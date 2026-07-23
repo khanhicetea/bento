@@ -2,6 +2,8 @@
 
 Bento is a self-hosted operations layer for running multiple isolated PHP applications and reverse-proxied services on one Linux server using Docker Compose.
 
+![Bento logo](./bento-logo-3d.png)
+
 This repository is a **Deno 2.9 / TypeScript** reimplementation of the Bento host control plane. It preserves the product model described in [`specs/`](specs/):
 
 - one operator-owned Linux host
