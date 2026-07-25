@@ -19,7 +19,7 @@ mkdir -p "$CERT_DIR"
 openssl req -x509 -nodes -newkey rsa:2048 \
   -keyout "$KEY" \
   -out "$CRT" \
-  -days 825 \
+  -days 7300 \
   -subj "/CN=bento-boot/O=Bento/C=US" \
   >/dev/null 2>&1 || true
 
