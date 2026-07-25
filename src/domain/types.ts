@@ -79,7 +79,7 @@ export const DEFAULT_FPM_PROFILE = asFpmProfile("small");
 export const DEFAULT_UID_BASE = 10000;
 export const DEFAULT_GID_BASE = 10000;
 export const SHARED_SOCKET_GROUP = "bento-web";
-export const SHARED_SOCKET_GID = 5555;
+export const SHARED_SOCKET_GID = 5000;
 export const APP_HOME_ROOT = "/home";
 
 /** Named FPM capacity profiles. */

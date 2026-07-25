@@ -2,7 +2,7 @@
  * Permission check / dry-run / shallow / recursive repair workflows.
  * Does not follow symlink targets. Startup must not recursively rewrite large trees.
  *
- * Policy (shared socket/read group = 5555 / bento-web):
+ * Policy (shared socket/read group = 5000 / bento-web):
  * - App home + code path: owner app, world-traverse (o+x) so Nginx can reach the public tree
  * - Public document tree: owner app, group bento-web, group-readable
  * - Private dirs (credentials, .ssh, .composer, .bento, logs, tmp): owner-only (or 750 for logs/tmp)
