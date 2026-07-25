@@ -18,18 +18,12 @@ server {
   {{/accessLog}}
 
   {{#deployEnabled}}
-  location = /_bento/deploy {
+  location ^~ /_bento/ {
     include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/deploy-webhook.php;
+    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/bento.php;
     fastcgi_param BENTO_DEPLOY_SECRET "{{deploySecret}}";
     fastcgi_param BENTO_APP "{{slug}}";
-    fastcgi_pass unix:{{socketPath}};
-  }
-  location = /_bento/clean-opcache {
-    internal;
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/clean-opcache.php;
-    fastcgi_param BENTO_APP "{{slug}}";
+    fastcgi_param BENTO_HTTP_REQUEST 1;
     fastcgi_pass unix:{{socketPath}};
   }
   {{/deployEnabled}}
@@ -100,18 +94,12 @@ server {
   {{/accessLog}}
 
   {{#deployEnabled}}
-  location = /_bento/deploy {
+  location ^~ /_bento/ {
     include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/deploy-webhook.php;
+    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/bento.php;
     fastcgi_param BENTO_DEPLOY_SECRET "{{deploySecret}}";
     fastcgi_param BENTO_APP "{{slug}}";
-    fastcgi_pass unix:{{socketPath}};
-  }
-  location = /_bento/clean-opcache {
-    internal;
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/clean-opcache.php;
-    fastcgi_param BENTO_APP "{{slug}}";
+    fastcgi_param BENTO_HTTP_REQUEST 1;
     fastcgi_pass unix:{{socketPath}};
   }
   {{/deployEnabled}}

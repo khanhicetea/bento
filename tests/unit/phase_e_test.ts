@@ -395,22 +395,18 @@ Deno.test("E3 disabled deploy omits /_bento routes; enabled matches helpers", as
     let vhost = textContent(files.find((f) => f.relPath === "nginx/sites/alpha.conf")!.content);
     assertEquals(vhost.includes("/_bento/deploy"), false);
     assertEquals(vhost.includes("/_bento/clean-opcache"), false);
-    assertEquals(vhost.includes("deploy-webhook.php"), false);
+    assertEquals(vhost.includes("helpers/bento.php"), false);
 
     const enabled = enableDeploy(state, { slug: "alpha" }, platform);
     state = enabled.state;
     files = await generateAll(platform, state, "digest");
     vhost = textContent(files.find((f) => f.relPath === "nginx/sites/alpha.conf")!.content);
-    assertEquals(vhost.includes("location = /_bento/deploy"), true);
-    assertEquals(vhost.includes("location = /_bento/clean-opcache"), true);
+    assertEquals(vhost.includes("location ^~ /_bento/"), true);
     assertEquals(
-      vhost.includes("SCRIPT_FILENAME /opt/bento/helpers/deploy-webhook.php"),
+      vhost.includes("SCRIPT_FILENAME /opt/bento/helpers/bento.php"),
       true,
     );
-    assertEquals(
-      vhost.includes("SCRIPT_FILENAME /opt/bento/helpers/clean-opcache.php"),
-      true,
-    );
+    assertEquals(vhost.includes("fastcgi_param BENTO_HTTP_REQUEST 1"), true);
     // default argv and container-local drain wiring
     const app = state.apps["alpha"]!;
     assertEquals(app.deploy.argv[0], "sh");

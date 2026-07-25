@@ -280,7 +280,7 @@ function resetOpcache(string $socketPath, string $app, string $deployId): array 
             'REQUEST_METHOD' => 'POST',
             'REQUEST_URI' => '/_bento/clean-opcache',
             'SCRIPT_NAME' => '/_bento/clean-opcache',
-            'SCRIPT_FILENAME' => '/opt/bento/helpers/clean-opcache.php',
+            'SCRIPT_FILENAME' => '/opt/bento/helpers/bento.php',
             'CONTENT_LENGTH' => '0',
             'REMOTE_ADDR' => '127.0.0.1',
             'SERVER_NAME' => 'bento-runner',

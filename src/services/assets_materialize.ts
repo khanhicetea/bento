@@ -42,8 +42,7 @@ const DOCKER_PHP_FILES = [
 ] as const;
 
 const HELPER_FILES = [
-  "helpers/deploy-webhook.php",
-  "helpers/clean-opcache.php",
+  "helpers/bento.php",
   "helpers/deploy-drain.php",
   "helpers/deploy-drain.sh",
 ] as const;

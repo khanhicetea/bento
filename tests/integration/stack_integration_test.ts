@@ -551,8 +551,8 @@ Deno.test("F2 deploy enable + queue surface + drain status", async () => {
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
 
     const vhost = await readText(gen(h, "nginx", "sites", "alpha.conf"));
-    assertEquals(vhost.includes("/_bento/deploy"), true);
-    assertEquals(vhost.includes("/_bento/clean-opcache"), true);
+    assertEquals(vhost.includes("location ^~ /_bento/"), true);
+    assertEquals(vhost.includes("/opt/bento/helpers/bento.php"), true);
     const state = JSON.parse(await readText(join(h.stack, "state.json")));
     const service = state.apps.alpha.phpService;
     const crontab = await readText(
@@ -571,7 +571,7 @@ Deno.test("F2 deploy enable + queue surface + drain status", async () => {
     assertEquals(await h.run("deploy", "disable", "alpha"), 0);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
     const off = await readText(gen(h, "nginx", "sites", "alpha.conf"));
-    assertEquals(off.includes("/_bento/deploy"), false);
+    assertEquals(off.includes("location ^~ /_bento/"), false);
 
     // Unit-level drain exits covered in unit tests; here ensure drain CLI is safe empty
     assertEquals(await h.run("deploy", "enable", "alpha"), 0);

@@ -182,7 +182,7 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
         "variables_order=EGPCS",
         "-S",
         "0.0.0.0:8080",
-        "/opt/bento/helpers/deploy-webhook.php",
+        "/opt/bento/helpers/bento.php",
       ], { timeoutMs: 15_000 });
       assertEquals(server.code, 0, server.stderr);
 

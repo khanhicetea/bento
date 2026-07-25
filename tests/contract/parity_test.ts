@@ -136,7 +136,7 @@ Deno.test("materialize uses digest-addressed cache and skips republish", async (
       true,
     );
     assertEquals(
-      await Deno.stat(join(stack, "helpers/deploy-webhook.php")).then(() => true),
+      await Deno.stat(join(stack, "helpers/bento.php")).then(() => true),
       true,
     );
     const drainPhp = await Deno.readTextFile(join(stack, "helpers/deploy-drain.php"));
