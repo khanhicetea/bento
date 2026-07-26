@@ -145,7 +145,7 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]` — ephemeral PHP CLI as app UID (TUI: Applications → Open CLI shell)                                                                                                                                                 |
 | Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
 | Portability  | `stack export <directory>`, `stack import <directory>` — CLI-only full stack + raw MySQL/PostgreSQL/Redis volume transfer                                                                                                                                                 |
-| Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup`, `restore`                                                                                                                                                                          |
+| Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                            |
 
 PostgreSQL is a first-class alternative to MySQL. Managed private services can be added and listed with `postgres add <major>` / `postgres list`, apps select one with `--database-engine postgres --postgres <major-or-service>`, and routine administration is available through `postgres db|shell|size|processlist`. Top-level `backup` and `restore` infer the selected app's engine, including mixed-engine `backup --all`, portable PostgreSQL dumps, and guarded restore-to-new or replacement. State schema v2 is engine-aware while keeping MySQL 8.4 as the default. Existing schema v1 stacks are never rewritten during routine reads; migrate one deliberately with `bento state migrate --confirm migrate-v1-to-v2`. Bento validates the complete v2 document, writes a mode-`0600` v1 backup beside `state.json`, then atomically replaces the state file. Each app belongs to exactly one MySQL or PostgreSQL service. Automatic cross-engine migration and managed database service/volume removal are unsupported. PostgreSQL uses official major tags such as `17` (`postgres17`). See [`specs/pg-database.md`](specs/pg-database.md).
 
@@ -159,7 +159,20 @@ bento backup --all
 # Restore to a new namespaced database for verification.
 bento restore --file /var/lib/bento/backups/postgres17/reports-....sql.gz \
   --app reports --target reports_verify
+
+# Register the current stack for a daily 03:15 host-cron run.
+bento --stack /var/lib/bento backup schedule register \
+  --schedule "15 3 * * *" --bin /usr/local/bin/bento
+bento --stack /var/lib/bento backup schedule status
+
+# Run the same scheduled all-database operation immediately, or remove registration.
+bento --stack /var/lib/bento backup schedule run
+bento --stack /var/lib/bento backup schedule unregister
 ```
+
+**Scheduled backups are emphatically on-host only.** They write logical dumps beneath the selected stack's `backups/` directory; Bento does **not** upload, replicate, or otherwise create an off-host copy. Configure and verify separate off-host replication before treating these dumps as a disaster-recovery backup.
+
+Registration manages only the stack-qualified Bento block in the current user's host crontab and preserves unrelated entries. `status` reports registration plus a bounded, redacted last-run record; `unregister` leaves existing dumps and that record in place. Overlapping logical backup batches are rejected rather than queued.
 
 MySQL uses matching `mysqldump`; PostgreSQL uses matching-major `pg_dump --no-owner --no-acl`. Dumps are written privately, checked for successful non-empty output, and atomically published. Retention runs only after the requested batch succeeds. Restore is not object-level atomic and can leave a partial destination after an import failure. Replacing an existing database requires exact target-name confirmation. Use logical backup/restore—not raw volume transfer—for PostgreSQL major upgrades.
 

@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import { runCli } from "../../src/main.ts";
+import { createFileLock } from "../../src/platform/lock.ts";
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -460,6 +461,36 @@ Deno.test("cli init render status app create", async () => {
     badState.schemaVersion = 999;
     await Deno.writeTextFile(join(stack, "state.json"), JSON.stringify(badState));
     assertEquals((await runCli([...base, "status"])) !== 0, true);
+  });
+});
+
+Deno.test("cli backup keeps legacy flags and exposes schedule help/run without crontab", async () => {
+  await withStack(async (stack) => {
+    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    assertEquals(await runCli([...base, "init"]), 0);
+
+    // The existing top-level option remains routed to the default backup command.
+    assertEquals(await runCli([...base, "backup", "--all", "--none"]), 0);
+
+    // Help and an empty all-database run do not use schedule status/register paths,
+    // so this smoke coverage never reads or mutates the host user's crontab.
+    assertEquals(await runCli([...base, "backup", "schedule", "--help"]), 0);
+    assertEquals(await runCli([...base, "backup", "schedule", "run"]), 0);
+    assertEquals(
+      await fileExists(join(stack, "backups/.schedule/last-run.json")),
+      true,
+    );
+
+    // Manual backups preserve the typed conflict exit code when a scheduled/manual
+    // batch already owns the shared stack backup lock.
+    const release = await createFileLock().tryExclusive(
+      join(stack, "locks/database-backup.lock"),
+    );
+    try {
+      assertEquals(await runCli([...base, "backup", "--all", "--none"]), 4);
+    } finally {
+      await release?.();
+    }
   });
 });
 

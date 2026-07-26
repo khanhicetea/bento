@@ -1,10 +1,10 @@
 /** Engine-neutral logical backup/restore dispatch. */
 
-import { relative, resolve } from "@std/path";
+import { join, relative, resolve } from "@std/path";
 import type { DesiredState } from "../domain/state.ts";
 import { assertNever } from "../domain/state.ts";
 import { asDatabaseName } from "../domain/types.ts";
-import { notFoundError, validationError } from "../domain/errors.ts";
+import { conflictError, notFoundError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import {
   applyBackupRetention,
@@ -35,33 +35,46 @@ export async function runDatabaseBackup(
   state: DesiredState,
   req: DatabaseBackupRequest,
 ): Promise<DatabaseBackupArtifact[]> {
-  const targets = resolveTargets(state, req);
-  const artifacts: DatabaseBackupArtifact[] = [];
-  const compress = req.compress ?? "zstd";
-
-  // Retention is deliberately deferred until every engine adapter succeeds.
-  // Earlier valid artifacts remain if a later target fails.
-  for (const target of targets) {
-    switch (target.engine) {
-      case "mysql": {
-        const result = await runMysqlBackup(
-          platform,
-          state,
-          { scope: "database", slug: target.slug, database: target.database, compress },
-          { skipRetention: true },
-        );
-        artifacts.push(...result);
-        break;
-      }
-      case "postgres":
-        artifacts.push(await runPostgresBackup(platform, target, compress));
-        break;
-      default:
-        assertNever(target.engine);
-    }
+  const release = await platform.lock.tryExclusive(
+    join(platform.paths.paths.lockDir, "database-backup.lock"),
+  );
+  if (!release) {
+    throw conflictError(
+      "another logical backup batch is already running",
+      "Wait for the current logical backup batch to finish, then retry.",
+    );
   }
-  await applyBackupRetention(platform, artifacts, 10);
-  return artifacts;
+  try {
+    const targets = resolveTargets(state, req);
+    const artifacts: DatabaseBackupArtifact[] = [];
+    const compress = req.compress ?? "zstd";
+
+    // Retention is deliberately deferred until every engine adapter succeeds.
+    // Earlier valid artifacts remain if a later target fails.
+    for (const target of targets) {
+      switch (target.engine) {
+        case "mysql": {
+          const result = await runMysqlBackup(
+            platform,
+            state,
+            { scope: "database", slug: target.slug, database: target.database, compress },
+            { skipRetention: true },
+          );
+          artifacts.push(...result);
+          break;
+        }
+        case "postgres":
+          artifacts.push(await runPostgresBackup(platform, target, compress));
+          break;
+        default:
+          assertNever(target.engine);
+      }
+    }
+    await applyBackupRetention(platform, artifacts, 10);
+    return artifacts;
+  } finally {
+    await release();
+  }
 }
 
 /** Restore through the selected app's engine and return state with a new target recorded. */

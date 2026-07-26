@@ -79,6 +79,8 @@ export interface FileSystem {
 export interface FileLock {
   /** Acquire exclusive lock; returns release function. */
   exclusive(path: string): Promise<() => Promise<void>>;
+  /** Try to acquire an exclusive lock without waiting; null means it is held. */
+  tryExclusive(path: string): Promise<(() => Promise<void>) | null>;
   /** Acquire shared lock; returns release function. */
   shared(path: string): Promise<() => Promise<void>>;
 }

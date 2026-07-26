@@ -125,20 +125,35 @@ export const safeRelativePathSchema = z.string().superRefine((value, ctx) => {
   }
 });
 
-/** Cron expression (5-field) validated by cron-parser; shell metacharacters rejected. */
+/** Cron expression (5-field) validated by cron-parser; injection characters rejected. */
 export const cronScheduleSchema = z
   .string()
   .min(1, "must not be empty")
-  .transform((s) => s.trim())
   .superRefine((value, ctx) => {
+    // Check the original bytes before trimming or whitespace canonicalization so
+    // line/control-character injection cannot be normalized into a valid cron.
+    if (
+      [...value].some((char) => {
+        const code = char.charCodeAt(0);
+        return code <= 0x08 || (code >= 0x0a && code <= 0x1f) || code === 0x7f;
+      })
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "contains control characters",
+      });
+      return;
+    }
     if (/[;|&`$(){}<>]/.test(value)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "contains unsafe characters",
       });
-      return;
     }
-    const parts = value.split(/\s+/);
+  })
+  .transform((value) => value.trim().replace(/[\t ]+/g, " "))
+  .superRefine((value, ctx) => {
+    const parts = value.split(" ");
     if (parts.length !== 5) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

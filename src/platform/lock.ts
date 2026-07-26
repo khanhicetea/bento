@@ -33,6 +33,30 @@ export function createFileLock(): FileLock {
       };
     },
 
+    async tryExclusive(path: string): Promise<(() => Promise<void>) | null> {
+      let file: Deno.FsFile | undefined;
+      try {
+        file = await openLock(path);
+        if (!(await file.tryLock(true))) {
+          file.close();
+          return null;
+        }
+      } catch (cause) {
+        file?.close();
+        throw platformError(`failed to try exclusive lock ${path}`, cause);
+      }
+      let released = false;
+      return async () => {
+        if (released) return;
+        released = true;
+        try {
+          await file.unlock();
+        } finally {
+          file.close();
+        }
+      };
+    },
+
     async shared(path: string): Promise<() => Promise<void>> {
       let file: Deno.FsFile;
       try {
@@ -79,6 +103,17 @@ export function createMemoryLock(): FileLock {
         await new Promise<void>((resolve) => waiters.push(resolve));
       }
       return async () => {
+        exclusiveOwners.delete(path);
+        notify();
+      };
+    },
+    async tryExclusive(path: string): Promise<(() => Promise<void>) | null> {
+      if (exclusiveOwners.has(path) || (sharedCounts.get(path) ?? 0) !== 0) return null;
+      exclusiveOwners.set(path, 1);
+      let released = false;
+      return async () => {
+        if (released) return;
+        released = true;
         exclusiveOwners.delete(path);
         notify();
       };

@@ -463,14 +463,26 @@ export async function applyBackupRetention(
       join(platform.paths.paths.backupsDir, a.service, a.database),
     );
   }
-  for (const dir of byDb.values()) {
+  for (const [key, dir] of byDb.entries()) {
     if (!(await platform.fs.exists(dir))) continue;
-    const names = (await platform.fs.readDir(dir))
-      .filter((n) => !n.endsWith(".partial"))
-      .sort()
-      .reverse();
-    for (const n of names.slice(keep)) {
-      await platform.fs.remove(join(dir, n));
+    const [service, database] = key.split("/", 2) as [string, string];
+    const prefix = `${service}_${database}_`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const managedName = new RegExp(
+      `^${prefix}(\\d{4}-\\d{2}-\\d{2}T\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z\\.sql(?:\\.gz|\\.zst)?$`,
+    );
+    const names: string[] = [];
+    for (const name of await platform.fs.readDir(dir)) {
+      const match = managedName.exec(name);
+      if (!match) continue;
+      const generatedIso = `${match[1]}:${match[2]}:${match[3]}.${match[4]}Z`;
+      const timestamp = new Date(generatedIso);
+      if (Number.isNaN(timestamp.getTime()) || timestamp.toISOString() !== generatedIso) continue;
+      const entry = await platform.fs.lstat(join(dir, name));
+      if (entry.isFile && !entry.isSymlink) names.push(name);
+    }
+    names.sort().reverse();
+    for (const name of names.slice(keep)) {
+      await platform.fs.remove(join(dir, name));
     }
   }
 }

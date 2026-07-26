@@ -36,10 +36,23 @@ Deno.test("parseSafeRelativePath rejects traversal", () => {
   assertEquals(parseSafeRelativePath("public").ok, true);
 });
 
-Deno.test("parseCronSchedule requires 5 fields and rejects shell metacharacters", () => {
-  assertEquals(parseCronSchedule("*/5 * * * *").ok, true);
-  assertEquals(parseCronSchedule("* * * *").ok, false);
-  assertEquals(parseCronSchedule("* * * * *; rm -rf /").ok, false);
+Deno.test("parseCronSchedule validates, canonicalizes, and rejects injection", () => {
+  const canonical = parseCronSchedule("  */5\t *  * * *  ");
+  assertEquals(canonical.ok, true);
+  if (canonical.ok) assertEquals(canonical.value, "*/5 * * * *");
+  for (
+    const invalid of [
+      "* * * *",
+      "61 * * * *",
+      "* * * * *; rm -rf /",
+      "* * * * *\nMAILTO=attacker@example.test",
+      "* * * * *\rcommand",
+      "* * * * *%newline",
+      "* * * * *$(id)",
+    ]
+  ) {
+    assertEquals(parseCronSchedule(invalid).ok, false, invalid);
+  }
 });
 
 Deno.test("database version and service validators", () => {
