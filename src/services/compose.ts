@@ -68,7 +68,12 @@ export function assembleComposeDocuments(
         content = renderMysqlFragment(database.service, database.image, database.volume);
         break;
       case "postgres":
-        content = renderPostgresFragment(database.service, database.image, database.volume);
+        content = renderPostgresFragment(
+          database.service,
+          database.image,
+          database.volume,
+          String(database.version),
+        );
         break;
       default:
         content = assertNever(database);
@@ -348,8 +353,17 @@ function renderPhpFragment(service: string, image: string, version: string): str
   return stringifyYaml(doc);
 }
 
-function renderPostgresFragment(service: string, image: string, volume: string): string {
+function renderPostgresFragment(
+  service: string,
+  image: string,
+  volume: string,
+  version: string,
+): string {
   const logging = composeLogging();
+  // postgres:18+ changed PGDATA to a major-specific directory below
+  // /var/lib/postgresql. Mount the parent there; older official images still
+  // require the historical /var/lib/postgresql/data mount.
+  const dataPath = Number(version) >= 18 ? "/var/lib/postgresql" : "/var/lib/postgresql/data";
   const doc = {
     "x-log-common": logging,
     services: {
@@ -367,7 +381,7 @@ function renderPostgresFragment(service: string, image: string, volume: string):
         },
         env_file: [".env"],
         volumes: [
-          `${volume}:/var/lib/postgresql/data`,
+          `${volume}:${dataPath}`,
           `./generated/postgres/${service}:/etc/bento/postgres:ro`,
           `./backups/${service}:/var/backups/bento`,
         ],

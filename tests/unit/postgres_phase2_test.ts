@@ -11,7 +11,7 @@ import { createMemoryLock } from "../../src/platform/lock.ts";
 import { createPathPolicy } from "../../src/platform/paths.ts";
 import { createRecordingProcessRunner } from "../../src/platform/process.ts";
 import { createSeededRandom } from "../../src/platform/random.ts";
-import { buildComposeFileList } from "../../src/services/compose.ts";
+import { assembleComposeDocuments, buildComposeFileList } from "../../src/services/compose.ts";
 import { generatePostgresSecrets } from "../../src/services/generate.ts";
 import { RenderService } from "../../src/services/render.ts";
 import { StateStore } from "../../src/services/state_store.ts";
@@ -117,6 +117,33 @@ Deno.test("Phase 2 PostgreSQL compose is private, mounted correctly, and determi
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("Phase 2 PostgreSQL 18 mounts the new major-aware data root", () => {
+  const platform = testPlatform("/tmp/bento-pg18-compose");
+  const state = createEmptyState("2026-07-26T12:00:00.000Z");
+  const version = asPostgresVersion("18");
+  const service = postgresServiceName(version);
+  state.databaseServices.push({
+    engine: "postgres",
+    version,
+    service,
+    image: postgresImage(version),
+    volume: `${service}-data`,
+  });
+
+  const generated = assembleComposeDocuments(platform, state).find((file) =>
+    file.relPath === "compose/docker-compose.postgres18.yml"
+  );
+  const content = generated!.content;
+  const doc = parseYaml(
+    typeof content === "string" ? content : new TextDecoder().decode(content),
+  ) as Record<string, unknown>;
+  const services = doc.services as Record<string, Record<string, unknown>>;
+  assertEquals(
+    (services.postgres18!.volumes as string[])[0],
+    "postgres18-data:/var/lib/postgresql",
+  );
 });
 
 Deno.test("Phase 2 root pgpass has real escaped content, mode 0600, and rollback safety", async () => {
