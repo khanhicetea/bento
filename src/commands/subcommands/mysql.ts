@@ -208,7 +208,7 @@ async function cmdMysqlShell(
       database,
       interactive: !printOnly,
     });
-    assertShellPlanSecretsOffArgv(plan, [app.mysqlPassword]);
+    assertShellPlanSecretsOffArgv(plan, [app.database.password]);
   }
 
   if (printOnly) {
@@ -289,7 +289,7 @@ async function cmdMysqlSize(argv: CliArgs, ctx: CliContext): Promise<number> {
     let databases: string[] = [];
     if (argv.app) {
       const app = state.apps[argv.app];
-      databases = app?.databases.map((d) => d.name) ?? [];
+      databases = app?.database.databases.map((d) => d.name) ?? [];
     }
     const { rows } = await queryDatabaseSizes(ctx.platform, service, rootPassword, databases);
     for (const r of rows) {

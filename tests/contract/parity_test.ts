@@ -216,10 +216,73 @@ Deno.test({
       assertEquals(ver.stdout.includes(DENO_TARGET_VERSION), true);
     }
 
+    // PostgreSQL command smoke in the freshly compiled distribution. A plain
+    // `deno task test` may discover an older optional dist/bento, so only run
+    // new-command assertions when the parity task explicitly requires it.
+    if (Deno.env.get("REQUIRE_BENTO_BIN") === "1") {
+      await withStack(async (stack) => {
+        const env = { PATH: "/usr/bin:/bin", HOME: Deno.env.get("HOME") ?? "/tmp" };
+        assertEquals(
+          (await runBin(bin, ["--stack", stack, "init"], { cwd: "/tmp", env })).code,
+          0,
+        );
+        assertEquals(
+          (await runBin(bin, ["--stack", stack, "postgres", "add", "17", "--no-apply"], {
+            cwd: "/tmp",
+            env,
+          })).code,
+          0,
+        );
+        const list = await runBin(bin, ["--stack", stack, "postgres", "list"], {
+          cwd: "/tmp",
+          env,
+        });
+        assertEquals(list.code, 0, list.stderr);
+        assertEquals(list.stdout.includes("postgres17"), true);
+        assertEquals(
+          (await runBin(bin, [
+            "--stack",
+            stack,
+            "app",
+            "create",
+            "pgparity",
+            "--domain",
+            "pgparity.test",
+            "--database-engine",
+            "postgres",
+            "--postgres",
+            "17",
+            "--no-apply",
+          ], { cwd: "/tmp", env })).code,
+          0,
+        );
+        const shellPlan = await runBin(
+          bin,
+          ["--stack", stack, "postgres", "shell", "--app", "pgparity", "--print"],
+          { cwd: "/tmp", env },
+        );
+        assertEquals(shellPlan.code, 0, shellPlan.stderr);
+        assertEquals(shellPlan.stdout.includes("psql"), true);
+        const state = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+        assertEquals(
+          shellPlan.stdout.includes(state.apps.pgparity.database.password),
+          false,
+        );
+        assertEquals(
+          (await runBin(bin, ["--stack", stack, "postgres", "remove", "17"], {
+            cwd: "/tmp",
+            env,
+          })).code,
+          10,
+        );
+      });
+    }
+
     await withStack(async (baseStack) => {
       // Shared inputs: init once via source, clone to two stacks
       const seed = ["--stack", baseStack, "--repo-root", Deno.cwd()];
       assertEquals(await runCli([...seed, "init"]), 0);
+      assertEquals(await runCli([...seed, "postgres", "add", "17", "--no-apply"]), 0);
       // Create an app so generated surface is non-trivial
       assertEquals(
         await runCli([
@@ -229,6 +292,10 @@ Deno.test({
           "parity",
           "--domain",
           "parity.test",
+          "--database-engine",
+          "postgres",
+          "--postgres",
+          "postgres17",
           "--no-apply",
         ]),
         0,

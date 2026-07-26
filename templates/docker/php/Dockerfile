@@ -21,12 +21,13 @@ RUN set -eux; \
     libjpeg62-turbo-dev \
     libonig-dev \
     libpng-dev \
+    libpq-dev \
     libsqlite3-dev \
     libssl-dev \
     libxml2-dev \
     libzip-dev; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
-  docker-php-ext-install -j"$(nproc)" bcmath exif gd intl pcntl pdo_mysql pdo_sqlite soap sockets zip mysqli; \
+  docker-php-ext-install -j"$(nproc)" bcmath exif gd intl pcntl pdo_mysql pdo_pgsql pdo_sqlite pgsql soap sockets zip mysqli; \
   (docker-php-ext-install -j"$(nproc)" opcache || docker-php-ext-enable opcache || true); \
   pecl install redis; \
   docker-php-ext-enable redis
@@ -113,6 +114,7 @@ RUN set -eux; \
     libldap-2.5-0 \
     libonig5 \
     libpng16-16 \
+    libpq5 \
     libreadline8 \
     libsodium23 \
     libsqlite3-0 \

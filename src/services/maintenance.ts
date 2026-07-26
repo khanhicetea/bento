@@ -43,6 +43,7 @@ export async function runStackMaintenance(
   const retained: string[] = [];
   const notes: string[] = [
     "In-runner s6 service logs are separate from host maintenance.",
+    "MySQL/PostgreSQL logical backup retention remains per engine/service/database and runs only after a successful backup batch.",
   ];
 
   const nginxLogDir = join(platform.paths.paths.logsDir, "nginx");

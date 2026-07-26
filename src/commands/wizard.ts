@@ -9,18 +9,27 @@ import type { CliContext } from "./context.ts";
 import { sectionApps } from "./wizard/apps.ts";
 import { sectionBootstrap } from "./wizard/bootstrap.ts";
 import { sectionMysql } from "./wizard/mysql.ts";
+import { sectionPostgres } from "./wizard/postgres.ts";
 import { sectionPhp } from "./wizard/php.ts";
 import { sectionProxies } from "./wizard/proxies.ts";
 import { handleError, pcDim } from "./wizard/shared.ts";
 import { sectionStatus } from "./wizard/status.ts";
 
-type WizardSection = "apps" | "proxies" | "mysql" | "php" | "status" | "bootstrap";
+type WizardSection =
+  | "apps"
+  | "proxies"
+  | "mysql"
+  | "postgres"
+  | "php"
+  | "status"
+  | "bootstrap";
 type SectionHandler = (ui: WizardUI, ctx: CliContext) => Promise<void>;
 
 const SECTION_HANDLERS: Record<WizardSection, SectionHandler> = {
   apps: sectionApps,
   proxies: sectionProxies,
   mysql: sectionMysql,
+  postgres: sectionPostgres,
   php: sectionPhp,
   status: sectionStatus,
   bootstrap: sectionBootstrap,
@@ -53,6 +62,11 @@ export async function runWizard(ctx: CliContext): Promise<number> {
         {
           label: "Manage MySQL",
           value: "mysql",
+          hint: "shell · versions · sizes · backup · restore",
+        },
+        {
+          label: "Manage PostgreSQL",
+          value: "postgres",
           hint: "shell · versions · sizes · backup · restore",
         },
         { label: "Manage PHP", value: "php", hint: "add version · reload FPM" },

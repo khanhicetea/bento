@@ -6,9 +6,8 @@ import {
   listRecentBackupFiles,
   queryDatabaseSizes,
   resolveMysqlServices,
-  runBackup,
-  runRestore,
 } from "../../services/mysql.ts";
+import { runDatabaseBackup, runDatabaseRestore } from "../../services/database_backup.ts";
 import { requireMysqlRootPassword } from "../../services/stack_env.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
@@ -91,9 +90,9 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
           rows,
         );
       } else if (action === "backup") {
-        await wizardBackup(ui, ctx);
+        await wizardDatabaseBackup(ui, ctx);
       } else {
-        await wizardRestore(ui, ctx);
+        await wizardDatabaseRestore(ui, ctx);
       }
     } catch (err) {
       handleError(ui, err);
@@ -102,10 +101,10 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
   }
 }
 
-async function wizardBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
+export async function wizardDatabaseBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
   const state = await ctx.store.load();
   const apps = Object.values(state.apps)
-    .filter((app) => app.databases.length > 0)
+    .filter((app) => app.database.databases.length > 0)
     .sort((a, b) => a.slug.localeCompare(b.slug));
   if (apps.length === 0) {
     ui.warn("No managed databases to back up");
@@ -127,7 +126,9 @@ async function wizardBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
       apps.map((app) => ({
         label: app.slug,
         value: app.slug,
-        hint: `${app.databases.length} database${app.databases.length === 1 ? "" : "s"}`,
+        hint: `${app.database.databases.length} database${
+          app.database.databases.length === 1 ? "" : "s"
+        }`,
       })),
     ) ?? undefined;
     if (!slug) return;
@@ -136,7 +137,7 @@ async function wizardBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
       const app = state.apps[slug]!;
       database = await ui.menu(
         "Database",
-        app.databases.map((db) => ({ label: db.name, value: db.name })),
+        app.database.databases.map((db) => ({ label: db.name, value: db.name })),
       ) ?? undefined;
       if (!database) return;
     }
@@ -156,7 +157,12 @@ async function wizardBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
   ));
   if (!(await ui.confirm("Start backup?", { defaultYes: true }))) return;
 
-  const artifacts = await runBackup(ctx.platform, state, { scope, slug, database, compress });
+  const artifacts = await runDatabaseBackup(ctx.platform, state, {
+    scope,
+    slug,
+    database,
+    compress,
+  });
   ui.success(
     `Backup completed`,
     `${artifacts.length} database${artifacts.length === 1 ? "" : "s"}`,
@@ -171,7 +177,7 @@ async function wizardBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
   );
 }
 
-async function wizardRestore(ui: WizardUI, ctx: CliContext): Promise<void> {
+export async function wizardDatabaseRestore(ui: WizardUI, ctx: CliContext): Promise<void> {
   const state = await ctx.store.load();
   const apps = Object.values(state.apps).sort((a, b) => a.slug.localeCompare(b.slug));
   if (apps.length === 0) {
@@ -200,7 +206,7 @@ async function wizardRestore(ui: WizardUI, ctx: CliContext): Promise<void> {
     apps.map((app) => ({
       label: app.slug,
       value: app.slug,
-      hint: app.mysqlService,
+      hint: app.database.service,
     })),
   );
   if (!slug) return;
@@ -208,7 +214,7 @@ async function wizardRestore(ui: WizardUI, ctx: CliContext): Promise<void> {
 
   const newTarget = "__new_database__";
   const selectedTarget = await ui.menu("Target database", [
-    ...app.databases.map((db) => ({
+    ...app.database.databases.map((db) => ({
       label: db.name,
       value: db.name,
       hint: "replace existing database",
@@ -222,7 +228,7 @@ async function wizardRestore(ui: WizardUI, ctx: CliContext): Promise<void> {
   if (!target) return;
 
   let replaceOriginal: string | undefined;
-  if (app.databases.some((db) => db.name === target)) {
+  if (app.database.databases.some((db) => db.name === target)) {
     ui.warn(
       `This will drop and recreate ${target}`,
       "Restore is not object-level atomic; a failed import can leave a partial database.",
@@ -248,11 +254,15 @@ async function wizardRestore(ui: WizardUI, ctx: CliContext): Promise<void> {
       replaceOriginal ? ` --replace ${replaceOriginal}` : ""
     }`,
   ));
-  await runRestore(ctx.platform, state, {
-    file,
-    slug,
-    targetDatabase: target,
-    replaceOriginal,
+  await ctx.store.withExclusive(async (current) => {
+    const next = await runDatabaseRestore(ctx.platform, current, {
+      file,
+      slug,
+      targetDatabase: target,
+      replaceOriginal,
+    });
+    if (next !== current) await ctx.store.save(next);
+    return next;
   });
   ui.success("Restore completed", target);
 }

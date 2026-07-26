@@ -23,7 +23,7 @@ export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<v
       const state = await ctx.store.init(force);
       ui.success(
         "Initialized",
-        `state=${ctx.platform.paths.paths.stateFile}\nphp=${state.defaults.phpVersion} mysql=${state.defaults.mysqlVersion}`,
+        `state=${ctx.platform.paths.paths.stateFile}\nphp=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,
       );
     } catch (err) {
       handleError(ui, err);

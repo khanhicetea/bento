@@ -4,12 +4,14 @@
  * Chains:
  *   1. bootstrap       docker + init + render + compose up
  *   2. apps-create     create apps (homes/pools/domains)
- *   3. db-add          mysql db provision + PHP connectivity
- *   4. domain          add/remove aliases + nginx vhost proof
- *   5. cron-worker     * * * * * print cron + file worker, wait 61s
- *   6. permissions     break modes → repair → re-check
- *   7. http/tls/status shared self-signed TLS HTTP (ACME skipped)
- *   8. deploy          live webhook → queue → runner drain → hook → OPcache
+ *   3. db-add          MySQL db provision + PHP connectivity
+ *   4. postgres        PDO connectivity, two-app isolation, backup/restore
+ *   5. domain          add/remove aliases + nginx vhost proof
+ *   6. cron-worker     * * * * * print cron + file worker, wait 61s
+ *   7. permissions     break modes → repair → re-check
+ *   8. http/tls/status shared TLS HTTP + mixed-engine status (ACME skipped)
+ *   9. stack-transfer  mixed-engine raw-volume export
+ *  10. deploy          live webhook → runner drain → hook → OPcache
  *
  * Invoked as: `bento test-stack [name]` (default name: testbento)
  * or global:  `bento --test-stack [name]`
@@ -24,8 +26,12 @@ import { applyAppDataPlane, materializeAppHome, provisionApp } from "./app.ts";
 import { materializeDockerAssets } from "./assets_materialize.ts";
 import { composeArgs } from "./compose.ts";
 import { createAppDatabaseLive, isMysqlReachable } from "./mysql.ts";
+import { addPostgresVersion, execPostgresAppSql, isPostgresReachable } from "./postgres.ts";
 import { isRedisReachable } from "./redis.ts";
 import { loadRedisPassword, requireMysqlRootPassword } from "./stack_env.ts";
+import { runDatabaseBackup, runDatabaseRestore } from "./database_backup.ts";
+import { buildStatus } from "./status.ts";
+import { exportStack } from "./stack_transfer.ts";
 import { parseDotEnv } from "./stack_env.ts";
 import { addCronJob, removeCronJob } from "./cron.ts";
 import { addWorker, removeWorker, workerProgramName } from "./worker.ts";
@@ -247,6 +253,31 @@ echo "mysql_ok db=" . ($row['db'] ?? '') . "\\n";
 `;
 }
 
+function phpPostgresProbe(): string {
+  return `<?php
+declare(strict_types=1);
+$host = getenv('PGHOST') ?: 'postgres17';
+$port = getenv('PGPORT') ?: '5432';
+$user = getenv('PGUSER') ?: '';
+$pass = getenv('PGPASSWORD') ?: '';
+$db   = getenv('PGDATABASE') ?: '';
+try {
+  $pdo = new PDO("pgsql:host={$host};port={$port};dbname={$db}", $user, $pass, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+  ]);
+  $row = $pdo->query('SELECT current_database() AS db, 1 AS ok')->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+  fwrite(STDERR, "postgres_connect_fail: {$e->getMessage()}\\n");
+  exit(1);
+}
+if (!$row || (string)$row['ok'] !== '1') {
+  fwrite(STDERR, "postgres_query_fail\\n");
+  exit(2);
+}
+echo "postgres_ok db=" . ($row['db'] ?? '') . "\\n";
+`;
+}
+
 function phpRedisProbe(): string {
   return `<?php
 declare(strict_types=1);
@@ -313,19 +344,29 @@ async function loadAppCredEnv(
   const cred = (await platform.fs.exists(credPath))
     ? parseDotEnv(await platform.fs.readText(credPath))
     : {};
-  return {
-    MYSQL_HOST: cred.MYSQL_HOST ?? app.mysqlService,
-    MYSQL_USER: cred.MYSQL_USER ?? app.mysqlUser,
-    MYSQL_PASSWORD: cred.MYSQL_PASSWORD ?? app.mysqlPassword,
-    MYSQL_DATABASE: cred.MYSQL_DATABASE ??
-      app.databases[0]?.name ??
-      `${app.slug}_db`,
+  const env: Record<string, string> = {
     REDIS_HOST: cred.REDIS_HOST ?? "redis",
     REDIS_PORT: cred.REDIS_PORT ?? "6379",
     REDIS_PASSWORD: cred.REDIS_PASSWORD ?? sharedRedis,
     REDIS_PREFIX: cred.REDIS_PREFIX ?? app.redis.prefix,
     HOME: app.home,
   };
+  if (app.database.engine === "postgres") {
+    env.DB_CONNECTION = cred.DB_CONNECTION ?? "pgsql";
+    env.PGHOST = cred.PGHOST ?? app.database.service;
+    env.PGPORT = cred.PGPORT ?? "5432";
+    env.PGUSER = cred.PGUSER ?? app.database.user;
+    env.PGPASSWORD = cred.PGPASSWORD ?? app.database.password;
+    env.PGDATABASE = cred.PGDATABASE ?? app.database.databases[0]?.name ?? app.slug;
+  } else {
+    env.DB_CONNECTION = cred.DB_CONNECTION ?? "mysql";
+    env.MYSQL_HOST = cred.MYSQL_HOST ?? app.database.service;
+    env.MYSQL_USER = cred.MYSQL_USER ?? app.database.user;
+    env.MYSQL_PASSWORD = cred.MYSQL_PASSWORD ?? app.database.password;
+    env.MYSQL_DATABASE = cred.MYSQL_DATABASE ?? app.database.databases[0]?.name ??
+      `${app.slug}_db`;
+  }
+  return env;
 }
 
 async function runPhpAsApp(
@@ -407,6 +448,8 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   let state: DesiredState | undefined;
   const appSlug = "demo";
   const appSlug2 = "other";
+  const pgAppSlug = "pgalpha";
+  const pgAppSlug2 = "pgbeta";
   let appDomain = `${opts.name}.test`;
 
   // =========================================================================
@@ -434,6 +477,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       state = await store.init(false);
     } else {
       state = await store.load();
+    }
+    if (!state.databaseServices.some((service) => service.engine === "postgres")) {
+      state = addPostgresVersion(state, "17");
+      await store.save(state);
     }
     await patchStackEnv(platform, { COMPOSE_PROJECT_NAME: opts.name });
     for (
@@ -524,7 +571,8 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("mysql-ready", "MySQL service reachable", async () => {
     state = await store.load();
-    const service = state.mysqlVersions[0]?.service ?? "mysql84";
+    const service = state.databaseServices.filter((v) => v.engine === "mysql")[0]?.service ??
+      "mysql84";
     const ok = await waitFor(
       `mysql ${service}`,
       opts.timeoutMs,
@@ -557,6 +605,21 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
           return false;
         }
       },
+      log,
+    );
+    return ok
+      ? { ok: true, detail: service }
+      : { ok: false, detail: `timed out after ${opts.timeoutMs}ms waiting for ${service}` };
+  });
+
+  await record("postgres-ready", "PostgreSQL service reachable on private network", async () => {
+    state = await store.load();
+    const service = state.databaseServices.find((entry) => entry.engine === "postgres")?.service ??
+      "postgres17";
+    const ok = await waitFor(
+      `postgres ${service}`,
+      opts.timeoutMs,
+      async () => await isPostgresReachable(platform, service),
       log,
     );
     return ok
@@ -699,7 +762,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const a = state.apps[appSlug]!;
     const b = state.apps[appSlug2]!;
     if (a.uid === b.uid) return { ok: false, detail: "uids collide" };
-    if (a.mysqlPassword === b.mysqlPassword) {
+    if (a.database.password === b.database.password) {
       return { ok: false, detail: "mysql passwords collide" };
     }
     if (a.redis.prefix === b.redis.prefix) {
@@ -777,7 +840,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const app = state.apps[appSlug];
     if (!app) return { ok: false, detail: "demo app missing" };
     const dbName = `${appSlug}_db`;
-    if (app.databases.some((d) => d.name === dbName)) {
+    if (app.database.databases.some((d) => d.name === dbName)) {
       // Re-apply grants in case MySQL volume was recreated
       const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
       const redisShared = await loadRedisPassword(platform);
@@ -815,7 +878,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const app = state.apps[appSlug];
     if (!app) return { ok: false, detail: "demo app missing" };
     const dbName = `${appSlug}_appdata`;
-    if (app.databases.some((d) => d.name === dbName)) {
+    if (app.database.databases.some((d) => d.name === dbName)) {
       return { ok: true, detail: `already recorded ${dbName}` };
     }
     const rootPassword = await requireMysqlRootPassword(platform);
@@ -902,7 +965,178 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   });
 
   // =========================================================================
-  // CHAIN 4 — domain add / remove
+  // CHAIN 4 — PostgreSQL apps, PDO connectivity, isolation, backup/restore
+  // =========================================================================
+  chain("postgres");
+
+  await record("pg-apps-create", "Create two PostgreSQL-backed apps", async () => {
+    state = await store.load();
+    for (
+      const [slug, domain] of [
+        [pgAppSlug, `${pgAppSlug}.${opts.name}.test`],
+        [pgAppSlug2, `${pgAppSlug2}.${opts.name}.test`],
+      ] as const
+    ) {
+      let app = state.apps[slug];
+      if (!app) {
+        const provisioned = provisionApp(platform, state, {
+          slug,
+          domain,
+          documentRoot: "public",
+          postgresVersion: "17",
+          createDatabase: true,
+        });
+        app = provisioned.app;
+        const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
+        if (!plane.databaseApplied) {
+          return { ok: false, detail: `database provisioning deferred for ${slug}` };
+        }
+        const redisShared = await loadRedisPassword(platform);
+        await materializeAppHome(platform, app, {
+          recursivePerms: true,
+          redisSharedPassword: redisShared,
+        });
+        await store.save(provisioned.state);
+        await render.apply(provisioned.state, {
+          reloadPlan: provisioned.reloadPlan,
+          skipValidate: true,
+        });
+        state = provisioned.state;
+      } else {
+        if (app.database.engine !== "postgres") {
+          return { ok: false, detail: `${slug} already exists with ${app.database.engine}` };
+        }
+        const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
+        if (!plane.databaseApplied) {
+          return { ok: false, detail: `database reconciliation failed for ${slug}` };
+        }
+        await materializeAppHome(platform, app, {
+          recursivePerms: false,
+          redisSharedPassword: await loadRedisPassword(platform),
+        });
+      }
+    }
+    const alpha = state.apps[pgAppSlug]!;
+    const beta = state.apps[pgAppSlug2]!;
+    return {
+      ok: alpha.database.engine === "postgres" && beta.database.engine === "postgres",
+      detail: `${pgAppSlug}/${pgAppSlug2} → ${alpha.database.service}`,
+    };
+  });
+
+  await record("pg-pdo-connect", "PostgreSQL app connects through PDO pgsql", async () => {
+    state = await store.load();
+    const app = state.apps[pgAppSlug];
+    if (!app || app.database.engine !== "postgres") {
+      return { ok: false, detail: `${pgAppSlug} PostgreSQL binding missing` };
+    }
+    await writeProbePhp(platform, pgAppSlug, "_bento_postgres.php", phpPostgresProbe());
+    const env = await loadAppCredEnv(platform, app, await loadRedisPassword(platform));
+    const result = await runPhpAsApp(
+      opts.stackRoot,
+      app,
+      "code/public/_bento_postgres.php",
+      env,
+    );
+    if (result.code !== 0 || !/postgres_ok/.test(result.stdout)) {
+      return {
+        ok: false,
+        detail: `exit ${result.code}: ${(result.stderr || result.stdout).trim().slice(0, 400)}`,
+      };
+    }
+    return { ok: true, detail: result.stdout.trim() };
+  });
+
+  await record("pg-isolation", "PostgreSQL roles cannot cross-connect", async () => {
+    state = await store.load();
+    const alpha = state.apps[pgAppSlug];
+    const beta = state.apps[pgAppSlug2];
+    if (
+      !alpha || !beta || alpha.database.engine !== "postgres" || beta.database.engine !== "postgres"
+    ) {
+      return { ok: false, detail: "PostgreSQL test apps missing" };
+    }
+    const own = await execPostgresAppSql(
+      platform,
+      alpha.database.service,
+      alpha.database.user,
+      pgAppSlug,
+      "SELECT 1;",
+      alpha.database.password,
+    );
+    const cross = await execPostgresAppSql(
+      platform,
+      alpha.database.service,
+      alpha.database.user,
+      pgAppSlug2,
+      "SELECT 1;",
+      alpha.database.password,
+    );
+    if (own.code !== 0 || cross.code === 0) {
+      return {
+        ok: false,
+        detail: `own=${own.code} cross=${cross.code}: ${
+          (cross.stderr || own.stderr).trim().slice(0, 240)
+        }`,
+      };
+    }
+    return { ok: true, detail: `${pgAppSlug} own=allowed; ${pgAppSlug2}=denied` };
+  });
+
+  await record(
+    "pg-backup-restore",
+    "PostgreSQL logical backup restores to verification DB",
+    async () => {
+      state = await store.load();
+      const app = state.apps[pgAppSlug];
+      if (!app || app.database.engine !== "postgres") {
+        return { ok: false, detail: `${pgAppSlug} PostgreSQL binding missing` };
+      }
+      const seeded = await execPostgresAppSql(
+        platform,
+        app.database.service,
+        app.database.user,
+        pgAppSlug,
+        "DROP TABLE IF EXISTS bento_live_proof; CREATE TABLE bento_live_proof(value text); INSERT INTO bento_live_proof VALUES ('restored');",
+        app.database.password,
+      );
+      if (seeded.code !== 0) return { ok: false, detail: seeded.stderr.trim().slice(0, 300) };
+      const [artifact] = await runDatabaseBackup(platform, state, {
+        scope: "database",
+        slug: pgAppSlug,
+        database: pgAppSlug,
+        compress: "gzip",
+      });
+      if (!artifact || artifact.engine !== "postgres") {
+        return { ok: false, detail: "PostgreSQL backup artifact missing" };
+      }
+      const target = `${pgAppSlug}_verify`;
+      const replacing = app.database.databases.some((database) => database.name === target);
+      const next = await runDatabaseRestore(platform, state, {
+        file: artifact.path,
+        slug: pgAppSlug,
+        targetDatabase: target,
+        replaceOriginal: replacing ? target : undefined,
+      });
+      if (next !== state) await store.save(next);
+      state = next;
+      const verified = await execPostgresAppSql(
+        platform,
+        app.database.service,
+        app.database.user,
+        target,
+        "SELECT value FROM bento_live_proof;",
+        app.database.password,
+      );
+      if (verified.code !== 0 || !verified.stdout.includes("restored")) {
+        return { ok: false, detail: (verified.stderr || verified.stdout).trim().slice(0, 300) };
+      }
+      return { ok: true, detail: `${artifact.path} → ${target}` };
+    },
+  );
+
+  // =========================================================================
+  // CHAIN 5 — domain add / remove
   // =========================================================================
   chain("domain");
 
@@ -1118,31 +1352,8 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       );
       const workerProg = workerProgramName(appSlug, "print");
       const schedProg = `scheduler-${appSlug}`;
-      const ok = await waitFor(
-        "s6 services",
-        60_000,
-        async () => {
-          const status = await composeCmd(
-            platform,
-            runnerState,
-            [
-              "exec",
-              "-T",
-              runner,
-              "/command/s6-svstat",
-              `/run/bento-s6/services/${workerProg}`,
-              `/run/bento-s6/services/${schedProg}`,
-            ],
-            10_000,
-          );
-          const text = status.stdout + status.stderr;
-          return status.code === 0 &&
-            text.split("\n").filter((line) => line.startsWith("up")).length >= 2;
-        },
-        log,
-      );
-      if (!ok) {
-        const st = await composeCmd(
+      const serviceStatus = async (program: string) =>
+        await composeCmd(
           platform,
           runnerState,
           [
@@ -1150,14 +1361,34 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
             "-T",
             runner,
             "/command/s6-svstat",
-            `/run/bento-s6/services/${workerProg}`,
-            `/run/bento-s6/services/${schedProg}`,
+            `/run/bento-s6/services/${program}`,
           ],
           10_000,
         );
+      const ok = await waitFor(
+        "s6 services",
+        60_000,
+        async () => {
+          const [worker, scheduler] = await Promise.all([
+            serviceStatus(workerProg),
+            serviceStatus(schedProg),
+          ]);
+          return worker.code === 0 && scheduler.code === 0 &&
+            (worker.stdout + worker.stderr).startsWith("up") &&
+            (scheduler.stdout + scheduler.stderr).startsWith("up");
+        },
+        log,
+      );
+      if (!ok) {
+        const [worker, scheduler] = await Promise.all([
+          serviceStatus(workerProg),
+          serviceStatus(schedProg),
+        ]);
         return {
           ok: false,
-          detail: `services not running: ${(st.stdout + st.stderr).trim().slice(0, 400)}`,
+          detail: `services not running: worker=${
+            (worker.stdout + worker.stderr).trim().slice(0, 180)
+          }; scheduler=${(scheduler.stdout + scheduler.stderr).trim().slice(0, 180)}`,
         };
       }
       return { ok: true, detail: `runner=${runner}; ${schedProg}+${workerProg} up` };
@@ -1522,22 +1753,61 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     };
   });
 
-  await record("status", "Stack state lists both apps", async () => {
+  await record("status", "Mixed-engine status lists MySQL and PostgreSQL apps", async () => {
     state = await store.load();
-    const apps = Object.keys(state.apps);
-    if (!apps.includes(appSlug) || !apps.includes(appSlug2)) {
-      return { ok: false, detail: `apps=${apps.join(",")}` };
+    const report = await buildStatus(platform, state);
+    const apps = new Map(report.apps.map((app) => [app.slug, app]));
+    const expected = [appSlug, appSlug2, pgAppSlug, pgAppSlug2];
+    if (expected.some((slug) => !apps.has(slug))) {
+      return { ok: false, detail: `apps=${[...apps.keys()].join(",")}` };
+    }
+    if (
+      apps.get(appSlug)?.databaseEngine !== "mysql" ||
+      apps.get(pgAppSlug)?.databaseEngine !== "postgres" ||
+      report.mysqlVersions.length === 0 || report.postgresVersions.length === 0
+    ) {
+      return { ok: false, detail: "mixed-engine status classification failed" };
     }
     return {
       ok: true,
       detail: `apps=${
-        apps.join(",")
-      }; cron=${state.cronJobs.length}; workers=${state.workers.length}`,
+        expected.join(",")
+      }; mysql=${report.mysqlVersions.length}; postgres=${report.postgresVersions.length}`,
     };
   });
 
   // =========================================================================
-  // CHAIN 8 — live deploy webhook → queue → runner → hook → OPcache
+  // CHAIN 9 — mixed-engine raw-volume export
+  // =========================================================================
+  chain("stack-transfer");
+
+  await record("stack-export-mixed", "Export MySQL/PostgreSQL/Redis raw volumes", async () => {
+    state = await store.load();
+    const destination = resolve(`${opts.stackRoot}-transfer`);
+    if (await platform.fs.exists(destination)) {
+      await platform.fs.remove(destination, { recursive: true });
+    }
+    try {
+      const exported = await exportStack(platform, state, destination);
+      const names = exported.files.map((path) => path.split(/[\\/]/).at(-1) ?? path);
+      const required = [
+        "stack.tar.gz",
+        "mysql84-data.tar.gz",
+        "postgres17-data.tar.gz",
+        "redis-data.tar.gz",
+      ];
+      const missing = required.filter((name) => !names.includes(name));
+      if (missing.length > 0) return { ok: false, detail: `missing ${missing.join(", ")}` };
+      return { ok: true, detail: names.join(", ") };
+    } finally {
+      if (await platform.fs.exists(destination)) {
+        await platform.fs.remove(destination, { recursive: true });
+      }
+    }
+  });
+
+  // =========================================================================
+  // CHAIN 10 — live deploy webhook → queue → runner → hook → OPcache
   // =========================================================================
   chain("deploy");
 
@@ -1820,7 +2090,7 @@ export function formatTestStackReport(report: TestStackReport): string {
   lines.push(report.ok ? "RESULT: PASS" : "RESULT: FAIL");
   lines.push("");
   lines.push(
-    "Chains: bootstrap → apps-create → db-add → domain → cron-worker → permissions → http/tls → deploy",
+    "Chains: bootstrap → apps-create → db-add → postgres → domain → cron-worker → permissions → http/tls → stack-transfer → deploy",
   );
   lines.push("Note: TLS ACME issuance is not exercised (requires public DNS).");
   return lines.join("\n");

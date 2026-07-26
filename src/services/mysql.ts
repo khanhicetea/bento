@@ -23,11 +23,14 @@ export function addMysqlVersion(
   versionInput: string,
 ): DesiredState {
   const version = asMysqlVersion(unwrap(parseMysqlVersion(versionInput), "mysqlVersion"));
-  if (state.mysqlVersions.some((v) => v.version === version)) {
+  if (
+    state.databaseServices.filter((v) => v.engine === "mysql").some((v) => v.version === version)
+  ) {
     throw conflictError(`MySQL version ${version} is already managed`);
   }
   const service = mysqlServiceName(version);
   const managed: ManagedMysqlVersion = {
+    engine: "mysql",
     version,
     service,
     image: mysqlImage(version),
@@ -35,8 +38,8 @@ export function addMysqlVersion(
   };
   return {
     ...state,
-    mysqlVersions: [...state.mysqlVersions, managed].sort((a, b) =>
-      compareMajorMinor(a.version, b.version)
+    databaseServices: [...state.databaseServices, managed].sort((a, b) =>
+      a.service.localeCompare(b.service)
     ),
     updatedAt: new Date().toISOString(),
   };
@@ -65,16 +68,22 @@ export function createAppDatabase(
       `database ${dbName} outside app namespace; use ${slug} or ${slug}_*`,
     );
   }
-  if (app.databases.some((d) => d.name === dbName)) {
+  if (app.database.databases.some((d) => d.name === dbName)) {
     throw conflictError(`database ${dbName} already recorded for app ${slug}`);
   }
   // Cross-service creation refused before SQL runs — app has single service.
+  if (app.database.engine !== "mysql") {
+    throw validationError(`app ${slug} is not MySQL-backed`);
+  }
   const nextApp: AppState = {
     ...app,
-    databases: [
-      ...app.databases,
-      { name: asDatabaseName(dbName), createdAt: now },
-    ],
+    database: {
+      ...app.database,
+      databases: [
+        ...app.database.databases,
+        { name: asDatabaseName(dbName), createdAt: now },
+      ],
+    },
     updatedAt: now,
   };
   return {
@@ -86,7 +95,7 @@ export function createAppDatabase(
 
 /** SQL to ensure app user and grants without changing an existing user's password. */
 export function grantSql(app: AppState, dbName: string, password: string): string {
-  const user = mysqlIdent(app.mysqlUser);
+  const user = mysqlIdent(app.database.user);
   const db = mysqlIdent(dbName);
   const like = mysqlLikeEscape(app.slug);
   const pw = mysqlStringLiteral(password);
@@ -101,7 +110,7 @@ export function grantSql(app: AppState, dbName: string, password: string): strin
 
 /** Best-effort account setup without recording a database or resetting its password. */
 export function accountSetupSql(app: AppState, password: string): string {
-  const user = mysqlIdent(app.mysqlUser);
+  const user = mysqlIdent(app.database.user);
   const slugDb = mysqlIdent(app.slug);
   const like = mysqlLikeEscape(app.slug);
   const pw = mysqlStringLiteral(password);
@@ -182,11 +191,11 @@ export async function applyAppMysqlGrants(
   dbName: string,
   rootPassword: string,
 ): Promise<void> {
-  const sql = grantSql(app, dbName, app.mysqlPassword);
-  const result = await execMysqlSql(platform, app.mysqlService, sql, rootPassword);
+  const sql = grantSql(app, dbName, app.database.password);
+  const result = await execMysqlSql(platform, app.database.service, sql, rootPassword);
   if (result.code !== 0) {
     throw serviceError(
-      `MySQL grant failed for database ${dbName} on ${app.mysqlService}: ${
+      `MySQL grant failed for database ${dbName} on ${app.database.service}: ${
         (result.stderr || result.stdout || "unknown error").trim()
       }`,
       "Ensure the MySQL service is running and MYSQL_ROOT_PASSWORD matches the container, then retry `bento mysql db`.",
@@ -204,9 +213,9 @@ export async function tryBestEffortMysqlAccount(
   rootPassword: string | undefined,
 ): Promise<boolean> {
   if (!rootPassword) return false;
-  if (!(await isMysqlReachable(platform, app.mysqlService))) return false;
-  const sql = accountSetupSql(app, app.mysqlPassword);
-  const result = await execMysqlSql(platform, app.mysqlService, sql, rootPassword);
+  if (!(await isMysqlReachable(platform, app.database.service))) return false;
+  const sql = accountSetupSql(app, app.database.password);
+  const result = await execMysqlSql(platform, app.database.service, sql, rootPassword);
   return result.code === 0;
 }
 
@@ -229,9 +238,9 @@ export async function createAppDatabaseLive(
     platform.clock.nowIso(),
   );
   const app = validated.apps[slug]!;
-  if (!(await isMysqlReachable(platform, app.mysqlService))) {
+  if (!(await isMysqlReachable(platform, app.database.service))) {
     throw serviceError(
-      `MySQL service ${app.mysqlService} is unavailable; database ${dbName} was not recorded`,
+      `MySQL service ${app.database.service} is unavailable; database ${dbName} was not recorded`,
       "Start the stack MySQL service (e.g. `bento compose -- up -d`), confirm MYSQL_ROOT_PASSWORD, then retry `bento mysql db` or `bento app create --db`.",
     );
   }
@@ -247,6 +256,7 @@ export type BackupRequest = {
 };
 
 export type BackupArtifact = {
+  engine: "mysql";
   path: string;
   database: string;
   service: string;
@@ -314,6 +324,7 @@ export async function runBackup(
   platform: Platform,
   state: DesiredState,
   req: BackupRequest,
+  options: { skipRetention?: boolean } = {},
 ): Promise<BackupArtifact[]> {
   const targets = resolveBackupTargets(state, req);
   const artifacts: BackupArtifact[] = [];
@@ -380,6 +391,7 @@ export async function runBackup(
         throw new Error(`dump for ${t.database} was empty; not publishing`);
       }
       artifacts.push({
+        engine: "mysql",
         path: finalPath,
         database: t.database,
         service: t.service,
@@ -391,8 +403,9 @@ export async function runBackup(
     throw cause;
   }
 
-  // Retention per database only after full batch success
-  await applyRetention(platform, artifacts, 10);
+  // The engine-neutral dispatcher defers this until its complete mixed-engine
+  // batch succeeds. Direct MySQL callers retain the historical behavior.
+  if (!options.skipRetention) await applyBackupRetention(platform, artifacts, 10);
   return artifacts;
 }
 
@@ -406,17 +419,23 @@ function resolveBackupTargets(
     }
     const app = state.apps[req.slug];
     if (!app) throw notFoundError(`app not found: ${req.slug}`);
-    if (!app.databases.some((d) => d.name === req.database)) {
+    if (app.database.engine !== "mysql") {
+      throw validationError(`app ${req.slug} is not MySQL-backed`);
+    }
+    if (!app.database.databases.some((d) => d.name === req.database)) {
       throw notFoundError(`database ${req.database} not recorded for app ${req.slug}`);
     }
-    return [{ service: app.mysqlService, database: req.database, slug: req.slug }];
+    return [{ service: app.database.service, database: req.database, slug: req.slug }];
   }
   if (req.scope === "app") {
     if (!req.slug) throw validationError("app backup requires --app");
     const app = state.apps[req.slug];
     if (!app) throw notFoundError(`app not found: ${req.slug}`);
-    return app.databases.map((d) => ({
-      service: app.mysqlService,
+    if (app.database.engine !== "mysql") {
+      throw validationError(`app ${req.slug} is not MySQL-backed`);
+    }
+    return app.database.databases.map((d) => ({
+      service: app.database.service,
       database: d.name,
       slug: req.slug!,
     }));
@@ -424,16 +443,17 @@ function resolveBackupTargets(
   // all user databases
   const out: Array<{ service: string; database: string; slug: string }> = [];
   for (const app of Object.values(state.apps)) {
-    for (const d of app.databases) {
-      out.push({ service: app.mysqlService, database: d.name, slug: app.slug });
+    if (app.database.engine !== "mysql") continue;
+    for (const d of app.database.databases) {
+      out.push({ service: app.database.service, database: d.name, slug: app.slug });
     }
   }
   return out;
 }
 
-async function applyRetention(
+export async function applyBackupRetention(
   platform: Platform,
-  artifacts: BackupArtifact[],
+  artifacts: Array<{ service: string; database: string }>,
   keep: number,
 ): Promise<void> {
   const byDb = new Map<string, string>();
@@ -470,6 +490,9 @@ export async function runRestore(
 ): Promise<void> {
   const app = state.apps[req.slug];
   if (!app) throw notFoundError(`app not found: ${req.slug}`);
+  if (app.database.engine !== "mysql") {
+    throw validationError(`app ${req.slug} is not MySQL-backed`);
+  }
 
   if (req.replaceOriginal !== undefined) {
     if (req.replaceOriginal !== req.targetDatabase) {
@@ -499,7 +522,7 @@ export async function runRestore(
     throw validationError(`backup file is empty or not a regular file: ${file}`);
   }
 
-  const serviceBackupDir = join(platform.paths.paths.backupsDir, app.mysqlService);
+  const serviceBackupDir = join(platform.paths.paths.backupsDir, app.database.service);
   await platform.fs.mkdirp(serviceBackupDir, 0o700);
   let containerFile = pathInsideBackupMount(serviceBackupDir, file);
   let stagedFile: string | undefined;
@@ -537,7 +560,7 @@ export async function runRestore(
 
   try {
     const result = await platform.process.run(
-      ["docker", "compose", "exec", "-T", app.mysqlService, "sh", "-c", script],
+      ["docker", "compose", "exec", "-T", app.database.service, "sh", "-c", script],
       {
         cwd: platform.paths.paths.root,
         timeoutMs: 60 * 60_000,
@@ -571,7 +594,9 @@ function shellQuote(s: string): string {
 }
 
 export function listMysqlVersions(state: DesiredState): ManagedMysqlVersion[] {
-  return [...state.mysqlVersions].sort((a, b) => compareMajorMinor(a.version, b.version));
+  return [...state.databaseServices.filter((v) => v.engine === "mysql")].sort((a, b) =>
+    compareMajorMinor(a.version, b.version)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -634,11 +659,11 @@ export function buildMysqlShellPlan(
     };
   }
 
-  const service = identity.app.mysqlService;
-  const user = identity.app.mysqlUser;
-  const password = identity.app.mysqlPassword;
-  if (!database && identity.app.databases[0]) {
-    database = identity.app.databases[0].name;
+  const service = identity.app.database.service;
+  const user = identity.app.database.user;
+  const password = identity.app.database.password;
+  if (!database && identity.app.database.databases[0]) {
+    database = identity.app.database.databases[0].name;
   }
   const optionPath = mysqlClientOptionPath(platform.random.hex(8));
   const cnf = [
@@ -798,7 +823,7 @@ export function resolveMysqlServices(
   opts?: { service?: string; app?: string },
 ): string[] {
   if (opts?.service) {
-    const found = state.mysqlVersions.find(
+    const found = state.databaseServices.filter((v) => v.engine === "mysql").find(
       (v) => v.service === opts.service || v.version === opts.service,
     );
     if (!found) throw notFoundError(`MySQL service not found: ${opts.service}`);
@@ -807,9 +832,9 @@ export function resolveMysqlServices(
   if (opts?.app) {
     const app = state.apps[opts.app];
     if (!app) throw notFoundError(`app not found: ${opts.app}`);
-    return [app.mysqlService];
+    return [app.database.service];
   }
-  return state.mysqlVersions.map((v) => v.service);
+  return state.databaseServices.filter((v) => v.engine === "mysql").map((v) => v.service);
 }
 
 // silence unused

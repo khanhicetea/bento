@@ -120,11 +120,11 @@ Deno.test("mysql shell plan for app uses app credentials on stdin only", async (
     const plan = buildMysqlShellPlan(platform, { kind: "app", app }, {
       interactive: false,
     });
-    assertShellPlanSecretsOffArgv(plan, [app.mysqlPassword]);
-    assertEquals(plan.user, app.mysqlUser);
-    assertEquals(plan.service, app.mysqlService);
-    assertEquals(plan.stage?.stdin.includes(app.mysqlPassword), true);
-    assertEquals(plan.open.command.join(" ").includes(app.mysqlPassword), false);
+    assertShellPlanSecretsOffArgv(plan, [app.database.password]);
+    assertEquals(plan.user, app.database.user);
+    assertEquals(plan.service, app.database.service);
+    assertEquals(plan.stage?.stdin.includes(app.database.password), true);
+    assertEquals(plan.open.command.join(" ").includes(app.database.password), false);
     assertEquals(plan.open.command.includes("--default-character-set=utf8mb4"), true);
   });
 });

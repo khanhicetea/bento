@@ -119,8 +119,8 @@ Deno.test("F2 create two apps; homes/pools/sockets/domains separate", async () =
     assertEquals(state.apps.beta.home, "/home/beta");
     assertEquals(state.domains["alpha.test"].kind, "app");
     assertEquals(state.domains["beta.test"].slug, "beta");
-    assertEquals(state.apps.alpha.mysqlUser !== state.apps.beta.mysqlUser, true);
-    assertEquals(state.apps.alpha.mysqlPassword !== state.apps.beta.mysqlPassword, true);
+    assertEquals(state.apps.alpha.database.user !== state.apps.beta.database.user, true);
+    assertEquals(state.apps.alpha.database.password !== state.apps.beta.database.password, true);
 
     // Pool files distinct
     const phpDir = gen(h, "php");
@@ -371,8 +371,8 @@ Deno.test("F2 MySQL namespace refuse + stable app passwords (control plane)", as
     // App passwords are distinct and remain stable during reconciliation.
     const statePath = join(h.stack, "state.json");
     const state = JSON.parse(await readText(statePath));
-    const pwAlpha = state.apps.alpha.mysqlPassword;
-    const pwBeta = state.apps.beta.mysqlPassword;
+    const pwAlpha = state.apps.alpha.database.password;
+    const pwBeta = state.apps.beta.database.password;
     assertEquals(pwAlpha !== pwBeta, true);
 
     assertEquals(
@@ -380,19 +380,19 @@ Deno.test("F2 MySQL namespace refuse + stable app passwords (control plane)", as
       0,
     );
     const after = JSON.parse(await readText(statePath));
-    assertEquals(after.apps.alpha.mysqlPassword, pwAlpha);
-    assertEquals(after.apps.beta.mysqlPassword, pwBeta);
+    assertEquals(after.apps.alpha.database.password, pwAlpha);
+    assertEquals(after.apps.beta.database.password, pwBeta);
 
     // Password rotation is deliberately not a Bento command.
     assertEquals((await h.run("mysql", "password", "alpha")) !== 0, true);
     const afterUnsupportedCommand = JSON.parse(await readText(statePath));
-    assertEquals(afterUnsupportedCommand.apps.alpha.mysqlPassword, pwAlpha);
+    assertEquals(afterUnsupportedCommand.apps.alpha.database.password, pwAlpha);
 
     // Cross-service: app is locked to its mysqlService; adding another MySQL version
     // must not reassign existing apps.
     assertEquals(await h.run("mysql", "add", "8.0"), 0);
     const multi = JSON.parse(await readText(statePath));
-    assertEquals(multi.apps.alpha.mysqlService, state.apps.alpha.mysqlService);
+    assertEquals(multi.apps.alpha.database.service, state.apps.alpha.database.service);
     // MySQL version removal blocked
     assertEquals((await h.run("mysql", "remove", "8.4")) !== 0, true);
   });

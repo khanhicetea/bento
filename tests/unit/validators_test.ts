@@ -2,8 +2,10 @@ import { assertEquals, assertThrows } from "@std/assert";
 import {
   parseAppSlug,
   parseCronSchedule,
+  parseDatabaseService,
   parseDomainName,
   parsePhpVersion,
+  parsePostgresVersion,
   parseSafeRelativePath,
   unwrap,
 } from "../../src/schemas/validators.ts";
@@ -40,9 +42,16 @@ Deno.test("parseCronSchedule requires 5 fields and rejects shell metacharacters"
   assertEquals(parseCronSchedule("* * * * *; rm -rf /").ok, false);
 });
 
-Deno.test("parsePhpVersion", () => {
+Deno.test("database version and service validators", () => {
   assertEquals(parsePhpVersion("8.5").ok, true);
   assertEquals(parsePhpVersion("8").ok, false);
+  assertEquals(parsePostgresVersion("17").ok, true);
+  for (const invalid of ["17.2", "latest", "v17", "0", ""]) {
+    assertEquals(parsePostgresVersion(invalid).ok, false);
+  }
+  assertEquals(parseDatabaseService("mysql84").ok, true);
+  assertEquals(parseDatabaseService("postgres17").ok, true);
+  assertEquals(parseDatabaseService("postgres17.2").ok, false);
 });
 
 Deno.test("empty state round-trips through schema", () => {
@@ -52,7 +61,7 @@ Deno.test("empty state round-trips through schema", () => {
   assertEquals(loaded.schemaVersion, STATE_SCHEMA_VERSION);
   assertEquals(loaded.defaults.phpVersion, "8.5");
   assertEquals(loaded.phpVersions.length, 1);
-  assertEquals(loaded.mysqlVersions.length, 1);
+  assertEquals(loaded.databaseServices.length, 1);
 });
 
 Deno.test("future schema version is rejected without mutation", () => {

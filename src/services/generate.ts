@@ -10,7 +10,12 @@ import { renderTemplate } from "./template.ts";
 import { type GeneratedFile, withManagedMarker } from "./render.ts";
 import { containerAppHome } from "../platform/paths.ts";
 import { assembleComposeDocuments } from "./compose.ts";
-import { loadAcmeEnvironment, loadHttp3Enabled, loadMysqlRootPassword } from "./stack_env.ts";
+import {
+  loadAcmeEnvironment,
+  loadHttp3Enabled,
+  loadMysqlRootPassword,
+  loadPostgresRootPassword,
+} from "./stack_env.ts";
 import {
   renderAcmeIssuer,
   renderAcmeSslSnippet,
@@ -39,9 +44,11 @@ export async function generateAll(
   // Runner: Supercronic and worker service directories supervised by s6
   files.push(...generateRunnerConfig(state));
 
-  // MySQL root client option files (restricted; password from stack .env)
-  const rootPassword = (await loadMysqlRootPassword(platform)) ?? "";
-  files.push(...generateMysqlSecrets(state, rootPassword));
+  // Database administrator client files (restricted; passwords from stack .env).
+  const mysqlRootPassword = (await loadMysqlRootPassword(platform)) ?? "";
+  files.push(...generateMysqlSecrets(state, mysqlRootPassword));
+  const postgresRootPassword = (await loadPostgresRootPassword(platform)) ?? "";
+  files.push(...generatePostgresSecrets(state, postgresRootPassword));
 
   // Generation marker
   files.push({
@@ -52,7 +59,14 @@ export async function generateAll(
         `assetDigest=${assetDigest}`,
         `apps=${Object.keys(state.apps).sort().join(",")}`,
         `php=${state.phpVersions.map((v) => v.version).join(",")}`,
-        `mysql=${state.mysqlVersions.map((v) => v.version).join(",")}`,
+        `mysql=${
+          state.databaseServices.filter((v) => v.engine === "mysql").map((v) => v.version).join(",")
+        }`,
+        `postgres=${
+          state.databaseServices.filter((v) => v.engine === "postgres").map((v) => v.version).join(
+            ",",
+          )
+        }`,
         "",
       ].join("\n"),
     ),
@@ -495,12 +509,32 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
  * Materialize root MySQL client option files with real password content from stack env.
  * Mode is always 0600; files are disposable generated config (not durable secrets store).
  */
+export function generatePostgresSecrets(
+  state: DesiredState,
+  rootPassword: string,
+): GeneratedFile[] {
+  const files: GeneratedFile[] = [];
+  // .pgpass escapes backslashes and field delimiters. Strip line breaks so an
+  // operator-supplied value cannot create a second credential record.
+  const escapedPassword = rootPassword.replace(/[\r\n]/g, "").replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:");
+  for (const postgres of state.databaseServices.filter((v) => v.engine === "postgres")) {
+    files.push({
+      relPath: `postgres/${postgres.service}/root.pgpass`,
+      content: withManagedMarker(`*:*:*:postgres:${escapedPassword}\n`),
+      mode: 0o600,
+      managed: true,
+    });
+  }
+  return files;
+}
+
 export function generateMysqlSecrets(
   state: DesiredState,
   rootPassword: string,
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
-  for (const m of state.mysqlVersions) {
+  for (const m of state.databaseServices.filter((v) => v.engine === "mysql")) {
     // MySQL accepts # comments; marker keeps file in the managed set.
     files.push({
       relPath: `mysql/${m.service}/root.cnf`,

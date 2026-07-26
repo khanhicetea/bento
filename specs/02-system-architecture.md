@@ -16,7 +16,7 @@ Management CLI ---- desired state ----> complete candidate generation
                                               v
 Internet ---> host-network Nginx ---> per-app PHP-FPM socket
                     |                         |
-                    |                         +---- private backend ---- MySQL version services
+                    |                         +---- private backend ---- MySQL/PostgreSQL version services
                     |                         |                       \-- Redis
                     |                         |
                     |                         +---- shared app home
@@ -35,7 +35,7 @@ The control plane is a strict TypeScript CLI on Deno 2.9 plus tracked or embedde
 
 - validate operator intent;
 - own the desired-state schema and stable app identities;
-- derive managed PHP/MySQL service topology;
+- derive managed PHP and MySQL/PostgreSQL service topology;
 - render Nginx, PHP-FPM, scheduler, worker, and secret material;
 - stage and transactionally promote generated output;
 - validate running services before reload;
@@ -72,9 +72,10 @@ The data plane consists of:
 | PHP runner | One per PHP version | Supervises per-app schedulers and long-running workers |
 | PHP CLI | Ephemeral per invocation | Runs app commands and shells with the correct identity/runtime |
 | MySQL | One per managed MySQL version | Durable relational data for apps assigned to that service |
+| PostgreSQL | One per managed PostgreSQL major version | Durable relational data for apps assigned to that service |
 | Redis | One | Durable shared cache/queue service, optionally ACL-isolated per app |
 
-Nginx is the only public service. PHP, runners, MySQL, and Redis use a private Compose network. Nginx deliberately does not join that network; PHP communication crosses shared Unix-socket mounts.
+Nginx is the only public service. PHP, runners, MySQL, PostgreSQL, and Redis use a private Compose network. Nginx deliberately does not join that network; PHP communication crosses shared Unix-socket mounts.
 
 ### 2.3 Target codebase layering
 
@@ -83,11 +84,11 @@ The TypeScript implementation must preserve one-way dependencies even though exa
 | Layer | Target responsibility |
 |---|---|
 | Entrypoint and command adapters | Parse scripted/interactive intent, select records, coordinate use cases, map typed errors to exit codes, and format operator output |
-| Domain/application services | State transitions, rendering plans, Compose assembly, Nginx/PHP/MySQL/Redis behavior, runtime versions, runners, deployment, and access logs |
+| Domain/application services | State transitions, rendering plans, Compose assembly, Nginx/PHP/database/Redis behavior, engine adapters, runtime versions, runners, deployment, and access logs |
 | Schemas | Runtime validation, current schema-version enforcement, defaults, and conversion from `unknown` into domain values |
 | Platform adapters | Atomic filesystem primitives, locks, clocks, randomness, subprocess/Docker execution, terminal access, and host inspection |
 | Shared UI/policy | Paths, environment/default policy, templating, prompts, tables, and stable operator diagnostics |
-| Immutable runtime assets | Base Compose topology, Nginx/PHP/MySQL templates, Docker build contexts, and in-container helper programs |
+| Immutable runtime assets | Base Compose topology, Nginx/PHP/MySQL/PostgreSQL templates, Docker build contexts, and in-container helper programs |
 | Behavioral tests | Validate domain invariants, secret handling, scoped reloads, render rollback, version resolution, and operational safety |
 
 The intended dependency direction is command adapters -> application/domain services -> narrow platform interfaces, with concrete platform adapters injected at the outside. Domain code must not import command parsers, prompts, `Deno.*`, or terminal formatting. This keeps headless behavior testable and prevents CLI presentation or Deno APIs from becoming the domain model.
@@ -96,9 +97,9 @@ The intended dependency direction is command adapters -> application/domain serv
 
 TypeScript compile-time types do not make JSON, environment values, CLI tokens, or subprocess output safe. Every such input starts as `unknown` and passes through a runtime schema before it reaches domain services. The schema library may come from JSR or npm, but the inferred TypeScript type and runtime validator must describe the same model.
 
-Use opaque/branded value types for frequently confused primitives such as `AppSlug`, `DomainName`, `Uid`, `Gid`, `PhpVersion`, `MysqlService`, `AbsoluteAppPath`, and `UnixSocketPath`. Use discriminated unions for TLS modes, reload targets, queue policies, deploy states, command results, and recovery outcomes. Exhaustive switches must fail type checking when a new variant is not handled.
+Use opaque/branded value types for frequently confused primitives such as `AppSlug`, `DomainName`, `Uid`, `Gid`, `PhpVersion`, `MysqlVersion`, `PostgresVersion`, `DatabaseService`, `AbsoluteAppPath`, and `UnixSocketPath`. Use discriminated unions for TLS modes, reload targets, queue policies, deploy states, command results, and recovery outcomes. Exhaustive switches must fail type checking when a new variant is not handled.
 
-Persisted state has one explicit MVP schema version. Loading follows `bytes -> JSON unknown -> exact version check -> schema validation -> current State`. Any other version is rejected without writing over the source; pre-MVP state is intentionally unsupported. Saving follows a validated domain state and an atomic writer; callers cannot write arbitrary records.
+Persisted state has one explicit current schema version. Schema v2 represents managed database services and app database bindings as discriminated unions keyed by `engine: "mysql" | "postgres"`; invalid mixed-engine state is therefore neither representable nor accepted at runtime. Loading follows `bytes -> JSON unknown -> exact version check -> schema validation -> current State`. Routine reads reject every other version without writing over the source. The only v1 path is an explicit operator-confirmed migration that backs up the original, preserves all MySQL identifiers and secrets, validates the complete v2 result, and atomically replaces the source. Saving follows a validated domain state and an atomic writer; callers cannot write arbitrary records.
 
 Package APIs that return weakly typed data are isolated behind adapters. Production source must not spread `any` through the domain layer, use unchecked type assertions to accept external data, or index arbitrary state objects without validation.
 
@@ -112,7 +113,7 @@ An app is a logical tenant inside version-shared infrastructure.
 | Web execution | Dedicated PHP-FPM pool and Unix socket |
 | Filesystem | Private home; Nginx receives read-only home mount and group access only to the public tree |
 | PHP filesystem access | Per-pool `open_basedir` rooted in the app home, plus required runtime libraries/log paths |
-| MySQL | Same-name user with grants restricted to the app database namespace on one service |
+| Relational database | Exactly one engine/service binding; same-name MySQL user or restricted PostgreSQL role with access only to the app's recorded database namespace |
 | Redis | Mandatory app key prefix in shared mode; per-app user/key/channel ACL in ACL mode |
 | Background work | s6-managed workers and schedulers switch to the app user and constrain working directory to the app home |
 | Deployment | Authenticated per-app queue; deploy command runs as the app user with one active job |
@@ -146,7 +147,7 @@ The shared socket group lets Nginx connect without joining every app's private g
 
 ### 4.3 Backend services
 
-PHP-FPM, runner, CLI, MySQL, and Redis communicate through a private Compose network. Apps use the selected MySQL service name and the Redis service name, never `localhost`. MySQL and Redis have no public port publication in the base topology.
+PHP-FPM, runner, CLI, MySQL, PostgreSQL, and Redis communicate through a private Compose network. Apps use the selected database service name and the Redis service name, never `localhost`. MySQL, PostgreSQL, and Redis have no public port publication in the base topology.
 
 ## 5. State and storage layers
 
@@ -158,7 +159,7 @@ Bento separates five ownership layers:
 | Local desired state | Stack defaults/secrets and the state document | Operator-owned source of truth |
 | Generated state | Compose runtime fragments, vhosts, pools, scheduler/worker config, root client files | Disposable and fully reconstructible |
 | Local customization | Compose overlays and selected app templates | Operator-owned, upgrade-aware |
-| Durable runtime | App homes, logs, backups, certificates, ACME state, MySQL/Redis volumes | Preserved across render and container recreation |
+| Durable runtime | App homes, logs, backups, certificates, ACME state, MySQL/PostgreSQL/Redis volumes | Preserved across render and container recreation |
 
 Generated state must carry a managed marker and must never be the place for user edits. A full generation also determines which old managed files are stale.
 
@@ -170,9 +171,9 @@ The persisted schema may be implemented differently, but it must represent these
 
 ```text
 Stack
-  defaults -> PHP version, MySQL service, FPM profile
+  defaults -> PHP version, database engine/service, FPM profile
   managed PHP versions[]
-  managed MySQL versions[]
+  managed database services[] -> engine, version, service, image, volume
   apps{}
   proxy sites{}
   global domain ownership{}
@@ -183,14 +184,14 @@ App
   identity -> slug, UID/GID, home
   runtime  -> PHP version, PHP service, FPM profile, entrypoint mode
   ingress  -> main domain, aliases, TLS mode, access-log flag
-  data     -> one MySQL service, MySQL user, databases[], Redis identity/prefix
+  data     -> one discriminated MySQL or PostgreSQL binding, app user/role, databases[], Redis identity/prefix
   deploy   -> enabled, HMAC secret, queue policy, timeout, workdir, trusted argv
   config   -> selected app vhost/pool template provenance
 
 Domain owner -> exactly one PHP app or one proxy site
 Cron job     -> exactly one app and its PHP version
 Worker       -> exactly one app and its PHP version
-Database     -> exactly one app and its selected MySQL service
+Database     -> exactly one app and its selected relational database service
 Deploy job  -> exactly one app and one of queued|running|success|failed|skipped
 ```
 
@@ -204,13 +205,13 @@ The app slug is stack-wide unique and reused as the Linux identity, FPM pool, so
 2. Refuse domain collisions and unmanaged runtime versions.
 3. Allocate or reuse a stable UID/GID.
 4. Create the app home and private/public directory structure.
-5. Create/update MySQL and Redis identities when their services are available.
+5. Dispatch to the selected MySQL or PostgreSQL adapter and create/update its app identity plus Redis identity when services are available.
 6. Record desired state.
 7. Generate the app identity, FPM pool, vhost, and related runtime configuration.
 8. Validate/reload PHP-FPM and Nginx as required.
 9. Apply the initial recursive permission policy once, while the tree is small.
 
-An explicit database request must fail before recording a database if MySQL is unavailable. Best-effort account setup without an explicit database may be completed later.
+An explicit database request must fail before recording a database if the selected MySQL or PostgreSQL service is unavailable. Best-effort account setup without an explicit database may be completed later. Omitting database options preserves an existing app's engine and service; ordinary provisioning refuses engine/service moves because those require an external migration.
 
 ### 7.2 Request serving
 
@@ -218,7 +219,7 @@ An explicit database request must fail before recording a database if MySQL is u
 2. Static files are read from the app's selected public tree through a read-only mount.
 3. PHP requests are routed to the app's socket under its selected PHP version.
 4. The app pool executes as the app user with its pool limits and filesystem boundary.
-5. PHP reaches its assigned MySQL service and Redis through the private network.
+5. PHP reaches its assigned MySQL or PostgreSQL service and Redis through the private network.
 
 ### 7.3 Render and apply transaction
 
@@ -243,7 +244,7 @@ Restore prior generation       Signal only targeted roles
                                   Finalize journal
 ```
 
-The transaction covers generated service files and sensitive generated MySQL option files. Managed PHP/MySQL Compose fragments are also derived from state, though their exact transactional mechanism may differ in a replacement as long as the observable safety guarantees remain.
+The transaction covers generated service files and sensitive generated MySQL option files. Managed PHP and MySQL/PostgreSQL Compose fragments are also derived from state, though their exact transactional mechanism may differ in a replacement as long as the observable safety guarantees remain.
 
 ### 7.4 Scoped reconciliation
 
@@ -310,22 +311,27 @@ After any finished command, the runner sends `POST /_bento/clean-opcache` direct
 
 ### 7.7 Database backup and restore
 
-Backup runs the matching version's client tools inside the MySQL container, authenticating through the generated mode-0600 root option file and local mysqld Unix socket. Each service has only its own host backup directory bind-mounted read-write at `/var/backups/bento`. `mysqldump` writes a private partial file there; Zstandard compression uses explicit level 3 by default (`zstd -3`) and runs before bytes reach the bind. Successful, non-empty output is atomically renamed inside that directory, so dump bytes never cross the Docker exec stdout boundary. Retention runs per database only after the full requested batch succeeds.
+Top-level backup and restore infer the engine from the selected app/database and dispatch to an engine-specific adapter. A mixed-engine `backup --all` groups work by engine, service, and database. Each service has only its own host backup directory bind-mounted read-write at `/var/backups/bento`. Retention runs per database only after the complete requested batch succeeds.
 
-Restore makes the selected dump available through the same writable backup bind (temporarily staging external files), then decompresses and imports it inside the matching MySQL container over the Unix socket. Replacing an original requires exact-name confirmation and performs drop/create before import. Therefore restore is not object-level atomic, and failed import can leave a partially restored destination.
+MySQL backup runs matching client tools inside the MySQL container, authenticating through the generated mode-0600 root option file and local mysqld Unix socket. `mysqldump` writes a private partial file; successful, non-empty output is atomically renamed.
+
+PostgreSQL backup runs matching-major `pg_dump` inside the PostgreSQL container through protected client credentials and uses `--no-owner --no-acl`. Uncompressed, gzip, and Zstandard outputs are supported. As with MySQL, dump bytes remain in the backup bind, a failed or empty partial is removed, and only a successful non-empty file is atomically published.
+
+Restore stages or selects the dump in the matching service backup bind, validates app/engine/namespace/compression, creates the destination under the app identity and reapplies engine-specific isolation. Replacing an original requires exact-name confirmation and performs drop/create before import. Restore is not object-level atomic, and failed import can leave a partially restored destination. PostgreSQL major upgrades use logical dump/restore; raw-volume transfer is accepted only between compatible PostgreSQL major/image versions.
 
 ## 8. Security model
 
 ### 8.1 Public surface
 
-Only Nginx is public. The stack may expose app sites, proxy sites, ACME HTTP challenges, and an opt-in authenticated app-internal endpoint. Management, FPM, MySQL, Redis, s6 control paths, and status endpoints remain local/private.
+Only Nginx is public. The stack may expose app sites, proxy sites, ACME HTTP challenges, and an opt-in authenticated app-internal endpoint. Management, FPM, MySQL, PostgreSQL, Redis, s6 control paths, and status endpoints remain local/private.
 
 ### 8.2 Secrets
 
 - Stack secrets and desired state are local and untracked.
 - MySQL root credentials are mounted as protected client option files configured for the local mysqld Unix socket, not supplied on administrative argv or streamed repeatedly over exec stdin.
-- App MySQL/Redis credentials are mode-restricted inside the app home.
-- Temporary app-authenticated database shells stage a protected in-container option file through stdin and remove it afterward.
+- PostgreSQL administrator credentials are mounted as protected client credentials (for example `.pgpass`) and are never supplied on host argv.
+- App MySQL/PostgreSQL/Redis credentials are mode-restricted inside the app home.
+- Temporary app-authenticated database shells stage a protected in-container client file through stdin and remove it afterward.
 - Webhook signatures use constant-time HMAC comparison.
 - Certificate keys, ACME accounts, backups, app homes, and runtime state are never committed.
 
@@ -344,6 +350,7 @@ Only Nginx is public. The stack may expose app sites, proxy sites, ACME HTTP cha
 - Worker commands are stored as argv; shell evaluation requires an explicit shell.
 - Cron values and schedules reject unsafe structure before runtime validation.
 - MySQL grants escape wildcard characters in app names.
+- PostgreSQL identifiers and literals are quoted without shell interpolation; app roles have no superuser, role, replication, or database-creation privilege, and `PUBLIC` database/schema access is revoked.
 - The supported Compose wrapper refuses volume-destructive down operations.
 
 ## 9. Failure and recovery semantics
@@ -378,14 +385,14 @@ The replacement must use these target choices unless the product owner explicitl
 | PHP capabilities | Common web extensions, OPcache, Redis extension, Composer, Node.js, Git, SSH client | Supports typical modern and legacy PHP deployment workflows |
 | Process supervision | s6-overlay 3.x | PID 1 plus a dynamic scan tree with individually controllable services |
 | Scheduling | Supercronic | Container-friendly cron parsing, validation, reload, and logs |
-| Relational data | Versioned MySQL services with named volumes | App assignment to one durable engine version; matching client tools |
+| Relational data | Versioned MySQL and PostgreSQL services with named volumes | Exactly one engine/service per app; matching client tools and mixed-engine coexistence |
 | Cache/queue | Redis with AOF persistence and optional ACL mode | Shared internal service with compatibility and stronger isolation modes |
-| Backups | `mysqldump`, optional Zstandard/gzip streaming | Portable logical recovery without host compression dependencies |
+| Backups | `mysqldump` or `pg_dump`, with uncompressed/gzip/Zstandard output | Portable logical recovery without host compression dependencies |
 | Log lifecycle | Docker local logging plus logrotate | Bounded service logs and app file logs without control-plane daemon |
 | Analysis | One-shot GoAccess container | No permanent analytics service |
 | Tests/tooling | `deno fmt`, `deno lint`, `deno check`, `deno test`, contract/integration shell checks | One pinned toolchain for format, lint, types, tests, and builds |
 
-Current defaults are PHP 8.5 and MySQL 8.4. Those defaults are product policy, not eternal architecture; version management must remain data-driven. Legacy MySQL 5.7 has special ARM64 compatibility handling but is end-of-life and should be treated as a compatibility requirement only if the reimplementation must support existing hosts.
+Current defaults are PHP 8.5 and MySQL 8.4. PostgreSQL is an explicit alternative and uses official major tags such as `17`, yielding stable names such as `postgres17` and `postgres17-data`. Those defaults are product policy, not eternal architecture; version management must remain data-driven. Legacy MySQL 5.7 has special ARM64 compatibility handling but is end-of-life and should be treated as a compatibility requirement only if the reimplementation must support existing hosts.
 
 ### 10.1 Deno project and dependency policy
 
@@ -435,10 +442,14 @@ Safe extension occurs through desired-state features, local Compose overlays, us
 3. App-to-PHP routing uses per-app Unix sockets.
 4. Apps share containers by PHP version and isolate through identity/pool/filesystem/data credentials.
 5. Each PHP version has FPM, singleton runner, and ephemeral CLI roles.
-6. Each app has one primary PHP version and one MySQL service.
-7. MySQL and Redis remain private in the base topology.
+6. Each app has one primary PHP version and exactly one discriminated MySQL or PostgreSQL database binding.
+7. MySQL, PostgreSQL, and Redis remain private in the base topology.
 8. Desired state is authoritative; generated output is disposable.
 9. Durable data is separate from generated state.
 10. Render/apply is serialized, staged, validated, recoverable, and reload-scoped.
 11. All app execution paths use the same app identity.
 12. Runner replicas remain one per PHP version.
+13. MySQL 8.4 remains the default database unless explicitly changed; adding PostgreSQL does not change existing MySQL CLI behavior.
+14. Database engine/service moves and MySQL/PostgreSQL data conversion are external migrations, never reconciliation side effects.
+15. Automated MySQL/PostgreSQL service or volume removal is blocked.
+16. PostgreSQL raw-volume transfer requires a compatible major version; logical backup/restore is the major-upgrade path.

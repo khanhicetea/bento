@@ -1,26 +1,24 @@
-/**
- * Domain model for Bento desired state.
- * This is the authoritative in-memory representation after schema validation.
- */
+/** Authoritative in-memory desired-state domain model. */
 
 import type {
   AbsoluteAppPath,
   AppSlug,
   CronJobName,
   DatabaseName,
+  DatabaseService,
   DomainName,
   FpmProfile,
   Gid,
-  MysqlService,
   MysqlVersion,
   PhpVersion,
+  PostgresVersion,
   ProxySiteName,
   Uid,
   WorkerName,
 } from "./types.ts";
 import {
+  asDatabaseService,
   asFpmProfile,
-  asMysqlService,
   asMysqlVersion,
   asPhpVersion,
   DEFAULT_FPM_PROFILE,
@@ -29,31 +27,19 @@ import {
 } from "./types.ts";
 import { STATE_SCHEMA_VERSION } from "../version.ts";
 
+export type DatabaseEngine = "mysql" | "postgres";
 export type TlsMode =
   | { kind: "self-ca" }
   | { kind: "shared" }
   | { kind: "acme" }
   | { kind: "external"; certPath: string; keyPath: string };
-
 export type EntrypointMode = "front-controller" | "legacy";
 export type RedisMode = "shared" | "acl";
 export type QueuePolicy = "latest" | "fifo";
-export type DeployStatus =
-  | "queued"
-  | "running"
-  | "success"
-  | "failed"
-  | "skipped";
-
+export type DeployStatus = "queued" | "running" | "success" | "failed" | "skipped";
 export type TemplateProvenance =
   | { kind: "upstream" }
-  | {
-    kind: "custom";
-    sourcePath: string;
-    copiedFromVersion?: string;
-    activatedAt: string;
-  };
-
+  | { kind: "custom"; sourcePath: string; copiedFromVersion?: string; activatedAt: string };
 export type DomainOwner =
   | { kind: "app"; slug: AppSlug }
   | { kind: "proxy"; name: ProxySiteName };
@@ -66,7 +52,6 @@ export type AppDeployConfig = {
   workdir: string;
   argv: string[];
 };
-
 export type AppRedisIdentity = {
   mode: RedisMode;
   prefix: string;
@@ -74,15 +59,26 @@ export type AppRedisIdentity = {
   aclUsername?: string;
   aclPassword?: string;
 };
+export type AppDatabase = { name: DatabaseName; createdAt: string };
 
-export type AppDatabase = {
-  name: DatabaseName;
-  createdAt: string;
-};
+export type AppDatabaseBinding =
+  | {
+    engine: "mysql";
+    service: DatabaseService;
+    user: string;
+    password: string;
+    databases: AppDatabase[];
+  }
+  | {
+    engine: "postgres";
+    service: DatabaseService;
+    user: string;
+    password: string;
+    databases: AppDatabase[];
+  };
 
 export type AppState = {
   slug: AppSlug;
-  /** Disabled apps retain desired state and durable data but emit no runtime config. */
   enabled: boolean;
   uid: Uid;
   gid: Gid;
@@ -96,10 +92,7 @@ export type AppState = {
   fpmProfile: FpmProfile;
   tls: TlsMode;
   accessLog: boolean;
-  mysqlService: MysqlService;
-  mysqlUser: string;
-  mysqlPassword: string;
-  databases: AppDatabase[];
+  database: AppDatabaseBinding;
   redis: AppRedisIdentity;
   deploy: AppDeployConfig;
   vhostTemplate: TemplateProvenance;
@@ -107,7 +100,6 @@ export type AppState = {
   createdAt: string;
   updatedAt: string;
 };
-
 export type ProxySite = {
   name: ProxySiteName;
   mainDomain: DomainName;
@@ -118,7 +110,6 @@ export type ProxySite = {
   createdAt: string;
   updatedAt: string;
 };
-
 export type CronJob = {
   name: CronJobName;
   app: AppSlug;
@@ -126,14 +117,12 @@ export type CronJob = {
   timezone: string;
   workdir: string;
   command: string[];
-  /** argv is safely quoted; shell is stored as one script body without tokenizing it. */
   commandMode: "argv" | "shell";
   output: "log" | "null" | "inherit";
   timeoutSec?: number;
   lock?: string;
   enabled: boolean;
 };
-
 export type Worker = {
   name: WorkerName;
   app: AppSlug;
@@ -145,32 +134,44 @@ export type Worker = {
   stopwaitsecs: number;
 };
 
+export type DatabaseDefault =
+  | { engine: "mysql"; version: MysqlVersion; service: DatabaseService }
+  | { engine: "postgres"; version: PostgresVersion; service: DatabaseService };
 export type StackDefaults = {
   phpVersion: PhpVersion;
-  mysqlVersion: MysqlVersion;
+  database: DatabaseDefault;
   fpmProfile: FpmProfile;
   redisMode: RedisMode;
 };
-
 export type ManagedPhpVersion = {
   version: PhpVersion;
   service: string;
   image: string;
   processCap: number;
 };
-
-export type ManagedMysqlVersion = {
-  version: MysqlVersion;
-  service: MysqlService;
-  image: string;
-  volume: string;
-};
+export type ManagedDatabaseService =
+  | {
+    engine: "mysql";
+    version: MysqlVersion;
+    service: DatabaseService;
+    image: string;
+    volume: string;
+  }
+  | {
+    engine: "postgres";
+    version: PostgresVersion;
+    service: DatabaseService;
+    image: string;
+    volume: string;
+  };
+export type ManagedMysqlVersion = Extract<ManagedDatabaseService, { engine: "mysql" }>;
+export type ManagedPostgresVersion = Extract<ManagedDatabaseService, { engine: "postgres" }>;
 
 export type DesiredState = {
   schemaVersion: typeof STATE_SCHEMA_VERSION;
   defaults: StackDefaults;
   phpVersions: ManagedPhpVersion[];
-  mysqlVersions: ManagedMysqlVersion[];
+  databaseServices: ManagedDatabaseService[];
   apps: Record<string, AppState>;
   proxies: Record<string, ProxySite>;
   domains: Record<string, DomainOwner>;
@@ -183,47 +184,47 @@ export type DesiredState = {
 export function phpServiceName(version: PhpVersion): string {
   return `php${String(version).replace(".", "")}`;
 }
-
-export function mysqlServiceName(version: MysqlVersion): MysqlService {
-  return asMysqlService(`mysql${String(version).replace(".", "")}`);
+export function mysqlServiceName(version: MysqlVersion): DatabaseService {
+  return asDatabaseService(`mysql${String(version).replace(".", "")}`);
 }
-
+export function postgresServiceName(version: PostgresVersion): DatabaseService {
+  return asDatabaseService(`postgres${version}`);
+}
 export function phpImage(version: PhpVersion): string {
-  // Tag used by compose build; one image serves FPM, runner, and CLI roles.
   return `bento/php:${version}`;
 }
-
 export function mysqlImage(version: MysqlVersion): string {
   return `mysql:${version}`;
+}
+export function postgresImage(version: PostgresVersion): string {
+  return `postgres:${version}`;
 }
 
 export function createEmptyState(now: string = new Date().toISOString()): DesiredState {
   const php = DEFAULT_PHP_VERSION;
   const mysql = DEFAULT_MYSQL_VERSION;
+  const mysqlService = mysqlServiceName(mysql);
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
     defaults: {
       phpVersion: php,
-      mysqlVersion: mysql,
+      database: { engine: "mysql", version: mysql, service: mysqlService },
       fpmProfile: DEFAULT_FPM_PROFILE,
       redisMode: "shared",
     },
-    phpVersions: [
-      {
-        version: php,
-        service: phpServiceName(php),
-        image: phpImage(php),
-        processCap: 200,
-      },
-    ],
-    mysqlVersions: [
-      {
-        version: mysql,
-        service: mysqlServiceName(mysql),
-        image: mysqlImage(mysql),
-        volume: `${mysqlServiceName(mysql)}-data`,
-      },
-    ],
+    phpVersions: [{
+      version: php,
+      service: phpServiceName(php),
+      image: phpImage(php),
+      processCap: 200,
+    }],
+    databaseServices: [{
+      engine: "mysql",
+      version: mysql,
+      service: mysqlService,
+      image: mysqlImage(mysql),
+      volume: `${mysqlService}-data`,
+    }],
     apps: {},
     proxies: {},
     domains: {},
@@ -234,44 +235,46 @@ export function createEmptyState(now: string = new Date().toISOString()): Desire
   };
 }
 
+export function managedMysqlServices(state: DesiredState): ManagedMysqlVersion[] {
+  return state.databaseServices.filter((v): v is ManagedMysqlVersion => v.engine === "mysql");
+}
+export function managedPostgresServices(state: DesiredState): ManagedPostgresVersion[] {
+  return state.databaseServices.filter((v): v is ManagedPostgresVersion => v.engine === "postgres");
+}
+export function requireMysqlBinding(
+  app: AppState,
+): Extract<AppDatabaseBinding, { engine: "mysql" }> {
+  if (app.database.engine !== "mysql") throw new Error(`app ${app.slug} is not MySQL-backed`);
+  return app.database;
+}
+export function assertNever(value: never): never {
+  throw new Error(`unsupported database engine: ${JSON.stringify(value)}`);
+}
 export function listApps(state: DesiredState): AppState[] {
   return Object.values(state.apps).sort((a, b) => a.slug.localeCompare(b.slug));
 }
-
 export function getApp(state: DesiredState, slug: string): AppState | undefined {
   return state.apps[slug];
 }
-
-export function findDomainOwner(
-  state: DesiredState,
-  domain: string,
-): DomainOwner | undefined {
+export function findDomainOwner(state: DesiredState, domain: string): DomainOwner | undefined {
   return state.domains[domain.toLowerCase()];
 }
-
 export function assertKnownPhpVersion(state: DesiredState, version: PhpVersion): ManagedPhpVersion {
   const found = state.phpVersions.find((v) => v.version === version);
-  if (!found) {
-    throw new Error(`PHP version ${version} is not managed`);
-  }
+  if (!found) throw new Error(`PHP version ${version} is not managed`);
   return found;
 }
-
 export function assertKnownMysqlService(
   state: DesiredState,
-  service: MysqlService,
+  service: DatabaseService,
 ): ManagedMysqlVersion {
-  const found = state.mysqlVersions.find((v) => v.service === service);
-  if (!found) {
-    throw new Error(`MySQL service ${service} is not managed`);
-  }
+  const found = managedMysqlServices(state).find((v) => v.service === service);
+  if (!found) throw new Error(`MySQL service ${service} is not managed`);
   return found;
 }
-
 export function cloneState(state: DesiredState): DesiredState {
   return structuredClone(state);
 }
-
 export function defaultDeployConfig(appHome: string): AppDeployConfig {
   return {
     enabled: false,
@@ -281,21 +284,9 @@ export function defaultDeployConfig(appHome: string): AppDeployConfig {
     argv: ["sh", `${appHome}/.bento/deploy.sh`],
   };
 }
-
 export function defaultRedisIdentity(slug: string, mode: RedisMode): AppRedisIdentity {
-  const prefix = `${slug}:`;
-  if (mode === "acl") {
-    return {
-      mode: "acl",
-      prefix,
-      aclUsername: `app_${slug}`,
-    };
-  }
-  return {
-    mode: "shared",
-    prefix,
-  };
+  return mode === "acl"
+    ? { mode: "acl", prefix: `${slug}:`, aclUsername: `app_${slug}` }
+    : { mode: "shared", prefix: `${slug}:` };
 }
-
-/** Re-export helpers used by services. */
-export { asFpmProfile, asMysqlService, asMysqlVersion, asPhpVersion };
+export { asFpmProfile, asMysqlVersion, asPhpVersion };

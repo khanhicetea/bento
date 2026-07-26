@@ -232,8 +232,8 @@ Deno.test("F1 MySQL namespace refuse + one-time app passwords", async () => {
       createDatabase: true,
     });
     state = b.state;
-    const pwA = a.app.mysqlPassword;
-    const pwB = b.app.mysqlPassword;
+    const pwA = a.app.database.password;
+    const pwB = b.app.database.password;
     assertEquals(pwA !== pwB, true);
 
     assertThrows(
@@ -246,8 +246,8 @@ Deno.test("F1 MySQL namespace refuse + one-time app passwords", async () => {
       slug: "alpha",
       domain: "a.test",
     });
-    assertEquals(updated.app.mysqlPassword, pwA);
-    assertEquals(updated.state.apps["beta"]!.mysqlPassword, pwB);
+    assertEquals(updated.app.database.password, pwA);
+    assertEquals(updated.state.apps["beta"]!.database.password, pwB);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -776,7 +776,7 @@ Deno.test("F1 backup refuses empty dump and leaves no final artifact", async () 
     // No finalized backup under backups/ (failed dumps leave no final artifact)
     const backups = platform.paths.paths.backupsDir;
     if (await platform.fs.exists(backups)) {
-      const serviceDir = join(backups, p.app.mysqlService, "alpha");
+      const serviceDir = join(backups, p.app.database.service, "alpha");
       if (await platform.fs.exists(serviceDir)) {
         const names = await platform.fs.readDir(serviceDir);
         const finals = names.filter((n) => !n.endsWith(".partial") && n.includes(".sql"));

@@ -158,7 +158,7 @@ Deno.test("explicit database fails before recording when MySQL exec fails", asyn
 
     // state on disk unchanged — database not recorded
     const reloaded = await store.load();
-    assertEquals(reloaded.apps["alpha"]?.databases.length ?? 0, 0);
+    assertEquals(reloaded.apps["alpha"]?.database.databases.length ?? 0, 0);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -181,7 +181,7 @@ Deno.test("explicit database fails when MySQL is unreachable", async () => {
       Error,
       "unavailable",
     );
-    assertEquals(state.apps["alpha"]?.databases.length ?? 0, 0);
+    assertEquals(state.apps["alpha"]?.database.databases.length ?? 0, 0);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -204,7 +204,7 @@ Deno.test("applyAppDataPlane with --db applies grants via exec when reachable", 
     assertEquals(platform.process.calls.length >= 2, true);
     for (const call of platform.process.calls) {
       const joined = call.command.join("\0");
-      assertEquals(joined.includes(app.mysqlPassword), false);
+      assertEquals(joined.includes(app.database.password), false);
     }
   } finally {
     await Deno.remove(root, { recursive: true });
@@ -240,7 +240,7 @@ Deno.test("shared redis credentials include prefix and stack password", async ()
     assertEquals(cred.includes("REDIS_PREFIX=alpha:"), true);
     assertEquals(cred.includes("REDIS_MODE=shared"), true);
     // mysql password present in credentials file (restricted mode) but not in public tree
-    assertEquals(cred.includes(`MYSQL_PASSWORD=${app.mysqlPassword}`), true);
+    assertEquals(cred.includes(`MYSQL_PASSWORD=${app.database.password}`), true);
     const env = redisConnectionEnv(app, "shared-secret");
     assertEquals(env.REDIS_PREFIX, "alpha:");
     assertEquals(env.REDIS_PASSWORD, "shared-secret");

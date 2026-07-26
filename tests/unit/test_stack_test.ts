@@ -66,6 +66,8 @@ Deno.test("formatTestStackReport summarizes pass/fail and chain note", () => {
   assertEquals(text.includes("[SKIP]"), true);
   assertEquals(text.includes("[FAIL]"), true);
   assertEquals(text.includes("ACME"), true);
+  assertEquals(text.includes("postgres"), true);
+  assertEquals(text.includes("stack-transfer"), true);
   assertEquals(text.includes("cron-worker"), true);
   assertEquals(text.includes("permissions"), true);
 });

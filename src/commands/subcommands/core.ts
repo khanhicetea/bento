@@ -43,6 +43,16 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
       bind(state, cmdInit),
     )
     .command(
+      "state migrate",
+      "Explicitly migrate schema v1 state to schema v2",
+      (y: YargsBuilder) =>
+        y.option("confirm", {
+          type: "string",
+          describe: "Must be exactly migrate-v1-to-v2",
+        }),
+      bind(state, cmdStateMigrate),
+    )
+    .command(
       "render",
       "Render generated config (no reload)",
       () => {},
@@ -142,8 +152,28 @@ async function cmdInit(argv: ArgsWith<"force">, ctx: CliContext): Promise<number
   const state = await ctx.store.init(force);
   ctx.log.info(`initialized state at ${ctx.platform.paths.paths.stateFile}`);
   ctx.log.info(
-    `defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.mysqlVersion}`,
+    `defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,
   );
+  return 0;
+}
+
+async function cmdStateMigrate(
+  argv: ArgsWith<"confirm">,
+  ctx: CliContext,
+): Promise<number> {
+  const result = await ctx.store.migrateV1ToV2(argv.confirm);
+  if (ctx.json) {
+    ctx.log.out(
+      JSON.stringify(
+        { schemaVersion: result.state.schemaVersion, backup: result.backupPath },
+        null,
+        2,
+      ),
+    );
+  } else {
+    ctx.log.info(`migrated state to schema v${result.state.schemaVersion}`);
+    ctx.log.info(`v1 backup: ${result.backupPath}`);
+  }
   return 0;
 }
 

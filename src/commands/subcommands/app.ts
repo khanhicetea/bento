@@ -1,4 +1,5 @@
 import { safetyError } from "../../domain/errors.ts";
+import type { AppState } from "../../domain/state.ts";
 import {
   applyAppDataPlane,
   capacityWarnings,
@@ -52,7 +53,13 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
               })
               .option("php", { type: "string", describe: "PHP version" })
               .option("fpm", { type: "string", describe: "FPM capacity profile" })
-              .option("mysql", { type: "string", describe: "MySQL version/service" })
+              .option("database-engine", {
+                type: "string",
+                choices: ["mysql", "postgres"],
+                describe: "Relational database engine",
+              })
+              .option("mysql", { type: "string", describe: "MySQL version/service shorthand" })
+              .option("postgres", { type: "string", describe: "PostgreSQL version/service" })
               .option("database", { type: "string", describe: "Initial database name" })
               .option("db", {
                 type: "boolean",
@@ -97,7 +104,12 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
               .option("docroot", { type: "string" })
               .option("php", { type: "string" })
               .option("fpm", { type: "string" })
+              .option("database-engine", {
+                type: "string",
+                choices: ["mysql", "postgres"],
+              })
               .option("mysql", { type: "string" })
+              .option("postgres", { type: "string" })
               .option("database", { type: "string" })
               .option("db", { type: "boolean", default: false })
               .option("legacy", { type: "boolean", default: false })
@@ -179,11 +191,11 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.phpVersion,
       a.fpmProfile,
       a.tls.kind,
-      a.mysqlService,
+      `${a.database.engine}/${a.database.service}`,
     ]);
   ctx.log.out(
     printTable(
-      ["slug", "status", "uid", "domain", "php", "fpm", "tls", "mysql"],
+      ["slug", "status", "uid", "domain", "php", "fpm", "tls", "database"],
       rows,
     ),
   );
@@ -198,9 +210,14 @@ async function cmdAppShow(argv: ArgsWith<"slug">, ctx: CliContext): Promise<numb
     ctx.log.error(`app not found: ${slug}`);
     return 3;
   }
-  const safe = {
+  ctx.log.out(JSON.stringify(redactAppForOutput(app), null, 2));
+  return 0;
+}
+
+export function redactAppForOutput(app: AppState): AppState {
+  return {
     ...app,
-    mysqlPassword: "***",
+    database: { ...app.database, password: "***" },
     redis: {
       ...app.redis,
       password: app.redis.password ? "***" : undefined,
@@ -211,8 +228,6 @@ async function cmdAppShow(argv: ArgsWith<"slug">, ctx: CliContext): Promise<numb
       hmacSecret: app.deploy.hmacSecret ? "***" : undefined,
     },
   };
-  ctx.log.out(JSON.stringify(safe, null, 2));
-  return 0;
 }
 
 async function cmdAppCreate(
@@ -237,12 +252,14 @@ async function cmdAppCreate(
         : undefined,
       phpVersion: argv.php,
       fpmProfile: argv.fpm,
+      databaseEngine: argv.databaseEngine,
       mysqlVersion: argv.mysql,
+      postgresVersion: argv.postgres,
       createDatabase: explicitDb,
       databaseName: argv.database,
       accessLog: argv.accessLog === true,
     });
-    // Live MySQL/Redis side effects before recording state (explicit --db fails closed).
+    // Live database/Redis side effects run before state save (explicit --db fails closed).
     const plane = await applyAppDataPlane(ctx.platform, provisioned.app, {
       explicitDatabase: explicitDb,
     });
@@ -349,11 +366,17 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   const plan = await planAppPrune(ctx.platform, state, argv.slug);
 
   ctx.log.out(`The following retained data for app ${plan.slug} will be permanently deleted:`);
+  const engineLabel = plan.engine === "mysql" ? "MySQL" : "PostgreSQL";
   for (const database of plan.databases) {
-    ctx.log.out(`  - MySQL database: ${database} (${plan.mysqlService})`);
+    ctx.log.out(`  - ${engineLabel} database: ${database} (${plan.databaseService})`);
   }
   if (plan.manifestFound) {
-    ctx.log.out(`  - MySQL account: ${plan.mysqlUser}@% (${plan.mysqlService})`);
+    const identity = plan.engine === "mysql" ? `${plan.databaseUser}@%` : plan.databaseUser;
+    ctx.log.out(
+      `  - ${engineLabel} ${
+        plan.engine === "mysql" ? "account" : "role"
+      }: ${identity} (${plan.databaseService})`,
+    );
   } else {
     ctx.log.warn(
       "cleanup metadata is unavailable; database data cannot be identified and will not be deleted",

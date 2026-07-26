@@ -41,7 +41,7 @@ export async function sectionStatus(ui: WizardUI, ctx: CliContext): Promise<void
         a.phpVersion,
         a.fpmProfile,
         a.tls.kind,
-        a.mysqlService,
+        a.database.service,
       ]);
     ui.table(["slug", "uid", "domain", "php", "fpm", "tls", "mysql"], rows);
   } else if (action === "php") {

@@ -5,7 +5,7 @@
 
 import { join } from "@std/path";
 import { stringify as stringifyYaml } from "@std/yaml";
-import type { DesiredState } from "../domain/state.ts";
+import { assertNever, type DesiredState } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { type GeneratedFile, withManagedMarker } from "./render.ts";
 import { safetyError } from "../domain/errors.ts";
@@ -30,7 +30,7 @@ export function assertSafeComposeArgs(args: string[]): void {
   ) {
     throw safetyError(
       "refusing docker compose down with volume/image destruction",
-      "Remove -v/--volumes/--rmi. Durable MySQL/Redis volumes must not be deleted through Bento.",
+      "Remove -v/--volumes/--rmi. Durable MySQL/PostgreSQL/Redis volumes must not be deleted through Bento.",
     );
   }
 }
@@ -59,12 +59,23 @@ export function assembleComposeDocuments(
     });
   }
 
-  for (const m of state.mysqlVersions) {
+  for (
+    const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))
+  ) {
+    let content: string;
+    switch (database.engine) {
+      case "mysql":
+        content = renderMysqlFragment(database.service, database.image, database.volume);
+        break;
+      case "postgres":
+        content = renderPostgresFragment(database.service, database.image, database.volume);
+        break;
+      default:
+        content = assertNever(database);
+    }
     files.push({
-      relPath: `compose/docker-compose.${m.service}.yml`,
-      content: withManagedMarker(
-        renderMysqlFragment(m.service, m.image, m.volume),
-      ),
+      relPath: `compose/docker-compose.${database.service}.yml`,
+      content: withManagedMarker(content),
       mode: 0o644,
       managed: true,
     });
@@ -105,8 +116,10 @@ export function buildComposeFileList(
   for (const v of [...state.phpVersions].sort((a, b) => a.service.localeCompare(b.service))) {
     files.push(`${gen}/docker-compose.php-${v.service}.yml`);
   }
-  for (const m of [...state.mysqlVersions].sort((a, b) => a.service.localeCompare(b.service))) {
-    files.push(`${gen}/docker-compose.${m.service}.yml`);
+  for (
+    const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))
+  ) {
+    files.push(`${gen}/docker-compose.${database.service}.yml`);
   }
   // Local overlays in deterministic lexicographic order (operator-owned)
   // Actual disk scan happens at invoke time; list known pattern here.
@@ -330,6 +343,39 @@ function renderPhpFragment(service: string, image: string, version: string): str
           BENTO_ROLE: "cli",
         },
       },
+    },
+  };
+  return stringifyYaml(doc);
+}
+
+function renderPostgresFragment(service: string, image: string, volume: string): string {
+  const logging = composeLogging();
+  const doc = {
+    "x-log-common": logging,
+    services: {
+      [service]: {
+        image,
+        restart: "unless-stopped",
+        logging,
+        networks: ["private"],
+        // The official image reads this only while initializing an empty volume.
+        // It remains in stack .env and is never placed on host process argv.
+        environment: {
+          POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}",
+          POSTGRES_USER: "postgres",
+          PGPASSFILE: "/etc/bento/postgres/root.pgpass",
+        },
+        env_file: [".env"],
+        volumes: [
+          `${volume}:/var/lib/postgresql/data`,
+          `./generated/postgres/${service}:/etc/bento/postgres:ro`,
+          `./backups/${service}:/var/backups/bento`,
+        ],
+        // no public ports
+      },
+    },
+    volumes: {
+      [volume]: null,
     },
   };
   return stringifyYaml(doc);

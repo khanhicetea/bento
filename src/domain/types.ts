@@ -12,7 +12,10 @@ export type Uid = Brand<number, "Uid">;
 export type Gid = Brand<number, "Gid">;
 export type PhpVersion = Brand<string, "PhpVersion">;
 export type MysqlVersion = Brand<string, "MysqlVersion">;
-export type MysqlService = Brand<string, "MysqlService">;
+export type PostgresVersion = Brand<string, "PostgresVersion">;
+export type DatabaseService = Brand<string, "DatabaseService">;
+/** Compatibility type for MySQL adapter APIs; persisted state uses DatabaseService. */
+export type MysqlService = DatabaseService;
 export type AbsoluteAppPath = Brand<string, "AbsoluteAppPath">;
 export type UnixSocketPath = Brand<string, "UnixSocketPath">;
 export type AbsolutePath = Brand<string, "AbsolutePath">;
@@ -41,8 +44,14 @@ export function asPhpVersion(value: string): PhpVersion {
 export function asMysqlVersion(value: string): MysqlVersion {
   return value as MysqlVersion;
 }
+export function asPostgresVersion(value: string): PostgresVersion {
+  return value as PostgresVersion;
+}
+export function asDatabaseService(value: string): DatabaseService {
+  return value as DatabaseService;
+}
 export function asMysqlService(value: string): MysqlService {
-  return value as MysqlService;
+  return asDatabaseService(value);
 }
 export function asAbsoluteAppPath(value: string): AbsoluteAppPath {
   return value as AbsoluteAppPath;

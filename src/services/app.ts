@@ -3,15 +3,23 @@
  */
 
 import { join } from "@std/path";
-import type { AppState, DesiredState, EntrypointMode, TlsMode } from "../domain/state.ts";
-import { defaultDeployConfig, defaultRedisIdentity, mysqlServiceName } from "../domain/state.ts";
+import type {
+  AppDatabaseBinding,
+  AppState,
+  DatabaseEngine,
+  DesiredState,
+  EntrypointMode,
+  ManagedDatabaseService,
+  TlsMode,
+} from "../domain/state.ts";
+import { defaultDeployConfig, defaultRedisIdentity } from "../domain/state.ts";
 import {
   asAbsoluteAppPath,
   asAppSlug,
+  asDatabaseService,
   asDomainName,
   asFpmProfile,
   asGid,
-  asMysqlService,
   asPhpVersion,
   asUid,
   DEFAULT_FPM_PROFILE,
@@ -38,8 +46,19 @@ import {
 } from "../domain/reload.ts";
 import { applyAppPermissionPolicy } from "./permissions.ts";
 import { applyAppMysqlGrants, isMysqlReachable, tryBestEffortMysqlAccount } from "./mysql.ts";
+import {
+  applyAppPostgresDatabase,
+  isPostgresReachable,
+  tryBestEffortPostgresRole,
+} from "./postgres.ts";
 import { tryApplyAppRedisAcl } from "./redis.ts";
-import { loadMysqlRootPassword, loadRedisPassword, requireMysqlRootPassword } from "./stack_env.ts";
+import {
+  loadMysqlRootPassword,
+  loadPostgresRootPassword,
+  loadRedisPassword,
+  requireMysqlRootPassword,
+  requirePostgresRootPassword,
+} from "./stack_env.ts";
 import { serviceError } from "../domain/errors.ts";
 
 export type ProvisionAppInput = {
@@ -50,7 +69,11 @@ export type ProvisionAppInput = {
   entrypointMode?: EntrypointMode;
   phpVersion?: string;
   fpmProfile?: string;
+  databaseEngine?: string;
+  /** Managed MySQL version or service; retained as the compatibility shorthand. */
   mysqlVersion?: string;
+  /** Managed PostgreSQL major version or service. */
+  postgresVersion?: string;
   createDatabase?: boolean;
   databaseName?: string;
   tls?: TlsMode;
@@ -113,34 +136,9 @@ export function provisionApp(
   }
   const fpmProfile = asFpmProfile(String(fpmProfileStr));
 
-  const mysqlVersion = input.mysqlVersion
-    ? input.mysqlVersion
-    : existing
-    ? undefined
-    : state.defaults.mysqlVersion;
-  let mysqlService = existing?.mysqlService;
-  if (mysqlVersion) {
-    const mv = state.mysqlVersions.find((m) => m.version === mysqlVersion);
-    if (!mv) {
-      throw validationError(`MySQL version ${mysqlVersion} is not managed`);
-    }
-    if (existing && existing.mysqlService !== mv.service) {
-      throw conflictError(
-        `app ${slug} is assigned to ${existing.mysqlService}; moving MySQL versions is an explicit migration`,
-      );
-    }
-    mysqlService = mv.service;
-  }
-  if (!mysqlService) {
-    mysqlService = mysqlServiceName(state.defaults.mysqlVersion);
-  }
-  const managedMysql = state.mysqlVersions.find((m) => m.service === mysqlService);
-  if (!managedMysql) {
-    throw validationError(`MySQL service ${mysqlService} is not managed`);
-  }
+  const managedDatabase = resolveAppDatabaseService(state, existing, input);
 
-  // Explicit database request must fail if MySQL unavailable — checked by caller with live check.
-  // Here we only record intent.
+  // Explicit database requests require a live engine adapter in applyAppDataPlane before save.
 
   const documentRoot = unwrap(
     parseSafeRelativePath(input.documentRoot ?? existing?.documentRoot ?? "public"),
@@ -161,7 +159,7 @@ export function provisionApp(
   const now = platform.clock.nowIso();
 
   // Generate once for a new app; all later reconciliation preserves it.
-  const mysqlPassword = existing?.mysqlPassword ?? platform.random.hex(18);
+  const databasePassword = existing?.database.password ?? platform.random.hex(18);
   const redisPassword = existing?.redis.password ??
     (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
 
@@ -180,7 +178,7 @@ export function provisionApp(
     };
   }
 
-  const databases = existing?.databases ? [...existing.databases] : [];
+  const databases = existing?.database.databases ? [...existing.database.databases] : [];
   if (input.createDatabase) {
     const dbName = input.databaseName ?? slug;
     if (!/^[a-zA-Z0-9_]+$/.test(dbName)) {
@@ -212,10 +210,13 @@ export function provisionApp(
     fpmProfile,
     tls,
     accessLog,
-    mysqlService: asMysqlService(String(mysqlService)),
-    mysqlUser: slug,
-    mysqlPassword,
-    databases,
+    database: databaseBinding(
+      managedDatabase.engine,
+      String(managedDatabase.service),
+      slug,
+      databasePassword,
+      databases,
+    ),
     redis,
     deploy: existing?.deploy ?? defaultDeployConfig(homeContainer),
     vhostTemplate: existing?.vhostTemplate ?? { kind: "upstream" },
@@ -249,8 +250,83 @@ export function provisionApp(
   };
 }
 
-function asDatabaseName(name: string): AppState["databases"][number]["name"] {
-  return name as AppState["databases"][number]["name"];
+function asDatabaseName(name: string): AppState["database"]["databases"][number]["name"] {
+  return name as AppState["database"]["databases"][number]["name"];
+}
+
+function databaseBinding(
+  engine: DatabaseEngine,
+  service: string,
+  user: string,
+  password: string,
+  databases: AppState["database"]["databases"],
+): AppDatabaseBinding {
+  const common = { service: asDatabaseService(service), user, password, databases };
+  return engine === "mysql" ? { engine: "mysql", ...common } : { engine: "postgres", ...common };
+}
+
+function resolveAppDatabaseService(
+  state: DesiredState,
+  existing: AppState | undefined,
+  input: ProvisionAppInput,
+): ManagedDatabaseService {
+  if (input.databaseEngine !== undefined && !["mysql", "postgres"].includes(input.databaseEngine)) {
+    throw validationError("database engine must be mysql or postgres");
+  }
+  if (input.mysqlVersion && input.postgresVersion) {
+    throw validationError("--mysql and --postgres cannot be used together");
+  }
+  if (input.databaseEngine === "mysql" && input.postgresVersion) {
+    throw validationError("--database-engine mysql contradicts --postgres");
+  }
+  if (input.databaseEngine === "postgres" && input.mysqlVersion) {
+    throw validationError("--database-engine postgres contradicts --mysql");
+  }
+
+  const requestedEngine = (input.databaseEngine ??
+    (input.mysqlVersion ? "mysql" : input.postgresVersion ? "postgres" : undefined)) as
+      | DatabaseEngine
+      | undefined;
+  const engine = requestedEngine ?? existing?.database.engine ?? state.defaults.database.engine;
+  if (existing && engine !== existing.database.engine) {
+    throw conflictError(
+      `app ${existing.slug} is assigned to ${existing.database.engine}/${existing.database.service}; moving database engines is an explicit migration`,
+    );
+  }
+
+  const token = engine === "mysql" ? input.mysqlVersion : input.postgresVersion;
+  if (existing && token === undefined) {
+    const preserved = state.databaseServices.find((entry) =>
+      entry.engine === engine && entry.service === existing.database.service
+    );
+    if (!preserved) {
+      throw validationError(`${engine} service ${existing.database.service} is not managed`);
+    }
+    return preserved;
+  }
+
+  const candidates = state.databaseServices.filter((entry) => entry.engine === engine);
+  let selected: ManagedDatabaseService | undefined;
+  if (token) {
+    selected = candidates.find((entry) => entry.version === token || entry.service === token);
+  } else if (state.defaults.database.engine === engine) {
+    selected = candidates.find((entry) => entry.service === state.defaults.database.service);
+  } else if (candidates.length === 1) {
+    selected = candidates[0];
+  }
+  if (!selected) {
+    throw validationError(
+      token
+        ? `${engine} version or service ${token} is not managed`
+        : `select a managed ${engine} service explicitly`,
+    );
+  }
+  if (existing && selected.service !== existing.database.service) {
+    throw conflictError(
+      `app ${existing.slug} is assigned to ${existing.database.service}; moving database services is an explicit migration`,
+    );
+  }
+  return selected;
 }
 
 export function allocateIdentity(
@@ -315,11 +391,24 @@ export async function materializeAppHome(
       `REDIS_PREFIX=${app.redis.prefix}`,
       `REDIS_MODE=acl`,
     ];
+  const databaseLines = app.database.engine === "mysql"
+    ? [
+      "DB_CONNECTION=mysql",
+      `MYSQL_HOST=${app.database.service}`,
+      `MYSQL_USER=${app.database.user}`,
+      `MYSQL_PASSWORD=${app.database.password}`,
+      `MYSQL_DATABASE=${app.database.databases[0]?.name ?? app.slug}`,
+    ]
+    : [
+      "DB_CONNECTION=pgsql",
+      `PGHOST=${app.database.service}`,
+      "PGPORT=5432",
+      `PGUSER=${app.database.user}`,
+      `PGPASSWORD=${app.database.password}`,
+      `PGDATABASE=${app.database.databases[0]?.name ?? app.slug}`,
+    ];
   const cred = [
-    `MYSQL_HOST=${app.mysqlService}`,
-    `MYSQL_USER=${app.mysqlUser}`,
-    `MYSQL_PASSWORD=${app.mysqlPassword}`,
-    `MYSQL_DATABASE=${app.databases[0]?.name ?? app.slug}`,
+    ...databaseLines,
     `REDIS_HOST=redis`,
     `REDIS_PORT=6379`,
     ...redisLines,
@@ -386,6 +475,9 @@ export async function materializeAppHome(
 }
 
 export type AppDataPlaneResult = {
+  /** True when the selected relational database adapter completed. */
+  databaseApplied: boolean;
+  /** Compatibility signal retained for existing MySQL harness callers. */
   mysqlApplied: boolean;
   redisApplied: boolean;
   /** Operator-facing note when best-effort work was deferred. */
@@ -407,29 +499,58 @@ export async function applyAppDataPlane(
   },
 ): Promise<AppDataPlaneResult> {
   const deferredNotes: string[] = [];
-  let mysqlApplied = false;
+  let databaseApplied = false;
   let redisApplied = false;
 
-  if (opts.explicitDatabase) {
-    const rootPassword = await requireMysqlRootPassword(platform);
-    if (!(await isMysqlReachable(platform, app.mysqlService))) {
-      throw serviceError(
-        `MySQL service ${app.mysqlService} is unavailable; database was not recorded`,
-        "Start the stack MySQL service, confirm MYSQL_ROOT_PASSWORD, then retry `bento app create --db` or `bento mysql db`.",
+  if (app.database.engine === "mysql") {
+    if (opts.explicitDatabase) {
+      const rootPassword = await requireMysqlRootPassword(platform);
+      if (!(await isMysqlReachable(platform, app.database.service))) {
+        throw serviceError(
+          `MySQL service ${app.database.service} is unavailable; database was not recorded`,
+          "Start the stack MySQL service, confirm MYSQL_ROOT_PASSWORD, then retry `bento app create --db` or `bento mysql db`.",
+        );
+      }
+      for (const dbName of app.database.databases.map((d) => d.name)) {
+        await applyAppMysqlGrants(platform, app, dbName, rootPassword);
+      }
+      databaseApplied = true;
+    } else {
+      databaseApplied = await tryBestEffortMysqlAccount(
+        platform,
+        app,
+        await loadMysqlRootPassword(platform),
       );
+      if (!databaseApplied) {
+        deferredNotes.push(
+          `MySQL account setup deferred for ${app.slug}; retry when ${app.database.service} is up`,
+        );
+      }
     }
-    const dbs = app.databases.length > 0 ? app.databases.map((d) => d.name) : [app.slug];
-    for (const dbName of dbs) {
-      await applyAppMysqlGrants(platform, app, dbName, rootPassword);
-    }
-    mysqlApplied = true;
   } else {
-    const rootPassword = await loadMysqlRootPassword(platform);
-    mysqlApplied = await tryBestEffortMysqlAccount(platform, app, rootPassword);
-    if (!mysqlApplied) {
-      deferredNotes.push(
-        `MySQL account setup deferred for ${app.slug}; retry with 'bento mysql db ${app.slug} ${app.slug}' when MySQL is up`,
+    if (opts.explicitDatabase) {
+      const rootPassword = await requirePostgresRootPassword(platform);
+      if (!(await isPostgresReachable(platform, app.database.service))) {
+        throw serviceError(
+          `PostgreSQL service ${app.database.service} is unavailable; database was not recorded`,
+          "Start PostgreSQL, confirm POSTGRES_PASSWORD, then retry `bento app create --db`.",
+        );
+      }
+      for (const dbName of app.database.databases.map((d) => d.name)) {
+        await applyAppPostgresDatabase(platform, app, dbName, rootPassword);
+      }
+      databaseApplied = true;
+    } else {
+      databaseApplied = await tryBestEffortPostgresRole(
+        platform,
+        app,
+        await loadPostgresRootPassword(platform),
       );
+      if (!databaseApplied) {
+        deferredNotes.push(
+          `PostgreSQL role setup deferred for ${app.slug}; retry when ${app.database.service} is up`,
+        );
+      }
     }
   }
 
@@ -441,7 +562,12 @@ export async function applyAppDataPlane(
     );
   }
 
-  return { mysqlApplied, redisApplied, deferredNotes };
+  return {
+    databaseApplied,
+    mysqlApplied: app.database.engine === "mysql" && databaseApplied,
+    redisApplied,
+    deferredNotes,
+  };
 }
 
 export function getAppOrThrow(state: DesiredState, slug: string): AppState {

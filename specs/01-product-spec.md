@@ -14,7 +14,7 @@ The application is Bento's primary unit of ownership. One application identity b
 - a private Linux user/group;
 - one PHP version and one PHP-FPM pool;
 - one or more domains;
-- one MySQL user on exactly one MySQL service;
+- one relational database binding on exactly one managed MySQL or PostgreSQL service;
 - Redis connection metadata and optional per-app ACL identity;
 - scheduled jobs, long-running workers, and deployment jobs;
 - logs, credentials, and permission policy.
@@ -45,7 +45,7 @@ Secondary uses include placing Nginx and TLS in front of non-PHP services alread
 2. Make the desired configuration reproducible from a small state model.
 3. Minimize disruption by validating changes and reloading only affected services.
 4. Keep database, cache, credentials, and internal services private by default.
-5. Support multiple PHP and MySQL versions without duplicating the whole stack.
+5. Support multiple PHP, MySQL, and PostgreSQL versions without duplicating the whole stack.
 6. Cover the complete operational lifecycle around requests, CLI tasks, schedules, workers, deployments, logs, backups, and maintenance.
 7. Preserve local control and support deliberate customization without requiring a fork.
 
@@ -54,7 +54,7 @@ Secondary uses include placing Nginx and TLS in front of non-PHP services alread
 - **Single-host first.** Optimize for one production Linux server, not a cluster.
 - **Desired state over edited output.** Generated configuration is disposable and must be reconstructible.
 - **App identity everywhere.** Web requests, CLI commands, schedules, workers, deployments, and data access must resolve to the same app identity.
-- **Private by default.** Only the web ingress is public; PHP, MySQL, and Redis are internal.
+- **Private by default.** Only the web ingress is public; PHP, MySQL, PostgreSQL, and Redis are internal.
 - **Safe change application.** Generate completely, validate before reload, and preserve the previous usable generation when validation fails.
 - **Narrow blast radius.** A domain change should not restart workers; a cron change should not reload Nginx.
 - **Durability is explicit.** Application homes, database volumes, backups, certificates, and ACME state survive service recreation.
@@ -66,11 +66,11 @@ Secondary uses include placing Nginx and TLS in front of non-PHP services alread
 
 Bento must provide one Deno 2.9/TypeScript management interface for both interactive and scripted operation. It must:
 
-- initialize an empty desired state with sensible default PHP and MySQL versions;
+- initialize an empty desired state with sensible default PHP and relational-database versions; MySQL 8.4 remains the default unless the operator explicitly selects PostgreSQL;
 - render the stack before first startup;
 - assemble the base Compose topology, managed runtime fragments, and local overlays consistently;
 - expose guided interactive workflows as a convenience while keeping all important operations scriptable;
-- report stack, service, app, runtime, TLS, and capacity status;
+- report stack, service, app, runtime, database engine/service, TLS, and capacity status;
 - refuse known destructive shortcuts, especially accidental deletion of durable database volumes.
 
 The same TypeScript entrypoint must run directly under Deno and compile into a standalone Linux executable. Both forms must be usable on a clean host without installing Python, Node.js, a package tree, or a web control plane. The compiled form still uses an external Bento stack root for mutable/operator state and may materialize embedded Compose/Docker assets there, but it must not require a language runtime, package installation, or separate checkout of immutable control-plane assets.
@@ -83,7 +83,7 @@ The operator must be able to create or update an application with a unique slug 
 - a private app home containing code, logs, credentials, SSH state, dependency-manager state, and Bento runtime state;
 - an app-specific PHP-FPM pool and Unix socket;
 - a selected PHP version and named FPM capacity profile;
-- optional MySQL account and initial database;
+- optional account and initial database on exactly one selected MySQL or PostgreSQL service;
 - Redis credentials/metadata;
 - an HTTP and HTTPS virtual host;
 - initial filesystem ownership and modes.
@@ -132,33 +132,37 @@ Apps select from named FPM sizing profiles rather than arbitrary process-manager
 
 An unused non-default PHP version may be removed. Removal must be refused while any app still uses it or when it would remove the final managed version.
 
-### 6.5 MySQL and Redis
+### 6.5 Relational databases and Redis
 
-Bento must manage one durable MySQL service and named volume per selected MySQL version. An app is assigned to exactly one MySQL service and receives:
+Bento must manage one durable service and named volume per selected MySQL or PostgreSQL version. An app is assigned to exactly one relational database engine and service and receives:
 
-- a same-name database user;
-- grants limited to databases in that app's namespace;
+- a same-name database user/role;
+- privileges limited to databases in that app's namespace;
 - mode-restricted credential material;
 - one or more recorded databases on that service.
 
-The product must not create the same app identity across multiple MySQL services. Moving an app to another MySQL version is an explicit migration outside ordinary provisioning.
+MySQL and PostgreSQL services may coexist, but one app cannot have mixed-engine bindings or identities on multiple managed database services. Moving an existing app between engines or services is an explicit, externally operated migration outside ordinary provisioning. Bento does not automatically migrate application data between MySQL and PostgreSQL.
 
-The MySQL root password is generated once when the stack environment is initialized. An app user's password is generated once during initial app provisioning. Reconciliation and later database grants must not alter an existing account's password. Bento does not provide password rotation; the operator is responsible for manually updating MySQL, Bento's state and credential material, and dependent applications.
+MySQL 8.4 remains the default database for existing and newly initialized stacks unless the operator explicitly changes the database default. Managed PostgreSQL versions use official major tags such as `17`; their stable service and volume names are `postgres17` and `postgres17-data`.
 
-Required MySQL operations are:
+Each engine's administrator password is generated once when its stack environment is initialized. An app user's/role's password is generated once during initial provisioning. Reconciliation and later grants must not alter an existing password. Bento does not provide automatic database password rotation.
+
+Required operations for both engines are:
 
 - add and list managed versions;
 - create and list app databases;
-- open root or app-authenticated database shells without exposing passwords in host arguments;
+- open administrator or app-authenticated shells without exposing passwords in host arguments;
 - show database sizes and active processes;
 - create logical backups for one database, one app, or all user databases;
-- optionally compress backup streams inside the matching database container;
+- optionally compress backup output inside the matching database container;
 - retain a configurable number of successful backups per database;
 - restore to a new database name or replace the original only after exact confirmation.
 
-Backups must be finalized atomically and must never publish an empty or failed partial dump. Restore is streamed but is not transactionally atomic at the database-object level; the product must communicate that limitation. Off-host backup transfer is the operator's responsibility.
+PostgreSQL app roles must be unprivileged (`NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, and `NOREPLICATION`). Bento's administrator creates each database with the app role as owner and revokes default `PUBLIC` database and schema access so another app role cannot connect to or modify it.
 
-Automated MySQL version removal is intentionally unsupported because it would couple service removal with durable-volume destruction.
+Backups must be finalized atomically and must never publish an empty or failed partial dump. Restore is streamed but is not transactionally atomic at the database-object level; the product must communicate that limitation. PostgreSQL dumps omit source ownership and ACLs. Off-host backup transfer is the operator's responsibility.
+
+Automated MySQL and PostgreSQL service/version removal is intentionally unsupported because it would couple service removal with durable-volume destruction. Raw PostgreSQL volume transfer requires a compatible PostgreSQL major version; logical backup/restore is the supported major-upgrade path.
 
 Bento provides one durable Redis service. Shared-password mode is the compatibility default and requires applications to use an app-specific key prefix. Optional ACL mode creates a unique identity that can access only the app's key and channel namespace. Redis is not exposed publicly.
 
@@ -228,7 +232,7 @@ Private directories such as credentials, SSH state, dependency-manager state, lo
 
 Startup may synchronize users and volatile runtime directories, but it must not recursively rewrite potentially large app trees. The operator needs separate check, dry-run repair, shallow repair, and explicit recursive repair workflows.
 
-Root database credentials, app credentials, webhook secrets, certificate keys, backups, and ACME state must not be printed casually, passed in host process arguments, or stored in version control.
+MySQL and PostgreSQL administrator credentials, app credentials, webhook secrets, certificate keys, backups, and ACME state must not be printed casually, passed in host process arguments, or stored in version control.
 
 ### 6.10 Observability and maintenance
 
@@ -259,9 +263,9 @@ Upgrades must remain reviewable: local changes should not require editing tracke
 The host control plane must target Deno 2.9 and use strict TypeScript as an architectural safety mechanism:
 
 - persisted state, environment input, template data, JSON from subprocesses, and CLI values are runtime-validated before use;
-- core concepts such as app slug, domain, UID/GID, PHP/MySQL version, service name, absolute app path, TLS mode, queue policy, deploy status, and reload target have explicit types rather than being passed around as unstructured strings or dictionaries;
+- core concepts such as app slug, domain, UID/GID, PHP/MySQL/PostgreSQL version, database engine/service, absolute app path, TLS mode, queue policy, deploy status, and reload target have explicit types rather than being passed around as unstructured strings or dictionaries;
 - state variants and operational outcomes use discriminated unions with exhaustive handling;
-- persisted state uses the single MVP schema version and rejects every other version without changing files;
+- persisted state uses one current schema version, rejects unsupported versions without changing files, and migrates schema v1 to the engine-aware schema v2 only through an explicit, backed-up, validated migration;
 - exported domain and platform APIs avoid `any`; unavoidable unsafe package boundaries are isolated in adapters and immediately validated.
 
 The project is not restricted to the Deno standard library. Maintained JSR or npm packages should be used where they materially improve CLI parsing/help, runtime schema validation, semantic-version handling, templating, terminal presentation, testing, or other non-product plumbing. Package choice must remain auditable, lockfile-pinned, compatible with direct Deno execution and `deno compile`, and free of an undeclared production install step.
@@ -272,11 +276,11 @@ Repository tasks must provide one-command formatting, linting, type checking, un
 
 ### 7.1 First production host
 
-The operator supplies stack secrets/defaults, renders the initial topology, starts the containers, and checks service health. The fresh system includes one PHP runtime, one MySQL runtime, Redis, Nginx, and an empty app state.
+The operator supplies stack secrets/defaults, renders the initial topology, starts the containers, and checks service health. The fresh system includes one PHP runtime, one MySQL 8.4 runtime, Redis, Nginx, and an empty app state. PostgreSQL is added or selected explicitly.
 
 ### 7.2 Launch a framework application
 
-The operator creates an app with a `public` document root and front-controller routing, chooses PHP and MySQL versions, creates a database, deploys code through the app CLI role, runs migrations, points DNS, and switches the site from shared TLS to ACME. No database or cache port is made public.
+The operator creates an app with a `public` document root and front-controller routing, chooses PHP and either MySQL or PostgreSQL, creates a database, deploys code through the app CLI role, runs migrations, points DNS, and switches the site from shared TLS to ACME. No database or cache port is made public.
 
 ### 7.3 Operate asynchronous work
 
@@ -288,7 +292,7 @@ The operator enables deployment, stores the returned HMAC secret in the source-c
 
 ### 7.5 Recover data
 
-The operator creates compressed logical dumps, copies them off-host, and later restores one dump to a new suffixed database for verification. Replacing the original database requires its exact name as confirmation.
+The operator creates engine-appropriate compressed logical dumps, copies them off-host, and later restores one dump to a new suffixed database for verification. Replacing the original database requires its exact name as confirmation. PostgreSQL major upgrades use this logical path rather than raw-volume transfer.
 
 ## 8. Explicit non-goals and current limitations
 
@@ -297,7 +301,7 @@ The operator creates compressed logical dumps, copies them off-host, and later r
 - One container per app or hard container-level isolation between apps sharing a PHP version.
 - General-purpose hosting for arbitrary language runtimes; non-PHP services are supported only through reverse proxying.
 - Automatic source-control checkout strategy, zero-downtime release directories, or application-specific rollback logic.
-- Unconfirmed app-home/database teardown, database migration between MySQL versions, MySQL service removal, volume destruction, or MySQL password rotation. App and proxy desired-state removal requires exact typed confirmation. The CLI-only app prune workflow must list each known retained home/database part and requires the operator to type the literal `delete`; it has no confirmation-bypass flag.
+- Unconfirmed app-home/database teardown, automatic migration between database engines/services, MySQL or PostgreSQL service removal, database-volume destruction, or automatic database password rotation. App and proxy desired-state removal requires exact typed confirmation. The CLI-only app prune workflow must list each known retained home/database part and requires the operator to type the literal `delete`; it has no confirmation-bypass flag.
 - Automatic off-host backup replication.
 - Per-app CPU/memory quotas inside a shared PHP version container.
 - Real-time hosted analytics; access-log analysis is ad hoc.

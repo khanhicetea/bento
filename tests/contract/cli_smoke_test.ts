@@ -99,6 +99,76 @@ Deno.test("cli init render status app create", async () => {
     // mysql remove blocked
     assertEquals((await runCli([...base, "mysql", "remove", "8.4"])) !== 0, true);
 
+    // PostgreSQL add/list render a stable private service; duplicates and removal are blocked.
+    assertEquals(await runCli([...base, "postgres", "--help"]), 0);
+    assertEquals(await runCli([...base, "postgres", "add", "17", "--no-apply"]), 0);
+    assertEquals(await runCli([...base, "postgres", "list"]), 0);
+    assertEquals((await runCli([...base, "postgres", "add", "17", "--no-apply"])) !== 0, true);
+    assertEquals((await runCli([...base, "postgres", "add", "17.2", "--no-apply"])) !== 0, true);
+    assertEquals((await runCli([...base, "postgres", "remove", "17"])) !== 0, true);
+    assertEquals(await runCli([...base, "render"]), 0);
+    assertEquals(
+      await fileExists(join(stack, "generated/compose/docker-compose.postgres17.yml")),
+      true,
+    );
+
+    // PostgreSQL app selection is persisted; contradictory flags and engine moves fail closed.
+    assertEquals(
+      await runCli([
+        ...base,
+        "app",
+        "create",
+        "pgdemo",
+        "--domain",
+        "pgdemo.test",
+        "--database-engine",
+        "postgres",
+        "--postgres",
+        "postgres17",
+        "--no-apply",
+      ]),
+      0,
+    );
+    const pgState = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    assertEquals(pgState.apps.pgdemo.database.engine, "postgres");
+    assertEquals(pgState.apps.pgdemo.database.service, "postgres17");
+    const pgCred = await Deno.readTextFile(join(stack, "homes/pgdemo/credentials/app.env"));
+    assertEquals(pgCred.includes("DB_CONNECTION=pgsql"), true);
+    assertEquals(pgCred.includes("MYSQL_"), false);
+    assertEquals(
+      (await runCli([
+        ...base,
+        "app",
+        "create",
+        "badflags",
+        "--domain",
+        "badflags.test",
+        "--mysql",
+        "8.4",
+        "--postgres",
+        "17",
+        "--no-apply",
+      ])) !== 0,
+      true,
+    );
+    assertEquals(
+      (await runCli([
+        ...base,
+        "app",
+        "update",
+        "pgdemo",
+        "--domain",
+        "pgdemo.test",
+        "--mysql",
+        "8.4",
+        "--no-apply",
+      ])) !== 0,
+      true,
+    );
+    const afterRefusals = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    assertEquals(afterRefusals.apps.badflags, undefined);
+    assertEquals(afterRefusals.apps.pgdemo.database.engine, "postgres");
+
     // App/proxy removal fails closed without exact typed confirmation
     assertEquals((await runCli([...base, "app", "delete", "demo"])) !== 0, true);
     assertEquals((await runCli([...base, "app", "remove", "demo"])) !== 0, true);
@@ -266,6 +336,19 @@ Deno.test("cli init render status app create", async () => {
     );
     assertEquals(
       await runCli([...base, "mysql", "shell", "--app", "demo", "--print"]),
+      0,
+    );
+
+    // PostgreSQL routine administration help and dry shell plans are process-free.
+    for (const command of ["db", "shell", "size", "processlist"]) {
+      assertEquals(await runCli([...base, "postgres", command, "--help"]), 0);
+    }
+    assertEquals(
+      await runCli([...base, "postgres", "shell", "--root", "--service", "17", "--print"]),
+      0,
+    );
+    assertEquals(
+      await runCli([...base, "postgres", "shell", "--app", "pgdemo", "--print"]),
       0,
     );
 

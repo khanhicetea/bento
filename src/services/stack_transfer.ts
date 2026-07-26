@@ -19,6 +19,26 @@ export type StackImportResult = {
   volumes: string[];
 };
 
+export type DatabaseTransferVolume = {
+  kind: "database";
+  engine: "mysql" | "postgres";
+  service: string;
+  logical: string;
+  docker: string;
+};
+
+export type RedisTransferVolume = {
+  kind: "redis";
+  service: "redis";
+  logical: "redis-data";
+  docker: string;
+};
+
+export type StackTransferVolumes = {
+  databases: DatabaseTransferVolume[];
+  redis: RedisTransferVolume;
+};
+
 export function composeProjectName(env: Record<string, string>): string {
   const project = env.COMPOSE_PROJECT_NAME?.trim() || "bento";
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(project)) {
@@ -37,18 +57,34 @@ export function volumeArchiveName(logicalVolume: string): string {
 export function stackVolumeNames(
   state: DesiredState,
   project: string,
-): {
-  mysql: Array<{ logical: string; docker: string }>;
-  redis: { logical: string; docker: string };
-} {
-  const mysql = state.mysqlVersions.map((entry) => ({
-    logical: entry.volume,
-    docker: `${project}_${entry.volume}`,
-  }));
-  return {
-    mysql,
-    redis: { logical: "redis-data", docker: `${project}_redis-data` },
+): StackTransferVolumes {
+  const databases: DatabaseTransferVolume[] = [...state.databaseServices]
+    .sort((a, b) => a.service.localeCompare(b.service))
+    .map((entry) => ({
+      kind: "database",
+      engine: entry.engine,
+      service: entry.service,
+      logical: entry.volume,
+      docker: `${project}_${entry.volume}`,
+    }));
+  const redis: RedisTransferVolume = {
+    kind: "redis",
+    service: "redis",
+    logical: "redis-data",
+    docker: `${project}_redis-data`,
   };
+  assertUniqueVolumeArchives([...databases, redis]);
+  return { databases, redis };
+}
+
+/** Data services are stopped/restarted in this deterministic order for raw copies. */
+export function stackDataServiceNames(state: DesiredState): string[] {
+  return [
+    ...[...state.databaseServices]
+      .sort((a, b) => a.service.localeCompare(b.service))
+      .map((entry) => String(entry.service)),
+    "redis",
+  ];
 }
 
 /**
@@ -69,7 +105,8 @@ export async function exportStack(
   const env = await loadStackEnv(platform);
   const project = composeProjectName(env);
   const volumes = stackVolumeNames(state, project);
-  const allVolumes = [...volumes.mysql.map((v) => v.docker), volumes.redis.docker];
+  const allTransferVolumes = [...volumes.databases, volumes.redis];
+  const allVolumes = allTransferVolumes.map((volume) => volume.docker);
 
   await requireCommand(platform, ["docker", "info"], "Docker is unavailable");
   for (const volume of allVolumes) {
@@ -80,13 +117,13 @@ export async function exportStack(
     );
   }
 
-  const dataServices = [...state.mysqlVersions.map((v) => v.service), "redis"];
+  const dataServices = stackDataServiceNames(state);
   const ps = await runCompose(platform, state, ["ps", "--services", "--filter", "status=running"]);
   const running = new Set(ps.stdout.split(/\r?\n/).map((v) => v.trim()).filter(Boolean));
   const restart = dataServices.filter((service) => running.has(service));
   const archiveNames = [
     STACK_ARCHIVE,
-    ...volumes.mysql.map((volume) => volumeArchiveName(volume.logical)),
+    ...volumes.databases.map((volume) => volumeArchiveName(volume.logical)),
     REDIS_ARCHIVE,
   ];
   const partials = archiveNames.map((name) => join(output, `.${name}.partial`));
@@ -96,7 +133,7 @@ export async function exportStack(
   try {
     if (restart.length > 0) await runCompose(platform, state, ["stop", ...restart]);
 
-    for (const volume of volumes.mysql) {
+    for (const volume of volumes.databases) {
       const archive = volumeArchiveName(volume.logical);
       await archiveVolume(platform, output, `.${archive}.partial`, volume);
     }
@@ -186,7 +223,7 @@ export async function importStack(
   const state = await new StateStore(platform).load();
   const project = composeProjectName(await loadStackEnv(platform));
   const volumes = stackVolumeNames(state, project);
-  const allVolumes = [...volumes.mysql, volumes.redis];
+  const allVolumes = [...volumes.databases, volumes.redis];
   const volumeArchives = allVolumes.map((volume) => ({
     volume,
     archive: volumeArchiveName(volume.logical),
@@ -195,6 +232,8 @@ export async function importStack(
   if (volumeArchiveName(volumes.redis.logical) !== REDIS_ARCHIVE) {
     throw validationError("Redis volume archive naming is inconsistent");
   }
+  const expectedArchives = new Set([STACK_ARCHIVE, ...volumeArchives.map((v) => v.archive)]);
+  await refuseUnexpectedImportArchives(platform, input, expectedArchives);
   for (const entry of volumeArchives) {
     const archive = join(input, entry.archive);
     await requireArchiveFile(platform, archive);
@@ -291,6 +330,36 @@ async function restoreVolume(
     "/volume",
   ];
   await requireCommand(platform, command, `failed to restore Docker volume ${volume.docker}`);
+}
+
+function assertUniqueVolumeArchives(
+  volumes: Array<{ logical: string; docker: string }>,
+): void {
+  const logical = new Set<string>();
+  const docker = new Set<string>();
+  const archives = new Set<string>();
+  for (const volume of volumes) {
+    const archive = volumeArchiveName(volume.logical);
+    if (logical.has(volume.logical) || docker.has(volume.docker) || archives.has(archive)) {
+      throw validationError(`duplicate Docker volume identity for transfer: ${volume.logical}`);
+    }
+    logical.add(volume.logical);
+    docker.add(volume.docker);
+    archives.add(archive);
+  }
+}
+
+async function refuseUnexpectedImportArchives(
+  platform: Platform,
+  input: string,
+  expected: Set<string>,
+): Promise<void> {
+  for (const name of await platform.fs.readDir(input)) {
+    const archiveLike = /\.(?:tar(?:\.(?:gz|zst|xz))?|tgz|zip)$/i.test(name);
+    if (archiveLike && !expected.has(name)) {
+      throw validationError(`unexpected archive in stack import directory: ${name}`);
+    }
+  }
 }
 
 async function requireArchiveFile(platform: Platform, path: string): Promise<void> {

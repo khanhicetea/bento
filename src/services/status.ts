@@ -3,7 +3,7 @@
  * Secrets are never included in the report object (safe for --json).
  */
 
-import type { DesiredState } from "../domain/state.ts";
+import type { DesiredState, ManagedDatabaseService } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { capacityWarnings } from "./app.ts";
 import { FPM_PROFILES } from "../domain/types.ts";
@@ -11,7 +11,7 @@ import { resolveComposeFiles } from "./compose.ts";
 
 export type RoleStatus = {
   name: string;
-  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql";
+  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql" | "postgres";
   /** observed | expected-only */
   state: "running" | "stopped" | "unknown" | "config-ready";
   detail?: string;
@@ -21,7 +21,9 @@ export type StatusReport = {
   stackRoot: string;
   defaults: {
     phpVersion: string;
-    mysqlVersion: string;
+    databaseEngine: "mysql" | "postgres";
+    databaseVersion: string;
+    databaseService: string;
     fpmProfile: string;
     redisMode: string;
   };
@@ -35,14 +37,8 @@ export type StatusReport = {
     poolMaxSum: number;
     overCap: boolean;
   }>;
-  mysqlVersions: Array<{
-    version: string;
-    service: string;
-    volume: string;
-    appCount: number;
-    health: "ok" | "unknown" | "down" | "error";
-    healthDetail?: string;
-  }>;
+  mysqlVersions: DatabaseVersionStatus[];
+  postgresVersions: DatabaseVersionStatus[];
   apps: Array<{
     slug: string;
     enabled: boolean;
@@ -55,7 +51,8 @@ export type StatusReport = {
     entrypointMode: string;
     tls: string;
     accessLog: boolean;
-    mysqlService: string;
+    databaseEngine: "mysql" | "postgres";
+    databaseService: string;
     databases: string[];
     redisMode: string;
     deploy: boolean;
@@ -76,6 +73,15 @@ export type StatusReport = {
     assetVersion?: string;
     renderedAt?: string;
   };
+};
+
+type DatabaseVersionStatus = {
+  version: string;
+  service: string;
+  volume: string;
+  appCount: number;
+  health: "ok" | "unknown" | "down" | "error";
+  healthDetail?: string;
 };
 
 export async function buildStatus(
@@ -133,62 +139,34 @@ export async function buildStatus(
   const runningNames = await observeRunningServices(platform);
   const roles = buildExpectedRoles(state, runningNames, notes);
 
-  // MySQL health: only when container appears running
-  const mysqlVersions = await Promise.all(state.mysqlVersions.map(async (m) => {
-    const appCount = Object.values(state.apps).filter((a) => a.mysqlService === m.service)
-      .length;
-    let health: "ok" | "unknown" | "down" | "error" = "unknown";
-    let healthDetail: string | undefined;
-    if (runningNames === null) {
-      health = "unknown";
-      healthDetail = "docker unavailable";
-    } else if (!runningNames.has(m.service)) {
-      health = "down";
-      healthDetail = "service not running; config ready for next start";
-    } else {
-      const probe = await platform.process.run(
-        [
-          "docker",
-          "compose",
-          "exec",
-          "-T",
-          m.service,
-          "mysqladmin",
-          "ping",
-          "-h",
-          "127.0.0.1",
-          "--silent",
-        ],
-        { cwd: platform.paths.paths.root, timeoutMs: 3_000 },
-      ).catch(() => ({ code: 1, stdout: "", stderr: "probe failed" }));
-      if (probe.code === 0) {
-        health = "ok";
-      } else {
-        health = "error";
-        healthDetail = (probe.stderr || probe.stdout || "ping failed").trim().slice(0, 120);
-      }
-    }
-    return {
-      version: m.version,
-      service: m.service,
-      volume: m.volume,
-      appCount,
-      health,
-      ...(healthDetail ? { healthDetail } : {}),
-    };
-  }));
+  // Database health is probed only for observed running containers. Stopped services
+  // remain down/config-ready rather than being reported as healthy.
+  const databaseVersions = await Promise.all(
+    state.databaseServices.map((managed) =>
+      databaseVersionStatus(platform, state, managed, runningNames)
+    ),
+  );
+  const mysqlVersions = databaseVersions.filter((_, index) =>
+    state.databaseServices[index]?.engine === "mysql"
+  );
+  const postgresVersions = databaseVersions.filter((_, index) =>
+    state.databaseServices[index]?.engine === "postgres"
+  );
 
   return {
     stackRoot: platform.paths.paths.root,
     defaults: {
       phpVersion: state.defaults.phpVersion,
-      mysqlVersion: state.defaults.mysqlVersion,
+      databaseEngine: state.defaults.database.engine,
+      databaseVersion: state.defaults.database.version,
+      databaseService: state.defaults.database.service,
       fpmProfile: state.defaults.fpmProfile,
       redisMode: state.defaults.redisMode,
     },
     roles,
     phpVersions,
     mysqlVersions,
+    postgresVersions,
     apps: Object.values(state.apps)
       .sort((a, b) => a.slug.localeCompare(b.slug))
       .map((a) => ({
@@ -203,8 +181,9 @@ export async function buildStatus(
         entrypointMode: a.entrypointMode,
         tls: a.tls.kind,
         accessLog: a.accessLog,
-        mysqlService: a.mysqlService,
-        databases: a.databases.map((d) => d.name),
+        databaseEngine: a.database.engine,
+        databaseService: a.database.service,
+        databases: a.database.databases.map((d) => d.name),
         redisMode: a.redis.mode,
         deploy: a.deploy.enabled,
       })),
@@ -228,6 +207,49 @@ export async function buildStatus(
     warnings,
     notes,
     generation,
+  };
+}
+
+async function databaseVersionStatus(
+  platform: Platform,
+  state: DesiredState,
+  managed: ManagedDatabaseService,
+  runningNames: Set<string> | null,
+): Promise<DatabaseVersionStatus> {
+  const appCount =
+    Object.values(state.apps).filter((app) =>
+      app.database.engine === managed.engine && app.database.service === managed.service
+    ).length;
+  let health: DatabaseVersionStatus["health"] = "unknown";
+  let healthDetail: string | undefined;
+  if (runningNames === null) {
+    healthDetail = "docker unavailable";
+  } else if (!runningNames.has(managed.service)) {
+    health = "down";
+    healthDetail = "service not running; config ready for next start";
+  } else {
+    const command = managed.engine === "mysql"
+      ? ["mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      : ["pg_isready", "--username", "postgres", "--dbname", "postgres"];
+    const probe = await platform.process.run(
+      ["docker", "compose", "exec", "-T", managed.service, ...command],
+      { cwd: platform.paths.paths.root, timeoutMs: 3_000 },
+    ).catch(() => ({ code: 1, stdout: "", stderr: "probe failed" }));
+    if (probe.code === 0) health = "ok";
+    else {
+      health = "error";
+      healthDetail = redactStatusText(
+        (probe.stderr || probe.stdout || "probe failed").trim().slice(0, 120),
+      );
+    }
+  }
+  return {
+    version: managed.version,
+    service: managed.service,
+    volume: managed.volume,
+    appCount,
+    health,
+    ...(healthDetail ? { healthDetail } : {}),
   };
 }
 
@@ -268,8 +290,8 @@ function buildExpectedRoles(
     push(v.service, "php-fpm");
     push(`${v.service}-runner`, "php-runner");
   }
-  for (const m of state.mysqlVersions) {
-    push(m.service, "mysql");
+  for (const database of state.databaseServices) {
+    push(database.service, database.engine);
   }
 
   if (running === null) {
@@ -328,7 +350,7 @@ export function formatStatus(report: StatusReport): string {
     );
   }
   lines.push(
-    `  defaults: php=${report.defaults.phpVersion} mysql=${report.defaults.mysqlVersion} fpm=${report.defaults.fpmProfile} redis=${report.defaults.redisMode}`,
+    `  defaults: php=${report.defaults.phpVersion} database=${report.defaults.databaseEngine}:${report.defaults.databaseService}(${report.defaults.databaseVersion}) fpm=${report.defaults.fpmProfile} redis=${report.defaults.redisMode}`,
   );
   lines.push("");
   lines.push("Roles:");
@@ -353,13 +375,23 @@ export function formatStatus(report: StatusReport): string {
     );
   }
   lines.push("");
+  lines.push("PostgreSQL services:");
+  for (const database of report.postgresVersions) {
+    const health = database.healthDetail
+      ? `${database.health}: ${database.healthDetail}`
+      : database.health;
+    lines.push(
+      `  ${database.version}  service=${database.service}  volume=${database.volume}  apps=${database.appCount}  health=${health}`,
+    );
+  }
+  lines.push("");
   lines.push("Apps:");
   if (report.apps.length === 0) lines.push("  (none)");
   for (const a of report.apps) {
     lines.push(
       `  ${a.slug}  ${
         a.enabled ? "enabled" : "disabled"
-      }  uid=${a.uid}  ${a.domain}  php=${a.php}/${a.fpmProfile}  tls=${a.tls}  entry=${a.entrypointMode}  db=${a.mysqlService}[${
+      }  uid=${a.uid}  ${a.domain}  php=${a.php}/${a.fpmProfile}  tls=${a.tls}  entry=${a.entrypointMode}  db=${a.databaseEngine}:${a.databaseService}[${
         a.databases.join(",") || "-"
       }]  redis=${a.redisMode}  deploy=${a.deploy ? "on" : "off"}`,
     );
@@ -413,5 +445,8 @@ function redactStatusText(text: string): string {
     .replace(/(password["']?\s*[:=]\s*["']?)([^"'\s,}\]]+)/gi, "$1***")
     .replace(/(secret["']?\s*[:=]\s*["']?)([^"'\s,}\]]+)/gi, "$1***")
     .replace(/(hmacSecret["']?\s*:\s*["'])([^"']+)/g, "$1***")
-    .replace(/(MYSQL_PWD=)(\S+)/g, "$1***");
+    .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD)=)(\S+)/g, "$1***")
+    .replace(/((?:CREATE|ALTER)\s+ROLE[\s\S]{0,200}?\sPASSWORD\s+(?:E)?["'])([^"']+)/gi, "$1***")
+    .replace(/((?:postgres(?:ql)?):\/\/[^:\s/]+:)([^@\s/]+)(@)/gi, "$1***$3")
+    .replace(/(^|\n)([^:\n]*:[^:\n]*:[^:\n]*:[^:\n]*:)([^\n]+)/g, "$1$2***");
 }

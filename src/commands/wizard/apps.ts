@@ -9,13 +9,18 @@ import {
   setAppEnabled,
 } from "../../services/app.ts";
 import { buildMysqlShellPlan, createAppDatabaseLive } from "../../services/mysql.ts";
-import { loadRedisPassword, requireMysqlRootPassword } from "../../services/stack_env.ts";
+import { buildPostgresShellPlan, createPostgresAppDatabaseLive } from "../../services/postgres.ts";
+import {
+  loadRedisPassword,
+  requireMysqlRootPassword,
+  requirePostgresRootPassword,
+} from "../../services/stack_env.ts";
 import { type MenuChoice, WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
 import { runCliExec } from "../subcommands/exec.ts";
 import { sectionCron } from "./cron.ts";
 import { sectionLogs } from "./logs.ts";
-import { ensureState, handleError, openMysqlShell, pcDim } from "./shared.ts";
+import { ensureState, handleError, openMysqlShell, openPostgresShell, pcDim } from "./shared.ts";
 import { sectionTemplate } from "./templates.ts";
 import { sectionWorker } from "./workers.ts";
 
@@ -203,6 +208,28 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   ]);
   if (entry === null) return;
 
+  const existing = state.apps[slug];
+  const databaseChoices: MenuChoice<string>[] = state.databaseServices.map((service) => ({
+    label: `${service.engine}: ${service.version}`,
+    value: `${service.engine}:${service.service}`,
+    hint: existing?.database.service === service.service
+      ? "current"
+      : state.defaults.database.service === service.service
+      ? "default"
+      : service.service,
+  }));
+  if (existing) {
+    databaseChoices.unshift({
+      label: `Keep current (${existing.database.engine}: ${existing.database.service})`,
+      value: "",
+    });
+  }
+  const databaseSelection = await ui.menu("Relational database", databaseChoices);
+  if (databaseSelection === null) return;
+  const [databaseEngine, databaseService] = databaseSelection
+    ? databaseSelection.split(":", 2)
+    : [undefined, undefined];
+
   const createDb = await ui.confirm("Create a namespaced database for this app?");
   const databaseName = createDb
     ? await ui.prompt("Database name (blank = auto)", { default: "" })
@@ -223,7 +250,12 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       ["fpm", fpm || `(default ${state.defaults.fpmProfile})`],
       ["docroot", docroot || "public"],
       ["entry", entry || "default"],
-      ["database", createDb ? (databaseName || "auto") : "no"],
+      [
+        "database",
+        `${databaseSelection || "keep current"}${
+          createDb ? ` · create ${databaseName || "auto"}` : ""
+        }`,
+      ],
       ["access-log", accessLog ? "yes" : "no"],
       ["apply", noApply ? "skip" : "yes"],
     ],
@@ -245,6 +277,9 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
         entrypointMode: entry || undefined,
         phpVersion: php || undefined,
         fpmProfile: fpm || undefined,
+        databaseEngine,
+        mysqlVersion: databaseEngine === "mysql" ? databaseService : undefined,
+        postgresVersion: databaseEngine === "postgres" ? databaseService : undefined,
         createDatabase: createDb,
         databaseName: databaseName || undefined,
         accessLog,
@@ -291,18 +326,22 @@ async function sectionAppDatabases(
     ui.clear();
     ui.header(
       `Databases: ${slug}`,
-      `${app.mysqlService} · ${app.databases.length} database${
-        app.databases.length === 1 ? "" : "s"
+      `${app.database.service} · ${app.database.databases.length} database${
+        app.database.databases.length === 1 ? "" : "s"
       }`,
     );
     ui.table(
       ["database", "created"],
-      app.databases.map((db) => [db.name, db.createdAt]),
+      app.database.databases.map((db) => [db.name, db.createdAt]),
     );
     ui.blank();
     const action = await ui.menu("Database actions", [
       { label: "Create database", value: "create" },
-      { label: "Open MySQL shell", value: "shell", hint: `as app ${slug}` },
+      {
+        label: app.database.engine === "postgres" ? "Open PostgreSQL shell" : "Open MySQL shell",
+        value: "shell",
+        hint: `as app ${slug}`,
+      },
     ]);
     if (!action) return;
 
@@ -314,14 +353,23 @@ async function sectionAppDatabases(
         });
         if (!dbName) continue;
         await ctx.store.withExclusive(async (state) => {
-          const rootPassword = await requireMysqlRootPassword(ctx.platform);
-          const next = await createAppDatabaseLive(
-            ctx.platform,
-            state,
-            slug,
-            dbName,
-            rootPassword,
-          );
+          const current = state.apps[slug];
+          if (!current) throw new Error(`app not found: ${slug}`);
+          const next = current.database.engine === "postgres"
+            ? await createPostgresAppDatabaseLive(
+              ctx.platform,
+              state,
+              slug,
+              dbName,
+              await requirePostgresRootPassword(ctx.platform),
+            )
+            : await createAppDatabaseLive(
+              ctx.platform,
+              state,
+              slug,
+              dbName,
+              await requireMysqlRootPassword(ctx.platform),
+            );
           const app = next.apps[slug]!;
           const redisShared = await loadRedisPassword(ctx.platform);
           await materializeAppHome(ctx.platform, app, {
@@ -336,12 +384,21 @@ async function sectionAppDatabases(
         const state = await ctx.store.load();
         const app = state.apps[slug];
         if (!app) throw new Error(`app not found: ${slug}`);
-        await openMysqlShell(
-          ui,
-          ctx,
-          buildMysqlShellPlan(ctx.platform, { kind: "app", app }),
-          `bento mysql shell --app ${slug}`,
-        );
+        if (app.database.engine === "postgres") {
+          await openPostgresShell(
+            ui,
+            ctx,
+            buildPostgresShellPlan(ctx.platform, { kind: "app", app }),
+            `bento postgres shell --app ${slug}`,
+          );
+        } else {
+          await openMysqlShell(
+            ui,
+            ctx,
+            buildMysqlShellPlan(ctx.platform, { kind: "app", app }),
+            `bento mysql shell --app ${slug}`,
+          );
+        }
       }
     } catch (err) {
       handleError(ui, err);

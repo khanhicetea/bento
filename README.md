@@ -10,7 +10,7 @@ This repository is a **Deno 2.9 / TypeScript** reimplementation of the Bento hos
 - host-network Nginx as the only public service
 - per-app Linux identity, home, PHP-FPM pool, and Unix socket
 - version-shared PHP FPM / singleton runner / ephemeral CLI roles
-- private MySQL (per managed version) and Redis
+- private MySQL and PostgreSQL services (per managed version) plus Redis, with one engine/service binding per app
 - desired-state rendering with staged, validated, recoverable apply
 - schedules, workers, webhook deploys, backups, and diagnostics
 
@@ -46,10 +46,18 @@ deno task run --stack ./my-stack init
 deno task run --stack ./my-stack render
 deno task run --stack ./my-stack status
 
-# create an application
+# create a default MySQL application
 deno task run --stack ./my-stack app create demo \
   --domain demo.example.test \
   --docroot public \
+  --db
+
+# or add PostgreSQL and create a PostgreSQL-backed application
+deno task run --stack ./my-stack postgres add 17
+deno task run --stack ./my-stack app create reports \
+  --domain reports.example.test \
+  --database-engine postgres \
+  --postgres 17 \
   --db
 
 # apply (validate + scoped reload when services are up)
@@ -108,7 +116,8 @@ Operator CLI (Deno/TS)
    -> lock / stage / promote / validate / reload
 
 Internet -> host-network Nginx -> per-app PHP-FPM sockets
-                                 -> private MySQL / Redis
+                                 -> private MySQL / PostgreSQL services
+                                 -> private Redis
 
 PHP runner (one per version) -> s6-overlay PID 1 -> per-app Supercronic + flat s6 workers
                              -> local deploy drain -> hook -> app FPM OPcache reset
@@ -121,12 +130,13 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Area         | Commands                                                                                                                                                                                                                                                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops)                                                                                                                                                                       |
-| Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                            |
+| Bootstrap    | `init`, `state migrate --confirm migrate-v1-to-v2`, `render`, `apply`, `status`                                                                                                                                                                                |
 | Diagnostics  | `doctor`, `support-bundle [output]` — validates runtime versions, network/storage/TLS/service health, permissions, volumes, overlays, and secret modes; bundles contain redacted diagnostics only                                                              |
-| Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — multi-chain Docker harness: apps, db add/connect, domain add/remove, cron + worker, permissions, HTTP shared TLS, signed webhook → runner hook → OPcache; ACME skipped                   |
+| Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — Docker harness covering MySQL and PostgreSQL PHP connectivity, PostgreSQL two-app isolation and backup/restore, mixed-engine status/raw export, app operations, and deploy; ACME skipped |
 | Apps         | `app create\|list\|show\|update\|enable\|disable\|delete\|remove\|prune\|shell`; removal requires `--confirm "delete <slug>"` and retains durable data; `app prune <slug>` lists and permanently cleans retained home/database data only after typing `delete` |
 | PHP          | `php add\|remove\|list`                                                                                                                                                                                                                                        |
 | MySQL        | `mysql add\|list\|db\|shell\|size\|processlist` (version removal blocked; password rotation unsupported)                                                                                                                                                       |
+| PostgreSQL   | `postgres add\|list\|db\|shell\|size\|processlist` (official major tags such as `17`; version/service removal blocked); apps select it with `--database-engine postgres --postgres 17`                                                                         |
 | Proxy        | `proxy create\|list\|delete\|remove` (repeat `--upstream URL`; deletion requires `--confirm "delete <name>"`)                                                                                                                                                  |
 | TLS          | `tls set --app\|--proxy --mode self-ca\|shared\|acme\|external`; `tls ca export --output PATH` (see TLS notes below)                                                                                                                                           |
 | Background   | `cron …` (`cron reload <app>`), `worker …` (`worker signal <app> <name> --signal HUP`)                                                                                                                                                                         |
@@ -134,8 +144,24 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal (TUI: Applications → Access logs)                                                                                                              |
 | Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]` — ephemeral PHP CLI as app UID (TUI: Applications → Open CLI shell)                                                                                                                                                 |
 | Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
-| Portability  | `stack export <directory>`, `stack import <directory>` — CLI-only full stack + raw MySQL/Redis volume transfer                                                                                                                                                 |
+| Portability  | `stack export <directory>`, `stack import <directory>` — CLI-only full stack + raw MySQL/PostgreSQL/Redis volume transfer                                                                                                                                                 |
 | Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup`, `restore`                                                                                                                                                                          |
+
+PostgreSQL is a first-class alternative to MySQL. Managed private services can be added and listed with `postgres add <major>` / `postgres list`, apps select one with `--database-engine postgres --postgres <major-or-service>`, and routine administration is available through `postgres db|shell|size|processlist`. Top-level `backup` and `restore` infer the selected app's engine, including mixed-engine `backup --all`, portable PostgreSQL dumps, and guarded restore-to-new or replacement. State schema v2 is engine-aware while keeping MySQL 8.4 as the default. Existing schema v1 stacks are never rewritten during routine reads; migrate one deliberately with `bento state migrate --confirm migrate-v1-to-v2`. Bento validates the complete v2 document, writes a mode-`0600` v1 backup beside `state.json`, then atomically replaces the state file. Each app belongs to exactly one MySQL or PostgreSQL service. Automatic cross-engine migration and managed database service/volume removal are unsupported. PostgreSQL uses official major tags such as `17` (`postgres17`). See [`specs/pg-database.md`](specs/pg-database.md).
+
+### Logical database backup and restore
+
+```bash
+# Engine is inferred from app state; --all may include both engines.
+bento backup --app reports --gzip
+bento backup --all
+
+# Restore to a new namespaced database for verification.
+bento restore --file /var/lib/bento/backups/postgres17/reports-....sql.gz \
+  --app reports --target reports_verify
+```
+
+MySQL uses matching `mysqldump`; PostgreSQL uses matching-major `pg_dump --no-owner --no-acl`. Dumps are written privately, checked for successful non-empty output, and atomically published. Retention runs only after the requested batch succeeds. Restore is not object-level atomic and can leave a partial destination after an import failure. Replacing an existing database requires exact target-name confirmation. Use logical backup/restore—not raw volume transfer—for PostgreSQL major upgrades.
 
 ### Full stack export and import
 
@@ -147,15 +173,16 @@ bento --stack /var/lib/bento stack export /srv/exports/bento-2026-07-21
 
 # Produces:
 #   stack.tar.gz          (state, homes, credentials, certificates, config, logs, backups)
-#   mysql84-data.tar.gz   (one archive per managed MySQL volume)
-#   mysql80-data.tar.gz   (example when another MySQL version is configured)
-#   redis-data.tar.gz     (the Redis volume)
+#   mysql84-data.tar.gz      (one archive per managed MySQL volume)
+#   mysql80-data.tar.gz      (example when another MySQL version is configured)
+#   postgres17-data.tar.gz   (one archive per managed PostgreSQL volume)
+#   redis-data.tar.gz        (the Redis volume)
 
 # Destination host: --stack must be an empty/nonexistent destination root.
 bento --stack /var/lib/bento stack import /srv/exports/bento-2026-07-21
 ```
 
-Export verifies the named volumes, stops only running MySQL/Redis services for a consistent raw copy, and restarts those services afterward. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.json`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects existing destination volumes, validates and restores the archives, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
+Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and Redis data services needed for a consistent raw copy, and restarts exactly those services afterward. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.json`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects missing, corrupt, unsafe, or unexpected archives and all existing destination data volumes, restores only newly created volumes, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. In particular, raw PostgreSQL transfer requires a compatible PostgreSQL major/image version; use logical `backup`/`restore` for major upgrades. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
 
 ### Runner service supervision
 
@@ -228,8 +255,8 @@ Bento intentionally does **not** provide:
 - multi-host / Kubernetes / remote control plane / browser admin UI
 - one container per app (apps share PHP version containers; isolation is identity-based)
 - unconfirmed destructive deletion of app homes or databases (`app prune` is CLI-only, lists every known part, and requires typing the literal `delete`)
-- automated MySQL version or volume deletion (`mysql remove` and `compose down -v` are blocked)
-- MySQL password rotation (the operator must update MySQL and dependent credentials manually)
+- automated MySQL or PostgreSQL version/volume deletion (`mysql remove`, `postgres remove`, and `compose down -v` are blocked)
+- automatic relational-database password rotation (the operator must coordinate the database, Bento state/credentials, and dependent applications)
 - automatic off-host backup replication (logical dumps stay under the stack root)
 - a hard-coded Git deploy workflow (webhook orchestration + operator `deploy.sh` only)
 - a Python runtime dependency
@@ -272,10 +299,10 @@ Edit these files directly, then run `bento apply` to validate and reload Nginx. 
 
 - Only Nginx is public in the base topology.
 - Database and webhook secrets are not printed in ordinary status output.
-- The MySQL root password is generated once when `init` first creates the stack `.env`; each app password is generated once during initial app provisioning.
+- MySQL and PostgreSQL administrator passwords are generated once when `init` first creates the stack `.env`; each app database password is generated once during initial provisioning.
 - Set `HTTP3=true` in the stack `.env` and render to enable HTTP/3/QUIC listeners and `Alt-Svc` headers; it is disabled by default.
-- Bento does not rotate MySQL passwords or reset existing MySQL accounts during reconciliation. Operators must coordinate any password change manually, including MySQL, Bento state/credential material, and dependent applications.
-- MySQL passwords are not passed on host process argv for admin SQL.
+- Bento does not rotate MySQL/PostgreSQL app passwords or reset existing account passwords during reconciliation. Operators must coordinate any password change manually across the database, Bento state/credentials, and dependent applications.
+- Database administrator and app passwords are not passed on host process argv for admin SQL.
 - Deploy HMAC secrets live in desired state / FastCGI params, not app-writable secret files.
 - Deno permissions are explicit in `deno.json` tasks (not `-A` by default).
 

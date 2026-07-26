@@ -59,6 +59,26 @@ export async function requireMysqlRootPassword(platform: Platform): Promise<stri
   return value;
 }
 
+export async function loadPostgresRootPassword(
+  platform: Platform,
+): Promise<string | undefined> {
+  const env = await loadStackEnv(platform);
+  const value = env.POSTGRES_PASSWORD;
+  if (value === undefined || value.trim() === "") return undefined;
+  return value;
+}
+
+export async function requirePostgresRootPassword(platform: Platform): Promise<string> {
+  const value = await loadPostgresRootPassword(platform);
+  if (value === undefined) {
+    throw secretError(
+      "POSTGRES_PASSWORD is not set in the stack .env",
+      "Run `bento init` or set POSTGRES_PASSWORD in the stack .env (mode 0600).",
+    );
+  }
+  return value;
+}
+
 export async function loadRedisPassword(platform: Platform): Promise<string> {
   const env = await loadStackEnv(platform);
   return env.REDIS_PASSWORD ?? "";

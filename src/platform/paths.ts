@@ -19,6 +19,7 @@ export function resolveStackPaths(stackRoot: string): StackPaths {
     nginxDir: join(generatedDir, "nginx"),
     phpDir: join(generatedDir, "php"),
     mysqlDir: join(generatedDir, "mysql"),
+    postgresDir: join(generatedDir, "postgres"),
     runnerDir: join(generatedDir, "runner"),
     secretsDir: join(generatedDir, "secrets"),
     backupsDir: join(root, "backups"),

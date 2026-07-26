@@ -1,6 +1,6 @@
 # Bento remaining work (agent todo)
 
-Status snapshot: **~99% capabilities coded · ~97% acceptance proven · ~98% definition of done** (Phase A+B+C+D+E+F+G complete; host scenarios residual)
+Status snapshot: **existing MySQL product ~99% capabilities coded · PostgreSQL Phase 0 contract complete, Phases 1–9 open**
 
 Read first (in order):
 
@@ -305,6 +305,21 @@ Agents must **not** spend time implementing these. Phase G closes by **locking**
 
 ---
 
+## PostgreSQL roadmap
+
+The first-class PostgreSQL extension is tracked in [`pg-database.md`](pg-database.md). Phases 0–8 are complete, covering the locked contract, schema v2 migration, private service/PHP support, app isolation, administration, engine-aware logical backup/restore, diagnostics/pruning, and full-stack raw-volume transfer. Phase 9 remains open.
+
+- [x] Phase 0 — design and acceptance contract
+- [x] Phase 1 — state schema v2 and explicit safe migration
+- [x] Phase 2 — PostgreSQL Compose service and PHP client support
+- [x] Phase 3 — PostgreSQL adapter and version commands
+- [x] Phase 4 — app provisioning and isolation
+- [x] Phase 5 — administration commands
+- [x] Phase 6 — logical backup and restore
+- [x] Phase 7 — status, doctor, maintenance, prune, diagnostics
+- [x] Phase 8 — full stack export/import
+- [ ] Phase 9 — TUI, live harness, parity, and documentation completion
+
 ## Suggested implementation order for the next agent
 
 Do in this order unless blocked:
@@ -361,5 +376,6 @@ Do in this order unless blocked:
 | 2026-07-17 | phase G | Locked explicit non-goals (product §8). MySQL service/volume removal remains blocked and compose down -v is refused. Later lifecycle support permits guarded app/proxy desired-state removal while retaining durable data; CLI-only app prune provides listed, literal-`delete` cleanup. |
 | 2026-07-17 | live test-stack | Added real Docker harness `bento test-stack [name]` / `--test-stack` (default `testbento`): compose up, app+db, PHP version, MySQL/Redis from PHP, HTTP boot TLS, isolation. Fixed PHP entrypoint RO crash, Redis protected-mode (private net), project-scoped networks, entrypoint bind-mount, default REDIS_PASSWORD. ACME intentionally not tested. `deno task test:stack`. 139 unit/contract green; live run PASS. |
 | 2026-07-17 | test-stack chains | Expanded harness into multi-chain ops: apps-create, db-add (primary+secondary + PHP connect), domain add/remove aliases, cron `* * * * *` print + worker file writer with 61s wait, permissions break/repair/check, http/tls. Fixed supervisord control socket, cron setpriv (supercronic has no user field), worker setpriv (numeric UID invalid for supervisor). Live: 32 passed / 0 failed. |
+| 2026-07-26 | PostgreSQL Phase 0 | Locked PostgreSQL alternative-backend product/architecture contract, official major-only tags (`17` → `postgres17`), migration/removal non-goals, and `PG-01`–`PG-18` acceptance matrix. Documentation-contract test added; no production behavior changed. |
 
 When you complete a slice, append a row and check boxes above.

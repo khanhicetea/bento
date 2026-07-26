@@ -472,6 +472,7 @@ export class RenderService {
               rel.startsWith("nginx/") ||
               rel.startsWith("php/") ||
               rel.startsWith("mysql/") ||
+              rel.startsWith("postgres/") ||
               rel.startsWith("runner/") ||
               rel.startsWith("secrets/");
             if (!managed) {

@@ -111,6 +111,7 @@ export type StackPaths = {
   nginxDir: string;
   phpDir: string;
   mysqlDir: string;
+  postgresDir: string;
   runnerDir: string;
   secretsDir: string;
   backupsDir: string;

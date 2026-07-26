@@ -47,8 +47,8 @@ Deno.test("provisionApp creates distinct identities and domain ownership", async
     assertEquals(b.app.home, "/home/beta");
     assertEquals(state.domains["alpha.example"]?.kind, "app");
     assertEquals(state.domains["beta.example"]?.kind, "app");
-    assertEquals(a.app.databases[0]?.name, "alpha");
-    assertEquals(a.app.mysqlService, b.app.mysqlService); // same default service
+    assertEquals(a.app.database.databases[0]?.name, "alpha");
+    assertEquals(a.app.database.service, b.app.database.service); // same default service
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -93,7 +93,7 @@ Deno.test("main domain change retains identity", async () => {
     });
     assertEquals(second.app.uid, first.app.uid);
     assertEquals(second.app.home, first.app.home);
-    assertEquals(second.app.mysqlPassword, first.app.mysqlPassword);
+    assertEquals(second.app.database.password, first.app.database.password);
     assertEquals(second.state.domains["old.example"], undefined);
     assertEquals(second.state.domains["new.example"]?.kind, "app");
   } finally {

@@ -223,15 +223,23 @@ async function addServiceChecks(
     ...state.phpVersions.map((
       v,
     ): [string, string, string[]] => [`php:${v.service}`, v.service, ["php-fpm", "-t"]]),
-    ...state.mysqlVersions.map((
-      v,
-    ): [string, string, string[]] => [`mysql:${v.service}`, v.service, [
-      "mysqladmin",
-      "ping",
-      "-h",
-      "127.0.0.1",
-      "--silent",
-    ]]),
+    ...state.databaseServices.map((v): [string, string, string[]] =>
+      v.engine === "mysql"
+        ? [`mysql:${v.service}`, v.service, [
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "--silent",
+        ]]
+        : [`postgres:${v.service}`, v.service, [
+          "pg_isready",
+          "--username",
+          "postgres",
+          "--dbname",
+          "postgres",
+        ]]
+    ),
   ];
   for (const [id, service, command] of probes) {
     let result: RunResult;
@@ -288,7 +296,10 @@ async function addVolumeChecks(platform: Platform, state: DesiredState, add: Add
     const env = await platform.fs.readText(platform.paths.paths.envFile);
     project = env.match(/^COMPOSE_PROJECT_NAME=(.+)$/m)?.[1]?.trim() || project;
   }
-  const volumes = ["redis-data", ...state.mysqlVersions.map((m) => m.volume)];
+  const volumes = [
+    "redis-data",
+    ...state.databaseServices.map((database) => database.volume),
+  ];
   for (const logical of volumes) {
     const name = `${project}_${logical}`;
     const result = await run(platform, ["docker", "volume", "inspect", name]);
@@ -308,7 +319,15 @@ async function addSecretModeChecks(
 ) {
   const paths = platform.paths.paths;
   const candidates = [paths.envFile, paths.stateFile, join(paths.certsDir, "boot.key")];
+  for (const database of state.databaseServices) {
+    candidates.push(
+      database.engine === "mysql"
+        ? join(paths.mysqlDir, database.service, "root.cnf")
+        : join(paths.postgresDir, database.service, "root.pgpass"),
+    );
+  }
   for (const app of Object.values(state.apps)) {
+    candidates.push(join(platform.paths.appHome(app.slug), "credentials", "app.env"));
     if (app.tls.kind === "external") candidates.push(resolve(paths.certsDir, app.tls.keyPath));
     if (app.tls.kind === "self-ca") {
       candidates.push(join(paths.certsDir, "private-ca", "sites", `${app.slug}.key`));

@@ -1,5 +1,6 @@
 import { isBentoError } from "../../domain/errors.ts";
 import type { MysqlShellPlan } from "../../services/mysql.ts";
+import { executePostgresShell, type PostgresShellPlan } from "../../services/postgres.ts";
 import { redact } from "../../ui/output.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
@@ -29,6 +30,34 @@ export async function ensureState(ui: WizardUI, ctx: CliContext): Promise<boolea
     await ui.pause();
     return false;
   }
+}
+
+export async function openPostgresShell(
+  ui: WizardUI,
+  ctx: CliContext,
+  plan: PostgresShellPlan,
+  scriptable: string,
+): Promise<void> {
+  ui.blank();
+  ui.info(
+    `Attaching PostgreSQL shell to ${plan.service} as ${plan.user} · database=${plan.database}`,
+  );
+  ui.message(pcDim(`scriptable: ${scriptable}`));
+  ui.message(pcDim("Exit psql to return to the wizard."));
+  ui.blank();
+  const exitCode = await executePostgresShell(ctx.platform, plan, async (command) => {
+    const [cmd, ...args] = command;
+    return (await new Deno.Command(cmd!, {
+      args,
+      cwd: ctx.stackRoot,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }).output()).code;
+  });
+  ui.blank();
+  if (exitCode === 0) ui.success("PostgreSQL shell closed", plan.service);
+  else ui.warn(`PostgreSQL shell exited ${exitCode}`, plan.service);
 }
 
 export async function openMysqlShell(

@@ -104,6 +104,16 @@ export const mysqlVersionSchema = z
     "must look like major.minor (e.g. 8.4)",
   );
 
+/** PostgreSQL managed versions use official major-only tags (for example 17). */
+export const postgresVersionSchema = z
+  .string()
+  .regex(/^[1-9]\d*$/, "must be an official major-only tag (e.g. 17)");
+
+export const databaseServiceSchema = z.string().regex(
+  /^(?:mysql\d+|postgres\d+)$/,
+  "must be a managed database service name",
+);
+
 /** Safe relative path under app home (no traversal). */
 export const safeRelativePathSchema = z.string().superRefine((value, ctx) => {
   const p = value.replace(/\\/g, "/");
@@ -204,6 +214,20 @@ export function parseMysqlVersion(
   field = "mysqlVersion",
 ): ParseResult<string> {
   return parseWith(mysqlVersionSchema, value, field);
+}
+
+export function parsePostgresVersion(
+  value: unknown,
+  field = "postgresVersion",
+): ParseResult<string> {
+  return parseWith(postgresVersionSchema, value, field);
+}
+
+export function parseDatabaseService(
+  value: unknown,
+  field = "databaseService",
+): ParseResult<string> {
+  return parseWith(databaseServiceSchema, value, field);
 }
 
 export function parseSafeRelativePath(

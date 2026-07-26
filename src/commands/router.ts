@@ -22,6 +22,7 @@ import { registerExecCommand } from "./subcommands/exec.ts";
 import { registerLogCommands } from "./subcommands/logs.ts";
 import { registerMaintenanceCommands } from "./subcommands/maintenance.ts";
 import { registerMysqlCommands } from "./subcommands/mysql.ts";
+import { registerPostgresCommands } from "./subcommands/postgres.ts";
 import { registerPermissionsCommands } from "./subcommands/permissions.ts";
 import { registerPhpCommands } from "./subcommands/php.ts";
 import { registerProxyCommands } from "./subcommands/proxy.ts";
@@ -87,6 +88,7 @@ function buildParser(state: RunState) {
   parser = registerAppCommands(parser, state);
   parser = registerPhpCommands(parser, state);
   parser = registerMysqlCommands(parser, state);
+  parser = registerPostgresCommands(parser, state);
   parser = registerProxyCommands(parser, state);
   parser = registerDeployCommands(parser, state);
   parser = registerCronCommands(parser, state);

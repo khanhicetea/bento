@@ -115,7 +115,7 @@ Deno.test("proxy delete requires exact typed confirmation", () => {
 Deno.test("G MySQL version/volume removal is safety-blocked", () => {
   const state = createEmptyState();
   assertSafety(() => removeMysqlVersion(state, "8.4"), "MySQL version removal");
-  assertEquals(state.mysqlVersions.length > 0, true);
+  assertEquals(state.databaseServices.length > 0, true);
 });
 
 Deno.test("G compose refuses volume-destructive down flags", () => {

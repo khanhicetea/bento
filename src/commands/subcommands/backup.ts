@@ -1,4 +1,4 @@
-import { runBackup, runRestore } from "../../services/mysql.ts";
+import { runDatabaseBackup, runDatabaseRestore } from "../../services/database_backup.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
 import { bind, type RunState, type YargsBuilder } from "../shared.ts";
@@ -7,7 +7,7 @@ export function registerBackupCommands(parser: YargsBuilder, state: RunState): Y
   return parser
     .command(
       "backup",
-      "Logical MySQL backup",
+      "Logical database backup",
       (y: YargsBuilder) =>
         y
           .option("app", { type: "string", describe: "App slug" })
@@ -27,7 +27,7 @@ export function registerBackupCommands(parser: YargsBuilder, state: RunState): Y
     )
     .command(
       "restore",
-      "Logical MySQL restore",
+      "Logical database restore",
       (y: YargsBuilder) =>
         y
           .option("file", { type: "string", demandOption: true, describe: "Dump path" })
@@ -58,7 +58,7 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     return 2;
   }
   try {
-    const artifacts = await runBackup(ctx.platform, state, {
+    const artifacts = await runDatabaseBackup(ctx.platform, state, {
       scope,
       slug: argv.app,
       database: argv.database,
@@ -86,12 +86,15 @@ async function cmdRestore(
   ctx.log.warn(
     "restore is not object-level atomic; a failed import can leave a partial destination",
   );
-  const state = await ctx.store.load();
-  await runRestore(ctx.platform, state, {
-    file,
-    slug: app,
-    targetDatabase: target,
-    replaceOriginal: argv.replace,
+  await ctx.store.withExclusive(async (state) => {
+    const next = await runDatabaseRestore(ctx.platform, state, {
+      file,
+      slug: app,
+      targetDatabase: target,
+      replaceOriginal: argv.replace,
+    });
+    if (next !== state) await ctx.store.save(next);
+    return next;
   });
   ctx.log.info(`restore completed into ${target}`);
   return 0;
