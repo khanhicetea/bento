@@ -52,6 +52,9 @@ deno task run --stack ./my-stack app create demo \
   --docroot public \
   --db
 
+# An Ed25519 deploy key is created once under homes/demo/.ssh/ (mounted as /home/demo/.ssh/).
+# Register id_ed25519.pub with the Git host before cloning a private repository.
+
 # or add PostgreSQL and create a PostgreSQL-backed application
 deno task run --stack ./my-stack postgres add 17
 deno task run --stack ./my-stack app create reports \

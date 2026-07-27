@@ -375,6 +375,8 @@ export async function materializeAppHome(
     await platform.fs.mkdirp(d, 0o750);
   }
 
+  await ensureAppSshKeyPair(platform, app);
+
   // Credentials (mode 0600); shared Redis auth comes from stack env when not on app state.
   const sharedRedisPassword = app.redis.password ?? opts.redisSharedPassword ?? "";
   const redisLines = app.redis.mode === "shared"
@@ -472,6 +474,70 @@ export async function materializeAppHome(
   } else {
     await applyAppPermissionPolicy(platform, app, { recursive: false });
   }
+}
+
+/** Ensure every app has a stable Ed25519 deploy key for private Git clones. */
+export async function ensureAppSshKeyPair(
+  platform: Platform,
+  app: AppState,
+): Promise<void> {
+  const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
+  const privateKey = join(sshDir, "id_ed25519");
+  const publicKey = `${privateKey}.pub`;
+  await platform.fs.mkdirp(sshDir, 0o700);
+  await platform.fs.chmod(sshDir, 0o700);
+
+  const hasPrivateKey = await platform.fs.exists(privateKey);
+  const hasPublicKey = await platform.fs.exists(publicKey);
+  if (!hasPrivateKey && hasPublicKey) {
+    throw safetyError(
+      `refusing to replace orphaned SSH public key for app ${app.slug}`,
+      `Move or remove ${publicKey}, then provision the app again.`,
+    );
+  }
+
+  if (!hasPrivateKey) {
+    const result = await platform.process.run([
+      "ssh-keygen",
+      "-q",
+      "-t",
+      "ed25519",
+      "-N",
+      "",
+      "-C",
+      `bento-app-${app.slug}`,
+      "-f",
+      privateKey,
+    ], { timeoutMs: 10_000 });
+    if (result.code !== 0) {
+      throw serviceError(
+        `failed to generate SSH key pair for app ${app.slug}: ${
+          (result.stderr || result.stdout || `ssh-keygen exited ${result.code}`).trim()
+        }`,
+        "Install OpenSSH ssh-keygen, check the app home permissions, and retry.",
+      );
+    }
+  } else if (!hasPublicKey) {
+    const result = await platform.process.run(
+      ["ssh-keygen", "-y", "-f", privateKey],
+      { timeoutMs: 10_000 },
+    );
+    if (result.code !== 0 || !result.stdout.trim()) {
+      throw serviceError(
+        `failed to recreate SSH public key for app ${app.slug}`,
+        `Check ${privateKey} and retry app provisioning.`,
+      );
+    }
+    await platform.fs.atomicWriteText(
+      publicKey,
+      `${result.stdout.trim()} bento-app-${app.slug}\n`,
+      0o644,
+    );
+  }
+
+  // Recording process runners used by tests may not materialize command outputs.
+  if (await platform.fs.exists(privateKey)) await platform.fs.chmod(privateKey, 0o600);
+  if (await platform.fs.exists(publicKey)) await platform.fs.chmod(publicKey, 0o644);
 }
 
 export type AppDataPlaneResult = {

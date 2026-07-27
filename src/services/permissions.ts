@@ -279,6 +279,8 @@ export async function applyAppPermissionPolicy(
         join(home, "tmp", "sessions"),
         join(home, ".bento"),
         join(home, ".ssh"),
+        join(home, ".ssh", "id_ed25519"),
+        join(home, ".ssh", "id_ed25519.pub"),
         join(home, ".composer"),
         join(home, "credentials"),
         docRoot,
@@ -344,6 +346,8 @@ export async function applyAppPermissionPolicy(
   for (
     const p of [
       join(home, "credentials", "app.env"),
+      join(home, ".ssh", "id_ed25519"),
+      join(home, ".ssh", "id_ed25519.pub"),
       join(home, ".bento", "deploy.sh"),
       join(home, ".bento", "deploy.json"),
       join(home, ".bento", "queue.json"),

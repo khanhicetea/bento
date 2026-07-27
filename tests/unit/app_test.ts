@@ -1,6 +1,11 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import { createEmptyState } from "../../src/domain/state.ts";
-import { allocateIdentity, capacityWarnings, provisionApp } from "../../src/services/app.ts";
+import {
+  allocateIdentity,
+  capacityWarnings,
+  materializeAppHome,
+  provisionApp,
+} from "../../src/services/app.ts";
 import { addPhpVersion, buildCliExec, cliRunComposeCommand } from "../../src/services/php.ts";
 import { createFixedClock } from "../../src/platform/clock.ts";
 import { createSeededRandom } from "../../src/platform/random.ts";
@@ -49,6 +54,36 @@ Deno.test("provisionApp creates distinct identities and domain ownership", async
     assertEquals(state.domains["beta.example"]?.kind, "app");
     assertEquals(a.app.database.databases[0]?.name, "alpha");
     assertEquals(a.app.database.service, b.app.database.service); // same default service
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("materializeAppHome generates one stable SSH key pair with strict modes", async () => {
+  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+  try {
+    const process = createRecordingProcessRunner(async (command) => {
+      if (command[0] === "ssh-keygen" && command.includes("-f")) {
+        const keyPath = command[command.indexOf("-f") + 1]!;
+        await Deno.writeTextFile(keyPath, "private-key\n");
+        await Deno.writeTextFile(`${keyPath}.pub`, "ssh-ed25519 public-key bento-app-alpha\n");
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    const platform = { ...testPlatform(root), process };
+    const app = provisionApp(platform, createEmptyState(), {
+      slug: "alpha",
+      domain: "alpha.example",
+    }).app;
+
+    await materializeAppHome(platform, app);
+    await materializeAppHome(platform, app, false);
+
+    const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
+    assertEquals((await platform.fs.stat(sshDir)).mode & 0o777, 0o700);
+    assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519"))).mode & 0o777, 0o600);
+    assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519.pub"))).mode & 0o777, 0o644);
+    assertEquals(process.calls.filter((call) => call.command[0] === "ssh-keygen").length, 1);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
