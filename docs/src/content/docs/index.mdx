@@ -1,30 +1,68 @@
 ---
-title: Bento Documentation
-description: Documentation for the Bento self-hosted operations layer.
+title: Bento documentation
+description: Install and operate Bento, a single-host platform for PHP applications and reverse-proxied services.
 template: splash
 hero:
-  tagline: Run isolated PHP applications and reverse-proxied services on one Linux server.
+  title: Operate PHP applications on one Linux host
+  tagline: Bento turns application, ingress, runtime, database, job, and backup settings into a Docker Compose stack you control.
   actions:
-    - text: View on GitHub
-      link: https://github.com/khanhicetea/bento
-      icon: external
-    - text: Read the project overview
-      link: https://github.com/khanhicetea/bento#readme
+    - text: Install Bento
+      link: /start/install/
+      icon: download
+    - text: Create a stack
+      link: /start/first-stack/
+      icon: rocket
+    - text: Understand the architecture
+      link: https://github.com/khanhicetea/bento#architecture-short
       icon: open-book
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Documentation is being prepared
-
-This site is ready for the Bento guides and reference documentation. Content authors can add Markdown or MDX pages under `src/content/docs/`.
+Bento is a host-local command-line control plane for running multiple PHP applications and reverse-proxied services on one operator-owned Linux server. It generates and operates a private Docker Compose data plane with Nginx as its only public service.
 
 <CardGrid>
-	<Card title="Guides" icon="open-book">
-		Task-focused installation, configuration, and operations guides will live here.
-	</Card>
-	<Card title="Reference" icon="document">
-		CLI commands and configuration reference will be added here.
-	</Card>
+  <Card title="Start with one stack" icon="rocket">
+    Prepare a Linux host, install the compiled `bento` command, and launch your first application through a guided path.
+
+    [Start with the requirements →](/start/requirements/)
+  </Card>
+  <Card title="Run routine operations" icon="setting">
+    Apply changes, inspect service health, manage applications, and protect relational databases with logical backups.
+
+    [Review the current command surface →](https://github.com/khanhicetea/bento#command-surface)
+  </Card>
+  <Card title="Understand what Bento owns" icon="open-book">
+    Learn how the stack root, desired state, generated configuration, and durable data fit together before customizing a stack.
+
+    [Learn the stack-root and stack-name model →](/concepts/stacks/)
+  </Card>
 </CardGrid>
+
+## Is Bento a fit?
+
+Bento is designed for a technically capable developer or small team that:
+
+- operates one Linux VPS or dedicated server;
+- needs several PHP applications, or HTTP services behind a reverse proxy;
+- wants a local CLI and Docker Compose rather than a resident web control plane;
+- accepts shared, versioned PHP containers with per-app identities, pools, sockets, homes, and database grants.
+
+Bento is not a cluster orchestrator or a hostile multi-tenant sandbox. It does not replace off-host backups, DNS management, source control, or your application's deployment procedure.
+
+## How Bento works
+
+```text
+Operator -> bento CLI -> desired state -> generated configuration -> Docker Compose
+Internet -> Nginx -> app PHP-FPM socket or reverse-proxy upstream
+                       -> private MySQL, PostgreSQL, and Redis services
+```
+
+The `bento` command runs on the host; there is no resident Bento daemon. Your stack root contains operator intent and mutable stack data. Generated files are disposable, while app homes, certificates, backups, and database volumes are durable resources that require deliberate protection.
+
+## Choose a path
+
+- **New operator:** [check the host requirements](/start/requirements/), [install the compiled command](/start/install/), [create the first stack](/start/first-stack/), then [add the first application](/start/first-app/).
+- **Returning operator:** use the [current command surface](https://github.com/khanhicetea/bento#command-surface) to find the operation you need.
+- **Advanced operator:** begin with the [architecture overview](https://github.com/khanhicetea/bento#architecture-short) and the [system architecture specification](https://github.com/khanhicetea/bento/blob/main/specs/02-system-architecture.md).
