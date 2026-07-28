@@ -1,0 +1,56 @@
+---
+title: Manage PHP runtimes
+description: Add and remove managed PHP versions, select an app runtime, and assess shared FPM capacity.
+---
+
+# Manage PHP runtimes
+
+Run multiple PHP versions concurrently and assign each app one version and FPM capacity profile.
+
+## List and add runtimes
+
+```sh
+bento --stack /var/lib/bento php list
+bento --stack /var/lib/bento php add 8.4
+```
+
+Adding a version creates FPM, singleton runner, and ephemeral CLI roles from the same image. Apply builds and starts configuration as needed; use `--no-apply` to batch changes, then run `bento --stack /var/lib/bento apply`.
+
+Update an app by repeating its domain and selecting the managed version/profile:
+
+```sh
+bento --stack /var/lib/bento app update demo \
+  --domain demo.example.com --php 8.4 --fpm medium
+```
+
+Omitted runtime choices preserve the app's current values. Run application tests and migrations through the app CLI identity before shifting production traffic.
+
+## Verify
+
+```sh
+bento --stack /var/lib/bento app show demo
+bento --stack /var/lib/bento status
+bento --stack /var/lib/bento exec demo -- php -v
+```
+
+## Remove an unused runtime
+
+```sh
+bento --stack /var/lib/bento php remove 8.4
+```
+
+Removal is refused if an app uses the version, if it is the default, or if it would remove the final managed PHP version. It removes managed configuration, not application homes or database data.
+
+## Troubleshooting
+
+If a build fails, inspect the PHP service build logs and host disk space. If Bento reports excess capacity, reduce app profiles or spread apps across versions; profiles share a global FPM process cap rather than reserving isolated CPU/memory.
+
+## Advanced
+
+Apps on one version share the image, container namespace, network, and global capacity. The runner must remain a singleton because scaling it duplicates schedules and workers. A runtime move changes the app socket and background role; Bento targets FPM/Nginx/runner reconciliation rather than treating it as a slug rename.
+
+## Next steps
+
+- [Understand the app model](/concepts/app-model/)
+- [Run app commands](/guides/apps/manage/)
+- [Runtime supervision](/advanced/runtime-supervision/)

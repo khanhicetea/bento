@@ -444,3 +444,14 @@ Keep this file after the initial documentation project is complete. Update it wh
 - a new major operator safety boundary is introduced.
 
 Prefer small, reviewed changes. Do not turn this guide into a second product manual; operator facts belong in published pages, while this file defines how those pages are written and verified.
+
+### Lessons from the initial complete documentation set
+
+- Maintain one command-group map in `reference/cli.md`, then link each group to a task guide. Compare it with current top-level `bento --help` whenever commands change.
+- Audit root-relative links against source routes, not generated HTML. A clean Starlight build proves page parsing but does not by itself prove every authored link target.
+- Never use a secret-printing command as a connectivity example. Name the protected credential path and verify through an application-specific health operation instead.
+- Distinguish a configuration reload from container recreation. Compose changes to images, mounts, environment, networks, or publications generally need `compose -- up -d`; render/apply alone cannot alter an existing container definition.
+- Record Docker soft-skips explicitly. A passing integration task can still lack live data-plane proof when Docker networking, images, or architecture are unavailable.
+- For a completed batch, run a clean-room reading-path review from Requirements through Daily operations without relying on the root README, in addition to testing individual pages.
+
+A lightweight source-route link audit can derive routes from every `.md`/`.mdx` file under `src/content/docs/`, extract Markdown destinations, and fail when a root-relative route has no source page. Keep the script local to review until the repository adopts a maintained link-checking task.
