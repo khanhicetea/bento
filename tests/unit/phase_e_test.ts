@@ -182,15 +182,23 @@ Deno.test("E1 proxy renders named multi-server upstream with keepalive", async (
     const vhost = textContent(
       files.find((f) => f.relPath === "nginx/sites/proxy-edge.conf")!.content,
     );
+    const proxyCommon = textContent(
+      files.find((f) => f.relPath === "nginx/snippets/proxy-common.conf")!.content,
+    );
     assertEquals(vhost.includes("upstream upstream_edge {"), true);
     assertEquals(vhost.includes("server 127.0.0.1:3000;"), true);
     assertEquals(vhost.includes("server 10.0.0.2:3000;"), true);
-    assertEquals(vhost.includes("keepalive 5;"), true);
-    assertEquals(vhost.match(/proxy_set_header Connection "";/g)?.length, 4);
+    assertEquals(vhost.includes("keepalive 32;"), true);
+    assertEquals(vhost.match(/include \/etc\/nginx\/snippets\/proxy-common\.conf;/g)?.length, 4);
+    assertEquals(proxyCommon.includes("proxy_set_header Connection $connection_upgrade;"), true);
+    assertEquals(proxyCommon.includes("proxy_set_header Upgrade $http_upgrade;"), true);
+    assertEquals(proxyCommon.includes("proxy_socket_keepalive on;"), true);
     assertEquals(vhost.match(/proxy_pass http:\/\/upstream_edge;/g)?.length, 4);
     assertEquals(vhost.match(/proxy_cache proxy_assets;/g)?.length, 2);
-    assertEquals(vhost.match(/proxy_cache proxy_cache;/g)?.length, 2);
+    assertEquals(vhost.match(/^\s+proxy_cache proxy_cache;/gm)?.length ?? 0, 0);
     assertEquals(vhost.match(/expires 30d;/g)?.length, 2);
+    assertEquals(vhost.includes("custom/proxies/edge/upstream.d/*.conf"), true);
+    assertEquals(vhost.match(/custom\/proxies\/edge\/server\.d\/\*\.conf/g)?.length, 2);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -372,10 +380,14 @@ Deno.test("E2 front-controller rejects non-index PHP; legacy allows scripts", as
     assertEquals(legacy.includes("try_files $uri =404;"), true);
     assertEquals(legacy.includes("if ($uri !~ ^/index\\.php$)"), false);
 
-    assertEquals(front.match(/fastcgi_cache app_cache;/g)?.length, 2);
-    assertEquals(front.match(/fastcgi_cache_valid 200 1d;/g)?.length, 2);
-    assertEquals(legacy.match(/fastcgi_cache app_cache;/g)?.length, 2);
-    assertEquals(legacy.match(/fastcgi_cache_valid 200 1d;/g)?.length, 2);
+    // Dynamic PHP caching is opt-in because authentication semantics are app-specific.
+    assertEquals(front.match(/^\s+fastcgi_cache app_cache;/gm)?.length ?? 0, 0);
+    assertEquals(legacy.match(/^\s+fastcgi_cache app_cache;/gm)?.length ?? 0, 0);
+
+    // Additive per-app drop-ins avoid requiring a complete custom vhost.
+    assertEquals(front.match(/custom\/apps\/front\/server\.d\/\*\.conf/g)?.length, 2);
+    assertEquals(front.includes("custom/apps/front/http.d/*.conf"), true);
+    assertEquals(front.includes("custom/apps/front/https.d/*.conf"), true);
   } finally {
     await Deno.remove(root, { recursive: true });
   }

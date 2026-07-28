@@ -90,12 +90,9 @@ async function generateNginx(
     ? 443
     : composeEnvironment.nginx.httpsPort ?? 443;
   const httpsPortSuffix = publishedHttpsPort === 443 ? "" : `:${publishedHttpsPort}`;
-  let mainTpl: string;
-  try {
-    mainTpl = await platform.assets.readText("nginx/nginx.conf.tpl");
-  } catch {
-    mainTpl = DEFAULT_NGINX_MAIN;
-  }
+  // Nginx templates are compiled immutable assets. Fail candidate generation when
+  // one is missing instead of silently rendering a stale in-code fallback.
+  const mainTpl = await platform.assets.readText("nginx/nginx.conf.tpl");
   // Keep the shared issuer present from the first Nginx start. The ACME module
   // cannot introduce a previously absent issuer with a worker reload alone.
   const acme = await loadAcmeEnvironment(platform);
@@ -103,7 +100,7 @@ async function generateNginx(
   files.push({
     relPath: "nginx/nginx.conf",
     content: withManagedMarker(renderTemplate(mainTpl, {
-      workerConnections: 4096,
+      workerConnections: 8192,
       acmeIssuers,
     })),
     mode: 0o644,
@@ -120,7 +117,9 @@ async function generateNginx(
   });
   files.push({
     relPath: "nginx/snippets/boot-ssl.conf",
-    content: withManagedMarker(DEFAULT_BOOT_SSL),
+    content: withManagedMarker(
+      await platform.assets.readText("docker/nginx/snippets/boot-ssl.conf"),
+    ),
     mode: 0o644,
     managed: true,
   });
@@ -132,19 +131,22 @@ async function generateNginx(
   });
   files.push({
     relPath: "nginx/snippets/app-common.conf",
-    content: withManagedMarker(`# shared app defaults
-charset utf-8;
-index index.php index.html;
-`),
+    content: withManagedMarker(
+      await platform.assets.readText("nginx/snippets/app-common.conf"),
+    ),
+    mode: 0o644,
+    managed: true,
+  });
+  files.push({
+    relPath: "nginx/snippets/proxy-common.conf",
+    content: withManagedMarker(
+      await platform.assets.readText("nginx/snippets/proxy-common.conf"),
+    ),
     mode: 0o644,
     managed: true,
   });
 
-  const defaultVhostTpl = await readOrDefault(
-    platform,
-    "nginx/default-vhost.conf.tpl",
-    DEFAULT_VHOST,
-  );
+  const defaultVhostTpl = await platform.assets.readText("nginx/default-vhost.conf.tpl");
   files.push({
     relPath: "nginx/sites/00-default.conf",
     content: withManagedMarker(renderTemplate(defaultVhostTpl, { http3 })),
@@ -194,10 +196,10 @@ async function generateAppVhost(
     try {
       tpl = await platform.fs.readText(app.vhostTemplate.sourcePath);
     } catch {
-      tpl = await readOrDefault(platform, "nginx/app-vhost.conf.tpl", DEFAULT_APP_VHOST);
+      tpl = await platform.assets.readText("nginx/app-vhost.conf.tpl");
     }
   } else {
-    tpl = await readOrDefault(platform, "nginx/app-vhost.conf.tpl", DEFAULT_APP_VHOST);
+    tpl = await platform.assets.readText("nginx/app-vhost.conf.tpl");
   }
 
   const serverNames = [app.mainDomain, ...app.aliases].join(" ");
@@ -258,11 +260,7 @@ async function generateProxyVhost(
   httpsPortSuffix: string,
   httpsAdvertisedPort: number,
 ): Promise<GeneratedFile[]> {
-  const tpl = await readOrDefault(
-    platform,
-    "nginx/proxy-vhost.conf.tpl",
-    DEFAULT_PROXY_VHOST,
-  );
+  const tpl = await platform.assets.readText("nginx/proxy-vhost.conf.tpl");
   const serverNames = [proxy.mainDomain, ...proxy.aliases].join(" ");
   const ssl = resolveSslForSite(proxy.tls, `proxy-${proxy.name}`, String(proxy.mainDomain));
   const upstream = validateUpstreams(proxy.upstreams);
@@ -651,313 +649,6 @@ async function readOrDefault(
     return fallback;
   }
 }
-
-const DEFAULT_NGINX_MAIN = `load_module /usr/lib/nginx/modules/ngx_http_acme_module.so;
-
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
-
-# Operator-managed directives in the global (main) context.
-include /etc/nginx/custom/global.conf;
-
-events {
-  worker_connections {{workerConnections}};
-  multi_accept on;
-}
-
-http {
-  resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
-
-  acme_shared_zone zone=ngx_acme_shared:10M;
-
-  {{acmeIssuers}}
-
-  include /etc/nginx/mime.types;
-  default_type application/octet-stream;
-  sendfile on;
-  keepalive_timeout 65;
-  server_tokens off;
-  client_max_body_size 64m;
-
-  # Shared cache zones (cache data is kept on disk; keys use bounded shared memory).
-  fastcgi_cache_path /var/cache/nginx/app_cache levels=1:2 keys_zone=app_cache:10m max_size=1g inactive=1d use_temp_path=off;
-  proxy_cache_path /var/cache/nginx/proxy_assets levels=1:2 keys_zone=proxy_assets:20m max_size=2g inactive=7d use_temp_path=off;
-  proxy_cache_path /var/cache/nginx/proxy_cache levels=1:2 keys_zone=proxy_cache:10m max_size=1g inactive=7d use_temp_path=off;
-
-  # zstd with gzip fallback (modules loaded by image)
-  gzip on;
-  gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
-
-  # Operator-managed HTTP directives loaded before generated sites.
-  include /etc/nginx/custom/http-before-sites.conf;
-
-  include /etc/nginx/sites/*.conf;
-
-  # Operator-managed HTTP directives loaded after generated sites.
-  include /etc/nginx/custom/http-after-sites.conf;
-}
-`;
-
-const DEFAULT_BOOT_SSL = `ssl_certificate     /etc/nginx/certs/boot.crt;
-ssl_certificate_key /etc/nginx/certs/boot.key;
-include /etc/nginx/snippets/ssl-common.conf;
-`;
-
-const DEFAULT_VHOST = `# Reject requests whose Host/SNI does not match a configured site.
-server {
-  listen 80 default_server;
-  listen [::]:80 default_server;
-  server_name _;
-
-  return 404;
-}
-
-server {
-  listen 443 ssl default_server;
-  listen [::]:443 ssl default_server;
-  {{#http3}}
-  listen 443 quic default_server;
-  listen [::]:443 quic default_server;
-  {{/http3}}
-  http2 on;
-  server_name _;
-
-  include /etc/nginx/snippets/boot-ssl.conf;
-
-  return 404;
-}
-`;
-
-const DEFAULT_APP_VHOST = `# app {{slug}}
-server {
-  listen 80;
-  listen [::]:80;
-  server_name {{serverNames}};
-
-  {{#redirectHttps}}
-  location / {
-    return 301 https://$host{{httpsPortSuffix}}$request_uri;
-  }
-  {{/redirectHttps}}
-  {{^redirectHttps}}
-  root {{docRoot}};
-  include /etc/nginx/snippets/app-common.conf;
-
-  {{#accessLog}}
-  access_log {{accessLogPath}} bento_access_log;
-  {{/accessLog}}
-
-  {{#deployEnabled}}
-  location ^~ /_bento/ {
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/bento.php;
-    fastcgi_param BENTO_DEPLOY_SECRET "{{deploySecret}}";
-    fastcgi_param BENTO_APP "{{slug}}";
-    fastcgi_param BENTO_HTTP_REQUEST 1;
-    fastcgi_pass unix:{{socketPath}};
-  }
-  {{/deployEnabled}}
-
-  {{#frontController}}
-  location / {
-    try_files $uri $uri/ /index.php?$query_string;
-  }
-  location ~ \\.php$ {
-
-    if ($uri !~ ^/index\\.php$) {
-      return 404;
-    }
-
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    # Cache successful FastCGI responses for one day.
-    fastcgi_cache app_cache;
-    fastcgi_cache_valid 200 1d;
-    fastcgi_pass unix:{{socketPath}};
-  }
-  {{/frontController}}
-  {{#legacy}}
-  location / {
-    try_files $uri $uri/ =404;
-  }
-  location ~ \\.php$ {
-    try_files $uri =404;
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    # Cache successful FastCGI responses for one day.
-    fastcgi_cache app_cache;
-    fastcgi_cache_valid 200 1d;
-    fastcgi_pass unix:{{socketPath}};
-  }
-  {{/legacy}}
-  {{/redirectHttps}}
-}
-
-server {
-  listen 443 ssl;
-  listen [::]:443 ssl;
-  {{#http3}}
-  listen 443 quic;
-  listen [::]:443 quic;
-  {{/http3}}
-  http2 on;
-  server_name {{serverNames}};
-
-  {{#sslCertificate}}
-  ssl_certificate     {{sslCertificate}};
-  ssl_certificate_key {{sslCertificateKey}};
-  {{/sslCertificate}}
-  include {{sslInclude}};
-  {{#http3}}
-  add_header Alt-Svc 'h3=":{{httpsAdvertisedPort}}"; ma=86400' always;
-  {{/http3}}
-
-  root {{docRoot}};
-  include /etc/nginx/snippets/app-common.conf;
-
-  {{#accessLog}}
-  access_log {{accessLogPath}} bento_access_log;
-  {{/accessLog}}
-
-  {{#deployEnabled}}
-  location ^~ /_bento/ {
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME /opt/bento/helpers/bento.php;
-    fastcgi_param BENTO_DEPLOY_SECRET "{{deploySecret}}";
-    fastcgi_param BENTO_APP "{{slug}}";
-    fastcgi_param BENTO_HTTP_REQUEST 1;
-    fastcgi_pass unix:{{socketPath}};
-  }
-  {{/deployEnabled}}
-
-  {{#frontController}}
-  location / {
-    try_files $uri $uri/ /index.php?$query_string;
-  }
-  location ~ \\.php$ {
-
-    if ($uri !~ ^/index\\.php$) {
-      return 404;
-    }
-
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    # Cache successful FastCGI responses for one day.
-    fastcgi_cache app_cache;
-    fastcgi_cache_valid 200 1d;
-    fastcgi_pass unix:{{socketPath}};
-  }
-  {{/frontController}}
-  {{#legacy}}
-  location / {
-    try_files $uri $uri/ =404;
-  }
-  location ~ \\.php$ {
-    try_files $uri =404;
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    # Cache successful FastCGI responses for one day.
-    fastcgi_cache app_cache;
-    fastcgi_cache_valid 200 1d;
-    fastcgi_pass unix:{{socketPath}};
-  }
-  {{/legacy}}
-}
-`;
-
-const DEFAULT_PROXY_VHOST = `# proxy {{name}}
-upstream {{upstreamName}} {
-  {{#upstreamServers}}
-  server {{.}};
-  {{/upstreamServers}}
-  keepalive 5;
-}
-
-server {
-  listen 80;
-  listen [::]:80;
-  server_name {{serverNames}};
-  {{#redirectHttps}}
-  location / {
-    return 301 https://$host{{httpsPortSuffix}}$request_uri;
-  }
-  {{/redirectHttps}}
-  {{^redirectHttps}}
-  {{#accessLog}}
-  access_log {{accessLogPath}} bento_access_log;
-  {{/accessLog}}
-  location ~* \\.(?:css|js|mjs|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot)$ {
-    expires 30d;
-    proxy_cache proxy_assets;
-    proxy_cache_valid 200 7d;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_pass {{upstreamScheme}}://{{upstreamName}}{{upstreamUri}};
-  }
-  location / {
-    proxy_cache proxy_cache;
-    proxy_cache_valid 200 7d;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_pass {{upstreamScheme}}://{{upstreamName}}{{upstreamUri}};
-  }
-  {{/redirectHttps}}
-}
-
-server {
-  listen 443 ssl;
-  listen [::]:443 ssl;
-  {{#http3}}
-  listen 443 quic;
-  listen [::]:443 quic;
-  {{/http3}}
-  http2 on;
-  server_name {{serverNames}};
-  {{#sslCertificate}}
-  ssl_certificate     {{sslCertificate}};
-  ssl_certificate_key {{sslCertificateKey}};
-  {{/sslCertificate}}
-  include {{sslInclude}};
-  {{#http3}}
-  add_header Alt-Svc 'h3=":{{httpsAdvertisedPort}}"; ma=86400' always;
-  {{/http3}}
-  {{#accessLog}}
-  access_log {{accessLogPath}} bento_access_log;
-  {{/accessLog}}
-  location ~* \\.(?:css|js|mjs|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot)$ {
-    expires 30d;
-    proxy_cache proxy_assets;
-    proxy_cache_valid 200 7d;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_pass {{upstreamScheme}}://{{upstreamName}}{{upstreamUri}};
-  }
-  location / {
-    proxy_cache proxy_cache;
-    proxy_cache_valid 200 7d;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_pass {{upstreamScheme}}://{{upstreamName}}{{upstreamUri}};
-  }
-}
-`;
 
 const DEFAULT_POOL = `[{{slug}}]
 user = {{uid}}

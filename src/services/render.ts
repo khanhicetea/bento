@@ -93,10 +93,13 @@ type RenderJournal = {
 const MANAGED_MARKER_HASH = "# bento-managed: true\n";
 const MANAGED_MARKER_SEMI = "; bento-managed: true\n";
 
-const NGINX_SIDELOAD_FILES = [
-  "global.conf",
-  "http-before-sites.conf",
-  "http-after-sites.conf",
+const NGINX_CUSTOM_DIRS = [
+  "main.d",
+  "events.d",
+  "http.d",
+  "sites.d",
+  "apps",
+  "proxies",
 ] as const;
 
 export type ManagedMarkerStyle = "hash" | "semicolon" | "none";
@@ -157,9 +160,9 @@ export class RenderService {
       for (const app of Object.values(state.apps)) {
         await ensureAppLogDirs(this.platform, app);
       }
-      // These files belong to the operator: create them once, then never render,
-      // replace, or remove them during reconciliation.
-      await ensureNginxSideloadFiles(this.platform);
+      // Custom Nginx directories belong to the operator. Reconciliation creates
+      // missing directories but never replaces or removes their contents.
+      await ensureNginxCustomizationDirs(this.platform, state);
 
       // Materialize docker build contexts + helpers for Compose (outside generated/)
       await materializeDockerAssets(
@@ -496,13 +499,23 @@ export class RenderService {
   }
 }
 
-async function ensureNginxSideloadFiles(platform: Platform): Promise<void> {
+async function ensureNginxCustomizationDirs(
+  platform: Platform,
+  state: DesiredState,
+): Promise<void> {
   const dir = join(platform.paths.paths.root, "custom", "nginx");
   await platform.fs.mkdirp(dir, 0o755);
-  for (const name of NGINX_SIDELOAD_FILES) {
-    const path = join(dir, name);
-    if (!(await platform.fs.exists(path))) {
-      await platform.fs.atomicWriteText(path, "", 0o644);
+  for (const name of NGINX_CUSTOM_DIRS) {
+    await platform.fs.mkdirp(join(dir, name), 0o755);
+  }
+  for (const slug of Object.keys(state.apps)) {
+    for (const name of ["server.d", "http.d", "https.d"]) {
+      await platform.fs.mkdirp(join(dir, "apps", slug, name), 0o755);
+    }
+  }
+  for (const name of Object.keys(state.proxies)) {
+    for (const child of ["upstream.d", "server.d", "http.d", "https.d"]) {
+      await platform.fs.mkdirp(join(dir, "proxies", name, child), 0o755);
     }
   }
 }

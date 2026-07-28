@@ -196,7 +196,8 @@ Deno.test("cli init render status app create", async () => {
     assertEquals(proxyVhost.includes("upstream upstream_api {"), true);
     assertEquals(proxyVhost.includes("server 127.0.0.1:3000;"), true);
     assertEquals(proxyVhost.includes("server 127.0.0.1:3001;"), true);
-    assertEquals(proxyVhost.includes("keepalive 5;"), true);
+    assertEquals(proxyVhost.includes("keepalive 32;"), true);
+    assertEquals(proxyVhost.includes("include /etc/nginx/snippets/proxy-common.conf;"), true);
     assertEquals((await runCli([...base, "proxy", "delete", "api"])) !== 0, true);
     assertEquals((await runCli([...base, "proxy", "remove", "api"])) !== 0, true);
     // proxy still listed after unconfirmed delete, then exact confirmation removes it

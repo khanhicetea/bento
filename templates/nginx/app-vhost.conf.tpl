@@ -4,6 +4,10 @@ server {
   listen [::]:80;
   server_name {{serverNames}};
 
+  # Additive operator-owned directives/locations; no full-template fork required.
+  include /etc/nginx/custom/apps/{{slug}}/server.d/*.conf;
+  include /etc/nginx/custom/apps/{{slug}}/http.d/*.conf;
+
   {{#redirectHttps}}
   location / {
     return 301 https://$host{{httpsPortSuffix}}$request_uri;
@@ -14,7 +18,7 @@ server {
   include /etc/nginx/snippets/app-common.conf;
 
   {{#accessLog}}
-  access_log {{accessLogPath}} bento_access_log;
+  access_log {{accessLogPath}} bento_access_log buffer=64k flush=1s;
   {{/accessLog}}
 
   {{#deployEnabled}}
@@ -77,6 +81,10 @@ server {
   http2 on;
   server_name {{serverNames}};
 
+  # Common app drop-ins apply to both protocols; HTTPS drop-ins apply only here.
+  include /etc/nginx/custom/apps/{{slug}}/server.d/*.conf;
+  include /etc/nginx/custom/apps/{{slug}}/https.d/*.conf;
+
   {{#sslCertificate}}
   ssl_certificate     {{sslCertificate}};
   ssl_certificate_key {{sslCertificateKey}};
@@ -90,7 +98,7 @@ server {
   include /etc/nginx/snippets/app-common.conf;
 
   {{#accessLog}}
-  access_log {{accessLogPath}} bento_access_log;
+  access_log {{accessLogPath}} bento_access_log buffer=64k flush=1s;
   {{/accessLog}}
 
   {{#deployEnabled}}

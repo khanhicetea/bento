@@ -49,20 +49,37 @@ Deno.test("init + render produces startable topology files", async () => {
     assertEquals(nginxMain.includes("keys_zone=app_cache:10m max_size=1g"), true);
     assertEquals(nginxMain.includes("keys_zone=proxy_assets:20m max_size=2g"), true);
     assertEquals(nginxMain.includes("keys_zone=proxy_cache:10m max_size=1g"), true);
-    assertEquals(nginxMain.includes("include /etc/nginx/custom/global.conf;"), true);
+    assertEquals(nginxMain.includes("worker_connections 8192;"), true);
+    assertEquals(nginxMain.includes("keepalive_requests 1000;"), true);
+    assertEquals(nginxMain.includes("proxy_cache_lock on;"), true);
+    assertEquals(nginxMain.includes("map $http_upgrade $connection_upgrade"), true);
+    assertEquals(nginxMain.includes("include /etc/nginx/custom/main.d/*.conf;"), true);
+    assertEquals(nginxMain.includes("include /etc/nginx/custom/events.d/*.conf;"), true);
+    assertEquals(nginxMain.includes("include /etc/nginx/custom/http.d/*.conf;"), true);
+    assertEquals(nginxMain.includes("include /etc/nginx/custom/sites.d/*.conf;"), true);
     assertEquals(
-      nginxMain.indexOf("include /etc/nginx/custom/http-before-sites.conf;") <
+      nginxMain.indexOf("include /etc/nginx/custom/http.d/*.conf;") <
         nginxMain.indexOf("include /etc/nginx/sites/*.conf;"),
       true,
     );
     assertEquals(
       nginxMain.indexOf("include /etc/nginx/sites/*.conf;") <
-        nginxMain.indexOf("include /etc/nginx/custom/http-after-sites.conf;"),
+        nginxMain.indexOf("include /etc/nginx/custom/sites.d/*.conf;"),
       true,
     );
-    for (const name of ["global.conf", "http-before-sites.conf", "http-after-sites.conf"]) {
-      assertEquals(await platform.fs.readText(join(root, "custom/nginx", name)), "");
+    for (const name of ["main.d", "events.d", "http.d", "sites.d", "apps", "proxies"]) {
+      assertEquals((await platform.fs.stat(join(root, "custom/nginx", name))).isDirectory, true);
     }
+    const appCommon = await platform.fs.readText(
+      join(root, "generated/nginx/snippets/app-common.conf"),
+    );
+    const proxyCommon = await platform.fs.readText(
+      join(root, "generated/nginx/snippets/proxy-common.conf"),
+    );
+    assertEquals(appCommon.includes("expires 30d;"), true);
+    assertEquals(appCommon.includes("Never expose dotfiles"), true);
+    assertEquals(proxyCommon.includes("proxy_socket_keepalive on;"), true);
+    assertEquals(proxyCommon.includes("Connection $connection_upgrade;"), true);
     const composeBase = await platform.fs.readText(base);
     assertEquals(composeBase.includes("./custom/nginx:/etc/nginx/custom:ro"), true);
     assertEquals(composeBase.includes("nofile:"), true);
@@ -99,11 +116,11 @@ Deno.test("init + render produces startable topology files", async () => {
     assertEquals(mysqlCompose.includes("x-log-common:"), true);
     assertEquals(mysqlCompose.match(/logging: \*/g)?.length, 1);
 
-    const userGlobal = join(root, "custom/nginx/global.conf");
-    await platform.fs.writeText(userGlobal, "worker_rlimit_nofile 8192;\n", 0o640);
+    const userDropIn = join(root, "custom/nginx/main.d/20-worker-priority.conf");
+    await platform.fs.writeText(userDropIn, "worker_priority -5;\n", 0o640);
     await render.apply(state, { renderOnly: true, skipValidate: true });
-    assertEquals(await platform.fs.readText(userGlobal), "worker_rlimit_nofile 8192;\n");
-    assertEquals((await platform.fs.stat(userGlobal)).mode & 0o777, 0o640);
+    assertEquals(await platform.fs.readText(userDropIn), "worker_priority -5;\n");
+    assertEquals((await platform.fs.stat(userDropIn)).mode & 0o777, 0o640);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -431,6 +448,12 @@ Deno.test("app apply emits INI-safe pool marker, include file, and code/ docroot
     );
     assertEquals(vhost.includes("root /home/alpha/code/public;"), true);
     assertEquals(vhost.includes("fastcgi_pass unix:/run/php-fpm/php85/alpha.sock;"), true);
+    for (const name of ["server.d", "http.d", "https.d"]) {
+      assertEquals(
+        (await platform.fs.stat(join(root, "custom/nginx/apps/alpha", name))).isDirectory,
+        true,
+      );
+    }
 
     const phpCompose = await platform.fs.readText(
       join(root, "generated/compose/docker-compose.php-php85.yml"),

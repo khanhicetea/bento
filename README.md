@@ -322,15 +322,36 @@ specs/                    # product specifications
 .github/workflows/ci.yml  # release gates
 ```
 
-## Nginx sideload configuration
+## Nginx performance and sideload configuration
 
-On the first render, Bento creates three empty operator-owned files and does not modify them on later renders:
+Bento ships conservative production defaults for connection reuse, buffered access logs, gzip, static assets, cache-stampede protection, upstream failover, and WebSocket upgrades. Dynamic PHP and proxy responses remain **uncached** by default because Bento cannot infer application authentication or cache semantics.
 
-- `custom/nginx/global.conf` — Nginx global/main context;
-- `custom/nginx/http-before-sites.conf` — inside `http`, before generated sites;
-- `custom/nginx/http-after-sites.conf` — inside `http`, after generated sites.
+Do not edit `generated/nginx/`; it is replaced on render. Put additive configuration under the operator-owned `custom/nginx/` tree instead. Bento creates the directory structure when needed and preserves everything placed inside it:
 
-Edit these files directly, then run `bento apply` to validate and reload Nginx. They are mounted read-only into the container; directives must be valid in the context where each file is included.
+| Path | Nginx context and load order |
+|---|---|
+| `main.d/*.conf` | main context |
+| `events.d/*.conf` | end of `events` |
+| `http.d/*.conf` | `http`, before generated sites |
+| `sites.d/*.conf` | `http`, after generated sites |
+| `apps/<slug>/server.d/*.conf` | both app HTTP and HTTPS server blocks |
+| `apps/<slug>/http.d/*.conf`, `https.d/*.conf` | one app protocol only |
+| `proxies/<name>/upstream.d/*.conf` | the named proxy `upstream` block |
+| `proxies/<name>/server.d/*.conf` | both proxy HTTP and HTTPS server blocks |
+| `proxies/<name>/http.d/*.conf`, `https.d/*.conf` | one proxy protocol only |
+
+Drop-ins are loaded lexically, so prefix files with `10-`, `20-`, and so on when order matters. They are mounted read-only into Nginx. Directives must be valid in the context shown, and redefining a generated singleton directive can make `nginx -t` fail.
+
+For example, `custom/nginx/apps/shop/server.d/20-health.conf` can add a location without forking the generated vhost:
+
+```nginx
+location = /healthz {
+  access_log off;
+  return 204;
+}
+```
+
+Run `bento apply` after changes; Bento validates the candidate before reloading. For changes to managed locations rather than additive directives, use `bento template select --app <slug> --kind vhost` to create a complete app-owned vhost template. Returning to the upstream template preserves that custom source.
 
 ## Security notes
 
