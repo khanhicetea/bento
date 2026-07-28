@@ -8,6 +8,7 @@ import {
   rotateDeploySecret,
 } from "../../services/deploy.ts";
 import { printTable } from "../../ui/output.ts";
+import { loadStackComposeEnvironment } from "../../services/stack_env.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith } from "../args.ts";
 import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
@@ -97,7 +98,9 @@ async function cmdDeployEnable(argv: ArgsWith<"app">, ctx: CliContext): Promise<
     }
     return enabled;
   });
-  ctx.log.out(deployWebhookInstructions(result.state.apps[slug]!, result.secret));
+  const environment = await loadStackComposeEnvironment(ctx.platform);
+  const httpsPort = environment.nginx.hostNetwork ? 443 : environment.nginx.httpsPort ?? 443;
+  ctx.log.out(deployWebhookInstructions(result.state.apps[slug]!, result.secret, httpsPort));
   return 0;
 }
 
@@ -187,8 +190,14 @@ async function cmdDeployInstructions(
     ctx.log.error("deploy not enabled");
     return 3;
   }
+  const environment = await loadStackComposeEnvironment(ctx.platform);
+  const httpsPort = environment.nginx.hostNetwork ? 443 : environment.nginx.httpsPort ?? 443;
   ctx.log.out(
-    deployWebhookInstructions(app, app.deploy.hmacSecret ? "<stored in state>" : ""),
+    deployWebhookInstructions(
+      app,
+      app.deploy.hmacSecret ? "<stored in state>" : "",
+      httpsPort,
+    ),
   );
   return 0;
 }

@@ -540,10 +540,15 @@ async function pruneDeployLogs(
   }
 }
 
-export function deployWebhookInstructions(app: AppState, secret: string): string {
+export function deployWebhookInstructions(
+  app: AppState,
+  secret: string,
+  httpsPort = 443,
+): string {
+  const authority = `${app.mainDomain}${httpsPort === 443 ? "" : `:${httpsPort}`}`;
   return [
     `Deploy webhook for app ${app.slug}`,
-    `URL: https://${app.mainDomain}/_bento/deploy`,
+    `URL: https://${authority}/_bento/deploy`,
     `Method: POST`,
     `Headers:`,
     `  X-Hub-Signature-256: sha256=<hmac>`,

@@ -60,7 +60,13 @@ type BooleanArgName =
   | "skipHttp"
   | "skipValidate";
 
-type NumberArgName = "retainDays" | "scheduleWaitSec" | "timeout" | "timeoutSec";
+type NumberArgName =
+  | "httpPort"
+  | "httpsPort"
+  | "retainDays"
+  | "scheduleWaitSec"
+  | "timeout"
+  | "timeoutSec";
 
 /** Canonical camelCase shape emitted by the configured yargs parser. */
 export type CliArgs =
@@ -71,6 +77,7 @@ export type CliArgs =
     json: boolean;
     kind?: TemplateKind;
     mode?: TlsMode["kind"];
+    ingressMode?: "host" | "bridge";
     upstream?: string | string[];
   }
   & Partial<Record<StringArgName, string>>

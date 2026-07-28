@@ -9,6 +9,12 @@ import { assertNever, type DesiredState } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { type GeneratedFile, withManagedMarker } from "./render.ts";
 import { safetyError } from "../domain/errors.ts";
+import type { StackComposeEnvironment } from "./stack_env.ts";
+
+const DEFAULT_COMPOSE_ENVIRONMENT: StackComposeEnvironment = {
+  projectName: "bento",
+  nginx: { hostNetwork: true, http3: false },
+};
 
 export type ComposeInvocation = {
   /** Ordered -f arguments relative to stack root or absolute. */
@@ -38,12 +44,13 @@ export function assertSafeComposeArgs(args: string[]): void {
 export function assembleComposeDocuments(
   platform: Platform,
   state: DesiredState,
+  environment: StackComposeEnvironment = DEFAULT_COMPOSE_ENVIRONMENT,
 ): GeneratedFile[] {
   const files: GeneratedFile[] = [];
 
   files.push({
     relPath: "compose/docker-compose.base.yml",
-    content: withManagedMarker(renderBaseCompose()),
+    content: withManagedMarker(renderBaseCompose(environment)),
     mode: 0o644,
     managed: true,
   });
@@ -191,51 +198,71 @@ function composeLogging(): ComposeLogging {
   };
 }
 
-function renderBaseCompose(): string {
+function renderBaseCompose(environment: StackComposeEnvironment): string {
   // Keep the extension and its aliases in the same document: YAML anchors do not
   // cross Compose's -f file boundaries, so each generated fragment declares it.
   const logging = composeLogging();
-  // Project name + private network are scoped via COMPOSE_PROJECT_NAME (stack .env)
-  // so a disposable test stack (e.g. testbento) does not collide with production.
+  // Project name + private network are scoped via the explicit stack name in .env;
+  // stack identity is never inferred from the project directory.
+  const nginx: Record<string, unknown> = {
+    image: "bento/nginx:latest",
+    build: {
+      context: "./docker/nginx",
+      dockerfile: "Dockerfile",
+    },
+    restart: "unless-stopped",
+    logging,
+    ulimits: {
+      nofile: {
+        soft: 65535,
+        hard: 65535,
+      },
+    },
+    volumes: [
+      "./generated/nginx/nginx.conf:/etc/nginx/nginx.conf:ro",
+      "./custom/nginx:/etc/nginx/custom:ro",
+      "./generated/nginx/sites:/etc/nginx/sites:ro",
+      // Generated snippets fully replace image defaults (boot-ssl, app-common, per-site ssl).
+      "./generated/nginx/snippets:/etc/nginx/snippets:ro",
+      "./certs:/etc/nginx/certs",
+      // Native Nginx ACME account keys, certificates, and renewal state.
+      "./certs/acme-state:/var/cache/nginx/acme",
+      "./homes:/home:ro",
+      "./runtime/php-fpm:/run/php-fpm:ro",
+      "./logs/nginx:/var/log/nginx",
+    ],
+  };
+  if (environment.nginx.hostNetwork) {
+    nginx.network_mode = "host";
+  } else {
+    nginx.networks = ["private"];
+    // Gives bridge-mode reverse proxies an explicit route to host services without
+    // changing the meaning of 127.0.0.1 (which remains the Nginx container itself).
+    nginx.extra_hosts = ["host.docker.internal:host-gateway"];
+    const ports: string[] = [];
+    if (environment.nginx.httpPort !== undefined) {
+      ports.push(`${environment.nginx.httpPort}:80/tcp`);
+    }
+    if (environment.nginx.httpsPort !== undefined) {
+      ports.push(`${environment.nginx.httpsPort}:443/tcp`);
+      if (environment.nginx.http3) {
+        ports.push(`${environment.nginx.httpsPort}:443/udp`);
+      }
+    }
+    if (ports.length > 0) nginx.ports = ports;
+  }
+
   const doc = {
     "x-log-common": logging,
-    name: "${COMPOSE_PROJECT_NAME:-bento}",
+    name: environment.projectName,
     networks: {
       private: {
         driver: "bridge",
-        name: "${COMPOSE_PROJECT_NAME:-bento}_private",
+        name: `${environment.projectName}_private`,
       },
     },
     services: {
-      nginx: {
-        image: "bento/nginx:latest",
-        build: {
-          context: "./docker/nginx",
-          dockerfile: "Dockerfile",
-        },
-        network_mode: "host",
-        restart: "unless-stopped",
-        logging,
-        ulimits: {
-          nofile: {
-            soft: 65535,
-            hard: 65535,
-          },
-        },
-        volumes: [
-          "./generated/nginx/nginx.conf:/etc/nginx/nginx.conf:ro",
-          "./custom/nginx:/etc/nginx/custom:ro",
-          "./generated/nginx/sites:/etc/nginx/sites:ro",
-          // Generated snippets fully replace image defaults (boot-ssl, app-common, per-site ssl).
-          "./generated/nginx/snippets:/etc/nginx/snippets:ro",
-          "./certs:/etc/nginx/certs",
-          // Native Nginx ACME account keys, certificates, and renewal state.
-          "./certs/acme-state:/var/cache/nginx/acme",
-          "./homes:/home:ro",
-          "./runtime/php-fpm:/run/php-fpm:ro",
-          "./logs/nginx:/var/log/nginx",
-        ],
-      },
+      nginx,
       redis: {
         image: "redis:7-alpine",
         restart: "unless-stopped",

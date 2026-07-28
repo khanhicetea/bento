@@ -6,7 +6,7 @@ server {
 
   {{#redirectHttps}}
   location / {
-    return 301 https://$host$request_uri;
+    return 301 https://$host{{httpsPortSuffix}}$request_uri;
   }
   {{/redirectHttps}}
   {{^redirectHttps}}
@@ -83,7 +83,7 @@ server {
   {{/sslCertificate}}
   include {{sslInclude}};
   {{#http3}}
-  add_header Alt-Svc 'h3=":443"; ma=86400' always;
+  add_header Alt-Svc 'h3=":{{httpsAdvertisedPort}}"; ma=86400' always;
   {{/http3}}
 
   root {{docRoot}};

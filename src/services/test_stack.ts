@@ -53,7 +53,7 @@ export type TestStackOptions = {
   keep: boolean;
   /** Skip docker image build (use existing tags). */
   skipBuild: boolean;
-  /** Skip host-network nginx / HTTP checks. */
+  /** Skip bridge-published Nginx / HTTP checks. */
   skipHttp: boolean;
   /** Per-service readiness wait in ms. */
   timeoutMs: number;
@@ -450,6 +450,14 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   const appSlug2 = "other";
   const pgAppSlug = "pgalpha";
   const pgAppSlug2 = "pgbeta";
+  // The harness opts into bridge networking so it never stops or steals ingress
+  // from another Bento stack. Keep the deterministic pair in the unprivileged range.
+  const portSeed = [...opts.name].reduce(
+    (hash, char) => (hash * 31 + char.charCodeAt(0)) % 10_000,
+    0,
+  );
+  const nginxHttpPort = 20_000 + portSeed * 2;
+  const nginxHttpsPort = nginxHttpPort + 1;
   let appDomain = `${opts.name}.test`;
 
   // =========================================================================
@@ -482,7 +490,12 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       state = addPostgresVersion(state, "17");
       await store.save(state);
     }
-    await patchStackEnv(platform, { COMPOSE_PROJECT_NAME: opts.name });
+    await patchStackEnv(platform, {
+      COMPOSE_PROJECT_NAME: opts.name,
+      NGINX_HOST_NETWORK: "0",
+      NGINX_HTTP_PORT: String(nginxHttpPort),
+      NGINX_HTTPS_PORT: String(nginxHttpsPort),
+    });
     for (
       const d of [
         "runtime/php-fpm",
@@ -541,13 +554,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     return { ok: true };
   });
 
-  await record("nginx-ports", "Free host :80/:443 from other compose nginx", async () => {
-    const stopped = await stopForeignHostNginx(opts.name, log);
-    return {
-      ok: true,
-      detail: stopped.length ? `stopped ${stopped.join(", ")}` : "no foreign nginx containers",
-    };
-  });
+  await record("nginx-ports", "Use isolated bridge-mode Nginx ports", async () => ({
+    ok: true,
+    detail: `HTTP ${nginxHttpPort}; HTTPS ${nginxHttpsPort}; no other stack is stopped`,
+  }));
 
   await record("up", "Compose up -d (mysql, redis, php, nginx, runner)", async () => {
     state = await store.load();
@@ -557,11 +567,11 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       if (/address already in use|failed to bind|ports are not available/i.test(combined)) {
         log(
           "warn",
-          "compose up reported port bind issues (likely nginx host network); continuing data-plane checks",
+          "compose up reported a test ingress port conflict; continuing data-plane checks",
         );
         return {
           ok: true,
-          detail: "partial up (host port conflict on nginx — HTTP checks may skip)",
+          detail: "partial up (test ingress port conflict — HTTP checks may skip)",
         };
       }
       return { ok: false, detail: combined.trim().slice(0, 600) };
@@ -1590,7 +1600,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   // =========================================================================
   chain("http-tls-status");
 
-  await record("http", "HTTP front-controller responds via host nginx (shared TLS)", async () => {
+  await record("http", "HTTP front-controller responds via isolated Nginx port", async () => {
     if (opts.skipHttp) {
       return { ok: true, skipped: true, detail: "--skip-http set" };
     }
@@ -1628,7 +1638,6 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return { ok: false, detail: `missing pool socket at ${sockHost}` };
     }
 
-    await stopForeignHostNginx(opts.name, log);
     await composeCmd(platform, state, ["up", "-d", "nginx"], 120_000);
 
     const ngx = await runCapture(
@@ -1680,7 +1689,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         "10",
         "-H",
         `Host: ${domain}`,
-        "http://127.0.0.1/",
+        `http://127.0.0.1:${nginxHttpPort}/`,
       ],
       { timeoutMs: 15_000 },
     );
@@ -1695,7 +1704,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return {
         ok: true,
         skipped: true,
-        detail: `curl failed (nginx host conflict?): ${(curl.stderr || "").trim().slice(0, 200)}`,
+        detail: `curl failed on test port ${nginxHttpPort}: ${
+          (curl.stderr || "").trim().slice(0, 200)
+        }`,
       };
     }
     if (code !== "200") {
@@ -1820,7 +1831,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         return {
           ok: true,
           skipped: true,
-          detail: opts.skipHttp ? "--skip-http set" : "live host nginx check unavailable",
+          detail: opts.skipHttp ? "--skip-http set" : "live Nginx HTTP check unavailable",
         };
       }
 
@@ -1904,7 +1915,7 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
           `X-Hub-Signature-256: sha256=${signature}`,
           "--data-binary",
           "@-",
-          "http://127.0.0.1/_bento/deploy",
+          `http://127.0.0.1:${nginxHttpPort}/_bento/deploy`,
         ],
         { stdin: body, timeoutMs: 20_000 },
       );
@@ -2018,36 +2029,6 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
   }
 
   return finish(opts, steps, startedAt);
-}
-
-/**
- * Stop other compose nginx containers that bind host :80/:443.
- * Nginx uses network_mode:host, so only one project can own those ports.
- */
-async function stopForeignHostNginx(
-  projectName: string,
-  log: TestStackOptions["log"],
-): Promise<string[]> {
-  const stopped: string[] = [];
-  const list = await runCapture(
-    ["docker", "ps", "--format", "{{.Names}}"],
-    { timeoutMs: 15_000 },
-  );
-  if (list.code !== 0) return stopped;
-  const names = list.stdout
-    .split("\n")
-    .map((n) => n.trim())
-    .filter((n) => n.length > 0);
-  const ours = `${projectName}-nginx`;
-  for (const name of names) {
-    if (!/-nginx(?:-\d+)?$/.test(name)) continue;
-    if (name === ours || name.startsWith(`${ours}-`)) continue;
-    log("warn", `stopping foreign host-network nginx container ${name} (frees :80/:443)`);
-    const r = await runCapture(["docker", "stop", name], { timeoutMs: 60_000 });
-    if (r.code === 0) stopped.push(name);
-  }
-  if (stopped.length) await sleep(1000);
-  return stopped;
 }
 
 function finish(

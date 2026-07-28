@@ -14,7 +14,7 @@ Management CLI ---- desired state ----> complete candidate generation
    +---- Compose assembly          validate and atomic promote
                                               |
                                               v
-Internet ---> host-network Nginx ---> per-app PHP-FPM socket
+Internet ---> Nginx (host default / private bridge opt-in) ---> per-app PHP-FPM socket
                     |                         |
                     |                         +---- private backend ---- MySQL/PostgreSQL version services
                     |                         |                       \-- Redis
@@ -75,7 +75,7 @@ The data plane consists of:
 | PostgreSQL | One per managed PostgreSQL major version | Durable relational data for apps assigned to that service |
 | Redis | One | Durable shared cache/queue service, optionally ACL-isolated per app |
 
-Nginx is the only public service. PHP, runners, MySQL, PostgreSQL, and Redis use a private Compose network. Nginx deliberately does not join that network; PHP communication crosses shared Unix-socket mounts.
+Nginx is the only public service. PHP, runners, MySQL, PostgreSQL, and Redis use a stack-private Compose network. Nginx deliberately does not join it in default host-network mode; in opt-in bridge mode Nginx joins the same stack-private network and may publish operator-selected host ports. PHP communication continues to cross shared Unix-socket mounts in either mode.
 
 ### 2.3 Target codebase layering
 
@@ -126,12 +126,16 @@ Use a separate app for each codebase or trust boundary. Use a separate host or s
 
 ### 4.1 Ingress
 
-Nginx uses the host network and binds ports 80 and 443 directly. This design provides straightforward HTTP/3/UDP handling and lets reverse proxies reach host-loopback upstreams. It also means:
+Nginx uses the host network and binds ports 80 and 443 directly by default. This provides straightforward HTTP/3/UDP handling and lets reverse proxies reach host-loopback upstreams. An explicitly named additional stack may set `NGINX_HOST_NETWORK=0`, join only its own private Compose network, and publish distinct HTTP/HTTPS host ports directly or through an operator overlay.
+
+Consequences:
 
 - the production target is Linux;
-- another host web server must not own those ports;
-- a proxy target on `127.0.0.1` means the host, not a Compose container;
-- replacing host networking is an ingress redesign, not a local configuration tweak.
+- only one default host-network stack can own ports 80/443;
+- stack identity is explicit in `COMPOSE_PROJECT_NAME` and never inferred from the stack directory;
+- in host mode, `127.0.0.1` means the host and Compose service discovery is unavailable;
+- in bridge mode, `127.0.0.1` means the Nginx container, stack service discovery is available, and `host.docker.internal` maps to the host gateway;
+- bridge HTTPS publishes matching UDP only when HTTP/3 is enabled.
 
 ### 4.2 PHP request path
 

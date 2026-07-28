@@ -72,7 +72,9 @@ function buildParser(state: RunState) {
     .exitProcess(false)
     .recommendCommands()
     .wrap(Math.min(100, yargs().terminalWidth()))
-    .epilogue("Environment:\n  BENTO_STACK_ROOT     Default stack root (mutable state)")
+    .epilogue(
+      "Environment:\n  BENTO_STACK_ROOT       Default stack root (mutable state)\n  NGINX_HOST_NETWORK     1 (default) for host mode; 0 for stack-private bridge mode\n  NGINX_HTTP_PORT        Optional bridge-mode HTTP host port\n  NGINX_HTTPS_PORT       Optional bridge-mode HTTPS host TCP/UDP port",
+    )
     .fail((msg: string | undefined, err: Error | undefined, failedYargs: Argv) => {
       if (err) throw err;
       if (msg) {

@@ -10,6 +10,7 @@ import {
   runTestStack,
 } from "../../services/test_stack.ts";
 import { runWizard } from "../wizard.ts";
+import { loadStackComposeEnvironment } from "../../services/stack_env.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
 import { bind, printVersion, type RunState, type YargsBuilder } from "../shared.ts";
@@ -35,11 +36,17 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
       "init",
       "Initialize empty desired state",
       (y: YargsBuilder) =>
-        y.option("force", {
-          type: "boolean",
-          default: false,
-          describe: "Overwrite existing state",
-        }),
+        y
+          .option("force", {
+            type: "boolean",
+            default: false,
+            describe: "Overwrite existing state",
+          })
+          .option("name", {
+            type: "string",
+            describe:
+              "Stable stack name used to prefix Docker resources (default: bento; not derived from --stack)",
+          }),
       bind(state, cmdInit),
     )
     .command(
@@ -126,7 +133,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           .option("skip-http", {
             type: "boolean",
             default: false,
-            describe: "Skip host-network nginx HTTP probe",
+            describe: "Skip bridge-published Nginx HTTP probe",
           })
           .option("timeout-sec", {
             type: "number",
@@ -149,8 +156,11 @@ async function cmdTui(_argv: CliArgs, ctx: CliContext): Promise<number> {
 
 async function cmdInit(argv: ArgsWith<"force">, ctx: CliContext): Promise<number> {
   const { force } = argv;
-  const state = await ctx.store.init(force);
-  ctx.log.info(`initialized state at ${ctx.platform.paths.paths.stateFile}`);
+  const state = await ctx.store.init(force, { projectName: argv.name });
+  const environment = await loadStackComposeEnvironment(ctx.platform);
+  ctx.log.info(
+    `initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateFile}`,
+  );
   ctx.log.info(
     `defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,
   );

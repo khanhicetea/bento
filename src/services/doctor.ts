@@ -8,6 +8,7 @@ import { checkPermissions } from "./permissions.ts";
 import { composeArgs } from "./compose.ts";
 import { buildStatus, statusToJson } from "./status.ts";
 import { redact } from "../ui/output.ts";
+import { loadStackComposeEnvironment } from "./stack_env.ts";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export type DoctorCheck = {
@@ -35,6 +36,14 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
   const checks: DoctorCheck[] = [];
   const add = (id: string, category: string, status: DoctorStatus, detail: string) =>
     checks.push({ id, category, status, detail: redact(detail).slice(0, 500) });
+  const composeEnvironment = await loadStackComposeEnvironment(platform);
+  const nginxEnvironment = composeEnvironment.nginx;
+  add(
+    "stack-name",
+    "compose",
+    "pass",
+    `stack name ${composeEnvironment.projectName} (independent from stack directory)`,
+  );
 
   const docker = await run(platform, ["docker", "version", "--format", "{{.Server.Version}}"]);
   if (docker.code !== 0) add("docker-version", "runtime", "fail", "Docker daemon unavailable");
@@ -60,8 +69,34 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     );
   }
 
+  const expectedPorts = nginxEnvironment.hostNetwork
+    ? [80, 443]
+    : [nginxEnvironment.httpPort, nginxEnvironment.httpsPort].filter(
+      (port): port is number => port !== undefined,
+    );
+  add(
+    "nginx-network",
+    "network",
+    "pass",
+    nginxEnvironment.hostNetwork
+      ? "Nginx uses host networking"
+      : expectedPorts.length > 0
+      ? `Nginx uses stack-private network; published TCP ports ${expectedPorts.join(", ")}`
+      : "Nginx uses stack-private network with no base host publications",
+  );
+  if (
+    nginxEnvironment.hostNetwork &&
+    (nginxEnvironment.httpPort !== undefined || nginxEnvironment.httpsPort !== undefined)
+  ) {
+    add(
+      "nginx-host-ports-ignored",
+      "network",
+      "warn",
+      "NGINX_HTTP_PORT/NGINX_HTTPS_PORT are ignored in host-network mode",
+    );
+  }
   const ports = await run(platform, ["ss", "-H", "-ltn"]);
-  for (const port of [80, 443]) {
+  for (const port of expectedPorts) {
     if (ports.code !== 0) {
       add(`port-${port}`, "network", "warn", "cannot inspect listening TCP ports (ss unavailable)");
     } else {
@@ -75,6 +110,18 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
         listening ? `TCP ${port} is listening` : `TCP ${port} is not listening`,
       );
     }
+  }
+  const hasAcme = Object.values(state.apps).some((app) => app.tls.kind === "acme") ||
+    Object.values(state.proxies).some((proxy) => proxy.tls.kind === "acme");
+  if (
+    hasAcme && !nginxEnvironment.hostNetwork && nginxEnvironment.httpPort !== 80
+  ) {
+    add(
+      "acme-http-port",
+      "tls",
+      "warn",
+      "ACME HTTP-01 requires public port 80 to forward to this stack's Nginx port 80",
+    );
   }
 
   await addFilesystemChecks(platform, add);
@@ -291,11 +338,7 @@ async function addPermissionChecks(platform: Platform, state: DesiredState, add:
 }
 
 async function addVolumeChecks(platform: Platform, state: DesiredState, add: AddCheck) {
-  let project = "bento";
-  if (await platform.fs.exists(platform.paths.paths.envFile)) {
-    const env = await platform.fs.readText(platform.paths.paths.envFile);
-    project = env.match(/^COMPOSE_PROJECT_NAME=(.+)$/m)?.[1]?.trim() || project;
-  }
+  const project = (await loadStackComposeEnvironment(platform)).projectName;
   const volumes = [
     "redis-data",
     ...state.databaseServices.map((database) => database.volume),

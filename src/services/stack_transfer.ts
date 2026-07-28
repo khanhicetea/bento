@@ -3,7 +3,7 @@ import type { DesiredState } from "../domain/state.ts";
 import { conflictError, platformError, safetyError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { composeArgs } from "./compose.ts";
-import { loadStackEnv } from "./stack_env.ts";
+import { loadStackEnv, updateStackEnv, validateComposeProjectName } from "./stack_env.ts";
 
 export const STACK_ARCHIVE = "stack.tar.gz";
 export const REDIS_ARCHIVE = "redis-data.tar.gz";
@@ -17,6 +17,15 @@ export type StackExportResult = {
 export type StackImportResult = {
   directory: string;
   volumes: string[];
+};
+
+export type StackImportOptions = {
+  projectName?: string;
+  nginxHostNetwork?: boolean;
+  /** Undefined preserves the archive; null clears the publication. */
+  httpPort?: number | null;
+  /** Undefined preserves the archive; null clears the publication. */
+  httpsPort?: number | null;
 };
 
 export type DatabaseTransferVolume = {
@@ -40,11 +49,13 @@ export type StackTransferVolumes = {
 };
 
 export function composeProjectName(env: Record<string, string>): string {
-  const project = env.COMPOSE_PROJECT_NAME?.trim() || "bento";
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(project)) {
-    throw validationError(`invalid COMPOSE_PROJECT_NAME for volume transfer: ${project}`);
+  try {
+    return validateComposeProjectName(env.COMPOSE_PROJECT_NAME?.trim() || "bento");
+  } catch {
+    throw validationError(
+      `invalid COMPOSE_PROJECT_NAME for volume transfer: ${env.COMPOSE_PROJECT_NAME ?? "bento"}`,
+    );
   }
-  return project;
 }
 
 export function volumeArchiveName(logicalVolume: string): string {
@@ -192,7 +203,22 @@ export async function exportStack(
 export async function importStack(
   platform: Platform,
   source: string,
+  options: StackImportOptions = {},
 ): Promise<StackImportResult> {
+  if (options.projectName !== undefined) validateComposeProjectName(options.projectName);
+  for (
+    const [name, port] of [["httpPort", options.httpPort], [
+      "httpsPort",
+      options.httpsPort,
+    ]] as const
+  ) {
+    if (
+      port !== undefined && port !== null &&
+      (!Number.isInteger(port) || port < 1 || port > 65535)
+    ) {
+      throw validationError(`${name} must be between 1 and 65535`);
+    }
+  }
   const input = resolve(source);
   const root = resolve(platform.paths.paths.root);
   assertSeparatePath(root, input, "import directory must be outside the destination stack root");
@@ -221,6 +247,20 @@ export async function importStack(
   // Validate imported desired state and derive volume identities from imported .env.
   const { StateStore } = await import("./state_store.ts");
   const state = await new StateStore(platform).load();
+  const envUpdates: Record<string, string> = {};
+  if (options.projectName !== undefined) {
+    envUpdates.COMPOSE_PROJECT_NAME = validateComposeProjectName(options.projectName);
+  }
+  if (options.nginxHostNetwork !== undefined) {
+    envUpdates.NGINX_HOST_NETWORK = options.nginxHostNetwork ? "1" : "0";
+  }
+  if (options.httpPort !== undefined) {
+    envUpdates.NGINX_HTTP_PORT = options.httpPort === null ? "" : String(options.httpPort);
+  }
+  if (options.httpsPort !== undefined) {
+    envUpdates.NGINX_HTTPS_PORT = options.httpsPort === null ? "" : String(options.httpsPort);
+  }
+  if (Object.keys(envUpdates).length > 0) await updateStackEnv(platform, envUpdates);
   const project = composeProjectName(await loadStackEnv(platform));
   const volumes = stackVolumeNames(state, project);
   const allVolumes = [...volumes.databases, volumes.redis];

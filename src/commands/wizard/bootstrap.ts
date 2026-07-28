@@ -2,6 +2,10 @@ import { describeReloadPlan } from "../../domain/reload.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
 import { ensureState, handleError } from "./shared.ts";
+import {
+  DEFAULT_COMPOSE_PROJECT_NAME,
+  loadStackComposeEnvironment,
+} from "../../services/stack_env.ts";
 
 export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Bootstrap", ctx.stackRoot);
@@ -19,11 +23,21 @@ export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<v
 
   if (action === "init") {
     const force = await ui.confirm("Overwrite existing state if present?", { defaultYes: false });
+    let defaultName = DEFAULT_COMPOSE_PROJECT_NAME;
+    if (await ctx.platform.fs.exists(ctx.platform.paths.paths.envFile)) {
+      try {
+        defaultName = (await loadStackComposeEnvironment(ctx.platform)).projectName;
+      } catch {
+        // Let init report malformed existing configuration.
+      }
+    }
+    const name = await ui.prompt("Stable stack name", { default: defaultName, required: true });
+    if (!name) return;
     try {
-      const state = await ctx.store.init(force);
+      const state = await ctx.store.init(force, { projectName: name });
       ui.success(
         "Initialized",
-        `state=${ctx.platform.paths.paths.stateFile}\nphp=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,
+        `name=${name}\nstate=${ctx.platform.paths.paths.stateFile}\nphp=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,
       );
     } catch (err) {
       handleError(ui, err);

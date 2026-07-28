@@ -8,6 +8,7 @@ import type { Platform } from "../platform/mod.ts";
 import { capacityWarnings } from "./app.ts";
 import { FPM_PROFILES } from "../domain/types.ts";
 import { resolveComposeFiles } from "./compose.ts";
+import { loadStackComposeEnvironment } from "./stack_env.ts";
 
 export type RoleStatus = {
   name: string;
@@ -19,6 +20,13 @@ export type RoleStatus = {
 
 export type StatusReport = {
   stackRoot: string;
+  stackName: string;
+  ingress: {
+    mode: "host" | "bridge";
+    httpPort?: number;
+    httpsPort?: number;
+    http3: boolean;
+  };
   defaults: {
     phpVersion: string;
     databaseEngine: "mysql" | "postgres";
@@ -90,6 +98,20 @@ export async function buildStatus(
 ): Promise<StatusReport> {
   const warnings = capacityWarnings(state);
   const notes: string[] = [];
+  const composeEnvironment = await loadStackComposeEnvironment(platform);
+  const nginxEnvironment = composeEnvironment.nginx;
+  if (
+    nginxEnvironment.hostNetwork &&
+    (nginxEnvironment.httpPort !== undefined || nginxEnvironment.httpsPort !== undefined)
+  ) {
+    warnings.push("Nginx bridge-mode port settings are ignored while host networking is active");
+  }
+  if (
+    !nginxEnvironment.hostNetwork && nginxEnvironment.httpPort === undefined &&
+    nginxEnvironment.httpsPort === undefined
+  ) {
+    notes.push("Nginx uses the private stack network and has no host ports published");
+  }
 
   const phpVersions = state.phpVersions.map((v) => {
     const apps = Object.values(state.apps).filter((a) => a.enabled && a.phpVersion === v.version);
@@ -155,6 +177,15 @@ export async function buildStatus(
 
   return {
     stackRoot: platform.paths.paths.root,
+    stackName: composeEnvironment.projectName,
+    ingress: {
+      mode: nginxEnvironment.hostNetwork ? "host" : "bridge",
+      ...(nginxEnvironment.httpPort !== undefined ? { httpPort: nginxEnvironment.httpPort } : {}),
+      ...(nginxEnvironment.httpsPort !== undefined
+        ? { httpsPort: nginxEnvironment.httpsPort }
+        : {}),
+      http3: nginxEnvironment.http3,
+    },
     defaults: {
       phpVersion: state.defaults.phpVersion,
       databaseEngine: state.defaults.database.engine,
@@ -341,7 +372,13 @@ async function observeRunningServices(platform: Platform): Promise<Set<string> |
 export function formatStatus(report: StatusReport): string {
   const lines: string[] = [];
   lines.push(`Bento status`);
-  lines.push(`  stack: ${report.stackRoot}`);
+  lines.push(`  stack: ${report.stackName} (${report.stackRoot})`);
+  const ingressDetail = report.ingress.mode === "host"
+    ? "direct host :80/:443"
+    : `http=${report.ingress.httpPort ?? "internal-only"}, https=${
+      report.ingress.httpsPort ?? "internal-only"
+    }${report.ingress.http3 && report.ingress.httpsPort ? ", HTTP/3 UDP published" : ""}`;
+  lines.push(`  ingress: ${report.ingress.mode} (${ingressDetail})`);
   if (report.generation?.renderedAt) {
     lines.push(
       `  generation: ${report.generation.renderedAt} (assets ${

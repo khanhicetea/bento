@@ -4,14 +4,16 @@ x-log-common: &log-common
   options:
     max-size: 10m
     max-file: "3"
-name: bento
+name: "${COMPOSE_PROJECT_NAME:-bento}"
 networks:
   private:
     driver: bridge
-    name: bento_private
+    name: "${COMPOSE_PROJECT_NAME:-bento}_private"
 services:
   nginx:
     image: bento/nginx:latest
+    # Runtime generation selects host mode (default) or the stack-private network
+    # from NGINX_HOST_NETWORK. This reference shows the default.
     network_mode: host
     restart: unless-stopped
     logging: *log-common

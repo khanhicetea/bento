@@ -11,7 +11,16 @@ import { loadStateFromJson, migrateV1ToV2, stateToJson } from "../schemas/state.
 import type { Platform } from "../platform/mod.ts";
 import { safetyError, stateError } from "../domain/errors.ts";
 import { STATE_SCHEMA_VERSION } from "../version.ts";
-import { parseDotEnv } from "./stack_env.ts";
+import {
+  DEFAULT_COMPOSE_PROJECT_NAME,
+  parseDotEnv,
+  validateComposeProjectName,
+} from "./stack_env.ts";
+
+export type StackInitOptions = {
+  /** Stable stack identity; deliberately independent from the stack directory. */
+  projectName?: string;
+};
 
 export class StateStore {
   constructor(private readonly platform: Platform) {}
@@ -46,8 +55,21 @@ export class StateStore {
   }
 
   /** Initialize empty state if missing; refuse to overwrite. */
-  async init(force = false): Promise<DesiredState> {
+  async init(force = false, options: StackInitOptions = {}): Promise<DesiredState> {
     const path = this.platform.paths.paths.stateFile;
+    let requestedProject = options.projectName;
+    if (
+      requestedProject === undefined &&
+      await this.platform.fs.exists(this.platform.paths.paths.envFile)
+    ) {
+      const existingEnv = parseDotEnv(
+        await this.platform.fs.readText(this.platform.paths.paths.envFile),
+      );
+      requestedProject = existingEnv.COMPOSE_PROJECT_NAME?.trim() || undefined;
+    }
+    const projectName = validateComposeProjectName(
+      requestedProject ?? DEFAULT_COMPOSE_PROJECT_NAME,
+    );
     if (await this.platform.fs.exists(path) && !force) {
       throw stateError(`state already exists at ${path}`, {
         recovery: "Use --force only if you intentionally want to reset desired state.",
@@ -65,12 +87,16 @@ export class StateStore {
     await this.save(state);
     // Seed stack secrets once. Reconciliation fills missing/empty secrets while
     // preserving every existing non-empty value byte-for-byte.
-    await this.reconcileStackEnv();
+    await this.reconcileStackEnv(projectName, options.projectName !== undefined);
     return state;
   }
 
-  /** Add missing stack secrets without replacing any existing non-empty value. */
-  async reconcileStackEnv(): Promise<void> {
+  /** Add missing stack settings/secrets without replacing existing non-empty values. */
+  async reconcileStackEnv(
+    projectName = DEFAULT_COMPOSE_PROJECT_NAME,
+    initializeTopology = false,
+  ): Promise<void> {
+    projectName = validateComposeProjectName(projectName);
     const envPath = this.platform.paths.paths.envFile;
     if (!(await this.platform.fs.exists(envPath))) {
       await this.platform.fs.atomicWriteText(
@@ -79,7 +105,7 @@ export class StateStore {
           mysqlRootPassword: this.platform.random.hex(24),
           postgresRootPassword: this.platform.random.hex(24),
           redisPassword: this.platform.random.hex(24),
-          projectName: "bento",
+          projectName,
         }),
         0o600,
       );
@@ -88,6 +114,13 @@ export class StateStore {
 
     const existing = await this.platform.fs.readText(envPath);
     const env = parseDotEnv(existing);
+    const configuredProject = env.COMPOSE_PROJECT_NAME?.trim();
+    if (configuredProject && configuredProject !== projectName) {
+      throw safetyError(
+        `stack is already named '${configuredProject}', refusing to rename it to '${projectName}'`,
+        "Stack names prefix Docker volumes and are immutable after initialization. Use the existing name or import into a new stack with --name.",
+      );
+    }
     const missing: string[] = [];
     if (!env.MYSQL_ROOT_PASSWORD) {
       missing.push(`MYSQL_ROOT_PASSWORD=${this.platform.random.hex(24)}`);
@@ -97,6 +130,12 @@ export class StateStore {
     }
     if (!env.REDIS_PASSWORD) {
       missing.push(`REDIS_PASSWORD=${this.platform.random.hex(24)}`);
+    }
+    if (initializeTopology) {
+      if (!configuredProject) missing.push(`COMPOSE_PROJECT_NAME=${projectName}`);
+      if (env.NGINX_HOST_NETWORK === undefined) missing.push("NGINX_HOST_NETWORK=1");
+      if (env.NGINX_HTTP_PORT === undefined) missing.push("NGINX_HTTP_PORT=");
+      if (env.NGINX_HTTPS_PORT === undefined) missing.push("NGINX_HTTPS_PORT=");
     }
     if (missing.length === 0) return;
 
@@ -201,6 +240,12 @@ function defaultEnvContent(opts: {
     "ACME_URL=https://acme-v02.api.letsencrypt.org/directory",
     "# Enable HTTP/3/QUIC listeners and Alt-Svc headers in generated Nginx vhosts.",
     "HTTP3=false",
+    "# Host networking is the default. Set to 0 for a stack-private Nginx network.",
+    "NGINX_HOST_NETWORK=1",
+    "# Bridge-mode host publications; blank means internal-only (overlays may publish instead).",
+    "NGINX_HTTP_PORT=",
+    "NGINX_HTTPS_PORT=",
+    "# Stable stack name used to prefix Compose containers, networks, and volumes.",
     `COMPOSE_PROJECT_NAME=${opts.projectName}`,
     "",
   ].join("\n");

@@ -7,7 +7,7 @@ Bento is a self-hosted operations layer for running multiple isolated PHP applic
 This repository is a **Deno 2.9 / TypeScript** reimplementation of the Bento host control plane. It preserves the product model described in [`specs/`](specs/):
 
 - one operator-owned Linux host
-- host-network Nginx as the only public service
+- Nginx as the only public service: host network by default, stack-private bridge mode as a multi-stack opt-in
 - per-app Linux identity, home, PHP-FPM pool, and Unix socket
 - version-shared PHP FPM / singleton runner / ephemeral CLI roles
 - private MySQL and PostgreSQL services (per managed version) plus Redis, with one engine/service binding per app
@@ -42,7 +42,7 @@ deno task test:integration   # soft-skips Docker-only steps when daemon is down
 deno task test:stack         # real Docker stack harness (default name: testbento)
 
 # initialize a stack root and render
-deno task run --stack ./my-stack init
+deno task run --stack ./my-stack init --name my-stack
 deno task run --stack ./my-stack render
 deno task run --stack ./my-stack status
 
@@ -67,7 +67,23 @@ deno task run --stack ./my-stack app create reports \
 deno task run --stack ./my-stack apply
 ```
 
-Stack roots are **external** mutable state (desired state, homes, certs, backups, generated output). Immutable templates ship with the repository or compiled binary.
+Stack roots are **external** mutable state (desired state, homes, certs, backups, generated output). Immutable templates ship with the repository or compiled binary. The stable stack name is explicit and is not derived from the stack directory; it becomes `COMPOSE_PROJECT_NAME` and prefixes Compose containers, networks, and named volumes. `bento` remains the compatible default when `--name` is omitted.
+
+### Multiple stacks and Nginx ports
+
+Nginx uses host networking by default (`NGINX_HOST_NETWORK=1`), preserving direct host ports 80/443 and HTTP/3 behavior. Because only one host-network process can own those ports, additional stacks should opt into the stack-private bridge network and select distinct publications:
+
+```bash
+bento --stack /srv/bento/customer-b init --name customer-b
+bento --stack /srv/bento/customer-b stack ingress set bridge \
+  --http-port 8080 --https-port 8443
+bento --stack /srv/bento/customer-b compose -- up -d --build
+
+# Inspect effective settings
+bento --stack /srv/bento/customer-b stack ingress show
+```
+
+Bridge mode keeps Nginx on that stack's private network. Blank `NGINX_HTTP_PORT` / `NGINX_HTTPS_PORT` values mean internal-only; advanced operators may instead publish addresses or ports in an operator-owned `overlays/*.yml` file. HTTPS publishes TCP and, when `HTTP3=true`, UDP on the selected port. `host.docker.internal` maps to the host gateway in bridge mode; `127.0.0.1` means the Nginx container itself.
 
 ## Compile and distribution parity
 
@@ -81,7 +97,7 @@ deno task compile:arm64    # Linux aarch64 (release)
 The compiled `bento` executable needs no Deno/Python/Node on the target host. Immutable templates are embedded with `--include=templates` and materialize into a digest-addressed cache under the stack root (`.asset-cache/<digest>/`) before publishing stable Compose paths (`docker/`, `helpers/`). Mutable operator state always lives under an explicit external stack root — never next to the binary.
 
 ```bash
-./dist/bento --stack /var/lib/bento init
+./dist/bento --stack /var/lib/bento init --name production
 ./dist/bento --stack /var/lib/bento render
 ./dist/bento --stack /var/lib/bento status
 ./dist/bento version   # reports bento version + pinned Deno target (2.9.x)
@@ -118,9 +134,9 @@ Operator CLI (Deno/TS)
    -> complete candidate generation
    -> lock / stage / promote / validate / reload
 
-Internet -> host-network Nginx -> per-app PHP-FPM sockets
-                                 -> private MySQL / PostgreSQL services
-                                 -> private Redis
+Internet -> Nginx (host default / bridge opt-in) -> per-app PHP-FPM sockets
+                                                   -> private MySQL / PostgreSQL services
+                                                   -> private Redis
 
 PHP runner (one per version) -> s6-overlay PID 1 -> per-app Supercronic + flat s6 workers
                              -> local deploy drain -> hook -> app FPM OPcache reset
@@ -147,8 +163,8 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal (TUI: Applications → Access logs)                                                                                                              |
 | Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]` — ephemeral PHP CLI as app UID (TUI: Applications → Open CLI shell)                                                                                                                                                 |
 | Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
-| Portability  | `stack export <directory>`, `stack import <directory>` — CLI-only full stack + raw MySQL/PostgreSQL/Redis volume transfer                                                                                                                                                 |
-| Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                            |
+| Stack        | `stack ingress show`, `stack ingress set host\|bridge [--http-port N --https-port N]`; `stack export <directory>`, `stack import <directory> [--name NAME --ingress-mode bridge --http-port N --https-port N]`                                                 |
+| Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                             |
 
 PostgreSQL is a first-class alternative to MySQL. Managed private services can be added and listed with `postgres add <major>` / `postgres list`, apps select one with `--database-engine postgres --postgres <major-or-service>`, and routine administration is available through `postgres db|shell|size|processlist`. Top-level `backup` and `restore` infer the selected app's engine, including mixed-engine `backup --all`, portable PostgreSQL dumps, and guarded restore-to-new or replacement. State schema v2 is engine-aware while keeping MySQL 8.4 as the default. Existing schema v1 stacks are never rewritten during routine reads; migrate one deliberately with `bento state migrate --confirm migrate-v1-to-v2`. Bento validates the complete v2 document, writes a mode-`0600` v1 backup beside `state.json`, then atomically replaces the state file. Each app belongs to exactly one MySQL or PostgreSQL service. Automatic cross-engine migration and managed database service/volume removal are unsupported. PostgreSQL uses official major tags such as `17` (`postgres17`). See [`specs/pg-database.md`](specs/pg-database.md).
 
@@ -181,7 +197,12 @@ MySQL uses matching `mysqldump`; PostgreSQL uses matching-major `pg_dump --no-ow
 
 ### Full stack export and import
 
-The stack transfer commands are intentionally CLI-only. The stack identity comes from the global `--stack` path and `COMPOSE_PROJECT_NAME` in the stack `.env`; there is no separate stack-name positional argument.
+The stack transfer commands are intentionally CLI-only. Stack identity comes from the explicit `COMPOSE_PROJECT_NAME` in the stack `.env`, independently from the global `--stack` path. A same-machine clone should override both identity and ingress before import starts the stack:
+
+```bash
+bento --stack /srv/bento/clone stack import /srv/exports/bento-2026-07-21 \
+  --name clone --ingress-mode bridge --http-port 18080 --https-port 18443
+```
 
 ```bash
 # Source host: destination must be empty and outside the stack root.
@@ -316,7 +337,7 @@ Edit these files directly, then run `bento apply` to validate and reload Nginx. 
 - Only Nginx is public in the base topology.
 - Database and webhook secrets are not printed in ordinary status output.
 - MySQL and PostgreSQL administrator passwords are generated once when `init` first creates the stack `.env`; each app database password is generated once during initial provisioning.
-- Set `HTTP3=true` in the stack `.env` and render to enable HTTP/3/QUIC listeners and `Alt-Svc` headers; it is disabled by default.
+- Set `HTTP3=true` in the stack `.env` and render to enable HTTP/3/QUIC listeners and `Alt-Svc` headers; it is disabled by default. Bridge-mode HTTPS publication includes matching UDP when enabled.
 - Bento does not rotate MySQL/PostgreSQL app passwords or reset existing account passwords during reconciliation. Operators must coordinate any password change manually across the database, Bento state/credentials, and dependent applications.
 - Database administrator and app passwords are not passed on host process argv for admin SQL.
 - Deploy HMAC secrets live in desired state / FastCGI params, not app-writable secret files.

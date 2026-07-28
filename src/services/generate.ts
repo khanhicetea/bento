@@ -15,6 +15,7 @@ import {
   loadHttp3Enabled,
   loadMysqlRootPassword,
   loadPostgresRootPassword,
+  loadStackComposeEnvironment,
 } from "./stack_env.ts";
 import {
   renderAcmeIssuer,
@@ -31,8 +32,9 @@ export async function generateAll(
 ): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = [];
 
-  // Compose assembly
-  const composeFiles = assembleComposeDocuments(platform, state);
+  // Compose assembly (stack name and ingress topology come from operator-owned .env).
+  const composeEnvironment = await loadStackComposeEnvironment(platform);
+  const composeFiles = assembleComposeDocuments(platform, state, composeEnvironment);
   for (const f of composeFiles) files.push(f);
 
   // Nginx core + sites
@@ -83,6 +85,11 @@ async function generateNginx(
 ): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = [];
   const http3 = await loadHttp3Enabled(platform);
+  const composeEnvironment = await loadStackComposeEnvironment(platform);
+  const publishedHttpsPort = composeEnvironment.nginx.hostNetwork
+    ? 443
+    : composeEnvironment.nginx.httpsPort ?? 443;
+  const httpsPortSuffix = publishedHttpsPort === 443 ? "" : `:${publishedHttpsPort}`;
   let mainTpl: string;
   try {
     mainTpl = await platform.assets.readText("nginx/nginx.conf.tpl");
@@ -146,10 +153,29 @@ index index.php index.html;
   });
 
   for (const app of Object.values(state.apps)) {
-    if (app.enabled) files.push(...await generateAppVhost(platform, state, app, http3));
+    if (app.enabled) {
+      files.push(
+        ...await generateAppVhost(
+          platform,
+          state,
+          app,
+          http3,
+          httpsPortSuffix,
+          publishedHttpsPort,
+        ),
+      );
+    }
   }
   for (const proxy of Object.values(state.proxies)) {
-    files.push(...await generateProxyVhost(platform, proxy, http3));
+    files.push(
+      ...await generateProxyVhost(
+        platform,
+        proxy,
+        http3,
+        httpsPortSuffix,
+        publishedHttpsPort,
+      ),
+    );
   }
 
   return files;
@@ -160,6 +186,8 @@ async function generateAppVhost(
   _state: DesiredState,
   app: AppState,
   http3: boolean,
+  httpsPortSuffix: string,
+  httpsAdvertisedPort: number,
 ): Promise<GeneratedFile[]> {
   let tpl: string;
   if (app.vhostTemplate.kind === "custom") {
@@ -193,6 +221,8 @@ async function generateAppVhost(
     tlsKind: app.tls.kind,
     realTls: app.tls.kind !== "shared",
     redirectHttps: ssl.redirectHttps,
+    httpsPortSuffix,
+    httpsAdvertisedPort,
     sslInclude: ssl.includePath,
     sslCertificate: ssl.certificatePath,
     sslCertificateKey: ssl.certificateKeyPath,
@@ -225,6 +255,8 @@ async function generateProxyVhost(
   platform: Platform,
   proxy: ProxySite,
   http3: boolean,
+  httpsPortSuffix: string,
+  httpsAdvertisedPort: number,
 ): Promise<GeneratedFile[]> {
   const tpl = await readOrDefault(
     platform,
@@ -246,6 +278,8 @@ async function generateProxyVhost(
     tlsKind: proxy.tls.kind,
     realTls: proxy.tls.kind !== "shared",
     redirectHttps: ssl.redirectHttps,
+    httpsPortSuffix,
+    httpsAdvertisedPort,
     sslInclude: ssl.includePath,
     sslCertificate: ssl.certificatePath,
     sslCertificateKey: ssl.certificateKeyPath,
@@ -703,7 +737,7 @@ server {
 
   {{#redirectHttps}}
   location / {
-    return 301 https://$host$request_uri;
+    return 301 https://$host{{httpsPortSuffix}}$request_uri;
   }
   {{/redirectHttps}}
   {{^redirectHttps}}
@@ -776,7 +810,7 @@ server {
   {{/sslCertificate}}
   include {{sslInclude}};
   {{#http3}}
-  add_header Alt-Svc 'h3=":443"; ma=86400' always;
+  add_header Alt-Svc 'h3=":{{httpsAdvertisedPort}}"; ma=86400' always;
   {{/http3}}
 
   root {{docRoot}};
@@ -846,7 +880,7 @@ server {
   server_name {{serverNames}};
   {{#redirectHttps}}
   location / {
-    return 301 https://$host$request_uri;
+    return 301 https://$host{{httpsPortSuffix}}$request_uri;
   }
   {{/redirectHttps}}
   {{^redirectHttps}}
@@ -894,7 +928,7 @@ server {
   {{/sslCertificate}}
   include {{sslInclude}};
   {{#http3}}
-  add_header Alt-Svc 'h3=":443"; ma=86400' always;
+  add_header Alt-Svc 'h3=":{{httpsAdvertisedPort}}"; ma=86400' always;
   {{/http3}}
   {{#accessLog}}
   access_log {{accessLogPath}} bento_access_log;

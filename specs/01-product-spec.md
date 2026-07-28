@@ -101,9 +101,9 @@ First-class app deletion is outside the current product contract. A replacement 
 
 ### 6.3 Ingress, domains, TLS, and reverse proxies
 
-Bento must provide a single public Nginx ingress that:
+Bento must provide a single Nginx ingress per stack that:
 
-- binds host HTTP and HTTPS directly, including UDP support for HTTP/3;
+- uses direct host HTTP/HTTPS networking by default, including UDP support for HTTP/3, while allowing an explicitly named additional stack to opt into its private Compose network and publish distinct host ports;
 - serves all app domains and proxy domains;
 - reaches PHP-FPM through per-app Unix sockets;
 - starts safely before production certificates exist by using a shared self-signed certificate;
@@ -116,7 +116,7 @@ Bento must provide a single public Nginx ingress that:
 
 The operator must also be able to create a reverse-proxy site for a host-reachable upstream. Proxy sites participate in the same global domain and TLS model as PHP apps.
 
-Because ingress uses the host network, a loopback proxy target means the host namespace. Compose service-name discovery is not available to Nginx unless the service is separately made reachable.
+In default host-network mode, a loopback proxy target means the host namespace and Compose service-name discovery is unavailable to Nginx. In opt-in bridge mode, Nginx joins only its own stack-private network, Compose service discovery is available there, `127.0.0.1` means the Nginx container, and host services should use the explicit host-gateway name.
 
 ### 6.4 Versioned PHP runtime and capacity
 
