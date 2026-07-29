@@ -92,7 +92,7 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
         await recordVerification(ctx, slug);
         ui.success(`Full restore verification succeeded for ${slug}`, detail || undefined);
       } else {
-        const defaultOutput = join(ctx.stackRoot, "backups", `${slug}-s3-export.sqlite`);
+        const defaultOutput = join(ctx.stackRoot, "backups", "sqlite", `${slug}-s3-export.sqlite`);
         const output = await ui.prompt("New database file", {
           default: defaultOutput,
           required: true,
