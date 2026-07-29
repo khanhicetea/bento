@@ -123,7 +123,7 @@ export async function enableSqliteBackup(
     provider: "litestream",
     destination: "primary-s3",
     syncInterval: rpo,
-    snapshotInterval: "1h",
+    snapshotInterval: "6h",
     snapshotRetention: retention,
     l0Retention: "24h",
     enabled: true,

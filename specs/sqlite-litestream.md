@@ -69,13 +69,13 @@ socket:
   permissions: 0600
 
 snapshot:
-  interval: 1h
+  interval: 6h
   retention: 168h
 
 l0-retention: 24h
 validation:
-  interval: 6h
-verify-compaction: true
+  interval: 24h
+verify-compaction: false
 shutdown-sync-timeout: 30s
 
 dbs:
@@ -84,8 +84,8 @@ dbs:
     recursive: true
     watch: true
     meta-dir: /var/lib/litestream
-    monitor-interval: 1s
-    checkpoint-interval: 1m
+    monitor-interval: 10s
+    checkpoint-interval: 5m
     busy-timeout: 5s
     replica:
       sync-interval: 60s

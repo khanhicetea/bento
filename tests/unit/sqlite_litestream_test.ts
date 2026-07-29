@@ -54,7 +54,7 @@ Deno.test("stack SQLite backup renders one constrained-root directory watcher", 
     provider: "litestream",
     destination: "primary-s3",
     syncInterval: "60s",
-    snapshotInterval: "1h",
+    snapshotInterval: "6h",
     snapshotRetention: "168h",
     l0Retention: "24h",
     enabled: true,
@@ -68,6 +68,12 @@ Deno.test("stack SQLite backup renders one constrained-root directory watcher", 
   assertStringIncludes(configs[0]!.content, "recursive: true");
   assertStringIncludes(configs[0]!.content, "watch: true");
   assertStringIncludes(configs[0]!.content, "meta-dir: /var/lib/litestream");
+  assertStringIncludes(configs[0]!.content, "interval: 6h");
+  assertStringIncludes(configs[0]!.content, "retention: 168h");
+  assertStringIncludes(configs[0]!.content, "validation:\n  interval: 24h");
+  assertStringIncludes(configs[0]!.content, "verify-compaction: false");
+  assertStringIncludes(configs[0]!.content, "monitor-interval: 10s");
+  assertStringIncludes(configs[0]!.content, "checkpoint-interval: 5m");
   assertStringIncludes(configs[0]!.content, "sync-interval: 60s");
   assert(!configs[0]!.content.includes("- path: /sqlite/"));
   assertEquals(configs[0]!.relPath, "litestream/litestream.yml");
@@ -128,7 +134,7 @@ Deno.test("render regenerates the Litestream environment after stack .env change
       provider: "litestream",
       destination: "primary-s3",
       syncInterval: "60s",
-      snapshotInterval: "1h",
+      snapshotInterval: "6h",
       snapshotRetention: "168h",
       l0Retention: "24h",
       enabled: true,
@@ -195,7 +201,7 @@ Deno.test("SQLite S3 export restores with integrity checking and refuses overwri
       provider: "litestream",
       destination: "primary-s3",
       syncInterval: "60s",
-      snapshotInterval: "1h",
+      snapshotInterval: "6h",
       snapshotRetention: "168h",
       l0Retention: "24h",
       enabled: true,
@@ -228,7 +234,7 @@ Deno.test("stack watcher remains rendered after the last SQLite app leaves state
     provider: "litestream",
     destination: "primary-s3",
     syncInterval: "60s",
-    snapshotInterval: "1h",
+    snapshotInterval: "6h",
     snapshotRetention: "168h",
     l0Retention: "24h",
     enabled: true,
