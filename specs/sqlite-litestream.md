@@ -10,9 +10,9 @@ Scope: provide first-class app SQLite files and stack-wide continuous S3-compati
 
 Bento uses one dedicated Litestream container per stack:
 
-1. Every SQLite app stores one file at `sqlite/<immutable-file-id>/database.sqlite`.
+1. Every SQLite app stores one file at `sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite`.
 2. `BENTO_LITESTREAM_ENABLED=true` permits one stack-wide backup policy.
-3. Litestream watches `/sqlite` recursively for files whose basename is `database.sqlite`.
+3. Litestream watches `/sqlite` recursively for files matching `*.sqlite`.
 4. Every matching valid SQLite database is backed up. Backup is not a per-app opt-in.
 5. The container runs as root with all capabilities dropped except `DAC_OVERRIDE`, `CHOWN`, and `FOWNER`.
 6. Bento uses ordinary ownership and modes, not a shared backup UID or POSIX ACLs.
@@ -35,16 +35,16 @@ Litestream v0.5.15 supports `dir`, `pattern`, `recursive`, `watch`, and `meta-di
 For Bento:
 
 ```text
-/sqlite/sqlite_abc/database.sqlite
+/sqlite/demo_a1b2c3d4e5/demo.sqlite
 ```
 
 maps beneath the stack replica root as:
 
 ```text
-bento/<stack>/sqlite_abc/database.sqlite/
+bento/<stack>/demo_a1b2c3d4e5/demo.sqlite/
 ```
 
-The immutable random file ID prevents app slug reuse from joining old history. Exactly one watcher process must write each stack replica root.
+The immutable file ID combines a readable app slug with a random suffix, preventing app slug reuse from joining old history. Exactly one watcher process must write each stack replica root.
 
 Directory mode replaces:
 
@@ -80,7 +80,7 @@ shutdown-sync-timeout: 30s
 
 dbs:
   - dir: /sqlite
-    pattern: "database.sqlite"
+    pattern: "*.sqlite"
     recursive: true
     watch: true
     meta-dir: /var/lib/litestream
@@ -111,7 +111,7 @@ services:
     security_opt: [no-new-privileges:true]
     stop_grace_period: 45s
     networks: [backup-egress]
-    env_file: [./secrets/litestream/stack-s3.env]
+    env_file: [./generated/secrets/litestream/stack-s3.env]
     volumes:
       - ./sqlite:/sqlite
       - ./litestream-meta:/var/lib/litestream
@@ -145,7 +145,7 @@ type SqliteBackupPolicy = {
 };
 ```
 
-An app SQLite binding contains only the immutable local file identity and its latest restore-verification timestamp. S3 credentials remain in `secrets/litestream/stack-s3.env`, not desired state.
+An app SQLite binding contains only the immutable local file identity and its latest restore-verification timestamp. S3 credentials are derived from the stack `.env` into `generated/secrets/litestream/stack-s3.env`, not stored in desired state.
 
 A new SQLite database is automatically covered while the policy is enabled. Removing an app retains its SQLite directory, so backup continues. Prune deletes the local directory; the watcher unregisters it automatically while remote objects remain.
 
@@ -177,7 +177,7 @@ Watcher-managed databases are runtime entries, so Bento uses daemon IPC:
 ```sh
 litestream list -socket /run/litestream/control.sock -json
 litestream info -socket /run/litestream/control.sock -json
-litestream sync -socket /run/litestream/control.sock -wait /sqlite/<id>/database.sqlite
+litestream sync -socket /run/litestream/control.sock -wait /sqlite/<id>/<app-slug>.sqlite
 ```
 
 Do not use configuration-based `litestream status` for watcher health. In v0.5.15 it does not report dynamic directory entries correctly, and `meta-dir` can produce a misleading validation error in that command path.
@@ -189,7 +189,7 @@ Directory-managed databases are not individually defined in configuration. Resto
 ```sh
 litestream restore -o /var/lib/litestream/verify.sqlite \
   -integrity-check full \
-  s3://<bucket>/bento/<stack>/<file-id>/database.sqlite
+  s3://<bucket>/bento/<stack>/<file-id>/<app-slug>.sqlite
 ```
 
 Bento currently verifies restore-to-new only. A guarded production replacement restore remains separate work.
@@ -217,7 +217,7 @@ The ownership behavior is important enough to remain an automated native-Linux i
 
 1. Exactly one Litestream process writes a stack replica root.
 2. Every managed SQLite file uses local Linux storage with working SQLite locking semantics.
-3. Enabling the watcher means every valid managed `database.sqlite` is in scope.
+3. Enabling the watcher means every valid managed `<app-slug>.sqlite` is in scope.
 4. App database directories remain private to their app UID; they are not world-readable or world-writable.
 5. Litestream receives only the mounts and capabilities listed above.
 6. PHP containers cannot read Litestream credentials, configuration, metadata, process environment, or control socket.

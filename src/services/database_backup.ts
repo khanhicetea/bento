@@ -87,7 +87,7 @@ export async function runDatabaseRestore(
   if (!app) throw notFoundError(`app not found: ${req.slug}`);
   if (app.database.engine === "sqlite") {
     throw validationError(
-      "SQLite replacement restore is not yet supported; use `bento sqlite backup verify` to test recovery",
+      "SQLite replacement restore is not yet supported; use `bento sqlite backup export --app <app> --output <file>` to create a recovery database file",
     );
   }
   validateDumpPathForEngine(platform, state, req.file, app.database.engine);

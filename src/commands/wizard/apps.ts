@@ -385,7 +385,7 @@ async function sectionAppDatabases(
       ui.table(
         ["field", "value"],
         [
-          ["file", sqliteContainerPath(app.database.file.id)],
+          ["file", sqliteContainerPath(app.database.file.id, app.slug)],
           ["backup", state.sqliteBackup?.enabled ? "enabled" : "disabled"],
           ["verified", app.database.backupVerifiedAt ?? "never"],
         ],

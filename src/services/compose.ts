@@ -319,7 +319,7 @@ function renderLitestreamFragment(environment: StackComposeEnvironment): string 
         security_opt: ["no-new-privileges:true"],
         stop_grace_period: "45s",
         networks: ["backup-egress"],
-        env_file: ["./secrets/litestream/stack-s3.env"],
+        env_file: ["./generated/secrets/litestream/stack-s3.env"],
         environment: { COMPOSE_PROJECT_NAME: environment.projectName },
         volumes: [
           "./sqlite:/sqlite",

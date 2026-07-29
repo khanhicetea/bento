@@ -27,7 +27,7 @@ Bento targets several PHP applications on one operator-owned Linux host. The fol
 - No automatic migration between database engines/services or automatic database password rotation.
 - Restore is not object-level atomic and can leave a partial destination.
 - Scheduled MySQL/PostgreSQL logical backups are on-host only; no automatic upload or off-host replication.
-- SQLite continuous backup supports S3-compatible replication and temporary restore verification, but no public production replacement-restore command.
+- SQLite continuous backup supports S3-compatible replication, temporary verification, and export to a separate database file, but no public production replacement-restore command.
 - Stack export/import currently excludes the stack-root `sqlite/` directory.
 - Raw PostgreSQL transfer requires compatible major/image versions; major upgrades use logical dump/restore.
 

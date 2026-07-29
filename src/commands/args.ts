@@ -31,7 +31,6 @@ type StringArgName =
   | "schedule"
   | "service"
   | "signal"
-  | "sqlitePath"
   | "slug"
   | "source"
   | "target"

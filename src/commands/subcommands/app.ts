@@ -9,6 +9,7 @@ import {
   setAppEnabled,
 } from "../../services/app.ts";
 import { loadRedisPassword } from "../../services/stack_env.ts";
+import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
 import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "../../services/app_prune.ts";
 import { printTable } from "../../ui/output.ts";
 import type { CliContext } from "../context.ts";
@@ -192,7 +193,7 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.fpmProfile,
       a.tls.kind,
       a.database.engine === "sqlite"
-        ? `/sqlite/${a.database.file.id}/database.sqlite`
+        ? sqliteContainerPath(a.database.file.id, a.slug)
         : `${a.database.engine}/${a.database.service}`,
     ]);
   ctx.log.out(
@@ -259,7 +260,6 @@ async function cmdAppCreate(
       databaseEngine: argv.databaseEngine,
       mysqlVersion: argv.mysql,
       postgresVersion: argv.postgres,
-      sqlitePath: argv.sqlitePath,
       createDatabase: explicitDb,
       databaseName: argv.database,
       accessLog: argv.accessLog === true,

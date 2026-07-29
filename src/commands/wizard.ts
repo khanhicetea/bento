@@ -13,6 +13,7 @@ import { sectionPostgres } from "./wizard/postgres.ts";
 import { sectionPhp } from "./wizard/php.ts";
 import { sectionProxies } from "./wizard/proxies.ts";
 import { handleError, pcDim } from "./wizard/shared.ts";
+import { sectionSqlite } from "./wizard/sqlite.ts";
 import { sectionStatus } from "./wizard/status.ts";
 
 type WizardSection =
@@ -20,6 +21,7 @@ type WizardSection =
   | "proxies"
   | "mysql"
   | "postgres"
+  | "sqlite"
   | "php"
   | "status"
   | "bootstrap";
@@ -30,6 +32,7 @@ const SECTION_HANDLERS: Record<WizardSection, SectionHandler> = {
   proxies: sectionProxies,
   mysql: sectionMysql,
   postgres: sectionPostgres,
+  sqlite: sectionSqlite,
   php: sectionPhp,
   status: sectionStatus,
   bootstrap: sectionBootstrap,
@@ -68,6 +71,11 @@ export async function runWizard(ctx: CliContext): Promise<number> {
           label: "Manage PostgreSQL",
           value: "postgres",
           hint: "shell · versions · sizes · backup · restore",
+        },
+        {
+          label: "Manage SQLite",
+          value: "sqlite",
+          hint: "app databases · S3 sync · verify · export",
         },
         { label: "Manage PHP", value: "php", hint: "add version · reload FPM" },
         { label: "Status / Diag", value: "status", hint: "stack · apps · capacity" },

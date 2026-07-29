@@ -149,7 +149,9 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
 
   const validDatabaseNames = candidate.engine === "sqlite"
     ? candidate.databaseService === "local-file" && candidate.databases.length === 1 &&
-      candidate.databases.every((name) => /^sqlite_[a-f0-9]+$/.test(name))
+      candidate.databases.every((name) =>
+        name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1))
+      )
     : /^[a-zA-Z0-9_-]+$/.test(candidate.databaseService) &&
       candidate.databases.every((name) =>
         /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`))

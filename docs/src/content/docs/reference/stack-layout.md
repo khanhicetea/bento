@@ -17,9 +17,8 @@ Paths below are relative to the selected stack root, such as `/var/lib/bento`.
 | `homes/<app>/` | App code, credentials, SSH, logs, deploy state | Durable and sensitive |
 | `certs/` | Boot, private-CA, external and ACME material | Durable; private keys sensitive |
 | `backups/<service>/` | MySQL/PostgreSQL logical dumps | Durable and sensitive; on-host only |
-| `sqlite/<file-id>/` | Private SQLite database and WAL/SHM sidecars | Durable and sensitive |
+| `sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite` | Private SQLite database and WAL/SHM sidecars | Durable and sensitive |
 | `litestream-meta/` | Directory-watcher transaction metadata | Durable; required to continue replication efficiently |
-| `secrets/litestream/` | Generated Litestream S3 environment | Sensitive; mode `0600` |
 | `logs/` | Nginx logs and reports | Durable operational data; potentially personal/sensitive |
 | `runtime/` | FPM sockets and volatile runner locks | Ephemeral |
 | `locks/` | Host render serialization | Ephemeral/recovery coordination |
@@ -30,7 +29,7 @@ MySQL, PostgreSQL, and Redis contents live in Compose named volumes outside the 
 
 ## Generated subtrees
 
-`generated/compose/`, `nginx/`, `php/`, `runner/`, `mysql/`, `postgres/`, and `litestream/` are derived from desired state and templates. Render uses same-filesystem staging and a journal. Edits are overwritten and can break recovery assumptions.
+`generated/compose/`, `nginx/`, `php/`, `runner/`, `mysql/`, `postgres/`, `litestream/`, and `secrets/` are derived from desired state, the stack `.env`, and templates. Render uses same-filesystem staging and a journal. Edits are overwritten and can break recovery assumptions. Generated secrets remain sensitive and use mode `0600`.
 
 ## App home in containers
 

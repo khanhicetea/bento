@@ -16,8 +16,8 @@ Deno.test("Litestream watcher discovers private app databases and preserves WAL 
   const meta = join(root, "meta");
   const replica = join(root, "replica");
   const runtime = join(root, "run");
-  const appA = join(data, "sqlite_a");
-  const appB = join(data, "sqlite_b");
+  const appA = join(data, "app-a_1234567890");
+  const appB = join(data, "app-b_abcdef1234");
   const uidA = 12001;
   const uidB = 12002;
 
@@ -40,7 +40,7 @@ Deno.test("Litestream watcher discovers private app databases and preserves WAL 
   permissions: 0600
 dbs:
   - dir: /sqlite
-    pattern: "database.sqlite"
+    pattern: "*.sqlite"
     recursive: true
     watch: true
     meta-dir: /var/lib/litestream
@@ -64,8 +64,8 @@ c.close()
     await Deno.chmod(fixturePath, 0o644);
 
     await startWatcher(name, { data, meta, replica, runtime, configPath });
-    await runAs(uidA, fixturePath, join(appA, "database.sqlite"), "1");
-    await runAs(uidB, fixturePath, join(appB, "database.sqlite"), "2");
+    await runAs(uidA, fixturePath, join(appA, "app-a.sqlite"), "1");
+    await runAs(uidB, fixturePath, join(appB, "app-b.sqlite"), "2");
 
     await waitFor(async () => {
       const out = await run([
@@ -94,28 +94,28 @@ c.close()
       "-wait",
       "-timeout",
       "10",
-      "/sqlite/sqlite_a/database.sqlite",
+      "/sqlite/app-a_1234567890/app-a.sqlite",
     ]);
     assertEquals(sync.code, 0, sync.stderr);
     await stopWatcher(name);
 
     for (const suffix of ["-wal", "-shm"]) {
-      await Deno.remove(join(appA, `database.sqlite${suffix}`)).catch(() => {});
+      await Deno.remove(join(appA, `app-a.sqlite${suffix}`)).catch(() => {});
     }
     await startWatcher(name, { data, meta, replica, runtime, configPath });
     await waitFor(async () => {
       try {
-        await Deno.stat(join(appA, "database.sqlite-wal"));
-        await Deno.stat(join(appA, "database.sqlite-shm"));
+        await Deno.stat(join(appA, "app-a.sqlite-wal"));
+        await Deno.stat(join(appA, "app-a.sqlite-shm"));
         return true;
       } catch {
         return false;
       }
     }, "Litestream-recreated WAL and SHM files");
 
-    assertEquals((await Deno.stat(join(appA, "database.sqlite-wal"))).uid, uidA);
-    assertEquals((await Deno.stat(join(appA, "database.sqlite-shm"))).uid, uidA);
-    await runAs(uidA, fixturePath, join(appA, "database.sqlite"), "3");
+    assertEquals((await Deno.stat(join(appA, "app-a.sqlite-wal"))).uid, uidA);
+    assertEquals((await Deno.stat(join(appA, "app-a.sqlite-shm"))).uid, uidA);
+    await runAs(uidA, fixturePath, join(appA, "app-a.sqlite"), "3");
   } finally {
     await stopWatcher(name);
     await Deno.remove(root, { recursive: true }).catch(() => {});

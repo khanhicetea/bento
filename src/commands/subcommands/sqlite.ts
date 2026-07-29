@@ -3,13 +3,13 @@ import type { ArgsWith } from "../args.ts";
 import { bind, type RunState, type YargsBuilder } from "../shared.ts";
 import {
   enableSqliteBackup,
-  listSqliteBackups,
+  exportSqliteBackup,
+  getSqliteBackupStatus,
   requireSqliteApp,
   sqliteCompose,
   syncSqliteBackup,
   verifySqliteBackup,
 } from "../../services/sqlite.ts";
-import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
 
 export function registerSqliteCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(
@@ -50,7 +50,16 @@ export function registerSqliteCommands(parser: YargsBuilder, state: RunState): Y
               (cmd: YargsBuilder) => cmd.option("app", { type: "string", demandOption: true }),
               bind(state, cmdVerify),
             )
-            .demandCommand(1, "Choose enable, status, sync, or verify"),
+            .command(
+              "export",
+              "Export an S3 replica to a new local SQLite database file",
+              (cmd: YargsBuilder) =>
+                cmd
+                  .option("app", { type: "string", demandOption: true })
+                  .option("output", { type: "string", demandOption: true }),
+              bind(state, cmdExport),
+            )
+            .demandCommand(1, "Choose enable, status, sync, verify, or export"),
         undefined,
       ).demandCommand(1, "Choose backup"),
   );
@@ -101,29 +110,12 @@ async function cmdEnable(argv: ArgsWith<"app">, ctx: CliContext): Promise<number
 
 async function cmdStatus(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
   const state = await ctx.store.load();
-  const { database } = requireSqliteApp(state, argv.app);
-  const configured = Boolean(state.sqliteBackup?.enabled);
-  const ps = configured
-    ? await sqliteCompose(ctx.platform, state, ["ps", "--status", "running", "litestream"])
-    : { code: 0, stdout: "", stderr: "" };
-  const containerRunning = ps.stdout.includes("litestream");
-  const watched = containerRunning
-    ? (await listSqliteBackups(ctx.platform, state)).find((entry) =>
-      entry.path === sqliteContainerPath(database.file.id)
-    )
-    : undefined;
+  const status = await getSqliteBackupStatus(ctx.platform, state, argv.app);
   const report = {
-    app: argv.app,
+    ...status,
     scope: "stack-wide directory watcher",
-    file: sqliteContainerPath(database.file.id),
-    configured,
-    containerRunning,
-    replicationStatus: watched?.status ?? "not discovered",
-    lastSyncAt: watched?.last_sync_at,
-    expectedRpo: state.sqliteBackup?.syncInterval,
-    verifiedAt: database.backupVerifiedAt,
-    destination: configured
-      ? "s3://<redacted>/bento/<stack>/<sqlite-file-id>/database.sqlite"
+    destination: status.configured
+      ? "s3://<redacted>/bento/<stack>/<sqlite-file-id>/<app-slug>.sqlite"
       : undefined,
   };
   ctx.log.out(
@@ -131,13 +123,22 @@ async function cmdStatus(argv: ArgsWith<"app">, ctx: CliContext): Promise<number
       ? JSON.stringify(report)
       : Object.entries(report).map(([k, v]) => `${k}: ${v ?? "never"}`).join("\n"),
   );
-  return configured && containerRunning && watched?.status === "replicating" ? 0 : 8;
+  return status.configured && status.containerRunning && status.replicationStatus === "replicating"
+    ? 0
+    : 8;
 }
 
 async function cmdSync(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
   const state = await ctx.store.load();
   const detail = await syncSqliteBackup(ctx.platform, state, argv.app);
   ctx.log.info(`remote sync confirmed for ${argv.app}${detail ? `: ${detail}` : ""}`);
+  return 0;
+}
+
+async function cmdExport(argv: ArgsWith<"app" | "output">, ctx: CliContext): Promise<number> {
+  const state = await ctx.store.load();
+  const output = await exportSqliteBackup(ctx.platform, state, argv.app, argv.output);
+  ctx.log.info(`exported ${argv.app} S3 replica to ${output}`);
   return 0;
 }
 

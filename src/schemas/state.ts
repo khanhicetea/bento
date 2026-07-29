@@ -127,15 +127,18 @@ const bindingSchema = z.discriminatedUnion("engine", [
   strict({
     engine: z.literal("sqlite"),
     file: strict({
-      id: nonEmptyStringSchema,
-      path: safeRelativePathSchema.refine(
-        (path) =>
-          path === "data/sqlite/database.sqlite" ||
-          /^sqlite\/[a-z0-9_]+\/database\.sqlite$/.test(path),
-        { message: "SQLite path must be the managed sqlite/<file-id>/database.sqlite path" },
-      ),
+      id: nonEmptyStringSchema.regex(/^[a-z][a-z0-9-]{1,31}_[a-f0-9]{10}$/),
+      path: safeRelativePathSchema,
       createdAt: isoDateSchema,
-    }),
+    }).refine(
+      (file) => {
+        const slug = file.id.slice(0, -11);
+        return file.path === `sqlite/${file.id}/${slug}.sqlite`;
+      },
+      {
+        message: "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite",
+      },
+    ),
     backupVerifiedAt: isoDateSchema.optional(),
   }),
 ]);
@@ -161,7 +164,10 @@ const appBase = {
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
 };
-const appSchema = strict({ ...appBase, database: bindingSchema });
+const appSchema = strict({ ...appBase, database: bindingSchema }).refine(
+  (app) => app.database.engine !== "sqlite" || app.database.file.id.startsWith(`${app.slug}_`),
+  { message: "SQLite file identity must belong to the app slug" },
+);
 const v1AppSchema = strict({
   ...appBase,
   mysqlService: nonEmptyStringSchema,

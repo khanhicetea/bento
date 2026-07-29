@@ -216,7 +216,7 @@ export async function buildStatus(
         databaseEngine: a.database.engine,
         databaseService: a.database.engine === "sqlite" ? "local-file" : a.database.service,
         databases: a.database.engine === "sqlite"
-          ? [sqliteContainerPath(a.database.file.id)]
+          ? [sqliteContainerPath(a.database.file.id, a.slug)]
           : a.database.databases.map((d) => d.name),
         redisMode: a.redis.mode,
         deploy: a.deploy.enabled,

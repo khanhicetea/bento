@@ -5,6 +5,7 @@
 import type { AppState, CronJob, DesiredState, ProxySite, Worker } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { FPM_PROFILES, SHARED_SOCKET_GID } from "../domain/types.ts";
+import { validationError } from "../domain/errors.ts";
 import { ASSET_VERSION } from "../version.ts";
 import { renderTemplate } from "./template.ts";
 import { type GeneratedFile, withManagedMarker } from "./render.ts";
@@ -16,6 +17,7 @@ import {
   loadMysqlRootPassword,
   loadPostgresRootPassword,
   loadStackComposeEnvironment,
+  loadStackEnv,
 } from "./stack_env.ts";
 import {
   renderAcmeIssuer,
@@ -48,6 +50,7 @@ export async function generateAll(
 
   // One dedicated Litestream daemon discovers every managed SQLite database.
   files.push(...generateLitestreamConfig(state));
+  files.push(...generateLitestreamEnvironment(state, await loadStackEnv(platform)));
 
   // Database administrator client files (restricted; passwords from stack .env).
   const mysqlRootPassword = (await loadMysqlRootPassword(platform)) ?? "";
@@ -393,7 +396,7 @@ export function generateLitestreamConfig(state: DesiredState): GeneratedFile[] {
     "shutdown-sync-timeout: 30s",
     "dbs:",
     "  - dir: /sqlite",
-    '    pattern: "database.sqlite"',
+    '    pattern: "*.sqlite"',
     "    recursive: true",
     "    watch: true",
     "    meta-dir: /var/lib/litestream",
@@ -410,6 +413,43 @@ export function generateLitestreamConfig(state: DesiredState): GeneratedFile[] {
     content: withManagedMarker(lines.join("\n")),
     // Contains environment references but never credential values.
     mode: 0o644,
+    managed: true,
+  }];
+}
+
+export function generateLitestreamEnvironment(
+  state: DesiredState,
+  env: Record<string, string>,
+): GeneratedFile[] {
+  if (!state.sqliteBackup?.enabled) return [];
+
+  const required = [
+    "S3_BUCKET_NAME",
+    "S3_REGION",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+  ] as const;
+  for (const key of required) {
+    if (!env[key]) throw validationError(`${key} is required in the stack .env`);
+  }
+  for (const key of [...required, "S3_ENDPOINT"] as const) {
+    if (env[key]?.includes("\n") || env[key]?.includes("\r")) {
+      throw validationError(`${key} in the stack .env must not contain line breaks`);
+    }
+  }
+
+  return [{
+    relPath: "secrets/litestream/stack-s3.env",
+    content: withManagedMarker([
+      `S3_BUCKET_NAME=${env.S3_BUCKET_NAME}`,
+      `S3_REGION=${env.S3_REGION}`,
+      `S3_ENDPOINT=${env.S3_ENDPOINT ?? ""}`,
+      `AWS_ACCESS_KEY_ID=${env.S3_ACCESS_KEY_ID}`,
+      `AWS_SECRET_ACCESS_KEY=${env.S3_SECRET_ACCESS_KEY}`,
+      `AWS_REGION=${env.S3_REGION}`,
+      "",
+    ].join("\n")),
+    mode: 0o600,
     managed: true,
   }];
 }

@@ -54,7 +54,6 @@ import {
 } from "./postgres.ts";
 import { tryApplyAppRedisAcl } from "./redis.ts";
 import {
-  DEFAULT_SQLITE_PATH,
   sqliteContainerPath,
   sqliteHostDir,
   sqliteHostPath,
@@ -82,8 +81,6 @@ export type ProvisionAppInput = {
   mysqlVersion?: string;
   /** Managed PostgreSQL major version or service. */
   postgresVersion?: string;
-  /** Legacy compatibility input; storage is allocated under stack sqlite/<file-id>. */
-  sqlitePath?: string;
   createDatabase?: boolean;
   databaseName?: string;
   tls?: TlsMode;
@@ -231,7 +228,7 @@ export function provisionApp(
     database: databaseEngine === "sqlite"
       ? existing?.database.engine === "sqlite"
         ? existing.database
-        : createSqliteBinding(platform, input.sqlitePath ?? DEFAULT_SQLITE_PATH, now)
+        : createSqliteBinding(platform, slug, now)
       : databaseBinding(
         managedDatabase!.engine,
         String(managedDatabase!.service),
@@ -278,17 +275,13 @@ function asDatabaseName(name: string): AppDatabase["name"] {
 
 function createSqliteBinding(
   platform: Platform,
-  requestedPath: string,
+  slug: string,
   now: string,
 ): AppDatabaseBinding {
-  const normalized = unwrap(parseSafeRelativePath(requestedPath), "sqlitePath");
-  if (normalized !== DEFAULT_SQLITE_PATH) {
-    throw validationError(`SQLite location is managed; expected ${DEFAULT_SQLITE_PATH}`);
-  }
-  const id = platform.random.id("sqlite");
+  const id = `${slug}_${platform.random.hex(5)}`;
   return {
     engine: "sqlite",
-    file: { id, path: sqliteRelativePath(id), createdAt: now },
+    file: { id, path: sqliteRelativePath(id, slug), createdAt: now },
   } as AppDatabaseBinding;
 }
 
@@ -423,7 +416,7 @@ export async function materializeAppHome(
   }
   if (app.database.engine === "sqlite") {
     const sqliteDir = sqliteHostDir(platform, app.database.file.id);
-    const sqlitePath = sqliteHostPath(platform, app.database.file.id);
+    const sqlitePath = sqliteHostPath(platform, app.database.file.id, app.slug);
     await platform.fs.mkdirp(sqliteDir, 0o700);
     if (!(await platform.fs.exists(sqlitePath))) {
       await platform.fs.writeBytes(sqlitePath, new Uint8Array(), 0o600);
@@ -478,7 +471,7 @@ export async function materializeAppHome(
     ]
     : [
       "DB_CONNECTION=sqlite",
-      `DB_DATABASE=${sqliteContainerPath(app.database.file.id)}`,
+      `DB_DATABASE=${sqliteContainerPath(app.database.file.id, app.slug)}`,
       "SQLITE_BUSY_TIMEOUT=5000",
     ];
   const cred = [

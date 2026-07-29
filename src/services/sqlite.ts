@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import type { AppDatabaseBinding, DesiredState, SqliteBackupPolicy } from "../domain/state.ts";
 import { conflictError, notFoundError, serviceError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
@@ -17,6 +17,17 @@ export type WatchedSqliteDatabase = {
   path: string;
   status: string;
   last_sync_at?: string;
+};
+
+export type SqliteBackupStatus = {
+  app: string;
+  file: string;
+  configured: boolean;
+  containerRunning: boolean;
+  replicationStatus: string;
+  lastSyncAt?: string;
+  expectedRpo?: string;
+  verifiedAt?: string;
 };
 
 export function requireSqliteApp(state: DesiredState, slug: string) {
@@ -77,7 +88,7 @@ export async function enableSqliteBackup(
   for (const app of Object.values(state.apps)) {
     if (app.database.engine !== "sqlite") continue;
     const sqliteDir = sqliteHostDir(platform, app.database.file.id);
-    const hostPath = sqliteHostPath(platform, app.database.file.id);
+    const hostPath = sqliteHostPath(platform, app.database.file.id, app.slug);
     const dirStat = await platform.fs.lstat(sqliteDir);
     if (!dirStat.isDirectory || dirStat.isSymlink) {
       throw validationError(`SQLite directory is not a real local directory: ${sqliteDir}`);
@@ -102,22 +113,6 @@ export async function enableSqliteBackup(
     if (!env[key]) throw validationError(`${key} is required in the stack .env`);
   }
 
-  const secretDir = join(platform.paths.paths.root, "secrets", "litestream");
-  await platform.fs.mkdirp(secretDir, 0o700);
-  await platform.fs.atomicWriteText(
-    join(secretDir, "stack-s3.env"),
-    [
-      `S3_BUCKET_NAME=${env.S3_BUCKET_NAME}`,
-      `S3_REGION=${env.S3_REGION}`,
-      `S3_ENDPOINT=${env.S3_ENDPOINT ?? ""}`,
-      `AWS_ACCESS_KEY_ID=${env.S3_ACCESS_KEY_ID}`,
-      `AWS_SECRET_ACCESS_KEY=${env.S3_SECRET_ACCESS_KEY}`,
-      `AWS_REGION=${env.S3_REGION}`,
-      "",
-    ].join("\n"),
-    0o600,
-  );
-
   // The watcher keeps transaction metadata outside app-owned directories. Both
   // mounts are writable by the constrained-root Litestream process without ACLs.
   await platform.fs.mkdirp(join(platform.paths.paths.root, "litestream-meta"), 0o700);
@@ -134,7 +129,7 @@ export async function enableSqliteBackup(
     enabled: true,
   };
   const nextDb = requireSqliteApp(next, slug).database;
-  nextDb.file.path = sqliteRelativePath(nextDb.file.id);
+  nextDb.file.path = sqliteRelativePath(nextDb.file.id, slug);
   next.apps[slug]!.updatedAt = platform.clock.nowIso();
   next.updatedAt = platform.clock.nowIso();
   return next;
@@ -165,6 +160,34 @@ export async function listSqliteBackups(
   }
 }
 
+export async function getSqliteBackupStatus(
+  platform: Platform,
+  state: DesiredState,
+  slug: string,
+): Promise<SqliteBackupStatus> {
+  const { database } = requireSqliteApp(state, slug);
+  const configured = Boolean(state.sqliteBackup?.enabled);
+  const ps = configured
+    ? await sqliteCompose(platform, state, ["ps", "--status", "running", "litestream"])
+    : { code: 0, stdout: "", stderr: "" };
+  const containerRunning = ps.stdout.includes("litestream");
+  const watched = containerRunning
+    ? (await listSqliteBackups(platform, state)).find((entry) =>
+      entry.path === sqliteContainerPath(database.file.id, slug)
+    )
+    : undefined;
+  return {
+    app: slug,
+    file: sqliteContainerPath(database.file.id, slug),
+    configured,
+    containerRunning,
+    replicationStatus: watched?.status ?? "not discovered",
+    lastSyncAt: watched?.last_sync_at,
+    expectedRpo: state.sqliteBackup?.syncInterval,
+    verifiedAt: database.backupVerifiedAt,
+  };
+}
+
 export async function syncSqliteBackup(
   platform: Platform,
   state: DesiredState,
@@ -177,9 +200,65 @@ export async function syncSqliteBackup(
     "-wait",
     "-timeout",
     "120",
-    sqliteContainerPath(database.file.id),
+    sqliteContainerPath(database.file.id, slug),
   ]);
   return result.stdout.trim();
+}
+
+export async function exportSqliteBackup(
+  platform: Platform,
+  state: DesiredState,
+  slug: string,
+  requestedOutput: string,
+): Promise<string> {
+  const { database } = requireSqliteApp(state, slug);
+  requireSqliteBackupPolicy(state);
+  const output = resolve(requestedOutput);
+  if (await platform.fs.exists(output)) {
+    throw conflictError(`refusing to overwrite existing file: ${output}`);
+  }
+
+  const exportId = platform.random.id("sqlite-export");
+  const restoredName = `${exportId}.sqlite`;
+  const containerRestorePath = `/var/lib/litestream/${restoredName}`;
+  const hostRestorePath = join(platform.paths.paths.root, "litestream-meta", restoredName);
+  const partialOutput = `${output}.${exportId}.partial`;
+  const replicaUrl = await sqliteReplicaUrl(platform, database.file.id, slug);
+
+  try {
+    const result = await sqliteCompose(platform, state, [
+      "exec",
+      "-T",
+      "litestream",
+      "litestream",
+      "restore",
+      "-o",
+      containerRestorePath,
+      "-integrity-check",
+      "full",
+      replicaUrl,
+    ]);
+    if (result.code !== 0) {
+      throw serviceError(`Litestream export failed: ${result.stderr.trim()}`);
+    }
+    const restored = await platform.fs.lstat(hostRestorePath);
+    if (!restored.isFile || restored.isSymlink || restored.size === 0) {
+      throw serviceError("Litestream export did not produce a non-empty regular database file");
+    }
+    await platform.fs.copyFile(hostRestorePath, partialOutput);
+    await platform.fs.chmod(partialOutput, 0o600);
+    if (await platform.fs.exists(output)) {
+      throw conflictError(`refusing to overwrite existing file: ${output}`);
+    }
+    await platform.fs.rename(partialOutput, output);
+    return output;
+  } finally {
+    await platform.fs.remove(hostRestorePath);
+    await platform.fs.remove(partialOutput);
+    for (const suffix of ["-wal", "-shm", "-journal"]) {
+      await platform.fs.remove(`${hostRestorePath}${suffix}`);
+    }
+  }
 }
 
 export async function verifySqliteBackup(
@@ -194,7 +273,7 @@ export async function verifySqliteBackup(
   const proofName = `verify-${database.file.id}-${Date.now()}.sqlite`;
   const containerProofPath = `/var/lib/litestream/${proofName}`;
   const hostProofPath = join(platform.paths.paths.root, "litestream-meta", proofName);
-  const replicaUrl = await sqliteReplicaUrl(platform, database.file.id);
+  const replicaUrl = await sqliteReplicaUrl(platform, database.file.id, slug);
   const result = await sqliteCompose(platform, state, [
     "exec",
     "-T",
@@ -243,12 +322,16 @@ async function runSocketCommand(
   throw serviceError(`Litestream command failed: ${result.stderr.trim()}`);
 }
 
-async function sqliteReplicaUrl(platform: Platform, fileId: string): Promise<string> {
+async function sqliteReplicaUrl(
+  platform: Platform,
+  fileId: string,
+  slug: string,
+): Promise<string> {
   const env = await loadStackEnv(platform);
   const composeEnvironment = await loadStackComposeEnvironment(platform);
   const params = new URLSearchParams();
   if (env.S3_ENDPOINT) params.set("endpoint", env.S3_ENDPOINT);
   if (env.S3_REGION) params.set("region", env.S3_REGION);
   const query = params.size > 0 ? `?${params.toString()}` : "";
-  return `s3://${env.S3_BUCKET_NAME}/bento/${composeEnvironment.projectName}/${fileId}/database.sqlite${query}`;
+  return `s3://${env.S3_BUCKET_NAME}/bento/${composeEnvironment.projectName}/${fileId}/${slug}.sqlite${query}`;
 }

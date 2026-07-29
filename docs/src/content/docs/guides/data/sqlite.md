@@ -5,7 +5,7 @@ description: Create a private SQLite app database and replicate it to S3 with Li
 
 # Operate SQLite with continuous backup
 
-Use SQLite as an app's database, then enable continuous off-host replication to an S3-compatible object store. Bento keeps each database in a private app-ID directory and runs one stack-wide Litestream directory watcher. When the watcher is enabled, every managed `database.sqlite` under the stack SQLite root is backed up automatically.
+Use SQLite as an app's database, then enable continuous off-host replication to an S3-compatible object store. Bento keeps each database in a private app-ID directory and runs one stack-wide Litestream directory watcher. When the watcher is enabled, every managed `<app-slug>.sqlite` under the stack SQLite root is backed up automatically.
 
 ## Before you begin
 
@@ -15,7 +15,7 @@ Use SQLite as an app's database, then enable continuous off-host replication to 
 - Plan for SQLite's single-writer behavior. Use MySQL or PostgreSQL instead when your workload requires many concurrent writers or database-server features.
 
 :::caution
-Continuous replication reduces the recovery point after host or disk loss, but it is not a substitute for restore testing. Bento does not currently provide a command that replaces a live SQLite database from a replica.
+Continuous replication reduces the recovery point after host or disk loss, but it is not a substitute for restore testing. Bento can export a replica to a new local database file; it does not replace a live SQLite database from a replica.
 :::
 
 ## Create a SQLite app
@@ -60,13 +60,13 @@ PRAGMA journal_mode;
 Do not edit the generated credential file or move the database manually. Bento stores the durable file under:
 
 ```text
-/var/lib/bento/sqlite/<file-id>/database.sqlite
+/var/lib/bento/sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite
 ```
 
 Inside PHP and Litestream containers, the same file appears at:
 
 ```text
-/sqlite/<file-id>/database.sqlite
+/sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite
 ```
 
 ## Configure S3 replication
@@ -119,6 +119,16 @@ bento --stack /var/lib/bento sqlite backup verify --app demo
 
 Run `verify` regularly and after credential, bucket-policy, endpoint, or storage changes. Also monitor stale verification timestamps and failed Litestream service health externally.
 
+Export the S3 replica into a new local SQLite database file:
+
+```sh
+bento --stack /var/lib/bento sqlite backup export \
+  --app demo \
+  --output /safe/recovery/demo.sqlite
+```
+
+Export runs Litestream's full integrity check, publishes the result with mode `0600`, and refuses to overwrite an existing destination. It never changes the application's live database. The same status, sync, verification, and export operations are available under **Manage SQLite** in `bento tui`.
+
 `bento backup --app demo` dispatches to the same confirmed remote synchronization for a SQLite app. It does not create a logical dump under `backups/`.
 
 ## Troubleshooting
@@ -156,7 +166,7 @@ This root process can read and modify every SQLite database in the stack. Its re
 
 Removing an app retains its home and SQLite directory, so the directory watcher continues protecting the retained database. The separate interactive `app prune` operation permanently deletes the local SQLite directory; Litestream detects its removal and stops managing it. Remote S3 objects remain; remove them only under your object-store retention and incident-recovery policy.
 
-`sqlite backup verify` always restores to a temporary file. It does not stop writers or replace production data. A production replacement restore must stop every writer, preserve the current database and WAL/SHM files, restore to a separate path, verify integrity, repair ownership and ACLs, and replace the database deliberately. That guarded workflow is not yet exposed by the Bento CLI.
+`sqlite backup verify` restores to a temporary file, while `sqlite backup export` publishes a separate recovery file. Neither stops writers nor replaces production data. A production replacement restore must stop every writer, preserve the current database and WAL/SHM files, restore to a separate path, verify integrity, repair ownership and ACLs, and replace the database deliberately. That guarded workflow is not yet exposed by the Bento CLI.
 
 ## Next steps
 
