@@ -38,14 +38,23 @@ type LegacyMysqlManifest = {
 export async function writeAppPruneManifest(platform: Platform, app: AppState): Promise<void> {
   const home = platform.paths.appHome(app.slug);
   await platform.fs.mkdirp(join(home, ".bento"), 0o700);
-  const manifest: AppPruneManifest = {
-    version: 2,
-    slug: app.slug,
-    engine: app.database.engine,
-    databaseService: app.database.service,
-    databaseUser: app.database.user,
-    databases: app.database.databases.map((database) => database.name),
-  };
+  const manifest: AppPruneManifest = app.database.engine === "sqlite"
+    ? {
+      version: 2,
+      slug: app.slug,
+      engine: "sqlite",
+      databaseService: "local-file",
+      databaseUser: app.slug,
+      databases: [app.database.file.id],
+    }
+    : {
+      version: 2,
+      slug: app.slug,
+      engine: app.database.engine,
+      databaseService: app.database.service,
+      databaseUser: app.database.user,
+      databases: app.database.databases.map((database) => database.name),
+    };
   await platform.fs.writeText(
     join(home, MANIFEST),
     `${JSON.stringify(manifest, null, 2)}\n`,
@@ -92,9 +101,10 @@ export async function planAppPrune(
     throw validationError(`invalid app prune manifest: ${manifestPath}`);
   }
   const manifest = normalizeManifest(raw, slug);
-  const managed = state.databaseServices.some((service) =>
-    service.engine === manifest.engine && service.service === manifest.databaseService
-  );
+  const managed = manifest.engine === "sqlite" ||
+    state.databaseServices.some((service) =>
+      service.engine === manifest.engine && service.service === manifest.databaseService
+    );
   if (!managed) throw validationError(`unsafe app prune manifest: ${manifestPath}`);
 
   return { ...manifest, home, manifestFound: true };
@@ -120,23 +130,33 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
     candidate = {
       version: 2,
       slug: typeof value.slug === "string" ? value.slug : "",
-      engine: value.engine === "postgres" ? "postgres" : "mysql",
+      engine: value.engine === "postgres"
+        ? "postgres"
+        : value.engine === "sqlite"
+        ? "sqlite"
+        : "mysql",
       databaseService: typeof value.databaseService === "string" ? value.databaseService : "",
       databaseUser: typeof value.databaseUser === "string" ? value.databaseUser : "",
       databases: Array.isArray(value.databases) ? value.databases.filter(isString) : [],
     };
-    if (value.version !== 2 || (value.engine !== "mysql" && value.engine !== "postgres")) {
+    if (
+      value.version !== 2 ||
+      (value.engine !== "mysql" && value.engine !== "postgres" && value.engine !== "sqlite")
+    ) {
       throw validationError("invalid app prune manifest");
     }
   }
 
-  const valid = candidate.slug === slug &&
-    /^[a-zA-Z0-9_-]+$/.test(candidate.databaseService) &&
-    candidate.databaseUser === slug &&
+  const validDatabaseNames = candidate.engine === "sqlite"
+    ? candidate.databaseService === "local-file" && candidate.databases.length === 1 &&
+      candidate.databases.every((name) => /^sqlite_[a-f0-9]+$/.test(name))
+    : /^[a-zA-Z0-9_-]+$/.test(candidate.databaseService) &&
+      candidate.databases.every((name) =>
+        /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`))
+      );
+  const valid = candidate.slug === slug && candidate.databaseUser === slug &&
     Array.isArray(value.databases) && candidate.databases.length === value.databases.length &&
-    candidate.databases.every((name) =>
-      /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`))
-    );
+    validDatabaseNames;
   if (!valid) throw validationError("unsafe app prune manifest");
   return candidate;
 }
@@ -163,11 +183,18 @@ export async function executeAppPrune(
   const cleaned: string[] = [];
   if (plan.manifestFound) {
     if (plan.engine === "mysql") await pruneMysql(platform, plan);
-    else await prunePostgres(platform, plan);
-    for (const database of plan.databases) cleaned.push(`database ${database}`);
-    cleaned.push(
-      `${plan.engine === "mysql" ? "MySQL account" : "PostgreSQL role"} ${plan.databaseUser}`,
-    );
+    else if (plan.engine === "postgres") await prunePostgres(platform, plan);
+    else {
+      const sqliteDir = join(platform.paths.paths.root, "sqlite", plan.databases[0]!);
+      await platform.fs.remove(sqliteDir, { recursive: true });
+      cleaned.push(`SQLite directory ${sqliteDir}`);
+    }
+    if (plan.engine !== "sqlite") {
+      for (const database of plan.databases) cleaned.push(`database ${database}`);
+      cleaned.push(
+        `${plan.engine === "mysql" ? "MySQL account" : "PostgreSQL role"} ${plan.databaseUser}`,
+      );
+    }
   }
 
   await platform.fs.remove(plan.home, { recursive: true });

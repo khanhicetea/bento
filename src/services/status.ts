@@ -9,10 +9,11 @@ import { capacityWarnings } from "./app.ts";
 import { FPM_PROFILES } from "../domain/types.ts";
 import { resolveComposeFiles } from "./compose.ts";
 import { loadStackComposeEnvironment } from "./stack_env.ts";
+import { sqliteContainerPath } from "./sqlite_paths.ts";
 
 export type RoleStatus = {
   name: string;
-  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql" | "postgres";
+  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql" | "postgres" | "litestream";
   /** observed | expected-only */
   state: "running" | "stopped" | "unknown" | "config-ready";
   detail?: string;
@@ -59,7 +60,7 @@ export type StatusReport = {
     entrypointMode: string;
     tls: string;
     accessLog: boolean;
-    databaseEngine: "mysql" | "postgres";
+    databaseEngine: "mysql" | "postgres" | "sqlite";
     databaseService: string;
     databases: string[];
     redisMode: string;
@@ -213,8 +214,10 @@ export async function buildStatus(
         tls: a.tls.kind,
         accessLog: a.accessLog,
         databaseEngine: a.database.engine,
-        databaseService: a.database.service,
-        databases: a.database.databases.map((d) => d.name),
+        databaseService: a.database.engine === "sqlite" ? "local-file" : a.database.service,
+        databases: a.database.engine === "sqlite"
+          ? [sqliteContainerPath(a.database.file.id)]
+          : a.database.databases.map((d) => d.name),
         redisMode: a.redis.mode,
         deploy: a.deploy.enabled,
       })),
@@ -324,6 +327,7 @@ function buildExpectedRoles(
   for (const database of state.databaseServices) {
     push(database.service, database.engine);
   }
+  if (state.sqliteBackup?.enabled) push("litestream", "litestream");
 
   if (running === null) {
     notes.push(

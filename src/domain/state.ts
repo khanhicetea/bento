@@ -27,7 +27,16 @@ import {
 } from "./types.ts";
 import { STATE_SCHEMA_VERSION } from "../version.ts";
 
-export type DatabaseEngine = "mysql" | "postgres";
+export type DatabaseEngine = "mysql" | "postgres" | "sqlite";
+export type SqliteBackupPolicy = {
+  provider: "litestream";
+  destination: string;
+  syncInterval: string;
+  snapshotInterval: string;
+  snapshotRetention: string;
+  l0Retention: string;
+  enabled: boolean;
+};
 export type TlsMode =
   | { kind: "self-ca" }
   | { kind: "shared" }
@@ -71,6 +80,16 @@ export type AppDatabaseBinding =
   }
   | {
     engine: "postgres";
+    service: DatabaseService;
+    user: string;
+    password: string;
+    databases: AppDatabase[];
+  }
+  | {
+    engine: "sqlite";
+    file: { id: string; path: string; createdAt: string };
+    backupVerifiedAt?: string;
+    /** Type-only compatibility members; SQLite state validation forbids persisting these. */
     service: DatabaseService;
     user: string;
     password: string;
@@ -172,6 +191,7 @@ export type DesiredState = {
   defaults: StackDefaults;
   phpVersions: ManagedPhpVersion[];
   databaseServices: ManagedDatabaseService[];
+  sqliteBackup?: SqliteBackupPolicy;
   apps: Record<string, AppState>;
   proxies: Record<string, ProxySite>;
   domains: Record<string, DomainOwner>;

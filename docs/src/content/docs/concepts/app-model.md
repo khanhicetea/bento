@@ -14,7 +14,7 @@ app slug
   ├─ identity: UID/GID and private home
   ├─ traffic: domains, Nginx vhost, PHP pool and socket
   ├─ runtime: one PHP version and FPM capacity profile
-  ├─ data: one relational service binding and Redis metadata
+  ├─ data: one database-engine binding and Redis metadata
   └─ work: schedules, workers and optional deploy queue
 ```
 
@@ -26,7 +26,7 @@ For an app named `demo`, Bento uses `demo` across several resources:
 | Process identity | One stable private UID/GID for FPM, CLI, schedules, workers, and deploy commands |
 | PHP requests | A `demo` FPM pool and `demo.sock` under the app's selected PHP service |
 | Domains | One primary domain plus optional aliases, all unique across apps and reverse proxies |
-| Relational data | User or role `demo`, bound to exactly one managed MySQL or PostgreSQL service |
+| Database | One managed MySQL/PostgreSQL service binding or one private SQLite file |
 | Redis | An app-specific key prefix, plus a per-app identity when the stack uses ACL mode |
 | Background work | Cron jobs, workers, and deploy jobs scoped to `demo` |
 
@@ -67,10 +67,10 @@ The credential file supplies connection values; Bento does not automatically loa
 
 ## Data binding
 
-An app binds to exactly one relational database engine and managed service. It receives one same-name database user or PostgreSQL role and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. An ordinary app update preserves this binding.
+An app binds to exactly one database engine. A MySQL or PostgreSQL binding selects one managed service, receives a same-name user or role, and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. A SQLite binding receives one private file under the stack-root `sqlite/` directory. An ordinary app update preserves the binding.
 
 :::caution
-Changing an existing app's database engine or service is an external migration, not an app update. Bento does not move data between services or between MySQL and PostgreSQL.
+Changing an existing app's database engine or service is an external migration, not an app update. Bento does not move data between engines or services.
 :::
 
 Redis is shared stack infrastructure. In shared mode, every app must use its recorded key prefix. In ACL mode, Bento additionally gives the app a Redis username and credentials restricted to its namespace. Redis metadata does not create a separate Redis instance per app.
@@ -113,7 +113,7 @@ Bento also does not:
 - reserve dedicated CPU or memory per app;
 - automatically configure a framework from `credentials/app.env`;
 - migrate an app between relational engines or services;
-- replicate code, database data, or credentials off-host.
+- replicate code, relational database data, or credentials off-host; optional [SQLite continuous backup](/guides/data/sqlite/) is the exception.
 
 ## Advanced
 

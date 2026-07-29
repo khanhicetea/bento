@@ -46,6 +46,9 @@ export async function generateAll(
   // Runner: Supercronic and worker service directories supervised by s6
   files.push(...generateRunnerConfig(state));
 
+  // One dedicated Litestream daemon discovers every managed SQLite database.
+  files.push(...generateLitestreamConfig(state));
+
   // Database administrator client files (restricted; passwords from stack .env).
   const mysqlRootPassword = (await loadMysqlRootPassword(platform)) ?? "";
   files.push(...generateMysqlSecrets(state, mysqlRootPassword));
@@ -334,7 +337,9 @@ async function generatePhpPools(
       maxSpare: dynamic ? profile.maxSpare : 0,
       processIdleTimeout: dynamic ? "" : profile.processIdleTimeout,
       socketPath: `/run/php-fpm/${app.slug}.sock`,
-      openBasedir: `${home}:/usr/share/php:/tmp${app.deploy.enabled ? ":/opt/bento/helpers" : ""}`,
+      openBasedir: `${home}:/usr/share/php:/tmp${
+        app.database.engine === "sqlite" ? `:/sqlite/${app.database.file.id}` : ""
+      }${app.deploy.enabled ? ":/opt/bento/helpers" : ""}`,
       deployEnabled: app.deploy.enabled,
     });
     files.push({
@@ -364,6 +369,49 @@ async function generatePhpPools(
     });
   }
   return files;
+}
+
+export function generateLitestreamConfig(state: DesiredState): GeneratedFile[] {
+  const backup = state.sqliteBackup;
+  if (!backup?.enabled) return [];
+
+  const lines = [
+    "logging:",
+    "  level: info",
+    "  type: json",
+    "socket:",
+    "  enabled: true",
+    "  path: /run/litestream/control.sock",
+    "  permissions: 0600",
+    "snapshot:",
+    `  interval: ${backup.snapshotInterval}`,
+    `  retention: ${backup.snapshotRetention}`,
+    `l0-retention: ${backup.l0Retention}`,
+    "validation:",
+    "  interval: 6h",
+    "verify-compaction: true",
+    "shutdown-sync-timeout: 30s",
+    "dbs:",
+    "  - dir: /sqlite",
+    '    pattern: "database.sqlite"',
+    "    recursive: true",
+    "    watch: true",
+    "    meta-dir: /var/lib/litestream",
+    "    monitor-interval: 1s",
+    "    checkpoint-interval: 1m",
+    "    busy-timeout: 5s",
+    "    replica:",
+    `      sync-interval: ${backup.syncInterval}`,
+    "      url: s3://${S3_BUCKET_NAME}/bento/${COMPOSE_PROJECT_NAME}?endpoint=${S3_ENDPOINT}&region=${S3_REGION}",
+    "",
+  ];
+  return [{
+    relPath: "litestream/litestream.yml",
+    content: withManagedMarker(lines.join("\n")),
+    // Contains environment references but never credential values.
+    mode: 0o644,
+    managed: true,
+  }];
 }
 
 function generateRunnerConfig(state: DesiredState): GeneratedFile[] {

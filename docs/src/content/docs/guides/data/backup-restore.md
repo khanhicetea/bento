@@ -5,7 +5,7 @@ description: Create logical database dumps, copy them off-host, schedule backups
 
 # Back up and restore databases
 
-Create portable logical dumps for MySQL and PostgreSQL apps, maintain an on-host schedule, and prove recovery by restoring to a separate verification database before replacing production data.
+Create portable logical dumps for MySQL and PostgreSQL apps, maintain an on-host schedule, and prove recovery by restoring to a separate verification database before replacing production data. For a SQLite app, use [Litestream continuous backup](/guides/data/sqlite/) instead.
 
 ## Before you begin
 
@@ -22,7 +22,7 @@ Bento writes logical dumps only below the selected stack's on-host `backups/` di
 
 ## Back up one app
 
-Back up every database recorded for `demo`:
+Back up every MySQL or PostgreSQL database recorded for `demo`:
 
 ```sh
 bento --stack /var/lib/bento backup --app demo
@@ -64,13 +64,15 @@ Bento writes managed dumps with mode `0600`. A file's existence proves dump comp
 
 ## Back up every managed database
 
-Run one batch across every recorded MySQL and PostgreSQL app database:
+Run one batch across every recorded app database:
 
 ```sh
 bento --stack /var/lib/bento backup --all
 ```
 
-Bento permits only one logical backup batch at a time. If a later database fails, earlier completed dumps remain, but retention does not run for that failed batch. Read the error and rerun after correcting service health or storage.
+Bento creates logical dumps for MySQL and PostgreSQL bindings. For every SQLite app, it waits for confirmed synchronization through the stack-wide Litestream directory watcher instead of creating a dump. The batch fails if the stack-wide SQLite backup policy is not enabled.
+
+Bento permits only one logical backup batch at a time. If a later database or SQLite synchronization fails, earlier completed dumps remain, but relational retention does not run for that failed batch. Read the error and rerun after correcting service health, storage, or SQLite replication.
 
 After a complete successful batch, Bento keeps the ten newest managed dumps for each service/database pair. It ignores unrelated files, symlinks, partial files, and names outside its managed dump pattern.
 
@@ -86,12 +88,12 @@ rsync -a /var/lib/bento/backups/ \
 Protect the destination as sensitive data. Verify the remote copy independently by comparing file counts, sizes, or cryptographic hashes, and test recovery from the off-host copy—not only from the original host path.
 
 :::note
-The stack's logical dumps cover managed relational databases. They do not include app homes, Redis data, certificates, desired state, or stack secrets. Back up those ownership layers separately.
+The stack's logical dumps cover managed relational databases. They do not include SQLite files, app homes, Redis data, certificates, desired state, or stack secrets. Back up those ownership layers separately.
 :::
 
 ## Schedule on-host logical backups
 
-Bento can add one stack-qualified block to the current host user's crontab. The scheduled command runs an all-database, Zstandard-compressed batch.
+Bento can add one stack-qualified block to the current host user's crontab. The scheduled command runs an all-database, Zstandard-compressed relational batch and confirms synchronization for SQLite apps.
 
 Confirm the absolute installed binary path:
 
@@ -124,7 +126,7 @@ bento --stack /var/lib/bento backup schedule status
 Confirm `registered: yes`, the intended schedule, `last run: succeeded`, a nonzero artifact count and byte total, and the expected on-host backup directory.
 
 :::caution
-Scheduling does not create an off-host backup. Configure a separate replication job or backup agent for `/var/lib/bento/backups/`, monitor both jobs, and alert when either the logical dump or off-host copy stops succeeding.
+Scheduling does not create an off-host copy of MySQL or PostgreSQL dumps. Configure a separate replication job or backup agent for `/var/lib/bento/backups/`, monitor both jobs, and alert when either the logical dump or off-host copy stops succeeding. SQLite synchronization uses its separately configured S3 replica.
 :::
 
 Remove only this stack's managed crontab block when needed:

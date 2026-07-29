@@ -58,7 +58,7 @@ test -w /var/lib/bento && echo "stack root is writable"
 ```
 
 :::caution
-Do not place the stack root in `/tmp`, an ephemeral deployment directory, or the source checkout. Losing this directory can lose desired state, credentials, app files, certificates, and on-host backups. Docker database and Redis data also require separate protection because they live in named volumes.
+Do not place the stack root in `/tmp`, an ephemeral deployment directory, or the source checkout. Losing this directory can lose desired state, credentials, app files, SQLite databases, certificates, and on-host backups. Docker MySQL, PostgreSQL, and Redis data also require separate protection because they live in named volumes.
 :::
 
 Bento defaults to `./bento` when neither `--stack` nor `BENTO_STACK_ROOT` is set. Use an explicit path for production commands so the selected stack cannot change with the current working directory:

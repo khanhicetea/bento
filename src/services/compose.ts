@@ -13,6 +13,7 @@ import type { StackComposeEnvironment } from "./stack_env.ts";
 
 const DEFAULT_COMPOSE_ENVIRONMENT: StackComposeEnvironment = {
   projectName: "bento",
+  litestreamEnabled: false,
   nginx: { hostNetwork: true, http3: false },
 };
 
@@ -93,6 +94,15 @@ export function assembleComposeDocuments(
     });
   }
 
+  if (state.sqliteBackup?.enabled) {
+    files.push({
+      relPath: "compose/docker-compose.litestream.yml",
+      content: withManagedMarker(renderLitestreamFragment(environment)),
+      mode: 0o644,
+      managed: true,
+    });
+  }
+
   // Aggregated project file listing for inspectability
   const list = buildComposeFileList(platform, state);
   files.push({
@@ -132,6 +142,9 @@ export function buildComposeFileList(
     const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))
   ) {
     files.push(`${gen}/docker-compose.${database.service}.yml`);
+  }
+  if (state.sqliteBackup?.enabled) {
+    files.push(`${gen}/docker-compose.litestream.yml`);
   }
   // Local overlays in deterministic lexicographic order (operator-owned)
   // Actual disk scan happens at invoke time; list known pattern here.
@@ -287,6 +300,38 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
   return stringifyYaml(doc);
 }
 
+function renderLitestreamFragment(environment: StackComposeEnvironment): string {
+  const disabled = environment.litestreamEnabled === false;
+  return stringifyYaml({
+    networks: {
+      "backup-egress": { driver: "bridge", name: `${environment.projectName}_backup_egress` },
+    },
+    services: {
+      litestream: {
+        image: "litestream/litestream:0.5.15",
+        restart: "unless-stopped",
+        command: ["replicate", "-config", "/etc/litestream/litestream.yml"],
+        ...(disabled ? { profiles: ["litestream-disabled"] } : {}),
+        user: "0:0",
+        read_only: true,
+        cap_drop: ["ALL"],
+        cap_add: ["DAC_OVERRIDE", "CHOWN", "FOWNER"],
+        security_opt: ["no-new-privileges:true"],
+        stop_grace_period: "45s",
+        networks: ["backup-egress"],
+        env_file: ["./secrets/litestream/stack-s3.env"],
+        environment: { COMPOSE_PROJECT_NAME: environment.projectName },
+        volumes: [
+          "./sqlite:/sqlite",
+          "./litestream-meta:/var/lib/litestream",
+          "./generated/litestream:/etc/litestream:ro",
+          "./runtime/litestream:/run/litestream",
+        ],
+      },
+    },
+  });
+}
+
 function renderPhpFragment(service: string, image: string, version: string): string {
   const logging = composeLogging();
   const build = {
@@ -310,6 +355,7 @@ function renderPhpFragment(service: string, image: string, version: string): str
         cap_add: ["SYS_PTRACE"],
         volumes: [
           "./homes:/home",
+          "./sqlite:/sqlite",
           // Pools directory is not matched by php-fpm.d/*.conf; include file below pulls it in.
           `./generated/php/${service}/pools:/usr/local/etc/php-fpm.d/bento:ro`,
           `./generated/php/${service}/zz-bento-pools.conf:/usr/local/etc/php-fpm.d/zz-bento-pools.conf:ro`,
@@ -337,6 +383,7 @@ function renderPhpFragment(service: string, image: string, version: string): str
         command: ["/usr/local/bin/bento-runner-entrypoint"],
         volumes: [
           "./homes:/home",
+          "./sqlite:/sqlite",
           `./generated/runner/${service}/services:/etc/bento/services:ro`,
           `./generated/runner/${service}/cron:/etc/bento/cron:ro`,
           "./docker/php/runner-entrypoint.sh:/usr/local/bin/bento-runner-entrypoint:ro",
@@ -366,6 +413,7 @@ function renderPhpFragment(service: string, image: string, version: string): str
         working_dir: "/home",
         volumes: [
           "./homes:/home",
+          "./sqlite:/sqlite",
           // Bind host entrypoint so CLI identity fixes apply without image rebuild.
           "./docker/php/entrypoint.sh:/usr/local/bin/bento-php-entrypoint:ro",
           "./helpers:/opt/bento/helpers:ro",

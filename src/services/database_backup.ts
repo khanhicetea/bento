@@ -85,6 +85,11 @@ export async function runDatabaseRestore(
 ): Promise<DesiredState> {
   const app = state.apps[req.slug];
   if (!app) throw notFoundError(`app not found: ${req.slug}`);
+  if (app.database.engine === "sqlite") {
+    throw validationError(
+      "SQLite replacement restore is not yet supported; use `bento sqlite backup verify` to test recovery",
+    );
+  }
   validateDumpPathForEngine(platform, state, req.file, app.database.engine);
 
   switch (app.database.engine) {
@@ -139,6 +144,7 @@ function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<
     slug: string;
   }> = [];
   for (const app of apps) {
+    if (app.database.engine === "sqlite") continue;
     const databases = req.scope === "database"
       ? app.database.databases.filter((database) => database.name === req.database)
       : app.database.databases;

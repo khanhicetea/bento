@@ -31,7 +31,7 @@ Expect `Linux`, followed by `x86_64` or `aarch64`. The compiled binary includes 
 
 Install and start:
 
-- Docker Engine 20.10 or newer; and
+- Docker Engine 20.10 or newer, running rootful without user-namespace remapping when SQLite continuous backup is used; and
 - the Docker Compose v2 plugin, version 2.20 or newer.
 
 The account that runs `bento` must be able to reach the Docker daemon. Granting Docker access is effectively granting host-level control; follow Docker's security guidance when deciding whether to use `sudo` or Docker-group membership.
@@ -60,11 +60,11 @@ openssl version
 command -v ssh-keygen
 ```
 
-Later optional operations also use `tar` for stack transfer and support bundles, and `crontab` for scheduled backups.
+Later optional operations also use `tar` for stack transfer and support bundles and `crontab` for scheduled backups. SQLite continuous backup does not require `setfacl`; it uses a narrowly mounted, capability-limited root Litestream container.
 
 ### Storage and permissions
 
-Choose a local, durable filesystem for the **stack root**. The examples use `/var/lib/bento`. This directory eventually contains desired state, secrets, app homes, certificates, logs, and on-host backups; Docker named volumes hold database and Redis data.
+Choose a local, durable filesystem for the **stack root**. The examples use `/var/lib/bento`. This directory eventually contains desired state, secrets, app homes, SQLite databases, certificates, logs, and on-host backups; Docker named volumes hold MySQL, PostgreSQL, and Redis data.
 
 Ensure that:
 

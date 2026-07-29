@@ -18,6 +18,7 @@ export type NginxComposeEnvironment = {
 export type StackComposeEnvironment = {
   projectName: string;
   nginx: NginxComposeEnvironment;
+  litestreamEnabled?: boolean;
 };
 
 /** Validate the stable, explicit Compose identity used to prefix stack resources. */
@@ -107,6 +108,11 @@ export async function loadStackComposeEnvironment(
   }
   return {
     projectName,
+    litestreamEnabled: parseEnvBoolean(
+      env.BENTO_LITESTREAM_ENABLED,
+      false,
+      "BENTO_LITESTREAM_ENABLED",
+    ),
     nginx: {
       hostNetwork,
       ...(httpPort !== undefined ? { httpPort } : {}),

@@ -7,7 +7,7 @@
 
 import type { DesiredState } from "../domain/state.ts";
 import { createEmptyState } from "../domain/state.ts";
-import { loadStateFromJson, migrateV1ToV2, stateToJson } from "../schemas/state.ts";
+import { loadStateFromJson, migrateV1ToV2, migrateV2ToV3, stateToJson } from "../schemas/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { safetyError, stateError } from "../domain/errors.ts";
 import { STATE_SCHEMA_VERSION } from "../version.ts";
@@ -188,6 +188,43 @@ export class StateStore {
       loadStateFromJson(nextJson);
       const stamp = this.platform.clock.nowIso().replace(/[:.]/g, "-");
       const backupPath = `${path}.v1-${stamp}.bak`;
+      await this.platform.fs.atomicWriteText(backupPath, original, 0o600);
+      await this.platform.fs.atomicWriteText(path, nextJson, 0o600);
+      return { state: migrated.value, backupPath };
+    } finally {
+      await release();
+    }
+  }
+
+  /** Explicitly migrate schema v2 to v3 after an exact confirmation. */
+  async migrateV2ToV3(confirmation: string | undefined): Promise<{
+    state: DesiredState;
+    backupPath: string;
+  }> {
+    if (confirmation !== "migrate-v2-to-v3") {
+      throw safetyError(
+        "state migration confirmation must be exactly 'migrate-v2-to-v3'",
+        "Re-run with --confirm migrate-v2-to-v3 after backing up the stack.",
+      );
+    }
+    const release = await this.platform.lock.exclusive(this.platform.paths.paths.renderLock);
+    try {
+      const path = this.platform.paths.paths.stateFile;
+      const original = await this.platform.fs.readText(path);
+      let raw: unknown;
+      try {
+        raw = JSON.parse(original);
+      } catch {
+        throw stateError("state.json is not valid JSON; migration made no changes");
+      }
+      const migrated = migrateV2ToV3(raw);
+      if (!migrated.ok) {
+        throw stateError(`cannot migrate schema v2 state: ${migrated.errors.join("; ")}`);
+      }
+      const nextJson = stateToJson(migrated.value);
+      loadStateFromJson(nextJson);
+      const stamp = this.platform.clock.nowIso().replace(/[:.]/g, "-");
+      const backupPath = `${path}.v2-${stamp}.bak`;
       await this.platform.fs.atomicWriteText(backupPath, original, 0o600);
       await this.platform.fs.atomicWriteText(path, nextJson, 0o600);
       return { state: migrated.value, backupPath };

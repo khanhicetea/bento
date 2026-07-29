@@ -51,11 +51,11 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
     )
     .command(
       "state migrate",
-      "Explicitly migrate schema v1 state to schema v2",
+      "Explicitly migrate state to the current schema",
       (y: YargsBuilder) =>
         y.option("confirm", {
           type: "string",
-          describe: "Must be exactly migrate-v1-to-v2",
+          describe: "Must be exactly migrate-v1-to-v2 or migrate-v2-to-v3",
         }),
       bind(state, cmdStateMigrate),
     )
@@ -171,7 +171,9 @@ async function cmdStateMigrate(
   argv: ArgsWith<"confirm">,
   ctx: CliContext,
 ): Promise<number> {
-  const result = await ctx.store.migrateV1ToV2(argv.confirm);
+  const result = argv.confirm === "migrate-v2-to-v3"
+    ? await ctx.store.migrateV2ToV3(argv.confirm)
+    : await ctx.store.migrateV1ToV2(argv.confirm);
   if (ctx.json) {
     ctx.log.out(
       JSON.stringify(
@@ -182,7 +184,7 @@ async function cmdStateMigrate(
     );
   } else {
     ctx.log.info(`migrated state to schema v${result.state.schemaVersion}`);
-    ctx.log.info(`v1 backup: ${result.backupPath}`);
+    ctx.log.info(`pre-migration backup: ${result.backupPath}`);
   }
   return 0;
 }

@@ -25,12 +25,13 @@ PHP runner -> per-app Supercronic, deploy drain, and s6 workers
 | PHP CLI | Ephemeral per command | App UID/GID, home, runtime |
 | MySQL/PostgreSQL | One per managed version | Private service and durable named volume |
 | Redis | One per stack | Private shared/ACL cache and durable volume |
+| Litestream | Optional one per stack | Constrained-root directory watcher for every managed SQLite file |
 
 ## Request and storage paths
 
 Nginx reads app homes through a read-only mount and reaches FPM through per-app sockets. PHP roles reach databases and Redis through the private network. Host-mode Nginx does not join that network; bridge-mode Nginx does. Database and cache ports are not published by the base model.
 
-Desired state and `.env` are local source-of-truth. Generated configuration is disposable. Operator customization is loaded from `custom/` and `overlays/`. Homes, certificates, backups, logs, and named volumes are durable.
+Desired state and `.env` are local source-of-truth. Generated configuration is disposable. Operator customization is loaded from `custom/` and `overlays/`. Homes, SQLite files, certificates, backups, logs, and named volumes are durable.
 
 ## Validation and failure
 

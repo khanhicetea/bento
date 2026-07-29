@@ -55,8 +55,8 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
               .option("fpm", { type: "string", describe: "FPM capacity profile" })
               .option("database-engine", {
                 type: "string",
-                choices: ["mysql", "postgres"],
-                describe: "Relational database engine",
+                choices: ["mysql", "postgres", "sqlite"],
+                describe: "Database engine",
               })
               .option("mysql", { type: "string", describe: "MySQL version/service shorthand" })
               .option("postgres", { type: "string", describe: "PostgreSQL version/service" })
@@ -106,7 +106,7 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
               .option("fpm", { type: "string" })
               .option("database-engine", {
                 type: "string",
-                choices: ["mysql", "postgres"],
+                choices: ["mysql", "postgres", "sqlite"],
               })
               .option("mysql", { type: "string" })
               .option("postgres", { type: "string" })
@@ -191,7 +191,9 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.phpVersion,
       a.fpmProfile,
       a.tls.kind,
-      `${a.database.engine}/${a.database.service}`,
+      a.database.engine === "sqlite"
+        ? `/sqlite/${a.database.file.id}/database.sqlite`
+        : `${a.database.engine}/${a.database.service}`,
     ]);
   ctx.log.out(
     printTable(
@@ -217,7 +219,9 @@ async function cmdAppShow(argv: ArgsWith<"slug">, ctx: CliContext): Promise<numb
 export function redactAppForOutput(app: AppState): AppState {
   return {
     ...app,
-    database: { ...app.database, password: "***" },
+    database: app.database.engine === "sqlite"
+      ? app.database
+      : { ...app.database, password: "***" },
     redis: {
       ...app.redis,
       password: app.redis.password ? "***" : undefined,
@@ -255,6 +259,7 @@ async function cmdAppCreate(
       databaseEngine: argv.databaseEngine,
       mysqlVersion: argv.mysql,
       postgresVersion: argv.postgres,
+      sqlitePath: argv.sqlitePath,
       createDatabase: explicitDb,
       databaseName: argv.database,
       accessLog: argv.accessLog === true,
@@ -366,17 +371,27 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   const plan = await planAppPrune(ctx.platform, state, argv.slug);
 
   ctx.log.out(`The following retained data for app ${plan.slug} will be permanently deleted:`);
-  const engineLabel = plan.engine === "mysql" ? "MySQL" : "PostgreSQL";
+  const engineLabel = plan.engine === "mysql"
+    ? "MySQL"
+    : plan.engine === "postgres"
+    ? "PostgreSQL"
+    : "SQLite";
   for (const database of plan.databases) {
-    ctx.log.out(`  - ${engineLabel} database: ${database} (${plan.databaseService})`);
+    ctx.log.out(
+      plan.engine === "sqlite"
+        ? `  - SQLite directory: ${ctx.platform.paths.paths.root}/sqlite/${database}`
+        : `  - ${engineLabel} database: ${database} (${plan.databaseService})`,
+    );
   }
   if (plan.manifestFound) {
-    const identity = plan.engine === "mysql" ? `${plan.databaseUser}@%` : plan.databaseUser;
-    ctx.log.out(
-      `  - ${engineLabel} ${
-        plan.engine === "mysql" ? "account" : "role"
-      }: ${identity} (${plan.databaseService})`,
-    );
+    if (plan.engine !== "sqlite") {
+      const identity = plan.engine === "mysql" ? `${plan.databaseUser}@%` : plan.databaseUser;
+      ctx.log.out(
+        `  - ${engineLabel} ${
+          plan.engine === "mysql" ? "account" : "role"
+        }: ${identity} (${plan.databaseService})`,
+      );
+    }
   } else {
     ctx.log.warn(
       "cleanup metadata is unavailable; database data cannot be identified and will not be deleted",

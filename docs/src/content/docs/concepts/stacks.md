@@ -45,14 +45,14 @@ A stack root contains several ownership classes:
 | --- | --- | --- |
 | Operator intent and secrets | `state.json`, `.env` | Sensitive source of truth; normally change through Bento commands |
 | Operator customization | `custom/`, `overlays/` | Preserve and review across upgrades |
-| Durable runtime data | `homes/`, `certs/`, `backups/`, `logs/` | Back up according to recovery requirements |
+| Durable runtime data | `homes/`, `sqlite/`, `certs/`, `backups/`, `logs/` | Back up according to recovery requirements |
 | Generated output | `generated/`, `docker/`, `helpers/`, `.asset-cache/` | Reconstructible; do not customize generated copies |
 | Ephemeral coordination | `runtime/`, `locks/` | Recreated as needed; not recovery data |
 
-Docker named volumes for MySQL, PostgreSQL, and Redis are durable stack resources but do **not** live under the stack root. The stack name connects generated Compose configuration to those volumes.
+Docker named volumes for MySQL, PostgreSQL, and Redis are durable stack resources but do **not** live under the stack root. SQLite databases live under stack-root `sqlite/`. The stack name connects generated Compose configuration to named volumes and the remote SQLite replica prefix.
 
 :::caution
-A filesystem backup of the stack root alone is not a complete database backup. It omits Docker named-volume contents. Use Bento's logical backup or stack export workflows and keep verified off-host copies.
+A filesystem backup of the stack root alone is not a complete database backup. It omits Docker named-volume contents, and copying a live SQLite file does not guarantee consistency. Use Bento's relational logical backup or stack export workflows, configure SQLite continuous backup where needed, and keep verified off-host copies.
 :::
 
 ## The stack name selects Compose resources

@@ -4,6 +4,7 @@ import { createPlatform } from "../../src/platform/mod.ts";
 import { migrateV1ToV2, parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { StateStore } from "../../src/services/state_store.ts";
+import { STATE_SCHEMA_VERSION } from "../../src/version.ts";
 
 function v1Fixture() {
   const platform = createPlatform("/tmp/unused", Deno.cwd());
@@ -57,7 +58,7 @@ Deno.test("PG-01 pure v1 migration preserves every MySQL durable identifier and 
   assertEquals(result.ok, true);
   if (!result.ok) return;
   const app = result.value.apps["alpha"]!;
-  assertEquals(result.value.schemaVersion, 2);
+  assertEquals(result.value.schemaVersion, STATE_SCHEMA_VERSION);
   assertEquals(result.value.defaults.database, {
     engine: "mysql",
     version: old.defaults.mysqlVersion,
@@ -141,7 +142,7 @@ Deno.test("explicit state migration backs up v1 and atomically installs validate
     const migrated = await store.migrateV1ToV2("migrate-v1-to-v2");
     assertEquals(await platform.fs.readText(migrated.backupPath), original);
     assertEquals((await platform.fs.stat(migrated.backupPath)).mode & 0o777, 0o600);
-    assertEquals((await store.load()).schemaVersion, 2);
+    assertEquals((await store.load()).schemaVersion, STATE_SCHEMA_VERSION);
     assertEquals((await platform.fs.stat(platform.paths.paths.stateFile)).mode & 0o777, 0o600);
   } finally {
     await Deno.remove(root, { recursive: true });

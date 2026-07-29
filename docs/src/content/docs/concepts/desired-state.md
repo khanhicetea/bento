@@ -35,9 +35,9 @@ Bento is an on-demand control plane, not a resident daemon. It reconciles the st
 | Stack environment | `.env` | Bento initialization and deliberate operator configuration | Secrets are not safely derivable from generated files |
 | Customization | `custom/`, `overlays/` | Operator or supported customization commands | No; preserve it |
 | Generated configuration | `generated/nginx/`, `generated/php/`, `generated/compose/`, generated client files | Bento | Yes, from current intent and assets |
-| Durable runtime data | `homes/`, `certs/`, `backups/`, logs, Docker named volumes | Applications, services, and Bento operations | No; use an appropriate backup method |
+| Durable runtime data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, logs, Docker named volumes | Applications, services, and Bento operations | No; use an appropriate backup method |
 
-`state.json` contains the versioned application model: apps, runtime assignments, domains, database bindings, jobs, proxies, and related settings. It can also contain deployment secrets, so Bento writes it with restricted permissions. The stack `.env` contains Compose identity, topology settings, and administrator secrets. Treat both as sensitive source material.
+`state.json` contains the versioned application model: apps, runtime assignments, domains, database bindings, the optional stack-wide SQLite backup policy, jobs, proxies, and related settings. It can also contain deployment secrets, so Bento writes it with restricted permissions. The stack `.env` contains Compose identity, topology settings, and administrator secrets. Treat both as sensitive source material.
 
 ## Change desired state through Bento
 

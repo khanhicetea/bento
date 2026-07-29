@@ -10,6 +10,8 @@ import {
 } from "../../services/app.ts";
 import { buildMysqlShellPlan, createAppDatabaseLive } from "../../services/mysql.ts";
 import { buildPostgresShellPlan, createPostgresAppDatabaseLive } from "../../services/postgres.ts";
+import { enableSqliteBackup, sqliteCompose } from "../../services/sqlite.ts";
+import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
 import {
   loadRedisPassword,
   requireMysqlRootPassword,
@@ -212,32 +214,57 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   const databaseChoices: MenuChoice<string>[] = state.databaseServices.map((service) => ({
     label: `${service.engine}: ${service.version}`,
     value: `${service.engine}:${service.service}`,
-    hint: existing?.database.service === service.service
+    hint: existing?.database.engine !== "sqlite" &&
+        existing?.database.service === service.service
       ? "current"
       : state.defaults.database.service === service.service
       ? "default"
       : service.service,
   }));
+  databaseChoices.push({
+    label: "SQLite",
+    value: "sqlite",
+    hint: existing?.database.engine === "sqlite"
+      ? "current · Litestream backup"
+      : "local file · Litestream backup",
+  });
   if (existing) {
     databaseChoices.unshift({
-      label: `Keep current (${existing.database.engine}: ${existing.database.service})`,
+      label: existing.database.engine === "sqlite"
+        ? "Keep current (SQLite)"
+        : `Keep current (${existing.database.engine}: ${existing.database.service})`,
       value: "",
     });
   }
-  const databaseSelection = await ui.menu("Relational database", databaseChoices);
+  const databaseSelection = await ui.menu("Database", databaseChoices);
   if (databaseSelection === null) return;
   const [databaseEngine, databaseService] = databaseSelection
     ? databaseSelection.split(":", 2)
     : [undefined, undefined];
+  const effectiveDatabaseEngine = databaseEngine ?? existing?.database.engine ??
+    state.defaults.database.engine;
+  const useSqlite = effectiveDatabaseEngine === "sqlite";
 
-  const createDb = await ui.confirm("Create a namespaced database for this app?");
+  const createDb = useSqlite
+    ? false
+    : await ui.confirm("Create a namespaced database for this app?");
   const databaseName = createDb
     ? await ui.prompt("Database name (blank = auto)", { default: "" })
     : "";
   if (createDb && databaseName === null) return;
+  if (useSqlite) {
+    ui.info("SQLite continuous backup will be enabled with Litestream.");
+    ui.message(
+      state.sqliteBackup?.enabled
+        ? "The existing stack-wide policy will automatically cover this database."
+        : "Requires BENTO_LITESTREAM_ENABLED=true and S3 settings in the stack environment.",
+    );
+  }
 
   const accessLog = await ui.confirm("Enable per-app access logs?", { defaultYes: false });
-  const noApply = !(await ui.confirm("Render & apply after save?", { defaultYes: true }));
+  const noApply = useSqlite
+    ? false
+    : !(await ui.confirm("Render & apply after save?", { defaultYes: true }));
 
   ui.blank();
   ui.table(
@@ -252,10 +279,11 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       ["entry", entry || "default"],
       [
         "database",
-        `${databaseSelection || "keep current"}${
+        `${useSqlite ? "SQLite" : databaseSelection || "keep current"}${
           createDb ? ` · create ${databaseName || "auto"}` : ""
         }`,
       ],
+      ...(useSqlite ? [["sqlite-backup", "Litestream · enabled"]] : []),
       ["access-log", accessLog ? "yes" : "no"],
       ["apply", noApply ? "skip" : "yes"],
     ],
@@ -292,22 +320,49 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
         recursivePerms: true,
         redisSharedPassword: redisShared,
       });
-      await ctx.store.save(provisioned.state);
+
+      let nextState = provisioned.state;
+      let sqliteBackupEnabledNow = false;
+      if (provisioned.app.database.engine === "sqlite" && !nextState.sqliteBackup?.enabled) {
+        nextState = await enableSqliteBackup(ctx.platform, nextState, slug);
+        sqliteBackupEnabledNow = true;
+      }
+
+      await ctx.store.save(nextState);
       if (!noApply) {
-        await ctx.render.apply(provisioned.state, {
+        await ctx.render.apply(nextState, {
           reloadPlan: provisioned.reloadPlan,
           skipValidate: false,
           alreadyLocked: true,
         });
       }
-      return { provisioned, plane };
+      return { provisioned, plane, state: nextState, sqliteBackupEnabledNow };
     });
+
+    if (result.provisioned.app.database.engine === "sqlite") {
+      if (result.sqliteBackupEnabledNow) {
+        const up = await sqliteCompose(ctx.platform, result.state, [
+          "up",
+          "-d",
+          "--force-recreate",
+          "litestream",
+        ]);
+        if (up.code !== 0) {
+          throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
+        }
+      }
+      ui.success(
+        "SQLite Litestream backup enabled",
+        "The watcher will discover the database after the application initializes it.",
+      );
+    }
+
     ui.success(
       `${result.provisioned.created ? "Created" : "Updated"} app ${result.provisioned.app.slug}`,
       `uid=${result.provisioned.app.uid} domain=${result.provisioned.app.mainDomain}`,
     );
     for (const note of result.plane.deferredNotes) ui.warn(note);
-    for (const w of capacityWarnings(result.provisioned.state)) ui.warn(w);
+    for (const w of capacityWarnings(result.state)) ui.warn(w);
   } catch (err) {
     handleError(ui, err);
   }
@@ -320,10 +375,25 @@ async function sectionAppDatabases(
   slug: string,
 ): Promise<void> {
   while (true) {
-    const app = (await ctx.store.load()).apps[slug];
+    const state = await ctx.store.load();
+    const app = state.apps[slug];
     if (!app) return;
 
     ui.clear();
+    if (app.database.engine === "sqlite") {
+      ui.header(`SQLite: ${slug}`, "local database · stack-wide Litestream backup");
+      ui.table(
+        ["field", "value"],
+        [
+          ["file", sqliteContainerPath(app.database.file.id)],
+          ["backup", state.sqliteBackup?.enabled ? "enabled" : "disabled"],
+          ["verified", app.database.backupVerifiedAt ?? "never"],
+        ],
+      );
+      await ui.pause();
+      return;
+    }
+
     ui.header(
       `Databases: ${slug}`,
       `${app.database.service} · ${app.database.databases.length} database${

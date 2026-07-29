@@ -4,6 +4,7 @@
 
 import { join } from "@std/path";
 import type {
+  AppDatabase,
   AppDatabaseBinding,
   AppState,
   DatabaseEngine,
@@ -53,6 +54,13 @@ import {
 } from "./postgres.ts";
 import { tryApplyAppRedisAcl } from "./redis.ts";
 import {
+  DEFAULT_SQLITE_PATH,
+  sqliteContainerPath,
+  sqliteHostDir,
+  sqliteHostPath,
+  sqliteRelativePath,
+} from "./sqlite_paths.ts";
+import {
   loadMysqlRootPassword,
   loadPostgresRootPassword,
   loadRedisPassword,
@@ -74,6 +82,8 @@ export type ProvisionAppInput = {
   mysqlVersion?: string;
   /** Managed PostgreSQL major version or service. */
   postgresVersion?: string;
+  /** Legacy compatibility input; storage is allocated under stack sqlite/<file-id>. */
+  sqlitePath?: string;
   createDatabase?: boolean;
   databaseName?: string;
   tls?: TlsMode;
@@ -136,7 +146,11 @@ export function provisionApp(
   }
   const fpmProfile = asFpmProfile(String(fpmProfileStr));
 
-  const managedDatabase = resolveAppDatabaseService(state, existing, input);
+  const databaseEngine = (input.databaseEngine ?? existing?.database.engine ??
+    state.defaults.database.engine) as DatabaseEngine;
+  const managedDatabase = databaseEngine === "sqlite"
+    ? undefined
+    : resolveAppDatabaseService(state, existing, input);
 
   // Explicit database requests require a live engine adapter in applyAppDataPlane before save.
 
@@ -159,7 +173,9 @@ export function provisionApp(
   const now = platform.clock.nowIso();
 
   // Generate once for a new app; all later reconciliation preserves it.
-  const databasePassword = existing?.database.password ?? platform.random.hex(18);
+  const databasePassword = existing && existing.database.engine !== "sqlite"
+    ? existing.database.password
+    : platform.random.hex(18);
   const redisPassword = existing?.redis.password ??
     (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
 
@@ -178,8 +194,10 @@ export function provisionApp(
     };
   }
 
-  const databases = existing?.database.databases ? [...existing.database.databases] : [];
-  if (input.createDatabase) {
+  const databases = existing && existing.database.engine !== "sqlite"
+    ? [...existing.database.databases]
+    : [];
+  if (input.createDatabase && databaseEngine !== "sqlite") {
     const dbName = input.databaseName ?? slug;
     if (!/^[a-zA-Z0-9_]+$/.test(dbName)) {
       throw validationError(`invalid database name ${dbName}`);
@@ -210,13 +228,17 @@ export function provisionApp(
     fpmProfile,
     tls,
     accessLog,
-    database: databaseBinding(
-      managedDatabase.engine,
-      String(managedDatabase.service),
-      slug,
-      databasePassword,
-      databases,
-    ),
+    database: databaseEngine === "sqlite"
+      ? existing?.database.engine === "sqlite"
+        ? existing.database
+        : createSqliteBinding(platform, input.sqlitePath ?? DEFAULT_SQLITE_PATH, now)
+      : databaseBinding(
+        managedDatabase!.engine,
+        String(managedDatabase!.service),
+        slug,
+        databasePassword,
+        databases,
+      ),
     redis,
     deploy: existing?.deploy ?? defaultDeployConfig(homeContainer),
     vhostTemplate: existing?.vhostTemplate ?? { kind: "upstream" },
@@ -250,8 +272,24 @@ export function provisionApp(
   };
 }
 
-function asDatabaseName(name: string): AppState["database"]["databases"][number]["name"] {
-  return name as AppState["database"]["databases"][number]["name"];
+function asDatabaseName(name: string): AppDatabase["name"] {
+  return name as AppDatabase["name"];
+}
+
+function createSqliteBinding(
+  platform: Platform,
+  requestedPath: string,
+  now: string,
+): AppDatabaseBinding {
+  const normalized = unwrap(parseSafeRelativePath(requestedPath), "sqlitePath");
+  if (normalized !== DEFAULT_SQLITE_PATH) {
+    throw validationError(`SQLite location is managed; expected ${DEFAULT_SQLITE_PATH}`);
+  }
+  const id = platform.random.id("sqlite");
+  return {
+    engine: "sqlite",
+    file: { id, path: sqliteRelativePath(id), createdAt: now },
+  } as AppDatabaseBinding;
 }
 
 function databaseBinding(
@@ -259,7 +297,7 @@ function databaseBinding(
   service: string,
   user: string,
   password: string,
-  databases: AppState["database"]["databases"],
+  databases: AppDatabase[],
 ): AppDatabaseBinding {
   const common = { service: asDatabaseService(service), user, password, databases };
   return engine === "mysql" ? { engine: "mysql", ...common } : { engine: "postgres", ...common };
@@ -270,8 +308,14 @@ function resolveAppDatabaseService(
   existing: AppState | undefined,
   input: ProvisionAppInput,
 ): ManagedDatabaseService {
-  if (input.databaseEngine !== undefined && !["mysql", "postgres"].includes(input.databaseEngine)) {
-    throw validationError("database engine must be mysql or postgres");
+  if (
+    input.databaseEngine !== undefined &&
+    !["mysql", "postgres", "sqlite"].includes(input.databaseEngine)
+  ) {
+    throw validationError("database engine must be mysql, postgres, or sqlite");
+  }
+  if (input.databaseEngine === "sqlite" && (input.mysqlVersion || input.postgresVersion)) {
+    throw validationError("--database-engine sqlite cannot be combined with --mysql or --postgres");
   }
   if (input.mysqlVersion && input.postgresVersion) {
     throw validationError("--mysql and --postgres cannot be used together");
@@ -285,9 +329,12 @@ function resolveAppDatabaseService(
 
   const requestedEngine = (input.databaseEngine ??
     (input.mysqlVersion ? "mysql" : input.postgresVersion ? "postgres" : undefined)) as
-      | DatabaseEngine
+      | Exclude<DatabaseEngine, "sqlite">
       | undefined;
   const engine = requestedEngine ?? existing?.database.engine ?? state.defaults.database.engine;
+  if (engine === "sqlite") {
+    throw validationError("SQLite does not use a managed relational service");
+  }
   if (existing && engine !== existing.database.engine) {
     throw conflictError(
       `app ${existing.slug} is assigned to ${existing.database.engine}/${existing.database.service}; moving database engines is an explicit migration`,
@@ -374,6 +421,25 @@ export async function materializeAppHome(
   for (const d of dirs) {
     await platform.fs.mkdirp(d, 0o750);
   }
+  if (app.database.engine === "sqlite") {
+    const sqliteDir = sqliteHostDir(platform, app.database.file.id);
+    const sqlitePath = sqliteHostPath(platform, app.database.file.id);
+    await platform.fs.mkdirp(sqliteDir, 0o700);
+    if (!(await platform.fs.exists(sqlitePath))) {
+      await platform.fs.writeBytes(sqlitePath, new Uint8Array(), 0o600);
+    }
+    const ownership = await platform.process.run([
+      "chown",
+      "-R",
+      `${app.uid}:${app.gid}`,
+      sqliteDir,
+    ]);
+    if (ownership.code !== 0) {
+      throw safetyError(`cannot set SQLite ownership: ${ownership.stderr.trim()}`);
+    }
+    await platform.fs.chmod(sqliteDir, 0o700);
+    await platform.fs.chmod(sqlitePath, 0o600);
+  }
 
   await ensureAppSshKeyPair(platform, app);
 
@@ -401,13 +467,19 @@ export async function materializeAppHome(
       `MYSQL_PASSWORD=${app.database.password}`,
       `MYSQL_DATABASE=${app.database.databases[0]?.name ?? app.slug}`,
     ]
-    : [
+    : app.database.engine === "postgres"
+    ? [
       "DB_CONNECTION=pgsql",
       `PGHOST=${app.database.service}`,
       "PGPORT=5432",
       `PGUSER=${app.database.user}`,
       `PGPASSWORD=${app.database.password}`,
       `PGDATABASE=${app.database.databases[0]?.name ?? app.slug}`,
+    ]
+    : [
+      "DB_CONNECTION=sqlite",
+      `DB_DATABASE=${sqliteContainerPath(app.database.file.id)}`,
+      "SQLITE_BUSY_TIMEOUT=5000",
     ];
   const cred = [
     ...databaseLines,
@@ -593,7 +665,7 @@ export async function applyAppDataPlane(
         );
       }
     }
-  } else {
+  } else if (app.database.engine === "postgres") {
     if (opts.explicitDatabase) {
       const rootPassword = await requirePostgresRootPassword(platform);
       if (!(await isPostgresReachable(platform, app.database.service))) {
@@ -618,6 +690,10 @@ export async function applyAppDataPlane(
         );
       }
     }
+  } else {
+    // The private file is materialized with the app home. The application opens it
+    // with PDO SQLite, which writes the canonical SQLite header and WAL settings.
+    databaseApplied = true;
   }
 
   const redisShared = await loadRedisPassword(platform);

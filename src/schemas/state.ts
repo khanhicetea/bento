@@ -1,4 +1,4 @@
-/** Runtime validation and explicit v1 -> v2 state migration. */
+/** Runtime validation and explicit migrations to the current state schema. */
 import { z } from "zod";
 import {
   type AppDatabase,
@@ -100,6 +100,15 @@ const databaseSchema = strict({
   name: nonEmptyStringSchema.regex(/^[a-zA-Z0-9_]+$/, "must be alphanumeric/underscore"),
   createdAt: isoDateSchema,
 });
+const sqliteBackupSchema = strict({
+  provider: z.literal("litestream"),
+  destination: nonEmptyStringSchema,
+  syncInterval: z.enum(["1s", "10s", "60s"]),
+  snapshotInterval: nonEmptyStringSchema,
+  snapshotRetention: nonEmptyStringSchema,
+  l0Retention: nonEmptyStringSchema,
+  enabled: z.boolean(),
+});
 const bindingSchema = z.discriminatedUnion("engine", [
   strict({
     engine: z.literal("mysql"),
@@ -114,6 +123,20 @@ const bindingSchema = z.discriminatedUnion("engine", [
     user: nonEmptyStringSchema,
     password: z.string(),
     databases: z.array(databaseSchema).default([]),
+  }),
+  strict({
+    engine: z.literal("sqlite"),
+    file: strict({
+      id: nonEmptyStringSchema,
+      path: safeRelativePathSchema.refine(
+        (path) =>
+          path === "data/sqlite/database.sqlite" ||
+          /^sqlite\/[a-z0-9_]+\/database\.sqlite$/.test(path),
+        { message: "SQLite path must be the managed sqlite/<file-id>/database.sqlite path" },
+      ),
+      createdAt: isoDateSchema,
+    }),
+    backupVerifiedAt: isoDateSchema.optional(),
   }),
 ]);
 const appBase = {
@@ -235,6 +258,7 @@ const desiredStateRawSchema = strict({
   defaults: defaultsSchema,
   phpVersions: z.array(managedPhpSchema).min(1),
   databaseServices: z.array(managedDatabaseSchema).min(1),
+  sqliteBackup: sqliteBackupSchema.optional(),
   apps: z.record(z.string(), appSchema),
   ...commonState,
 }).superRefine((state, ctx) => {
@@ -259,6 +283,7 @@ const desiredStateRawSchema = strict({
     });
   }
   for (const [slug, app] of Object.entries(state.apps)) {
+    if (app.database.engine === "sqlite") continue;
     if (!services.has(app.database.service)) {
       ctx.addIssue({
         code: "custom",
@@ -266,7 +291,8 @@ const desiredStateRawSchema = strict({
         message: "must reference a managed service",
       });
     }
-    const managed = state.databaseServices.find((s) => s.service === app.database.service);
+    const relational = app.database as Exclude<typeof app.database, { engine: "sqlite" }>;
+    const managed = state.databaseServices.find((s) => s.service === relational.service);
     if (managed && managed.engine !== app.database.engine) {
       ctx.addIssue({
         code: "custom",
@@ -320,6 +346,19 @@ function brandRedis(r: z.infer<typeof redisSchema>): AppRedisIdentity {
   };
 }
 function brandApp(app: z.infer<typeof appSchema>): AppState {
+  const database: AppState["database"] = app.database.engine === "sqlite"
+    ? ({
+      engine: "sqlite" as const,
+      file: app.database.file,
+      ...(app.database.backupVerifiedAt ? { backupVerifiedAt: app.database.backupVerifiedAt } : {}),
+    } as AppState["database"])
+    : {
+      engine: app.database.engine,
+      service: asDatabaseService(app.database.service),
+      user: app.database.user,
+      password: app.database.password,
+      databases: app.database.databases.map(brandDatabase),
+    };
   return {
     slug: asAppSlug(app.slug),
     enabled: app.enabled,
@@ -335,13 +374,7 @@ function brandApp(app: z.infer<typeof appSchema>): AppState {
     fpmProfile: asFpmProfile(app.fpmProfile),
     tls: app.tls,
     accessLog: app.accessLog,
-    database: {
-      engine: app.database.engine,
-      service: asDatabaseService(app.database.service),
-      user: app.database.user,
-      password: app.database.password,
-      databases: app.database.databases.map(brandDatabase),
-    },
+    database,
     redis: brandRedis(app.redis),
     deploy: brandDeploy(app.deploy),
     vhostTemplate: app.vhostTemplate,
@@ -454,6 +487,7 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
       processCap: v.processCap,
     })),
     databaseServices: raw.databaseServices.map(brandManaged),
+    ...(raw.sqliteBackup ? { sqliteBackup: raw.sqliteBackup } : {}),
     apps,
     proxies,
     domains,
@@ -507,7 +541,7 @@ export function migrateV1ToV2(value: unknown): ParseResult<DesiredState> {
     }]),
   );
   return parseDesiredState({
-    schemaVersion: 2,
+    schemaVersion: STATE_SCHEMA_VERSION,
     defaults: {
       phpVersion: old.defaults.phpVersion,
       database: {
@@ -529,6 +563,16 @@ export function migrateV1ToV2(value: unknown): ParseResult<DesiredState> {
     updatedAt: old.updatedAt,
   });
 }
+/** Pure v2 -> v3 migration. Relational bindings are preserved byte-for-value. */
+export function migrateV2ToV3(value: unknown): ParseResult<DesiredState> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return err("state must be a JSON object");
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.schemaVersion !== 2) return err("expected schemaVersion 2");
+  return parseDesiredState({ ...raw, schemaVersion: STATE_SCHEMA_VERSION });
+}
+
 export function loadV1StateFromJson(text: string): DesiredState {
   let raw: unknown;
   try {

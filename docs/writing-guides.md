@@ -77,7 +77,7 @@ Use these terms consistently:
 | **data plane** | Nginx, PHP roles, databases, Redis, and supervised jobs running in containers. |
 | **host mode** | Nginx uses the host network; normally one stack owns host ports 80/443. |
 | **bridge mode** | Nginx joins the stack-private Compose network and may publish explicitly selected host ports. |
-| **database service** | One managed MySQL version or PostgreSQL major and its durable volume. An app binds to exactly one engine/service. |
+| **database service** | One managed MySQL version or PostgreSQL major and its durable volume. A relational app binds to exactly one engine/service; a SQLite app binds to one private file instead. |
 | **runner** | Singleton service per PHP version that supervises app schedulers, deploy drains, and workers. |
 | **overlay** | Operator-owned Compose customization loaded in deterministic order. |
 | **drop-in** | Additive operator-owned configuration included from a supported `custom/` location. |

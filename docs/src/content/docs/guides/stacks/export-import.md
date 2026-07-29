@@ -5,7 +5,7 @@ description: Transfer a complete Bento stack and its raw data volumes with expli
 
 # Export and import a stack
 
-Export stack files plus MySQL, PostgreSQL, and Redis volumes, then import them into an empty stack root. Plan downtime for data services.
+Export supported stack files plus MySQL, PostgreSQL, and Redis volumes, then import them into an empty stack root. Plan downtime for data services.
 
 ## Before you begin
 
@@ -15,6 +15,10 @@ Export stack files plus MySQL, PostgreSQL, and Redis volumes, then import them i
 
 :::caution
 Export archives contain passwords, private keys, application files, and raw database data. Encrypt them in transit and at rest, and restrict access.
+:::
+
+:::caution
+Stack export does not currently include the stack-root `sqlite/` directory. Use [SQLite continuous backup](/guides/data/sqlite/) and verify its remote restore separately. Do not copy a live SQLite database and its WAL/SHM files as an assumed-consistent backup.
 :::
 
 ## Export
@@ -48,7 +52,7 @@ bento --stack /srv/bento/clone doctor
 bento --stack /srv/bento/clone stack ingress show
 ```
 
-Verify representative applications and databases before retiring the source.
+Verify representative applications and imported MySQL/PostgreSQL/Redis data before retiring the source. Recover and verify SQLite separately; the current import does not restore it.
 
 ## Troubleshooting
 

@@ -10,6 +10,7 @@ import {
   runDatabaseBackup,
   runDatabaseRestore,
 } from "../../services/database_backup.ts";
+import { syncSqliteBackup } from "../../services/sqlite.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
 import { bind, type RunState, type YargsBuilder } from "../shared.ts";
@@ -120,6 +121,15 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     ctx.log.error("usage: bento backup --app <app> [--database name] | --all");
     return 2;
   }
+  const sqliteApps = scope === "all"
+    ? Object.values(state.apps).filter((app) => app.database.engine === "sqlite")
+    : argv.app && state.apps[argv.app]?.database.engine === "sqlite"
+    ? [state.apps[argv.app]!]
+    : [];
+  if (scope === "database" && sqliteApps.length > 0) {
+    ctx.log.error("SQLite has one explicit file; omit --database");
+    return 2;
+  }
   const artifacts = await runDatabaseBackup(ctx.platform, state, {
     scope,
     slug: argv.app,
@@ -127,6 +137,10 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     compress: argv.gzip === true ? "gzip" : argv.none === true ? "none" : "zstd",
   });
   logBackupArtifacts(ctx, artifacts);
+  for (const app of sqliteApps) {
+    await syncSqliteBackup(ctx.platform, state, app.slug);
+    ctx.log.info(`remote sync confirmed for SQLite app ${app.slug}`);
+  }
   return 0;
 }
 

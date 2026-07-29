@@ -29,7 +29,7 @@ Put global flags before the command. Use explicit `--stack` for first use, multi
 | Bootstrap/control | `version`, `tui`, `init`, `state migrate`, `render`, `apply` | [Start here](/start/first-stack/) |
 | Diagnostics | `status`, `doctor`, `support-bundle`, `test-stack` | [Diagnostics](/guides/stacks/diagnostics/) |
 | Apps/runtime | `app`, `php`, `exec` | [Apps](/guides/apps/manage/), [PHP](/guides/apps/php-runtimes/) |
-| Data | `mysql`, `postgres`, `backup`, `restore` | [Data guides](/guides/data/backup-restore/) |
+| Data | `mysql`, `postgres`, `sqlite`, `backup`, `restore` | [Relational backup and restore](/guides/data/backup-restore/), [SQLite](/guides/data/sqlite/) |
 | Traffic | `proxy`, `tls`, `logs` | [Reverse proxy](/guides/apps/reverse-proxy/), [TLS](/guides/apps/domains-tls/) |
 | Background | `deploy`, `cron`, `worker` | [Deploy](/guides/apps/deploy/), [jobs](/guides/apps/schedules-workers/) |
 | Stack | `compose`, `stack`, `maintenance` | [Stack management](/guides/stacks/manage/) |

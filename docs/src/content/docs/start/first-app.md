@@ -182,7 +182,7 @@ bento --stack /var/lib/bento compose -- logs --tail 100 php85 nginx
 
 Without `--db`, Bento may create the database account on a best-effort basis and defer that work while MySQL is unavailable. The first-app path uses `--db` so database creation is explicit and transactional with respect to desired-state recording.
 
-An app binds to one relational database engine and managed service. To use PostgreSQL for a different app, first add a supported PostgreSQL major, then select it with `--database-engine postgres --postgres <major> --db`. Bento does not automatically move an existing app between MySQL and PostgreSQL.
+An app binds to one database engine. A MySQL or PostgreSQL app also binds to one managed service. To use PostgreSQL for a different app, first add a supported PostgreSQL major, then select it with `--database-engine postgres --postgres <major> --db`. For a private file database and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/). Bento does not automatically move an existing app between engines.
 
 The generated credential file is application metadata, not automatic framework configuration. Bento does not infer how Laravel, Symfony, WordPress, or another application loads environment variables.
 
