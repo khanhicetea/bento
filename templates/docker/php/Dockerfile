@@ -104,6 +104,7 @@ RUN set -eux; \
     ca-certificates \
     curl \
     git \
+    gzip \
     libargon2-1 \
     libcurl4 \
     libffi8 \
@@ -118,6 +119,7 @@ RUN set -eux; \
     libreadline8 \
     libsodium23 \
     libsqlite3-0 \
+    sqlite3 \
     libssl3 \
     libstdc++6 \
     libxml2 \

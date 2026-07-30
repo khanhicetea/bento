@@ -125,7 +125,7 @@ const bindingSchema = z.discriminatedUnion("engine", [
     databases: z.array(databaseSchema).default([]),
   }),
   strict({
-    engine: z.literal("sqlite"),
+    engine: z.literal("litestream"),
     file: strict({
       id: nonEmptyStringSchema.regex(/^[a-z][a-z0-9-]{1,31}_[a-f0-9]{10}$/),
       path: safeRelativePathSchema,
@@ -136,7 +136,29 @@ const bindingSchema = z.discriminatedUnion("engine", [
         return file.path === `sqlite/${file.id}/${slug}.sqlite`;
       },
       {
-        message: "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite",
+        message:
+          "Litestream path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite",
+      },
+    ),
+    backupVerifiedAt: isoDateSchema.optional(),
+  }),
+  strict({
+    engine: z.literal("sqlite"),
+    file: strict({
+      id: nonEmptyStringSchema.regex(/^[a-z][a-z0-9-]{1,31}_[a-f0-9]{10}$/),
+      path: safeRelativePathSchema,
+      createdAt: isoDateSchema,
+    }).refine(
+      (file) => {
+        const slug = file.id.slice(0, -11);
+        // Legacy schema-v3 SQLite files are now identified as Litestream.
+        // New plain SQLite files use .db to stay outside the *.sqlite watcher.
+        return file.path === `sqlite/${file.id}/${slug}.db` ||
+          file.path === `sqlite/${file.id}/${slug}.sqlite`;
+      },
+      {
+        message:
+          "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.(db|sqlite)",
       },
     ),
     backupVerifiedAt: isoDateSchema.optional(),
@@ -165,7 +187,9 @@ const appBase = {
   updatedAt: isoDateSchema,
 };
 const appSchema = strict({ ...appBase, database: bindingSchema }).refine(
-  (app) => app.database.engine !== "sqlite" || app.database.file.id.startsWith(`${app.slug}_`),
+  (app) =>
+    (app.database.engine !== "sqlite" && app.database.engine !== "litestream") ||
+    app.database.file.id.startsWith(`${app.slug}_`),
   { message: "SQLite file identity must belong to the app slug" },
 );
 const v1AppSchema = strict({
@@ -289,7 +313,7 @@ const desiredStateRawSchema = strict({
     });
   }
   for (const [slug, app] of Object.entries(state.apps)) {
-    if (app.database.engine === "sqlite") continue;
+    if (app.database.engine === "sqlite" || app.database.engine === "litestream") continue;
     if (!services.has(app.database.service)) {
       ctx.addIssue({
         code: "custom",
@@ -297,7 +321,10 @@ const desiredStateRawSchema = strict({
         message: "must reference a managed service",
       });
     }
-    const relational = app.database as Exclude<typeof app.database, { engine: "sqlite" }>;
+    const relational = app.database as Exclude<
+      typeof app.database,
+      { engine: "sqlite" | "litestream" }
+    >;
     const managed = state.databaseServices.find((s) => s.service === relational.service);
     if (managed && managed.engine !== app.database.engine) {
       ctx.addIssue({
@@ -352,19 +379,28 @@ function brandRedis(r: z.infer<typeof redisSchema>): AppRedisIdentity {
   };
 }
 function brandApp(app: z.infer<typeof appSchema>): AppState {
-  const database: AppState["database"] = app.database.engine === "sqlite"
-    ? ({
-      engine: "sqlite" as const,
-      file: app.database.file,
-      ...(app.database.backupVerifiedAt ? { backupVerifiedAt: app.database.backupVerifiedAt } : {}),
-    } as AppState["database"])
-    : {
-      engine: app.database.engine,
-      service: asDatabaseService(app.database.service),
-      user: app.database.user,
-      password: app.database.password,
-      databases: app.database.databases.map(brandDatabase),
-    };
+  const database: AppState["database"] =
+    app.database.engine === "sqlite" || app.database.engine === "litestream"
+      ? (() => {
+        const engine = app.database.engine === "sqlite" &&
+            app.database.file.path.endsWith(".sqlite")
+          ? "litestream" as const
+          : app.database.engine;
+        return {
+          engine,
+          file: app.database.file,
+          ...(engine === "litestream" && app.database.backupVerifiedAt
+            ? { backupVerifiedAt: app.database.backupVerifiedAt }
+            : {}),
+        } as AppState["database"];
+      })()
+      : {
+        engine: app.database.engine,
+        service: asDatabaseService(app.database.service),
+        user: app.database.user,
+        password: app.database.password,
+        databases: app.database.databases.map(brandDatabase),
+      };
   return {
     slug: asAppSlug(app.slug),
     enabled: app.enabled,

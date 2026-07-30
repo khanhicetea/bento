@@ -215,6 +215,7 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
     label: `${service.engine}: ${service.version}`,
     value: `${service.engine}:${service.service}`,
     hint: existing?.database.engine !== "sqlite" &&
+        existing?.database.engine !== "litestream" &&
         existing?.database.service === service.service
       ? "current"
       : state.defaults.database.service === service.service
@@ -224,14 +225,19 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   databaseChoices.push({
     label: "SQLite",
     value: "sqlite",
-    hint: existing?.database.engine === "sqlite"
-      ? "current · Litestream backup"
-      : "local file · Litestream backup",
+    hint: existing?.database.engine === "sqlite" ? "current" : "local file · weekly VACUUM",
+  });
+  databaseChoices.push({
+    label: "Litestream",
+    value: "litestream",
+    hint: existing?.database.engine === "litestream"
+      ? "current"
+      : "SQLite · continuous S3 replication",
   });
   if (existing) {
     databaseChoices.unshift({
-      label: existing.database.engine === "sqlite"
-        ? "Keep current (SQLite)"
+      label: existing.database.engine === "sqlite" || existing.database.engine === "litestream"
+        ? `Keep current (${existing.database.engine})`
         : `Keep current (${existing.database.engine}: ${existing.database.service})`,
       value: "",
     });
@@ -244,16 +250,18 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   const effectiveDatabaseEngine = databaseEngine ?? existing?.database.engine ??
     state.defaults.database.engine;
   const useSqlite = effectiveDatabaseEngine === "sqlite";
+  const useLitestream = effectiveDatabaseEngine === "litestream";
+  const useFileDatabase = useSqlite || useLitestream;
 
-  const createDb = useSqlite
+  const createDb = useFileDatabase
     ? false
     : await ui.confirm("Create a namespaced database for this app?");
   const databaseName = createDb
     ? await ui.prompt("Database name (blank = auto)", { default: "" })
     : "";
   if (createDb && databaseName === null) return;
-  if (useSqlite) {
-    ui.info("SQLite continuous backup will be enabled with Litestream.");
+  if (useLitestream) {
+    ui.info("Litestream continuous backup will be enabled.");
     ui.message(
       state.sqliteBackup?.enabled
         ? "The existing stack-wide policy will automatically cover this database."
@@ -262,7 +270,7 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   }
 
   const accessLog = await ui.confirm("Enable per-app access logs?", { defaultYes: false });
-  const noApply = useSqlite
+  const noApply = useFileDatabase
     ? false
     : !(await ui.confirm("Render & apply after save?", { defaultYes: true }));
 
@@ -279,11 +287,12 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       ["entry", entry || "default"],
       [
         "database",
-        `${useSqlite ? "SQLite" : databaseSelection || "keep current"}${
+        `${useFileDatabase ? effectiveDatabaseEngine : databaseSelection || "keep current"}${
           createDb ? ` · create ${databaseName || "auto"}` : ""
         }`,
       ],
-      ...(useSqlite ? [["sqlite-backup", "Litestream · enabled"]] : []),
+      ...(useLitestream ? [["sqlite-backup", "Litestream · enabled"]] : []),
+      ...(useSqlite ? [["maintenance", "weekly VACUUM · runner Supercronic"]] : []),
       ["access-log", accessLog ? "yes" : "no"],
       ["apply", noApply ? "skip" : "yes"],
     ],
@@ -323,7 +332,7 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
 
       let nextState = provisioned.state;
       let sqliteBackupEnabledNow = false;
-      if (provisioned.app.database.engine === "sqlite" && !nextState.sqliteBackup?.enabled) {
+      if (provisioned.app.database.engine === "litestream" && !nextState.sqliteBackup?.enabled) {
         nextState = await enableSqliteBackup(ctx.platform, nextState, slug);
         sqliteBackupEnabledNow = true;
       }
@@ -339,7 +348,7 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       return { provisioned, plane, state: nextState, sqliteBackupEnabledNow };
     });
 
-    if (result.provisioned.app.database.engine === "sqlite") {
+    if (result.provisioned.app.database.engine === "litestream") {
       if (result.sqliteBackupEnabledNow) {
         const up = await sqliteCompose(ctx.platform, result.state, [
           "up",
@@ -380,14 +389,26 @@ async function sectionAppDatabases(
     if (!app) return;
 
     ui.clear();
-    if (app.database.engine === "sqlite") {
-      ui.header(`SQLite: ${slug}`, "local database · stack-wide Litestream backup");
+    if (app.database.engine === "sqlite" || app.database.engine === "litestream") {
+      ui.header(
+        `${app.database.engine === "litestream" ? "Litestream" : "SQLite"}: ${slug}`,
+        app.database.engine === "litestream"
+          ? "SQLite database · stack-wide continuous backup"
+          : "local SQLite · weekly runner VACUUM",
+      );
       ui.table(
         ["field", "value"],
         [
-          ["file", sqliteContainerPath(app.database.file.id, app.slug)],
-          ["backup", state.sqliteBackup?.enabled ? "enabled" : "disabled"],
-          ["verified", app.database.backupVerifiedAt ?? "never"],
+          ["file", sqliteContainerPath(app.database.file.id, app.slug, app.database.engine)],
+          [
+            "backup",
+            app.database.engine === "litestream"
+              ? state.sqliteBackup?.enabled ? "continuous S3" : "disabled"
+              : "logical .backup via bento backup",
+          ],
+          ...(app.database.engine === "litestream"
+            ? [["verified", app.database.backupVerifiedAt ?? "never"]]
+            : [["maintenance", "VACUUM Sundays 03:30 UTC"]]),
         ],
       );
       await ui.pause();

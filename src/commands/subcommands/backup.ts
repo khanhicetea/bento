@@ -121,13 +121,13 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     ctx.log.error("usage: bento backup --app <app> [--database name] | --all");
     return 2;
   }
-  const sqliteApps = scope === "all"
-    ? Object.values(state.apps).filter((app) => app.database.engine === "sqlite")
-    : argv.app && state.apps[argv.app]?.database.engine === "sqlite"
+  const litestreamApps = scope === "all"
+    ? Object.values(state.apps).filter((app) => app.database.engine === "litestream")
+    : argv.app && state.apps[argv.app]?.database.engine === "litestream"
     ? [state.apps[argv.app]!]
     : [];
-  if (scope === "database" && sqliteApps.length > 0) {
-    ctx.log.error("SQLite has one explicit file; omit --database");
+  if (scope === "database" && litestreamApps.length > 0) {
+    ctx.log.error("Litestream has one explicit SQLite file; omit --database");
     return 2;
   }
   const artifacts = await runDatabaseBackup(ctx.platform, state, {
@@ -137,9 +137,9 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     compress: argv.gzip === true ? "gzip" : argv.none === true ? "none" : "zstd",
   });
   logBackupArtifacts(ctx, artifacts);
-  for (const app of sqliteApps) {
+  for (const app of litestreamApps) {
     await syncSqliteBackup(ctx.platform, state, app.slug);
-    ctx.log.info(`remote sync confirmed for SQLite app ${app.slug}`);
+    ctx.log.info(`remote sync confirmed for Litestream app ${app.slug}`);
   }
   return 0;
 }

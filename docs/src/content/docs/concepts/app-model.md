@@ -67,7 +67,7 @@ The credential file supplies connection values; Bento does not automatically loa
 
 ## Data binding
 
-An app binds to exactly one database engine. A MySQL or PostgreSQL binding selects one managed service, receives a same-name user or role, and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. A SQLite binding receives one private file under the stack-root `sqlite/` directory. An ordinary app update preserves the binding.
+An app binds to exactly one database engine. A MySQL or PostgreSQL binding selects one managed service, receives a same-name user or role, and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. A `sqlite` binding receives one private local file under the stack-root `sqlite/` directory, weekly Supercronic `VACUUM`, and `.backup` logical backups. A `litestream` binding is also SQLite but explicitly opts into continuous S3 replication. An ordinary app update preserves the binding.
 
 :::caution
 Changing an existing app's database engine or service is an external migration, not an app update. Bento does not move data between engines or services.

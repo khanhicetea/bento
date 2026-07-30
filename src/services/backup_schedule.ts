@@ -16,7 +16,7 @@ const ERROR_MAX_BYTES = 2 * 1024;
 const PATH_MAX_BYTES = 4096;
 
 export type BackupScheduleArtifactSummary = {
-  engine: "mysql" | "postgres";
+  engine: "mysql" | "postgres" | "sqlite";
   service: string;
   database: string;
   basename: string;
@@ -56,7 +56,7 @@ type ParsedBlock = {
 };
 
 const artifactSchema = z.object({
-  engine: z.enum(["mysql", "postgres"]),
+  engine: z.enum(["mysql", "postgres", "sqlite"]),
   service: z.string().max(128),
   database: z.string().max(128),
   basename: z.string().max(255),

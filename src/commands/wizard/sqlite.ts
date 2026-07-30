@@ -20,7 +20,7 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
   while (true) {
     const state = await ctx.store.load();
     const apps = Object.values(state.apps)
-      .filter((app) => app.database.engine === "sqlite")
+      .filter((app) => app.database.engine === "litestream")
       .sort((a, b) => a.slug.localeCompare(b.slug));
 
     ui.clear();
@@ -34,8 +34,10 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
       ["app", "file", "verified"],
       apps.map((app) => [
         app.slug,
-        app.database.engine === "sqlite" ? sqliteContainerPath(app.database.file.id, app.slug) : "",
-        app.database.engine === "sqlite" ? app.database.backupVerifiedAt ?? "never" : "",
+        app.database.engine === "litestream"
+          ? sqliteContainerPath(app.database.file.id, app.slug, "litestream")
+          : "",
+        app.database.engine === "litestream" ? app.database.backupVerifiedAt ?? "never" : "",
       ]),
     );
     ui.blank();

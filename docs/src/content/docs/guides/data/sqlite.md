@@ -1,11 +1,16 @@
 ---
-title: Operate SQLite with continuous backup
-description: Create a private SQLite app database and replicate it to S3 with Litestream.
+title: Operate SQLite and Litestream databases
+description: Choose local SQLite with logical backups or SQLite continuously replicated by Litestream.
 ---
 
-# Operate SQLite with continuous backup
+# Operate SQLite and Litestream databases
 
-Use SQLite as an app's database, then enable continuous off-host replication to an S3-compatible object store. Bento keeps each database in a private app-ID directory and runs one stack-wide Litestream directory watcher. When the watcher is enabled, every managed `<app-slug>.sqlite` under the stack SQLite root is backed up automatically.
+Bento exposes two file-database types so their backup behavior is explicit:
+
+- **`sqlite`** is a simple local SQLite database. The app runner runs `VACUUM` every Sunday at 03:30 UTC through Supercronic. `bento backup` creates a consistent copy with SQLite's `.backup` command and stores it under `./backups/sqlite/<app>/`, compressed with Zstandard by default (or gzip with `--gzip`).
+- **`litestream`** is SQLite with continuous off-host replication to an S3-compatible object store. Bento runs one stack-wide Litestream watcher for these databases.
+
+Both types keep each database in a private app-ID directory. Existing bindings from versions where `sqlite` meant Litestream are read as `litestream`; their `.sqlite` files and S3 replicas do not move.
 
 ## Before you begin
 
@@ -20,13 +25,30 @@ Continuous replication reduces the recovery point after host or disk loss, but i
 
 ## Create a SQLite app
 
-Create an app with an explicit SQLite binding:
+Create a plain local SQLite app:
 
 ```sh
 bento --stack /var/lib/bento app create demo \
   --domain demo.example.com \
   --database-engine sqlite
 ```
+
+Create a continuously replicated SQLite app by selecting the explicit Litestream type:
+
+```sh
+bento --stack /var/lib/bento app create demo \
+  --domain demo.example.com \
+  --database-engine litestream
+```
+
+For plain SQLite, create a logical backup with:
+
+```sh
+bento --stack /var/lib/bento backup --app demo
+bento --stack /var/lib/bento backup --app demo --gzip
+```
+
+The default artifact ends in `.sqlite.zst`; `--gzip` produces `.sqlite.gz`.
 
 Bento creates one private database file and writes its container path and default busy timeout to `/home/demo/credentials/app.env` as `DB_DATABASE` and `SQLITE_BUSY_TIMEOUT`. Configure your framework to load that protected file, or copy only the needed values into its protected configuration. Bento does not automatically inject the file into PHP's process environment.
 
@@ -129,7 +151,7 @@ bento --stack /var/lib/bento sqlite backup export \
 
 Export runs Litestream's full integrity check, publishes the result with mode `0600`, and refuses to overwrite an existing destination. It never changes the application's live database. The same status, sync, verification, and export operations are available under **Manage SQLite** in `bento tui`.
 
-`bento backup --app demo` dispatches to the same confirmed remote synchronization for a SQLite app. It does not create a logical dump under `backups/`.
+`bento backup --app demo` confirms remote synchronization for a `litestream` app and does not create a local logical dump. For a plain `sqlite` app it uses SQLite's online `.backup` API and publishes a compressed artifact under `backups/sqlite/demo/`.
 
 ## Troubleshooting
 

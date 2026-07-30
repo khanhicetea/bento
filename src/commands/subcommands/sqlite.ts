@@ -14,7 +14,7 @@ import {
 export function registerSqliteCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(
     "sqlite",
-    "Manage SQLite databases and continuous backup",
+    "Manage Litestream (continuously replicated SQLite) databases",
     (y: YargsBuilder) =>
       y.command(
         "backup",

@@ -5,7 +5,7 @@ description: Create logical database dumps, copy them off-host, schedule backups
 
 # Back up and restore databases
 
-Create portable logical dumps for MySQL and PostgreSQL apps, maintain an on-host schedule, and prove recovery by restoring to a separate verification database before replacing production data. For a SQLite app, use [Litestream continuous backup](/guides/data/sqlite/) instead.
+Create portable logical dumps for MySQL, PostgreSQL, and plain SQLite apps, maintain an on-host schedule, and prove relational recovery before replacing production data. Litestream apps use [continuous backup](/guides/data/sqlite/) instead.
 
 ## Before you begin
 
@@ -70,7 +70,7 @@ Run one batch across every recorded app database:
 bento --stack /var/lib/bento backup --all
 ```
 
-Bento creates logical dumps for MySQL and PostgreSQL bindings. For every SQLite app, it waits for confirmed synchronization through the stack-wide Litestream directory watcher instead of creating a dump. The batch fails if the stack-wide SQLite backup policy is not enabled.
+Bento creates logical dumps for MySQL and PostgreSQL bindings. For a plain `sqlite` binding it uses SQLite's online `.backup` command and Zstandard or gzip compression, publishing under `backups/sqlite/<app>/`. For every `litestream` binding, it waits for confirmed synchronization through the stack-wide watcher instead of creating a local dump.
 
 Bento permits only one logical backup batch at a time. If a later database or SQLite synchronization fails, earlier completed dumps remain, but relational retention does not run for that failed batch. Read the error and rerun after correcting service health, storage, or SQLite replication.
 
@@ -93,7 +93,7 @@ The stack's logical dumps cover managed relational databases. They do not includ
 
 ## Schedule on-host logical backups
 
-Bento can add one stack-qualified block to the current host user's crontab. The scheduled command runs an all-database, Zstandard-compressed relational batch and confirms synchronization for SQLite apps.
+Bento can add one stack-qualified block to the current host user's crontab. The scheduled command runs an all-database, Zstandard-compressed logical backup batch, including plain SQLite apps. Litestream remains the continuous-replication option.
 
 Confirm the absolute installed binary path:
 

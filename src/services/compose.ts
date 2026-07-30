@@ -384,6 +384,7 @@ function renderPhpFragment(service: string, image: string, version: string): str
         volumes: [
           "./homes:/home",
           "./sqlite:/sqlite",
+          "./backups/sqlite:/var/backups/bento/sqlite",
           `./generated/runner/${service}/services:/etc/bento/services:ro`,
           `./generated/runner/${service}/cron:/etc/bento/cron:ro`,
           "./docker/php/runner-entrypoint.sh:/usr/local/bin/bento-runner-entrypoint:ro",

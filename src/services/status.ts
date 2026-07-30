@@ -60,7 +60,7 @@ export type StatusReport = {
     entrypointMode: string;
     tls: string;
     accessLog: boolean;
-    databaseEngine: "mysql" | "postgres" | "sqlite";
+    databaseEngine: "mysql" | "postgres" | "sqlite" | "litestream";
     databaseService: string;
     databases: string[];
     redisMode: string;
@@ -214,9 +214,13 @@ export async function buildStatus(
         tls: a.tls.kind,
         accessLog: a.accessLog,
         databaseEngine: a.database.engine,
-        databaseService: a.database.engine === "sqlite" ? "local-file" : a.database.service,
-        databases: a.database.engine === "sqlite"
-          ? [sqliteContainerPath(a.database.file.id, a.slug)]
+        databaseService: a.database.engine === "sqlite"
+          ? "local-file"
+          : a.database.engine === "litestream"
+          ? "litestream"
+          : a.database.service,
+        databases: a.database.engine === "sqlite" || a.database.engine === "litestream"
+          ? [sqliteContainerPath(a.database.file.id, a.slug, a.database.engine)]
           : a.database.databases.map((d) => d.name),
         redisMode: a.redis.mode,
         deploy: a.deploy.enabled,

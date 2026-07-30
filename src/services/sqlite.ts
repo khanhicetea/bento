@@ -11,7 +11,7 @@ import {
   sqliteRelativePath,
 } from "./sqlite_paths.ts";
 
-type SqliteBinding = Extract<AppDatabaseBinding, { engine: "sqlite" }>;
+type LitestreamBinding = Extract<AppDatabaseBinding, { engine: "litestream" }>;
 
 export type WatchedSqliteDatabase = {
   path: string;
@@ -33,10 +33,10 @@ export type SqliteBackupStatus = {
 export function requireSqliteApp(state: DesiredState, slug: string) {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
-  if (app.database.engine !== "sqlite") {
-    throw validationError(`app ${slug} uses ${app.database.engine}, not SQLite`);
+  if (app.database.engine !== "litestream") {
+    throw validationError(`app ${slug} uses ${app.database.engine}, not Litestream`);
   }
-  return { app, database: app.database as SqliteBinding };
+  return { app, database: app.database as LitestreamBinding };
 }
 
 export function requireSqliteBackupPolicy(state: DesiredState): SqliteBackupPolicy {
@@ -86,9 +86,9 @@ export async function enableSqliteBackup(
 
   requireSqliteApp(state, slug);
   for (const app of Object.values(state.apps)) {
-    if (app.database.engine !== "sqlite") continue;
+    if (app.database.engine !== "litestream") continue;
     const sqliteDir = sqliteHostDir(platform, app.database.file.id);
-    const hostPath = sqliteHostPath(platform, app.database.file.id, app.slug);
+    const hostPath = sqliteHostPath(platform, app.database.file.id, app.slug, "litestream");
     const dirStat = await platform.fs.lstat(sqliteDir);
     if (!dirStat.isDirectory || dirStat.isSymlink) {
       throw validationError(`SQLite directory is not a real local directory: ${sqliteDir}`);
@@ -129,7 +129,7 @@ export async function enableSqliteBackup(
     enabled: true,
   };
   const nextDb = requireSqliteApp(next, slug).database;
-  nextDb.file.path = sqliteRelativePath(nextDb.file.id, slug);
+  nextDb.file.path = sqliteRelativePath(nextDb.file.id, slug, "litestream");
   next.apps[slug]!.updatedAt = platform.clock.nowIso();
   next.updatedAt = platform.clock.nowIso();
   return next;

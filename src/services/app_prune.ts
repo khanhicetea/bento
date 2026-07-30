@@ -38,23 +38,24 @@ type LegacyMysqlManifest = {
 export async function writeAppPruneManifest(platform: Platform, app: AppState): Promise<void> {
   const home = platform.paths.appHome(app.slug);
   await platform.fs.mkdirp(join(home, ".bento"), 0o700);
-  const manifest: AppPruneManifest = app.database.engine === "sqlite"
-    ? {
-      version: 2,
-      slug: app.slug,
-      engine: "sqlite",
-      databaseService: "local-file",
-      databaseUser: app.slug,
-      databases: [app.database.file.id],
-    }
-    : {
-      version: 2,
-      slug: app.slug,
-      engine: app.database.engine,
-      databaseService: app.database.service,
-      databaseUser: app.database.user,
-      databases: app.database.databases.map((database) => database.name),
-    };
+  const manifest: AppPruneManifest =
+    app.database.engine === "sqlite" || app.database.engine === "litestream"
+      ? {
+        version: 2,
+        slug: app.slug,
+        engine: app.database.engine,
+        databaseService: "local-file",
+        databaseUser: app.slug,
+        databases: [app.database.file.id],
+      }
+      : {
+        version: 2,
+        slug: app.slug,
+        engine: app.database.engine,
+        databaseService: app.database.service,
+        databaseUser: app.database.user,
+        databases: app.database.databases.map((database) => database.name),
+      };
   await platform.fs.writeText(
     join(home, MANIFEST),
     `${JSON.stringify(manifest, null, 2)}\n`,
@@ -101,7 +102,7 @@ export async function planAppPrune(
     throw validationError(`invalid app prune manifest: ${manifestPath}`);
   }
   const manifest = normalizeManifest(raw, slug);
-  const managed = manifest.engine === "sqlite" ||
+  const managed = manifest.engine === "sqlite" || manifest.engine === "litestream" ||
     state.databaseServices.some((service) =>
       service.engine === manifest.engine && service.service === manifest.databaseService
     );
@@ -132,8 +133,8 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
       slug: typeof value.slug === "string" ? value.slug : "",
       engine: value.engine === "postgres"
         ? "postgres"
-        : value.engine === "sqlite"
-        ? "sqlite"
+        : value.engine === "sqlite" || value.engine === "litestream"
+        ? value.engine
         : "mysql",
       databaseService: typeof value.databaseService === "string" ? value.databaseService : "",
       databaseUser: typeof value.databaseUser === "string" ? value.databaseUser : "",
@@ -141,13 +142,14 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
     };
     if (
       value.version !== 2 ||
-      (value.engine !== "mysql" && value.engine !== "postgres" && value.engine !== "sqlite")
+      (value.engine !== "mysql" && value.engine !== "postgres" && value.engine !== "sqlite" &&
+        value.engine !== "litestream")
     ) {
       throw validationError("invalid app prune manifest");
     }
   }
 
-  const validDatabaseNames = candidate.engine === "sqlite"
+  const validDatabaseNames = candidate.engine === "sqlite" || candidate.engine === "litestream"
     ? candidate.databaseService === "local-file" && candidate.databases.length === 1 &&
       candidate.databases.every((name) =>
         name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1))
@@ -191,7 +193,7 @@ export async function executeAppPrune(
       await platform.fs.remove(sqliteDir, { recursive: true });
       cleaned.push(`SQLite directory ${sqliteDir}`);
     }
-    if (plan.engine !== "sqlite") {
+    if (plan.engine !== "sqlite" && plan.engine !== "litestream") {
       for (const database of plan.databases) cleaned.push(`database ${database}`);
       cleaned.push(
         `${plan.engine === "mysql" ? "MySQL account" : "PostgreSQL role"} ${plan.databaseUser}`,

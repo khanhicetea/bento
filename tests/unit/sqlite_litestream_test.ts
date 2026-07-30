@@ -12,20 +12,20 @@ import {
 } from "../../src/services/generate.ts";
 import { exportSqliteBackup } from "../../src/services/sqlite.ts";
 
-Deno.test("SQLite state has one explicit private file and no relational credentials", () => {
+Deno.test("Litestream state has one explicit private SQLite file and no relational credentials", () => {
   const platform = createPlatform("/tmp/sqlite-state-test", Deno.cwd());
   const result = provisionApp(platform, createEmptyState("2026-07-29T00:00:00.000Z"), {
     slug: "lite-app",
     domain: "lite-app.test",
-    databaseEngine: "sqlite",
+    databaseEngine: "litestream",
     createDatabase: true,
   });
-  assert(result.app.database.engine === "sqlite");
+  assert(result.app.database.engine === "litestream");
   assert(/^lite-app_[a-f0-9]{10}$/.test(result.app.database.file.id));
   const json = stateToJson(result.state);
   assertStringIncludes(json, '"path": "sqlite/lite-app_');
   assertStringIncludes(json, '/lite-app.sqlite"');
-  assert(!json.includes('"password"'), "SQLite-only app binding must not serialize DB passwords");
+  assert(!json.includes('"password"'), "Litestream app binding must not serialize DB passwords");
   assert(parseDesiredState(JSON.parse(json)).ok);
 });
 
@@ -43,12 +43,12 @@ Deno.test("stack SQLite backup renders one constrained-root directory watcher", 
   const provisioned = provisionApp(platform, createEmptyState("2026-07-29T00:00:00.000Z"), {
     slug: "lite",
     domain: "lite.test",
-    databaseEngine: "sqlite",
+    databaseEngine: "litestream",
   });
   const second = provisionApp(platform, provisioned.state, {
     slug: "other",
     domain: "other.test",
-    databaseEngine: "sqlite",
+    databaseEngine: "litestream",
   });
   second.state.sqliteBackup = {
     provider: "litestream",
@@ -195,7 +195,7 @@ Deno.test("SQLite S3 export restores with integrity checking and refuses overwri
     const provisioned = provisionApp(platform, createEmptyState(), {
       slug: "lite",
       domain: "lite.test",
-      databaseEngine: "sqlite",
+      databaseEngine: "litestream",
     });
     provisioned.state.sqliteBackup = {
       provider: "litestream",

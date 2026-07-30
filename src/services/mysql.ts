@@ -468,7 +468,7 @@ export async function applyBackupRetention(
     const [service, database] = key.split("/", 2) as [string, string];
     const prefix = `${service}_${database}_`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const managedName = new RegExp(
-      `^${prefix}(\\d{4}-\\d{2}-\\d{2}T\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z\\.sql(?:\\.gz|\\.zst)?$`,
+      `^${prefix}(\\d{4}-\\d{2}-\\d{2}T\\d{2})-(\\d{2})-(\\d{2})-(\\d{3})Z\\.(?:sql|sqlite)(?:\\.gz|\\.zst)?$`,
     );
     const names: string[] = [];
     for (const name of await platform.fs.readDir(dir)) {

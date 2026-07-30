@@ -13,10 +13,11 @@ import {
   runRestore as runMysqlRestore,
 } from "./mysql.ts";
 import { runPostgresBackup, runPostgresRestore } from "./postgres.ts";
+import { runSqliteBackup } from "./sqlite_local.ts";
 
 export type DatabaseBackupRequest = BackupRequest;
 export type DatabaseBackupArtifact = {
-  engine: "mysql" | "postgres";
+  engine: "mysql" | "postgres" | "sqlite";
   path: string;
   database: string;
   service: string;
@@ -29,7 +30,7 @@ export type DatabaseRestoreRequest = {
   replaceOriginal?: string;
 };
 
-/** Back up an app, one recorded database, or every database across both engines. */
+/** Back up an app, one recorded database, or every database across local engines. */
 export async function runDatabaseBackup(
   platform: Platform,
   state: DesiredState,
@@ -66,6 +67,9 @@ export async function runDatabaseBackup(
         case "postgres":
           artifacts.push(await runPostgresBackup(platform, target, compress));
           break;
+        case "sqlite":
+          artifacts.push(await runSqliteBackup(platform, state, target.slug, compress));
+          break;
         default:
           assertNever(target.engine);
       }
@@ -87,7 +91,12 @@ export async function runDatabaseRestore(
   if (!app) throw notFoundError(`app not found: ${req.slug}`);
   if (app.database.engine === "sqlite") {
     throw validationError(
-      "SQLite replacement restore is not yet supported; use `bento sqlite backup export --app <app> --output <file>` to create a recovery database file",
+      "SQLite replacement restore is not yet supported; restore the .sqlite artifact to a new file",
+    );
+  }
+  if (app.database.engine === "litestream") {
+    throw validationError(
+      "Litestream replacement restore is not yet supported; use `bento sqlite backup export --app <app> --output <file>` to create a recovery database file",
     );
   }
   validateDumpPathForEngine(platform, state, req.file, app.database.engine);
@@ -122,7 +131,7 @@ export async function runDatabaseRestore(
 }
 
 function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<{
-  engine: "mysql" | "postgres";
+  engine: "mysql" | "postgres" | "sqlite";
   service: string;
   database: string;
   slug: string;
@@ -138,13 +147,20 @@ function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<
       })(),
     ];
   const targets: Array<{
-    engine: "mysql" | "postgres";
+    engine: "mysql" | "postgres" | "sqlite";
     service: string;
     database: string;
     slug: string;
   }> = [];
   for (const app of apps) {
-    if (app.database.engine === "sqlite") continue;
+    if (app.database.engine === "litestream") continue;
+    if (app.database.engine === "sqlite") {
+      if (req.scope === "database") {
+        throw validationError("SQLite has one explicit file; omit --database");
+      }
+      targets.push({ engine: "sqlite", service: "sqlite", database: app.slug, slug: app.slug });
+      continue;
+    }
     const databases = req.scope === "database"
       ? app.database.databases.filter((database) => database.name === req.database)
       : app.database.databases;

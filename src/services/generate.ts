@@ -341,7 +341,9 @@ async function generatePhpPools(
       processIdleTimeout: dynamic ? "" : profile.processIdleTimeout,
       socketPath: `/run/php-fpm/${app.slug}.sock`,
       openBasedir: `${home}:/usr/share/php:/tmp${
-        app.database.engine === "sqlite" ? `:/sqlite/${app.database.file.id}` : ""
+        app.database.engine === "sqlite" || app.database.engine === "litestream"
+          ? `:/sqlite/${app.database.file.id}`
+          : ""
       }${app.deploy.enabled ? ":/opt/bento/helpers" : ""}`,
       deployEnabled: app.deploy.enabled,
     });
@@ -478,6 +480,16 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
           `* * * * * /opt/bento/helpers/deploy-drain.sh ${app.slug} /run/php-fpm/${app.phpService}/${app.slug}.sock`,
         );
       }
+      if (app.database.engine === "sqlite") {
+        // Sunday 03:30 UTC. VACUUM takes SQLite's normal exclusive write lock;
+        // busy_timeout lets short application transactions finish first.
+        const database = `/sqlite/${app.database.file.id}/${app.slug}.db`;
+        lines.push(
+          `30 3 * * 0 /usr/bin/sqlite3 ${shellQuote(database)} ${
+            shellQuote("PRAGMA busy_timeout=30000; VACUUM;")
+          }`,
+        );
+      }
       for (const job of appJobs) {
         lines.push(formatCronLine(job, app));
         files.push({
@@ -537,7 +549,7 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
       );
 
       const appJobs = jobs.filter((j) => j.app === app.slug);
-      if (appJobs.length > 0 || app.deploy.enabled) {
+      if (appJobs.length > 0 || app.deploy.enabled || app.database.engine === "sqlite") {
         const service = `scheduler-${app.slug}`;
         const supercronic = `/usr/local/bin/supercronic /etc/bento/cron/${app.slug}.crontab`;
         // Open the app-owned log only after dropping privileges. Besides giving
