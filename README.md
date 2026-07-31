@@ -120,8 +120,6 @@ The checked-in release workflow (`.github/workflows/ci.yml`) currently runs only
 
 Pin Deno **2.9.3** for source and compile. Documented operator paths use the explicit permission set in `deno.json` tasks (`--allow-read --allow-write --allow-env --allow-run --allow-net --allow-sys`). **Do not use unrestricted `-A` as the supported default.**
 
-Host-level system scenarios (contract §8 fourteen scenarios) are tracked in [`scripts/system-scenarios.md`](scripts/system-scenarios.md).
-
 ## Architecture (short)
 
 ```text
@@ -328,7 +326,6 @@ tests/
   unit/                   # domain + render + deploy unit suites
   contract/               # CLI smoke + source/binary parity
   integration/            # stack bootstrap / multi-app / boundary suite
-scripts/system-scenarios.md  # contract §8 host checklist
 specs/                    # product specifications
 .github/workflows/ci.yml  # tag/release binary builds
 ```

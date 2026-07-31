@@ -40,19 +40,16 @@ Deno.test("test-stack carries PostgreSQL connectivity, isolation, recovery, and 
 });
 
 Deno.test("release documentation describes shipped PostgreSQL behavior", async () => {
-  const [readme, product, architecture, scenarios, parity] = await Promise.all([
+  const [readme, product, architecture, parity] = await Promise.all([
     read("README.md"),
     read("specs/01-product-spec.md"),
     read("specs/02-system-architecture.md"),
-    read("scripts/system-scenarios.md"),
     read("tests/contract/parity_test.ts"),
   ]);
   assertMatch(readme, /PostgreSQL is a first-class database kind alongside MySQL/);
   assertMatch(readme, /postgres add 17/);
   assertMatch(product, /multiple relational engines\/services/);
   assertMatch(architecture, /PostgreSQL raw-volume transfer requires a compatible major version/);
-  assertMatch(scenarios, /PostgreSQL release scenarios/);
-  assertMatch(scenarios, /two PostgreSQL apps/);
   assertMatch(parity, /postgres17/);
   assertMatch(parity, /database-engine/);
 });
