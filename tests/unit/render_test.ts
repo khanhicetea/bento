@@ -113,6 +113,7 @@ Deno.test("init + render produces startable topology files", async () => {
     );
     assertEquals(phpCompose.includes("x-log-common:"), true);
     assertEquals(phpCompose.match(/logging: \*/g)?.length, 3);
+    assertEquals(phpCompose.includes("TZ: '${TZ:-UTC}'"), true);
     assertEquals(mysqlCompose.includes("x-log-common:"), true);
     assertEquals(mysqlCompose.match(/logging: \*/g)?.length, 1);
 

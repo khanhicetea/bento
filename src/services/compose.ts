@@ -397,6 +397,7 @@ function renderPhpFragment(service: string, image: string, version: string): str
         environment: {
           BENTO_PHP_VERSION: version,
           BENTO_ROLE: "runner",
+          TZ: "${TZ:-UTC}",
           S6_BEHAVIOUR_IF_STAGE2_FAILS: "2",
           S6_CMD_WAIT_FOR_SERVICES_MAXTIME: "0",
         },
