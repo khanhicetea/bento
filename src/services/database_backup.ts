@@ -1,7 +1,7 @@
 /** Engine-neutral logical backup/restore dispatch. */
 
 import { join, relative, resolve } from "@std/path";
-import type { DesiredState } from "../domain/state.ts";
+import type { AppDatabaseBinding, DesiredState } from "../domain/state.ts";
 import { assertNever } from "../domain/state.ts";
 import { asDatabaseName } from "../domain/types.ts";
 import { conflictError, notFoundError, validationError } from "../domain/errors.ts";
@@ -28,6 +28,7 @@ export type DatabaseRestoreRequest = {
   slug: string;
   targetDatabase: string;
   replaceOriginal?: string;
+  engine?: "mysql" | "postgres";
 };
 
 /** Back up an app, one recorded database, or every database across local engines. */
@@ -68,7 +69,9 @@ export async function runDatabaseBackup(
           artifacts.push(await runPostgresBackup(platform, target, compress));
           break;
         case "sqlite":
-          artifacts.push(await runSqliteBackup(platform, state, target.slug, compress));
+          artifacts.push(
+            await runSqliteBackup(platform, state, target.slug, compress, target.database),
+          );
           break;
         default:
           assertNever(target.engine);
@@ -89,42 +92,44 @@ export async function runDatabaseRestore(
 ): Promise<DesiredState> {
   const app = state.apps[req.slug];
   if (!app) throw notFoundError(`app not found: ${req.slug}`);
-  if (app.database.engine === "sqlite") {
-    throw validationError(
-      "SQLite replacement restore is not yet supported; restore the .sqlite artifact to a new file",
-    );
-  }
-  if (app.database.engine === "litestream") {
-    throw validationError(
-      "Litestream replacement restore is not yet supported; use `bento sqlite backup export --app <app> --output <file>` to create a recovery database file",
-    );
-  }
-  validateDumpPathForEngine(platform, state, req.file, app.database.engine);
+  const database = resolveRestoreBinding(platform, app.databases, req);
+  validateDumpPathForEngine(platform, state, req.file, database.engine);
+  const scopedApp = { ...app, database, databases: [database] };
 
-  switch (app.database.engine) {
+  switch (database.engine) {
     case "mysql":
-      await runMysqlRestore(platform, state, req);
+      await runMysqlRestore(platform, {
+        ...state,
+        apps: { ...state.apps, [req.slug]: scopedApp },
+      }, req);
       break;
     case "postgres":
       await runPostgresRestore(platform, {
         file: req.file,
-        app,
+        app: scopedApp,
         targetDatabase: req.targetDatabase,
         replaceOriginal: req.replaceOriginal,
       });
       break;
     default:
-      assertNever(app.database);
+      assertNever(database);
   }
 
-  if (app.database.databases.some((database) => database.name === req.targetDatabase)) {
+  if (database.databases.some((entry) => entry.name === req.targetDatabase)) {
     return state;
   }
   const next = structuredClone(state);
-  next.apps[req.slug]!.database.databases.push({
+  const nextBinding = next.apps[req.slug]!.databases.find((entry) =>
+    entry.engine === database.engine && entry.service === database.service
+  );
+  if (!nextBinding || nextBinding.engine === "sqlite" || nextBinding.engine === "litestream") {
+    throw validationError(`database binding disappeared for app ${req.slug}`);
+  }
+  nextBinding.databases.push({
     name: asDatabaseName(req.targetDatabase),
     createdAt: platform.clock.nowIso(),
   });
+  next.apps[req.slug]!.database = nextBinding;
   next.apps[req.slug]!.updatedAt = platform.clock.nowIso();
   next.updatedAt = platform.clock.nowIso();
   return next;
@@ -153,30 +158,73 @@ function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<
     slug: string;
   }> = [];
   for (const app of apps) {
-    if (app.database.engine === "litestream") continue;
-    if (app.database.engine === "sqlite") {
-      if (req.scope === "database") {
-        throw validationError("SQLite has one explicit file; omit --database");
+    let matched = false;
+    for (const binding of app.databases) {
+      if (binding.engine === "litestream") continue;
+      if (binding.engine === "sqlite") {
+        if (req.scope !== "database" || req.database === binding.file.id) {
+          targets.push({
+            engine: "sqlite",
+            service: "sqlite",
+            database: binding.file.id,
+            slug: app.slug,
+          });
+          matched = true;
+        }
+        continue;
       }
-      targets.push({ engine: "sqlite", service: "sqlite", database: app.slug, slug: app.slug });
-      continue;
+      const databases = req.scope === "database"
+        ? binding.databases.filter((database) => database.name === req.database)
+        : binding.databases;
+      for (const database of databases) {
+        targets.push({
+          engine: binding.engine,
+          service: binding.service,
+          database: database.name,
+          slug: app.slug,
+        });
+        matched = true;
+      }
     }
-    const databases = req.scope === "database"
-      ? app.database.databases.filter((database) => database.name === req.database)
-      : app.database.databases;
-    if (req.scope === "database" && (!req.database || databases.length === 0)) {
+    if (req.scope === "database" && (!req.database || !matched)) {
       throw notFoundError(`database ${req.database ?? ""} not recorded for app ${app.slug}`);
-    }
-    for (const database of databases) {
-      targets.push({
-        engine: app.database.engine,
-        service: app.database.service,
-        database: database.name,
-        slug: app.slug,
-      });
     }
   }
   return targets;
+}
+
+function resolveRestoreBinding(
+  platform: Platform,
+  bindings: AppDatabaseBinding[],
+  req: DatabaseRestoreRequest,
+): Extract<AppDatabaseBinding, { engine: "mysql" | "postgres" }> {
+  const relational = bindings.filter(
+    (binding): binding is Extract<AppDatabaseBinding, { engine: "mysql" | "postgres" }> =>
+      binding.engine === "mysql" || binding.engine === "postgres",
+  );
+  const requested = req.engine
+    ? relational.filter((binding) => binding.engine === req.engine)
+    : relational;
+  const named = requested.filter((binding) =>
+    binding.databases.some((database) =>
+      database.name === req.replaceOriginal || database.name === req.targetDatabase
+    )
+  );
+  if (named.length === 1) return named[0]!;
+
+  const rel = relative(resolve(platform.paths.paths.backupsDir), resolve(req.file));
+  const service = rel && rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\")
+    ? rel.split(/[\\/]/)[0]
+    : undefined;
+  const byService = requested.filter((binding) => binding.service === service);
+  if (byService.length === 1) return byService[0]!;
+  if (requested.length === 1) return requested[0]!;
+  if (requested.length === 0) {
+    throw validationError(`app ${req.slug} has no ${req.engine ?? "relational"} database binding`);
+  }
+  throw validationError(
+    `restore target is ambiguous for app ${req.slug}; specify --engine mysql or --engine postgres`,
+  );
 }
 
 function validateDumpPathForEngine(

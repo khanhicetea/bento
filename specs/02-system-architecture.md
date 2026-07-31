@@ -99,7 +99,7 @@ TypeScript compile-time types do not make JSON, environment values, CLI tokens, 
 
 Use opaque/branded value types for frequently confused primitives such as `AppSlug`, `DomainName`, `Uid`, `Gid`, `PhpVersion`, `MysqlVersion`, `PostgresVersion`, `DatabaseService`, `AbsoluteAppPath`, and `UnixSocketPath`. Use discriminated unions for TLS modes, reload targets, queue policies, deploy states, command results, and recovery outcomes. Exhaustive switches must fail type checking when a new variant is not handled.
 
-Persisted state has one explicit current schema version. Schema v2 represents managed database services and app database bindings as discriminated unions keyed by `engine: "mysql" | "postgres"`; invalid mixed-engine state is therefore neither representable nor accepted at runtime. Loading follows `bytes -> JSON unknown -> exact version check -> schema validation -> current State`. Routine reads reject every other version without writing over the source. The only v1 path is an explicit operator-confirmed migration that backs up the original, preserves all MySQL identifiers and secrets, validates the complete v2 result, and atomically replaces the source. Saving follows a validated domain state and an atomic writer; callers cannot write arbitrary records.
+Persisted state has one explicit current schema version. Schema v4 represents each app's `databases[]` as independent discriminated bindings keyed by `engine: "mysql" | "postgres" | "sqlite" | "litestream"`. Loading follows `bytes -> JSON unknown -> exact version check -> schema validation -> current State`; every other version is rejected without rewriting the source. This fresh project has no legacy migration path. Saving follows a validated domain state and an atomic writer; callers cannot write arbitrary records.
 
 Package APIs that return weakly typed data are isolated behind adapters. Production source must not spread `any` through the domain layer, use unchecked type assertions to accept external data, or index arbitrary state objects without validation.
 
@@ -113,7 +113,7 @@ An app is a logical tenant inside version-shared infrastructure.
 | Web execution | Dedicated PHP-FPM pool and Unix socket |
 | Filesystem | Private home; Nginx receives read-only home mount and group access only to the public tree |
 | PHP filesystem access | Per-pool `open_basedir` rooted in the app home, plus required runtime libraries/log paths |
-| Relational database | Exactly one engine/service binding; same-name MySQL user or restricted PostgreSQL role with access only to the app's recorded database namespace |
+| Databases | Multiple bindings across MySQL, PostgreSQL, SQLite, and Litestream; relational bindings use a same-name restricted user/role and file bindings use private app-owned paths |
 | Redis | Mandatory app key prefix in shared mode; per-app user/key/channel ACL in ACL mode |
 | Background work | s6-managed workers and schedulers switch to the app user and constrain working directory to the app home |
 | Deployment | Authenticated per-app queue; deploy command runs as the app user with one active job |
@@ -187,15 +187,15 @@ Stack
 App
   identity -> slug, UID/GID, home
   runtime  -> PHP version, PHP service, FPM profile, entrypoint mode
-  ingress  -> main domain, aliases, TLS mode, access-log flag
-  data     -> one discriminated MySQL or PostgreSQL binding, app user/role, databases[], Redis identity/prefix
+  ingress  -> linked domains (one primary), TLS mode, access-log flag
+  data     -> database bindings[] across MySQL/PostgreSQL/SQLite/Litestream, Redis identity/prefix
   deploy   -> enabled, HMAC secret, queue policy, timeout, workdir, trusted argv
   config   -> selected app vhost/pool template provenance
 
-Domain owner -> exactly one PHP app or one proxy site
+Domain link  -> exactly one PHP app or one proxy site; one primary link per target
 Cron job     -> exactly one app and its PHP version
 Worker       -> exactly one app and its PHP version
-Database     -> exactly one app and its selected relational database service
+Database     -> exactly one app; an app may have multiple bindings and engine kinds
 Deploy job  -> exactly one app and one of queued|running|success|failed|skipped
 ```
 
@@ -209,7 +209,7 @@ The app slug is stack-wide unique and reused as the Linux identity, FPM pool, so
 2. Refuse domain collisions and unmanaged runtime versions.
 3. Allocate or reuse a stable UID/GID.
 4. Create the app home and private/public directory structure.
-5. Dispatch to the selected MySQL or PostgreSQL adapter and create/update its app identity plus Redis identity when services are available.
+5. Dispatch to the requested database adapter, preserving the app's other bindings, and create/update its app identity plus Redis identity when services are available.
 6. Record desired state.
 7. Generate the app identity, FPM pool, vhost, and related runtime configuration.
 8. Validate/reload PHP-FPM and Nginx as required.
@@ -389,7 +389,7 @@ The replacement must use these target choices unless the product owner explicitl
 | PHP capabilities | Common web extensions, OPcache, Redis extension, Composer, Node.js, Git, SSH client | Supports typical modern and legacy PHP deployment workflows |
 | Process supervision | s6-overlay 3.x | PID 1 plus a dynamic scan tree with individually controllable services |
 | Scheduling | Supercronic | Container-friendly cron parsing, validation, reload, and logs |
-| Relational data | Versioned MySQL and PostgreSQL services with named volumes | Exactly one engine/service per app; matching client tools and mixed-engine coexistence |
+| Relational data | Versioned MySQL and PostgreSQL services with named volumes | Multiple bindings per app; matching client tools and mixed-engine coexistence |
 | Cache/queue | Redis with AOF persistence and optional ACL mode | Shared internal service with compatibility and stronger isolation modes |
 | Backups | `mysqldump` or `pg_dump`, with uncompressed/gzip/Zstandard output | Portable logical recovery without host compression dependencies |
 | Log lifecycle | Docker local logging plus logrotate | Bounded service logs and app file logs without control-plane daemon |
@@ -446,7 +446,7 @@ Safe extension occurs through desired-state features, local Compose overlays, us
 3. App-to-PHP routing uses per-app Unix sockets.
 4. Apps share containers by PHP version and isolate through identity/pool/filesystem/data credentials.
 5. Each PHP version has FPM, singleton runner, and ephemeral CLI roles.
-6. Each app has one primary PHP version and exactly one discriminated MySQL or PostgreSQL database binding.
+6. Each app has one primary PHP version and one or more discriminated database bindings; bindings may mix MySQL, PostgreSQL, SQLite, and Litestream.
 7. MySQL, PostgreSQL, and Redis remain private in the base topology.
 8. Desired state is authoritative; generated output is disposable.
 9. Durable data is separate from generated state.

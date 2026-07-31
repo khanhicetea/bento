@@ -79,6 +79,11 @@ export function registerBackupCommands(parser: YargsBuilder, state: RunState): Y
         y
           .option("file", { type: "string", demandOption: true, describe: "Dump path" })
           .option("app", { type: "string", demandOption: true })
+          .option("engine", {
+            type: "string",
+            choices: ["mysql", "postgres"],
+            describe: "Target engine when the app has more than one relational binding",
+          })
           .option("target", {
             type: "string",
             demandOption: true,
@@ -122,8 +127,11 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     return 2;
   }
   const litestreamApps = scope === "all"
-    ? Object.values(state.apps).filter((app) => app.database.engine === "litestream")
-    : argv.app && state.apps[argv.app]?.database.engine === "litestream"
+    ? Object.values(state.apps).filter((app) =>
+      app.databases.some((database) => database.engine === "litestream")
+    )
+    : argv.app &&
+        state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
     ? [state.apps[argv.app]!]
     : [];
   if (scope === "database" && litestreamApps.length > 0) {
@@ -218,7 +226,7 @@ function warnOnHostOnly(ctx: CliContext): void {
 }
 
 async function cmdRestore(
-  argv: ArgsWith<"file" | "app" | "target">,
+  argv: ArgsWith<"file" | "app" | "target" | "engine">,
   ctx: CliContext,
 ): Promise<number> {
   const { file, app, target } = argv;
@@ -235,6 +243,7 @@ async function cmdRestore(
       slug: app,
       targetDatabase: target,
       replaceOriginal: argv.replace,
+      engine: argv.engine as "mysql" | "postgres" | undefined,
     });
     if (next !== state) await ctx.store.save(next);
     return next;

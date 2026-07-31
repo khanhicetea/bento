@@ -131,8 +131,8 @@ Deno.test("cli init render status app create", async () => {
       0,
     );
     const pgState = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
-    assertEquals(pgState.apps.pgdemo.database.engine, "postgres");
-    assertEquals(pgState.apps.pgdemo.database.service, "postgres17");
+    assertEquals(pgState.apps.pgdemo.databases[0].engine, "postgres");
+    assertEquals(pgState.apps.pgdemo.databases[0].service, "postgres17");
     const pgCred = await Deno.readTextFile(join(stack, "homes/pgdemo/credentials/app.env"));
     assertEquals(pgCred.includes("DB_CONNECTION=pgsql"), true);
     assertEquals(pgCred.includes("MYSQL_"), false);
@@ -153,7 +153,7 @@ Deno.test("cli init render status app create", async () => {
       true,
     );
     assertEquals(
-      (await runCli([
+      await runCli([
         ...base,
         "app",
         "update",
@@ -163,12 +163,15 @@ Deno.test("cli init render status app create", async () => {
         "--mysql",
         "8.4",
         "--no-apply",
-      ])) !== 0,
-      true,
+      ]),
+      0,
     );
     const afterRefusals = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
     assertEquals(afterRefusals.apps.badflags, undefined);
-    assertEquals(afterRefusals.apps.pgdemo.database.engine, "postgres");
+    assertEquals(
+      afterRefusals.apps.pgdemo.databases.map((database: { engine: string }) => database.engine),
+      ["postgres", "mysql"],
+    );
 
     // App/proxy removal fails closed without exact typed confirmation
     assertEquals((await runCli([...base, "app", "delete", "demo"])) !== 0, true);

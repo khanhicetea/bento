@@ -9,18 +9,37 @@ import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import { generateAll } from "../../src/services/generate.ts";
 import { runSqliteBackup } from "../../src/services/sqlite_local.ts";
 
-Deno.test("legacy SQLite bindings are read as the renamed Litestream type", () => {
-  const platform = createPlatform("/tmp/bento-sqlite-legacy", Deno.cwd());
+Deno.test("one app can persist independent SQLite and Litestream bindings", () => {
+  const platform = createPlatform("/tmp/bento-sqlite-multiple", Deno.cwd());
   const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
-    slug: "legacy",
-    domain: "legacy.test",
+    slug: "files",
+    domain: "files.test",
+    databaseEngine: "sqlite",
+  });
+  const mixed = provisionApp(platform, result.state, {
+    slug: "files",
+    domain: "files.test",
     databaseEngine: "litestream",
   });
-  const raw = JSON.parse(stateToJson(result.state));
-  raw.apps.legacy.database.engine = "sqlite";
+  const withSecondLocal = provisionApp(platform, mixed.state, {
+    slug: "files",
+    domain: "files.test",
+    databaseEngine: "sqlite",
+    createDatabase: true,
+  });
+  const raw = JSON.parse(stateToJson(withSecondLocal.state));
   const parsed = parseDesiredState(raw);
   assert(parsed.ok);
-  if (parsed.ok) assertEquals(parsed.value.apps.legacy?.database.engine, "litestream");
+  if (parsed.ok) {
+    assertEquals(
+      parsed.value.apps.files?.databases.map((database) => database.engine),
+      ["sqlite", "litestream", "sqlite"],
+    );
+    const sqliteIds = parsed.value.apps.files?.databases
+      .filter((database) => database.engine === "sqlite")
+      .map((database) => database.file.id);
+    assertEquals(new Set(sqliteIds).size, 2);
+  }
 });
 
 Deno.test("plain SQLite backup uses .backup and gzip in the runner", async () => {

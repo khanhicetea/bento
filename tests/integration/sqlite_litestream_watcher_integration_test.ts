@@ -166,6 +166,13 @@ async function startWatcher(
 
 async function stopWatcher(name: string): Promise<void> {
   await run(["docker", "stop", "-t", "10", name]);
+  // `docker stop` can return before an `--rm` container's name is released.
+  // Wait for removal so the same test-owned name can be used for the restart.
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if ((await run(["docker", "inspect", name])).code !== 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  await run(["docker", "rm", "-f", name]);
 }
 
 async function runAs(uid: number, fixture: string, database: string, value: string): Promise<void> {

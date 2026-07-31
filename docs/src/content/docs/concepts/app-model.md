@@ -25,7 +25,7 @@ For an app named `demo`, Bento uses `demo` across several resources:
 | Filesystem | `/home/demo` inside PHP containers and `<stack-root>/homes/demo` on the host |
 | Process identity | One stable private UID/GID for FPM, CLI, schedules, workers, and deploy commands |
 | PHP requests | A `demo` FPM pool and `demo.sock` under the app's selected PHP service |
-| Domains | One primary domain plus optional aliases, all unique across apps and reverse proxies |
+| Domains | Independent link records: one primary plus any number of additional links, all unique across apps and reverse proxies |
 | Database | One managed MySQL/PostgreSQL service binding or one private SQLite file |
 | Redis | An app-specific key prefix, plus a per-app identity when the stack uses ACL mode |
 | Background work | Cron jobs, workers, and deploy jobs scoped to `demo` |
@@ -42,7 +42,7 @@ Changing a primary domain is different: it updates traffic ownership while prese
 
 Each app selects one managed PHP version and one named FPM capacity profile. Bento renders a dedicated pool and Unix socket for the app, but apps on the same PHP version share the PHP image, FPM service, global process cap, and runner container. The profile controls this app's pool capacity; it does not reserve a separate container or fixed host resources.
 
-Nginx maps the app's primary domain and aliases to its document root and FPM socket. Domains are stack-wide unique, including domains used by reverse proxies. An app also selects:
+Nginx resolves the app's primary and additional domain links to its document root and FPM socket. Domain links are stack-wide unique, including links used by reverse proxies. An app also selects:
 
 - a document root relative to its code directory, commonly `public`;
 - front-controller or legacy PHP routing;
@@ -67,11 +67,9 @@ The credential file supplies connection values; Bento does not automatically loa
 
 ## Data binding
 
-An app binds to exactly one database engine. A MySQL or PostgreSQL binding selects one managed service, receives a same-name user or role, and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. A `sqlite` binding receives one private local file under the stack-root `sqlite/` directory, weekly Supercronic `VACUUM`, and `.backup` logical backups. A `litestream` binding is also SQLite but explicitly opts into continuous S3 replication. An ordinary app update preserves the binding.
+An app owns a collection of database bindings and may mix engines. Each MySQL or PostgreSQL binding selects one managed service, receives a same-name user or role, and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. Each `sqlite` binding receives a private local file under the stack-root `sqlite/` directory, weekly Supercronic `VACUUM`, and `.backup` logical backups. A `litestream` binding is also SQLite but explicitly opts into continuous S3 replication. Adding a binding preserves every existing binding.
 
-:::caution
-Changing an existing app's database engine or service is an external migration, not an app update. Bento does not move data between engines or services.
-:::
+Adding a different engine or service creates another binding; it does not move or convert an existing database. Bento does not move data between bindings.
 
 Redis is shared stack infrastructure. In shared mode, every app must use its recorded key prefix. In ACL mode, Bento additionally gives the app a Redis username and credentials restricted to its namespace. Redis metadata does not create a separate Redis instance per app.
 
@@ -101,7 +99,7 @@ When operating the app, use its slug rather than manually selecting a container 
 bento --stack /var/lib/bento exec demo -- php -v
 ```
 
-Re-running `app create` or using `app update` is the supported way to change an app's domain, aliases, document root, routing mode, PHP version, or FPM profile. Omitted PHP, profile, and database choices preserve the existing recorded selections; inspect the result after every update.
+Re-running `app create` or using `app update` is the supported way to change an app's linked domains, document root, routing mode, PHP version, or FPM profile. Omitted PHP, profile, and database choices preserve the existing recorded selections; inspect the result after every update.
 
 ## Boundaries and limitations
 

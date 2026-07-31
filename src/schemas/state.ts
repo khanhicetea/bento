@@ -1,4 +1,4 @@
-/** Runtime validation and explicit migrations to the current state schema. */
+/** Runtime validation for the current state schema. */
 import { z } from "zod";
 import {
   type AppDatabase,
@@ -18,6 +18,7 @@ import {
   type StackDefaults,
   type TemplateProvenance,
   type TlsMode,
+  withAppRelations,
   type Worker,
 } from "../domain/state.ts";
 import {
@@ -170,8 +171,6 @@ const appBase = {
   uid: uidGidSchema,
   gid: uidGidSchema,
   home: absolutePathSchema,
-  mainDomain: domainNameSchema,
-  aliases: z.array(domainNameSchema).default([]),
   documentRoot: safeRelativePathSchema.default(""),
   entrypointMode: z.enum(["front-controller", "legacy"]),
   phpVersion: phpVersionSchema,
@@ -186,18 +185,34 @@ const appBase = {
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
 };
-const appSchema = strict({ ...appBase, database: bindingSchema }).refine(
-  (app) =>
-    (app.database.engine !== "sqlite" && app.database.engine !== "litestream") ||
-    app.database.file.id.startsWith(`${app.slug}_`),
-  { message: "SQLite file identity must belong to the app slug" },
-);
-const v1AppSchema = strict({
+const appSchema = strict({
   ...appBase,
-  mysqlService: nonEmptyStringSchema,
-  mysqlUser: nonEmptyStringSchema,
-  mysqlPassword: z.string(),
-  databases: z.array(databaseSchema).default([]),
+  databases: z.array(bindingSchema).min(1),
+}).superRefine((app, ctx) => {
+  const identities = new Set<string>();
+  for (const [index, database] of app.databases.entries()) {
+    if (
+      (database.engine === "sqlite" || database.engine === "litestream") &&
+      !database.file.id.startsWith(`${app.slug}_`)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["databases", index, "file", "id"],
+        message: "SQLite file identity must belong to the app slug",
+      });
+    }
+    const identity = database.engine === "sqlite" || database.engine === "litestream"
+      ? database.file.id
+      : `${database.engine}:${database.service}`;
+    if (identities.has(identity)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["databases", index],
+        message: `duplicate database binding ${identity}`,
+      });
+    }
+    identities.add(identity);
+  }
 });
 const proxySchema = strict({
   name: appSlugSchema,
@@ -210,8 +225,8 @@ const proxySchema = strict({
   updatedAt: isoDateSchema,
 });
 const domainOwnerSchema = z.discriminatedUnion("kind", [
-  strict({ kind: z.literal("app"), slug: appSlugSchema }),
-  strict({ kind: z.literal("proxy"), name: appSlugSchema }),
+  strict({ kind: z.literal("app"), slug: appSlugSchema, primary: z.boolean() }),
+  strict({ kind: z.literal("proxy"), name: appSlugSchema, primary: z.boolean() }),
 ]);
 const cronJobSchema = strict({
   name: nonEmptyStringSchema,
@@ -313,47 +328,116 @@ const desiredStateRawSchema = strict({
     });
   }
   for (const [slug, app] of Object.entries(state.apps)) {
-    if (app.database.engine === "sqlite" || app.database.engine === "litestream") continue;
-    if (!services.has(app.database.service)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["apps", slug, "database", "service"],
-        message: "must reference a managed service",
-      });
+    for (const [index, database] of app.databases.entries()) {
+      if (database.engine === "sqlite" || database.engine === "litestream") continue;
+      if (!services.has(database.service)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apps", slug, "databases", index, "service"],
+          message: "must reference a managed service",
+        });
+      }
+      const managed = state.databaseServices.find((s) => s.service === database.service);
+      if (managed && managed.engine !== database.engine) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apps", slug, "databases", index, "engine"],
+          message: "must match managed service engine",
+        });
+      }
+      if (
+        new Set(database.databases.map((entry) => entry.name)).size !==
+          database.databases.length
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apps", slug, "databases", index, "databases"],
+          message: "database names must be unique within a binding",
+        });
+      }
     }
-    const relational = app.database as Exclude<
-      typeof app.database,
-      { engine: "sqlite" | "litestream" }
-    >;
-    const managed = state.databaseServices.find((s) => s.service === relational.service);
-    if (managed && managed.engine !== app.database.engine) {
+    const links = Object.values(state.domains).filter((owner) =>
+      owner.kind === "app" && owner.slug === slug
+    );
+    if (links.filter((owner) => owner.primary).length !== 1) {
       ctx.addIssue({
         code: "custom",
-        path: ["apps", slug, "database", "engine"],
-        message: "must match managed service engine",
+        path: ["domains"],
+        message: `app ${slug} must have exactly one primary domain link`,
       });
     }
   }
-});
-const v1StateSchema = strict({
-  schemaVersion: z.literal(1),
-  defaults: strict({
-    phpVersion: phpVersionSchema,
-    mysqlVersion: mysqlVersionSchema,
-    fpmProfile: fpmProfileSchema,
-    redisMode: z.enum(["shared", "acl"]).default("shared"),
-  }),
-  phpVersions: z.array(managedPhpSchema).min(1),
-  mysqlVersions: z.array(
-    strict({
-      version: mysqlVersionSchema,
-      service: nonEmptyStringSchema,
-      image: nonEmptyStringSchema,
-      volume: nonEmptyStringSchema,
-    }),
-  ).min(1),
-  apps: z.record(z.string(), v1AppSchema),
-  ...commonState,
+  for (const [domain, owner] of Object.entries(state.domains)) {
+    const parsedDomain = domainNameSchema.safeParse(domain);
+    if (!parsedDomain.success || parsedDomain.data !== domain) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["domains", domain],
+        message: "key must be a normalized domain name",
+      });
+    }
+    if (owner.kind === "app" && !state.apps[owner.slug]) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["domains", domain],
+        message: `references unknown app ${owner.slug}`,
+      });
+    }
+    if (owner.kind === "proxy" && !state.proxies[owner.name]) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["domains", domain],
+        message: `references unknown proxy ${owner.name}`,
+      });
+    }
+  }
+  for (const [name] of Object.entries(state.proxies)) {
+    const links = Object.values(state.domains).filter((owner) =>
+      owner.kind === "proxy" && owner.name === name
+    );
+    if (links.filter((owner) => owner.primary).length !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["domains"],
+        message: `proxy ${name} must have exactly one primary domain link`,
+      });
+    }
+  }
+  for (
+    const [collection, records] of [
+      ["cronJobs", state.cronJobs],
+      ["workers", state.workers],
+    ] as const
+  ) {
+    const identities = new Set<string>();
+    for (const [index, record] of records.entries()) {
+      const identity = `${record.app}:${record.name}`;
+      if (identities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [collection, index, "name"],
+          message: `duplicate linked record ${identity}`,
+        });
+      }
+      identities.add(identity);
+    }
+  }
+  for (
+    const [collection, records] of [
+      ["cronJobs", state.cronJobs],
+      ["workers", state.workers],
+    ] as const
+  ) {
+    for (const [index, record] of records.entries()) {
+      if (!state.apps[record.app]) {
+        ctx.addIssue({
+          code: "custom",
+          path: [collection, index, "app"],
+          message: `references unknown app ${record.app}`,
+        });
+      }
+    }
+  }
 });
 
 function brandDatabase(db: z.infer<typeof databaseSchema>): AppDatabase {
@@ -379,36 +463,29 @@ function brandRedis(r: z.infer<typeof redisSchema>): AppRedisIdentity {
   };
 }
 function brandApp(app: z.infer<typeof appSchema>): AppState {
-  const database: AppState["database"] =
-    app.database.engine === "sqlite" || app.database.engine === "litestream"
-      ? (() => {
-        const engine = app.database.engine === "sqlite" &&
-            app.database.file.path.endsWith(".sqlite")
-          ? "litestream" as const
-          : app.database.engine;
-        return {
-          engine,
-          file: app.database.file,
-          ...(engine === "litestream" && app.database.backupVerifiedAt
-            ? { backupVerifiedAt: app.database.backupVerifiedAt }
-            : {}),
-        } as AppState["database"];
-      })()
+  const databases: AppState["databases"] = app.databases.map((database) =>
+    database.engine === "sqlite" || database.engine === "litestream"
+      ? {
+        engine: database.engine,
+        file: database.file,
+        ...(database.engine === "litestream" && database.backupVerifiedAt
+          ? { backupVerifiedAt: database.backupVerifiedAt }
+          : {}),
+      } as AppState["databases"][number]
       : {
-        engine: app.database.engine,
-        service: asDatabaseService(app.database.service),
-        user: app.database.user,
-        password: app.database.password,
-        databases: app.database.databases.map(brandDatabase),
-      };
+        engine: database.engine,
+        service: asDatabaseService(database.service),
+        user: database.user,
+        password: database.password,
+        databases: database.databases.map(brandDatabase),
+      }
+  );
   return {
     slug: asAppSlug(app.slug),
     enabled: app.enabled,
     uid: asUid(app.uid),
     gid: asGid(app.gid),
     home: asAbsoluteAppPath(app.home),
-    mainDomain: asDomainName(app.mainDomain),
-    aliases: app.aliases.map(asDomainName),
     documentRoot: app.documentRoot,
     entrypointMode: app.entrypointMode as EntrypointMode,
     phpVersion: asPhpVersion(app.phpVersion),
@@ -416,7 +493,10 @@ function brandApp(app: z.infer<typeof appSchema>): AppState {
     fpmProfile: asFpmProfile(app.fpmProfile),
     tls: app.tls,
     accessLog: app.accessLog,
-    database,
+    databases,
+    database: databases[0]!,
+    mainDomain: asDomainName("unlinked.invalid"),
+    aliases: [],
     redis: brandRedis(app.redis),
     deploy: brandDeploy(app.deploy),
     vhostTemplate: app.vhostTemplate,
@@ -439,8 +519,8 @@ function brandProxy(p: z.infer<typeof proxySchema>): ProxySite {
 }
 function brandOwner(o: z.infer<typeof domainOwnerSchema>): DomainOwner {
   return o.kind === "app"
-    ? { kind: "app", slug: asAppSlug(o.slug) }
-    : { kind: "proxy", name: asProxySiteName(o.name) };
+    ? { kind: "app", slug: asAppSlug(o.slug), primary: o.primary }
+    : { kind: "proxy", name: asProxySiteName(o.name), primary: o.primary };
 }
 function brandCron(j: z.infer<typeof cronJobSchema>): CronJob {
   return {
@@ -530,7 +610,12 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
     })),
     databaseServices: raw.databaseServices.map(brandManaged),
     ...(raw.sqliteBackup ? { sqliteBackup: raw.sqliteBackup } : {}),
-    apps,
+    apps: Object.fromEntries(
+      Object.entries(apps).map(([slug, app]) => [
+        slug,
+        withAppRelations(app, { apps, domains } as DesiredState),
+      ]),
+    ),
     proxies,
     domains,
     cronJobs: raw.cronJobs.map(brandCron),
@@ -540,92 +625,6 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
   });
 }
 
-/** Pure migration: validates v1, transforms it, then validates the complete v2 result. */
-export function migrateV1ToV2(value: unknown): ParseResult<DesiredState> {
-  const parsed = fromZod(v1StateSchema.safeParse(value));
-  if (!parsed.ok) return parsed;
-  const old = parsed.value;
-  for (const [key, app] of Object.entries(old.apps)) {
-    if (app.slug !== key) return err(`apps.${key}: key must match slug ${app.slug}`);
-  }
-  const defaultService = old.mysqlVersions.find((v) => v.version === old.defaults.mysqlVersion)
-    ?.service;
-  if (!defaultService) return err("defaults.mysqlVersion must reference a managed MySQL version");
-  const apps = Object.fromEntries(
-    Object.entries(old.apps).map(([key, app]) => [key, {
-      slug: app.slug,
-      enabled: app.enabled,
-      uid: app.uid,
-      gid: app.gid,
-      home: app.home,
-      mainDomain: app.mainDomain,
-      aliases: app.aliases,
-      documentRoot: app.documentRoot,
-      entrypointMode: app.entrypointMode,
-      phpVersion: app.phpVersion,
-      phpService: app.phpService,
-      fpmProfile: app.fpmProfile,
-      tls: app.tls,
-      accessLog: app.accessLog,
-      database: {
-        engine: "mysql",
-        service: app.mysqlService,
-        user: app.mysqlUser,
-        password: app.mysqlPassword,
-        databases: app.databases,
-      },
-      redis: app.redis,
-      deploy: app.deploy,
-      vhostTemplate: app.vhostTemplate,
-      poolTemplate: app.poolTemplate,
-      createdAt: app.createdAt,
-      updatedAt: app.updatedAt,
-    }]),
-  );
-  return parseDesiredState({
-    schemaVersion: STATE_SCHEMA_VERSION,
-    defaults: {
-      phpVersion: old.defaults.phpVersion,
-      database: {
-        engine: "mysql",
-        version: old.defaults.mysqlVersion,
-        service: defaultService,
-      },
-      fpmProfile: old.defaults.fpmProfile,
-      redisMode: old.defaults.redisMode,
-    },
-    phpVersions: old.phpVersions,
-    databaseServices: old.mysqlVersions.map((v) => ({ engine: "mysql", ...v })),
-    apps,
-    proxies: old.proxies,
-    domains: old.domains,
-    cronJobs: old.cronJobs,
-    workers: old.workers,
-    createdAt: old.createdAt,
-    updatedAt: old.updatedAt,
-  });
-}
-/** Pure v2 -> v3 migration. Relational bindings are preserved byte-for-value. */
-export function migrateV2ToV3(value: unknown): ParseResult<DesiredState> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return err("state must be a JSON object");
-  }
-  const raw = value as Record<string, unknown>;
-  if (raw.schemaVersion !== 2) return err("expected schemaVersion 2");
-  return parseDesiredState({ ...raw, schemaVersion: STATE_SCHEMA_VERSION });
-}
-
-export function loadV1StateFromJson(text: string): DesiredState {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (cause) {
-    throw validationError("state.json is not valid JSON", { cause: String(cause) });
-  }
-  const result = migrateV1ToV2(raw);
-  if (!result.ok) throw stateError(`invalid schema v1 desired state: ${result.errors.join("; ")}`);
-  return result.value;
-}
 export function loadStateFromJson(text: string): DesiredState {
   let raw: unknown;
   try {
@@ -642,7 +641,13 @@ export function loadStateFromJson(text: string): DesiredState {
   return result.value;
 }
 export function stateToJson(state: DesiredState): string {
-  return `${JSON.stringify(state, null, 2)}\n`;
+  const apps = Object.fromEntries(
+    Object.entries(state.apps).map(([slug, app]) => {
+      const { database: _database, mainDomain: _mainDomain, aliases: _aliases, ...persisted } = app;
+      return [slug, persisted];
+    }),
+  );
+  return `${JSON.stringify({ ...state, apps }, null, 2)}\n`;
 }
 export function emptyStateJson(now?: string): string {
   return stateToJson(createEmptyState(now));

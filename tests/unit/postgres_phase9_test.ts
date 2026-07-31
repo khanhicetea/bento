@@ -47,9 +47,9 @@ Deno.test("release documentation describes shipped PostgreSQL behavior", async (
     read("scripts/system-scenarios.md"),
     read("tests/contract/parity_test.ts"),
   ]);
-  assertMatch(readme, /PostgreSQL is a first-class alternative to MySQL/);
+  assertMatch(readme, /PostgreSQL is a first-class database kind alongside MySQL/);
   assertMatch(readme, /postgres add 17/);
-  assertMatch(product, /exactly one selected MySQL or PostgreSQL service/);
+  assertMatch(product, /multiple relational engines\/services/);
   assertMatch(architecture, /PostgreSQL raw-volume transfer requires a compatible major version/);
   assertMatch(scenarios, /PostgreSQL release scenarios/);
   assertMatch(scenarios, /two PostgreSQL apps/);

@@ -19,11 +19,11 @@ Internal file layout, helper names, and adapter boundaries may change when the o
 
 ## 2. PostgreSQL extension contract
 
-PostgreSQL is a first-class alternative relational backend, not an additional loose set of fields on a MySQL app. Managed MySQL and PostgreSQL versions may coexist, but each app has exactly one discriminated database binding and one service. Ordinary reconciliation never moves an app between engines/services and never converts data between MySQL and PostgreSQL.
+PostgreSQL is a first-class relational backend, not an additional loose set of MySQL fields. Managed MySQL and PostgreSQL versions may coexist, and each app owns a collection of discriminated database bindings that may mix those engines with SQLite and Litestream. Adding a binding never converts or removes another binding.
 
 Managed PostgreSQL versions use official major-only image tags such as `17`. Derived names are deterministic: version `17` maps to service `postgres17` and volume `postgres17-data`. Raw PostgreSQL volume transfer requires a compatible PostgreSQL major/image; logical backup and restore is the supported major-upgrade path.
 
-State schema v2 and its explicit v1 migration, Compose/runtime support, provisioning, administration, backup/restore, diagnostics, pruning, transfer, wizard, and release proof are delivered only through the phases in [`pg-database.md`](pg-database.md). A documentation phase does not make an unimplemented CLI command available.
+Current-schema Compose/runtime support, provisioning, administration, backup/restore, diagnostics, pruning, transfer, wizard, and release proof are delivered only through implemented behavior. This fresh project has no legacy state migration command. A documentation phase does not make an unimplemented CLI command available.
 
 ## 3. PostgreSQL acceptance IDs
 

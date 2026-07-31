@@ -11,6 +11,7 @@ import {
   removePostgresVersion,
   resolvePostgresServices,
 } from "../../services/postgres.ts";
+import { databaseBindings } from "../../domain/state.ts";
 import { loadRedisPassword, requirePostgresRootPassword } from "../../services/stack_env.ts";
 import { printTable } from "../../ui/output.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
@@ -177,7 +178,10 @@ async function cmdPostgresShell(
       database: argv.database,
       interactive: !argv.print,
     });
-    assertPostgresShellSecretsOffArgv(plan, [app.database.password]);
+    assertPostgresShellSecretsOffArgv(
+      plan,
+      databaseBindings(app, "postgres").map((database) => database.password),
+    );
   }
 
   if (argv.print) {
@@ -218,7 +222,11 @@ async function cmdPostgresSize(argv: CliArgs, ctx: CliContext): Promise<number> 
   const rows: Array<{ service: string; database: string; bytes: string; size: string }> = [];
   for (const service of services) {
     const databases = argv.app
-      ? state.apps[argv.app]?.database.databases.map((entry) => entry.name) ?? []
+      ? state.apps[argv.app]
+        ? databaseBindings(state.apps[argv.app]!, "postgres").flatMap((binding) =>
+          binding.databases.map((entry) => entry.name)
+        )
+        : []
       : [];
     // An app with no recorded databases must not broaden into a service-wide query.
     if (argv.app && databases.length === 0) continue;
@@ -254,7 +262,9 @@ async function cmdPostgresProcesslist(argv: CliArgs, ctx: CliContext): Promise<n
     backendStart: string;
     queryStart: string;
   }> = [];
-  const appUser = argv.app ? state.apps[argv.app]?.database.user : undefined;
+  const appUser = argv.app && state.apps[argv.app]
+    ? databaseBindings(state.apps[argv.app]!, "postgres")[0]?.user
+    : undefined;
   for (const service of services) {
     for (const row of await queryPostgresActivity(ctx.platform, service, rootPassword)) {
       if (appUser && row.user !== appUser) continue;

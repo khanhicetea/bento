@@ -39,7 +39,7 @@ The other three modes turn on HTTP-to-HTTPS redirects. Configure and verify the 
 
 ## Update app domains
 
-The primary domain and aliases are globally unique across apps and proxies. Change an app's domains with `app update`; pass the complete alias list because it replaces the previous list:
+Domains are authoritative link records, globally unique across apps and proxies. Each target has one primary link and any number of additional links. Change an app's links with `app update`; pass the complete alias list because it replaces the previous additional links:
 
 :::caution
 Changing a primary domain or alias changes routing immediately after apply. Confirm DNS and the intended certificate coverage first. `app update` also requires you to repeat `--access-log` if enabled access logging must remain enabled.

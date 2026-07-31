@@ -193,11 +193,11 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.phpVersion,
       a.fpmProfile,
       a.tls.kind,
-      a.database.engine === "sqlite" || a.database.engine === "litestream"
-        ? `${a.database.engine}/${
-          sqliteContainerPath(a.database.file.id, a.slug, a.database.engine)
-        }`
-        : `${a.database.engine}/${a.database.service}`,
+      a.databases.map((database) =>
+        database.engine === "sqlite" || database.engine === "litestream"
+          ? `${database.engine}/${sqliteContainerPath(database.file.id, a.slug, database.engine)}`
+          : `${database.engine}/${database.service}`
+      ).join(", "),
     ]);
   ctx.log.out(
     printTable(
@@ -221,11 +221,15 @@ async function cmdAppShow(argv: ArgsWith<"slug">, ctx: CliContext): Promise<numb
 }
 
 export function redactAppForOutput(app: AppState): AppState {
+  const databases = app.databases.map((database) =>
+    database.engine === "sqlite" || database.engine === "litestream"
+      ? database
+      : { ...database, password: "***" }
+  );
   return {
     ...app,
-    database: app.database.engine === "sqlite" || app.database.engine === "litestream"
-      ? app.database
-      : { ...app.database, password: "***" },
+    databases,
+    database: databases[0]!,
     redis: {
       ...app.redis,
       password: app.redis.password ? "***" : undefined,
@@ -248,6 +252,18 @@ async function cmdAppCreate(
   const skipValidate = argv.skipValidate === true;
   const explicitDb = argv.db === true;
   const result = await ctx.store.withExclusive(async (state) => {
+    const requestedDatabaseEngine =
+      (argv.databaseEngine ?? (argv.mysql ? "mysql" : argv.postgres ? "postgres" : undefined)) as
+        | "mysql"
+        | "postgres"
+        | "sqlite"
+        | "litestream"
+        | undefined;
+    const requestedDatabaseToken = requestedDatabaseEngine === "mysql"
+      ? argv.mysql
+      : requestedDatabaseEngine === "postgres"
+      ? argv.postgres
+      : undefined;
     const provisioned = provisionApp(ctx.platform, state, {
       slug,
       domain,
@@ -270,6 +286,14 @@ async function cmdAppCreate(
     // Live database/Redis side effects run before state save (explicit --db fails closed).
     const plane = await applyAppDataPlane(ctx.platform, provisioned.app, {
       explicitDatabase: explicitDb,
+      databaseEngine: requestedDatabaseEngine,
+      databaseService: requestedDatabaseToken
+        ? state.databaseServices.find((service) =>
+          service.engine === requestedDatabaseEngine &&
+          (service.version === requestedDatabaseToken || service.service === requestedDatabaseToken)
+        )?.service
+        : undefined,
+      databaseName: argv.database ?? (explicitDb ? slug : undefined),
     });
     const redisShared = await loadRedisPassword(ctx.platform);
     await materializeAppHome(ctx.platform, provisioned.app, {
@@ -374,26 +398,30 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   const plan = await planAppPrune(ctx.platform, state, argv.slug);
 
   ctx.log.out(`The following retained data for app ${plan.slug} will be permanently deleted:`);
-  const engineLabel = plan.engine === "mysql"
-    ? "MySQL"
-    : plan.engine === "postgres"
-    ? "PostgreSQL"
-    : "SQLite";
-  for (const database of plan.databases) {
-    ctx.log.out(
-      plan.engine === "sqlite" || plan.engine === "litestream"
-        ? `  - SQLite directory (${plan.engine}): ${ctx.platform.paths.paths.root}/sqlite/${database}`
-        : `  - ${engineLabel} database: ${database} (${plan.databaseService})`,
-    );
-  }
   if (plan.manifestFound) {
-    if (plan.engine !== "sqlite" && plan.engine !== "litestream") {
-      const identity = plan.engine === "mysql" ? `${plan.databaseUser}@%` : plan.databaseUser;
-      ctx.log.out(
-        `  - ${engineLabel} ${
-          plan.engine === "mysql" ? "account" : "role"
-        }: ${identity} (${plan.databaseService})`,
-      );
+    for (const binding of plan.bindings) {
+      const engineLabel = binding.engine === "mysql"
+        ? "MySQL"
+        : binding.engine === "postgres"
+        ? "PostgreSQL"
+        : "SQLite";
+      for (const database of binding.databases) {
+        ctx.log.out(
+          binding.engine === "sqlite" || binding.engine === "litestream"
+            ? `  - SQLite directory (${binding.engine}): ${ctx.platform.paths.paths.root}/sqlite/${database}`
+            : `  - ${engineLabel} database: ${database} (${binding.databaseService})`,
+        );
+      }
+      if (binding.engine !== "sqlite" && binding.engine !== "litestream") {
+        const identity = binding.engine === "mysql"
+          ? `${binding.databaseUser}@%`
+          : binding.databaseUser;
+        ctx.log.out(
+          `  - ${engineLabel} ${
+            binding.engine === "mysql" ? "account" : "role"
+          }: ${identity} (${binding.databaseService})`,
+        );
+      }
     }
   } else {
     ctx.log.warn(

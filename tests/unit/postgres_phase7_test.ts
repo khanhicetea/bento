@@ -163,8 +163,8 @@ Deno.test("Phase 7 PostgreSQL prune terminates only recorded DB sessions then dr
     await writeAppPruneManifest(platform, provisioned.app);
     state = deleteApp(provisioned.state, "pgapp", "delete pgapp", platform.clock.nowIso()).state;
     const plan = await planAppPrune(platform, state, "pgapp");
-    assertEquals(plan.engine, "postgres");
-    assertEquals(plan.databaseService, "postgres17");
+    assertEquals(plan.bindings[0]?.engine, "postgres");
+    assertEquals(plan.bindings[0]?.databaseService, "postgres17");
     await assertRejects(() => executeAppPrune(platform, plan, "yes"), Error, "exactly 'delete'");
     await executeAppPrune(platform, plan, "delete");
     const call = platform.process.calls.at(-1)!;
@@ -190,12 +190,14 @@ Deno.test("Phase 7 prune rejects malformed and cross-app retained manifests", as
     await platform.fs.writeText(
       path,
       JSON.stringify({
-        version: 2,
+        version: 3,
         slug: "pgapp",
-        engine: "postgres",
-        databaseService: "postgres17",
-        databaseUser: "pgapp",
-        databases: ["other_app"],
+        bindings: [{
+          engine: "postgres",
+          databaseService: "postgres17",
+          databaseUser: "pgapp",
+          databases: ["other_app"],
+        }],
       }),
       0o600,
     );

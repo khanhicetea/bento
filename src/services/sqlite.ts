@@ -1,5 +1,6 @@
 import { join, resolve } from "@std/path";
 import type { AppDatabaseBinding, DesiredState, SqliteBackupPolicy } from "../domain/state.ts";
+import { databaseBindings } from "../domain/state.ts";
 import { conflictError, notFoundError, serviceError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { composeArgs } from "./compose.ts";
@@ -33,10 +34,9 @@ export type SqliteBackupStatus = {
 export function requireSqliteApp(state: DesiredState, slug: string) {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
-  if (app.database.engine !== "litestream") {
-    throw validationError(`app ${slug} uses ${app.database.engine}, not Litestream`);
-  }
-  return { app, database: app.database as LitestreamBinding };
+  const database = databaseBindings(app, "litestream")[0];
+  if (!database) throw validationError(`app ${slug} has no Litestream database`);
+  return { app, database: database as LitestreamBinding };
 }
 
 export function requireSqliteBackupPolicy(state: DesiredState): SqliteBackupPolicy {
@@ -86,17 +86,18 @@ export async function enableSqliteBackup(
 
   requireSqliteApp(state, slug);
   for (const app of Object.values(state.apps)) {
-    if (app.database.engine !== "litestream") continue;
-    const sqliteDir = sqliteHostDir(platform, app.database.file.id);
-    const hostPath = sqliteHostPath(platform, app.database.file.id, app.slug, "litestream");
-    const dirStat = await platform.fs.lstat(sqliteDir);
-    if (!dirStat.isDirectory || dirStat.isSymlink) {
-      throw validationError(`SQLite directory is not a real local directory: ${sqliteDir}`);
-    }
-    if (await platform.fs.exists(hostPath)) {
-      const stat = await platform.fs.lstat(hostPath);
-      if (!stat.isFile || stat.isSymlink) {
-        throw validationError(`SQLite path must be a non-symlink regular file: ${hostPath}`);
+    for (const database of databaseBindings(app, "litestream")) {
+      const sqliteDir = sqliteHostDir(platform, database.file.id);
+      const hostPath = sqliteHostPath(platform, database.file.id, app.slug, "litestream");
+      const dirStat = await platform.fs.lstat(sqliteDir);
+      if (!dirStat.isDirectory || dirStat.isSymlink) {
+        throw validationError(`SQLite directory is not a real local directory: ${sqliteDir}`);
+      }
+      if (await platform.fs.exists(hostPath)) {
+        const stat = await platform.fs.lstat(hostPath);
+        if (!stat.isFile || stat.isSymlink) {
+          throw validationError(`SQLite path must be a non-symlink regular file: ${hostPath}`);
+        }
       }
     }
   }

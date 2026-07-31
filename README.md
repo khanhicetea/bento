@@ -10,7 +10,7 @@ This repository is a **Deno 2.9 / TypeScript** reimplementation of the Bento hos
 - Nginx as the only public service: host network by default, stack-private bridge mode as a multi-stack opt-in
 - per-app Linux identity, home, PHP-FPM pool, and Unix socket
 - version-shared PHP FPM / singleton runner / ephemeral CLI roles
-- private MySQL and PostgreSQL services (per managed version) plus Redis, with one engine/service binding per app
+- private MySQL and PostgreSQL services (per managed version), SQLite/Litestream files, and Redis, with multiple database bindings per app
 - desired-state rendering with staged, validated, recoverable apply
 - schedules, workers, webhook deploys, backups, and diagnostics
 
@@ -55,10 +55,10 @@ deno task run --stack ./my-stack app create demo \
 # An Ed25519 deploy key is created once under homes/demo/.ssh/ (mounted as /home/demo/.ssh/).
 # Register id_ed25519.pub with the Git host before cloning a private repository.
 
-# or add PostgreSQL and create a PostgreSQL-backed application
+# add PostgreSQL as another database kind on the same application
 deno task run --stack ./my-stack postgres add 17
-deno task run --stack ./my-stack app create reports \
-  --domain reports.example.test \
+deno task run --stack ./my-stack app update demo \
+  --domain demo.example.test \
   --database-engine postgres \
   --postgres 17 \
   --db
@@ -149,7 +149,7 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Area         | Commands                                                                                                                                                                                                                                                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops)                                                                                                                                                                       |
-| Bootstrap    | `init`, `state migrate --confirm migrate-v1-to-v2`, `render`, `apply`, `status`                                                                                                                                                                                |
+| Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                             |
 | Diagnostics  | `doctor`, `support-bundle [output]` — validates runtime versions, network/storage/TLS/service health, permissions, volumes, overlays, and secret modes; bundles contain redacted diagnostics only                                                              |
 | Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — Docker harness covering MySQL and PostgreSQL PHP connectivity, PostgreSQL two-app isolation and backup/restore, mixed-engine status/raw export, app operations, and deploy; ACME skipped |
 | Apps         | `app create\|list\|show\|update\|enable\|disable\|delete\|remove\|prune\|shell`; removal requires `--confirm "delete <slug>"` and retains durable data; `app prune <slug>` lists and permanently cleans retained home/database data only after typing `delete` |
@@ -166,18 +166,18 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Stack        | `stack ingress show`, `stack ingress set host\|bridge [--http-port N --https-port N]`; `stack export <directory>`, `stack import <directory> [--name NAME --ingress-mode bridge --http-port N --https-port N]`                                                 |
 | Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                             |
 
-PostgreSQL is a first-class alternative to MySQL. Managed private services can be added and listed with `postgres add <major>` / `postgres list`, apps select one with `--database-engine postgres --postgres <major-or-service>`, and routine administration is available through `postgres db|shell|size|processlist`. Top-level `backup` and `restore` infer the selected app's engine, including mixed-engine `backup --all`, portable PostgreSQL dumps, and guarded restore-to-new or replacement. State schema v2 is engine-aware while keeping MySQL 8.4 as the default. Existing schema v1 stacks are never rewritten during routine reads; migrate one deliberately with `bento state migrate --confirm migrate-v1-to-v2`. Bento validates the complete v2 document, writes a mode-`0600` v1 backup beside `state.json`, then atomically replaces the state file. Each app belongs to exactly one MySQL or PostgreSQL service. Automatic cross-engine migration and managed database service/volume removal are unsupported. PostgreSQL uses official major tags such as `17` (`postgres17`). See [`specs/pg-database.md`](specs/pg-database.md).
+PostgreSQL is a first-class database kind alongside MySQL, SQLite, and Litestream. Managed private services can be added and listed with `postgres add <major>` / `postgres list`; calling `app update` with a new database kind links another binding without replacing existing data. Routine administration is available through `mysql db|shell|size|processlist`, `postgres db|shell|size|processlist`, and `sqlite`. Top-level backup enumerates all linked bindings; restore accepts `--engine mysql|postgres` when a mixed relational app would otherwise be ambiguous. Fresh state uses schema v4: apps persist `databases[]`, while authoritative domain records link domains to apps or proxies and mark one link primary. Older schema versions are rejected and no migration command is provided. PostgreSQL uses official major tags such as `17` (`postgres17`).
 
 ### Logical database backup and restore
 
 ```bash
-# Engine is inferred from app state; --all may include both engines.
+# Every binding linked to the app is included; --all spans every app.
 bento backup --app reports --gzip
 bento backup --all
 
 # Restore to a new namespaced database for verification.
 bento restore --file /var/lib/bento/backups/postgres17/reports-....sql.gz \
-  --app reports --target reports_verify
+  --app reports --engine postgres --target reports_verify
 
 # Register the current stack for a daily 03:15 host-cron run.
 bento --stack /var/lib/bento backup schedule register \

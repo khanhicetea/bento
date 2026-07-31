@@ -18,7 +18,7 @@ MySQL 8.4 is the new-stack default. Added services are private and have durable 
 
 ## Create an app database
 
-The app must already be MySQL-backed, and names must remain in its namespace:
+The app must have a MySQL binding, and names must remain in its namespace:
 
 ```sh
 bento --stack /var/lib/bento mysql db demo demo_archive
@@ -57,7 +57,7 @@ If the service is unavailable, check `compose -- ps`, MySQL logs, and that `MYSQ
 
 ## Advanced
 
-Each app has one engine/service binding and a same-name user limited to recorded namespaced databases. Moving engines/services requires an external migration. Never use `compose down -v`.
+Each app may link multiple database kinds. Its MySQL binding has a same-name user limited to recorded namespaced databases and coexists with any PostgreSQL, SQLite, or Litestream bindings. Never use `compose down -v`.
 
 ## Next steps
 

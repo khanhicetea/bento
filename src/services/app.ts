@@ -14,6 +14,7 @@ import type {
   TlsMode,
 } from "../domain/state.ts";
 import { defaultDeployConfig, defaultRedisIdentity } from "../domain/state.ts";
+import { primaryDatabase } from "../domain/state.ts";
 import {
   asAbsoluteAppPath,
   asAppSlug,
@@ -108,6 +109,9 @@ export function provisionApp(
 
   // Domain uniqueness
   const claimed = [domain, ...aliases];
+  if (new Set(claimed).size !== claimed.length) {
+    throw validationError("primary domain and aliases must not contain duplicates");
+  }
   for (const d of claimed) {
     const owner = state.domains[d];
     if (!owner) continue;
@@ -143,13 +147,9 @@ export function provisionApp(
   }
   const fpmProfile = asFpmProfile(String(fpmProfileStr));
 
-  const databaseEngine = (input.databaseEngine ?? existing?.database.engine ??
+  const currentPrimary = existing ? primaryDatabase(existing) : undefined;
+  const databaseEngine = (input.databaseEngine ?? currentPrimary?.engine ??
     state.defaults.database.engine) as DatabaseEngine;
-  if (existing && input.databaseEngine && databaseEngine !== existing.database.engine) {
-    throw conflictError(
-      `app ${existing.slug} is assigned to ${existing.database.engine}; moving database engines is an explicit migration`,
-    );
-  }
   const fileDatabase = databaseEngine === "sqlite" || databaseEngine === "litestream";
   const managedDatabase = fileDatabase
     ? undefined
@@ -176,9 +176,15 @@ export function provisionApp(
   const now = platform.clock.nowIso();
 
   // Generate once for a new app; all later reconciliation preserves it.
-  const databasePassword = existing &&
-      existing.database.engine !== "sqlite" && existing.database.engine !== "litestream"
-    ? existing.database.password
+  const existingBinding = fileDatabase
+    ? existing?.databases.find((database) => database.engine === databaseEngine)
+    : existing?.databases.find((database) =>
+      database.engine === managedDatabase?.engine &&
+      database.service === managedDatabase.service
+    );
+  const databasePassword = existingBinding &&
+      existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
+    ? existingBinding.password
     : platform.random.hex(18);
   const redisPassword = existing?.redis.password ??
     (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
@@ -198,9 +204,9 @@ export function provisionApp(
     };
   }
 
-  const databases = existing &&
-      existing.database.engine !== "sqlite" && existing.database.engine !== "litestream"
-    ? [...existing.database.databases]
+  const databases = existingBinding &&
+      existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
+    ? [...existingBinding.databases]
     : [];
   if (input.createDatabase && !fileDatabase) {
     const dbName = input.databaseName ?? slug;
@@ -218,14 +224,30 @@ export function provisionApp(
     }
   }
 
+  const selectedBinding = fileDatabase
+    ? existingBinding && !input.createDatabase
+      ? existingBinding
+      : createSqliteBinding(platform, slug, now, databaseEngine as "sqlite" | "litestream")
+    : databaseBinding(
+      managedDatabase!.engine,
+      String(managedDatabase!.service),
+      slug,
+      databasePassword,
+      databases,
+    );
+  const appDatabases = existing ? [...existing.databases] : [];
+  const selectedIndex = existingBinding && !(fileDatabase && input.createDatabase)
+    ? appDatabases.indexOf(existingBinding)
+    : -1;
+  if (selectedIndex >= 0) appDatabases[selectedIndex] = selectedBinding;
+  else appDatabases.push(selectedBinding);
+
   const app: AppState = {
     slug: asAppSlug(slug),
     enabled: existing?.enabled ?? true,
     uid,
     gid,
     home: asAbsoluteAppPath(homeContainer),
-    mainDomain: asDomainName(domain),
-    aliases: aliases.map(asDomainName),
     documentRoot,
     entrypointMode,
     phpVersion,
@@ -233,17 +255,10 @@ export function provisionApp(
     fpmProfile,
     tls,
     accessLog,
-    database: fileDatabase
-      ? existing?.database.engine === databaseEngine
-        ? existing.database
-        : createSqliteBinding(platform, slug, now, databaseEngine as "sqlite" | "litestream")
-      : databaseBinding(
-        managedDatabase!.engine,
-        String(managedDatabase!.service),
-        slug,
-        databasePassword,
-        databases,
-      ),
+    databases: appDatabases,
+    database: appDatabases[0]!,
+    mainDomain: asDomainName(domain),
+    aliases: aliases.map(asDomainName),
     redis,
     deploy: existing?.deploy ?? defaultDeployConfig(homeContainer),
     vhostTemplate: existing?.vhostTemplate ?? { kind: "upstream" },
@@ -258,8 +273,8 @@ export function provisionApp(
   for (const [d, owner] of Object.entries(domains)) {
     if (owner.kind === "app" && owner.slug === slug) delete domains[d];
   }
-  for (const d of claimed) {
-    domains[d] = { kind: "app", slug: asAppSlug(slug) };
+  for (const [index, d] of claimed.entries()) {
+    domains[d] = { kind: "app", slug: asAppSlug(slug), primary: index === 0 };
   }
 
   const next: DesiredState = {
@@ -338,23 +353,26 @@ function resolveAppDatabaseService(
     (input.mysqlVersion ? "mysql" : input.postgresVersion ? "postgres" : undefined)) as
       | Exclude<DatabaseEngine, "sqlite" | "litestream">
       | undefined;
-  const engine = requestedEngine ?? existing?.database.engine ?? state.defaults.database.engine;
+  const current = existing
+    ? existing.databases.find((database) =>
+      database.engine === requestedEngine &&
+      (database.engine === "mysql" || database.engine === "postgres")
+    ) ?? primaryDatabase(existing)
+    : undefined;
+  const engine = requestedEngine ?? current?.engine ?? state.defaults.database.engine;
   if (engine === "sqlite" || engine === "litestream") {
     throw validationError("SQLite and Litestream do not use a managed relational service");
   }
-  if (existing && engine !== existing.database.engine) {
-    throw conflictError(
-      `app ${existing.slug} is assigned to ${existing.database.engine}/${existing.database.service}; moving database engines is an explicit migration`,
-    );
-  }
-
   const token = engine === "mysql" ? input.mysqlVersion : input.postgresVersion;
-  if (existing && token === undefined) {
+  if (
+    current && current.engine !== "sqlite" && current.engine !== "litestream" &&
+    current.engine === engine && token === undefined
+  ) {
     const preserved = state.databaseServices.find((entry) =>
-      entry.engine === engine && entry.service === existing.database.service
+      entry.engine === engine && entry.service === current.service
     );
     if (!preserved) {
-      throw validationError(`${engine} service ${existing.database.service} is not managed`);
+      throw validationError(`${engine} service ${current.service} is not managed`);
     }
     return preserved;
   }
@@ -373,11 +391,6 @@ function resolveAppDatabaseService(
       token
         ? `${engine} version or service ${token} is not managed`
         : `select a managed ${engine} service explicitly`,
-    );
-  }
-  if (existing && selected.service !== existing.database.service) {
-    throw conflictError(
-      `app ${existing.slug} is assigned to ${existing.database.service}; moving database services is an explicit migration`,
     );
   }
   return selected;
@@ -428,13 +441,18 @@ export async function materializeAppHome(
   for (const d of dirs) {
     await platform.fs.mkdirp(d, 0o750);
   }
-  if (app.database.engine === "sqlite" || app.database.engine === "litestream") {
-    const sqliteDir = sqliteHostDir(platform, app.database.file.id);
+  for (
+    const database of app.databases.filter((database) =>
+      database.engine === "sqlite" || database.engine === "litestream"
+    )
+  ) {
+    if (database.engine !== "sqlite" && database.engine !== "litestream") continue;
+    const sqliteDir = sqliteHostDir(platform, database.file.id);
     const sqlitePath = sqliteHostPath(
       platform,
-      app.database.file.id,
+      database.file.id,
       app.slug,
-      app.database.engine,
+      database.engine,
     );
     await platform.fs.mkdirp(sqliteDir, 0o700);
     if (!(await platform.fs.exists(sqlitePath))) {
@@ -471,30 +489,49 @@ export async function materializeAppHome(
       `REDIS_PREFIX=${app.redis.prefix}`,
       `REDIS_MODE=acl`,
     ];
-  const databaseLines = app.database.engine === "mysql"
+  const database = primaryDatabase(app);
+  const databaseLines = database.engine === "mysql"
     ? [
       "DB_CONNECTION=mysql",
-      `MYSQL_HOST=${app.database.service}`,
-      `MYSQL_USER=${app.database.user}`,
-      `MYSQL_PASSWORD=${app.database.password}`,
-      `MYSQL_DATABASE=${app.database.databases[0]?.name ?? app.slug}`,
+      `MYSQL_HOST=${database.service}`,
+      `MYSQL_USER=${database.user}`,
+      `MYSQL_PASSWORD=${database.password}`,
+      `MYSQL_DATABASE=${database.databases[0]?.name ?? app.slug}`,
     ]
-    : app.database.engine === "postgres"
+    : database.engine === "postgres"
     ? [
       "DB_CONNECTION=pgsql",
-      `PGHOST=${app.database.service}`,
+      `PGHOST=${database.service}`,
       "PGPORT=5432",
-      `PGUSER=${app.database.user}`,
-      `PGPASSWORD=${app.database.password}`,
-      `PGDATABASE=${app.database.databases[0]?.name ?? app.slug}`,
+      `PGUSER=${database.user}`,
+      `PGPASSWORD=${database.password}`,
+      `PGDATABASE=${database.databases[0]?.name ?? app.slug}`,
     ]
     : [
       "DB_CONNECTION=sqlite",
-      `DB_DATABASE=${sqliteContainerPath(app.database.file.id, app.slug, app.database.engine)}`,
+      `DB_DATABASE=${sqliteContainerPath(database.file.id, app.slug, database.engine)}`,
       "SQLITE_BUSY_TIMEOUT=5000",
     ];
+  const linkedDatabaseLines = app.databases.flatMap((binding, index) => {
+    const prefix = `BENTO_DB_${index + 1}`;
+    if (binding.engine === "mysql" || binding.engine === "postgres") {
+      return [
+        `${prefix}_ENGINE=${binding.engine}`,
+        `${prefix}_HOST=${binding.service}`,
+        `${prefix}_USER=${binding.user}`,
+        `${prefix}_PASSWORD=${binding.password}`,
+        `${prefix}_DATABASES=${binding.databases.map((entry) => entry.name).join(",")}`,
+      ];
+    }
+    return [
+      `${prefix}_ENGINE=${binding.engine}`,
+      `${prefix}_PATH=${sqliteContainerPath(binding.file.id, app.slug, binding.engine)}`,
+    ];
+  });
   const cred = [
     ...databaseLines,
+    `BENTO_DATABASE_COUNT=${app.databases.length}`,
+    ...linkedDatabaseLines,
     `REDIS_HOST=redis`,
     `REDIS_PORT=6379`,
     ...redisLines,
@@ -646,66 +683,91 @@ export async function applyAppDataPlane(
   opts: {
     /** When true, MySQL must be up and grants applied for each recorded database. */
     explicitDatabase: boolean;
+    databaseEngine?: DatabaseEngine;
+    databaseService?: string;
+    databaseName?: string;
   },
 ): Promise<AppDataPlaneResult> {
   const deferredNotes: string[] = [];
   let databaseApplied = false;
   let redisApplied = false;
 
-  if (app.database.engine === "mysql") {
-    if (opts.explicitDatabase) {
-      const rootPassword = await requireMysqlRootPassword(platform);
-      if (!(await isMysqlReachable(platform, app.database.service))) {
-        throw serviceError(
-          `MySQL service ${app.database.service} is unavailable; database was not recorded`,
-          "Start the stack MySQL service, confirm MYSQL_ROOT_PASSWORD, then retry `bento app create --db` or `bento mysql db`.",
+  let mysqlApplied = false;
+  const selectedDatabases = opts.explicitDatabase
+    ? app.databases.filter((database) => {
+      if (opts.databaseEngine && database.engine !== opts.databaseEngine) return false;
+      if (
+        opts.databaseService &&
+        (database.engine === "mysql" || database.engine === "postgres") &&
+        database.service !== opts.databaseService
+      ) return false;
+      if (
+        opts.databaseName &&
+        (database.engine === "mysql" || database.engine === "postgres") &&
+        !database.databases.some((entry) => entry.name === opts.databaseName)
+      ) return false;
+      return true;
+    })
+    : app.databases;
+  for (const database of selectedDatabases) {
+    const scopedApp = { ...app, databases: [database] };
+    if (database.engine === "mysql") {
+      if (opts.explicitDatabase) {
+        const rootPassword = await requireMysqlRootPassword(platform);
+        if (!(await isMysqlReachable(platform, database.service))) {
+          throw serviceError(
+            `MySQL service ${database.service} is unavailable; database was not recorded`,
+            "Start the stack MySQL service, confirm MYSQL_ROOT_PASSWORD, then retry `bento app create --db` or `bento mysql db`.",
+          );
+        }
+        for (const dbName of database.databases.map((d) => d.name)) {
+          await applyAppMysqlGrants(platform, scopedApp, dbName, rootPassword);
+        }
+        databaseApplied = true;
+        mysqlApplied = true;
+      } else {
+        const applied = await tryBestEffortMysqlAccount(
+          platform,
+          scopedApp,
+          await loadMysqlRootPassword(platform),
         );
+        databaseApplied ||= applied;
+        mysqlApplied ||= applied;
+        if (!applied) {
+          deferredNotes.push(
+            `MySQL account setup deferred for ${app.slug}; retry when ${database.service} is up`,
+          );
+        }
       }
-      for (const dbName of app.database.databases.map((d) => d.name)) {
-        await applyAppMysqlGrants(platform, app, dbName, rootPassword);
+    } else if (database.engine === "postgres") {
+      if (opts.explicitDatabase) {
+        const rootPassword = await requirePostgresRootPassword(platform);
+        if (!(await isPostgresReachable(platform, database.service))) {
+          throw serviceError(
+            `PostgreSQL service ${database.service} is unavailable; database was not recorded`,
+            "Start PostgreSQL, confirm POSTGRES_PASSWORD, then retry `bento app create --db`.",
+          );
+        }
+        for (const dbName of database.databases.map((d) => d.name)) {
+          await applyAppPostgresDatabase(platform, scopedApp, dbName, rootPassword);
+        }
+        databaseApplied = true;
+      } else {
+        const applied = await tryBestEffortPostgresRole(
+          platform,
+          scopedApp,
+          await loadPostgresRootPassword(platform),
+        );
+        databaseApplied ||= applied;
+        if (!applied) {
+          deferredNotes.push(
+            `PostgreSQL role setup deferred for ${app.slug}; retry when ${database.service} is up`,
+          );
+        }
       }
-      databaseApplied = true;
     } else {
-      databaseApplied = await tryBestEffortMysqlAccount(
-        platform,
-        app,
-        await loadMysqlRootPassword(platform),
-      );
-      if (!databaseApplied) {
-        deferredNotes.push(
-          `MySQL account setup deferred for ${app.slug}; retry when ${app.database.service} is up`,
-        );
-      }
-    }
-  } else if (app.database.engine === "postgres") {
-    if (opts.explicitDatabase) {
-      const rootPassword = await requirePostgresRootPassword(platform);
-      if (!(await isPostgresReachable(platform, app.database.service))) {
-        throw serviceError(
-          `PostgreSQL service ${app.database.service} is unavailable; database was not recorded`,
-          "Start PostgreSQL, confirm POSTGRES_PASSWORD, then retry `bento app create --db`.",
-        );
-      }
-      for (const dbName of app.database.databases.map((d) => d.name)) {
-        await applyAppPostgresDatabase(platform, app, dbName, rootPassword);
-      }
       databaseApplied = true;
-    } else {
-      databaseApplied = await tryBestEffortPostgresRole(
-        platform,
-        app,
-        await loadPostgresRootPassword(platform),
-      );
-      if (!databaseApplied) {
-        deferredNotes.push(
-          `PostgreSQL role setup deferred for ${app.slug}; retry when ${app.database.service} is up`,
-        );
-      }
     }
-  } else {
-    // The private file is materialized with the app home. The application opens it
-    // with PDO SQLite, which writes the canonical SQLite header and WAL settings.
-    databaseApplied = true;
   }
 
   const redisShared = await loadRedisPassword(platform);
@@ -718,7 +780,7 @@ export async function applyAppDataPlane(
 
   return {
     databaseApplied,
-    mysqlApplied: app.database.engine === "mysql" && databaseApplied,
+    mysqlApplied,
     redisApplied,
     deferredNotes,
   };

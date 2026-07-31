@@ -1,4 +1,4 @@
-import type { TlsMode } from "../../domain/state.ts";
+import type { AppDatabaseBinding, AppState, DatabaseEngine, TlsMode } from "../../domain/state.ts";
 import { FPM_PROFILES } from "../../domain/types.ts";
 import {
   applyAppDataPlane,
@@ -247,8 +247,8 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   const [databaseEngine, databaseService] = databaseSelection
     ? databaseSelection.split(":", 2)
     : [undefined, undefined];
-  const effectiveDatabaseEngine = databaseEngine ?? existing?.database.engine ??
-    state.defaults.database.engine;
+  const effectiveDatabaseEngine = (databaseEngine ?? existing?.database.engine ??
+    state.defaults.database.engine) as DatabaseEngine;
   const useSqlite = effectiveDatabaseEngine === "sqlite";
   const useLitestream = effectiveDatabaseEngine === "litestream";
   const useFileDatabase = useSqlite || useLitestream;
@@ -323,6 +323,9 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       });
       const plane = await applyAppDataPlane(ctx.platform, provisioned.app, {
         explicitDatabase: createDb,
+        databaseEngine: effectiveDatabaseEngine,
+        databaseService,
+        databaseName: databaseName || (createDb && !useFileDatabase ? slug : undefined),
       });
       const redisShared = await loadRedisPassword(ctx.platform);
       await materializeAppHome(ctx.platform, provisioned.app, {
@@ -332,7 +335,7 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
 
       let nextState = provisioned.state;
       let sqliteBackupEnabledNow = false;
-      if (provisioned.app.database.engine === "litestream" && !nextState.sqliteBackup?.enabled) {
+      if (useLitestream && !nextState.sqliteBackup?.enabled) {
         nextState = await enableSqliteBackup(ctx.platform, nextState, slug);
         sqliteBackupEnabledNow = true;
       }
@@ -348,7 +351,7 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       return { provisioned, plane, state: nextState, sqliteBackupEnabledNow };
     });
 
-    if (result.provisioned.app.database.engine === "litestream") {
+    if (useLitestream) {
       if (result.sqliteBackupEnabledNow) {
         const up = await sqliteCompose(ctx.platform, result.state, [
           "up",
@@ -389,25 +392,211 @@ async function sectionAppDatabases(
     if (!app) return;
 
     ui.clear();
-    if (app.database.engine === "sqlite" || app.database.engine === "litestream") {
+    ui.header(
+      `Databases: ${slug}`,
+      `${app.databases.length} binding${
+        app.databases.length === 1 ? "" : "s"
+      } · multiple kinds allowed`,
+    );
+    ui.table(
+      ["kind", "service / files", "databases"],
+      appDatabaseSummaryRows(app),
+    );
+    ui.blank();
+    const action = await ui.menu("Select a binding", [
+      ...appDatabaseMenuChoices(app),
+      {
+        label: "Add database binding…",
+        value: "__add",
+        hint: "MySQL · PostgreSQL · SQLite · Litestream",
+      },
+    ]);
+    if (!action) return;
+
+    if (action === "__add") {
+      await wizardAddAppDatabaseBinding(ui, ctx, slug);
+      continue;
+    }
+    if (action === SQLITE_DATABASE_GROUP) {
+      await sectionAppSqliteDatabases(ui, ctx, slug);
+      continue;
+    }
+
+    const binding = app.databases.find((entry) => databaseBindingKey(entry) === action);
+    if (binding) await sectionAppDatabaseBinding(ui, ctx, slug, binding);
+  }
+}
+
+const SQLITE_DATABASE_GROUP = "__sqlite";
+
+export function appDatabaseMenuChoices(app: AppState): MenuChoice<string>[] {
+  const choices: MenuChoice<string>[] = [];
+  const sqliteBindings = app.databases.filter(isSqliteBinding);
+  let sqliteGroupAdded = false;
+
+  for (const binding of app.databases) {
+    if (isSqliteBinding(binding)) {
+      if (!sqliteGroupAdded) {
+        choices.push({
+          label: "SQLite",
+          value: SQLITE_DATABASE_GROUP,
+          hint: sqliteBindingSummary(sqliteBindings),
+        });
+        sqliteGroupAdded = true;
+      }
+      continue;
+    }
+    choices.push({
+      label: databaseBindingLabel(binding),
+      value: databaseBindingKey(binding),
+      hint: `${binding.databases.length} logical database${
+        binding.databases.length === 1 ? "" : "s"
+      }`,
+    });
+  }
+
+  return choices;
+}
+
+function databaseBindingKey(binding: AppDatabaseBinding): string {
+  return binding.engine === "mysql" || binding.engine === "postgres"
+    ? `${binding.engine}:${binding.service}`
+    : `${binding.engine}:${binding.file.id}`;
+}
+
+function databaseBindingLabel(binding: AppDatabaseBinding): string {
+  if (binding.engine === "mysql") return `MySQL · ${binding.service}`;
+  if (binding.engine === "postgres") return `PostgreSQL · ${binding.service}`;
+  return `${binding.engine === "litestream" ? "Litestream" : "SQLite"} · ${binding.file.id}`;
+}
+
+function appDatabaseSummaryRows(app: AppState): string[][] {
+  const rows: string[][] = [];
+  const sqliteBindings = app.databases.filter(isSqliteBinding);
+  let sqliteGroupAdded = false;
+
+  for (const binding of app.databases) {
+    if (isSqliteBinding(binding)) {
+      if (!sqliteGroupAdded) {
+        rows.push([
+          "SQLite",
+          sqliteBindingCount(sqliteBindings),
+          sqliteModeSummary(sqliteBindings),
+        ]);
+        sqliteGroupAdded = true;
+      }
+      continue;
+    }
+    rows.push([
+      binding.engine === "postgres" ? "PostgreSQL" : "MySQL",
+      binding.service,
+      binding.databases.map((database) => database.name).join(", ") || "-",
+    ]);
+  }
+
+  return rows;
+}
+
+type SqliteBinding = Extract<AppDatabaseBinding, { engine: "sqlite" | "litestream" }>;
+
+function isSqliteBinding(binding: AppDatabaseBinding): binding is SqliteBinding {
+  return binding.engine === "sqlite" || binding.engine === "litestream";
+}
+
+function sqliteBindingCount(bindings: SqliteBinding[]): string {
+  return `${bindings.length} file${bindings.length === 1 ? "" : "s"}`;
+}
+
+function sqliteModeSummary(bindings: SqliteBinding[]): string {
+  const local = bindings.filter((binding) => binding.engine === "sqlite").length;
+  const replicated = bindings.length - local;
+  return [
+    ...(local > 0 ? [`${local} local`] : []),
+    ...(replicated > 0 ? [`${replicated} Litestream`] : []),
+  ].join(" · ");
+}
+
+function sqliteBindingSummary(bindings: SqliteBinding[]): string {
+  return `${sqliteBindingCount(bindings)} · ${sqliteModeSummary(bindings)}`;
+}
+
+export function sqliteDatabaseMenuChoices(
+  bindings: SqliteBinding[],
+): MenuChoice<string>[] {
+  return bindings.map((binding) => ({
+    label: `${binding.engine === "litestream" ? "Litestream" : "Local"} · ${binding.file.id}`,
+    value: databaseBindingKey(binding),
+    hint: binding.file.path,
+  }));
+}
+
+async function sectionAppSqliteDatabases(
+  ui: WizardUI,
+  ctx: CliContext,
+  slug: string,
+): Promise<void> {
+  while (true) {
+    const state = await ctx.store.load();
+    const app = state.apps[slug];
+    if (!app) return;
+    const bindings = app.databases.filter(isSqliteBinding);
+    if (bindings.length === 0) return;
+
+    ui.clear();
+    ui.header(`SQLite: ${slug}`, sqliteBindingSummary(bindings));
+    ui.table(
+      ["mode", "file", "backup"],
+      bindings.map((binding) => [
+        binding.engine === "litestream" ? "Litestream" : "Local",
+        sqliteContainerPath(binding.file.id, app.slug, binding.engine),
+        binding.engine === "litestream"
+          ? state.sqliteBackup?.enabled ? "continuous S3" : "disabled"
+          : "weekly VACUUM + logical .backup",
+      ]),
+    );
+    ui.blank();
+    const action = await ui.menu("Select a SQLite file", sqliteDatabaseMenuChoices(bindings));
+    if (!action) return;
+
+    const binding = bindings.find((entry) => databaseBindingKey(entry) === action);
+    if (binding) await sectionAppDatabaseBinding(ui, ctx, slug, binding);
+  }
+}
+
+async function sectionAppDatabaseBinding(
+  ui: WizardUI,
+  ctx: CliContext,
+  slug: string,
+  selected: AppDatabaseBinding,
+): Promise<void> {
+  while (true) {
+    const state = await ctx.store.load();
+    const app = state.apps[slug];
+    if (!app) return;
+    const binding = app.databases.find((entry) =>
+      databaseBindingKey(entry) === databaseBindingKey(selected)
+    );
+    if (!binding) return;
+
+    ui.clear();
+    if (binding.engine === "sqlite" || binding.engine === "litestream") {
       ui.header(
-        `${app.database.engine === "litestream" ? "Litestream" : "SQLite"}: ${slug}`,
-        app.database.engine === "litestream"
-          ? "SQLite database · stack-wide continuous backup"
-          : "local SQLite · weekly runner VACUUM",
+        `${binding.engine === "litestream" ? "Litestream" : "SQLite"}: ${slug}`,
+        binding.file.id,
       );
       ui.table(
         ["field", "value"],
         [
-          ["file", sqliteContainerPath(app.database.file.id, app.slug, app.database.engine)],
+          ["file", sqliteContainerPath(binding.file.id, app.slug, binding.engine)],
+          ["created", binding.file.createdAt],
           [
             "backup",
-            app.database.engine === "litestream"
+            binding.engine === "litestream"
               ? state.sqliteBackup?.enabled ? "continuous S3" : "disabled"
               : "logical .backup via bento backup",
           ],
-          ...(app.database.engine === "litestream"
-            ? [["verified", app.database.backupVerifiedAt ?? "never"]]
+          ...(binding.engine === "litestream"
+            ? [["verified", binding.backupVerifiedAt ?? "never"]]
             : [["maintenance", "VACUUM Sundays 03:30 UTC"]]),
         ],
       );
@@ -416,22 +605,22 @@ async function sectionAppDatabases(
     }
 
     ui.header(
-      `Databases: ${slug}`,
-      `${app.database.service} · ${app.database.databases.length} database${
-        app.database.databases.length === 1 ? "" : "s"
+      `${binding.engine === "postgres" ? "PostgreSQL" : "MySQL"}: ${slug}`,
+      `${binding.service} · ${binding.databases.length} database${
+        binding.databases.length === 1 ? "" : "s"
       }`,
     );
     ui.table(
       ["database", "created"],
-      app.database.databases.map((db) => [db.name, db.createdAt]),
+      binding.databases.map((database) => [database.name, database.createdAt]),
     );
     ui.blank();
-    const action = await ui.menu("Database actions", [
-      { label: "Create database", value: "create" },
+    const action = await ui.menu("Binding actions", [
+      { label: "Create logical database", value: "create" },
       {
-        label: app.database.engine === "postgres" ? "Open PostgreSQL shell" : "Open MySQL shell",
+        label: binding.engine === "postgres" ? "Open PostgreSQL shell" : "Open MySQL shell",
         value: "shell",
-        hint: `as app ${slug}`,
+        hint: `${binding.service} · as app ${slug}`,
       },
     ]);
     if (!action) return;
@@ -443,59 +632,161 @@ async function sectionAppDatabases(
           default: slug,
         });
         if (!dbName) continue;
-        await ctx.store.withExclusive(async (state) => {
-          const current = state.apps[slug];
-          if (!current) throw new Error(`app not found: ${slug}`);
-          const next = current.database.engine === "postgres"
+        await ctx.store.withExclusive(async (currentState) => {
+          const next = binding.engine === "postgres"
             ? await createPostgresAppDatabaseLive(
               ctx.platform,
-              state,
+              currentState,
               slug,
               dbName,
               await requirePostgresRootPassword(ctx.platform),
+              binding.service,
             )
             : await createAppDatabaseLive(
               ctx.platform,
-              state,
+              currentState,
               slug,
               dbName,
               await requireMysqlRootPassword(ctx.platform),
+              binding.service,
             );
-          const app = next.apps[slug]!;
+          const nextApp = next.apps[slug]!;
           const redisShared = await loadRedisPassword(ctx.platform);
-          await materializeAppHome(ctx.platform, app, {
+          await materializeAppHome(ctx.platform, nextApp, {
             recursivePerms: false,
             redisSharedPassword: redisShared,
           });
           await ctx.store.save(next);
           return next;
         });
-        ui.success(`Created database ${dbName}`, `app=${slug}`);
+        ui.success(`Created database ${dbName}`, `${binding.engine} · ${binding.service}`);
+      } else if (binding.engine === "postgres") {
+        await openPostgresShell(
+          ui,
+          ctx,
+          buildPostgresShellPlan(ctx.platform, { kind: "app", app }, {
+            service: binding.service,
+          }),
+          `bento postgres shell --app ${slug}`,
+        );
       } else {
-        const state = await ctx.store.load();
-        const app = state.apps[slug];
-        if (!app) throw new Error(`app not found: ${slug}`);
-        if (app.database.engine === "postgres") {
-          await openPostgresShell(
-            ui,
-            ctx,
-            buildPostgresShellPlan(ctx.platform, { kind: "app", app }),
-            `bento postgres shell --app ${slug}`,
-          );
-        } else {
-          await openMysqlShell(
-            ui,
-            ctx,
-            buildMysqlShellPlan(ctx.platform, { kind: "app", app }),
-            `bento mysql shell --app ${slug}`,
-          );
-        }
+        await openMysqlShell(
+          ui,
+          ctx,
+          buildMysqlShellPlan(ctx.platform, { kind: "app", app }, {
+            service: binding.service,
+          }),
+          `bento mysql shell --app ${slug}`,
+        );
       }
     } catch (err) {
       handleError(ui, err);
     }
     await ui.pause();
   }
+}
+
+async function wizardAddAppDatabaseBinding(
+  ui: WizardUI,
+  ctx: CliContext,
+  slug: string,
+): Promise<void> {
+  const state = await ctx.store.load();
+  const app = state.apps[slug];
+  if (!app) return;
+
+  const existing = new Set(app.databases.map(databaseBindingKey));
+  const choices: MenuChoice<string>[] = state.databaseServices
+    .filter((service) => !existing.has(`${service.engine}:${service.service}`))
+    .map((service) => ({
+      label: `${service.engine === "postgres" ? "PostgreSQL" : "MySQL"} · ${service.version}`,
+      value: `${service.engine}:${service.service}`,
+      hint: service.service,
+    }));
+  choices.push(
+    { label: "SQLite", value: "sqlite", hint: "new local database file · weekly VACUUM" },
+    {
+      label: "Litestream",
+      value: "litestream",
+      hint: "new SQLite file · continuous S3 replication",
+    },
+  );
+
+  const selection = await ui.menu("Add database binding", choices);
+  if (!selection) return;
+  const [engine, service] = selection.split(":", 2) as [
+    "mysql" | "postgres" | "sqlite" | "litestream",
+    string | undefined,
+  ];
+  const fileDatabase = engine === "sqlite" || engine === "litestream";
+  const createDatabase = fileDatabase ||
+    await ui.confirm("Create an initial namespaced logical database?", { defaultYes: true });
+  const databaseName = !fileDatabase && createDatabase
+    ? await ui.prompt("Database name (blank = app slug)", { default: "" })
+    : "";
+  if (databaseName === null) return;
+
+  const target = service ? `${engine} · ${service}` : engine;
+  if (!(await ui.confirm(`Add ${target} to ${slug}?`, { defaultYes: true }))) return;
+
+  try {
+    const result = await ctx.store.withExclusive(async (currentState) => {
+      const current = currentState.apps[slug];
+      if (!current) throw new Error(`app not found: ${slug}`);
+      const provisioned = provisionApp(ctx.platform, currentState, {
+        slug,
+        domain: current.mainDomain,
+        aliases: current.aliases,
+        databaseEngine: engine,
+        mysqlVersion: engine === "mysql" ? service : undefined,
+        postgresVersion: engine === "postgres" ? service : undefined,
+        createDatabase,
+        databaseName: databaseName || undefined,
+      });
+      const plane = await applyAppDataPlane(ctx.platform, provisioned.app, {
+        explicitDatabase: createDatabase && !fileDatabase,
+        databaseEngine: engine,
+        databaseService: service,
+        databaseName: databaseName || (createDatabase && !fileDatabase ? slug : undefined),
+      });
+      const redisShared = await loadRedisPassword(ctx.platform);
+      await materializeAppHome(ctx.platform, provisioned.app, {
+        recursivePerms: false,
+        redisSharedPassword: redisShared,
+      });
+
+      let nextState = provisioned.state;
+      let sqliteBackupEnabledNow = false;
+      if (engine === "litestream" && !nextState.sqliteBackup?.enabled) {
+        nextState = await enableSqliteBackup(ctx.platform, nextState, slug);
+        sqliteBackupEnabledNow = true;
+      }
+      await ctx.store.save(nextState);
+      await ctx.render.apply(nextState, {
+        reloadPlan: provisioned.reloadPlan,
+        skipValidate: false,
+        alreadyLocked: true,
+      });
+      return { state: nextState, plane, sqliteBackupEnabledNow };
+    });
+
+    if (engine === "litestream" && result.sqliteBackupEnabledNow) {
+      const up = await sqliteCompose(ctx.platform, result.state, [
+        "up",
+        "-d",
+        "--force-recreate",
+        "litestream",
+      ]);
+      if (up.code !== 0) {
+        throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
+      }
+    }
+    ui.success(`Added ${target}`, `app=${slug}`);
+    for (const note of result.plane.deferredNotes) ui.warn(note);
+  } catch (err) {
+    handleError(ui, err);
+  }
+  await ui.pause();
 }
 
 async function sectionAppDomains(

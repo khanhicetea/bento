@@ -5,7 +5,7 @@
 
 import { basename, isAbsolute, join, relative, resolve } from "@std/path";
 import type { AppState, DesiredState, ManagedPostgresVersion } from "../domain/state.ts";
-import { postgresImage, postgresServiceName } from "../domain/state.ts";
+import { databaseBindings, postgresImage, postgresServiceName } from "../domain/state.ts";
 import { asDatabaseName, asPostgresVersion } from "../domain/types.ts";
 import {
   conflictError,
@@ -16,6 +16,20 @@ import {
 } from "../domain/errors.ts";
 import type { Platform, RunResult } from "../platform/mod.ts";
 import { parsePostgresVersion, unwrap } from "../schemas/validators.ts";
+
+function postgresDatabase(app: AppState, service?: string) {
+  const database = service
+    ? databaseBindings(app, "postgres").find((binding) => binding.service === service)
+    : databaseBindings(app, "postgres")[0];
+  if (!database) {
+    throw validationError(
+      service
+        ? `app ${app.slug} has no PostgreSQL database binding for ${service}`
+        : `app ${app.slug} has no PostgreSQL database binding`,
+    );
+  }
+  return database;
+}
 
 /** Stable names derived from Bento's major-only PostgreSQL version format. */
 export function postgresVersionDetails(versionInput: string): ManagedPostgresVersion {
@@ -161,13 +175,13 @@ async function execPostgresSqlAs(
 
 /** SQL that creates an app role once and then enforces its non-privileged attributes. */
 export function postgresRoleSql(app: AppState): string {
-  const role = postgresLiteral(app.database.user);
-  const password = postgresLiteral(app.database.password);
+  const role = postgresLiteral(postgresDatabase(app).user);
+  const password = postgresLiteral(postgresDatabase(app).password);
   return [
     `SELECT format('CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', ${role}, ${password})`,
     `WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${role}) \\gexec`,
     `ALTER ROLE ${
-      postgresIdentifier(app.database.user)
+      postgresIdentifier(postgresDatabase(app).user)
     } WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;`,
   ].join("\n");
 }
@@ -175,9 +189,9 @@ export function postgresRoleSql(app: AppState): string {
 /** Administrator SQL for an owned, private app database. */
 export function postgresDatabaseSql(app: AppState, database: string): string {
   const dbLiteral = postgresLiteral(database);
-  const roleLiteral = postgresLiteral(app.database.user);
+  const roleLiteral = postgresLiteral(postgresDatabase(app).user);
   const db = postgresIdentifier(database);
-  const role = postgresIdentifier(app.database.user);
+  const role = postgresIdentifier(postgresDatabase(app).user);
   return [
     `SELECT format('CREATE DATABASE %I OWNER %I', ${dbLiteral}, ${roleLiteral})`,
     `WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = ${dbLiteral}) \\gexec`,
@@ -189,7 +203,7 @@ export function postgresDatabaseSql(app: AppState, database: string): string {
 
 /** Database-local schema policy; another app role receives no PUBLIC access. */
 export function postgresSchemaSql(app: AppState): string {
-  const role = postgresIdentifier(app.database.user);
+  const role = postgresIdentifier(postgresDatabase(app).user);
   return [
     "REVOKE ALL PRIVILEGES ON SCHEMA public FROM PUBLIC;",
     `ALTER SCHEMA public OWNER TO ${role};`,
@@ -202,18 +216,18 @@ export async function applyAppPostgresRole(
   app: AppState,
   rootPassword: string,
 ): Promise<void> {
-  if (app.database.engine !== "postgres") {
+  if (postgresDatabase(app).engine !== "postgres") {
     throw validationError(`app ${app.slug} is not PostgreSQL-backed`);
   }
   const result = await execPostgresSql(
     platform,
-    app.database.service,
+    postgresDatabase(app).service,
     postgresRoleSql(app),
     rootPassword,
   );
   if (result.code !== 0) {
     throw serviceError(
-      `PostgreSQL role setup failed for ${app.slug} on ${app.database.service}: ${
+      `PostgreSQL role setup failed for ${app.slug} on ${postgresDatabase(app).service}: ${
         (result.stderr || result.stdout || "unknown error").trim()
       }`,
       "Ensure PostgreSQL is running and POSTGRES_PASSWORD matches the container, then retry app provisioning.",
@@ -230,13 +244,13 @@ export async function applyAppPostgresDatabase(
   await applyAppPostgresRole(platform, app, rootPassword);
   const create = await execPostgresSql(
     platform,
-    app.database.service,
+    postgresDatabase(app).service,
     postgresDatabaseSql(app, database),
     rootPassword,
   );
   if (create.code !== 0) {
     throw serviceError(
-      `PostgreSQL database setup failed for ${database} on ${app.database.service}: ${
+      `PostgreSQL database setup failed for ${database} on ${postgresDatabase(app).service}: ${
         (create.stderr || create.stdout || "unknown error").trim()
       }`,
       "The database was not recorded; correct PostgreSQL availability/credentials and retry.",
@@ -244,7 +258,7 @@ export async function applyAppPostgresDatabase(
   }
   const schema = await execPostgresSqlAs(
     platform,
-    app.database.service,
+    postgresDatabase(app).service,
     "postgres",
     database,
     postgresSchemaSql(app),
@@ -252,7 +266,7 @@ export async function applyAppPostgresDatabase(
   );
   if (schema.code !== 0) {
     throw serviceError(
-      `PostgreSQL schema isolation failed for ${database} on ${app.database.service}: ${
+      `PostgreSQL schema isolation failed for ${database} on ${postgresDatabase(app).service}: ${
         (schema.stderr || schema.stdout || "unknown error").trim()
       }`,
       "The database was not recorded; correct PostgreSQL permissions and retry.",
@@ -265,7 +279,9 @@ export async function tryBestEffortPostgresRole(
   app: AppState,
   rootPassword: string | undefined,
 ): Promise<boolean> {
-  if (!rootPassword || !(await isPostgresReachable(platform, app.database.service))) return false;
+  if (!rootPassword || !(await isPostgresReachable(platform, postgresDatabase(app).service))) {
+    return false;
+  }
   try {
     await applyAppPostgresRole(platform, app, rootPassword);
     return true;
@@ -327,12 +343,10 @@ export function createPostgresAppDatabase(
   slug: string,
   database: string,
   now: string,
+  service?: string,
 ): DesiredState {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
-  if (app.database.engine !== "postgres") {
-    throw validationError(`app ${slug} is not PostgreSQL-backed`);
-  }
   if (!/^[a-zA-Z0-9_]+$/.test(database)) {
     throw validationError(`invalid database name ${database}`);
   }
@@ -341,18 +355,22 @@ export function createPostgresAppDatabase(
       `database ${database} outside app namespace; use ${slug} or ${slug}_*`,
     );
   }
-  if (app.database.databases.some((entry) => entry.name === database)) {
+  const current = postgresDatabase(app, service);
+  if (current.databases.some((entry) => entry.name === database)) {
     throw conflictError(`database ${database} already recorded for app ${slug}`);
   }
+  const binding = {
+    ...current,
+    databases: [
+      ...current.databases,
+      { name: asDatabaseName(database), createdAt: now },
+    ],
+  };
+  const databases = app.databases.map((entry) => entry === current ? binding : entry);
   const nextApp: AppState = {
     ...app,
-    database: {
-      ...app.database,
-      databases: [
-        ...app.database.databases,
-        { name: asDatabaseName(database), createdAt: now },
-      ],
-    },
+    databases,
+    database: databases[0]!,
     updatedAt: now,
   };
   return {
@@ -369,21 +387,29 @@ export async function createPostgresAppDatabaseLive(
   slug: string,
   database: string,
   rootPassword: string,
+  service?: string,
 ): Promise<DesiredState> {
   const validated = createPostgresAppDatabase(
     state,
     slug,
     database,
     platform.clock.nowIso(),
+    service,
   );
   const app = validated.apps[slug]!;
-  if (!(await isPostgresReachable(platform, app.database.service))) {
+  const binding = postgresDatabase(app, service);
+  if (!(await isPostgresReachable(platform, binding.service))) {
     throw serviceError(
-      `PostgreSQL service ${app.database.service} is unavailable; database ${database} was not recorded`,
+      `PostgreSQL service ${binding.service} is unavailable; database ${database} was not recorded`,
       "Start the PostgreSQL service, confirm POSTGRES_PASSWORD, then retry `bento postgres db`.",
     );
   }
-  await applyAppPostgresDatabase(platform, app, database, rootPassword);
+  await applyAppPostgresDatabase(
+    platform,
+    { ...app, databases: [binding], database: binding },
+    database,
+    rootPassword,
+  );
   return validated;
 }
 
@@ -405,7 +431,7 @@ export type PostgresShellPlan = {
 export function buildPostgresShellPlan(
   platform: Platform,
   identity: PostgresShellIdentity,
-  opts?: { database?: string; interactive?: boolean },
+  opts?: { database?: string; interactive?: boolean; service?: string },
 ): PostgresShellPlan {
   const interactive = opts?.interactive ?? true;
   if (identity.kind === "root") {
@@ -435,10 +461,7 @@ export function buildPostgresShellPlan(
     };
   }
 
-  if (identity.app.database.engine !== "postgres") {
-    throw validationError(`app ${identity.app.slug} is not PostgreSQL-backed`);
-  }
-  const { service, user, password, databases } = identity.app.database;
+  const { service, user, password, databases } = postgresDatabase(identity.app, opts?.service);
   const database = opts?.database ?? databases[0]?.name ?? "postgres";
   if (opts?.database && !databases.some((entry) => entry.name === opts.database)) {
     throw validationError(`database ${opts.database} is not recorded for app ${identity.app.slug}`);
@@ -735,7 +758,7 @@ export async function runPostgresRestore(
   req: PostgresRestoreRequest,
 ): Promise<void> {
   const { app } = req;
-  if (app.database.engine !== "postgres") {
+  if (postgresDatabase(app).engine !== "postgres") {
     throw validationError(`app ${app.slug} is not PostgreSQL-backed`);
   }
   if (req.replaceOriginal !== undefined && req.replaceOriginal !== req.targetDatabase) {
@@ -758,7 +781,7 @@ export async function runPostgresRestore(
     throw validationError(`backup file is empty or not a regular file: ${req.file}`);
   }
 
-  const serviceDir = join(platform.paths.paths.backupsDir, app.database.service);
+  const serviceDir = join(platform.paths.paths.backupsDir, postgresDatabase(app).service);
   await platform.fs.mkdirp(serviceDir, 0o700);
   let containerFile = postgresPathInsideBackupMount(serviceDir, req.file);
   let stagedFile: string | undefined;
@@ -772,7 +795,7 @@ export async function runPostgresRestore(
   }
 
   const db = postgresIdentifier(req.targetDatabase);
-  const role = postgresIdentifier(app.database.user);
+  const role = postgresIdentifier(postgresDatabase(app).user);
   const terminate = `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${
     postgresLiteral(req.targetDatabase)
   } AND pid <> pg_backend_pid();`;
@@ -806,18 +829,18 @@ export async function runPostgresRestore(
       }`
     ),
     `${decompress} | PGPASSFILE="$PASS" psql --username=${
-      pgShellQuote(app.database.user)
+      pgShellQuote(postgresDatabase(app).user)
     } --dbname=${pgShellQuote(req.targetDatabase)} --no-psqlrc --set=ON_ERROR_STOP=1`,
     `PGPASSFILE=/etc/bento/postgres/root.pgpass psql --username=postgres --dbname=${
       pgShellQuote(req.targetDatabase)
     } --no-psqlrc --set=ON_ERROR_STOP=1 --command=${pgShellQuote(postgresSchemaSql(app))}`,
   ].join("\n");
-  const stdin = `*:*:*:${app.database.user.replaceAll("\\", "\\\\").replaceAll(":", "\\:")}:${
-    pgpassPassword(app.database.password)
-  }\n`;
+  const stdin = `*:*:*:${
+    postgresDatabase(app).user.replaceAll("\\", "\\\\").replaceAll(":", "\\:")
+  }:${pgpassPassword(postgresDatabase(app).password)}\n`;
   try {
     const result = await platform.process.run(
-      ["docker", "compose", "exec", "-T", app.database.service, "sh", "-c", script],
+      ["docker", "compose", "exec", "-T", postgresDatabase(app).service, "sh", "-c", script],
       { cwd: platform.paths.paths.root, stdin, timeoutMs: 60 * 60_000 },
     );
     if (result.code !== 0) {

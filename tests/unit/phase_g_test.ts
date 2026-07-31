@@ -81,7 +81,7 @@ Deno.test("app prune lists retained parts and requires literal delete", async ()
       platform.clock.nowIso(),
     );
     const plan = await planAppPrune(platform, removed.state, "demo");
-    assertEquals(plan.databases, ["demo"]);
+    assertEquals(plan.bindings[0]?.databases, ["demo"]);
     assertEquals(plan.home, platform.paths.appHome("demo"));
 
     await assertRejects(() => executeAppPrune(platform, plan, "DELETE"), Error, "exactly 'delete'");

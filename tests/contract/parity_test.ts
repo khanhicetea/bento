@@ -264,8 +264,11 @@ Deno.test({
         assertEquals(shellPlan.code, 0, shellPlan.stderr);
         assertEquals(shellPlan.stdout.includes("psql"), true);
         const state = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+        const postgresBinding = state.apps.pgparity.databases.find(
+          (binding: { engine: string }) => binding.engine === "postgres",
+        );
         assertEquals(
-          shellPlan.stdout.includes(state.apps.pgparity.database.password),
+          shellPlan.stdout.includes(postgresBinding.password),
           false,
         );
         assertEquals(

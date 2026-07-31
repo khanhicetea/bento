@@ -1,4 +1,5 @@
 import { materializeAppHome } from "../../services/app.ts";
+import { databaseBindings } from "../../domain/state.ts";
 import {
   addMysqlVersion,
   assertShellPlanSecretsOffArgv,
@@ -208,7 +209,10 @@ async function cmdMysqlShell(
       database,
       interactive: !printOnly,
     });
-    assertShellPlanSecretsOffArgv(plan, [app.database.password]);
+    assertShellPlanSecretsOffArgv(
+      plan,
+      databaseBindings(app, "mysql").map((database) => database.password),
+    );
   }
 
   if (printOnly) {
@@ -289,7 +293,11 @@ async function cmdMysqlSize(argv: CliArgs, ctx: CliContext): Promise<number> {
     let databases: string[] = [];
     if (argv.app) {
       const app = state.apps[argv.app];
-      databases = app?.database.databases.map((d) => d.name) ?? [];
+      databases = app
+        ? databaseBindings(app, "mysql").flatMap((binding) =>
+          binding.databases.map((database) => database.name)
+        )
+        : [];
     }
     const { rows } = await queryDatabaseSizes(ctx.platform, service, rootPassword, databases);
     for (const r of rows) {

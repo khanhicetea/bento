@@ -53,8 +53,8 @@ export function createProxy(
   };
 
   const domains = { ...state.domains };
-  for (const d of [domain, ...aliases]) {
-    domains[d] = { kind: "proxy", name: asProxySiteName(name) };
+  for (const [index, d] of [domain, ...aliases].entries()) {
+    domains[d] = { kind: "proxy", name: asProxySiteName(name), primary: index === 0 };
   }
 
   return {

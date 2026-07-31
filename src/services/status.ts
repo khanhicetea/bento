@@ -63,6 +63,11 @@ export type StatusReport = {
     databaseEngine: "mysql" | "postgres" | "sqlite" | "litestream";
     databaseService: string;
     databases: string[];
+    databaseBindings: Array<{
+      engine: "mysql" | "postgres" | "sqlite" | "litestream";
+      service: string;
+      databases: string[];
+    }>;
     redisMode: string;
     deploy: boolean;
   }>;
@@ -222,6 +227,17 @@ export async function buildStatus(
         databases: a.database.engine === "sqlite" || a.database.engine === "litestream"
           ? [sqliteContainerPath(a.database.file.id, a.slug, a.database.engine)]
           : a.database.databases.map((d) => d.name),
+        databaseBindings: a.databases.map((database) => ({
+          engine: database.engine,
+          service: database.engine === "sqlite"
+            ? "local-file"
+            : database.engine === "litestream"
+            ? "litestream"
+            : database.service,
+          databases: database.engine === "sqlite" || database.engine === "litestream"
+            ? [sqliteContainerPath(database.file.id, a.slug, database.engine)]
+            : database.databases.map((entry) => String(entry.name)),
+        })),
         redisMode: a.redis.mode,
         deploy: a.deploy.enabled,
       })),
@@ -256,7 +272,9 @@ async function databaseVersionStatus(
 ): Promise<DatabaseVersionStatus> {
   const appCount =
     Object.values(state.apps).filter((app) =>
-      app.database.engine === managed.engine && app.database.service === managed.service
+      app.databases.some((database) =>
+        database.engine === managed.engine && database.service === managed.service
+      )
     ).length;
   let health: DatabaseVersionStatus["health"] = "unknown";
   let healthDetail: string | undefined;

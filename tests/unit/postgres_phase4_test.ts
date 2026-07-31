@@ -61,7 +61,7 @@ Deno.test("PostgreSQL app selection persists one engine binding and preserves pa
   assertEquals(reconciled.app.database.password, first.app.database.password);
 });
 
-Deno.test("database selection rejects contradictory flags and engine/service moves", () => {
+Deno.test("database selection rejects contradictory flags and adds another engine binding", () => {
   const platform = testPlatform("/tmp/bento-pg4");
   const state = addPostgresVersion(createEmptyState(), "17");
   const base = { slug: "demo", domain: "demo.test" };
@@ -81,16 +81,12 @@ Deno.test("database selection rejects contradictory flags and engine/service mov
     "contradicts",
   );
   const existing = provisionApp(platform, state, base).state;
-  assertThrows(
-    () =>
-      provisionApp(platform, existing, {
-        ...base,
-        databaseEngine: "postgres",
-        postgresVersion: "17",
-      }),
-    Error,
-    "explicit migration",
-  );
+  const mixed = provisionApp(platform, existing, {
+    ...base,
+    databaseEngine: "postgres",
+    postgresVersion: "17",
+  });
+  assertEquals(mixed.app.databases.map((database) => database.engine), ["mysql", "postgres"]);
 });
 
 Deno.test("PostgreSQL policy SQL preserves password and isolates database/schema", () => {

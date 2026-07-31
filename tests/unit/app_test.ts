@@ -7,6 +7,11 @@ import {
   provisionApp,
 } from "../../src/services/app.ts";
 import { addPhpVersion, buildCliExec, cliRunComposeCommand } from "../../src/services/php.ts";
+import {
+  addMysqlVersion,
+  buildMysqlShellPlan,
+  createAppDatabase,
+} from "../../src/services/mysql.ts";
 import { createFixedClock } from "../../src/platform/clock.ts";
 import { createSeededRandom } from "../../src/platform/random.ts";
 import { createFileSystem } from "../../src/platform/fs.ts";
@@ -57,6 +62,20 @@ Deno.test("provisionApp creates distinct identities and domain ownership", async
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("provisionApp rejects duplicate domain links before state is built", () => {
+  const platform = testPlatform("/tmp/bento-domain-duplicates");
+  assertThrows(
+    () =>
+      provisionApp(platform, createEmptyState(), {
+        slug: "alpha",
+        domain: "alpha.example",
+        aliases: ["alpha.example"],
+      }),
+    Error,
+    "must not contain duplicates",
+  );
 });
 
 Deno.test("materializeAppHome generates one stable SSH key pair with strict modes", async () => {
@@ -194,6 +213,47 @@ Deno.test("database namespace enforced", async () => {
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("MySQL operations target a selected binding without changing the primary", () => {
+  const platform = testPlatform("/tmp/bento-multi-mysql");
+  let state = addMysqlVersion(createEmptyState(), "8.0");
+  state = provisionApp(platform, state, {
+    slug: "alpha",
+    domain: "alpha.example",
+  }).state;
+  state = provisionApp(platform, state, {
+    slug: "alpha",
+    domain: "alpha.example",
+    databaseEngine: "mysql",
+    mysqlVersion: "8.0",
+  }).state;
+
+  const next = createAppDatabase(
+    state,
+    "alpha",
+    "alpha_archive",
+    "2026-07-30T00:00:00Z",
+    "mysql80",
+  );
+  const app = next.apps.alpha!;
+  const mysql84 = app.databases.find((binding) =>
+    binding.engine === "mysql" && binding.service === "mysql84"
+  );
+  const mysql80 = app.databases.find((binding) =>
+    binding.engine === "mysql" && binding.service === "mysql80"
+  );
+
+  assertEquals(mysql84?.engine === "mysql" ? mysql84.databases.length : -1, 0);
+  assertEquals(
+    mysql80?.engine === "mysql" ? mysql80.databases.map((database) => database.name) : [],
+    ["alpha_archive"],
+  );
+  assertEquals(app.database.engine === "mysql" ? app.database.service : "", "mysql84");
+  assertEquals(
+    buildMysqlShellPlan(platform, { kind: "app", app }, { service: "mysql80" }).service,
+    "mysql80",
+  );
 });
 
 Deno.test("capacity warnings when pools exceed cap", async () => {

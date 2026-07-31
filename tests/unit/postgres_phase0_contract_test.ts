@@ -8,7 +8,7 @@ async function read(relativePath: string): Promise<string> {
   return await Deno.readTextFile(new URL(relativePath, root));
 }
 
-Deno.test("PostgreSQL Phase 0 locks alternative-backend scope and non-goals", async () => {
+Deno.test("PostgreSQL contract covers multi-binding scope and non-goals", async () => {
   const [product, architecture, contract, readme] = await Promise.all([
     read("specs/01-product-spec.md"),
     read("specs/02-system-architecture.md"),
@@ -16,7 +16,7 @@ Deno.test("PostgreSQL Phase 0 locks alternative-backend scope and non-goals", as
     read("README.md"),
   ]);
 
-  assertMatch(product, /exactly one relational database engine and service/);
+  assertMatch(product, /multiple relational engines\/services/);
   assertMatch(product, /MySQL 8\.4 remains the default/);
   assertMatch(product, /does not automatically migrate application data/);
   assertMatch(
@@ -25,13 +25,16 @@ Deno.test("PostgreSQL Phase 0 locks alternative-backend scope and non-goals", as
   );
   assertMatch(product, /official major tags such as `17`/);
 
-  assertMatch(architecture, /discriminated unions keyed by `engine: "mysql" \| "postgres"`/);
+  assertMatch(
+    architecture,
+    /discriminated bindings keyed by `engine: "mysql" \| "postgres" \| "sqlite" \| "litestream"`/,
+  );
   assertMatch(architecture, /PostgreSQL backup runs matching-major `pg_dump`/);
   assertMatch(architecture, /PostgreSQL administrator credentials/);
   assertMatch(architecture, /Automated MySQL\/PostgreSQL service or volume removal is blocked/);
 
   assertMatch(contract, /Phase 0 locks this contract only/);
-  assertMatch(readme, /PostgreSQL is a first-class alternative to MySQL/);
+  assertMatch(readme, /PostgreSQL is a first-class database kind alongside MySQL/);
   assertMatch(
     readme,
     /Use logical backup\/restore—not raw volume transfer—for PostgreSQL major upgrades/,

@@ -1,6 +1,6 @@
 ---
 title: Desired-state schema
-description: Understand state ownership, schema migration, backup behavior, and why direct edits are risky.
+description: Understand state ownership, linked resources, version checks, and why direct edits are risky.
 ---
 
 # Desired-state schema
@@ -9,7 +9,7 @@ description: Understand state ownership, schema migration, backup behavior, and 
 
 ## What it records
 
-The current schema records stack defaults, managed PHP and database services, apps, proxies, global domain ownership, cron jobs, workers, deploy settings, TLS choices, Redis identities, and template provenance. App database bindings are discriminated by `mysql` or `postgres`, so one app cannot validly mix engines/services.
+The current schema records stack defaults, managed PHP and database services, apps, proxies, linked domains, cron jobs, workers, deploy settings, TLS choices, Redis identities, and template provenance. Each app has a `databases[]` collection whose independent bindings may use MySQL, PostgreSQL, SQLite, or Litestream. Domains are authoritative link records pointing to an app or proxy; they are not duplicated inside app records. Cron jobs and workers likewise link back to their app.
 
 Bento parses JSON as untrusted input, requires the exact current schema version, validates cross-record references and domain ownership, then writes validated state atomically. Unknown or malformed fields are rejected rather than silently ignored.
 
@@ -17,18 +17,9 @@ Bento parses JSON as untrusted input, requires the exact current schema version,
 `state.json` contains app database passwords and deploy HMAC secrets. Keep mode `0600`, never commit it, and redact it before sharing.
 :::
 
-## Schema migration
+## Schema versions
 
-Routine reads never rewrite an older schema. A schema-v1 stack must be migrated deliberately:
-
-```sh
-bento --stack /var/lib/bento state migrate \
-  --confirm migrate-v1-to-v2
-```
-
-Bento validates v1, builds and validates v2, writes a private backup beside the state file, and atomically replaces the source. Existing MySQL identifiers and secrets are preserved. Keep the backup until the migrated stack passes `render`, `doctor`, and application checks.
-
-An old binary rejects newer state instead of modifying it. Upgrade the binary; do not downgrade schema fields manually.
+This project starts directly at the current schema. Unsupported older or newer versions are rejected without modifying the file, and there is no schema migration command. Reinitialize a development stack or restore state produced by the matching binary rather than copying fields between schema versions.
 
 ## Recovery
 

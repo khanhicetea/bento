@@ -50,8 +50,8 @@ export type TemplateProvenance =
   | { kind: "upstream" }
   | { kind: "custom"; sourcePath: string; copiedFromVersion?: string; activatedAt: string };
 export type DomainOwner =
-  | { kind: "app"; slug: AppSlug }
-  | { kind: "proxy"; name: ProxySiteName };
+  | { kind: "app"; slug: AppSlug; primary: boolean }
+  | { kind: "proxy"; name: ProxySiteName; primary: boolean };
 
 export type AppDeployConfig = {
   enabled: boolean;
@@ -113,8 +113,6 @@ export type AppState = {
   uid: Uid;
   gid: Gid;
   home: AbsoluteAppPath;
-  mainDomain: DomainName;
-  aliases: DomainName[];
   documentRoot: string;
   entrypointMode: EntrypointMode;
   phpVersion: PhpVersion;
@@ -122,7 +120,16 @@ export type AppState = {
   fpmProfile: FpmProfile;
   tls: TlsMode;
   accessLog: boolean;
+  databases: AppDatabaseBinding[];
+  /**
+   * Derived in-memory primary binding. This is not persisted; new code should
+   * use `databases` or `databaseBindings`.
+   */
   database: AppDatabaseBinding;
+  /** Derived in-memory primary domain; domain links remain authoritative. */
+  mainDomain: DomainName;
+  /** Derived in-memory non-primary domains; domain links remain authoritative. */
+  aliases: DomainName[];
   redis: AppRedisIdentity;
   deploy: AppDeployConfig;
   vhostTemplate: TemplateProvenance;
@@ -275,8 +282,9 @@ export function managedPostgresServices(state: DesiredState): ManagedPostgresVer
 export function requireMysqlBinding(
   app: AppState,
 ): Extract<AppDatabaseBinding, { engine: "mysql" }> {
-  if (app.database.engine !== "mysql") throw new Error(`app ${app.slug} is not MySQL-backed`);
-  return app.database;
+  const database = databaseBindings(app, "mysql")[0];
+  if (!database) throw new Error(`app ${app.slug} has no MySQL database binding`);
+  return database;
 }
 export function assertNever(value: never): never {
   throw new Error(`unsupported database engine: ${JSON.stringify(value)}`);
@@ -289,6 +297,43 @@ export function getApp(state: DesiredState, slug: string): AppState | undefined 
 }
 export function findDomainOwner(state: DesiredState, domain: string): DomainOwner | undefined {
   return state.domains[domain.toLowerCase()];
+}
+export function listAppDomains(state: DesiredState, slug: string): DomainName[] {
+  return Object.entries(state.domains)
+    .filter(([, owner]) => owner.kind === "app" && owner.slug === slug)
+    .sort((a, b) => Number(b[1].primary) - Number(a[1].primary) || a[0].localeCompare(b[0]))
+    .map(([domain]) => domain as DomainName);
+}
+export function getAppPrimaryDomain(state: DesiredState, slug: string): DomainName | undefined {
+  const primary = Object.entries(state.domains).find(([, owner]) =>
+    owner.kind === "app" && owner.slug === slug && owner.primary
+  );
+  return primary?.[0] as DomainName | undefined;
+}
+export function withAppRelations(app: AppState, state: DesiredState): AppState {
+  const domains = listAppDomains(state, app.slug);
+  const mainDomain = getAppPrimaryDomain(state, app.slug) ?? domains[0];
+  if (!mainDomain) throw new Error(`app ${app.slug} has no linked domain`);
+  return {
+    ...app,
+    database: primaryDatabase(app),
+    mainDomain,
+    aliases: domains.filter((domain) => domain !== mainDomain),
+  };
+}
+export function primaryDatabase(app: AppState): AppDatabaseBinding {
+  const database = app.databases[0];
+  if (!database) throw new Error(`app ${app.slug} has no database binding`);
+  return database;
+}
+export function databaseBindings<E extends DatabaseEngine>(
+  app: AppState,
+  engine: E,
+): Extract<AppDatabaseBinding, { engine: E }>[] {
+  return app.databases.filter(
+    (database): database is Extract<AppDatabaseBinding, { engine: E }> =>
+      database.engine === engine,
+  );
 }
 export function assertKnownPhpVersion(state: DesiredState, version: PhpVersion): ManagedPhpVersion {
   const found = state.phpVersions.find((v) => v.version === version);

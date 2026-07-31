@@ -14,6 +14,7 @@ type StringArgName =
   | "destination"
   | "docroot"
   | "domain"
+  | "engine"
   | "file"
   | "fpm"
   | "key"

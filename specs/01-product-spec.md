@@ -88,7 +88,7 @@ The operator must be able to create or update an application with a unique slug 
 - an HTTP and HTTPS virtual host;
 - initial filesystem ownership and modes.
 
-Each app supports one main domain plus aliases. Domains must be globally unique across PHP apps and proxy sites. Changing the main domain must not change the app identity or code tree.
+Each app may have multiple linked domains. Domain links are authoritative, globally unique across PHP apps and proxy sites, and exactly one link per app is primary. Changing the primary link must not change the app identity or code tree.
 
 The app document root can be the code root or a safe subdirectory such as `public`. Two PHP routing modes are required:
 
@@ -134,7 +134,7 @@ An unused non-default PHP version may be removed. Removal must be refused while 
 
 ### 6.5 Relational databases and Redis
 
-Bento must manage one durable service and named volume per selected MySQL or PostgreSQL version. An app is assigned to exactly one relational database engine and service and receives:
+Bento must manage one durable service and named volume per selected MySQL or PostgreSQL version. An app may link bindings to multiple relational engines/services and receives, for each relational binding:
 
 - a same-name database user/role;
 - privileges limited to databases in that app's namespace;
@@ -265,7 +265,7 @@ The host control plane must target Deno 2.9 and use strict TypeScript as an arch
 - persisted state, environment input, template data, JSON from subprocesses, and CLI values are runtime-validated before use;
 - core concepts such as app slug, domain, UID/GID, PHP/MySQL/PostgreSQL version, database engine/service, absolute app path, TLS mode, queue policy, deploy status, and reload target have explicit types rather than being passed around as unstructured strings or dictionaries;
 - state variants and operational outcomes use discriminated unions with exhaustive handling;
-- persisted state uses one current schema version, rejects unsupported versions without changing files, and migrates schema v1 to the engine-aware schema v2 only through an explicit, backed-up, validated migration;
+- persisted state uses one current schema version and rejects unsupported versions without changing files; this fresh project does not carry legacy state migrations;
 - exported domain and platform APIs avoid `any`; unavoidable unsafe package boundaries are isolated in adapters and immediately validated.
 
 The project is not restricted to the Deno standard library. Maintained JSR or npm packages should be used where they materially improve CLI parsing/help, runtime schema validation, semantic-version handling, templating, terminal presentation, testing, or other non-product plumbing. Package choice must remain auditable, lockfile-pinned, compatible with direct Deno execution and `deno compile`, and free of an undeclared production install step.

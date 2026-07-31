@@ -2,7 +2,7 @@ import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/
 import { basename, join } from "@std/path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createPlatform, createRecordingProcessRunner } from "../../src/platform/mod.ts";
-import { migrateV2ToV3, parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
+import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import {
@@ -29,13 +29,9 @@ Deno.test("Litestream state has one explicit private SQLite file and no relation
   assert(parseDesiredState(JSON.parse(json)).ok);
 });
 
-Deno.test("v2 to v3 migration preserves relational state except schema version", () => {
-  const v3 = createEmptyState("2026-07-29T00:00:00.000Z");
-  const v2 = { ...structuredClone(v3), schemaVersion: 2 };
-  const migrated = migrateV2ToV3(v2);
-  assert(migrated.ok);
-  const actual = JSON.parse(stateToJson(migrated.value));
-  assertEquals(actual, { ...v2, schemaVersion: 3 });
+Deno.test("old state versions are rejected without migration", () => {
+  const old = { ...createEmptyState("2026-07-29T00:00:00.000Z"), schemaVersion: 3 };
+  assertEquals(parseDesiredState(old).ok, false);
 });
 
 Deno.test("stack SQLite backup renders one constrained-root directory watcher", () => {

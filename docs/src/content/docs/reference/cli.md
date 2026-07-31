@@ -26,7 +26,7 @@ Put global flags before the command. Use explicit `--stack` for first use, multi
 
 | Area | Commands | Guide |
 | --- | --- | --- |
-| Bootstrap/control | `version`, `tui`, `init`, `state migrate`, `render`, `apply` | [Start here](/start/first-stack/) |
+| Bootstrap/control | `version`, `tui`, `init`, `render`, `apply` | [Start here](/start/first-stack/) |
 | Diagnostics | `status`, `doctor`, `support-bundle`, `test-stack` | [Diagnostics](/guides/stacks/diagnostics/) |
 | Apps/runtime | `app`, `php`, `exec` | [Apps](/guides/apps/manage/), [PHP](/guides/apps/php-runtimes/) |
 | Data | `mysql`, `postgres`, `sqlite`, `backup`, `restore` | [Relational backup and restore](/guides/data/backup-restore/), [SQLite](/guides/data/sqlite/) |

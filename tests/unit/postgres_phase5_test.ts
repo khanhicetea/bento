@@ -69,7 +69,50 @@ Deno.test("PostgreSQL database state enforces namespace, engine, and duplicates"
   assertThrows(
     () => createPostgresAppDatabase(mysql, "mysqlapp", "mysqlapp", "2026-07-26T12:00:00Z"),
     Error,
-    "not PostgreSQL-backed",
+    "no PostgreSQL database binding",
+  );
+});
+
+Deno.test("PostgreSQL operations target a selected binding without changing the primary", () => {
+  const platform = testPlatform("/tmp/bento-pg5-multi");
+  let state = addPostgresVersion(addPostgresVersion(createEmptyState(), "16"), "17");
+  state = provisionApp(platform, state, {
+    slug: "demo",
+    domain: "demo.test",
+    databaseEngine: "postgres",
+    postgresVersion: "16",
+  }).state;
+  state = provisionApp(platform, state, {
+    slug: "demo",
+    domain: "demo.test",
+    databaseEngine: "postgres",
+    postgresVersion: "17",
+  }).state;
+
+  const next = createPostgresAppDatabase(
+    state,
+    "demo",
+    "demo_events",
+    "2026-07-30T00:00:00Z",
+    "postgres17",
+  );
+  const app = next.apps.demo!;
+  const postgres16 = app.databases.find((binding) =>
+    binding.engine === "postgres" && binding.service === "postgres16"
+  );
+  const postgres17 = app.databases.find((binding) =>
+    binding.engine === "postgres" && binding.service === "postgres17"
+  );
+
+  assertEquals(postgres16?.engine === "postgres" ? postgres16.databases.length : -1, 0);
+  assertEquals(
+    postgres17?.engine === "postgres" ? postgres17.databases.map((database) => database.name) : [],
+    ["demo_events"],
+  );
+  assertEquals(app.database.engine === "postgres" ? app.database.service : "", "postgres16");
+  assertEquals(
+    buildPostgresShellPlan(platform, { kind: "app", app }, { service: "postgres17" }).service,
+    "postgres17",
   );
 });
 
