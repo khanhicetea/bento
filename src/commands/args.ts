@@ -28,6 +28,8 @@ type StringArgName =
   | "replace"
   | "repoRoot"
   | "retention"
+  | "rclonePrefix"
+  | "rcloneRemote"
   | "rpo"
   | "schedule"
   | "service"

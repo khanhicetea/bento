@@ -8,6 +8,7 @@ import type { Platform } from "../platform/mod.ts";
 import { parseCronSchedule } from "../schemas/validators.ts";
 import { redact } from "../ui/output.ts";
 import { type DatabaseBackupArtifact, runDatabaseBackup } from "./database_backup.ts";
+import { readRcloneBackupTarget, saveRcloneBackupTarget, uploadBackupArtifacts } from "./rclone.ts";
 
 const MARKER_PREFIX = "BENTO BACKUP SCHEDULE";
 const RESULT_VERSION = 1;
@@ -168,10 +169,16 @@ export async function readBackupHostCrontab(platform: Platform): Promise<string>
 
 export async function registerBackupSchedule(
   platform: Platform,
-  opts: { schedule: string; bentoBin: string },
+  opts: { schedule: string; bentoBin: string; rcloneRemote?: string; rclonePrefix?: string },
 ): Promise<CrontabMergeResult> {
   const schedule = requireCronSchedule(opts.schedule);
   await validateExecutable(platform, opts.bentoBin);
+  if (opts.rcloneRemote !== undefined || opts.rclonePrefix !== undefined) {
+    if (opts.rcloneRemote === undefined) {
+      throw validationError("--rclone-prefix requires --rclone-remote");
+    }
+    await saveRcloneBackupTarget(platform, opts.rcloneRemote, opts.rclonePrefix ?? "");
+  }
   const stackRoot = platform.paths.paths.root;
   const fragment = backupScheduleCronFragment({ schedule, bentoBin: opts.bentoBin, stackRoot });
   return await mutateHostCrontab(platform, { action: "install", stackRoot, fragment });
@@ -250,6 +257,8 @@ export async function runScheduledBackup(
   });
   try {
     const artifacts = await runDatabaseBackup(platform, state, { scope: "all" });
+    const rcloneTarget = await readRcloneBackupTarget(platform);
+    if (rcloneTarget) await uploadBackupArtifacts(platform, state, artifacts, rcloneTarget);
     await writeLastRun(platform, terminalRecord(startedAt, platform.clock.nowIso(), artifacts));
     return artifacts;
   } catch (cause) {

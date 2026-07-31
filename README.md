@@ -161,7 +161,7 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Background   | `cron …` (`cron reload <app>`), `worker …` (`worker signal <app> <name> --signal HUP`)                                                                                                                                                                         |
 | Deploy       | `deploy enable\|disable\|rotate\|status\|drain\|instructions`                                                                                                                                                                                                  |
 | Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal (TUI: Applications → Access logs)                                                                                                              |
-| Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]` — ephemeral PHP CLI as app UID (TUI: Applications → Open CLI shell)                                                                                                                                                 |
+| Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]`, `rclone -- <args>` — ephemeral PHP CLI or isolated rclone sidecar                                                                                                                                                 |
 | Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
 | Stack        | `stack ingress show`, `stack ingress set host\|bridge [--http-port N --https-port N]`; `stack export <directory>`, `stack import <directory> [--name NAME --ingress-mode bridge --http-port N --https-port N]`                                                 |
 | Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                             |
@@ -192,9 +192,18 @@ bento --stack /var/lib/bento backup schedule run
 bento --stack /var/lib/bento backup schedule unregister
 ```
 
-**Scheduled backups are emphatically on-host only.** They write logical dumps beneath the selected stack's `backups/` directory; Bento does **not** upload, replicate, or otherwise create an off-host copy. Configure and verify separate off-host replication before treating these dumps as a disaster-recovery backup.
+Scheduled backups write logical dumps beneath the selected stack's `backups/` directory. To upload each newly created dump, configure a remote interactively with the isolated sidecar, then attach it to the schedule:
 
-Registration manages only the stack-qualified Bento block in the current user's host crontab and preserves unrelated entries. `status` reports registration plus a bounded, redacted last-run record; `unregister` leaves existing dumps and that record in place. Overlapping logical backup batches are rejected rather than queued.
+```bash
+bento --stack /var/lib/bento rclone -- config
+bento --stack /var/lib/bento backup schedule register \
+  --schedule "15 3 * * *" --bin /usr/local/bin/bento \
+  --rclone-remote archive --rclone-prefix bento/production
+```
+
+`rclone/rclone.conf` is created privately at stack initialization and is bind-mounted only into the profile-only rclone sidecar; backups are mounted read-only at `/backups`. The scheduled upload preserves the paths below `backups/`. Without an rclone target, dumps remain on-host only; configure and verify another off-host copy before treating them as disaster recovery.
+
+Registration manages only the stack-qualified Bento block in the current user's host crontab and preserves unrelated entries. `status` reports registration, upload target, and a bounded, redacted last-run record; `unregister` leaves existing dumps and that record in place. Overlapping logical backup batches are rejected rather than queued.
 
 MySQL uses matching `mysqldump`; PostgreSQL uses matching-major `pg_dump --no-owner --no-acl`. Dumps are written privately, checked for successful non-empty output, and atomically published. Retention runs only after the requested batch succeeds. Restore is not object-level atomic and can leave a partial destination after an import failure. Replacing an existing database requires exact target-name confirmation. Use logical backup/restore—not raw volume transfer—for PostgreSQL major upgrades.
 

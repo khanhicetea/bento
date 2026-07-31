@@ -16,6 +16,7 @@ import {
   parseDotEnv,
   validateComposeProjectName,
 } from "./stack_env.ts";
+import { initializeRcloneConfig } from "./rclone.ts";
 
 export type StackInitOptions = {
   /** Stable stack identity; deliberately independent from the stack directory. */
@@ -82,6 +83,7 @@ export class StateStore {
     await this.platform.fs.mkdirp(this.platform.paths.paths.overlaysDir);
     await this.platform.fs.mkdirp(this.platform.paths.paths.customDir);
     await this.platform.fs.mkdirp(this.platform.paths.paths.backupsDir);
+    await initializeRcloneConfig(this.platform);
     await this.platform.fs.mkdirp(this.platform.paths.paths.certsDir);
     await this.platform.fs.mkdirp(this.platform.paths.paths.homesDir);
     await this.save(state);

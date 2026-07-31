@@ -89,7 +89,10 @@ Deno.test("init + render produces startable topology files", async () => {
     assertEquals(composeBase.includes("driver: local"), true);
     assertEquals(composeBase.includes("max-size: 10m"), true);
     assertEquals(composeBase.includes("max-file: '3'"), true);
-    assertEquals(composeBase.match(/logging: \*/g)?.length, 2);
+    assertEquals(composeBase.match(/logging: \*/g)?.length, 3);
+    assertEquals(composeBase.includes("rclone/rclone:1.68.2"), true);
+    assertEquals(composeBase.includes("./backups:/backups:ro"), true);
+    assertEquals(await platform.fs.exists(join(root, "rclone/rclone.conf")), true);
     const defaultVhost = await platform.fs.readText(
       join(root, "generated/nginx/sites/00-default.conf"),
     );

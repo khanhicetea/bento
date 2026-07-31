@@ -9,6 +9,9 @@ networks:
   private:
     driver: bridge
     name: "${COMPOSE_PROJECT_NAME:-bento}_private"
+  backup-egress:
+    driver: bridge
+    name: "${COMPOSE_PROJECT_NAME:-bento}_backup_egress"
 services:
   nginx:
     image: bento/nginx:latest
@@ -28,5 +31,22 @@ services:
     networks: [private]
     volumes:
       - redis-data:/data
+  # Profile-only sidecar; invoked through `bento rclone -- ...`.
+  rclone:
+    image: rclone/rclone:1.68.2
+    profiles: [rclone]
+    entrypoint: [rclone]
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *log-common
+    networks: [backup-egress]
+    environment:
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+    tmpfs: [/tmp]
+    volumes:
+      - ./rclone:/config/rclone
+      - ./backups:/backups:ro
 volumes:
   redis-data: null

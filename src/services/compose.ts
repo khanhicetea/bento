@@ -273,6 +273,11 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
         driver: "bridge",
         name: `${environment.projectName}_private`,
       },
+      // Backup sidecars receive outbound access without joining application services.
+      "backup-egress": {
+        driver: "bridge",
+        name: `${environment.projectName}_backup_egress`,
+      },
     },
     services: {
       nginx,
@@ -292,6 +297,25 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
         volumes: ["redis-data:/data"],
         // no public ports
       },
+      // This profile-only sidecar is created by `bento rclone` or scheduled uploads;
+      // it is never started by a normal `compose up`.
+      rclone: {
+        image: "rclone/rclone:1.68.2",
+        profiles: ["rclone"],
+        entrypoint: ["rclone"],
+        user: "0:0",
+        read_only: true,
+        cap_drop: ["ALL"],
+        security_opt: ["no-new-privileges:true"],
+        logging,
+        networks: ["backup-egress"],
+        environment: { RCLONE_CONFIG: "/config/rclone/rclone.conf" },
+        tmpfs: ["/tmp"],
+        volumes: [
+          "./rclone:/config/rclone",
+          "./backups:/backups:ro",
+        ],
+      },
     },
     volumes: {
       "redis-data": null,
@@ -303,9 +327,6 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
 function renderLitestreamFragment(environment: StackComposeEnvironment): string {
   const disabled = environment.litestreamEnabled === false;
   return stringifyYaml({
-    networks: {
-      "backup-egress": { driver: "bridge", name: `${environment.projectName}_backup_egress` },
-    },
     services: {
       litestream: {
         image: "litestream/litestream:0.5.15",

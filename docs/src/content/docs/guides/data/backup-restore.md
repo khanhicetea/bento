@@ -17,7 +17,7 @@ Create portable logical dumps for MySQL, PostgreSQL, and plain SQLite apps, main
 - Avoid application schema changes while creating a dump, and schedule replacement restores during an application outage.
 
 :::caution
-Bento writes logical dumps only below the selected stack's on-host `backups/` directory. It does not upload, replicate, encrypt, or create an off-host copy. An on-host dump alone does not protect against host or disk loss.
+Bento writes logical dumps below the selected stack's on-host `backups/` directory. An on-host dump alone does not protect against host or disk loss. Configure and verify an off-host copy before treating the schedule as disaster recovery.
 :::
 
 ## Back up one app
@@ -78,7 +78,17 @@ After a complete successful batch, Bento keeps the ten newest managed dumps for 
 
 ## Copy dumps off-host
 
-Copy completed files with your encrypted backup or replication system immediately after creation. For example, with a preconfigured SSH destination:
+Bento includes an isolated, profile-only rclone sidecar. Stack initialization creates the private `rclone/rclone.conf`; configure its remote interactively without installing rclone on the host:
+
+```sh
+bento --stack /var/lib/bento rclone -- config
+# Optional: inspect configured remotes
+bento --stack /var/lib/bento rclone -- listremotes
+```
+
+The sidecar receives the configuration directory and a read-only `/backups` mount only. It is not started by `bento compose -- up`. Scheduled uploads below preserve each file's path below `backups/`.
+
+You can also copy completed files with another encrypted backup or replication system immediately after creation. For example, with a preconfigured SSH destination:
 
 ```sh
 rsync -a /var/lib/bento/backups/ \
@@ -106,10 +116,12 @@ Register a daily run at 03:15 in the host's cron timezone:
 ```sh
 bento --stack /var/lib/bento backup schedule register \
   --schedule '15 3 * * *' \
-  --bin /usr/local/bin/bento
+  --bin /usr/local/bin/bento \
+  --rclone-remote archive \
+  --rclone-prefix bento/production
 ```
 
-Use the actual absolute path returned by `command -v`. Registration preserves unrelated crontab entries and maintains a separate marked block for each explicit stack root.
+Use the actual absolute path returned by `command -v`. `archive` is the remote name configured through `bento rclone -- config`; the prefix is optional and may be empty. Each successful scheduled batch uploads only its newly created artifacts to `archive:bento/production/...`. Registration preserves unrelated crontab entries and maintains a separate marked block for each explicit stack root. Omit the two `--rclone-*` options to retain on-host-only scheduling.
 
 Run the scheduled path now to test its database access, mounts, compression, and status recording:
 
@@ -126,7 +138,7 @@ bento --stack /var/lib/bento backup schedule status
 Confirm `registered: yes`, the intended schedule, `last run: succeeded`, a nonzero artifact count and byte total, and the expected on-host backup directory.
 
 :::caution
-Scheduling does not create an off-host copy of MySQL or PostgreSQL dumps. Configure a separate replication job or backup agent for `/var/lib/bento/backups/`, monitor both jobs, and alert when either the logical dump or off-host copy stops succeeding. SQLite synchronization uses its separately configured S3 replica.
+A configured rclone destination is still only as durable as its provider, retention policy, and credentials. Monitor `backup schedule status`, verify remote file counts or checksums, and test recovery from the remote copy. SQLite synchronization uses its separately configured S3 replica.
 :::
 
 Remove only this stack's managed crontab block when needed:

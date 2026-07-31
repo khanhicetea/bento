@@ -90,6 +90,9 @@ export function redact(text: string): string {
     .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD)=)(\S+)/g, "$1***")
     .replace(/((?:CREATE|ALTER)\s+ROLE[\s\S]{0,200}?\sPASSWORD\s+(?:E)?["'])([^"']+)/gi, "$1***")
     .replace(/((?:postgres(?:ql)?):\/\/[^:\s/]+:)([^@\s/]+)(@)/gi, "$1***$3")
-    .replace(/(^|\n)([^:\n]*:[^:\n]*:[^:\n]*:[^:\n]*:)([^\n]+)/g, "$1$2***")
+    // PostgreSQL's .pgpass records are `host:port:database:user:password`.
+    // Require a numeric/wildcard port rather than treating arbitrary timestamped
+    // diagnostics (for example rclone errors) as a credential record.
+    .replace(/(^|\n)([^:\s\n]+:(?:\d+|\*):[^:\n]*:[^:\n]*:)([^\n]+)/g, "$1$2***")
     .replace(/(hmacSecret["']?\s*:\s*["'])([^"']+)/g, "$1***");
 }

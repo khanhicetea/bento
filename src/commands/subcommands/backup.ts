@@ -10,6 +10,7 @@ import {
   runDatabaseBackup,
   runDatabaseRestore,
 } from "../../services/database_backup.ts";
+import { readRcloneBackupTarget } from "../../services/rclone.ts";
 import { syncSqliteBackup } from "../../services/sqlite.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
@@ -47,6 +48,15 @@ export function registerBackupCommands(parser: YargsBuilder, state: RunState): Y
                         type: "string",
                         demandOption: true,
                         describe: "Absolute path to the executable Bento binary",
+                      })
+                      .option("rclone-remote", {
+                        type: "string",
+                        describe: "Configured rclone remote name to upload each new scheduled dump",
+                      })
+                      .option("rclone-prefix", {
+                        type: "string",
+                        describe:
+                          "Optional path below the rclone remote (requires --rclone-remote)",
                       }),
                   bind(state, cmdScheduleRegister),
                 )
@@ -177,19 +187,35 @@ async function cmdScheduleRegister(
   const result = await registerBackupSchedule(ctx.platform, {
     schedule: argv.schedule,
     bentoBin: argv.bin,
+    rcloneRemote: argv.rcloneRemote,
+    rclonePrefix: argv.rclonePrefix,
   });
   ctx.log.info(
     result.changed ? "backup schedule registered" : "backup schedule already registered",
   );
-  warnOnHostOnly(ctx);
+  const rcloneTarget = await readRcloneBackupTarget(ctx.platform);
+  if (rcloneTarget) {
+    ctx.log.info(
+      `scheduled dumps upload to rclone remote ${rcloneTarget.remote}:${
+        rcloneTarget.prefix || "/"
+      }`,
+    );
+  } else {
+    warnOnHostOnly(ctx);
+  }
   return 0;
 }
 
 async function cmdScheduleStatus(_argv: CliArgs, ctx: CliContext): Promise<number> {
   const status = await getBackupScheduleStatus(ctx.platform);
   const backupsDir = ctx.platform.paths.paths.backupsDir;
+  const rcloneTarget = await readRcloneBackupTarget(ctx.platform);
   if (ctx.json) {
-    ctx.log.out(JSON.stringify({ ...status, onHostBackupsDir: backupsDir }));
+    ctx.log.out(JSON.stringify({
+      ...status,
+      onHostBackupsDir: backupsDir,
+      rclone: rcloneTarget && { remote: rcloneTarget.remote, prefix: rcloneTarget.prefix },
+    }));
   } else {
     ctx.log.out(`registered: ${status.installed ? "yes" : "no"}`);
     ctx.log.out(`schedule: ${status.schedule ?? "not registered"}`);
@@ -203,8 +229,13 @@ async function cmdScheduleStatus(_argv: CliArgs, ctx: CliContext): Promise<numbe
       if (status.lastRun.error) ctx.log.out(`error: ${status.lastRun.error}`);
     }
     ctx.log.out(`on-host backups: ${backupsDir}`);
+    ctx.log.out(
+      `rclone upload: ${
+        rcloneTarget ? `${rcloneTarget.remote}:${rcloneTarget.prefix || "/"}` : "disabled"
+      }`,
+    );
   }
-  warnOnHostOnly(ctx);
+  if (!rcloneTarget) warnOnHostOnly(ctx);
   return 0;
 }
 

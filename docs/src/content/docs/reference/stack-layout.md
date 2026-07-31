@@ -16,7 +16,8 @@ Paths below are relative to the selected stack root, such as `/var/lib/bento`.
 | `overlays/` | Ordered operator Compose input | Durable custom input |
 | `homes/<app>/` | App code, credentials, SSH, logs, deploy state | Durable and sensitive |
 | `certs/` | Boot, private-CA, external and ACME material | Durable; private keys sensitive |
-| `backups/<service>/` | MySQL/PostgreSQL logical dumps | Durable and sensitive; on-host only |
+| `backups/<service>/` | MySQL/PostgreSQL logical dumps | Durable and sensitive; scheduled rclone uploads preserve paths below this directory |
+| `rclone/rclone.conf` | Operator rclone remote credentials/configuration | Sensitive; mode `0600`, mounted only into the ephemeral rclone sidecar |
 | `sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite` | Private SQLite database and WAL/SHM sidecars | Durable and sensitive |
 | `litestream-meta/` | Directory-watcher transaction metadata | Durable; required to continue replication efficiently |
 | `logs/` | Nginx logs and reports | Durable operational data; potentially personal/sensitive |

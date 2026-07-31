@@ -117,6 +117,9 @@ export type StackPaths = {
   runnerDir: string;
   secretsDir: string;
   backupsDir: string;
+  /** Private rclone configuration directory, bind-mounted only into the rclone sidecar. */
+  rcloneDir: string;
+  rcloneConfigFile: string;
   certsDir: string;
   customDir: string;
   overlaysDir: string;

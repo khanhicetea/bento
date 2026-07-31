@@ -23,6 +23,8 @@ export function resolveStackPaths(stackRoot: string): StackPaths {
     runnerDir: join(generatedDir, "runner"),
     secretsDir: join(generatedDir, "secrets"),
     backupsDir: join(root, "backups"),
+    rcloneDir: join(root, "rclone"),
+    rcloneConfigFile: join(root, "rclone", "rclone.conf"),
     certsDir: join(root, "certs"),
     customDir: join(root, "custom"),
     overlaysDir: join(root, "overlays"),
