@@ -1,13 +1,19 @@
 ---
 title: Render and apply internals
-description: Understand Bento's staged transaction, rollback, recovery, validation, and scoped reload behavior.
+description: Follow a render or apply from staging through validation, reload, and recovery.
 ---
 
 # Render and apply internals
 
-The operator consequence is direct: `render` changes generated files without signaling services; `apply` adds validation and targeted reload.
+`render` writes generated files but does not signal services. `apply` also validates the new configuration and reloads only the affected services.
 
 ## Transaction
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/render-apply-transaction.svg
+Alt: Bento apply transaction from lock and staging through validation, targeted reload, rollback, or retry.
+Show: A left-to-right flow with one decision at validation. The failure branch restores previous files and skips reload. The success branch reloads only affected roles. Add a second failure marker after reload signaling to show that valid new files stay in place for retry.
+-->
 
 ```text
 exclusive lock
@@ -21,7 +27,7 @@ exclusive lock
        success: signal targeted roles; finalize journal
 ```
 
-The transaction includes generated service files and protected database client material. Candidate failure before promotion leaves live output unchanged. Interruption during promotion is recovered deterministically by the next render/apply.
+The transaction covers generated service files and protected database client files. If candidate generation fails, Bento leaves the live files unchanged. If the process stops during publication, the next `render` or `apply` recovers the interrupted transaction.
 
 ## Reload scope
 
@@ -33,7 +39,7 @@ The transaction includes generated service files and protected database client m
 | Database creation, backup, restore | No web/runtime reload |
 | Full `apply` | Relevant Nginx, FPM, runners |
 
-Stopped services do not fail merely because they cannot be signaled; configuration is ready for startup. A running target must validate before reload.
+Bento does not treat a stopped service as a signal failure. The configuration waits for the next start. A running service must pass validation before Bento reloads it.
 
 ## Failure semantics
 
@@ -56,7 +62,9 @@ Do not manually delete staging, journal, or lock paths during an active command.
 
 ## Design rationale
 
-Complete generation avoids mixing old and new fragments; same-filesystem replacement supplies atomic file publication; managed markers distinguish stale output; scoped reloads reduce unrelated disruption. It is not continuous reconciliation or a zero-downtime guarantee.
+Bento generates a complete file set so it never mixes old and new fragments. Same-filesystem replacement publishes each file atomically, and managed markers identify stale output. Targeted reloads reduce unrelated disruption.
+
+This design does not continuously reconcile the stack, and it does not guarantee zero downtime.
 
 ## Next steps
 

@@ -1,11 +1,19 @@
 ---
 title: Add your first application
-description: Create a PHP application with MySQL, verify local routing, and prepare code, DNS, and TLS.
+description: Add a PHP app with MySQL, test it locally, and prepare DNS and TLS.
 ---
 
 # Add your first application
 
-Add an app named `demo` to the running `production` stack, create its MySQL database, and verify the generated placeholder through Nginx. This guide keeps the first path on MySQL; PostgreSQL is an alternative for a later application.
+Add an app named `demo` to the running `production` stack. You will create its MySQL database and test the generated page through Nginx.
+
+This first path uses MySQL. You can choose PostgreSQL for another app later.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/first-app-request-path.svg
+Alt: A local request for demo.example.com moving through Nginx to the demo PHP-FPM pool and MySQL database.
+Show: Include the curl --resolve test on the left, Nginx in the center, the demo Unix socket and PHP pool next, and mysql84 on the private network. Label the code directory and credentials file below the app. Keep public DNS outside the active local-test path.
+-->
 
 ## Before you begin
 
@@ -46,7 +54,9 @@ bento app create demo \
   --db
 ```
 
-The command performs the live database grant before saving desired state, creates the app home and a stable Ed25519 deploy key, renders configuration, validates it, and reloads the affected running services. It also writes a placeholder at:
+Before it saves desired state, the command creates and grants access to the live database. It then creates the app home and a stable Ed25519 deploy key, renders and validates configuration, and reloads the affected services.
+
+It also writes a starter page at:
 
 ```text
 /var/lib/bento/homes/demo/code/public/index.php
@@ -128,7 +138,9 @@ This proves the local Nginx-to-PHP path without waiting for DNS. It does not pro
 
 ## Prepare the real application
 
-The durable code directory is `/var/lib/bento/homes/demo/code/`, mounted in the PHP roles as `/home/demo/code/`. Replace the generated placeholder with your application using a deployment process that runs as the app identity. Keep the selected document root at `/home/demo/code/public`, or update the app deliberately if your framework uses another layout.
+The durable code directory is `/var/lib/bento/homes/demo/code/`. PHP containers see it as `/home/demo/code/`.
+
+Replace the starter page with your application through a deployment process that runs as the app user. Keep the document root at `/home/demo/code/public`, or update the app if your framework uses another layout.
 
 Bento writes database and Redis connection metadata to the private app file:
 
@@ -182,7 +194,11 @@ bento compose -- logs --tail 100 php85 nginx
 
 Without `--db`, Bento may create the database account on a best-effort basis and defer that work while MySQL is unavailable. The first-app path uses `--db` so database creation is explicit and transactional with respect to desired-state recording.
 
-An app can hold multiple add-only database bindings across MySQL, PostgreSQL, plain SQLite, and Litestream; the first binding remains its compatibility/default connection. To add PostgreSQL, first add a supported major, then run `app update` with `--database-engine postgres --postgres <major> --db`. For private file databases and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/). Adding a binding does not move or convert existing data.
+An app can keep several add-only database bindings across MySQL, PostgreSQL, SQLite, and Litestream. The first binding remains the default for compatibility.
+
+To add PostgreSQL, first add a supported major version. Then run `app update` with `--database-engine postgres --postgres <major> --db`. For private file databases and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/).
+
+Adding a binding never moves or converts existing data.
 
 The generated credential file is application metadata, not automatic framework configuration. Bento does not infer how Laravel, Symfony, WordPress, or another application loads environment variables.
 

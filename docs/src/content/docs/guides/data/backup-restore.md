@@ -1,11 +1,19 @@
 ---
 title: Back up and restore databases
-description: Create logical database dumps, copy them off-host, schedule backups, and verify restores safely.
+description: Create database backups, copy them off-host, and prove that you can restore them.
 ---
 
 # Back up and restore databases
 
-Create portable logical dumps for MySQL, PostgreSQL, and plain SQLite apps, maintain an on-host schedule, and prove relational recovery before replacing production data. Litestream apps use [continuous backup](/guides/data/sqlite/) instead.
+Create portable backups for MySQL, PostgreSQL, and plain SQLite apps. Then schedule them, copy them off the host, and test a restore before you replace production data.
+
+Apps that use Litestream follow the [continuous backup workflow](/guides/data/sqlite/) instead.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/backup-and-restore-flow.svg
+Alt: Database data flowing to an on-host dump, an encrypted off-host copy, a verification database, and finally an optional production replacement.
+Show: A safe left-to-right sequence. Make the off-host copy and verification restore required checkpoints before the destructive production-replacement branch. Mark on-host-only backup as incomplete disaster recovery and mark replacement restore as non-atomic with planned downtime.
+-->
 
 ## Before you begin
 
@@ -28,7 +36,9 @@ Back up every MySQL or PostgreSQL database recorded for `demo`:
 bento backup --app demo
 ```
 
-Zstandard is the default. Bento runs `mysqldump` or matching-major `pg_dump` inside the selected database container and publishes a non-empty dump atomically. A typical path is:
+Bento uses Zstandard compression by default. It runs `mysqldump` or the matching `pg_dump` inside the selected database container. Bento publishes the final file only after the dump succeeds and contains data.
+
+A typical path is:
 
 ```text
 /var/lib/bento/backups/mysql84/demo/mysql84_demo_<timestamp>.sql.zst
@@ -70,9 +80,13 @@ Run one batch across every recorded app database:
 bento backup --all
 ```
 
-Bento creates logical dumps for MySQL and PostgreSQL bindings. For a plain `sqlite` binding it uses SQLite's online `.backup` command and Zstandard or gzip compression, publishing under `backups/sqlite/<app>/`. For every `litestream` binding, it waits for confirmed synchronization through the stack-wide watcher instead of creating a local dump.
+Bento creates logical dumps for MySQL and PostgreSQL. For a plain `sqlite` binding, it uses SQLite's online `.backup` command, compresses the result, and publishes it under `backups/sqlite/<app>/`.
 
-Bento permits only one logical backup batch at a time. If a later database or SQLite synchronization fails, earlier completed dumps remain, but relational retention does not run for that failed batch. Read the error and rerun after correcting service health, storage, or SQLite replication.
+For a `litestream` binding, Bento waits for the stack-wide watcher to confirm synchronization instead of creating a local dump.
+
+Bento runs only one logical backup batch at a time. If a later database or SQLite synchronization fails, earlier successful dumps remain. Bento does not apply relational retention to that failed batch.
+
+Read the error, fix service health, storage, or SQLite replication, and run the batch again.
 
 After a complete successful batch, Bento keeps the ten newest managed dumps for each service/database pair. It ignores unrelated files, symlinks, partial files, and names outside its managed dump pattern.
 
@@ -86,7 +100,7 @@ bento rclone -- config
 bento rclone -- listremotes
 ```
 
-The sidecar receives the configuration directory and a read-only `/backups` mount only. It is not started by `bento compose -- up`. Scheduled uploads below preserve each file's path below `backups/`.
+The sidecar receives only its configuration directory and a read-only `/backups` mount. `bento compose -- up` does not start it. Scheduled uploads keep each file's relative path below `backups/`.
 
 You can also copy completed files with another encrypted backup or replication system immediately after creation. For example, with a preconfigured SSH destination:
 
@@ -121,7 +135,9 @@ bento backup schedule register \
   --rclone-prefix bento/production
 ```
 
-Use the actual absolute path returned by `command -v`. `archive` is the remote name configured through `bento rclone -- config`; the prefix is optional and may be empty. Each successful scheduled batch uploads only its newly created artifacts to `archive:bento/production/...`. Registration preserves unrelated crontab entries and maintains a separate marked block for each explicit stack root. Omit the two `--rclone-*` options to retain on-host-only scheduling.
+Use the absolute path returned by `command -v`. In this example, `archive` is the remote from `bento rclone -- config`, and the prefix is optional.
+
+Each successful run uploads only its new files to `archive:bento/production/...`. Bento preserves unrelated crontab entries and keeps a separate marked block for each stack root. Omit both `--rclone-*` options if you want on-host-only scheduling.
 
 Run the scheduled path now to test its database access, mounts, compression, and status recording:
 
@@ -166,7 +182,9 @@ bento restore \
 
 Replace `<dump>` with the exact finalized filename. The source may be `.sql`, `.sql.gz`, `.sql.zst`, or `.sql.zstd`. The target must equal the app slug or begin with `<slug>_`; Bento refuses names outside that namespace.
 
-A successful restore records the new database in desired state. Bento enforces the app namespace, but a MySQL restore without `--replace` can import into an already existing target. Confirm that a verification name is unused; after any partial attempt, choose another clean name or remove the partial database deliberately before retrying.
+A successful restore records the new database in desired state. Bento enforces the app namespace, but a MySQL restore without `--replace` can import into an existing target.
+
+Confirm that the verification name is unused. After a partial attempt, choose another clean name or deliberately remove the partial database before you retry.
 
 For a MySQL-backed app, inspect it as the app account:
 
@@ -252,7 +270,9 @@ Replace `<service>` with `mysql84`, `postgres17`, or the service shown by `app s
 
 ## Advanced
 
-MySQL dumps use `--single-transaction --routines --triggers` through the local Unix socket. PostgreSQL dumps use the service's matching-major `pg_dump` with `--no-owner --no-acl`; restore creates the target for the app role and reapplies Bento's database isolation policy. For a planned PostgreSQL major upgrade, use logical artifacts rather than raw volume transfer. Assigning an existing app to another database service remains an explicit external migration, and the SQL must be compatible with the target major.
+MySQL dumps use `--single-transaction --routines --triggers` through the local Unix socket. PostgreSQL dumps use the service's matching-major `pg_dump` with `--no-owner --no-acl`. During restore, Bento creates the target for the app role and reapplies its database isolation policy.
+
+Use logical backups for a planned PostgreSQL major upgrade, not raw volume transfer. Moving an app to another database service remains an external migration, and the SQL must work with the target major version.
 
 Dump and compression processes run inside the database container, writing a private `.partial` file to that service's bind-mounted backup directory. Bento requires a successful, non-empty result, sets mode `0600`, and renames it to the final path. This atomic publication prevents a failed current dump from masquerading as a complete artifact; it does not make a multi-database batch or restore atomic.
 

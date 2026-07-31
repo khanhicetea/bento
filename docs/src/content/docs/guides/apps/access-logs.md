@@ -1,11 +1,11 @@
 ---
 title: Operate access logs
-description: Enable, rotate, analyze, and disable per-app Nginx access logs while controlling sensitive retention.
+description: Turn app access logs on or off, rotate them, and create a private report.
 ---
 
 # Operate access logs
 
-Enable request logs for one app, rotate them without a configuration reload, and create an ad hoc report.
+Enable request logs for one app, rotate them without reloading Nginx, and create a one-time report. Decide how you will protect and delete sensitive log data before you begin.
 
 ## Enable and verify
 

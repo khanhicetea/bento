@@ -1,11 +1,11 @@
 ---
 title: Operate MySQL
-description: Add MySQL services, create app databases, open protected shells, and inspect usage safely.
+description: Add a private MySQL service, create app databases, and inspect them safely.
 ---
 
 # Operate MySQL
 
-Manage private versioned MySQL services and databases assigned to Bento apps.
+Add private, versioned MySQL services and create databases that belong to Bento apps.
 
 ## Add and list services
 

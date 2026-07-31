@@ -1,11 +1,11 @@
 ---
 title: Limitations
-description: Find Bento non-goals and unsupported or deliberately guarded workflows.
+description: Check what Bento does not support before you design or change a stack.
 ---
 
 # Limitations
 
-Bento targets several PHP applications on one operator-owned Linux host. The following boundaries are deliberate.
+Bento runs several PHP apps on one operator-owned Linux host. It deliberately leaves the following problems and workflows out of scope.
 
 ## Platform and availability
 

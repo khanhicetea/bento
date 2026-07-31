@@ -1,17 +1,19 @@
 ---
 title: Desired-state schema
-description: Understand state ownership, linked resources, version checks, and why direct edits are risky.
+description: Learn what state.json stores, how Bento validates it, and how to recover it.
 ---
 
 # Desired-state schema
 
-`state.json` is Bento's sensitive, versioned record of operator intent. Use CLI commands to mutate it; do not treat it as a hand-edited configuration file.
+`state.json` is Bento's sensitive, versioned record of your intent. Change it through Bento commands. Do not use it as a hand-edited configuration file.
 
 ## What it records
 
-The current schema records stack defaults, managed PHP and database services, apps, proxies, linked domains, cron jobs, workers, deploy settings, TLS choices, Redis identities, and template provenance. Each app has a `databases[]` collection whose independent bindings may use MySQL, PostgreSQL, SQLite, or Litestream. Domains are authoritative link records pointing to an app or proxy; they are not duplicated inside app records. Cron jobs and workers likewise link back to their app.
+The schema records stack defaults, managed PHP and database services, apps, proxies, domains, cron jobs, workers, deploy settings, TLS choices, Redis identities, and template history.
 
-Bento parses JSON as untrusted input, requires the exact current schema version, validates cross-record references and domain ownership, then writes validated state atomically. Unknown or malformed fields are rejected rather than silently ignored.
+Each app has a `databases[]` list whose bindings can use MySQL, PostgreSQL, SQLite, or Litestream. Domain records point to an app or proxy instead of being copied into those records. Cron jobs and workers also point back to their app.
+
+Bento treats JSON as untrusted input. It requires the exact current schema version, validates links and domain ownership, and then writes the state atomically. It rejects unknown or malformed fields instead of ignoring them.
 
 :::caution
 `state.json` contains app database passwords and deploy HMAC secrets. Keep mode `0600`, never commit it, and redact it before sharing.

@@ -1,15 +1,17 @@
 ---
 title: Use Redis
-description: Understand Bento's private shared-prefix and ACL Redis identities and consume app connection metadata.
+description: Connect an app to Bento's private Redis service in shared or ACL mode.
 ---
 
 # Use Redis
 
-Bento provides one durable private Redis service and writes app-specific connection metadata during provisioning. There are no standalone Redis management CLI subcommands.
+Bento provides one durable, private Redis service for the stack. During app setup, it writes connection details for that app. Bento does not provide separate Redis management commands.
 
 ## Find connection metadata
 
-Bento writes protected metadata to host `homes/demo/credentials/app.env`, mapped under the app home as `/home/demo/credentials/app.env`. Configure the application to read that private file or copy only the needed values into its own protected configuration; do not invent host addresses or print the file in shared logs.
+Bento writes protected metadata to `homes/demo/credentials/app.env` on the host. The app sees it at `/home/demo/credentials/app.env`.
+
+Configure the app to read this private file, or copy only the required values into another protected configuration. Do not invent host addresses or print the file in shared logs.
 
 Relevant keys include `REDIS_HOST=redis`, `REDIS_PORT=6379`, `REDIS_PREFIX`, `REDIS_MODE`, and mode-specific credentials. Do not print these in shared logs or support requests.
 

@@ -1,11 +1,11 @@
 ---
 title: Create a reverse proxy
-description: Route a domain through Bento Nginx to one or more correctly addressed upstream services.
+description: Route a domain through Bento Nginx to an HTTP service that already exists.
 ---
 
 # Create a reverse proxy
 
-Publish a host- or stack-reachable HTTP service through Bento's domain and TLS model.
+Publish an existing HTTP service through Bento's Nginx, domain, and TLS settings. Choose the upstream address from Nginx's point of view.
 
 ## Choose the upstream address
 

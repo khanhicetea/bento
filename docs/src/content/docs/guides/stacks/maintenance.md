@@ -1,11 +1,11 @@
 ---
 title: Run stack maintenance
-description: Apply bounded log retention manually or through host cron without implying database backup.
+description: Delete old rotated logs and reports now or on a host schedule.
 ---
 
 # Run stack maintenance
 
-Prune eligible rotated access logs and reports while retaining active logs, app homes, state, and database volumes.
+Delete eligible rotated access logs and reports. Bento keeps active logs, app homes, desired state, and database volumes.
 
 ## Run now
 

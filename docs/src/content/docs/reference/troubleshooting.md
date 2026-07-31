@@ -1,11 +1,11 @@
 ---
 title: Troubleshooting
-description: Start from a Bento symptom and follow targeted, non-destructive checks.
+description: Match a symptom to safe checks without destroying evidence or data.
 ---
 
 # Troubleshooting
 
-Start with explicit stack targeting and preserve evidence before changing data:
+Confirm the target stack and preserve evidence before you change data:
 
 ```sh
 bento status
@@ -39,6 +39,8 @@ Support bundles redact known secrets but remain sensitive. Inspect before sharin
 
 ## Safe recovery rules
 
-Do not edit generated files, use `compose down -v`, delete unknown volumes, or prune an app while troubleshooting. If apply validation fails, correct the input and retry. If signaling fails after successful validation, valid new files remain live; retry apply/reload after restoring service health.
+While troubleshooting, do not edit generated files, run `compose down -v`, delete unknown volumes, or prune an app.
+
+If apply validation fails, fix the input and retry. If a reload signal fails after validation, the valid new files stay live. Restore service health, then retry the apply or reload.
 
 For architecture-level failure semantics, see [render and apply](/advanced/render-apply/) and [storage recovery](/advanced/storage-recovery/).

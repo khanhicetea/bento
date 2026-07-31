@@ -1,11 +1,17 @@
 ---
 title: Networking internals
-description: Understand Bento network namespaces, FPM socket mappings, ingress trade-offs, HTTP/3, and multi-stack constraints.
+description: Learn how host and bridge networking change addresses, ports, and service discovery.
 ---
 
 # Networking internals
 
-Address interpretation depends on Nginx's network namespace; PHP routing does not because it uses shared Unix sockets.
+An address means different things in host and bridge mode. PHP routing stays the same because Nginx uses shared Unix sockets for PHP requests.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/network-namespaces.svg
+Alt: Host-mode and bridge-mode Nginx showing what localhost, host.docker.internal, and Compose service names point to.
+Show: Two side-by-side panels. In host mode, connect Nginx directly to host ports and host localhost, but not Compose DNS. In bridge mode, place Nginx inside the private network, connect Compose service names there, and connect host.docker.internal back to the host. Show PHP sockets as a separate path that works in both modes.
+-->
 
 ## Namespaces
 
@@ -31,13 +37,17 @@ Mount and group alignment is invariant. Nginx can route PHP without joining back
 
 ## Host versus bridge
 
-Host mode gives direct 80/443 binding and straightforward UDP/HTTP/3. Normally only one process/stack can own those ports. Bridge mode enables separate/internal stacks and same-stack service discovery; it optionally publishes selected HTTP/HTTPS host ports.
+Host mode binds Nginx directly to host ports 80 and 443. It also gives HTTP/3 a direct UDP path. Usually, only one process or stack can own those ports.
+
+Bridge mode supports additional or internal stacks and lets Nginx resolve services on the same private network. You choose whether to publish HTTP and HTTPS ports on the host.
 
 When `HTTP3=true`, bridge HTTPS publishes both TCP and matching UDP. Firewalls/NAT must forward both for QUIC. Clearing bridge publications keeps Nginx internal-only.
 
 ## Multi-stack boundaries
 
-Every stack needs a unique `COMPOSE_PROJECT_NAME`, private network, and stack root. Service names resolve only within their network. A second stack should use bridge mode and distinct ports; it cannot safely share the primary stack's named volumes or identity. Docker address pools must have capacity for each private network.
+Give every stack its own `COMPOSE_PROJECT_NAME`, private network, and stack root. Service names resolve only inside their network.
+
+Run a second stack in bridge mode on different host ports. Never share the first stack's name or named volumes. Docker must also have enough address space to create a private network for each stack.
 
 ## Operator consequences
 

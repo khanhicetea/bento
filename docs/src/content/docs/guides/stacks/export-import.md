@@ -1,11 +1,19 @@
 ---
 title: Export and import a stack
-description: Transfer a complete Bento stack and its raw data volumes with explicit compatibility and security checks.
+description: Move a Bento stack and its raw data volumes to a compatible host.
 ---
 
 # Export and import a stack
 
-Export supported stack files plus MySQL, PostgreSQL, and Redis volumes, then import them into an empty stack root. Plan downtime for data services.
+Export supported stack files and raw MySQL, PostgreSQL, and Redis volumes. Then import them into an empty stack root on a compatible host.
+
+Plan downtime while Bento copies data services.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/stack-transfer.svg
+Alt: A Bento stack moving from a source host through encrypted archives to an empty destination root and new Docker volumes.
+Show: Source checks, short data-service stop, encrypted archive set, destination compatibility checks, import into empty root and volumes, then isolated verification before traffic moves. Mark secrets inside the archive and show that PostgreSQL major upgrades require logical backup instead.
+-->
 
 ## Before you begin
 

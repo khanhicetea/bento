@@ -1,11 +1,17 @@
 ---
 title: Storage and recovery
-description: Understand Bento ownership layers, named volumes, logical and raw backups, and failure semantics.
+description: Learn what to back up, which recovery method to use, and what can fail.
 ---
 
 # Storage and recovery
 
-A recoverable Bento host needs more than `state.json`: preserve operator intent, app files, certificates, and database/cache data through compatible recovery methods.
+`state.json` alone cannot recover a Bento host. You must also protect app files, certificates, customization, and database or cache data with the correct backup method.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/backup-coverage.svg
+Alt: Bento backup methods mapped to desired state, app homes, certificates, relational databases, SQLite, and Redis.
+Show: Rows for each durable data type and columns for filesystem backup, logical backup, Litestream, and stack export. Use check marks only where a method covers the data. Highlight that no single method covers every row and that off-host copies require separate verification.
+-->
 
 ## Ownership layers
 
@@ -19,13 +25,19 @@ A recoverable Bento host needs more than `state.json`: preserve operator intent,
 
 ## Logical versus raw
 
-For MySQL and PostgreSQL, logical `backup` uses matching database tools, private partial files, non-empty checks, and atomic final naming. It is granular and the PostgreSQL major-upgrade path. Restore-to-new is the preferred verification flow. Restore replacement is guarded but not object-level atomic.
+For MySQL and PostgreSQL, `backup` uses matching database tools. Bento writes to a private partial file, checks that it is not empty, and then publishes the final file atomically.
+
+Logical backups let you restore one database and are the correct path for a PostgreSQL major upgrade. Verify a backup by restoring it under a new name. Replacing an existing database has safeguards, but the restore is not atomic at the object level.
 
 SQLite uses optional Litestream replication to S3-compatible storage. Verification restores a temporary copy and runs a full integrity check. Bento does not yet expose a guarded production replacement restore.
 
-Stack export combines supported stack files with raw named-volume archives. It stops only running data services needed for consistency and restarts their prior set. It currently excludes the stack-root `sqlite/` directory. Raw transfer is broad and version/architecture sensitive; PostgreSQL requires compatible major/image.
+Stack export combines supported stack files with raw archives of named volumes. It stops only the running data services required for a consistent copy, then restarts the same services.
 
-MySQL/PostgreSQL logical backups are created on-host. A scheduled batch can upload newly created artifacts through the operator-configured rclone sidecar; verify those remote copies and test them independently. SQLite continuous backup uses its separately configured S3 replica.
+The export currently excludes the stack root's `sqlite/` directory. Raw archives also depend on compatible CPU architectures and database images. PostgreSQL requires a compatible major version and image.
+
+Bento creates MySQL and PostgreSQL logical backups on the same host. A scheduled job can upload new files through your configured rclone sidecar, but you must verify and test those remote copies yourself.
+
+SQLite continuous backup uses its own configured S3 replica.
 
 ## Failure semantics
 
@@ -46,7 +58,9 @@ MySQL/PostgreSQL logical backups are created on-host. A scheduled batch can uplo
 
 ## Boundaries
 
-Bento provides optional continuous replication only for SQLite. It does not provide MySQL/PostgreSQL continuous replication, a public SQLite replacement-restore command, object-level atomic restore, or high availability. Use database-native and infrastructure tooling when those recovery objectives are required.
+Bento offers optional continuous replication only for SQLite. It does not provide continuous MySQL or PostgreSQL replication, a public command that replaces a production SQLite database, atomic object-level restore, or high availability.
+
+Use database-native or infrastructure tools when you need those recovery goals.
 
 ## Next steps
 

@@ -1,16 +1,22 @@
 ---
 title: Operate SQLite and Litestream databases
-description: Choose local SQLite with logical backups or SQLite continuously replicated by Litestream.
+description: Choose local SQLite backups or continuous Litestream replication, then verify recovery.
 ---
 
 # Operate SQLite and Litestream databases
 
-Bento exposes two file-database types so their backup behavior is explicit:
+Bento offers two SQLite types. Choose based on the backup behavior you need:
 
-- **`sqlite`** is a simple local SQLite database. The app runner runs `VACUUM` once a week through Supercronic at a stable randomized slot between 00:00 and 04:59 local time; slots are selected to avoid exact overlap with other local SQLite files. `bento backup` creates a consistent copy with SQLite's `.backup` command and stores it under `./backups/sqlite/<app>/`, compressed with Zstandard by default (or gzip with `--gzip`).
-- **`litestream`** is SQLite with continuous off-host replication to an S3-compatible object store. Bento runs one stack-wide Litestream watcher for these databases.
+- **`sqlite`** keeps a local database and uses scheduled logical backups. The app runner runs `VACUUM` once a week between 00:00 and 04:59 local time. Bento spreads the jobs across stable randomized slots. `bento backup` uses SQLite's `.backup` command and stores a compressed copy under `./backups/sqlite/<app>/`.
+- **`litestream`** continuously replicates SQLite to an S3-compatible object store. One stack-wide Litestream watcher protects all databases of this type.
 
-Both types keep each database in a private app-ID directory. Existing bindings from versions where `sqlite` meant Litestream are read as `litestream`; their `.sqlite` files and S3 replicas do not move.
+Both types keep each database in a private app-ID directory. Bento reads older bindings—created when `sqlite` meant Litestream—as `litestream`. Their files and S3 replicas stay in place.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/sqlite-backup-options.svg
+Alt: Plain SQLite using scheduled local backups compared with SQLite using continuous Litestream replication and restore verification.
+Show: Two parallel lanes starting from an app SQLite file. The plain lane goes through .backup to compressed on-host files and then an operator-managed off-host copy. The Litestream lane goes through the shared watcher to S3, then to temporary restore and integrity check. Mark both production replacement paths as manual and guarded.
+-->
 
 ## Before you begin
 
@@ -124,7 +130,9 @@ Enable the stack-wide directory watcher with the default 60-second recovery poin
 bento sqlite backup enable demo
 ```
 
-The command gracefully recreates the one watcher process so it loads the stack policy. It does not report success after upload alone: it waits for the selected app's remote synchronization, restores a temporary database from S3, runs a full SQLite integrity check, removes the temporary file, and records the app's verification time. New SQLite databases are discovered automatically without another restart.
+The command recreates the single watcher so it loads the stack policy. An upload alone does not count as success. Bento waits for remote synchronization, restores a temporary database from S3, runs a full integrity check, removes the temporary file, and records the verification time.
+
+The watcher discovers new SQLite databases without another restart.
 
 ## Verify the backup
 
@@ -156,7 +164,9 @@ bento sqlite backup export \
   --output /safe/recovery/demo.sqlite
 ```
 
-Export runs Litestream's full integrity check, publishes the result with mode `0600`, and refuses to overwrite an existing destination. It never changes the application's live database. Local `.backup` with Zstandard/gzip and the same Litestream status, sync, verification, and export operations are available under **Manage SQLite** in `bento tui`.
+Export runs Litestream's full integrity check and publishes the file with mode `0600`. It refuses to overwrite an existing destination and never changes the live app database.
+
+The **Manage SQLite** screen in `bento tui` also provides local compressed backups and the Litestream status, sync, verify, and export operations.
 
 `bento backup --app demo` confirms remote synchronization for a `litestream` app and does not create a local logical dump. For a plain `sqlite` app it uses SQLite's online `.backup` API and publishes a compressed artifact under `backups/sqlite/demo/`.
 
@@ -187,7 +197,9 @@ RPO, snapshot interval, and retention are stack-wide. Running `enable` again cha
 
 ### Storage and isolation
 
-The stack mounts only `./sqlite` at `/sqlite`; Litestream does not receive app-home mounts. Each app-ID directory remains owned by its app UID at mode `0700`. The watcher runs as root with all capabilities dropped except `DAC_OVERRIDE`, `CHOWN`, and `FOWNER`, which Litestream needs to traverse those directories and preserve database ownership when it creates WAL/SHM or metadata files. Transaction metadata lives on the separate durable `litestream-meta/` mount. No POSIX ACLs or shared backup UID are used.
+The stack mounts only `./sqlite` at `/sqlite`; Litestream cannot access app-home mounts. Each app-ID directory stays owned by the app UID with mode `0700`.
+
+The watcher runs as root but keeps only `DAC_OVERRIDE`, `CHOWN`, and `FOWNER`. Litestream needs these capabilities to enter private directories and preserve ownership when it creates WAL, SHM, or metadata files. Transaction metadata uses the separate durable `litestream-meta/` mount. Bento does not use POSIX ACLs or a shared backup UID.
 
 This root process can read and modify every SQLite database in the stack. Its read-only root filesystem, SQLite-only mounts, isolated egress network, lack of published ports, and capability allowlist limit—but do not remove—that blast radius. PHP apps still share containers by PHP version, so Bento is not a hostile multi-tenant sandbox.
 

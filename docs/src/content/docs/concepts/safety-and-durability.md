@@ -1,11 +1,17 @@
 ---
 title: Safety and durability
-description: Distinguish Bento state, generated files, customization, durable data, and security boundaries.
+description: Identify what to protect, what Bento can rebuild, and which dangerous actions it blocks.
 ---
 
 # Safety and durability
 
-Bento separates operator intent from disposable output and durable data. Knowing which layer owns a path prevents accidental data loss and secret exposure.
+Bento separates your intent, generated output, custom files, and durable data. Learn which layer owns each path before you edit, delete, or back it up.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/data-ownership-layers.svg
+Alt: Bento stack data grouped into desired state, generated, custom, durable, and temporary layers.
+Show: Five horizontal layers with example paths. Add badges for sensitive, rebuildable, operator-owned, back up, and temporary. Draw Docker named volumes beside rather than inside the stack-root boundary.
+-->
 
 ## Mental model
 
@@ -17,7 +23,9 @@ Bento separates operator intent from disposable output and durable data. Knowing
 | Durable | `homes/`, `sqlite/`, `certs/`, `backups/`, `logs/`, database and Redis volumes | Back up and protect |
 | Ephemeral | `runtime/`, `locks/`, `.asset-cache/` | Recreated or recoverable |
 
-The stack root contains files, including SQLite databases under `sqlite/`, but MySQL, PostgreSQL, and Redis contents live in Compose named volumes. Copying the stack root alone is therefore not a complete recovery copy, and blindly copying a live SQLite file is not a consistency guarantee.
+The stack root contains SQLite files under `sqlite/`. MySQL, PostgreSQL, and Redis store their data in Compose named volumes outside the root.
+
+For that reason, copying the stack root does not create a complete recovery copy. Copying a live SQLite file also does not guarantee a consistent backup.
 
 ## Safety controls
 
@@ -28,11 +36,13 @@ The stack root contains files, including SQLite databases under `sqlite/`, but M
 - MySQL/PostgreSQL dumps are created on-host. Scheduled runs may upload new artifacts through configured rclone, but you must verify remote retention and recovery separately.
 - SQLite uses optional S3 continuous backup; its verification command restores a temporary copy but does not replace production data.
 
-Treat `.env`, `state.json`, app credential files, deploy secrets, certificate private keys, and export archives as secrets. Support bundles redact known credentials, but inspect any archive before sharing it.
+Treat `.env`, `state.json`, app credentials, deploy secrets, certificate private keys, and export archives as secrets. Bento redacts known credentials from support bundles, but you must still inspect every archive before sharing it.
 
 ## Trust boundary
 
-Only Nginx is public in the base topology. App identity, FPM pools, filesystem modes, database grants, and optional Redis ACLs reduce accidental cross-app access. Apps sharing a PHP version still share containers, network reachability, and capacity. Bento is not a hostile multi-tenant sandbox; use separate hosts or stronger isolation for mutually untrusted tenants.
+Only Nginx is public in the base setup. App identities, FPM pools, file permissions, database grants, and optional Redis ACLs reduce accidental access between apps.
+
+Apps on the same PHP version still share containers, private network access, and capacity. Bento is not a hostile multi-tenant sandbox. Use separate hosts or stronger isolation for mutually untrusted tenants.
 
 ## Recovery priorities
 

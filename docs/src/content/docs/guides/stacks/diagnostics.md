@@ -1,11 +1,11 @@
 ---
 title: Diagnose a stack
-description: Inspect Bento status, run host and stack checks, collect redacted diagnostics, and locate service logs.
+description: Start with status, run deeper checks, inspect logs, and collect a support bundle.
 ---
 
 # Diagnose a stack
 
-Use progressively deeper checks to identify host, configuration, service, network, TLS, storage, or permission failures.
+Start with the cheapest checks, then go deeper until you locate the host, configuration, service, network, TLS, storage, or permission failure.
 
 ## Check status
 

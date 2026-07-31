@@ -1,11 +1,17 @@
 ---
 title: Manage domains and TLS
-description: Configure app or proxy domains and choose shared, private-CA, ACME, or external TLS safely.
+description: Connect domains to an app or proxy and choose the right certificate source.
 ---
 
 # Manage domains and TLS
 
-Choose and activate the correct TLS mode for a Bento app or reverse proxy, verify its certificate path, and understand who owns renewal and client trust.
+Choose a TLS mode for an app or reverse proxy, activate it, and verify the live certificate. The mode determines who issues the certificate, who renews it, and which clients trust it.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/tls-mode-decision.svg
+Alt: Decision tree for choosing shared, private-CA, ACME, or external TLS in Bento.
+Show: Ask whether the site is only bootstrapping, whether all clients can trust a private CA, whether public DNS and port 80 are available, and whether another system already supplies certificates. End each branch at one TLS mode with an owner and renewal label.
+-->
 
 ## Before you begin
 
@@ -33,13 +39,17 @@ Bento stores one TLS mode per app or proxy:
 | `acme` | Nginx's shared native ACME issuer | Yes | Public DNS names reachable on port 80 |
 | `external` | You or an external certificate system | Yes | Another system supplies files under the stack `certs/` directory |
 
-`shared` is the initial mode. Its one self-signed certificate is reused by every shared-mode site and does not validate the requested domain. It keeps HTTP available without forcing an HTTPS redirect; do not treat it as production identity.
+`shared` is the starting mode. All shared-mode sites reuse one self-signed certificate, so it does not prove the requested domain's identity.
+
+This mode keeps HTTP available and does not force an HTTPS redirect. Do not use it as a production identity.
 
 The other three modes turn on HTTP-to-HTTPS redirects. Configure and verify the selected certificate path before depending on that redirect.
 
 ## Update app domains
 
-Domains are authoritative link records, globally unique across apps and proxies. Each target has one primary link and any number of additional links. Change an app's links with `app update`; pass the complete alias list because it replaces the previous additional links:
+Every domain belongs to exactly one app or proxy in a stack. A target has one primary domain and can have several aliases.
+
+Use `app update` to change an app's domains. Pass the complete alias list because the command replaces the old list:
 
 :::caution
 Changing a primary domain or alias changes routing immediately after apply. Confirm DNS and the intended certificate coverage first. `app update` also requires you to repeat `--access-log` if enabled access logging must remain enabled.
@@ -114,7 +124,7 @@ Install `bento-ca.crt` in client trust stores only through the operating system 
 
 ## Use public ACME certificates
 
-Bento uses Nginx's native ACME module and a single issuer named `bento_acme`. Nginx performs HTTP-01 issuance and renewal; there is no `bento tls renew` or Certbot step.
+Bento uses Nginx's native ACME module and one issuer named `bento_acme`. Nginx handles HTTP-01 issuance and renewal. You do not run `bento tls renew` or Certbot.
 
 :::caution
 Before enabling ACME, every A and AAAA record for the primary domain and all aliases must point to this host, and public TCP port 80 must reach this stack's Nginx. A stale AAAA record can cause validation failure even when the A record is correct. Repeated failed issuance can encounter certificate-authority rate limits.
@@ -148,7 +158,7 @@ Enable ACME only after those checks pass:
 bento tls set --app demo --mode acme
 ```
 
-Certificate issuance can continue after the command returns. Nginx stores durable issuer state below `/var/lib/bento/certs/acme-state/`; include it in stack backups.
+Certificate issuance may continue after the command returns. Nginx stores durable issuer state under `/var/lib/bento/certs/acme-state/`. Include that directory in stack backups.
 
 Verify the certificate served publicly:
 
@@ -195,7 +205,7 @@ Verify the live certificate with `openssl s_client` as shown in the ACME procedu
 bento apply
 ```
 
-That causes Nginx to load the current files. Monitor certificate expiry outside Bento because no external-file renewal scheduler is provided.
+This command makes Nginx load the current files. Monitor certificate expiry outside Bento because Bento does not schedule renewal for external files.
 
 ## Verify a TLS change
 

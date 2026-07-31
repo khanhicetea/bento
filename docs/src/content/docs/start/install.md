@@ -1,11 +1,13 @@
 ---
 title: Install Bento
-description: Install and verify the compiled Bento command, then choose a durable stack root.
+description: Install the Bento command and choose a safe location for stack data.
 ---
 
 # Install Bento
 
-Install the compiled `bento` command on a supported Linux host and choose where Bento will keep mutable stack data. The compiled command includes its templates and does not require Deno, Node.js, Python, or a source checkout.
+Install the compiled `bento` command on a supported Linux host. Then choose a durable location for stack data.
+
+The compiled command includes its templates. A production host does not need Deno, Node.js, Python, or a source checkout.
 
 ## Before you begin
 
@@ -22,7 +24,7 @@ Install the compiled `bento` command on a supported Linux host and choose where 
    | `x86_64` | `bento-linux-amd64` |
    | `aarch64` | `bento-linux-arm64` |
 
-   Bento does not currently publish a stable “latest” download URL or checksum file. Select a specific trusted release rather than constructing a download URL, and keep the release identifier with your operational records.
+   Bento does not publish a stable “latest” download URL or checksum file. Choose a specific trusted release instead of building a download URL yourself. Record the release version for future recovery and audits.
 
 2. Install the downloaded asset on the command path. For example, on an x86-64 host:
 
@@ -43,7 +45,7 @@ Install the compiled `bento` command on a supported Linux host and choose where 
 
 ## Choose a stack root
 
-The **stack root** stores desired state, secrets, generated configuration, app homes, certificates, logs, and on-host backups. It is independent of the location of `/usr/local/bin/bento` and must be on durable local storage.
+The **stack root** stores desired state, secrets, generated configuration, app homes, certificates, logs, and on-host backups. It does not need to sit beside `/usr/local/bin/bento`. Put it on durable local storage.
 
 The documentation uses `/var/lib/bento`. Create it for the account that will operate Bento:
 
@@ -61,14 +63,18 @@ test -w /var/lib/bento && echo "stack root is writable"
 Do not place the stack root in `/tmp`, an ephemeral deployment directory, or the source checkout. Losing this directory can lose desired state, credentials, app files, SQLite databases, certificates, and on-host backups. Docker MySQL, PostgreSQL, and Redis data also require separate protection because they live in named volumes.
 :::
 
-Bento reads the stack root from `BENTO_STACK_ROOT` and defaults to `./bento` when the variable is unset. Select the durable production root once for your operator environment so commands do not depend on the current working directory:
+Bento reads the stack root from `BENTO_STACK_ROOT`. If the variable is unset, it uses `./bento`.
+
+Set the durable production root in your operator environment so commands do not depend on the current directory:
 
 ```sh
 export BENTO_STACK_ROOT=/var/lib/bento
 bento version
 ```
 
-Add the export to the operator account's shell profile or service environment when it should persist across sessions. The guides assume this variable is set and keep command examples short. `--stack PATH` remains available as a one-command override, which is useful when deliberately switching stacks.
+Add the export to the operator's shell profile or service environment if it should persist. The rest of these guides assume the variable is set.
+
+Use `--stack PATH` when you deliberately need to target another stack for one command.
 
 ## Run from source instead
 

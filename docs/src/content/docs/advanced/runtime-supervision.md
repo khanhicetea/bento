@@ -1,11 +1,17 @@
 ---
 title: Runtime supervision
-description: Understand PHP FPM, runner, CLI roles and scoped s6 reconciliation for schedules, deploys, and workers.
+description: See how Bento runs PHP requests, commands, schedules, deploys, and workers.
 ---
 
 # Runtime supervision
 
-Each managed PHP version uses one image for three roles so web, background, and operator commands share the same runtime/toolchain.
+Each PHP version uses one image for web requests, background work, and operator commands. This keeps the runtime and tools consistent across all three roles.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/php-runtime-roles.svg
+Alt: One PHP image split into persistent FPM, singleton runner, and temporary CLI roles for several apps.
+Show: Put one PHP image at the top and branch to FPM, runner, and CLI. Inside FPM show per-app pools and sockets. Inside runner show per-app schedulers, deploy queues, and workers. Mark CLI containers as temporary and the runner as exactly one replica.
+-->
 
 | Role | Lifetime | Responsibility |
 | --- | --- | --- |
@@ -15,7 +21,9 @@ Each managed PHP version uses one image for three roles so web, background, and 
 
 ## Runner model
 
-s6-overlay owns a dynamic scan tree. Bento generates one Supercronic service per app that has schedules or deploy draining, plus one flat service per enabled worker. Reconciliation adds/removes only affected service directories; sibling services and the container need not restart.
+The runner uses s6-overlay to watch a dynamic service tree. Bento adds one Supercronic service for each app that uses schedules or deploy draining. It also adds one service for each enabled worker.
+
+When the configuration changes, Bento updates only the affected service directories. Other services and the runner container can keep running.
 
 Crontab-only changes validate then signal the matching `scheduler-<app>` with USR2. Worker `start|stop|restart|signal|inspect` addresses one `worker-<app>-<name>` service. Runtime locks are volatile and app-scoped.
 
@@ -23,11 +31,15 @@ The runner must stay at one replica. Scaling it duplicates schedulers, drains, a
 
 ## Deploy supervision
 
-A per-app minute schedule drains at most one queued job. The hook runs as app identity with a bounded timeout/workdir and writes app logs. After a terminal attempt, the runner asks the app's FPM socket to reset OPcache. The HTTP endpoint only authenticates/enqueues.
+Each app checks its deploy queue once per minute and runs at most one queued job. The hook runs as the app user, inside a fixed working directory and timeout, and writes to app logs.
+
+After the job finishes or fails, the runner asks the app's FPM socket to reset OPcache. The HTTP endpoint only authenticates and queues the job; it never performs the deployment itself.
 
 ## Log supervision
 
-Docker uses the `local` driver with 10 MiB/three-file bounds. A root maintenance scheduler in each runner invokes logrotate hourly for app/worker/FPM files, using `copytruncate` and retaining two rotations. This is distinct from host `maintenance run`.
+Docker uses the `local` log driver and keeps three files of up to 10 MiB each. Each runner also invokes `logrotate` every hour for app, worker, and FPM logs. It uses `copytruncate` and keeps two rotations.
+
+This runner task is separate from the host-level `bento maintenance run` command.
 
 ## Migration/recovery
 

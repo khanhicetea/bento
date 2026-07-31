@@ -1,11 +1,11 @@
 ---
 title: CLI reference
-description: Find Bento global flags and command groups, then open the task guide for safe procedures.
+description: Find a Bento command group and jump to the guide that explains how to use it safely.
 ---
 
 # CLI reference
 
-Bento is a local command-line control plane. Run `bento --help` and `bento <group> --help` for the current exhaustive syntax.
+Use this page to find the right command group. For complete current syntax, run `bento --help` and `bento <group> --help` on your installed version.
 
 ## Global interface
 
@@ -21,7 +21,9 @@ bento [--json] <command> [args]
 | `--repo-root` | Test/source-mode repository override; not routine production use |
 | `--help` | Current command help |
 
-Set `BENTO_STACK_ROOT` once in the operator or script environment; examples assume it is already set. Put global flags before the command, and use `--stack PATH` only when a one-command override is useful. Many state mutations accept `--no-apply`; follow the batch with `bento apply`.
+Set `BENTO_STACK_ROOT` once in the operator or script environment. The examples assume it is set.
+
+Put global flags before the command. Use `--stack PATH` for a one-command override. When you batch state changes with `--no-apply`, finish the batch with `bento apply`.
 
 ## Command map
 

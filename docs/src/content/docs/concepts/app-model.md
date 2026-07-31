@@ -1,13 +1,19 @@
 ---
 title: Application identity and resources
-description: Understand how one stable app slug connects runtime, traffic, data, jobs, and durable files in Bento.
+description: See how one app slug connects files, traffic, PHP, data, jobs, and deployment.
 ---
 
 # Application identity and resources
 
-A Bento app is a stable logical identity, not only a website record. Its app slug connects the same codebase and operating identity to web requests, PHP commands, data access, background work, and deployment.
+A Bento app is more than a website record. Its stable slug connects one codebase and operating identity to web requests, PHP commands, data, background jobs, and deployments.
 
 ## Mental model
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/app-resource-map.svg
+Alt: The demo app slug connected to its Linux identity, home, domains, PHP pool, databases, Redis namespace, jobs, and deploy queue.
+Show: Put the app slug in the center. Group connected resources into five labeled areas: identity, traffic, runtime, data, and background work. Mark shared services, such as a PHP version and Redis, with a different color from app-owned resources.
+-->
 
 ```text
 app slug
@@ -40,7 +46,9 @@ Changing a primary domain is different: it updates traffic ownership while prese
 
 ## Runtime and traffic
 
-Each app selects one managed PHP version and one named FPM capacity profile. Bento renders a dedicated pool and Unix socket for the app, but apps on the same PHP version share the PHP image, FPM service, global process cap, and runner container. The profile controls this app's pool capacity; it does not reserve a separate container or fixed host resources.
+Each app selects one managed PHP version and one FPM capacity profile. Bento gives the app its own pool and Unix socket.
+
+Apps on the same PHP version still share the PHP image, FPM service, global process limit, and runner. The profile limits the app's pool; it does not reserve a container, CPU, or memory for that app.
 
 Nginx resolves the app's primary and additional domain links to its document root and FPM socket. Domain links are stack-wide unique, including links used by reverse proxies. An app also selects:
 
@@ -49,7 +57,9 @@ Nginx resolves the app's primary and additional domain links to its document roo
 - a TLS mode;
 - whether to write a per-app access log.
 
-Disabling an app removes its generated vhost, pool, schedules, and workers after apply. It retains the app model, domain claims, home, credentials, and database records. See [Manage applications](/guides/apps/manage/) for the enable, disable, remove, and prune lifecycle.
+After you disable and apply an app, Bento removes its generated virtual host, pool, schedules, and workers. Bento keeps the app record, domain claims, home, credentials, and database records.
+
+See [Manage applications](/guides/apps/manage/) for the full enable, disable, remove, and prune lifecycle.
 
 ## Files and credentials
 
@@ -63,15 +73,25 @@ Bento creates the durable host directory `<stack-root>/homes/<app>/`. PHP roles 
 | `/home/<app>/.ssh/` | Stable app deploy key and SSH state |
 | `/home/<app>/.bento/` | Deploy hook, queue, and app runtime metadata outside the public document root |
 
-The credential file supplies connection values; Bento does not automatically load it into a framework's configuration. Do not commit it or print its secrets. The authoritative `state.json` also contains app database passwords and may contain a deploy HMAC secret, so protect the [stack's desired state](/concepts/desired-state/).
+The credential file provides connection values, but Bento does not load it into your framework automatically. Never commit the file or print its secrets.
+
+`state.json` also contains app database passwords and may contain a deploy secret. Protect the [stack's desired state](/concepts/desired-state/).
 
 ## Data binding
 
-An app owns a collection of database bindings and may mix engines. Each MySQL or PostgreSQL binding selects one managed service, receives a same-name user or role, and may own multiple recorded databases in its namespace: either `<app>` or `<app>_*`. Each `sqlite` binding receives a private local file under the stack-root `sqlite/` directory, weekly Supercronic `VACUUM`, and `.backup` logical backups. A `litestream` binding is also SQLite but explicitly opts into continuous S3 replication. Adding a binding preserves every existing binding.
+An app can own several database bindings and mix engines:
+
+- A MySQL or PostgreSQL binding selects one managed service. Bento creates a matching user or role. The app can own databases named `<app>` or `<app>_*`.
+- A `sqlite` binding creates a private file under the stack root's `sqlite/` directory. Bento schedules a weekly `VACUUM` and uses SQLite's `.backup` command for logical backups.
+- A `litestream` binding also uses SQLite and adds continuous replication to S3-compatible storage.
+
+Adding a binding never removes an existing one.
 
 Adding a different engine or service creates another binding; it does not move or convert an existing database. Bento does not move data between bindings.
 
-Redis is shared stack infrastructure. In shared mode, every app must use its recorded key prefix. In ACL mode, Bento additionally gives the app a Redis username and credentials restricted to its namespace. Redis metadata does not create a separate Redis instance per app.
+All apps use the stack's shared Redis service. In shared mode, each app must use its recorded key prefix. In ACL mode, Bento also gives the app a Redis username and credentials limited to that namespace.
+
+An app does not receive its own Redis instance.
 
 ## Schedules, workers, and deploys
 
@@ -99,11 +119,15 @@ When operating the app, use its slug rather than manually selecting a container 
 bento exec demo -- php -v
 ```
 
-Re-running `app create` or using `app update` is the supported way to change an app's linked domains, document root, routing mode, PHP version, or FPM profile. Omitted PHP, profile, and database choices preserve the existing recorded selections; inspect the result after every update.
+Use `app create` again or run `app update` to change domains, the document root, routing, PHP, or the FPM profile. If you omit PHP, profile, or database options, Bento keeps the recorded choices.
+
+Inspect the app after every update.
 
 ## Boundaries and limitations
 
-The app model protects normal ownership boundaries and reduces accidental cross-app access, but it is not a hostile multi-tenant sandbox. Apps sharing a PHP version also share a container namespace, runtime image, network access, and capacity envelope. Use a separate host or stronger isolation system for mutually hostile tenants.
+The app model reduces accidental access between apps. It is not a hostile multi-tenant sandbox.
+
+Apps on the same PHP version share a container namespace, runtime image, network access, and capacity. Put mutually hostile tenants on separate hosts or use a stronger isolation system.
 
 Bento also does not:
 
@@ -115,9 +139,11 @@ Bento also does not:
 
 ## Advanced
 
-The app's stable UID/GID is used consistently by its PHP-FPM pool, ephemeral CLI role, scheduler, workers, and deploy hook. Nginx reads the public tree and reaches PHP through the app's Unix socket without receiving general write access to the private home.
+Bento uses the app's stable UID/GID for its FPM pool, temporary CLI containers, scheduler, workers, and deploy hook. Nginx can read the public tree and use the app's Unix socket, but it cannot write freely to the private home.
 
-Versioned PHP services have different cardinalities: one persistent FPM service and one singleton runner exist per managed PHP version, while CLI containers are ephemeral. The app-specific pool, socket, scheduler, and worker definitions live inside those shared roles. This gives Bento app-level operational identity without the resource cost or isolation guarantees of one complete container stack per app.
+Each managed PHP version has one persistent FPM service and one singleton runner. Bento creates CLI containers only when a command needs one.
+
+App-specific pools, sockets, schedulers, and workers live inside those shared roles. This saves resources, but it does not provide the isolation of a complete container stack for every app.
 
 ## Next steps
 

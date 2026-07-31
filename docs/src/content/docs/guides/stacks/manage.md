@@ -1,11 +1,11 @@
 ---
 title: Manage a stack
-description: Render and apply changes, inspect status and logs, and start or stop Bento services safely.
+description: Check a stack, apply changes, inspect logs, and manage service lifecycle safely.
 ---
 
 # Manage a stack
 
-Use Bento's status, apply, and Compose commands to operate an existing stack without bypassing its generated file chain or volume safeguards.
+Operate an existing stack with Bento's status, apply, and Compose commands. These commands preserve Bento's generated-file workflow and volume safeguards.
 
 ## Before you begin
 

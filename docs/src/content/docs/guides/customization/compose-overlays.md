@@ -1,11 +1,17 @@
 ---
 title: Customize Compose with overlays
-description: Add ordered operator-owned Compose overrides while preserving Bento networking, identity, sockets, and durable mounts.
+description: Extend Bento's Compose setup with ordered, operator-owned overlay files.
 ---
 
 # Customize Compose with overlays
 
-Extend or override the generated Compose model with files under the stack's `overlays/` directory.
+Add or override Compose settings with files under the stack's `overlays/` directory. Bento loads these operator-owned files in a predictable order.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/compose-overlay-order.svg
+Alt: Bento-managed Compose files followed by ordered operator overlays and the final merged Compose model.
+Show: A stack of managed files, then overlays named 10-, 20-, and 90- in lexical order, all merging into one effective Compose model. Add validation before apply and a separate container-recreate path for mounts, environment, networks, or image changes.
+-->
 
 ## Add an overlay
 

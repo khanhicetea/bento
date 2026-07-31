@@ -1,11 +1,11 @@
 ---
 title: Stack configuration
-description: Look up supported stack environment variables, defaults, networking effects, and secret handling.
+description: Look up stack environment variables, defaults, network effects, and secret rules.
 ---
 
 # Stack configuration
 
-Bento initializes the stack-root `.env` with mode `0600`. Edit only confirmed variables, then run `apply` or the relevant `stack ingress set` command.
+Bento creates the stack root's `.env` with mode `0600`. Change only variables listed here. Then run `apply`, or use the relevant `stack ingress set` command.
 
 | Variable | Initial/default behavior | Scope |
 | --- | --- | --- |

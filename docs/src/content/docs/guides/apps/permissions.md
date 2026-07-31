@@ -1,11 +1,11 @@
 ---
 title: Check and repair app permissions
-description: Audit app ownership and modes, preview repairs, and choose shallow or explicit recursive correction.
+description: Check app file ownership, preview a repair, and fix only the required scope.
 ---
 
 # Check and repair app permissions
 
-Audit one app's filesystem policy and repair only the necessary scope without following symlink targets.
+Check one app's file ownership and modes. Preview every repair, then change only the required scope. Bento never follows symlink targets during this operation.
 
 ## Check first
 

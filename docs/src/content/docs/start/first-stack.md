@@ -1,11 +1,17 @@
 ---
 title: Create your first stack
-description: Initialize, render, start, inspect, and validate one Bento stack on a Linux host.
+description: Create, start, and verify your first Bento stack on one Linux host.
 ---
 
 # Create your first stack
 
-Create and start an empty Bento stack named `production` under `/var/lib/bento`. This path uses host-mode Nginx on ports 80 and 443; you will add an application in the next step.
+Create an empty stack named `production` under `/var/lib/bento`, then start and verify it. This guide uses host-mode Nginx on ports 80 and 443. You will add an app in the next guide.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/first-stack-steps.svg
+Alt: Five steps to create a Bento stack: target the root, initialize, render, start services, and verify.
+Show: A numbered horizontal flow for a new operator. Under each step, name the main output: root selection, state files, generated files, containers and volumes, then health checks. Add a warning icon at the start-services step for public ports 80 and 443.
+-->
 
 ## Before you begin
 
@@ -133,7 +139,9 @@ Replace `<service>` with the role shown by `status` or `compose -- ps`, such as 
 
 ## Advanced
 
-`render` and `apply` serve different purposes. `render` writes generated files but never signals services. `apply` performs a staged transaction and, when relevant services are running, validates and reloads only the affected roles. Starting containers remains an explicit Compose operation through Bento's wrapper.
+`render` writes generated files but never signals services. `apply` stages a complete change, validates running services, and reloads only the affected roles.
+
+Neither command starts containers. Use Bento's Compose wrapper for container lifecycle operations.
 
 The wrapper assembles every managed Compose fragment and operator overlay in deterministic order. Use it instead of manually selecting files. It also blocks `docker compose down -v`, `--volumes`, and destructive `--rmi` forms to protect durable database and Redis resources.
 

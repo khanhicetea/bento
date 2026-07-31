@@ -1,13 +1,21 @@
 ---
 title: Networking and ingress
-description: Understand Bento's public ingress, private service network, host and bridge modes, and reverse-proxy addresses.
+description: Learn how traffic reaches Bento and choose the correct address in host or bridge mode.
 ---
 
 # Networking and ingress
 
-Bento exposes web traffic through one Nginx service while keeping PHP, databases, Redis, and job runners on a stack-private network. The Nginx **ingress mode** determines how Nginx reaches the host and private services, so it also changes what an upstream address such as `127.0.0.1` means.
+One Nginx service handles public web traffic. PHP, databases, Redis, and job runners stay on a private stack network.
+
+The Nginx **ingress mode** controls how Nginx reaches the host and private services. That choice changes what an address such as `127.0.0.1` means.
 
 ## Mental model
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/ingress-modes.svg
+Alt: Public requests entering Nginx in host mode and bridge mode, with private PHP, database, Redis, and host-service paths.
+Show: Two side-by-side request flows. Use the same icons and colors in both panels. Mark public ports, the private Compose network, Unix socket connections, and the host.docker.internal bridge. Include a small legend for public, private, and socket paths.
+-->
 
 ```text
                          host mode
@@ -23,7 +31,9 @@ Internet -> published host ports -> Nginx -> stack-private network
                                          +-> host.docker.internal -> host
 ```
 
-In the base topology, Nginx is the only public service. PHP-FPM, PHP runners, ephemeral PHP CLI containers, MySQL, PostgreSQL, and Redis join a Compose network named from the [stable stack name](/concepts/stacks/), such as `production_private`. MySQL, PostgreSQL, and Redis do not publish host ports.
+In the base setup, only Nginx is public. PHP-FPM, runners, temporary PHP CLI containers, MySQL, PostgreSQL, and Redis join a Compose network based on the [stable stack name](/concepts/stacks/), such as `production_private`.
+
+MySQL, PostgreSQL, and Redis do not publish host ports.
 
 PHP web requests are a special case: Nginx reaches each app's PHP-FPM pool through a shared Unix socket mount. This path works in both ingress modes and does not require Nginx to resolve the PHP Compose service name.
 
@@ -100,7 +110,9 @@ curl --resolve demo.example.com:18080:127.0.0.1 \
   http://demo.example.com:18080/
 ```
 
-Changing ingress mode rewrites the stack environment and generated Compose topology. If Nginx is running and Docker Compose is available, Bento validates the Compose configuration and force-recreates Nginx, which can briefly interrupt requests. Verify the endpoint again after any mode or publication change.
+Changing ingress mode updates the stack environment and generated Compose setup. If Nginx is running and Docker Compose is available, Bento validates Compose and force-recreates Nginx. Requests can pause briefly.
+
+Test the endpoint again after you change the mode or published ports.
 
 ## Boundaries and limitations
 
@@ -112,7 +124,9 @@ Changing ingress mode rewrites the stack environment and generated Compose topol
 
 ## Advanced
 
-The Nginx container sees PHP sockets at `/run/php-fpm/<php-service>/<app>.sock`, while each PHP-FPM service sees its app sockets under its own `/run/php-fpm/`. Bind mounts align those namespace-specific paths. This socket design keeps ordinary PHP request routing independent of whether Nginx uses the host or private bridge network.
+Nginx sees PHP sockets at `/run/php-fpm/<php-service>/<app>.sock`. Each PHP-FPM service sees its sockets under `/run/php-fpm/`. Bind mounts connect these different paths.
+
+Because PHP requests use sockets, their routing does not depend on host or bridge networking.
 
 Backend containers use Compose service names for private traffic: apps connect to their selected MySQL or PostgreSQL service and to Redis rather than to `localhost`. Ephemeral app commands launched by Bento join the same private network, so they use the same connection metadata as the running app.
 

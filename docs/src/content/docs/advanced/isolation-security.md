@@ -1,11 +1,11 @@
 ---
 title: Isolation and security
-description: Understand Bento identity, filesystem, socket, data, secret, and public-surface boundaries and their limits.
+description: Learn which app boundaries Bento provides and where you need stronger isolation.
 ---
 
 # Isolation and security
 
-Bento protects routine application ownership boundaries on one trusted host; it does not isolate mutually hostile tenants like separate VMs.
+Bento reduces accidental access between apps on one trusted host. It does not isolate hostile tenants as separate virtual machines would.
 
 ## Boundaries
 
@@ -22,19 +22,27 @@ Use separate apps for codebases/trust boundaries and separate hosts or stronger 
 
 ## Public surface
 
-Only Nginx is public in the base Compose topology. It exposes configured app/proxy domains, ACME challenges, and optional signed deploy endpoints. FPM, runners, databases, Redis, s6 controls, and Bento management remain host-local/private. Overlays can weaken this—review merged Compose for unintended ports.
+Only Nginx is public in the base Compose setup. It serves app and proxy domains, ACME challenges, and optional signed deploy endpoints.
+
+FPM, runners, databases, Redis, s6 controls, and Bento management stay private or host-local. An overlay can expose them, so review the merged Compose configuration for unexpected ports.
 
 ## Secrets
 
-Sensitive material includes `.env`, `state.json`, app credential files, SSH keys, deploy HMAC secrets, root client files, certificate keys, ACME state, backups, logs, and stack exports. Root/app database passwords are staged through protected files rather than host argv. Routine output and support bundles redact known fields, but operators must still inspect artifacts before sharing.
+Protect `.env`, `state.json`, app credentials, SSH keys, deploy secrets, database client files, certificate keys, ACME state, backups, logs, and stack exports.
+
+Bento passes database passwords through protected files instead of host command arguments. It also redacts known secrets from routine output and support bundles. Always inspect an artifact before you share it.
 
 ## Filesystem and command safety
 
-Working directories cannot escape the app home through ordinary path resolution. Recursive permission repair does not follow symlink targets. Worker argv avoids implicit shell evaluation; cron `--cmd` deliberately permits shell syntax. Domain uniqueness prevents ambiguous generated routing. The Compose wrapper blocks volume-destructive down.
+Bento keeps app working directories inside the app home. Recursive permission repair does not follow symlink targets.
+
+Worker arguments do not invoke a shell implicitly. Cron `--cmd` does allow shell syntax, so treat it as trusted input. Bento also rejects duplicate domains and blocks Compose commands that would delete volumes.
 
 ## Residual risk
 
-A compromised app may consume shared CPU/memory, probe private network services, exploit a shared runtime/kernel vulnerability, or expose its own credentials. Bento has no per-app resource quota or hostile tenancy guarantee. Keep host/Docker/images/apps patched, minimize overlays, restrict stack-root and Docker access, and maintain tested off-host recovery.
+A compromised app can consume shared CPU or memory, probe private services, exploit a shared runtime or kernel flaw, or expose its credentials. Bento does not set per-app resource quotas or guarantee hostile-tenant isolation.
+
+Patch the host, Docker, images, and apps. Keep overlays small, restrict access to Docker and the stack root, and maintain tested off-host recovery.
 
 ## Next steps
 

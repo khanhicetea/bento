@@ -1,13 +1,21 @@
 ---
 title: Stacks, roots, and names
-description: Understand how a stack root and stable stack name identify one Bento installation and its resources.
+description: Learn how a stack root selects host files while a stack name selects Docker resources.
 ---
 
 # Stacks, roots, and names
 
-A Bento **stack** is one installation's desired state, generated configuration, app homes, certificates, backups, and Docker Compose resources. Two independent identifiers locate it: the stack root selects files on the host, while the stack name selects Compose resources.
+A Bento **stack** includes one installation's state, generated configuration, app homes, certificates, backups, and Docker Compose resources.
+
+Two independent identifiers locate it. The **stack root** selects files on the host. The **stack name** selects Compose resources.
 
 ## Mental model
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/stack-root-vs-name.svg
+Alt: A stack root pointing to host files and a separate stack name pointing to Docker networks, containers, and volumes.
+Show: Two input boxes, /var/lib/bento and production. Route the first to filesystem paths and the second to production_private, containers, and named volumes. Add a warning showing that copying the root keeps the same Docker identity unless the import workflow changes it.
+-->
 
 | Identifier | Purpose | Example |
 | --- | --- | --- |
@@ -38,7 +46,9 @@ export BENTO_STACK_ROOT=/var/lib/bento
 bento status
 ```
 
-Without `BENTO_STACK_ROOT`, Bento defaults to `./bento`. That relative default changes meaning with the current working directory, so do not rely on it as an implicit production target. `--stack PATH` can override the environment for one command.
+Without `BENTO_STACK_ROOT`, Bento uses `./bento`. This relative path changes with your current directory, so do not rely on it for production.
+
+Use `--stack PATH` when you need to target another root for one command.
 
 A stack root contains several ownership classes:
 
@@ -50,7 +60,9 @@ A stack root contains several ownership classes:
 | Generated output | `generated/`, `docker/`, `helpers/`, `.asset-cache/` | Reconstructible; do not customize generated copies |
 | Ephemeral coordination | `runtime/`, `locks/` | Recreated as needed; not recovery data |
 
-Docker named volumes for MySQL, PostgreSQL, and Redis are durable stack resources but do **not** live under the stack root. SQLite databases live under stack-root `sqlite/`. The stack name connects generated Compose configuration to named volumes and the remote SQLite replica prefix.
+Docker stores durable MySQL, PostgreSQL, and Redis data in named volumes outside the stack root. SQLite databases live under the root's `sqlite/` directory.
+
+The stack name links generated Compose configuration to named volumes and the remote SQLite replica prefix.
 
 :::caution
 A filesystem backup of the stack root alone is not a complete database backup. It omits Docker named-volume contents, and copying a live SQLite file does not guarantee consistency. Use Bento's relational logical backup or stack export workflows, configure SQLite continuous backup where needed, and keep verified off-host copies.
@@ -60,7 +72,9 @@ A filesystem backup of the stack root alone is not a complete database backup. I
 
 The stack name is written to the private stack `.env` as `COMPOSE_PROJECT_NAME`. Bento uses it for the Compose project, private network, containers, and named volumes.
 
-Treat the name as immutable after initialization. Bento refuses an initialization request that tries to replace an existing name because a different name would address differently prefixed resources. The original data volumes may still exist, but the renamed project would not automatically use them.
+Treat the stack name as permanent after initialization. Bento refuses to initialize an existing stack with another name because the new name would point to differently prefixed Docker resources.
+
+The original volumes may still exist, but the renamed project would not use them automatically.
 
 Two stack roots on the same Docker host must not share a stack name. If both are named `production`, their host-side locks and desired state are separate while their Compose resource identity collides.
 
@@ -101,7 +115,7 @@ Check these values before an import, restore, app deletion, or multi-stack opera
 
 Do not put a production root under `/tmp`, a release checkout, or another directory replaced during deployment. The executable can move or be upgraded independently; mutable stack data remains under the selected root.
 
-Moving or restoring a root requires planning even though its name is independent. Host schedules can contain the old absolute path, running containers can have mounts from it, and a copied root is not a consistent copy of live database volumes.
+Plan before you move or restore a stack root. Host schedules may contain the old absolute path, running containers may mount it, and a copied root does not contain a consistent copy of live database volumes.
 
 ## Boundaries and limitations
 
@@ -113,7 +127,9 @@ Moving or restoring a root requires planning even though its name is independent
 
 ## Advanced
 
-Bento has no resident daemon that remembers a current stack. Each CLI invocation resolves its target from `BENTO_STACK_ROOT`, the `./bento` default, or a one-command `--stack` override, then loads the stack-local state and environment. Locks also live under that root. This makes stacks portable and explicit, but it cannot prevent two different roots with the same name from contending for the same Docker resources.
+Bento has no background daemon that remembers a current stack. Every command selects a root from `BENTO_STACK_ROOT`, the `./bento` default, or `--stack`. It then loads that root's state and environment. Locks also live under the root.
+
+This design makes stack targeting explicit and portable. It cannot stop two different roots with the same stack name from competing for the same Docker resources.
 
 Compiled and source-mode Bento use the same external-root model. Immutable templates come from the binary or checkout, enter a digest-addressed `.asset-cache/`, and are published to stable `docker/` and `helpers/` paths for Compose. Replacing the executable does not relocate operator state.
 

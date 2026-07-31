@@ -1,11 +1,17 @@
 ---
 title: Architecture
-description: See Bento's control plane, data plane, component cardinality, ownership, and request paths.
+description: See how Bento turns operator intent into running services, and learn who owns each part.
 ---
 
 # Architecture
 
-Bento is an on-demand host-local desired-state controller around Docker Compose. Operators run the CLI; there is no resident Bento daemon.
+Bento runs only when you call the `bento` command. The CLI reads your desired state, generates configuration, and operates Docker Compose. Bento does not run a background daemon.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/bento-architecture.svg
+Alt: Bento architecture showing the CLI control plane, Nginx request paths, PHP services, background runners, and private data services.
+Show: Put the operator and bento CLI on the left; desired state, render, validation, and Compose in the center; Nginx, PHP-FPM, runners, databases, and Redis on the right. Use solid arrows for requests and dashed arrows for configuration. Mark Nginx as public and all other services as private.
+-->
 
 ```text
 Operator -> bento CLI -> state.json -> staged render -> validate -> targeted reload
@@ -14,36 +20,54 @@ Internet -> Nginx -> app PHP-FPM socket -> private MySQL/PostgreSQL/Redis
 PHP runner -> per-app Supercronic, deploy drain, and s6 workers
 ```
 
-## Components and cardinality
+## Main components
 
 | Component | Cardinality | Role/boundary |
 | --- | ---: | --- |
-| CLI control plane | Per invocation | Validates intent, state, render, Compose, safety |
+| CLI control plane | Once per command | Validates intent, updates state, renders files, and operates Compose |
 | Nginx | One per stack | Only public base service; TLS, apps, proxies |
 | PHP-FPM | One per PHP version | Per-app pools and Unix sockets |
-| PHP runner | One per PHP version | Singleton supervisor for app background work |
+| PHP runner | One per PHP version | Supervises app background work; must stay a singleton |
 | PHP CLI | Ephemeral per command | App UID/GID, home, runtime |
 | MySQL/PostgreSQL | One per managed version | Private service and durable named volume |
 | Redis | One per stack | Private shared/ACL cache and durable volume |
 | Litestream | Optional one per stack | Constrained-root directory watcher for every managed SQLite file |
 
-## Request and storage paths
+## How requests move
 
-Nginx reads app homes through a read-only mount and reaches FPM through per-app sockets. PHP roles reach databases and Redis through the private network. Host-mode Nginx does not join that network; bridge-mode Nginx does. Database and cache ports are not published by the base model.
+Nginx reads public app files through a read-only mount. It sends PHP requests to each app's private FPM socket.
 
-Desired state and `.env` are local source-of-truth. Generated configuration is disposable. Operator customization is loaded from `custom/` and `overlays/`. Homes, SQLite files, certificates, backups, logs, and named volumes are durable.
+PHP services connect to databases and Redis through the stack's private network. In host mode, Nginx stays outside that network. In bridge mode, Nginx joins it. Bento does not publish database or Redis ports in the base setup.
+
+## Who owns the files
+
+Your desired state and `.env` are the source of truth. Bento can recreate generated configuration, so never customize generated files.
+
+Put your changes in `custom/` and `overlays/`. Protect app homes, SQLite files, certificates, backups, logs, and named volumes as durable data.
 
 ## Validation and failure
 
-Render is serialized and staged. Apply promotes a complete candidate, validates running targets, and reloads only affected roles. Validation failure restores previous bytes; a signal failure leaves valid new files for retry. See [render and apply](/advanced/render-apply/).
+Bento allows only one render at a time and builds the new configuration in a staging area. `apply` publishes the complete candidate, validates running services, and reloads only the affected roles.
+
+If validation fails, Bento restores the previous files. If a reload signal fails after validation, Bento leaves the valid new files in place so you can fix the service and retry. See [Render and apply internals](/advanced/render-apply/).
 
 ## Security boundary
 
-Stable UID/GID, pool/socket, filesystem modes, database grants, Redis identities, and job ownership reduce accidental crossing. Shared version containers are not hostile-tenant sandboxes. See [isolation and security](/advanced/isolation-security/).
+Bento separates apps with stable user IDs, private FPM pools and sockets, filesystem permissions, database grants, Redis identities, and job ownership. These controls reduce accidental access between apps.
+
+Apps still share versioned containers and the host kernel. Do not use Bento as a sandbox for mutually hostile tenants. See [Isolation and security](/advanced/isolation-security/).
 
 ## Implementation layering
 
-Command adapters parse and present; domain/services own state transitions and plans; schemas validate external input; platform adapters isolate filesystem, process, lock, clock, and randomness; templates are immutable runtime assets. Source and compiled distributions share this entrypoint and behavior.
+The code has five main layers:
+
+- Command adapters parse input and display results.
+- Domain and service code plans state changes.
+- Schemas validate external data.
+- Platform adapters handle files, processes, locks, time, and randomness.
+- Templates provide immutable runtime assets.
+
+Source mode and compiled releases use the same entry point and behavior.
 
 ## Next steps
 

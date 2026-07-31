@@ -1,11 +1,11 @@
 ---
 title: Manage applications
-description: Inspect, update, pause, access, remove, and permanently prune Bento applications safely.
+description: Inspect and update an app, run commands, pause traffic, or remove data safely.
 ---
 
 # Manage applications
 
-Manage an existing app's configuration and runtime state, run commands as its identity, and distinguish reversible service changes from permanent data deletion.
+Inspect and update an app, or run commands as its user. This guide also separates reversible changes—such as disabling an app—from permanent data deletion.
 
 ## Before you begin
 

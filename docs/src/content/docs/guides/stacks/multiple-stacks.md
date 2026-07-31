@@ -1,11 +1,17 @@
 ---
 title: Run multiple stacks
-description: Add a distinctly named bridge-mode stack without conflicting with production ingress.
+description: Add a second bridge-mode stack with its own name, root, network, and ports.
 ---
 
 # Run multiple stacks
 
-Run an additional Bento stack with its own stack root, Compose identity, private network, and non-conflicting ingress ports.
+Run another Bento stack without colliding with the first one. Give it a separate root, Compose identity, private network, and host ports.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/two-stacks-one-host.svg
+Alt: One host-mode production stack on ports 80 and 443 beside a bridge-mode staging stack on different published ports.
+Show: One Linux host containing two stack boundaries. Give each its own root, stack name, private network, and named volumes. Connect public 80/443 only to production and 18080/18443 to staging. Show that service-name DNS and volumes do not cross the boundary.
+-->
 
 ## Before you begin
 

@@ -1,11 +1,11 @@
 ---
 title: Operate PostgreSQL
-description: Add PostgreSQL majors, create isolated app databases, and administer them with protected credentials.
+description: Add a PostgreSQL major version, create app databases, and inspect them safely.
 ---
 
 # Operate PostgreSQL
 
-Use PostgreSQL as an explicit alternative to the default MySQL binding.
+Choose PostgreSQL when an app should not use the default MySQL binding. Bento keeps the service private and gives each app its own unprivileged role.
 
 ## Add a major and create an app
 

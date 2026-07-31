@@ -1,10 +1,10 @@
 ---
 title: Bento documentation
-description: Install and operate Bento, a single-host platform for PHP applications and reverse-proxied services.
+description: Learn how to install, run, and recover Bento on one Linux host.
 template: splash
 hero:
   title: Operate PHP applications on one Linux host
-  tagline: Bento turns application, ingress, runtime, database, job, and backup settings into a Docker Compose stack you control.
+  tagline: Describe the apps you want. Bento turns that intent into a Docker Compose stack that you control.
   actions:
     - text: Install Bento
       link: /start/install/
@@ -20,21 +20,21 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Bento is a host-local command-line control plane for running multiple PHP applications and reverse-proxied services on one operator-owned Linux server. It generates and operates a private Docker Compose data plane with Nginx as its only public service.
+Bento helps you run several PHP apps and reverse-proxied services on one Linux server. You operate it with a local CLI. Bento generates a private Docker Compose stack and exposes only Nginx by default.
 
 <CardGrid>
   <Card title="Start with one stack" icon="rocket">
-    Prepare a Linux host, install the compiled `bento` command, and launch your first application through a guided path.
+    Prepare a Linux host, install `bento`, and launch your first app with a guided setup.
 
     [Start with the requirements →](/start/requirements/)
   </Card>
   <Card title="Run routine operations" icon="setting">
-    Apply changes, inspect service health, manage applications, and protect relational databases with logical backups.
+    Apply changes, check service health, manage apps, and create logical database backups.
 
     [Review the current command surface →](https://github.com/khanhicetea/bento#command-surface)
   </Card>
   <Card title="Understand what Bento owns" icon="open-book">
-    Learn how the stack root, desired state, generated configuration, and durable data fit together before customizing a stack.
+    Learn which files you own, which files Bento regenerates, and which data you must back up.
 
     [Learn the stack-root and stack-name model →](/concepts/stacks/)
   </Card>
@@ -53,13 +53,21 @@ Bento is not a cluster orchestrator or a hostile multi-tenant sandbox. It does n
 
 ## How Bento works
 
+{/* DIAGRAM PLACEHOLDER
+Asset: /diagrams/bento-at-a-glance.svg
+Alt: An operator using the Bento CLI to configure Nginx, PHP apps, background jobs, databases, and Redis on one Linux host.
+Show: A beginner-friendly overview with no implementation class names. Put the Linux host around the whole stack, mark Nginx as the only public entry point, and use arrows from the CLI through desired state to generated Compose services.
+*/}
+
 ```text
 Operator -> bento CLI -> desired state -> generated configuration -> Docker Compose
 Internet -> Nginx -> app PHP-FPM socket or reverse-proxy upstream
                        -> private MySQL, PostgreSQL, and Redis services
 ```
 
-The `bento` command runs on the host; there is no resident Bento daemon. Your stack root contains operator intent and mutable stack data. Generated files are disposable, while app homes, certificates, backups, and database volumes are durable resources that require deliberate protection.
+The `bento` command runs on the host only when you call it. It does not need a background daemon.
+
+The stack root stores your intent and mutable stack data. Bento can replace generated files. You must protect app homes, certificates, backups, and database volumes.
 
 ## Choose a path
 

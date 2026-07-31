@@ -1,11 +1,13 @@
 ---
 title: What is Bento?
-description: Decide whether Bento fits your PHP applications, Linux host, and operating model.
+description: Decide whether Bento's single-host model fits your apps and operating needs.
 ---
 
 # What is Bento?
 
-Bento is a host-local command-line control plane for running multiple PHP applications and reverse-proxied HTTP services on one Linux server. Use this page to decide whether its single-host, Docker Compose operating model fits your workload.
+Bento runs several PHP apps and reverse-proxied HTTP services on one Linux server. You manage it with a local command-line tool, and it operates the services through Docker Compose.
+
+Use this page to decide whether that model fits your workload.
 
 ## When Bento fits
 
@@ -21,7 +23,7 @@ Bento can also place Nginx and TLS in front of non-PHP HTTP services that are re
 
 ## What Bento manages
 
-An **app** is Bento's primary unit of ownership. Each app has a stable identity that connects its home directory, Linux user and group, PHP version and pool, domains, database binding, Redis metadata, scheduled jobs, workers, and deploy settings.
+An **app** is Bento's main unit of ownership. Each app has a stable identity that links its home, Linux user and group, PHP runtime, domains, data access, background jobs, and deploy settings.
 
 At the stack level, Bento manages:
 
@@ -31,7 +33,13 @@ At the stack level, Bento manages:
 - generated Docker Compose and service configuration;
 - logical database backups, diagnostics, and guarded operational commands.
 
-You express the intended configuration as desired state. The `bento` command renders that state into generated files and operates the resulting Docker Compose services. There is no resident Bento daemon.
+You record the configuration you want as desired state. The `bento` command turns that state into generated files and operates the Docker Compose services. Bento does not run a background daemon.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/what-bento-manages.svg
+Alt: Responsibilities split between Bento and the operator on one Linux host.
+Show: Two columns. Under Bento, include generated configuration, Nginx, PHP roles, managed data services, jobs, and guarded operations. Under Operator, include host security, DNS, app code, off-host backups, monitoring, and capacity. Put shared responsibility for recovery testing between the columns.
+-->
 
 ```text
 Operator -> bento CLI -> desired state -> generated configuration -> Docker Compose
@@ -51,7 +59,9 @@ Bento deliberately optimizes for a comprehensible single-server platform. It doe
 - managed off-host storage, retention, or recovery guarantees (scheduled uploads require an operator-configured rclone remote);
 - per-app CPU or memory quotas inside shared PHP containers.
 
-The app boundaries—Linux identities, filesystem permissions, PHP pools, database grants, and optional Redis ACLs—reduce accidental cross-app access. They are not a hostile multi-tenant sandbox. Use separate hosts or stronger isolation when app operators or code do not trust one another.
+Linux identities, file permissions, PHP pools, database grants, and optional Redis ACLs reduce accidental access between apps. They do not create a hostile multi-tenant sandbox.
+
+Use separate hosts or stronger isolation when app operators or code do not trust one another.
 
 ## What you remain responsible for
 

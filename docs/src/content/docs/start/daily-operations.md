@@ -1,11 +1,11 @@
 ---
 title: Daily operations
-description: Check health, inspect logs, run app commands, back up data, apply changes, and collect diagnostics.
+description: Follow a safe daily routine for health checks, logs, backups, changes, and diagnostics.
 ---
 
 # Daily operations
 
-Use this runbook to check an existing Bento stack, investigate routine problems, operate an app, and make recoverable changes. The examples assume `BENTO_STACK_ROOT=/var/lib/bento` and use the app `demo`.
+Use this runbook for routine checks, app operations, recoverable changes, and first-line diagnosis. The examples target `BENTO_STACK_ROOT=/var/lib/bento` and the app `demo`.
 
 ## Before you begin
 
@@ -136,7 +136,9 @@ Verify the app route from the host with its expected host name:
 curl -I -H 'Host: demo.example.com' http://127.0.0.1/
 ```
 
-Then check the affected service logs and an application-specific function, such as a read-only page or health endpoint. A zero exit status from `apply` proves validation and reload handling completed; it does not prove every application workflow is healthy.
+Then check the affected service logs and an app-specific function, such as a read-only page or health endpoint.
+
+A successful `apply` proves that validation and reload handling completed. It does not prove that every application workflow is healthy.
 
 ## Diagnose a problem
 

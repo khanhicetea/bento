@@ -1,11 +1,11 @@
 ---
 title: Manage PHP runtimes
-description: Add and remove managed PHP versions, select an app runtime, and assess shared FPM capacity.
+description: Add PHP versions, assign one to an app, and remove versions that no app uses.
 ---
 
 # Manage PHP runtimes
 
-Run multiple PHP versions concurrently and assign each app one version and FPM capacity profile.
+Run several PHP versions at the same time. Assign each app one version and one FPM capacity profile.
 
 ## List and add runtimes
 
@@ -14,7 +14,7 @@ bento php list
 bento php add 8.4
 ```
 
-Adding a version creates FPM, singleton runner, and ephemeral CLI roles from the same image. Apply builds and starts configuration as needed; use `--no-apply` to batch changes, then run `bento apply`.
+Adding a version creates FPM, a singleton runner, and temporary CLI roles from the same image. Bento applies the new configuration as needed. To batch changes, use `--no-apply` and finish with `bento apply`.
 
 Update an app by repeating its domain and selecting the managed version/profile:
 

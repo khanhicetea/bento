@@ -1,11 +1,17 @@
 ---
 title: Configure webhook deployment
-description: Enable authenticated queued deployment, replace the no-op hook, and inspect or recover jobs.
+description: Queue signed deploy webhooks and run each deployment safely as its app user.
 ---
 
 # Configure webhook deployment
 
-Enable a signed HTTPS webhook that queues one app-owned deployment job for its PHP runner.
+Enable a signed HTTPS webhook that queues a deployment for one app. The app's PHP runner later performs the work as that app user.
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/webhook-deploy-queue.svg
+Alt: A signed webhook being authenticated by Nginx, added to an app queue, and drained by the singleton PHP runner.
+Show: Separate the quick HTTP request from the longer deployment job. Include signature validation, latest-or-FIFO queue behavior, the once-per-minute drain, the app-owned hook, logs, and final OPcache reset. Make clear that the HTTP endpoint never runs deployment code directly.
+-->
 
 ## Before you begin
 

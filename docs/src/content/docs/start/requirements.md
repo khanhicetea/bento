@@ -1,11 +1,11 @@
 ---
 title: Requirements and host preparation
-description: Prepare a Linux host, Docker, networking, storage, and the correct Bento distribution.
+description: Check that your Linux host, Docker, ports, DNS, and storage are ready for Bento.
 ---
 
 # Requirements and host preparation
 
-Prepare one Linux host that can run Docker Compose and store Bento's durable stack data. This page separates what a production host needs from the additional tools required to run Bento from source.
+Prepare one Linux host that can run Docker Compose and store durable stack data. Production hosts need only the compiled Bento release and its host dependencies. Contributors also need the source toolchain described later on this page.
 
 ## Production host requirements
 
@@ -34,7 +34,7 @@ Install and start:
 - Docker Engine 20.10 or newer, running rootful without user-namespace remapping when SQLite continuous backup is used; and
 - the Docker Compose v2 plugin, version 2.20 or newer.
 
-The account that runs `bento` must be able to reach the Docker daemon. Granting Docker access is effectively granting host-level control; follow Docker's security guidance when deciding whether to use `sudo` or Docker-group membership.
+The account that runs `bento` must reach the Docker daemon. Docker access effectively grants control of the host. Follow Docker's security guidance when you choose between `sudo` and Docker-group membership.
 
 Verify both the client and daemon, not only the presence of the `docker` command:
 
@@ -64,7 +64,9 @@ Later optional operations also use `tar` for stack transfer and support bundles 
 
 ### Storage and permissions
 
-Choose a local, durable filesystem for the **stack root**. The examples use `/var/lib/bento`. This directory eventually contains desired state, secrets, app homes, SQLite databases, certificates, logs, and on-host backups; Docker named volumes hold MySQL, PostgreSQL, and Redis data.
+Choose a local, durable filesystem for the **stack root**. The examples use `/var/lib/bento`.
+
+The root will contain desired state, secrets, app homes, SQLite databases, certificates, logs, and on-host backups. Docker stores MySQL, PostgreSQL, and Redis data in separate named volumes.
 
 Ensure that:
 
@@ -73,7 +75,9 @@ Ensure that:
 - the host has enough free space and inodes for application code, database volumes, images, logs, and backups;
 - the stack root and Docker data directory are not on ephemeral storage.
 
-Bento has no universal CPU, memory, or disk-size minimum: capacity depends on your PHP workers, databases, traffic, and backup retention. Leave enough free disk for both live data and temporary backup or upgrade work. Some ownership repairs require elevated host privileges, but the `bento` command does not otherwise need to run as root when the operator can access Docker and the stack root.
+Bento has no single CPU, memory, or disk minimum. Size the host for your PHP workers, databases, traffic, and backup retention. Leave free disk for live data and temporary backup or upgrade work.
+
+Some permission repairs need elevated host privileges. Otherwise, `bento` does not need to run as root when the operator can access Docker and the stack root.
 
 ## Prepare ports, firewall, and DNS
 

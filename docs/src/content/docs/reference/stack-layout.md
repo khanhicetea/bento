@@ -1,11 +1,11 @@
 ---
 title: Stack layout
-description: Identify source-of-truth, generated, custom, durable, sensitive, and ephemeral paths in a Bento stack root.
+description: Look up who owns each stack path and whether you must protect or can rebuild it.
 ---
 
 # Stack layout
 
-Paths below are relative to the selected stack root, such as `/var/lib/bento`.
+Use this table before you edit, delete, copy, or back up a stack path. Every path is relative to the selected stack root, such as `/var/lib/bento`.
 
 | Path | Ownership/lifecycle | Sensitive or durable |
 | --- | --- | --- |

@@ -1,11 +1,11 @@
 ---
 title: Customize Nginx with drop-ins
-description: Add context-correct operator-owned Nginx directives and validate them without editing generated files.
+description: Add Nginx directives in supported custom directories and validate them safely.
 ---
 
 # Customize Nginx with drop-ins
 
-Add supported Nginx configuration beneath `custom/nginx/`; Bento preserves it across renders and mounts it read-only.
+Put your Nginx additions under `custom/nginx/`. Bento preserves these files across renders and mounts them read-only. Never edit generated Nginx files.
 
 ## Choose the correct context
 

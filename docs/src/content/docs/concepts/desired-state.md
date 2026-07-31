@@ -1,13 +1,21 @@
 ---
 title: Desired state and generated configuration
-description: Understand what Bento treats as operator intent, what it regenerates, and how render and apply affect running services.
+description: Learn what Bento stores, what it regenerates, and when changes reach running services.
 ---
 
 # Desired state and generated configuration
 
-Bento stores your intended stack configuration as **desired state** and derives disposable service files from it. Understanding that direction prevents lost edits and helps you recover safely when validation or reload fails.
+Bento calls your intended configuration **desired state**. It uses that state to generate disposable service files.
+
+Once you know which direction the data flows, you can avoid lost edits and recover safely from validation or reload failures.
 
 ## Mental model
+
+<!-- DIAGRAM PLACEHOLDER
+Asset: /diagrams/desired-state-flow.svg
+Alt: Operator commands and custom files flowing through render, validation, and reload into running containers.
+Show: Desired state and stack environment as protected source inputs. Show custom files and overlays as a second operator-owned input. Both flow into generated files, then validation, then targeted reload. Add a rollback arrow from failed validation back to the previous generated files.
+-->
 
 ```text
 Bento commands
@@ -37,11 +45,13 @@ Bento is an on-demand control plane, not a resident daemon. It reconciles the st
 | Generated configuration | `generated/nginx/`, `generated/php/`, `generated/compose/`, generated client files | Bento | Yes, from current intent and assets |
 | Durable runtime data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, logs, Docker named volumes | Applications, services, and Bento operations | No; use an appropriate backup method |
 
-`state.json` contains the versioned application model: apps, runtime assignments, domains, database bindings, the optional stack-wide SQLite backup policy, jobs, proxies, and related settings. It can also contain deployment secrets, so Bento writes it with restricted permissions. The stack `.env` contains Compose identity, topology settings, and administrator secrets. Treat both as sensitive source material.
+`state.json` records apps, runtimes, domains, database bindings, SQLite backup policy, jobs, proxies, and related settings. It can also contain deploy secrets, so Bento restricts its permissions.
+
+The stack `.env` stores the Compose identity, topology settings, and administrator secrets. Treat both files as sensitive source material.
 
 ## Change desired state through Bento
 
-Use Bento commands rather than editing `state.json` directly. Commands validate identities, domains, runtime references, database relationships, and other cross-record rules before atomically saving a current-schema document.
+Use Bento commands instead of editing `state.json`. Before Bento saves the file atomically, it validates identities, domains, runtime references, database relationships, and other links.
 
 For example, an app command changes the app model and normally applies the resulting configuration in the same operation:
 
@@ -49,7 +59,7 @@ For example, an app command changes the app model and normally applies the resul
 bento app create demo --domain demo.example.com
 ```
 
-Some mutation commands offer `--no-apply`. That option records intent without reconciling generated files or running services. It is useful for batching related changes, but it deliberately leaves the live generation behind the desired state until you run:
+Some commands accept `--no-apply`. This option saves your intent but does not update generated files or running services. Use it to batch related changes, then run:
 
 ```sh
 bento apply
@@ -90,7 +100,9 @@ Use a normal apply to reconcile and activate current intent:
 bento apply
 ```
 
-A normal apply validates targeted services that are running, then reloads only the roles in its plan. Stopped services are not reloaded; they consume the generated configuration when they next start. `apply` does not start stopped containers—service lifecycle remains an explicit Compose operation.
+A normal apply validates each running target and reloads only the roles in its plan. Stopped services use the new configuration when they next start.
+
+`apply` does not start stopped containers. Use an explicit Compose operation to manage their lifecycle.
 
 :::caution
 `--skip-validate` bypasses the check that protects running services from invalid generated configuration. Keep it out of normal operations. An apply can also cause a brief service reload; plan application-level verification after material runtime changes.
@@ -98,7 +110,7 @@ A normal apply validates targeted services that are running, then reloads only t
 
 ## Generated files are outputs, not customization points
 
-Every managed generated file carries a Bento marker. A complete render replaces current managed files and removes managed files that are no longer desired. Direct edits under `generated/` can therefore disappear on the next render or apply.
+Bento marks every generated file that it owns. A complete render replaces those files and removes stale ones. Any direct edit under `generated/` can disappear during the next render or apply.
 
 Put operator-owned changes in supported locations instead:
 
@@ -119,7 +131,9 @@ Render and apply serialize generation with a stack-local lock and promote files 
 - If a reload signal fails after validation, the valid new generated files remain live; fix the service or signal problem and retry `apply`.
 - If the process stops during promotion, the next render or apply uses the transaction journal to recover the interrupted generation.
 
-A failed apply does not generally undo the desired-state mutation that triggered it. This is intentional: desired state remains the requested outcome while the previous valid generation can continue serving. Correct the invalid intent or customization, then apply again. If you no longer want the change, reverse it with the relevant Bento command rather than reconstructing old generated files.
+A failed apply usually keeps the desired-state change that triggered it. Your requested outcome stays recorded while the previous valid generation can continue serving.
+
+Fix the invalid intent or customization, then apply again. If you no longer want the change, reverse it with the relevant Bento command. Do not rebuild old generated files by hand.
 
 Verify the stack after reconciliation:
 
@@ -140,9 +154,17 @@ For a configuration error, read the validator diagnostic first. Check custom fil
 
 ## Advanced
 
-The apply transaction renders a complete candidate into same-filesystem staging, builds a deterministic managed-file manifest, journals existing files and modes, atomically promotes candidates, and removes stale managed files last. Validation happens after promotion because container validators consume the live mounted paths. A validation failure uses the journal to restore the prior generation before any reload.
+The apply transaction builds a complete candidate in a staging directory on the same filesystem. It records the existing files and modes, publishes candidates atomically, and removes stale files last.
 
-Reload plans are scoped by the change path used by a command: web routing changes can target Nginx, pool changes can target PHP-FPM and Nginx, and scheduler or worker changes can target the matching PHP runner. A standalone full `apply` conservatively plans Nginx plus all relevant PHP-FPM and runner roles. Preview shows that full pending plan but does not stage, validate, or promote files.
+Container validators must read the live mounted paths, so validation happens after publication. If validation fails, Bento uses its journal to restore the previous generation before any reload.
+
+Bento scopes reloads to the kind of change:
+
+- Web routing changes can target Nginx.
+- Pool changes can target PHP-FPM and Nginx.
+- Schedule or worker changes can target the matching PHP runner.
+
+A standalone `apply` takes a safer, broader approach and plans Nginx plus all relevant FPM and runner roles. Preview shows this plan but does not stage, validate, or publish files.
 
 Generation metadata in `generated/.generation.json` records the asset identity, render time, and managed manifest. It supports reconciliation; it does not replace `state.json` or serve as recovery data.
 

@@ -1,43 +1,75 @@
 ---
 title: Technical decisions
-description: Review Bento's major architecture choices, benefits, trade-offs, and deliberately rejected scope.
+description: Understand why Bento uses its current architecture and what each choice costs.
 ---
 
 # Technical decisions
 
-Bento optimizes for a comprehensible operator-owned PHP platform on one Linux host, not a general orchestration system.
+Bento aims to stay understandable on one operator-owned Linux host. It does not try to become a general orchestration system.
+
+Each section explains the problem, Bento's choice, its benefit, and its cost.
 
 ## Single host and Compose
 
-**Context:** Small deployments need repeatable services without cluster operations. **Decision:** Docker Compose on one Linux host. **Benefits:** familiar packaging, named-volume durability, low control-plane overhead. **Trade-offs:** host failure is stack failure; scaling/HA is external. **Boundary:** no Kubernetes or multi-host scheduler.
+- **Problem:** Small deployments need repeatable services without cluster operations.
+- **Choice:** Run Docker Compose on one Linux host.
+- **Benefit:** Operators get familiar packaging, durable named volumes, and a small control plane.
+- **Cost:** A host failure affects the whole stack. Bento leaves scaling and high availability to other systems.
+- **Boundary:** Bento does not include Kubernetes or a multi-host scheduler.
 
 ## Deno, strict TypeScript, one entrypoint
 
-**Context:** External JSON/env/process data needs runtime validation while releases should avoid a language runtime. **Decision:** Deno 2.9.x, strict TypeScript, validated boundaries, source and compiled delivery. **Benefits:** one toolchain and parity-tested binaries. **Trade-offs:** pinned runtime/dependency policy and compiled asset materialization. **Boundary:** no Python compatibility layer or unrestricted `-A` default.
+- **Problem:** Bento must validate JSON, environment, and process data at runtime, while production releases should not require a language runtime.
+- **Choice:** Use Deno 2.9.x, strict TypeScript, runtime validation, and compiled releases.
+- **Benefit:** Source and compiled builds share one toolchain and parity tests.
+- **Cost:** The project pins the runtime and dependencies and must package its assets into each binary.
+- **Boundary:** Bento does not include a Python compatibility layer or use unrestricted `-A` by default.
 
 ## Desired state without a daemon
 
-**Context:** Hand-edited configs drift, but continuous reconciliation is unnecessary. **Decision:** versioned local JSON plus explicit render/apply. **Benefits:** inspectable intent and no resident control service. **Trade-offs:** operators invoke reconciliation; external drift is not continuously healed. **Boundary:** generated output is disposable.
+- **Problem:** Hand-edited files drift, but a small single-host stack does not need continuous reconciliation.
+- **Choice:** Store versioned local desired state and reconcile it with explicit `render` and `apply` commands.
+- **Benefit:** Operators can inspect intent, and Bento needs no resident service.
+- **Cost:** Operators must run reconciliation. Bento does not continuously repair external changes.
+- **Boundary:** Generated output is disposable.
 
 ## Nginx-only ingress and Unix sockets
 
-**Context:** Public surface and routing should remain narrow. **Decision:** one Nginx; app FPM via per-app sockets. **Benefits:** no public FPM/database/cache ports, identity-aligned routing, direct host HTTP/3. **Trade-offs:** host/bridge namespace complexity and normally one host-mode stack. **Boundary:** non-PHP apps are proxy upstreams.
+- **Problem:** The public surface and routing path should stay narrow.
+- **Choice:** Expose one Nginx service and route PHP through per-app FPM sockets.
+- **Benefit:** FPM, database, and cache ports stay private. Routing follows app identity, and host mode supports direct HTTP/3.
+- **Cost:** Host and bridge modes interpret addresses differently, and normally only one stack can use host mode.
+- **Boundary:** Bento only reverse-proxies non-PHP applications.
 
 ## Shared versioned PHP roles
 
-**Context:** Per-app containers duplicate toolchains. **Decision:** FPM and singleton runner per version, ephemeral CLI per command. **Benefits:** concurrent runtimes with shared builds and consistent identities. **Trade-offs:** shared capacity/namespace; no hostile isolation or app quotas. **Rejected scope:** one container per app.
+- **Problem:** A full container set for every app duplicates tools and images.
+- **Choice:** Run one FPM service and one runner per PHP version, then create a temporary CLI container for each command.
+- **Benefit:** Apps can use different PHP versions while sharing builds and consistent identities.
+- **Cost:** Apps share capacity and a container namespace. Bento does not provide hostile isolation or app quotas.
+- **Rejected scope:** One container per app.
 
 ## One database binding, add-only services
 
-**Context:** Engine moves and volume deletion are high-risk. **Decision:** apps hold add-only database bindings across managed MySQL/PostgreSQL services and SQLite kinds; versions are added but not automatically removed. The first binding remains the compatibility/default connection. **Benefits:** explicit grants, tools, and volume ownership without destructive rebinding. **Trade-offs:** migrations and password rotation are coordinated externally. **Boundary:** no automatic cross-engine conversion.
+- **Problem:** Moving between database engines or deleting volumes carries high risk.
+- **Choice:** Apps keep add-only bindings to managed MySQL, PostgreSQL, or SQLite services. Bento adds versions but does not remove them automatically. The first binding remains the default for compatibility.
+- **Benefit:** Grants, tools, and volume ownership stay explicit, and Bento never performs a destructive rebind.
+- **Cost:** Operators coordinate data migration and password rotation outside Bento.
+- **Boundary:** Bento does not convert data between engines automatically.
 
 ## Staged and scoped apply
 
-**Context:** Partial generation and broad restarts create outages. **Decision:** lock, recover, stage, promote, validate, targeted reload, finalize. **Benefits:** recoverable files and narrower blast radius. **Trade-offs:** more transaction logic; not a distributed transaction or zero-downtime promise.
+- **Problem:** Partial configuration and broad restarts can cause avoidable outages.
+- **Choice:** Lock the stack, recover old work, stage a complete candidate, publish it, validate it, and reload only affected services.
+- **Benefit:** Bento can recover files and keep the reload scope small.
+- **Cost:** The transaction logic is more complex. It is not a distributed transaction and does not promise zero downtime.
 
 ## Operator-owned escape hatches
 
-**Context:** Real hosts need customization. **Decision:** drop-ins, complete app templates, ordered overlays. **Benefits:** upgrades need not fork core output. **Trade-offs:** trusted input can violate invariants and needs upgrade review.
+- **Problem:** Real hosts need supported customization points.
+- **Choice:** Accept drop-ins, complete app templates, and ordered Compose overlays.
+- **Benefit:** Operators can customize a stack without forking generated output.
+- **Cost:** Trusted custom input can break Bento's assumptions and needs review after upgrades.
 
 ## Next steps
 

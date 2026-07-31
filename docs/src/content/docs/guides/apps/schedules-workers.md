@@ -1,11 +1,11 @@
 ---
 title: Operate schedules and workers
-description: Add app-scoped cron jobs and supervised workers with safe commands, locks, timeouts, and controls.
+description: Run app schedules and long-lived workers with locks, timeouts, and scoped controls.
 ---
 
 # Operate schedules and workers
 
-Run scheduled and long-lived commands under the app's stable identity and selected PHP runner.
+Run scheduled commands and long-lived workers as the app user. Bento supervises them through the app's selected PHP runner.
 
 ## Add a schedule
 

@@ -1,11 +1,11 @@
 ---
 title: Customize app templates
-description: Select, inspect for upstream drift, and return app vhost or PHP pool templates safely.
+description: Take ownership of an app template, track upstream changes, or return to Bento's version.
 ---
 
 # Customize app templates
 
-Take ownership of one app's complete `vhost` or `pool` template when additive configuration is insufficient.
+Use a complete custom `vhost` or `pool` template when a small additive change is not enough. Once selected, you own that app's template and must review upstream changes.
 
 ## Select a template
 
