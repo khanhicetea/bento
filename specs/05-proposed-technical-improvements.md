@@ -331,7 +331,7 @@ The adapter MUST:
 
 ### Finding
 
-Schema-v4 `state.json` contains structural intent together with database passwords and deploy HMAC secrets. This makes every state copy, diff, diagnostic path, and migration highly sensitive and complicates safe planning/version control of non-secret intent.
+Schema-v1 `state.json` contains structural intent together with database passwords and deploy HMAC secrets. This makes every state copy, diff, diagnostic path, and migration highly sensitive and complicates safe planning/version control of non-secret intent.
 
 ### Decision
 
@@ -353,13 +353,13 @@ secrets/values/<id>        opaque bytes, mode 0600, atomic writes
 - Removal MUST tombstone/orphan secrets first; garbage collection is separate, dry-run capable, and retention-delayed.
 - Support bundles, plans, state diffs, and exports MUST know the separate secret ownership class.
 - Stack exports MUST include secrets securely; a redacted state export MAY omit values for review.
-- Migration from v4 MUST preserve exact values and file modes and produce rollback material.
+- Migration from v1 MUST preserve exact values and file modes and produce rollback material.
 - Optional at-rest encryption MAY use an operator-provided key, but Bento MUST not claim encryption benefit when key and ciphertext share the same unprotected host boundary.
 
 ### Acceptance criteria
 
 - `state.json` contains no app database password, Redis ACL password, deploy HMAC, or administrator secret value.
-- Interrupted migration leaves either valid v4 or complete new schema/store.
+- Interrupted migration leaves either valid v1 or complete new schema/store.
 - Secret garbage collection cannot remove a referenced or recently tombstoned value.
 - Source/compiled parity includes reference behavior while excluding secret bytes from diagnostics.
 

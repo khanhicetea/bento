@@ -682,7 +682,7 @@ Deno.test("E6 only current schemaVersion is accepted; load does not rewrite", as
     await store.load();
     assertEquals(await platform.fs.readText(path), original);
 
-    for (const unsupportedVersion of [0, 1, 999]) {
+    for (const unsupportedVersion of [0, 2, 999]) {
       const unsupported = JSON.parse(original);
       unsupported.schemaVersion = unsupportedVersion;
       assertEquals(parseDesiredState(unsupported).ok, false);

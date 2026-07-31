@@ -279,7 +279,7 @@ bento app database prune APP --binding BINDING_ID --confirm ...
 - Promotion preserves all binding passwords and database records.
 - Removing desired reference never drops a relational database or SQLite file.
 - Mixed-engine ambiguity is eliminated from shell/backup/restore commands by stable binding ID.
-- Schema migration from v4 assigns deterministic binding IDs and preserves the first binding as primary.
+- Schema migration from v1 assigns deterministic binding IDs and preserves the first binding as primary.
 
 ### Non-goals
 

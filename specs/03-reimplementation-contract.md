@@ -51,7 +51,7 @@ Technical choices are evaluated in this order:
 ### D-04 — Versioned strict desired state
 
 **Context:** Silent compatibility and hand-edited fragments cause ambiguous behavior.  
-**Decision:** Keep one strict schema-v4 JSON document and reject unsupported versions/unknown fields.  
+**Decision:** Keep one strict schema-v1 JSON document and reject unsupported versions/unknown fields.
 **Benefits:** Explicit model and deterministic generation.  
 **Trade-offs:** No implicit migration; incompatible state requires a matching binary or deliberate conversion.  
 **Invariant:** Invalid state is never overwritten during routine load.
@@ -189,7 +189,7 @@ Technical choices are evaluated in this order:
 A conforming reimplementation MAY change libraries, file internals, or container build mechanics only if it preserves:
 
 - CLI intent and documented safety behavior;
-- strict schema-v4 parsing/serialization, or provides an explicit product-approved migration;
+- strict schema-v1 parsing/serialization, or provides an explicit product-approved migration;
 - stack/project identity and durable resource naming;
 - domain uniqueness and app identity allocation/preservation;
 - component cardinality and private/public topology;
@@ -276,7 +276,7 @@ Tests MUST demonstrate:
 
 Round-trip tests MUST prove that:
 
-- persisted state is strict schema v4;
+- persisted state is strict schema v1;
 - derived `database`, `mainDomain`, and `aliases` views are omitted from JSON;
 - app and proxy map keys match their identities;
 - domain records point to existing owners and exactly one primary exists per owner;

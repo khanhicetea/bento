@@ -7,7 +7,7 @@ import { addPostgresVersion } from "../../src/services/postgres.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 import { STATE_SCHEMA_VERSION } from "../../src/version.ts";
 
-Deno.test("schema v4 persists linked domains and multiple database-engine bindings", () => {
+Deno.test("schema v1 persists linked domains and multiple database-engine bindings", () => {
   const platform = createPlatform("/tmp/unused", Deno.cwd());
   let state = addPostgresVersion(createEmptyState("2026-01-01T00:00:00.000Z"), "17");
   state = provisionApp(platform, state, {
@@ -48,7 +48,7 @@ Deno.test("schema v4 persists linked domains and multiple database-engine bindin
   assertEquals(parsed.value.apps.alpha?.aliases, ["www.alpha.test"]);
 });
 
-Deno.test("schema v4 rejects legacy app-owned ingress and singular database fields", () => {
+Deno.test("schema v1 rejects app-owned ingress and singular database fields", () => {
   const platform = createPlatform("/tmp/unused", Deno.cwd());
   const state = provisionApp(platform, createEmptyState(), {
     slug: "demo",
@@ -60,15 +60,15 @@ Deno.test("schema v4 rejects legacy app-owned ingress and singular database fiel
   assertEquals(parseDesiredState(raw).ok, false);
 });
 
-Deno.test("state store rejects an old schema without rewriting it", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-v4-state-" });
+Deno.test("state store rejects another schema without rewriting it", async () => {
+  const root = await Deno.makeTempDir({ prefix: "bento-v1-state-" });
   try {
     const platform = createPlatform(root, Deno.cwd());
     const store = new StateStore(platform);
     await platform.fs.mkdirp(root);
-    const original = `${JSON.stringify({ ...createEmptyState(), schemaVersion: 3 }, null, 2)}\n`;
+    const original = `${JSON.stringify({ ...createEmptyState(), schemaVersion: 2 }, null, 2)}\n`;
     await platform.fs.atomicWriteText(platform.paths.paths.stateFile, original, 0o600);
-    await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 3");
+    await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 2");
     assertEquals(await platform.fs.readText(platform.paths.paths.stateFile), original);
   } finally {
     await Deno.remove(root, { recursive: true });

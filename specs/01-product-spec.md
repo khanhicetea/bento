@@ -120,7 +120,7 @@ Bento MUST provide scriptable CLI commands and MAY provide guided TUI flows for 
 
 Fresh initialization MUST create:
 
-- schema-v4 desired state;
+- schema-v1 desired state;
 - default PHP `8.5` and MySQL `8.4` managed services;
 - Redis and one Nginx ingress topology;
 - stable stack identity and generated-once administrator secrets;

@@ -57,7 +57,7 @@ Command adapters SHOULD parse/present and coordinate use cases. They SHOULD NOT 
 
 `src/domain/` defines branded identifiers, desired-state types, errors, and reload plans. Key discriminated unions include database engine, TLS mode, domain owner, database service, and reload target.
 
-`src/schemas/` treats JSON and CLI-derived values as untrusted. Zod schemas reject unknown fields, malformed identities, unsupported state versions, broken references, duplicate bindings, and invalid domain ownership. Persisted state is schema version 4.
+`src/schemas/` treats JSON and CLI-derived values as untrusted. Zod schemas reject unknown fields, malformed identities, unsupported state versions, broken references, duplicate bindings, and invalid domain ownership. Persisted state is schema version 1.
 
 Branded TypeScript values reduce accidental mixing after runtime validation; they are not a substitute for boundary checks.
 
@@ -215,7 +215,7 @@ A proxy site uses the same domain/TLS ownership model as an app and forwards to 
 ### 8.1 Conceptual state model
 
 ```text
-DesiredState schema v4
+DesiredState schema v1
   defaults
     phpVersion, database service, FPM profile, Redis mode
   phpVersions[]
@@ -257,7 +257,7 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 2. Refuse to initialize any stack that already has desired state.
 3. Create private state/environment and directory structure.
 4. Generate administrator secrets once.
-5. Persist empty schema-v4 state with default PHP/MySQL services.
+5. Persist empty schema-v1 state with default PHP/MySQL services.
 6. Initialize private rclone config placeholder.
 7. Render/materialize when requested by the command flow.
 

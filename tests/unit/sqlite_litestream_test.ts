@@ -29,9 +29,9 @@ Deno.test("Litestream state has one explicit private SQLite file and no relation
   assert(parseDesiredState(JSON.parse(json)).ok);
 });
 
-Deno.test("old state versions are rejected without migration", () => {
-  const old = { ...createEmptyState("2026-07-29T00:00:00.000Z"), schemaVersion: 3 };
-  assertEquals(parseDesiredState(old).ok, false);
+Deno.test("other state versions are rejected without migration", () => {
+  const unsupported = { ...createEmptyState("2026-07-29T00:00:00.000Z"), schemaVersion: 2 };
+  assertEquals(parseDesiredState(unsupported).ok, false);
 });
 
 Deno.test("stack SQLite backup renders one constrained-root directory watcher", () => {
