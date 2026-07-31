@@ -7,11 +7,7 @@ description: See how Bento turns operator intent into running services, and lear
 
 Bento runs only when you call the `bento` command. The CLI reads your desired state, generates configuration, and operates Docker Compose. Bento does not run a background daemon.
 
-<!-- DIAGRAM PLACEHOLDER
-Asset: /diagrams/bento-architecture.svg
-Alt: Bento architecture showing the CLI control plane, Nginx request paths, PHP services, background runners, and private data services.
-Show: Put the operator and bento CLI on the left; desired state, render, validation, and Compose in the center; Nginx, PHP-FPM, runners, databases, and Redis on the right. Use solid arrows for requests and dashed arrows for configuration. Mark Nginx as public and all other services as private.
--->
+![Bento architecture: the CLI turns desired state into a Compose stack, with public Nginx routing to private PHP and data services.](/diagrams/bento-architecture.png)
 
 ```text
 Operator -> bento CLI -> state.json -> staged render -> validate -> targeted reload
