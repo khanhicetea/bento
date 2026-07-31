@@ -7,7 +7,7 @@ description: Choose local SQLite with logical backups or SQLite continuously rep
 
 Bento exposes two file-database types so their backup behavior is explicit:
 
-- **`sqlite`** is a simple local SQLite database. The app runner runs `VACUUM` every Sunday at 03:30 UTC through Supercronic. `bento backup` creates a consistent copy with SQLite's `.backup` command and stores it under `./backups/sqlite/<app>/`, compressed with Zstandard by default (or gzip with `--gzip`).
+- **`sqlite`** is a simple local SQLite database. The app runner runs `VACUUM` once a week through Supercronic at a stable randomized slot between 00:00 and 04:59 local time; slots are selected to avoid exact overlap with other local SQLite files. `bento backup` creates a consistent copy with SQLite's `.backup` command and stores it under `./backups/sqlite/<app>/`, compressed with Zstandard by default (or gzip with `--gzip`).
 - **`litestream`** is SQLite with continuous off-host replication to an S3-compatible object store. Bento runs one stack-wide Litestream watcher for these databases.
 
 Both types keep each database in a private app-ID directory. Existing bindings from versions where `sqlite` meant Litestream are read as `litestream`; their `.sqlite` files and S3 replicas do not move.

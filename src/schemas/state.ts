@@ -15,6 +15,7 @@ import {
   type ProxySite,
   type QueuePolicy,
   type RedisMode,
+  type SqliteVacuumSchedule,
   type StackDefaults,
   type TemplateProvenance,
   type TlsMode,
@@ -110,6 +111,11 @@ const sqliteBackupSchema = strict({
   l0Retention: nonEmptyStringSchema,
   enabled: z.boolean(),
 });
+const sqliteVacuumScheduleSchema: z.ZodType<SqliteVacuumSchedule> = strict({
+  dayOfWeek: z.number().int().min(0).max(6),
+  hour: z.number().int().min(0).max(4),
+  minute: z.number().int().min(0).max(59),
+});
 const bindingSchema = z.discriminatedUnion("engine", [
   strict({
     engine: z.literal("mysql"),
@@ -162,6 +168,7 @@ const bindingSchema = z.discriminatedUnion("engine", [
           "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.(db|sqlite)",
       },
     ),
+    vacuumSchedule: sqliteVacuumScheduleSchema.optional(),
     backupVerifiedAt: isoDateSchema.optional(),
   }),
 ]);
@@ -468,6 +475,9 @@ function brandApp(app: z.infer<typeof appSchema>): AppState {
       ? {
         engine: database.engine,
         file: database.file,
+        ...(database.engine === "sqlite" && database.vacuumSchedule
+          ? { vacuumSchedule: database.vacuumSchedule }
+          : {}),
         ...(database.engine === "litestream" && database.backupVerifiedAt
           ? { backupVerifiedAt: database.backupVerifiedAt }
           : {}),

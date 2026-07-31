@@ -26,6 +26,11 @@ import {
   resolveSslForSite,
 } from "./tls.ts";
 import { validateUpstreams } from "./proxy.ts";
+import {
+  formatSqliteVacuumSchedule,
+  resolveSqliteVacuumSchedules,
+  sqliteVacuumScheduleKey,
+} from "./sqlite_schedule.ts";
 
 export async function generateAll(
   platform: Platform,
@@ -463,6 +468,7 @@ export function generateLitestreamEnvironment(
 
 function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
   const files: GeneratedFile[] = [];
+  const vacuumSchedules = resolveSqliteVacuumSchedules(state);
   for (const v of state.phpVersions) {
     const appsOnVersion = Object.values(state.apps).filter((a) =>
       a.enabled && a.phpVersion === v.version
@@ -487,11 +493,16 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
       }
       for (const databaseBinding of app.databases) {
         if (databaseBinding.engine !== "sqlite") continue;
-        // Sunday 03:30 UTC. VACUUM takes SQLite's normal exclusive write lock;
-        // busy_timeout lets short application transactions finish first.
+        // Each file gets a stable weekly slot in the runner's local timezone,
+        // spread across 00:00-04:59. VACUUM takes SQLite's normal exclusive
+        // write lock; busy_timeout lets short application transactions finish first.
         const database = `/sqlite/${databaseBinding.file.id}/${app.slug}.db`;
+        const schedule = vacuumSchedules.get(
+          sqliteVacuumScheduleKey(String(app.slug), databaseBinding.file.id),
+        );
+        if (!schedule) throw validationError("missing SQLite VACUUM schedule");
         lines.push(
-          `30 3 * * 0 /usr/bin/sqlite3 ${shellQuote(database)} ${
+          `${formatSqliteVacuumSchedule(schedule)} /usr/bin/sqlite3 ${shellQuote(database)} ${
             shellQuote("PRAGMA busy_timeout=30000; VACUUM;")
           }`,
         );

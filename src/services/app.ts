@@ -61,6 +61,11 @@ import {
   sqliteRelativePath,
 } from "./sqlite_paths.ts";
 import {
+  randomSqliteVacuumSchedule,
+  resolveSqliteVacuumSchedules,
+  sqliteVacuumScheduleSlot,
+} from "./sqlite_schedule.ts";
+import {
   loadMysqlRootPassword,
   loadPostgresRootPassword,
   loadRedisPassword,
@@ -225,9 +230,13 @@ export function provisionApp(
   }
 
   const selectedBinding = fileDatabase
-    ? existingBinding && !input.createDatabase
-      ? existingBinding
-      : createSqliteBinding(platform, slug, now, databaseEngine as "sqlite" | "litestream")
+    ? existingBinding && !input.createDatabase ? existingBinding : createSqliteBinding(
+      platform,
+      state,
+      slug,
+      now,
+      databaseEngine as "sqlite" | "litestream",
+    )
     : databaseBinding(
       managedDatabase!.engine,
       String(managedDatabase!.service),
@@ -298,14 +307,22 @@ function asDatabaseName(name: string): AppDatabase["name"] {
 
 function createSqliteBinding(
   platform: Platform,
+  state: DesiredState,
   slug: string,
   now: string,
   engine: "sqlite" | "litestream",
 ): AppDatabaseBinding {
   const id = `${slug}_${platform.random.hex(5)}`;
+  const file = { id, path: sqliteRelativePath(id, slug, engine), createdAt: now };
+  if (engine === "litestream") return { engine, file } as AppDatabaseBinding;
+
+  const occupied = new Set(
+    [...resolveSqliteVacuumSchedules(state).values()].map(sqliteVacuumScheduleSlot),
+  );
   return {
     engine,
-    file: { id, path: sqliteRelativePath(id, slug, engine), createdAt: now },
+    file,
+    vacuumSchedule: randomSqliteVacuumSchedule(platform.random, occupied),
   } as AppDatabaseBinding;
 }
 

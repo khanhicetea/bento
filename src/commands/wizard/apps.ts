@@ -597,7 +597,7 @@ async function sectionAppDatabaseBinding(
           ],
           ...(binding.engine === "litestream"
             ? [["verified", binding.backupVerifiedAt ?? "never"]]
-            : [["maintenance", "VACUUM Sundays 03:30 UTC"]]),
+            : [["maintenance", "weekly VACUUM · randomized 00:00–04:59 local"]]),
         ],
       );
       await ui.pause();

@@ -69,6 +69,11 @@ export type AppRedisIdentity = {
   aclPassword?: string;
 };
 export type AppDatabase = { name: DatabaseName; createdAt: string };
+export type SqliteVacuumSchedule = {
+  dayOfWeek: number;
+  hour: number;
+  minute: number;
+};
 
 export type AppDatabaseBinding =
   | {
@@ -89,6 +94,8 @@ export type AppDatabaseBinding =
     /** Local SQLite file maintained weekly by the app runner. */
     engine: "sqlite";
     file: { id: string; path: string; createdAt: string };
+    /** Stable weekly local-time slot selected when the file is created. */
+    vacuumSchedule?: SqliteVacuumSchedule;
     /** Type-only compatibility members; file bindings never persist these. */
     service: DatabaseService;
     user: string;
