@@ -24,7 +24,7 @@ bento doctor
 bento --json doctor
 ```
 
-Doctor checks Docker/Compose, host utilities, ingress and port risks, storage and modes, overlays, TLS, service health, volumes, and app permissions. Fix `fail` results first; review warnings against your topology.
+Doctor checks the Linux host and required utilities, stack-root access and mount type, generated-file completeness, Docker/Compose compatibility, ingress listeners, DNS answers, certificate expiry/SAN/key consistency, service health, SQLite integrity, named volumes, overlays, app permissions, and secret modes. The human-readable report collects all failed checks in a final `FAILED checks` section so the repair list is easy to scan. Fix those results first; review warnings against your topology. A DNS success only proves that the name resolves—it does not prove that it points to this host or is reachable through an external firewall.
 
 Inspect service output without bypassing Bento's Compose file set:
 
