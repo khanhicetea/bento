@@ -482,7 +482,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     await platform.fs.mkdirp(opts.stackRoot);
     const exists = await store.exists();
     if (!exists) {
-      state = await store.init(false);
+      state = await store.init();
     } else {
       state = await store.load();
     }

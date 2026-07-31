@@ -643,7 +643,7 @@ Deno.test("E5 status covers roles, domains, TLS, capacity, redacts secrets", asy
     };
     const store = new StateStore(platform);
     await platform.fs.mkdirp(root);
-    await store.init(true);
+    await store.init();
     await store.save(state);
 
     const report = await buildStatus(platform, state);
@@ -674,7 +674,7 @@ Deno.test("E6 only current schemaVersion is accepted; load does not rewrite", as
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
-    await store.init(true);
+    await store.init();
     const path = platform.paths.paths.stateFile;
     const original = await platform.fs.readText(path);
 

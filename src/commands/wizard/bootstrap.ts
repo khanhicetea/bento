@@ -9,8 +9,7 @@ import {
 
 export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Bootstrap", ctx.stackRoot);
-  const action = await ui.menu("Bootstrap actions", [
-    { label: "Initialize empty desired state", value: "init", hint: "bento init" },
+  const actions = [
     { label: "Render generated config (no reload)", value: "render", hint: "bento render" },
     { label: "Apply (render + validate + reload)", value: "apply", hint: "bento apply" },
     {
@@ -18,11 +17,18 @@ export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<v
       value: "apply-ro",
       hint: "bento apply --render-only",
     },
-  ]);
+  ];
+  if (!(await ctx.store.exists())) {
+    actions.unshift({
+      label: "Initialize empty desired state",
+      value: "init",
+      hint: "bento init",
+    });
+  }
+  const action = await ui.menu("Bootstrap actions", actions);
   if (!action) return;
 
   if (action === "init") {
-    const force = await ui.confirm("Overwrite existing state if present?", { defaultYes: false });
     let defaultName = DEFAULT_COMPOSE_PROJECT_NAME;
     if (await ctx.platform.fs.exists(ctx.platform.paths.paths.envFile)) {
       try {
@@ -34,7 +40,7 @@ export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<v
     const name = await ui.prompt("Stable stack name", { default: defaultName, required: true });
     if (!name) return;
     try {
-      const state = await ctx.store.init(force, { projectName: name });
+      const state = await ctx.store.init({ projectName: name });
       ui.success(
         "Initialized",
         `name=${name}\nstate=${ctx.platform.paths.paths.stateFile}\nphp=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,

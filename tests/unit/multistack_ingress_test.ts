@@ -52,7 +52,7 @@ Deno.test("stack init persists an explicit name independent from the stack direc
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
-    await store.init(false, { projectName: "customer-a" });
+    await store.init({ projectName: "customer-a" });
     const environment = await loadStackComposeEnvironment(platform);
     assertEquals(environment.projectName, "customer-a");
     assertEquals(environment.nginx.hostNetwork, true);
@@ -60,11 +60,34 @@ Deno.test("stack init persists an explicit name independent from the stack direc
     assertStringIncludes(env, "COMPOSE_PROJECT_NAME=customer-a");
     assertStringIncludes(env, "NGINX_HOST_NETWORK=1");
     assertStringIncludes(env, "NGINX_HTTP_PORT=");
+    const originalState = await platform.fs.readText(platform.paths.paths.stateFile);
     await assertRejects(
-      () => store.init(true, { projectName: "customer-b" }),
+      () => store.init({ projectName: "customer-b" }),
       Error,
-      "refusing to rename",
+      "already initialized",
     );
+    assertEquals(await platform.fs.readText(platform.paths.paths.stateFile), originalState);
+    assertEquals(await platform.fs.readText(platform.paths.paths.envFile), env);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("concurrent stack initialization creates state only once", async () => {
+  const root = await Deno.makeTempDir({ prefix: "concurrent-stack-init-" });
+  try {
+    const platform = testPlatform(root);
+    const store = new StateStore(platform);
+    const results = await Promise.allSettled([
+      store.init({ projectName: "first" }),
+      store.init({ projectName: "second" }),
+    ]);
+
+    assertEquals(results.filter((result) => result.status === "fulfilled").length, 1);
+    assertEquals(results.filter((result) => result.status === "rejected").length, 1);
+    const environment = await loadStackComposeEnvironment(platform);
+    assertEquals(["first", "second"].includes(environment.projectName), true);
+    await store.load();
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -125,7 +148,7 @@ Deno.test("bridge HTTPS port is advertised in redirects, HTTP/3, and deploy URLs
   const root = await Deno.makeTempDir({ prefix: "bento-bridge-https-" });
   try {
     const platform = testPlatform(root);
-    await new StateStore(platform).init(false, { projectName: "redirect-stack" });
+    await new StateStore(platform).init({ projectName: "redirect-stack" });
     await updateStackEnv(platform, {
       NGINX_HOST_NETWORK: "0",
       NGINX_HTTP_PORT: "18080",
@@ -163,7 +186,7 @@ Deno.test("bridge mode can remain internal-only for overlay-owned publications",
   const root = await Deno.makeTempDir({ prefix: "bento-private-nginx-" });
   try {
     const platform = testPlatform(root);
-    await new StateStore(platform).init(false, { projectName: "private-stack" });
+    await new StateStore(platform).init({ projectName: "private-stack" });
     await updateStackEnv(platform, {
       NGINX_HOST_NETWORK: "0",
       NGINX_HTTP_PORT: "",

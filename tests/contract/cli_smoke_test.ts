@@ -468,6 +468,22 @@ Deno.test("cli init render status app create", async () => {
   });
 });
 
+Deno.test("cli refuses to reinitialize an existing stack", async () => {
+  await withStack(async (stack) => {
+    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    assertEquals(await runCli([...base, "init", "--name", "original"]), 0);
+    const statePath = join(stack, "state.json");
+    const envPath = join(stack, ".env");
+    const originalState = await Deno.readTextFile(statePath);
+    const originalEnv = await Deno.readTextFile(envPath);
+
+    assertEquals((await runCli([...base, "init", "--name", "replacement"])) !== 0, true);
+    assertEquals((await runCli([...base, "init", "--force"])) !== 0, true);
+    assertEquals(await Deno.readTextFile(statePath), originalState);
+    assertEquals(await Deno.readTextFile(envPath), originalEnv);
+  });
+});
+
 Deno.test("cli backup keeps legacy flags and exposes schedule help/run without crontab", async () => {
   await withStack(async (stack) => {
     const base = ["--stack", stack, "--repo-root", Deno.cwd()];

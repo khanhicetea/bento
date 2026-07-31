@@ -72,7 +72,7 @@ A filesystem backup of the stack root alone is not a complete database backup. I
 
 The stack name is written to the private stack `.env` as `COMPOSE_PROJECT_NAME`. Bento uses it for the Compose project, private network, containers, and named volumes.
 
-Treat the stack name as permanent after initialization. Bento refuses to initialize an existing stack with another name because the new name would point to differently prefixed Docker resources.
+Treat the stack name as permanent after initialization. Bento refuses every attempt to initialize an existing stack, including requests with another name, because reinitialization could discard desired state or point to differently prefixed Docker resources.
 
 The original volumes may still exist, but the renamed project would not use them automatically.
 

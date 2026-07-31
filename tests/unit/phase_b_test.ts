@@ -484,7 +484,7 @@ Deno.test("multiple --no-apply mutations then single apply is one transaction", 
   await withRoot(async (root, platform) => {
     const store = new StateStore(platform);
     const render = new RenderService(platform);
-    await store.init(true);
+    await store.init();
 
     // Mutate state without apply (simulating --no-apply)
     await store.withExclusive(async (state) => {

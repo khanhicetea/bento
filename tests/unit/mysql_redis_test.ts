@@ -68,10 +68,8 @@ Deno.test("stack init generates the MySQL root password only once", async () => 
       true,
     );
 
-    await store.init(true);
-    const forcedInitEnv = await platform.fs.readText(platform.paths.paths.envFile);
-
-    assertEquals(forcedInitEnv, initialEnv);
+    await assertRejects(() => store.init(), Error, "already initialized");
+    assertEquals(await platform.fs.readText(platform.paths.paths.envFile), initialEnv);
   } finally {
     await Deno.remove(root, { recursive: true });
   }

@@ -33,7 +33,7 @@ bento init --name production
 Bento creates private `state.json` and `.env` files along with the initial stack directories. The `.env` file includes generated database and Redis administrator secrets.
 
 :::caution
-Treat the stack name as permanent. Changing `COMPOSE_PROJECT_NAME` later would point Compose at differently named resources, including durable volumes. Do not use `init --force` as a retry command: it intentionally overwrites existing desired state.
+Treat the stack name as permanent. Changing `COMPOSE_PROJECT_NAME` later would point Compose at differently named resources, including durable volumes. Bento refuses to initialize a stack more than once and provides no force-overwrite mode. Back up or export the existing stack before creating a replacement in a different empty stack root.
 :::
 
 Verify the selected identity and ingress mode:
@@ -119,7 +119,7 @@ A healthy first stack has no failed checks. Warnings can still describe optional
 
 ## Troubleshooting
 
-**Initialization says state already exists:** verify that `BENTO_STACK_ROOT` selects the intended directory. Continue with the existing stack instead of using `--force`, unless you deliberately intend to replace its desired state.
+**Initialization says the stack is already initialized:** verify that `BENTO_STACK_ROOT` selects the intended directory, then continue with the existing stack. Initialization never overwrites existing desired state.
 
 **Compose reports that port 80 or 443 is already allocated:** stop or reconfigure the existing listener. One host-mode stack owns those ports. An additional stack needs a distinct name, bridge mode, and non-conflicting publications.
 

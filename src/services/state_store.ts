@@ -55,42 +55,49 @@ export class StateStore {
     await this.platform.fs.atomicWriteText(path, json, 0o600);
   }
 
-  /** Initialize empty state if missing; refuse to overwrite. */
-  async init(force = false, options: StackInitOptions = {}): Promise<DesiredState> {
+  /** Initialize a new stack exactly once; existing desired state is never overwritten. */
+  async init(options: StackInitOptions = {}): Promise<DesiredState> {
     const path = this.platform.paths.paths.stateFile;
-    let requestedProject = options.projectName;
-    if (
-      requestedProject === undefined &&
-      await this.platform.fs.exists(this.platform.paths.paths.envFile)
-    ) {
-      const existingEnv = parseDotEnv(
-        await this.platform.fs.readText(this.platform.paths.paths.envFile),
-      );
-      requestedProject = existingEnv.COMPOSE_PROJECT_NAME?.trim() || undefined;
-    }
-    const projectName = validateComposeProjectName(
-      requestedProject ?? DEFAULT_COMPOSE_PROJECT_NAME,
-    );
-    if (await this.platform.fs.exists(path) && !force) {
-      throw stateError(`state already exists at ${path}`, {
-        recovery: "Use --force only if you intentionally want to reset desired state.",
-      });
-    }
-    const state = createEmptyState(this.platform.clock.nowIso());
     await this.platform.fs.mkdirp(this.platform.paths.paths.root);
     await this.platform.fs.mkdirp(this.platform.paths.paths.lockDir);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.generatedDir);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.overlaysDir);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.customDir);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.backupsDir);
-    await initializeRcloneConfig(this.platform);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.certsDir);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.homesDir);
-    await this.save(state);
-    // Seed stack secrets once. Reconciliation fills missing/empty secrets while
-    // preserving every existing non-empty value byte-for-byte.
-    await this.reconcileStackEnv(projectName, options.projectName !== undefined);
-    return state;
+    const release = await this.platform.lock.exclusive(this.platform.paths.paths.renderLock);
+    try {
+      if (await this.platform.fs.exists(path)) {
+        throw safetyError(
+          `stack is already initialized at ${path}`,
+          "Continue using the existing stack. To create a replacement, export or back up its data first, then initialize a different empty stack root.",
+        );
+      }
+
+      let requestedProject = options.projectName;
+      if (
+        requestedProject === undefined &&
+        await this.platform.fs.exists(this.platform.paths.paths.envFile)
+      ) {
+        const existingEnv = parseDotEnv(
+          await this.platform.fs.readText(this.platform.paths.paths.envFile),
+        );
+        requestedProject = existingEnv.COMPOSE_PROJECT_NAME?.trim() || undefined;
+      }
+      const projectName = validateComposeProjectName(
+        requestedProject ?? DEFAULT_COMPOSE_PROJECT_NAME,
+      );
+      const state = createEmptyState(this.platform.clock.nowIso());
+      await this.platform.fs.mkdirp(this.platform.paths.paths.generatedDir);
+      await this.platform.fs.mkdirp(this.platform.paths.paths.overlaysDir);
+      await this.platform.fs.mkdirp(this.platform.paths.paths.customDir);
+      await this.platform.fs.mkdirp(this.platform.paths.paths.backupsDir);
+      await initializeRcloneConfig(this.platform);
+      await this.platform.fs.mkdirp(this.platform.paths.paths.certsDir);
+      await this.platform.fs.mkdirp(this.platform.paths.paths.homesDir);
+      await this.save(state);
+      // Seed stack secrets once. Reconciliation fills missing/empty secrets while
+      // preserving every existing non-empty value byte-for-byte.
+      await this.reconcileStackEnv(projectName, options.projectName !== undefined);
+      return state;
+    } finally {
+      await release();
+    }
   }
 
   /** Add missing stack settings/secrets without replacing existing non-empty values. */

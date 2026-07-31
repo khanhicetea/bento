@@ -254,7 +254,7 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 ### 9.1 Initialization
 
 1. Resolve absolute stack root and requested stable Compose project name.
-2. Refuse conflicting initialized identity.
+2. Refuse to initialize any stack that already has desired state.
 3. Create private state/environment and directory structure.
 4. Generate administrator secrets once.
 5. Persist empty schema-v4 state with default PHP/MySQL services.

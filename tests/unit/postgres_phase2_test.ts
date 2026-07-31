@@ -63,13 +63,13 @@ Deno.test("Phase 2 init creates PostgreSQL password once and env loader validate
     assertEquals(await loadPostgresRootPassword(platform), env.POSTGRES_PASSWORD);
     assertEquals(await requirePostgresRootPassword(platform), env.POSTGRES_PASSWORD);
 
-    await store.init(true);
+    await assertRejects(() => store.init(), Error, "already initialized");
     assertEquals(await platform.fs.readText(platform.paths.paths.envFile), first);
 
     const existing =
       "MYSQL_ROOT_PASSWORD=mysql-kept\nPOSTGRES_PASSWORD=postgres-kept\nREDIS_PASSWORD=redis-kept\n";
     await platform.fs.atomicWriteText(platform.paths.paths.envFile, existing, 0o600);
-    await store.init(true);
+    await assertRejects(() => store.init(), Error, "already initialized");
     assertEquals(await platform.fs.readText(platform.paths.paths.envFile), existing);
     assertEquals((await platform.fs.stat(platform.paths.paths.envFile)).mode & 0o777, 0o600);
   } finally {

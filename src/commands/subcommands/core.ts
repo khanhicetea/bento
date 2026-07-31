@@ -36,17 +36,11 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
       "init",
       "Initialize empty desired state",
       (y: YargsBuilder) =>
-        y
-          .option("force", {
-            type: "boolean",
-            default: false,
-            describe: "Overwrite existing state",
-          })
-          .option("name", {
-            type: "string",
-            describe:
-              "Stable stack name used to prefix Docker resources (default: bento; not derived from --stack)",
-          }),
+        y.option("name", {
+          type: "string",
+          describe:
+            "Stable stack name used to prefix Docker resources (default: bento; not derived from --stack)",
+        }),
       bind(state, cmdInit),
     )
     .command(
@@ -144,9 +138,8 @@ async function cmdTui(_argv: CliArgs, ctx: CliContext): Promise<number> {
   return await runWizard(ctx);
 }
 
-async function cmdInit(argv: ArgsWith<"force">, ctx: CliContext): Promise<number> {
-  const { force } = argv;
-  const state = await ctx.store.init(force, { projectName: argv.name });
+async function cmdInit(argv: CliArgs, ctx: CliContext): Promise<number> {
+  const state = await ctx.store.init({ projectName: argv.name });
   const environment = await loadStackComposeEnvironment(ctx.platform);
   ctx.log.info(
     `initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateFile}`,
