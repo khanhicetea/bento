@@ -47,9 +47,9 @@ Stopped services do not fail merely because they cannot be signaled; configurati
 Batch mutations with `--no-apply`, inspect state/rendered Compose, then apply once:
 
 ```sh
-bento --stack /var/lib/bento render
-bento --stack /var/lib/bento compose -- config
-bento --stack /var/lib/bento apply
+bento render
+bento compose -- config
+bento apply
 ```
 
 Do not manually delete staging, journal, or lock paths during an active command. If a process died, preserve evidence and let the next render recover before intervening.

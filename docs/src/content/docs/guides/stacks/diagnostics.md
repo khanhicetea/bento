@@ -10,9 +10,9 @@ Use progressively deeper checks to identify host, configuration, service, networ
 ## Check status
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento --json status
-bento --stack /var/lib/bento compose -- ps
+bento status
+bento --json status
+bento compose -- ps
 ```
 
 Status distinguishes running roles from configuration that is ready for a stopped service. JSON is suitable for scripts but remains operational output, not a stable remote API.
@@ -20,8 +20,8 @@ Status distinguishes running roles from configuration that is ready for a stoppe
 ## Run diagnostics
 
 ```sh
-bento --stack /var/lib/bento doctor
-bento --stack /var/lib/bento --json doctor
+bento doctor
+bento --json doctor
 ```
 
 Doctor checks Docker/Compose, host utilities, ingress and port risks, storage and modes, overlays, TLS, service health, volumes, and app permissions. Fix `fail` results first; review warnings against your topology.
@@ -29,14 +29,14 @@ Doctor checks Docker/Compose, host utilities, ingress and port risks, storage an
 Inspect service output without bypassing Bento's Compose file set:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 200 nginx
-bento --stack /var/lib/bento compose -- logs --tail 200 php85
+bento compose -- logs --tail 200 nginx
+bento compose -- logs --tail 200 php85
 ```
 
 ## Create a support bundle
 
 ```sh
-bento --stack /var/lib/bento support-bundle /tmp/bento-support.tar.gz
+bento support-bundle /tmp/bento-support.tar.gz
 ```
 
 Known secrets are redacted. The bundle is still sensitive metadata: inspect its member list and extracted contents before sharing, then transfer it through an approved channel.

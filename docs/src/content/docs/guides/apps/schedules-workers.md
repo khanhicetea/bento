@@ -12,18 +12,18 @@ Run scheduled and long-lived commands under the app's stable identity and select
 Prefer an explicit shell command only when you need redirects or pipelines:
 
 ```sh
-bento --stack /var/lib/bento cron add \
+bento cron add \
   --app demo --name scheduler \
   --schedule '* * * * *' --timezone UTC \
   --lock scheduler --timeout 300 \
   --cmd 'php artisan schedule:run >> logs/scheduler.log 2>&1'
-bento --stack /var/lib/bento cron list demo
+bento cron list demo
 ```
 
 Working directories and locks remain inside the app boundary. Edit omitted options without changing them:
 
 ```sh
-bento --stack /var/lib/bento cron edit demo scheduler --timeout 600
+bento cron edit demo scheduler --timeout 600
 ```
 
 `cron reload demo` signals only that app's Supercronic service after generated crontab validation.
@@ -33,10 +33,10 @@ bento --stack /var/lib/bento cron edit demo scheduler --timeout 600
 Prefer argv after `--` to avoid unintended shell evaluation:
 
 ```sh
-bento --stack /var/lib/bento worker add \
+bento worker add \
   --app demo --name queue -- php artisan queue:work
-bento --stack /var/lib/bento worker inspect demo queue
-bento --stack /var/lib/bento worker restart demo queue
+bento worker inspect demo queue
+bento worker restart demo queue
 ```
 
 Other scoped controls are `start`, `stop`, and `signal --signal HUP|ALRM|INT|QUIT|USR1|USR2|TERM|KILL`.
@@ -48,8 +48,8 @@ Removing a worker stops supervision for that definition. Confirm the application
 ## Verify
 
 ```sh
-bento --stack /var/lib/bento worker list demo
-bento --stack /var/lib/bento compose -- logs --tail 100 php85-runner
+bento worker list demo
+bento compose -- logs --tail 100 php85-runner
 ```
 
 ## Troubleshooting

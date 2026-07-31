@@ -17,26 +17,27 @@ Run an additional Bento stack with its own stack root, Compose identity, private
 
 ```sh
 sudo install -d -m 0700 /srv/bento/customer-b
-bento --stack /srv/bento/customer-b init --name customer-b
-bento --stack /srv/bento/customer-b stack ingress set bridge \
+export BENTO_STACK_ROOT=/srv/bento/customer-b
+bento init --name customer-b
+bento stack ingress set bridge \
   --http-port 8080 --https-port 8443
-bento --stack /srv/bento/customer-b render
-bento --stack /srv/bento/customer-b compose -- up -d --build
+bento render
+bento compose -- up -d --build
 ```
 
 Use `0` to clear a bridge publication and keep ingress internal-only:
 
 ```sh
-bento --stack /srv/bento/customer-b stack ingress set bridge \
+bento stack ingress set bridge \
   --http-port 0 --https-port 0
 ```
 
 ## Verify
 
 ```sh
-bento --stack /srv/bento/customer-b stack ingress show
-bento --stack /srv/bento/customer-b status
-bento --stack /srv/bento/customer-b compose -- ps
+bento stack ingress show
+bento status
+bento compose -- ps
 ```
 
 Check routing while DNS is pending:
@@ -55,7 +56,7 @@ If a port is occupied, choose another publication and apply again. In bridge mod
 
 ## Advanced
 
-Bridge Nginx can resolve services on its own stack-private network. It cannot discover services in another stack by Compose name. Operator overlays may publish a specific address, but keep stack roots and names explicit in every scheduled or destructive command.
+Bridge Nginx can resolve services on its own stack-private network. It cannot discover services in another stack by Compose name. Operator overlays may publish a specific address, but verify `BENTO_STACK_ROOT` and the stack name before every scheduled or destructive operation.
 
 ## Next steps
 

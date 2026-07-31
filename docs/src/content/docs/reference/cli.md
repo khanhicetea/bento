@@ -10,17 +10,18 @@ Bento is a local command-line control plane. Run `bento --help` and `bento <grou
 ## Global interface
 
 ```text
-bento [--stack PATH] [--json] <command> [args]
+bento [--json] <command> [args]
 ```
 
 | Option/environment | Purpose |
 | --- | --- |
-| `--stack PATH` / `BENTO_STACK_ROOT` | Select mutable stack root; default `./bento` |
+| `BENTO_STACK_ROOT` | Select the mutable stack root; default `./bento` |
+| `--stack PATH` | Override the stack root for one command |
 | `--json` | Machine-readable output where supported |
 | `--repo-root` | Test/source-mode repository override; not routine production use |
 | `--help` | Current command help |
 
-Put global flags before the command. Use explicit `--stack` for first use, multiple stacks, schedules, transfers, and destructive operations. Many state mutations accept `--no-apply`; follow the batch with `bento --stack PATH apply`.
+Set `BENTO_STACK_ROOT` once in the operator or script environment; examples assume it is already set. Put global flags before the command, and use `--stack PATH` only when a one-command override is useful. Many state mutations accept `--no-apply`; follow the batch with `bento apply`.
 
 ## Command map
 

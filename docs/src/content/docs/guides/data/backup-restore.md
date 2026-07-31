@@ -9,7 +9,7 @@ Create portable logical dumps for MySQL, PostgreSQL, and plain SQLite apps, main
 
 ## Before you begin
 
-- Confirm the stack root and app database binding with `bento --stack /var/lib/bento app show demo`.
+- Confirm the stack root and app database binding with `bento app show demo`.
 - Ensure the selected MySQL or PostgreSQL service is running and healthy.
 - Ensure the stack filesystem has enough free space for a new dump and restore staging.
 - Install `crontab` if you plan to register scheduled backups.
@@ -25,7 +25,7 @@ Bento writes logical dumps below the selected stack's on-host `backups/` directo
 Back up every MySQL or PostgreSQL database recorded for `demo`:
 
 ```sh
-bento --stack /var/lib/bento backup --app demo
+bento backup --app demo
 ```
 
 Zstandard is the default. Bento runs `mysqldump` or matching-major `pg_dump` inside the selected database container and publishes a non-empty dump atomically. A typical path is:
@@ -39,7 +39,7 @@ A PostgreSQL path uses its service name, for example `postgres17`.
 Back up only one recorded database when the app owns several:
 
 ```sh
-bento --stack /var/lib/bento backup \
+bento backup \
   --app demo \
   --database demo_archive
 ```
@@ -47,7 +47,7 @@ bento --stack /var/lib/bento backup \
 Choose gzip for compatibility with a recovery environment that does not have Zstandard:
 
 ```sh
-bento --stack /var/lib/bento backup --app demo --gzip
+bento backup --app demo --gzip
 ```
 
 Use `--none` for uncompressed plain SQL. Do not combine `--gzip` and `--none`.
@@ -67,7 +67,7 @@ Bento writes managed dumps with mode `0600`. A file's existence proves dump comp
 Run one batch across every recorded app database:
 
 ```sh
-bento --stack /var/lib/bento backup --all
+bento backup --all
 ```
 
 Bento creates logical dumps for MySQL and PostgreSQL bindings. For a plain `sqlite` binding it uses SQLite's online `.backup` command and Zstandard or gzip compression, publishing under `backups/sqlite/<app>/`. For every `litestream` binding, it waits for confirmed synchronization through the stack-wide watcher instead of creating a local dump.
@@ -81,9 +81,9 @@ After a complete successful batch, Bento keeps the ten newest managed dumps for 
 Bento includes an isolated, profile-only rclone sidecar. Stack initialization creates the private `rclone/rclone.conf`; configure its remote interactively without installing rclone on the host:
 
 ```sh
-bento --stack /var/lib/bento rclone -- config
+bento rclone -- config
 # Optional: inspect configured remotes
-bento --stack /var/lib/bento rclone -- listremotes
+bento rclone -- listremotes
 ```
 
 The sidecar receives the configuration directory and a read-only `/backups` mount only. It is not started by `bento compose -- up`. Scheduled uploads below preserve each file's path below `backups/`.
@@ -114,7 +114,7 @@ command -v bento
 Register a daily run at 03:15 in the host's cron timezone:
 
 ```sh
-bento --stack /var/lib/bento backup schedule register \
+bento backup schedule register \
   --schedule '15 3 * * *' \
   --bin /usr/local/bin/bento \
   --rclone-remote archive \
@@ -126,13 +126,13 @@ Use the actual absolute path returned by `command -v`. `archive` is the remote n
 Run the scheduled path now to test its database access, mounts, compression, and status recording:
 
 ```sh
-bento --stack /var/lib/bento backup schedule run
+bento backup schedule run
 ```
 
 Inspect registration and the bounded last-run record:
 
 ```sh
-bento --stack /var/lib/bento backup schedule status
+bento backup schedule status
 ```
 
 Confirm `registered: yes`, the intended schedule, `last run: succeeded`, a nonzero artifact count and byte total, and the expected on-host backup directory.
@@ -144,7 +144,7 @@ A configured rclone destination is still only as durable as its provider, retent
 Remove only this stack's managed crontab block when needed:
 
 ```sh
-bento --stack /var/lib/bento backup schedule unregister
+bento backup schedule unregister
 ```
 
 Unregistering leaves existing dumps and the last-run record in place.
@@ -158,7 +158,7 @@ Restore is not object-level atomic. A failed import can leave a partial destinat
 :::
 
 ```sh
-bento --stack /var/lib/bento restore \
+bento restore \
   --file /var/lib/bento/backups/mysql84/demo/<dump>.sql.zst \
   --app demo \
   --target demo_verify
@@ -171,7 +171,7 @@ A successful restore records the new database in desired state. Bento enforces t
 For a MySQL-backed app, inspect it as the app account:
 
 ```sh
-bento --stack /var/lib/bento mysql shell \
+bento mysql shell \
   --app demo \
   --database demo_verify
 ```
@@ -179,7 +179,7 @@ bento --stack /var/lib/bento mysql shell \
 For a PostgreSQL-backed app, use:
 
 ```sh
-bento --stack /var/lib/bento postgres shell \
+bento postgres shell \
   --app demo \
   --database demo_verify
 ```
@@ -197,7 +197,7 @@ A replacement requires an application outage. Disable the app to remove its rout
 :::
 
 ```sh
-bento --stack /var/lib/bento app disable demo
+bento app disable demo
 ```
 
 :::danger
@@ -207,7 +207,7 @@ The next restore terminates relevant PostgreSQL sessions when applicable, drops 
 For the original database `demo`:
 
 ```sh
-bento --stack /var/lib/bento restore \
+bento restore \
   --file /var/lib/bento/backups/mysql84/demo/<dump>.sql.zst \
   --app demo \
   --target demo \
@@ -219,7 +219,7 @@ Do not use a generic confirmation word. Bento requires the literal target databa
 After completion:
 
 1. Run application-specific database checks as the app account.
-2. Re-enable the app with `bento --stack /var/lib/bento app enable demo`, then start any external writers deliberately.
+2. Re-enable the app with `bento app enable demo`, then start any external writers deliberately.
 3. Verify HTTP requests, background jobs, and recent logs.
 4. Keep the pre-restore dump and incident notes until the recovery is accepted.
 
@@ -228,8 +228,8 @@ After completion:
 **Backup says the database service or bind is unavailable:** render current assets and recreate the selected service so its backup bind is active:
 
 ```sh
-bento --stack /var/lib/bento render
-bento --stack /var/lib/bento compose -- up -d <service>
+bento render
+bento compose -- up -d <service>
 ```
 
 Replace `<service>` with `mysql84`, `postgres17`, or the service shown by `app show`. Inspect its logs if it does not become healthy.

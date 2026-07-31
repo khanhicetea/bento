@@ -16,8 +16,8 @@ Enable a signed HTTPS webhook that queues one app-owned deployment job for its P
 ## Enable and configure
 
 ```sh
-bento --stack /var/lib/bento deploy enable demo
-bento --stack /var/lib/bento deploy instructions demo
+bento deploy enable demo
+bento deploy instructions demo
 ```
 
 The enable output includes the HMAC secret once. Store it immediately in the provider's secret field; do not put it in source control or chat.
@@ -31,8 +31,8 @@ Configure the provider to send HTTPS `POST` requests to `https://demo.example.co
 Trigger a test delivery, then run:
 
 ```sh
-bento --stack /var/lib/bento deploy status demo
-bento --stack /var/lib/bento deploy drain demo
+bento deploy status demo
+bento deploy drain demo
 ```
 
 The runner normally drains each minute. Logs are under `homes/demo/logs/`. Exit `0` is success, `99` skipped, and other exits failed. A finished attempt requests an app-pool OPcache reset; reset failure is logged without changing the hook result.
@@ -44,8 +44,8 @@ Rotation invalidates the old provider secret as soon as the applied configuratio
 :::
 
 ```sh
-bento --stack /var/lib/bento deploy rotate demo
-bento --stack /var/lib/bento deploy disable demo
+bento deploy rotate demo
+bento deploy disable demo
 ```
 
 ## Troubleshooting

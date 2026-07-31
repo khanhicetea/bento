@@ -10,7 +10,7 @@ Prune eligible rotated access logs and reports while retaining active logs, app 
 ## Run now
 
 ```sh
-bento --stack /var/lib/bento maintenance run --retain-days 14
+bento maintenance run --retain-days 14
 ```
 
 Review the reported removed and retained paths. Unknown filenames are retained rather than deleted.
@@ -24,7 +24,7 @@ Maintenance is not a backup. It does not create or replicate database dumps, and
 Register the stack-qualified job in the current user's crontab:
 
 ```sh
-bento --stack /var/lib/bento maintenance register \
+bento maintenance register \
   --schedule '15 3 * * *' --bin /usr/local/bin/bento
 ```
 
@@ -37,7 +37,7 @@ crontab -l
 Remove only that block when no longer needed:
 
 ```sh
-bento --stack /var/lib/bento maintenance unregister
+bento maintenance unregister
 ```
 
 ## Troubleshooting

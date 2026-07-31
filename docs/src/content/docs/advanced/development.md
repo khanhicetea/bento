@@ -48,7 +48,7 @@ Tasks declare explicit read/write/env/run/net/sys permissions; do not document `
 
 ## Release checks
 
-CI runs formatting, lint, typecheck, frozen dependency resolution, unit/contract and integration suites, native compile/smoke/parity, and Linux amd64/arm64 compilation. Architecture-specific Docker image execution still needs matching runners where emulation is unavailable.
+The repository exposes tasks for formatting, linting, typechecking, frozen dependency resolution, unit/contract and integration suites, native compile/smoke/parity, and Linux amd64/arm64 compilation. The checked-in GitHub workflow currently runs only on tags and published releases and compiles the two Linux binaries; it does not enforce all of those gates. Architecture-specific Docker image execution still needs matching runners where emulation is unavailable.
 
 ## Contributor safety
 

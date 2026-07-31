@@ -28,7 +28,7 @@ Continuous replication reduces the recovery point after host or disk loss, but i
 Create a plain local SQLite app:
 
 ```sh
-bento --stack /var/lib/bento app create demo \
+bento app create demo \
   --domain demo.example.com \
   --database-engine sqlite
 ```
@@ -36,7 +36,7 @@ bento --stack /var/lib/bento app create demo \
 Create a continuously replicated SQLite app by selecting the explicit Litestream type:
 
 ```sh
-bento --stack /var/lib/bento app create demo \
+bento app create demo \
   --domain demo.example.com \
   --database-engine litestream
 ```
@@ -44,14 +44,14 @@ bento --stack /var/lib/bento app create demo \
 For plain SQLite, create a logical backup with either the SQLite-specific command:
 
 ```sh
-bento --stack /var/lib/bento sqlite backup local demo
-bento --stack /var/lib/bento sqlite backup local demo --gzip
+bento sqlite backup local demo
+bento sqlite backup local demo --gzip
 ```
 
 or include plain SQLite files in the engine-neutral batch command:
 
 ```sh
-bento --stack /var/lib/bento backup --app demo
+bento backup --app demo
 ```
 
 The default artifact ends in `.sqlite.zst`; `--gzip` produces `.sqlite.gz`. Use
@@ -77,7 +77,7 @@ $pdo->exec("PRAGMA busy_timeout={$timeout}");
 Inspect the app binding:
 
 ```sh
-bento --stack /var/lib/bento app show demo
+bento app show demo
 ```
 
 Exercise an application endpoint that writes and reads a row. Confirm the application reports `wal` for this query:
@@ -121,7 +121,7 @@ Keep `.env` at mode `0600`. Do not put credentials on the command line or in an 
 Enable the stack-wide directory watcher with the default 60-second recovery point objective and seven-day snapshot retention. The app argument selects the database used for the initial upload-and-restore proof; the resulting policy covers every managed SQLite database in the stack:
 
 ```sh
-bento --stack /var/lib/bento sqlite backup enable demo
+bento sqlite backup enable demo
 ```
 
 The command gracefully recreates the one watcher process so it loads the stack policy. It does not report success after upload alone: it waits for the selected app's remote synchronization, restores a temporary database from S3, runs a full SQLite integrity check, removes the temporary file, and records the app's verification time. New SQLite databases are discovered automatically without another restart.
@@ -131,19 +131,19 @@ The command gracefully recreates the one watcher process so it loads the stack p
 Check desired policy and whether the shared Litestream container is running:
 
 ```sh
-bento --stack /var/lib/bento sqlite backup status --app demo
+bento sqlite backup status --app demo
 ```
 
 Force current writes to reach the remote replica:
 
 ```sh
-bento --stack /var/lib/bento sqlite backup sync --app demo
+bento sqlite backup sync --app demo
 ```
 
 Run another restore and full integrity check:
 
 ```sh
-bento --stack /var/lib/bento sqlite backup verify --app demo
+bento sqlite backup verify --app demo
 ```
 
 Run `verify` regularly and after credential, bucket-policy, endpoint, or storage changes. Also monitor stale verification timestamps and failed Litestream service health externally.
@@ -151,7 +151,7 @@ Run `verify` regularly and after credential, bucket-policy, endpoint, or storage
 Export the S3 replica into a new local SQLite database file:
 
 ```sh
-bento --stack /var/lib/bento sqlite backup export \
+bento sqlite backup export \
   --app demo \
   --output /safe/recovery/demo.sqlite
 ```
@@ -179,7 +179,7 @@ Export runs Litestream's full integrity check, publishes the result with mode `0
 `--rpo` accepts `1s`, `10s`, or `60s`; the default is `60s`. Shorter intervals reduce the expected data-loss window but increase object-store requests and cost.
 
 ```sh
-bento --stack /var/lib/bento sqlite backup enable demo \
+bento sqlite backup enable demo \
   --rpo 10s --retention 168h
 ```
 

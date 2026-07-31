@@ -29,9 +29,9 @@ Bento initializes the stack-root `.env` with mode `0600`. Edit only confirmed va
 Use the CLI for ingress values:
 
 ```sh
-bento --stack /var/lib/bento stack ingress set bridge \
+bento stack ingress set bridge \
   --http-port 8080 --https-port 8443
-bento --stack /var/lib/bento stack ingress show
+bento stack ingress show
 ```
 
 Port `0` clears a publication. HTTP and HTTPS bridge ports must differ. Boolean parsing accepts the values validated by the current implementation; prefer generated `1`/`0` for ingress and `true`/`false` for HTTP/3.
@@ -47,8 +47,8 @@ Stack defaults for PHP, database service, FPM profile, and Redis mode live in va
 ## Verify changes
 
 ```sh
-bento --stack /var/lib/bento doctor
-bento --stack /var/lib/bento compose -- config
+bento doctor
+bento compose -- config
 ```
 
 See [networking](/concepts/networking/) and [TLS modes](/guides/apps/domains-tls/) before changing public ingress. See [SQLite continuous backup](/guides/data/sqlite/) before configuring the Litestream and S3 values.

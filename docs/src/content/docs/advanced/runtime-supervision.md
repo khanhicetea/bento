@@ -34,10 +34,10 @@ Docker uses the `local` driver with 10 MiB/three-file bounds. A root maintenance
 A change to runner image/entrypoint assets can require a planned image rebuild and runner recreation:
 
 ```sh
-bento --stack /var/lib/bento render
-bento --stack /var/lib/bento compose -- build php85
-bento --stack /var/lib/bento compose -- up -d --force-recreate php85-runner
-bento --stack /var/lib/bento apply
+bento render
+bento compose -- build php85
+bento compose -- up -d --force-recreate php85-runner
+bento apply
 ```
 
 Inspect failures with `worker inspect`, runner logs, and scoped s6 status. Recreate only when generated config/image changes require it; ordinary cron/worker mutations reconcile live.

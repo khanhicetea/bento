@@ -12,8 +12,8 @@ Use PostgreSQL as an explicit alternative to the default MySQL binding.
 Only official major tags such as `17` are accepted:
 
 ```sh
-bento --stack /var/lib/bento postgres add 17
-bento --stack /var/lib/bento app create reports \
+bento postgres add 17
+bento app create reports \
   --domain reports.example.com \
   --database-engine postgres --postgres 17 --db
 ```
@@ -23,17 +23,17 @@ This creates service `postgres17`, durable volume `postgres17-data`, and an unpr
 ## Add and inspect databases
 
 ```sh
-bento --stack /var/lib/bento postgres db reports reports_archive
-bento --stack /var/lib/bento postgres shell --app reports \
+bento postgres db reports reports_archive
+bento postgres shell --app reports \
   --database reports
-bento --stack /var/lib/bento postgres size --app reports
-bento --stack /var/lib/bento postgres processlist --app reports
+bento postgres size --app reports
+bento postgres processlist --app reports
 ```
 
 Root administration requires an explicit service:
 
 ```sh
-bento --stack /var/lib/bento postgres shell --root \
+bento postgres shell --root \
   --service postgres17
 ```
 
@@ -42,8 +42,8 @@ Credentials are staged in protected files and excluded from host argv. Activity 
 ## Verify
 
 ```sh
-bento --stack /var/lib/bento app show reports
-bento --stack /var/lib/bento backup --app reports --gzip
+bento app show reports
+bento backup --app reports --gzip
 ```
 
 ## Troubleshooting

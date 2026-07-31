@@ -46,13 +46,13 @@ Use Bento commands rather than editing `state.json` directly. Commands validate 
 For example, an app command changes the app model and normally applies the resulting configuration in the same operation:
 
 ```sh
-bento --stack /var/lib/bento app create demo --domain demo.example.com
+bento app create demo --domain demo.example.com
 ```
 
 Some mutation commands offer `--no-apply`. That option records intent without reconciling generated files or running services. It is useful for batching related changes, but it deliberately leaves the live generation behind the desired state until you run:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 Do not use `--no-apply` when you require the change to take effect immediately. Until a successful apply, status on disk, generated configuration, and runtime behavior may describe different points in the change.
@@ -75,19 +75,19 @@ Both commands build a complete candidate from current desired state. Their opera
 Use `render` when you need generated Compose files before starting containers or want to materialize configuration without touching running services:
 
 ```sh
-bento --stack /var/lib/bento render
+bento render
 ```
 
 Use preview to inspect the candidate file list and pending reload targets without changing the live generation:
 
 ```sh
-bento --stack /var/lib/bento apply --preview
+bento apply --preview
 ```
 
 Use a normal apply to reconcile and activate current intent:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 A normal apply validates targeted services that are running, then reloads only the roles in its plan. Stopped services are not reloaded; they consume the generated configuration when they next start. `apply` does not start stopped containers—service lifecycle remains an explicit Compose operation.
@@ -124,8 +124,8 @@ A failed apply does not generally undo the desired-state mutation that triggered
 Verify the stack after reconciliation:
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento doctor
+bento status
+bento doctor
 ```
 
 For a configuration error, read the validator diagnostic first. Check custom files and recent desired-state changes; do not patch the generated candidate to make one apply pass.

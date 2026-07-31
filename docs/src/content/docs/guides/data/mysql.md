@@ -10,8 +10,8 @@ Manage private versioned MySQL services and databases assigned to Bento apps.
 ## Add and list services
 
 ```sh
-bento --stack /var/lib/bento mysql list
-bento --stack /var/lib/bento mysql add 8.0
+bento mysql list
+bento mysql add 8.0
 ```
 
 MySQL 8.4 is the new-stack default. Added services are private and have durable named volumes; Bento intentionally does not offer managed service removal.
@@ -21,8 +21,8 @@ MySQL 8.4 is the new-stack default. Added services are private and have durable 
 The app must have a MySQL binding, and names must remain in its namespace:
 
 ```sh
-bento --stack /var/lib/bento mysql db demo demo_archive
-bento --stack /var/lib/bento app show demo
+bento mysql db demo demo_archive
+bento app show demo
 ```
 
 The service must be reachable. Failure occurs before Bento records a requested database.
@@ -30,15 +30,15 @@ The service must be reachable. Failure occurs before Bento records a requested d
 ## Open a shell and inspect
 
 ```sh
-bento --stack /var/lib/bento mysql shell --app demo --database demo
-bento --stack /var/lib/bento mysql size --app demo
-bento --stack /var/lib/bento mysql processlist --app demo
+bento mysql shell --app demo --database demo
+bento mysql size --app demo
+bento mysql processlist --app demo
 ```
 
 For administration, select root and a service explicitly:
 
 ```sh
-bento --stack /var/lib/bento mysql shell --root --service mysql84
+bento mysql shell --root --service mysql84
 ```
 
 Bento uses protected option files so passwords do not appear in host process arguments. `--print` shows a redacted shell plan.
@@ -48,7 +48,7 @@ Bento uses protected option files so passwords do not appear in host process arg
 Run an application-level connection check through its identity, then create a logical dump:
 
 ```sh
-bento --stack /var/lib/bento backup --app demo --database demo --gzip
+bento backup --app demo --database demo --gzip
 ```
 
 ## Troubleshooting

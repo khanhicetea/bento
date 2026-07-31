@@ -20,13 +20,13 @@ Add an app named `demo` to the running `production` stack, create its MySQL data
 Start any stopped roles and wait for their health checks:
 
 ```sh
-bento --stack /var/lib/bento compose -- up -d --wait
+bento compose -- up -d --wait
 ```
 
 Confirm that `mysql84`, `php85`, and `nginx` are running or healthy:
 
 ```sh
-bento --stack /var/lib/bento compose -- ps
+bento compose -- ps
 ```
 
 MySQL must be reachable before an explicit database request. Bento fails closed rather than recording a database that it could not create.
@@ -36,7 +36,7 @@ MySQL must be reachable before an explicit database request. Bento fails closed 
 Create `demo` with front-controller routing, the `public` document root, and a MySQL 8.4 database named `demo`:
 
 ```sh
-bento --stack /var/lib/bento app create demo \
+bento app create demo \
   --domain demo.example.com \
   --docroot public \
   --front \
@@ -57,13 +57,13 @@ The app slug `demo` becomes a stable identity reused for its UID/GID, home, PHP 
 Check the initial filesystem policy:
 
 ```sh
-bento --stack /var/lib/bento permissions check demo
+bento permissions check demo
 ```
 
 If provisioning reported or routing later reveals ownership errors, run an explicitly recursive repair while the new app tree is still small:
 
 ```sh
-sudo /usr/local/bin/bento --stack /var/lib/bento \
+sudo /usr/local/bin/bento \
   permissions repair demo --recursive
 ```
 
@@ -74,7 +74,7 @@ Do not make recursive repair a routine startup action after the code tree grows.
 Show the app with secrets redacted:
 
 ```sh
-bento --stack /var/lib/bento app show demo
+bento app show demo
 ```
 
 Confirm that it reports:
@@ -88,7 +88,7 @@ Confirm that it reports:
 Check the stack-wide view as well:
 
 ```sh
-bento --stack /var/lib/bento status
+bento status
 ```
 
 The app and domain should appear under their respective sections.
@@ -98,7 +98,7 @@ The app and domain should appear under their respective sections.
 Bento creates one deploy key per app and preserves it on later updates. Print only its public half through the app's ephemeral CLI identity:
 
 ```sh
-bento --stack /var/lib/bento exec demo -- \
+bento exec demo -- \
   cat /home/demo/.ssh/id_ed25519.pub
 ```
 
@@ -139,7 +139,7 @@ Bento writes database and Redis connection metadata to the private app file:
 Adapt those values into your framework's configuration without committing the credential file or printing its secrets. You can verify database access interactively as the app account:
 
 ```sh
-bento --stack /var/lib/bento mysql shell --app demo --database demo
+bento mysql shell --app demo --database demo
 ```
 
 Exit the MySQL client with `quit` after the connection succeeds.
@@ -151,7 +151,7 @@ For public traffic, replace `demo.example.com` in the app configuration with you
 The initial `shared` TLS mode uses a starter self-signed certificate and does not provide public domain validation. For public ACME certificates, first set `ACME_EMAIL` in the stack's private `/var/lib/bento/.env`, confirm that every app domain resolves to this host, and confirm that public TCP port 80 reaches Nginx. Then run:
 
 ```sh
-bento --stack /var/lib/bento tls set --app demo --mode acme
+bento tls set --app demo --mode acme
 ```
 
 :::caution
@@ -163,7 +163,7 @@ Do not enable ACME before DNS and public port 80 are correct. Issuance will fail
 **App creation says MySQL is unavailable:** run `compose -- ps` and inspect `mysql84` logs. Wait for MySQL to become healthy, then rerun the same `app create ... --db` command. The failed explicit request does not record the database or app state.
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 mysql84
+bento compose -- logs --tail 100 mysql84
 ```
 
 **The domain is already owned:** choose another domain or inspect its current owner with `status`. Bento refuses duplicate app and proxy domains.
@@ -171,7 +171,7 @@ bento --stack /var/lib/bento compose -- logs --tail 100 mysql84
 **The local request returns `502 Bad Gateway`:** inspect `php85` and Nginx logs, then run `doctor`. Confirm that the app pool was generated and the PHP role is running.
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 php85 nginx
+bento compose -- logs --tail 100 php85 nginx
 ```
 
 **The request returns another site or a default response:** include the exact app hostname in `--resolve` and confirm that `app show demo` contains the same primary domain.
@@ -182,7 +182,7 @@ bento --stack /var/lib/bento compose -- logs --tail 100 php85 nginx
 
 Without `--db`, Bento may create the database account on a best-effort basis and defer that work while MySQL is unavailable. The first-app path uses `--db` so database creation is explicit and transactional with respect to desired-state recording.
 
-An app binds to one database engine. A MySQL or PostgreSQL app also binds to one managed service. To use PostgreSQL for a different app, first add a supported PostgreSQL major, then select it with `--database-engine postgres --postgres <major> --db`. For a private file database and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/). Bento does not automatically move an existing app between engines.
+An app can hold multiple add-only database bindings across MySQL, PostgreSQL, plain SQLite, and Litestream; the first binding remains its compatibility/default connection. To add PostgreSQL, first add a supported major, then run `app update` with `--database-engine postgres --postgres <major> --db`. For private file databases and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/). Adding a binding does not move or convert existing data.
 
 The generated credential file is application metadata, not automatic framework configuration. Bento does not infer how Laravel, Symfony, WordPress, or another application loads environment variables.
 

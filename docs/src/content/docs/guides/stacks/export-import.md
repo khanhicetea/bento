@@ -18,13 +18,13 @@ Export archives contain passwords, private keys, application files, and raw data
 :::
 
 :::caution
-Stack export does not currently include the stack-root `sqlite/` directory. Use [SQLite continuous backup](/guides/data/sqlite/) and verify its remote restore separately. Do not copy a live SQLite database and its WAL/SHM files as an assumed-consistent backup.
+Stack export includes the stack-root `sqlite/` directory mechanically, but it does not make a live SQLite file and its WAL/SHM files consistency-safe. Use SQLite's logical `.backup` or [Litestream continuous backup](/guides/data/sqlite/) and verify recovery separately.
 :::
 
 ## Export
 
 ```sh
-bento --stack /var/lib/bento stack export /srv/exports/production-2026-07-28
+bento stack export /srv/exports/production-2026-07-28
 ```
 
 Bento checks named volumes, stops only running MySQL/PostgreSQL/Redis services needed for consistent copies, writes `stack.tar.gz` and one archive per volume, then restarts exactly those services. Web requests may fail while their databases are stopped.
@@ -33,10 +33,11 @@ Verify the directory contains `stack.tar.gz`, database service archives such as 
 
 ## Import
 
-The destination selected by `--stack` must not exist or must be empty. For a same-host clone, override both identity and ingress before startup:
+Select a destination root that does not exist or is empty. For a same-host clone, override both identity and ingress before startup:
 
 ```sh
-bento --stack /srv/bento/clone stack import \
+export BENTO_STACK_ROOT=/srv/bento/clone
+bento stack import \
   /srv/exports/production-2026-07-28 \
   --name clone --ingress-mode bridge \
   --http-port 18080 --https-port 18443
@@ -47,12 +48,12 @@ Import rejects missing, unexpected, corrupt, or unsafe archives and existing des
 ## Verify
 
 ```sh
-bento --stack /srv/bento/clone status
-bento --stack /srv/bento/clone doctor
-bento --stack /srv/bento/clone stack ingress show
+bento status
+bento doctor
+bento stack ingress show
 ```
 
-Verify representative applications and imported MySQL/PostgreSQL/Redis data before retiring the source. Recover and verify SQLite separately; the current import does not restore it.
+Verify representative applications and imported MySQL/PostgreSQL/Redis data before retiring the source. Also verify every imported SQLite database from a logical backup or Litestream recovery point; raw inclusion in `stack.tar.gz` is not proof of consistency.
 
 ## Troubleshooting
 

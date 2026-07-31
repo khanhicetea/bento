@@ -10,16 +10,16 @@ Run multiple PHP versions concurrently and assign each app one version and FPM c
 ## List and add runtimes
 
 ```sh
-bento --stack /var/lib/bento php list
-bento --stack /var/lib/bento php add 8.4
+bento php list
+bento php add 8.4
 ```
 
-Adding a version creates FPM, singleton runner, and ephemeral CLI roles from the same image. Apply builds and starts configuration as needed; use `--no-apply` to batch changes, then run `bento --stack /var/lib/bento apply`.
+Adding a version creates FPM, singleton runner, and ephemeral CLI roles from the same image. Apply builds and starts configuration as needed; use `--no-apply` to batch changes, then run `bento apply`.
 
 Update an app by repeating its domain and selecting the managed version/profile:
 
 ```sh
-bento --stack /var/lib/bento app update demo \
+bento app update demo \
   --domain demo.example.com --php 8.4 --fpm medium
 ```
 
@@ -28,15 +28,15 @@ Omitted runtime choices preserve the app's current values. Run application tests
 ## Verify
 
 ```sh
-bento --stack /var/lib/bento app show demo
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento exec demo -- php -v
+bento app show demo
+bento status
+bento exec demo -- php -v
 ```
 
 ## Remove an unused runtime
 
 ```sh
-bento --stack /var/lib/bento php remove 8.4
+bento php remove 8.4
 ```
 
 Removal is refused if an app uses the version, if it is the default, or if it would remove the final managed PHP version. It removes managed configuration, not application homes or database data.

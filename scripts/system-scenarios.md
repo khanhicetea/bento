@@ -27,8 +27,8 @@ deno task run --test-stack=lab --skip-build --skip-http
 
 # Optional manual live data-plane
 export BENTO_STACK_ROOT=/var/lib/bento-scenario
-deno task run --stack "$BENTO_STACK_ROOT" init
-deno task run --stack "$BENTO_STACK_ROOT" render
+deno task run init
+deno task run render
 # then compose up via bento compose -- up -d  (operator path; no -A)
 ```
 

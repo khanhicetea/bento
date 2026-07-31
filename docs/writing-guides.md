@@ -65,7 +65,7 @@ Use these terms consistently:
 | Term | Meaning |
 | --- | --- |
 | **stack** | One Bento installation and its desired state, generated files, app homes, certificates, backups, and Compose resources on a host. |
-| **stack root** | The filesystem path selected by `--stack` or `BENTO_STACK_ROOT`. It stores mutable, operator-owned stack data. |
+| **stack root** | The mutable, operator-owned filesystem path selected by `BENTO_STACK_ROOT`, the `./bento` default, or a one-command `--stack` override. |
 | **stack name** | Stable `COMPOSE_PROJECT_NAME` identity that prefixes Compose resources. It is not inferred from the stack-root directory. |
 | **app** | Bento's logical application identity: slug, UID/GID, home, PHP pool/socket, domains, data binding, jobs, and deploy settings. |
 | **app slug** | Stable stack-wide identity reused across system resources. Do not describe changing it as a rename. |
@@ -77,7 +77,7 @@ Use these terms consistently:
 | **data plane** | Nginx, PHP roles, databases, Redis, and supervised jobs running in containers. |
 | **host mode** | Nginx uses the host network; normally one stack owns host ports 80/443. |
 | **bridge mode** | Nginx joins the stack-private Compose network and may publish explicitly selected host ports. |
-| **database service** | One managed MySQL version or PostgreSQL major and its durable volume. A relational app binds to exactly one engine/service; a SQLite app binds to one private file instead. |
+| **database service** | One managed MySQL version or PostgreSQL major and its durable volume. An app can hold multiple add-only relational and SQLite bindings; the first is its compatibility/default connection. |
 | **runner** | Singleton service per PHP version that supervises app schedulers, deploy drains, and workers. |
 | **overlay** | Operator-owned Compose customization loaded in deterministic order. |
 | **drop-in** | Additive operator-owned configuration included from a supported `custom/` location. |
@@ -129,7 +129,7 @@ One or two sentences describing the outcome and important scope.
 1. Explain intent.
 
    ```sh
-   bento --stack /var/lib/bento ...
+   bento ...
    ```
 
 2. Continue with the shortest safe path.
@@ -217,11 +217,11 @@ Do not rewrite source files module by module. Explain stable responsibilities an
 - Prefer the compiled command form in operator docs:
 
   ```sh
-  bento --stack /var/lib/bento status
+  bento status
   ```
 
-- Use `deno task run --stack ...` only in contributor/source-mode documentation.
-- Show `--stack` in first-use, multi-stack, scheduled, export/import, and destructive examples. It may be omitted in a tightly scoped sequence only after the page has established the selected stack root.
+- Use `deno task run ...` only in contributor/source-mode documentation.
+- Establish `BENTO_STACK_ROOT` once, then omit repeated `--stack` options from examples. Document the `./bento` default and reserve `--stack PATH` for a deliberate one-command override.
 - Put placeholders in clearly recognizable forms such as `app.example.com`, `<app>`, and `/path/to/export`. Use RFC-reserved example domains (`example.com`, `example.test`) instead of real domains.
 - Use one sample stack consistently where practical: stack root `/var/lib/bento`, stack name `production`, app `demo`, domain `demo.example.com`.
 - Use long option names in docs unless the short option is the normal interface.
@@ -241,7 +241,8 @@ For state-changing examples, use a disposable stack when practical:
 
 ```sh
 stack_root="$(mktemp -d)"
-bento --stack "$stack_root" init --name docs-check
+export BENTO_STACK_ROOT="$stack_root"
+bento init --name docs-check
 # Run only safe, relevant checks.
 rm -rf "$stack_root"
 ```
@@ -258,7 +259,7 @@ Include an example when it resolves a difficult choice, namespace difference, co
 - restoring a dump to `demo_verify` before replacing `demo`;
 - giving a second stack a distinct name and published ports;
 - showing a safe Nginx health-check drop-in rather than editing `generated/nginx/`;
-- explaining that scheduled backups remain on the host and need separate off-host replication.
+- explaining that dumps are created on-host and scheduled rclone uploads still require independent remote verification.
 
 Keep examples focused. Do not build a fictional company or application across many pages. A page should usually have one primary example and, only when needed, one contrasting advanced case.
 
@@ -284,7 +285,7 @@ Always call out these product boundaries when relevant:
 - `compose down -v` is blocked because it destroys durable volumes.
 - App desired-state removal and permanent prune are different operations; document exact confirmations from current help.
 - Managed MySQL/PostgreSQL version removal and automatic DB password rotation are unsupported.
-- Scheduled logical backups are on-host only; Bento does not replicate them off-host.
+- Logical dumps are created on-host; optional scheduled rclone uploads do not provide remote retention or recovery guarantees.
 - Restore is not object-level atomic and may leave a partial destination.
 - Raw PostgreSQL transfer requires a compatible major/image; use logical backup/restore for a major upgrade.
 - Export archives contain secrets and private keys.

@@ -34,7 +34,7 @@ location = /healthz {
 ```
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 curl -H 'Host: demo.example.com' http://127.0.0.1/healthz
 ```
 

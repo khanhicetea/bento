@@ -25,7 +25,7 @@ SQLite uses optional Litestream replication to S3-compatible storage. Verificati
 
 Stack export combines supported stack files with raw named-volume archives. It stops only running data services needed for consistency and restarts their prior set. It currently excludes the stack-root `sqlite/` directory. Raw transfer is broad and version/architecture sensitive; PostgreSQL requires compatible major/image.
 
-Scheduled MySQL/PostgreSQL logical backups stay on the same host. Replicate encrypted copies off-host and test them independently. SQLite continuous backup uses its separately configured S3 replica.
+MySQL/PostgreSQL logical backups are created on-host. A scheduled batch can upload newly created artifacts through the operator-configured rclone sidecar; verify those remote copies and test them independently. SQLite continuous backup uses its separately configured S3 replica.
 
 ## Failure semantics
 

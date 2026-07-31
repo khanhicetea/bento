@@ -25,7 +25,7 @@ The stack root contains files, including SQLite databases under `sqlite/`, but M
 - Removing app desired state retains its home and databases. Permanent `app prune` is a separate interactive operation that lists retained parts and requires the literal `delete`.
 - Managed MySQL/PostgreSQL service removal and automatic password rotation are unsupported.
 - Logical restore is not object-level atomic and can leave a partial destination.
-- Scheduled MySQL/PostgreSQL dumps are on-host only until you replicate and verify them elsewhere.
+- MySQL/PostgreSQL dumps are created on-host. Scheduled runs may upload new artifacts through configured rclone, but you must verify remote retention and recovery separately.
 - SQLite uses optional S3 continuous backup; its verification command restores a temporary copy but does not replace production data.
 
 Treat `.env`, `state.json`, app credential files, deploy secrets, certificate private keys, and export archives as secrets. Support bundles redact known credentials, but inspect any archive before sharing it.
@@ -36,7 +36,7 @@ Only Nginx is public in the base topology. App identity, FPM pools, filesystem m
 
 ## Recovery priorities
 
-Keep encrypted off-host copies of desired state, homes, certificates, and logical database dumps. Configure and test [SQLite continuous backup](/guides/data/sqlite/) separately. A [stack export](/guides/stacks/export-import/) includes supported raw volumes but currently excludes SQLite and requires compatible architecture and database images.
+Keep encrypted off-host copies of desired state, homes, certificates, and logical database dumps. Configure and test [SQLite continuous backup](/guides/data/sqlite/) separately. A [stack export](/guides/stacks/export-import/) includes raw database volumes and mechanically archives the stack-root SQLite tree, but live SQLite consistency is not guaranteed; raw import also requires compatible architecture and database images.
 
 ## Next steps
 

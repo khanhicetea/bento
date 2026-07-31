@@ -21,21 +21,21 @@ services:
 Inspect the deterministic file order and merged model:
 
 ```sh
-bento --stack /var/lib/bento compose files
-bento --stack /var/lib/bento compose -- config
-bento --stack /var/lib/bento doctor
+bento compose files
+bento compose -- config
+bento doctor
 ```
 
 Apply after validation:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 Some Compose changes require explicit service recreation because a configuration reload cannot change container mounts, environment, networks, or image settings:
 
 ```sh
-bento --stack /var/lib/bento compose -- up -d
+bento compose -- up -d
 ```
 
 :::caution

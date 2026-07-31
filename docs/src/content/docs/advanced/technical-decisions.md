@@ -29,7 +29,7 @@ Bento optimizes for a comprehensible operator-owned PHP platform on one Linux ho
 
 ## One database binding, add-only services
 
-**Context:** Engine moves and volume deletion are high-risk. **Decision:** each app binds exactly one managed MySQL/PostgreSQL service; versions are added but not automatically removed. **Benefits:** explicit grants, tools, volume ownership. **Trade-offs:** migrations/password rotation are coordinated externally. **Boundary:** no automatic cross-engine conversion.
+**Context:** Engine moves and volume deletion are high-risk. **Decision:** apps hold add-only database bindings across managed MySQL/PostgreSQL services and SQLite kinds; versions are added but not automatically removed. The first binding remains the compatibility/default connection. **Benefits:** explicit grants, tools, and volume ownership without destructive rebinding. **Trade-offs:** migrations and password rotation are coordinated externally. **Boundary:** no automatic cross-engine conversion.
 
 ## Staged and scoped apply
 

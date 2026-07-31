@@ -10,7 +10,7 @@ Audit one app's filesystem policy and repair only the necessary scope without fo
 ## Check first
 
 ```sh
-bento --stack /var/lib/bento permissions check demo
+bento permissions check demo
 ```
 
 Use `--recursive` to inspect the whole app tree. The default check focuses on core paths and is faster for large homes.
@@ -18,8 +18,8 @@ Use `--recursive` to inspect the whole app tree. The default check focuses on co
 ## Preview and repair
 
 ```sh
-bento --stack /var/lib/bento permissions repair demo --dry-run
-bento --stack /var/lib/bento permissions repair demo --shallow
+bento permissions repair demo --dry-run
+bento permissions repair demo --shallow
 ```
 
 Shallow repair is the routine path and fixes core directories. It avoids recursively rewriting a potentially large deployment.
@@ -29,16 +29,16 @@ Recursive repair can change ownership and modes across many application files an
 :::
 
 ```sh
-bento --stack /var/lib/bento permissions repair demo \
+bento permissions repair demo \
   --recursive --dry-run
-bento --stack /var/lib/bento permissions repair demo --recursive
+bento permissions repair demo --recursive
 ```
 
 ## Verify
 
 ```sh
-bento --stack /var/lib/bento permissions check demo --recursive
-bento --stack /var/lib/bento exec demo -- test -r public/index.php
+bento permissions check demo --recursive
+bento exec demo -- test -r public/index.php
 ```
 
 ## Troubleshooting

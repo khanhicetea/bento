@@ -12,14 +12,14 @@ Take ownership of one app's complete `vhost` or `pool` template when additive co
 Create/open a copy in the stack custom area using `$EDITOR`:
 
 ```sh
-bento --stack /var/lib/bento template select \
+bento template select \
   --app demo --kind vhost
 ```
 
 Or import an existing file:
 
 ```sh
-bento --stack /var/lib/bento template select \
+bento template select \
   --app demo --kind pool --source /path/to/pool.conf.tpl
 ```
 
@@ -30,7 +30,7 @@ Bento records template provenance, renders, validates, and targets the affected 
 ## Check drift
 
 ```sh
-bento --stack /var/lib/bento template drift --app demo
+bento template drift --app demo
 ```
 
 A `DRIFT` result means the upstream template changed since selection. Review and merge intentionally; Bento does not overwrite your source.
@@ -38,7 +38,7 @@ A `DRIFT` result means the upstream template changed since selection. Review and
 ## Return to upstream
 
 ```sh
-bento --stack /var/lib/bento template return \
+bento template return \
   --app demo --kind vhost
 ```
 

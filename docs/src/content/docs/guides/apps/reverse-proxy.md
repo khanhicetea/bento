@@ -17,17 +17,17 @@ Publish a host- or stack-reachable HTTP service through Bento's domain and TLS m
 For host-mode Nginx:
 
 ```sh
-bento --stack /var/lib/bento proxy create api \
+bento proxy create api \
   --domain api.example.com \
   --upstream http://127.0.0.1:9000
-bento --stack /var/lib/bento proxy list
+bento proxy list
 curl -H 'Host: api.example.com' http://127.0.0.1/
 ```
 
 Repeat `--upstream` for multiple servers:
 
 ```sh
-bento --stack /var/lib/bento proxy create api \
+bento proxy create api \
   --domain api.example.com \
   --upstream http://127.0.0.1:9000 \
   --upstream http://127.0.0.1:9001
@@ -42,7 +42,7 @@ Removal stops Bento from serving the proxy domain but does not stop or delete th
 :::
 
 ```sh
-bento --stack /var/lib/bento proxy remove api --confirm 'delete api'
+bento proxy remove api --confirm 'delete api'
 ```
 
 ## Troubleshooting

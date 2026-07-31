@@ -41,13 +41,14 @@ deno task test
 deno task test:integration   # soft-skips Docker-only steps when daemon is down
 deno task test:stack         # real Docker stack harness (default name: testbento)
 
-# initialize a stack root and render
-deno task run --stack ./my-stack init --name my-stack
-deno task run --stack ./my-stack render
-deno task run --stack ./my-stack status
+# select a stack root once for this shell, then initialize and render
+export BENTO_STACK_ROOT="$PWD/my-stack"
+deno task run init --name my-stack
+deno task run render
+deno task run status
 
 # create a default MySQL application
-deno task run --stack ./my-stack app create demo \
+deno task run app create demo \
   --domain demo.example.test \
   --docroot public \
   --db
@@ -56,15 +57,15 @@ deno task run --stack ./my-stack app create demo \
 # Register id_ed25519.pub with the Git host before cloning a private repository.
 
 # add PostgreSQL as another database kind on the same application
-deno task run --stack ./my-stack postgres add 17
-deno task run --stack ./my-stack app update demo \
+deno task run postgres add 17
+deno task run app update demo \
   --domain demo.example.test \
   --database-engine postgres \
   --postgres 17 \
   --db
 
 # apply (validate + scoped reload when services are up)
-deno task run --stack ./my-stack apply
+deno task run apply
 ```
 
 Stack roots are **external** mutable state (desired state, homes, certs, backups, generated output). Immutable templates ship with the repository or compiled binary. The stable stack name is explicit and is not derived from the stack directory; it becomes `COMPOSE_PROJECT_NAME` and prefixes Compose containers, networks, and named volumes. `bento` remains the compatible default when `--name` is omitted.
@@ -74,13 +75,14 @@ Stack roots are **external** mutable state (desired state, homes, certs, backups
 Nginx uses host networking by default (`NGINX_HOST_NETWORK=1`), preserving direct host ports 80/443 and HTTP/3 behavior. Because only one host-network process can own those ports, additional stacks should opt into the stack-private bridge network and select distinct publications:
 
 ```bash
-bento --stack /srv/bento/customer-b init --name customer-b
-bento --stack /srv/bento/customer-b stack ingress set bridge \
+export BENTO_STACK_ROOT=/srv/bento/customer-b
+bento init --name customer-b
+bento stack ingress set bridge \
   --http-port 8080 --https-port 8443
-bento --stack /srv/bento/customer-b compose -- up -d --build
+bento compose -- up -d --build
 
 # Inspect effective settings
-bento --stack /srv/bento/customer-b stack ingress show
+bento stack ingress show
 ```
 
 Bridge mode keeps Nginx on that stack's private network. Blank `NGINX_HTTP_PORT` / `NGINX_HTTPS_PORT` values mean internal-only; advanced operators may instead publish addresses or ports in an operator-owned `overlays/*.yml` file. HTTPS publishes TCP and, when `HTTP3=true`, UDP on the selected port. `host.docker.internal` maps to the host gateway in bridge mode; `127.0.0.1` means the Nginx container itself.
@@ -97,9 +99,10 @@ deno task compile:arm64    # Linux aarch64 (release)
 The compiled `bento` executable needs no Deno/Python/Node on the target host. Immutable templates are embedded with `--include=templates` and materialize into a digest-addressed cache under the stack root (`.asset-cache/<digest>/`) before publishing stable Compose paths (`docker/`, `helpers/`). Mutable operator state always lives under an explicit external stack root — never next to the binary.
 
 ```bash
-./dist/bento --stack /var/lib/bento init --name production
-./dist/bento --stack /var/lib/bento render
-./dist/bento --stack /var/lib/bento status
+export BENTO_STACK_ROOT=/var/lib/bento
+./dist/bento init --name production
+./dist/bento render
+./dist/bento status
 ./dist/bento version   # reports bento version + pinned Deno target (2.9.x)
 ```
 
@@ -113,14 +116,7 @@ deno task test:parity      # compile + require binary parity suite
 BENTO_BIN=$PWD/dist/bento deno task test
 ```
 
-Release CI (`.github/workflows/ci.yml`) runs:
-
-1. `fmt:check`, `lint`, `check`
-2. `deno install --frozen=true` (fail on lockfile / resolution drift)
-3. `deno task test` (unit + contract)
-4. `deno task test:integration` (soft-skips when Docker unavailable)
-5. `compile` + binary smoke (`init`/`render`/`status`) + `test:parity`
-6. `compile:amd64` and `compile:arm64` artifacts
+The checked-in release workflow (`.github/workflows/ci.yml`) currently runs only for tags and published releases and compiles the Linux amd64/arm64 artifacts. The formatting, linting, typecheck, frozen-install, test, integration, smoke, and parity tasks above are available as local gates but are not all enforced by that workflow.
 
 Pin Deno **2.9.3** for source and compile. Documented operator paths use the explicit permission set in `deno.json` tasks (`--allow-read --allow-write --allow-env --allow-run --allow-net --allow-sys`). **Do not use unrestricted `-A` as the supported default.**
 
@@ -183,20 +179,20 @@ bento restore --file /var/lib/bento/backups/postgres17/reports-....sql.gz \
   --app reports --engine postgres --target reports_verify
 
 # Register the current stack for a daily 03:15 host-cron run.
-bento --stack /var/lib/bento backup schedule register \
+bento backup schedule register \
   --schedule "15 3 * * *" --bin /usr/local/bin/bento
-bento --stack /var/lib/bento backup schedule status
+bento backup schedule status
 
 # Run the same scheduled all-database operation immediately, or remove registration.
-bento --stack /var/lib/bento backup schedule run
-bento --stack /var/lib/bento backup schedule unregister
+bento backup schedule run
+bento backup schedule unregister
 ```
 
 Scheduled backups write logical dumps beneath the selected stack's `backups/` directory. To upload each newly created dump, configure a remote interactively with the isolated sidecar, then attach it to the schedule:
 
 ```bash
-bento --stack /var/lib/bento rclone -- config
-bento --stack /var/lib/bento backup schedule register \
+bento rclone -- config
+bento backup schedule register \
   --schedule "15 3 * * *" --bin /usr/local/bin/bento \
   --rclone-remote archive --rclone-prefix bento/production
 ```
@@ -209,29 +205,32 @@ MySQL uses matching `mysqldump`; PostgreSQL uses matching-major `pg_dump --no-ow
 
 ### Full stack export and import
 
-The stack transfer commands are intentionally CLI-only. Stack identity comes from the explicit `COMPOSE_PROJECT_NAME` in the stack `.env`, independently from the global `--stack` path. A same-machine clone should override both identity and ingress before import starts the stack:
+The stack transfer commands are intentionally CLI-only. Stack identity comes from the explicit `COMPOSE_PROJECT_NAME` in the stack `.env`, independently from the selected stack root. A same-machine clone should select an empty destination root and override both identity and ingress before import starts the stack:
 
 ```bash
-bento --stack /srv/bento/clone stack import /srv/exports/bento-2026-07-21 \
+export BENTO_STACK_ROOT=/srv/bento/clone
+bento stack import /srv/exports/bento-2026-07-21 \
   --name clone --ingress-mode bridge --http-port 18080 --https-port 18443
 ```
 
 ```bash
 # Source host: destination must be empty and outside the stack root.
-bento --stack /var/lib/bento stack export /srv/exports/bento-2026-07-21
+export BENTO_STACK_ROOT=/var/lib/bento
+bento stack export /srv/exports/bento-2026-07-21
 
 # Produces:
-#   stack.tar.gz          (state, homes, credentials, certificates, config, logs, backups)
+#   stack.tar.gz          (state, homes, credentials, certificates, config, logs, backups, sqlite/)
 #   mysql84-data.tar.gz      (one archive per managed MySQL volume)
 #   mysql80-data.tar.gz      (example when another MySQL version is configured)
 #   postgres17-data.tar.gz   (one archive per managed PostgreSQL volume)
 #   redis-data.tar.gz        (the Redis volume)
 
-# Destination host: --stack must be an empty/nonexistent destination root.
-bento --stack /var/lib/bento stack import /srv/exports/bento-2026-07-21
+# Destination host: select an empty/nonexistent destination root.
+export BENTO_STACK_ROOT=/var/lib/bento
+bento stack import /srv/exports/bento-2026-07-21
 ```
 
-Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and Redis data services needed for a consistent raw copy, and restarts exactly those services afterward. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.json`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects missing, corrupt, unsafe, or unexpected archives and all existing destination data volumes, restores only newly created volumes, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. In particular, raw PostgreSQL transfer requires a compatible PostgreSQL major/image version; use logical `backup`/`restore` for major upgrades. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
+Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and Redis data services needed for a consistent raw copy, and restarts exactly those services afterward. The root archive mechanically includes `sqlite/`, but does not stop SQLite writers or guarantee that a live SQLite/WAL copy is consistent; use logical `.backup` or Litestream for recovery assurance. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.json`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects missing, corrupt, unsafe, or unexpected archives and all existing destination data volumes, restores only newly created volumes, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. In particular, raw PostgreSQL transfer requires a compatible PostgreSQL major/image version; use logical `backup`/`restore` for major upgrades. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
 
 ### Runner service supervision
 
@@ -285,7 +284,7 @@ Applications on the target server may need their own CA bundle reload or service
 - `permissions repair <app> --recursive` — bounded walk; **never follows symlink targets**
 - App create may apply recursive policy while the home tree is still small; routine startup/apply paths use shallow repairs only.
 
-Global flags: `--stack PATH` (or `BENTO_STACK_ROOT`), `--json`. Command parsing and help use **yargs**; table layout uses **cliui**; colorized operator output uses **picocolors**. Desired-state and CLI input validation use **zod**; cron schedules use **cron-parser**; PHP/MySQL version ordering uses **semver**; config templates use **mustache**. Standard library helpers come from official `@std/*` packages (path, yaml, encoding, assert).
+The stack root comes from `BENTO_STACK_ROOT` and defaults to `./bento`; `--stack PATH` is available as a one-command override. The other global flag is `--json`. Command parsing and help use **yargs**; table layout uses **cliui**; colorized operator output uses **picocolors**. Desired-state and CLI input validation use **zod**; cron schedules use **cron-parser**; PHP/MySQL version ordering uses **semver**; config templates use **mustache**. Standard library helpers come from official `@std/*` packages (path, yaml, encoding, assert).
 
 ## Specs and acceptance
 
@@ -306,7 +305,7 @@ Bento intentionally does **not** provide:
 - unconfirmed destructive deletion of app homes or databases (`app prune` is CLI-only, lists every known part, and requires typing the literal `delete`)
 - automated MySQL or PostgreSQL version/volume deletion (`mysql remove`, `postgres remove`, and `compose down -v` are blocked)
 - automatic relational-database password rotation (the operator must coordinate the database, Bento state/credentials, and dependent applications)
-- automatic off-host backup replication (logical dumps stay under the stack root)
+- managed off-host storage or retention guarantees (scheduled backups can upload through the operator-configured rclone sidecar)
 - a hard-coded Git deploy workflow (webhook orchestration + operator `deploy.sh` only)
 - a Python runtime dependency
 - per-app CPU/memory quotas inside shared PHP containers
@@ -331,7 +330,7 @@ tests/
   integration/            # stack bootstrap / multi-app / boundary suite
 scripts/system-scenarios.md  # contract §8 host checklist
 specs/                    # product specifications
-.github/workflows/ci.yml  # release gates
+.github/workflows/ci.yml  # tag/release binary builds
 ```
 
 ## Nginx performance and sideload configuration

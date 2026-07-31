@@ -5,13 +5,13 @@ description: Check health, inspect logs, run app commands, back up data, apply c
 
 # Daily operations
 
-Use this runbook to check an existing Bento stack, investigate routine problems, operate an app, and make recoverable changes. The examples explicitly target the stack at `/var/lib/bento` and the app `demo`.
+Use this runbook to check an existing Bento stack, investigate routine problems, operate an app, and make recoverable changes. The examples assume `BENTO_STACK_ROOT=/var/lib/bento` and use the app `demo`.
 
 ## Before you begin
 
 - Complete [Create your first stack](/start/first-stack/) and [Add your first application](/start/first-app/).
 - Confirm that the Docker daemon is available and your user can access it.
-- Keep the same `--stack /var/lib/bento` target throughout a maintenance session.
+- Keep `BENTO_STACK_ROOT=/var/lib/bento` throughout the maintenance session.
 - Know the app slug and domain you intend to operate.
 
 ## Start with status
@@ -19,7 +19,7 @@ Use this runbook to check an existing Bento stack, investigate routine problems,
 Check Bento's desired-state and runtime summary before changing anything:
 
 ```sh
-bento --stack /var/lib/bento status
+bento status
 ```
 
 Confirm the displayed stack root and stack name. Review service health, apps, domains, ingress, warnings, and notes. A role reported as `config-ready` has generated configuration but is not running.
@@ -27,13 +27,13 @@ Confirm the displayed stack root and stack name. Review service health, apps, do
 Inspect the underlying containers when a service is unhealthy or still starting:
 
 ```sh
-bento --stack /var/lib/bento compose -- ps
+bento compose -- ps
 ```
 
 For monitoring scripts, `--json` provides a secret-redacted status document:
 
 ```sh
-bento --stack /var/lib/bento --json status
+bento --json status
 ```
 
 ## Inspect logs
@@ -41,13 +41,13 @@ bento --stack /var/lib/bento --json status
 Follow recent logs for all Compose services:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 --follow
+bento compose -- logs --tail 100 --follow
 ```
 
 Press `Ctrl+C` to stop following; this does not stop any service. Limit the output when one role is implicated:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 nginx
+bento compose -- logs --tail 100 nginx
 ```
 
 Use the service name shown by `status` or `compose -- ps`, such as `nginx`, `php85`, `php85-runner`, `mysql84`, or `redis`. Application files also have logs under `/var/lib/bento/homes/<app>/logs/`; Nginx files are under `/var/lib/bento/logs/nginx/`.
@@ -61,13 +61,13 @@ The CLI container is ephemeral, but the command can change durable app files or 
 Open an ephemeral shell under the app's configured PHP version and UID/GID:
 
 ```sh
-bento --stack /var/lib/bento app shell demo
+bento app shell demo
 ```
 
 Run a noninteractive command from the app's code directory with arguments after `--`:
 
 ```sh
-bento --stack /var/lib/bento exec demo \
+bento exec demo \
   --workdir /home/demo/code -- php artisan queue:restart
 ```
 
@@ -82,7 +82,7 @@ Bento writes dumps only to this host under `/var/lib/bento/backups/`. An on-host
 Create a logical dump of every database recorded for `demo`:
 
 ```sh
-bento --stack /var/lib/bento backup --app demo
+bento backup --app demo
 ```
 
 Bento reports each completed path and byte size. Copy dumps to an encrypted off-host destination and monitor that copy separately.
@@ -94,13 +94,13 @@ Follow [Back up and restore databases](/guides/data/backup-restore/) to schedule
 Inspect an app before updating its desired state:
 
 ```sh
-bento --stack /var/lib/bento app show demo
+bento app show demo
 ```
 
 Most Bento commands that change desired state apply automatically. If you used `--no-apply`, changed a supported custom file, or need to reconcile the stack, preview the pending reload targets:
 
 ```sh
-bento --stack /var/lib/bento apply --preview
+bento apply --preview
 ```
 
 Preview does not write generated files, validate service configuration, or signal containers. Activate the current desired state with validation:
@@ -110,13 +110,13 @@ Apply can briefly affect traffic or application processes while targeted service
 :::
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 Apply does not start stopped services. If a role remains `config-ready`, inspect it and start its existing container explicitly:
 
 ```sh
-bento --stack /var/lib/bento compose -- start <service>
+bento compose -- start <service>
 ```
 
 Do not edit files under `generated/`; Bento replaces them. See [Desired state and generated configuration](/concepts/desired-state/) and [Manage a stack](/guides/stacks/manage/) before changing container lifecycle or custom configuration.
@@ -126,8 +126,8 @@ Do not edit files under `generated/`; Bento replaces them. See [Desired state an
 Repeat the status checks:
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento compose -- ps
+bento status
+bento compose -- ps
 ```
 
 Verify the app route from the host with its expected host name:
@@ -143,7 +143,7 @@ Then check the affected service logs and an application-specific function, such 
 Run Bento's broader checks:
 
 ```sh
-bento --stack /var/lib/bento doctor
+bento doctor
 ```
 
 `doctor` checks host tools, versions, network and ports, storage, TLS, services, permissions, volumes, overlays, and secret modes. It exits nonzero when any check fails. Resolve failed checks first; review warnings for conditions that may be intentional or transitional.
@@ -151,7 +151,7 @@ bento --stack /var/lib/bento doctor
 Create a redacted diagnostic archive when you need to preserve or share a snapshot:
 
 ```sh
-bento --stack /var/lib/bento support-bundle \
+bento support-bundle \
   /var/lib/bento/support/incident.tar.gz
 ```
 
@@ -173,7 +173,7 @@ Bento redacts known credential fields and writes the archive with private permis
 
 ## Advanced
 
-For unattended checks, use `bento --stack /var/lib/bento --json status` and `--json doctor`; both redact known secrets. Alert on command failure and on unhealthy service fields rather than matching the formatted human output.
+For unattended checks, use `bento --json status` and `--json doctor`; both redact known secrets. Alert on command failure and on unhealthy service fields rather than matching the formatted human output.
 
 The Compose wrapper materializes Bento's bundled assets, renders current configuration, and selects every managed Compose fragment and operator overlay before invoking Docker Compose. Use it instead of assembling `docker compose -f` arguments manually. Bento blocks `down` with volume or image-removal flags on this path because those options can destroy durable data; Docker access itself remains a trusted operator capability.
 

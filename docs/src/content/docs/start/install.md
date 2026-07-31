@@ -61,13 +61,14 @@ test -w /var/lib/bento && echo "stack root is writable"
 Do not place the stack root in `/tmp`, an ephemeral deployment directory, or the source checkout. Losing this directory can lose desired state, credentials, app files, SQLite databases, certificates, and on-host backups. Docker MySQL, PostgreSQL, and Redis data also require separate protection because they live in named volumes.
 :::
 
-Bento defaults to `./bento` when neither `--stack` nor `BENTO_STACK_ROOT` is set. Use an explicit path for production commands so the selected stack cannot change with the current working directory:
+Bento reads the stack root from `BENTO_STACK_ROOT` and defaults to `./bento` when the variable is unset. Select the durable production root once for your operator environment so commands do not depend on the current working directory:
 
 ```sh
-bento --stack /var/lib/bento version
+export BENTO_STACK_ROOT=/var/lib/bento
+bento version
 ```
 
-`BENTO_STACK_ROOT=/var/lib/bento` can set the same default for an operator environment, but the beginner guides continue to show `--stack` explicitly.
+Add the export to the operator account's shell profile or service environment when it should persist across sessions. The guides assume this variable is set and keep command examples short. `--stack PATH` remains available as a one-command override, which is useful when deliberately switching stacks.
 
 ## Run from source instead
 
@@ -75,7 +76,7 @@ Source mode is for development or for a reviewed checkout when no compiled relea
 
 ```sh
 deno --version
-deno task run --stack /var/lib/bento version
+deno task run version
 ```
 
 Use the permission set in the repository's `deno.json`; do not replace it with unrestricted `-A`. Source mode and the compiled binary are tested to produce equivalent state transitions and generated files. Mutable data still belongs in the external stack root, not beside the source or binary.

@@ -18,7 +18,7 @@ Use Bento's status, apply, and Compose commands to operate an existing stack wit
 Start each maintenance session with Bento's combined desired-state and runtime view:
 
 ```sh
-bento --stack /var/lib/bento status
+bento status
 ```
 
 Check the reported stack root and stack name before changing anything. Review expected roles, database health, apps, ingress, generation time, warnings, and notes. A role marked `config-ready` has generated configuration but is not running; `apply` does not start it.
@@ -26,13 +26,13 @@ Check the reported stack root and stack name before changing anything. Review ex
 For automation, request the secret-redacted JSON report:
 
 ```sh
-bento --stack /var/lib/bento --json status
+bento --json status
 ```
 
 Inspect the underlying Compose processes when you need container-level detail:
 
 ```sh
-bento --stack /var/lib/bento compose -- ps
+bento compose -- ps
 ```
 
 ## Reconcile a change
@@ -40,7 +40,7 @@ bento --stack /var/lib/bento compose -- ps
 Most Bento commands that change desired state apply automatically. If you used a command's `--no-apply` option, changed supported custom files, or need to reconcile the complete stack, preview the planned targets:
 
 ```sh
-bento --stack /var/lib/bento apply --preview
+bento apply --preview
 ```
 
 Preview creates a candidate in memory and lists its files and reload plan. It does not write generated files, validate service configuration, or signal containers.
@@ -52,7 +52,7 @@ An apply can briefly affect traffic or application processes while it reloads ta
 Apply the current desired state:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 Bento renders a complete generation, validates the relevant service configurations, and reloads targeted running services. Stopped roles read the generated configuration when you start them later.
@@ -60,8 +60,8 @@ Bento renders a complete generation, validates the relevant service configuratio
 Verify control-plane and container status again:
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento compose -- ps
+bento status
+bento compose -- ps
 ```
 
 For a web change, also make an HTTP request with the application's expected host name. For example, from the server:
@@ -81,32 +81,32 @@ In host ingress mode, starting Nginx claims host ports 80 and 443 and can expose
 Start all existing stack containers:
 
 ```sh
-bento --stack /var/lib/bento compose -- start
+bento compose -- start
 ```
 
 If containers have not been created, or an image or Compose definition changed, reconcile them in the background instead:
 
 ```sh
-bento --stack /var/lib/bento compose -- up -d --build
+bento compose -- up -d --build
 ```
 
 Stop all stack services while preserving their containers and durable volumes:
 
 ```sh
-bento --stack /var/lib/bento compose -- stop
+bento compose -- stop
 ```
 
 Start or stop one role by its Compose service name when you need a narrower outage:
 
 ```sh
-bento --stack /var/lib/bento compose -- stop php85-runner
-bento --stack /var/lib/bento compose -- start php85-runner
+bento compose -- stop php85-runner
+bento compose -- start php85-runner
 ```
 
 Use the service names reported by `status`, `compose -- ps`, or the merged Compose configuration. A broad restart interrupts every selected role and is normally unnecessary after `apply`; if a process must be recreated, target it explicitly:
 
 ```sh
-bento --stack /var/lib/bento compose -- restart nginx
+bento compose -- restart nginx
 ```
 
 :::danger
@@ -120,13 +120,13 @@ Plain `down` is allowed, but it stops the whole stack and removes its containers
 List the exact Compose files and overlay order selected by Bento:
 
 ```sh
-bento --stack /var/lib/bento compose files
+bento compose files
 ```
 
 Ask Compose to validate and print the merged model:
 
 ```sh
-bento --stack /var/lib/bento compose -- config
+bento compose -- config
 ```
 
 Files below `/var/lib/bento/generated/` are disposable outputs. Do not edit them; change desired state through Bento or use a [supported operator-owned input](/concepts/desired-state/#generated-files-are-outputs-not-customization-points).
@@ -134,13 +134,13 @@ Files below `/var/lib/bento/generated/` are disposable outputs. Do not edit them
 Follow logs for the complete stack:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 --follow
+bento compose -- logs --tail 100 --follow
 ```
 
 Or limit output to one service:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 nginx
+bento compose -- logs --tail 100 nginx
 ```
 
 Press `Ctrl+C` to stop following logs; this does not stop the service. Docker's service logs are separate from application files under each app's `logs/` directory and Nginx files under the stack's `logs/nginx/` directory.
@@ -158,7 +158,7 @@ Press `Ctrl+C` to stop following logs; this does not stop the service. Docker's 
 **A service repeatedly restarts:** inspect its first error with `compose -- logs --tail 100 <service>`. Also run the broader checks:
 
 ```sh
-bento --stack /var/lib/bento doctor
+bento doctor
 ```
 
 `doctor` exits nonzero when a check fails. Resolve host ports, storage, permissions, configuration, or service health findings before repeating a broad restart.

@@ -27,8 +27,8 @@ Shared mode is the compatibility default. A prefix is a naming rule, not a crypt
 Run a framework cache/queue health check through the app identity, then inspect `status` and Redis service logs:
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento compose -- logs --tail 100 redis
+bento status
+bento compose -- logs --tail 100 redis
 ```
 
 ## Troubleshooting

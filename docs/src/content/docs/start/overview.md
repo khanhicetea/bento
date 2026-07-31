@@ -48,7 +48,7 @@ Bento deliberately optimizes for a comprehensible single-server platform. It doe
 - one container per app or hard isolation between mutually untrusted tenants;
 - general-purpose hosting for non-PHP runtimes beyond reverse proxying to an existing service;
 - an application-specific Git checkout, release, or rollback strategy;
-- automatic off-host backup replication;
+- managed off-host storage, retention, or recovery guarantees (scheduled uploads require an operator-configured rclone remote);
 - per-app CPU or memory quotas inside shared PHP containers.
 
 The app boundaries—Linux identities, filesystem permissions, PHP pools, database grants, and optional Redis ACLs—reduce accidental cross-app access. They are not a hostile multi-tenant sandbox. Use separate hosts or stronger isolation when app operators or code do not trust one another.

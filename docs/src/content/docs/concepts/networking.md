@@ -83,7 +83,7 @@ Use `http://` or `https://` explicitly in a Bento reverse-proxy upstream. Multip
 Inspect the effective stack name, mode, publications, and HTTP/3 UDP publication before diagnosing traffic:
 
 ```sh
-bento --stack /var/lib/bento stack ingress show
+bento stack ingress show
 ```
 
 Also check the host listeners. A host-mode stack should own `80` and `443`; a bridge-mode stack should own only its selected published ports:

@@ -11,33 +11,34 @@ A Bento **stack** is one installation's desired state, generated configuration, 
 
 | Identifier | Purpose | Example |
 | --- | --- | --- |
-| **Stack root** | Filesystem path targeted by `--stack` or `BENTO_STACK_ROOT` | `/var/lib/bento` |
+| **Stack root** | Filesystem path from `BENTO_STACK_ROOT`, or the `./bento` default | `/var/lib/bento` |
 | **Stack name** | Stable Compose project identity stored as `COMPOSE_PROJECT_NAME` | `production` |
 
 They are deliberately independent:
 
 ```text
-/var/lib/bento  --stack path--> host files
+/var/lib/bento  --root path----> host files
 production      --name-------> production_private, production_mysql84-data, …
 ```
 
 The directory basename does not become the stack name. This command creates a root at `/var/lib/bento` with the name `production`:
 
 ```sh
-bento --stack /var/lib/bento init --name production
+bento init --name production
 ```
 
 If `--name` is omitted, the name defaults to `bento`; it is still not inferred from the directory. Stack names use lowercase letters, digits, hyphens, and underscores and must start with a letter or digit.
 
 ## The stack root selects host data
 
-Bento resolves the selected stack root to an absolute path and reads and writes all stack-local data beneath it. The production guides show `--stack` explicitly:
+Bento resolves the selected stack root to an absolute path and reads and writes all stack-local data beneath it. Set the production root once in the operator environment:
 
 ```sh
-bento --stack /var/lib/bento status
+export BENTO_STACK_ROOT=/var/lib/bento
+bento status
 ```
 
-Without `--stack` or `BENTO_STACK_ROOT`, Bento defaults to `./bento`. That relative default changes meaning with the current working directory, so it is unsafe as an implicit production target.
+Without `BENTO_STACK_ROOT`, Bento defaults to `./bento`. That relative default changes meaning with the current working directory, so do not rely on it as an implicit production target. `--stack PATH` can override the environment for one command.
 
 A stack root contains several ownership classes:
 
@@ -71,27 +72,27 @@ Copying a stack directory does not create an independent clone. The copy retains
 
 ### Target every important command
 
-Use the same explicit root for status checks, changes, scheduled tasks, backups, and destructive operations:
+Use the same selected root for status checks, changes, scheduled tasks, backups, and destructive operations:
 
 ```sh
-bento --stack /var/lib/bento app show demo
-bento --stack /var/lib/bento backup --app demo
+bento app show demo
+bento backup --app demo
 ```
 
-For scripts, set `BENTO_STACK_ROOT` once or retain `--stack` in every invocation. Do not depend on a script's working directory.
+For scripts, set `BENTO_STACK_ROOT` once. Do not depend on a script's working directory.
 
 ### Verify both identifiers before a change
 
 `status` reports the resolved root and stack name:
 
 ```sh
-bento --stack /var/lib/bento status
+bento status
 ```
 
 The ingress view also reports the name and networking mode:
 
 ```sh
-bento --stack /var/lib/bento stack ingress show
+bento stack ingress show
 ```
 
 Check these values before an import, restore, app deletion, or multi-stack operation. A valid command aimed at the wrong root can still change the wrong stack.
@@ -112,7 +113,7 @@ Moving or restoring a root requires planning even though its name is independent
 
 ## Advanced
 
-Bento has no resident daemon that remembers a current stack. Each CLI invocation resolves its target from `--stack`, then loads the stack-local state and environment. Locks also live under that root. This makes stacks portable and explicit, but it cannot prevent two different roots with the same name from contending for the same Docker resources.
+Bento has no resident daemon that remembers a current stack. Each CLI invocation resolves its target from `BENTO_STACK_ROOT`, the `./bento` default, or a one-command `--stack` override, then loads the stack-local state and environment. Locks also live under that root. This makes stacks portable and explicit, but it cannot prevent two different roots with the same name from contending for the same Docker resources.
 
 Compiled and source-mode Bento use the same external-root model. Immutable templates come from the binary or checkout, enter a digest-addressed `.asset-cache/`, and are published to stable `docker/` and `helpers/` paths for Compose. Replacing the executable does not relocate operator state.
 

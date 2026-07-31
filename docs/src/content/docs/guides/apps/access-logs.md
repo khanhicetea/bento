@@ -14,8 +14,8 @@ Access logs can contain client addresses, URLs, query strings, referrers, and us
 :::
 
 ```sh
-bento --stack /var/lib/bento logs access enable --app demo
-bento --stack /var/lib/bento app show demo
+bento logs access enable --app demo
+bento app show demo
 ```
 
 Generate a request, then inspect files beneath `logs/nginx/`. Enabling/disabling targets an Nginx-only configuration reload.
@@ -23,8 +23,8 @@ Generate a request, then inspect files beneath `logs/nginx/`. Enabling/disabling
 ## Rotate and report
 
 ```sh
-bento --stack /var/lib/bento logs access rotate --app demo
-bento --stack /var/lib/bento logs access report \
+bento logs access rotate --app demo
+bento logs access report \
   --app demo --output /var/lib/bento/logs/reports/demo.html
 ```
 
@@ -33,7 +33,7 @@ The one-shot GoAccess container reads the log and writes HTML. Use `--dry-run` t
 Disable future logging while retaining existing files:
 
 ```sh
-bento --stack /var/lib/bento logs access disable --app demo
+bento logs access disable --app demo
 ```
 
 ## Troubleshooting

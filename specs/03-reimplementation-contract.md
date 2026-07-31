@@ -38,7 +38,7 @@ Technical choices are evaluated in this order:
 **Decision:** Run the control plane once per CLI invocation; persist intent locally; reconcile explicitly.  
 **Benefits:** No management port/daemon, transparent target root, simple upgrades.  
 **Trade-offs:** External drift is not continuously healed and operators must invoke apply.  
-**Invariant:** Every operation resolves its stack from `--stack`/environment; no process remembers a global current stack.
+**Invariant:** Every operation resolves its stack from `BENTO_STACK_ROOT`, the `./bento` default, or a one-command `--stack` override; no process remembers a global current stack.
 
 ### D-03 — Deno, strict TypeScript, and one entrypoint
 

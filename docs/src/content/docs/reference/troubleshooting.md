@@ -8,9 +8,9 @@ description: Start from a Bento symptom and follow targeted, non-destructive che
 Start with explicit stack targeting and preserve evidence before changing data:
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento doctor
-bento --stack /var/lib/bento compose -- ps
+bento status
+bento doctor
+bento compose -- ps
 ```
 
 | Symptom | Checks and destination |
@@ -31,8 +31,8 @@ bento --stack /var/lib/bento compose -- ps
 ## Collect evidence
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 200 <service>
-bento --stack /var/lib/bento support-bundle /tmp/bento-support.tar.gz
+bento compose -- logs --tail 200 <service>
+bento support-bundle /tmp/bento-support.tar.gz
 ```
 
 Support bundles redact known secrets but remain sensitive. Inspect before sharing. Use `--json` with `status`/`doctor` for automation.

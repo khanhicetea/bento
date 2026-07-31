@@ -90,13 +90,13 @@ Removing an app from desired state also removes its cron and worker records, but
 Inspect the app model without exposing its database, Redis, or deploy secrets:
 
 ```sh
-bento --stack /var/lib/bento app show demo
+bento app show demo
 ```
 
 When operating the app, use its slug rather than manually selecting a container or UID. For example, this runs with the app's recorded PHP runtime, identity, home, and private network access:
 
 ```sh
-bento --stack /var/lib/bento exec demo -- php -v
+bento exec demo -- php -v
 ```
 
 Re-running `app create` or using `app update` is the supported way to change an app's linked domains, document root, routing mode, PHP version, or FPM profile. Omitted PHP, profile, and database choices preserve the existing recorded selections; inspect the result after every update.
@@ -111,7 +111,7 @@ Bento also does not:
 - reserve dedicated CPU or memory per app;
 - automatically configure a framework from `credentials/app.env`;
 - migrate an app between relational engines or services;
-- replicate code, relational database data, or credentials off-host; optional [SQLite continuous backup](/guides/data/sqlite/) is the exception.
+- manage source-code replication, remote retention, or provider durability; scheduled logical backups can upload through an operator-configured rclone sidecar, and [SQLite continuous backup](/guides/data/sqlite/) uses separate S3-compatible storage.
 
 ## Advanced
 

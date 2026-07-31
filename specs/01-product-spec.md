@@ -63,12 +63,12 @@ Bento is not appropriate when the workload requires multi-host availability, hor
 
 A stack is one independent Bento installation. It has:
 
-- an explicit filesystem root selected by `--stack` or `BENTO_STACK_ROOT`;
+- a filesystem root selected by `BENTO_STACK_ROOT`, the `./bento` default, or a one-command `--stack` override;
 - a stable Compose project name stored in `.env`;
 - one desired-state document, generated configuration, custom input, homes, certificates, backups, logs, and runtime coordination;
 - private network and named-volume identities derived from the Compose project name.
 
-The stack path and stack name are independent. Production commands SHOULD name the stack path explicitly. Separate stacks on one Docker host MUST use distinct project names and non-conflicting ingress.
+The stack path and stack name are independent. Production environments SHOULD set `BENTO_STACK_ROOT` explicitly rather than depend on the working-directory default. Separate stacks on one Docker host MUST use distinct project names and non-conflicting ingress.
 
 ### 5.2 Application
 

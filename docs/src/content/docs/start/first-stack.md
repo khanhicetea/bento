@@ -14,14 +14,14 @@ Create and start an empty Bento stack named `production` under `/var/lib/bento`.
 - Confirm that `/var/lib/bento` is writable and ports 80 and 443 are free.
 - Use a different stack root and stack name if this host already has a Bento stack.
 
-Every command below includes `--stack /var/lib/bento`. Keep that option consistent: running a command against a different path targets a different stack.
+The examples assume `BENTO_STACK_ROOT=/var/lib/bento` is set as described in the install guide. Check it before continuing: running against a different root targets a different stack.
 
 ## Initialize the stack
 
 Choose the stack name before initialization. The name becomes the stable Docker Compose identity that prefixes containers, networks, and named volumes; it is not inferred from `/var/lib/bento`.
 
 ```sh
-bento --stack /var/lib/bento init --name production
+bento init --name production
 ```
 
 Bento creates private `state.json` and `.env` files along with the initial stack directories. The `.env` file includes generated database and Redis administrator secrets.
@@ -33,7 +33,7 @@ Treat the stack name as permanent. Changing `COMPOSE_PROJECT_NAME` later would p
 Verify the selected identity and ingress mode:
 
 ```sh
-bento --stack /var/lib/bento stack ingress show
+bento stack ingress show
 ```
 
 The result should show the name `production` and mode `host`. In host mode, Nginx uses the host network and binds directly to ports 80 and 443; the “host port” publication fields are therefore not used.
@@ -43,19 +43,19 @@ The result should show the name `production` and mode `host`. In host mode, Ngin
 Render the desired state into generated configuration without starting or signaling services:
 
 ```sh
-bento --stack /var/lib/bento render
+bento render
 ```
 
 Render should report that it wrote files with no service signals. Inspect the deterministic Compose file chain:
 
 ```sh
-bento --stack /var/lib/bento compose files
+bento compose files
 ```
 
 Validate the merged Compose model before startup:
 
 ```sh
-bento --stack /var/lib/bento compose -- config --quiet
+bento compose -- config --quiet
 ```
 
 No output and a zero exit status mean Docker Compose accepted the generated model. Generated files under `/var/lib/bento/generated/` are disposable output; do not edit them.
@@ -69,7 +69,7 @@ The next command builds or downloads container images, creates durable Docker vo
 Start all services in the background:
 
 ```sh
-bento --stack /var/lib/bento compose -- up -d --build
+bento compose -- up -d --build
 ```
 
 The first build can take several minutes. The stack initially includes Nginx, Redis, the default PHP FPM and runner roles, and MySQL 8.4.
@@ -77,7 +77,7 @@ The first build can take several minutes. The stack initially includes Nginx, Re
 After the containers start, run a validated apply. This regenerates the candidate configuration, validates the merged Compose model and available service configurations, and reloads only affected running services:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 Do not add `--skip-validate` to the normal startup path.
@@ -87,7 +87,7 @@ Do not add `--skip-validate` to the normal startup path.
 Inspect Bento's view of the stack:
 
 ```sh
-bento --stack /var/lib/bento status
+bento status
 ```
 
 Confirm that it reports:
@@ -100,20 +100,20 @@ Confirm that it reports:
 Check the underlying containers when a role is still starting:
 
 ```sh
-bento --stack /var/lib/bento compose -- ps
+bento compose -- ps
 ```
 
 Finally, run the broader host and stack diagnostics:
 
 ```sh
-bento --stack /var/lib/bento doctor
+bento doctor
 ```
 
 A healthy first stack has no failed checks. Warnings can still describe optional or transitional conditions; read each one before proceeding. `doctor` exits nonzero when any check fails.
 
 ## Troubleshooting
 
-**Initialization says state already exists:** verify that `--stack` points to the intended directory. Continue with the existing stack instead of using `--force`, unless you deliberately intend to replace its desired state.
+**Initialization says state already exists:** verify that `BENTO_STACK_ROOT` selects the intended directory. Continue with the existing stack instead of using `--force`, unless you deliberately intend to replace its desired state.
 
 **Compose reports that port 80 or 443 is already allocated:** stop or reconfigure the existing listener. One host-mode stack owns those ports. An additional stack needs a distinct name, bridge mode, and non-conflicting publications.
 
@@ -124,7 +124,7 @@ A healthy first stack has no failed checks. Warnings can still describe optional
 **A container is restarting or unhealthy:** inspect its recent logs:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 100 <service>
+bento compose -- logs --tail 100 <service>
 ```
 
 Replace `<service>` with the role shown by `status` or `compose -- ps`, such as `nginx`, `php85`, `mysql84`, or `redis`.
@@ -137,7 +137,7 @@ Replace `<service>` with the role shown by `status` or `compose -- ps`, such as 
 
 The wrapper assembles every managed Compose fragment and operator overlay in deterministic order. Use it instead of manually selecting files. It also blocks `docker compose down -v`, `--volumes`, and destructive `--rmi` forms to protect durable database and Redis resources.
 
-The examples use explicit `--stack` even though Bento accepts `BENTO_STACK_ROOT` and defaults to `./bento`. Explicit targeting prevents the current directory from silently selecting another production stack.
+Each invocation resolves the root from `BENTO_STACK_ROOT`, or from the `./bento` default when it is unset. Keep the production variable in the operator environment; use `--stack PATH` only when a one-command override is clearer.
 
 ## Next steps
 

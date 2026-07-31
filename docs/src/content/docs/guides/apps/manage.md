@@ -19,7 +19,7 @@ Manage an existing app's configuration and runtime state, run commands as its id
 List the apps in desired state:
 
 ```sh
-bento --stack /var/lib/bento app list
+bento app list
 ```
 
 The table shows each app's enabled state, numeric identity, primary domain, PHP version, FPM profile, TLS mode, and database binding.
@@ -27,13 +27,13 @@ The table shows each app's enabled state, numeric identity, primary domain, PHP 
 Show one app's complete model with database, Redis, and deploy secrets redacted:
 
 ```sh
-bento --stack /var/lib/bento app show demo
+bento app show demo
 ```
 
 Use the stack-wide view to correlate the app with domains, service health, capacity warnings, and generated roles:
 
 ```sh
-bento --stack /var/lib/bento status
+bento status
 ```
 
 ## Update an app
@@ -47,7 +47,7 @@ Updating runtime, document-root, routing, domain, or FPM settings can briefly in
 For example, replace `demo`'s aliases while retaining its primary domain:
 
 ```sh
-bento --stack /var/lib/bento app update demo \
+bento app update demo \
   --domain demo.example.com \
   --alias www.demo.example.com,admin.demo.example.com
 ```
@@ -65,14 +65,14 @@ Important update behavior:
 Verify the recorded result and HTTP route:
 
 ```sh
-bento --stack /var/lib/bento app show demo
+bento app show demo
 curl -I -H 'Host: demo.example.com' http://127.0.0.1/
 ```
 
 If you batch changes with `--no-apply`, activate them afterward:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 Until apply succeeds, desired state and the running configuration can differ.
@@ -86,30 +86,30 @@ Disabling removes the app's generated vhost, PHP pool, scheduler, and worker con
 :::
 
 ```sh
-bento --stack /var/lib/bento app disable demo
+bento app disable demo
 ```
 
 Confirm that `app list` marks it disabled and that its vhost and runtime entries are no longer active:
 
 ```sh
-bento --stack /var/lib/bento app list
-bento --stack /var/lib/bento status
+bento app list
+bento status
 ```
 
 Enable and reapply its runtime configuration later:
 
 ```sh
-bento --stack /var/lib/bento app enable demo
+bento app enable demo
 ```
 
-Verify the app route after enabling it. Both commands accept `--no-apply`; if you use that option, run `bento --stack /var/lib/bento apply` before expecting runtime behavior to change.
+Verify the app route after enabling it. Both commands accept `--no-apply`; if you use that option, run `bento apply` before expecting runtime behavior to change.
 
 ## Open a shell or run a command
 
 Open an ephemeral Bash shell using the app's configured PHP version and numeric identity:
 
 ```sh
-bento --stack /var/lib/bento app shell demo
+bento app shell demo
 ```
 
 The shell container is removed when you exit. Its default working directory is `/home/demo`; app files remain durable because the stack home is mounted into the container.
@@ -117,7 +117,7 @@ The shell container is removed when you exit. Its default working directory is `
 Run one noninteractive command with arguments after `--`:
 
 ```sh
-bento --stack /var/lib/bento exec demo -- php -v
+bento exec demo -- php -v
 ```
 
 :::caution
@@ -127,7 +127,7 @@ Application commands and migrations can change durable files or database content
 Run a framework command from the code directory:
 
 ```sh
-bento --stack /var/lib/bento exec demo \
+bento exec demo \
   --workdir /home/demo/code -- php artisan migrate --force
 ```
 
@@ -136,7 +136,7 @@ Use `--php <version>` only for a deliberate one-off run under another PHP versio
 To inspect the Compose invocation without running it:
 
 ```sh
-bento --stack /var/lib/bento exec demo --print -- php -v
+bento exec demo --print -- php -v
 ```
 
 ## Remove desired state but retain data
@@ -148,7 +148,7 @@ The next command takes the app out of service and releases its domains for reuse
 :::
 
 ```sh
-bento --stack /var/lib/bento app remove demo --confirm 'delete demo'
+bento app remove demo --confirm 'delete demo'
 ```
 
 `app delete` is the same operation. Do not add `--no-apply` unless you intentionally want stale generated runtime configuration to remain until a later apply.
@@ -156,7 +156,7 @@ bento --stack /var/lib/bento app remove demo --confirm 'delete demo'
 Verify that the app is absent from desired state while its home remains on disk:
 
 ```sh
-bento --stack /var/lib/bento app list
+bento app list
 sudo test -d /var/lib/bento/homes/demo && echo 'retained home exists'
 ```
 
@@ -173,7 +173,7 @@ Prune only after the app has been removed from desired state and its retained da
 Ensure the recorded database service is running, then invoke the interactive command from a terminal:
 
 ```sh
-bento --stack /var/lib/bento app prune demo
+bento app prune demo
 ```
 
 Bento prints every known database, the database account or role, and the app-home path before changing data. Review the list. To proceed, type exactly:
@@ -201,10 +201,10 @@ If cleanup metadata is missing, Bento warns that it cannot identify database dat
 **Shell or exec cannot create the CLI container:** inspect the matching PHP image and Compose output. Use `--print` to verify the selected profile, service, workdir, and arguments, then check Docker with:
 
 ```sh
-bento --stack /var/lib/bento compose -- ps
+bento compose -- ps
 ```
 
-**A disabled app still responds:** confirm that the disable command applied successfully. Run `bento --stack /var/lib/bento apply`, inspect the Nginx configuration error if it fails, and retry the request with the exact host name.
+**A disabled app still responds:** confirm that the disable command applied successfully. Run `bento apply`, inspect the Nginx configuration error if it fails, and retry the request with the exact host name.
 
 **Removal rejects the confirmation:** pass the exact case-sensitive text `--confirm 'delete demo'`. Removal has no generic yes flag.
 

@@ -18,8 +18,8 @@ Choose and activate the correct TLS mode for a Bento app or reverse proxy, verif
 Inspect the current domain and TLS mode:
 
 ```sh
-bento --stack /var/lib/bento app show demo
-bento --stack /var/lib/bento status
+bento app show demo
+bento status
 ```
 
 ## Choose a TLS mode
@@ -46,7 +46,7 @@ Changing a primary domain or alias changes routing immediately after apply. Conf
 :::
 
 ```sh
-bento --stack /var/lib/bento app update demo \
+bento app update demo \
   --domain demo.example.com \
   --alias www.demo.example.com
 ```
@@ -60,7 +60,7 @@ Review the update behavior in [Manage applications](/guides/apps/manage/#update-
 Switch an app back to the startup mode:
 
 ```sh
-bento --stack /var/lib/bento tls set --app demo --mode shared
+bento tls set --app demo --mode shared
 ```
 
 For a proxy, replace `--app demo` with `--proxy <name>`. Pass exactly one target.
@@ -84,7 +84,7 @@ Clients do not trust the Bento private CA automatically. Export and distribute o
 Enable private-CA TLS:
 
 ```sh
-bento --stack /var/lib/bento tls set --app demo --mode self-ca
+bento tls set --app demo --mode self-ca
 ```
 
 Bento creates or verifies the CA, issues the site certificate, applies configuration, and reloads Nginx. It renews a leaf certificate on a later render or apply when its domain list changes or it has less than 30 days remaining.
@@ -92,7 +92,7 @@ Bento creates or verifies the CA, issues the site certificate, applies configura
 Export only the public CA certificate to a path outside the managed CA directory:
 
 ```sh
-bento --stack /var/lib/bento tls ca export \
+bento tls ca export \
   --output ./bento-ca.crt
 ```
 
@@ -145,7 +145,7 @@ curl -I http://demo.example.com/
 Enable ACME only after those checks pass:
 
 ```sh
-bento --stack /var/lib/bento tls set --app demo --mode acme
+bento tls set --app demo --mode acme
 ```
 
 Certificate issuance can continue after the command returns. Nginx stores durable issuer state below `/var/lib/bento/certs/acme-state/`; include it in stack backups.
@@ -182,7 +182,7 @@ Confirm that the certificate is current, matches the private key, and covers the
 Select paths relative to `/var/lib/bento/certs/`:
 
 ```sh
-bento --stack /var/lib/bento tls set \
+bento tls set \
   --app demo \
   --mode external \
   --cert external/demo-fullchain.pem \
@@ -192,7 +192,7 @@ bento --stack /var/lib/bento tls set \
 Verify the live certificate with `openssl s_client` as shown in the ACME procedure. When the external system renews the files, replace them atomically if possible and run:
 
 ```sh
-bento --stack /var/lib/bento apply
+bento apply
 ```
 
 That causes Nginx to load the current files. Monitor certificate expiry outside Bento because no external-file renewal scheduler is provided.
@@ -202,8 +202,8 @@ That causes Nginx to load the current files. Monitor certificate expiry outside 
 A direct `tls set` applies an Nginx-only reload; it does not reload PHP-FPM or runner roles. Check the selected state and Nginx process:
 
 ```sh
-bento --stack /var/lib/bento status
-bento --stack /var/lib/bento compose -- ps nginx
+bento status
+bento compose -- ps nginx
 ```
 
 Then verify both behaviors:
@@ -211,7 +211,7 @@ Then verify both behaviors:
 1. HTTP redirects for `self-ca`, `acme`, and `external`, but remains available without forced redirect for `shared`.
 2. HTTPS presents the expected certificate and succeeds with the appropriate public or private trust root.
 
-Use `--no-apply` only when batching changes. It records the TLS mode without changing live Nginx; run `bento --stack /var/lib/bento apply` afterward.
+Use `--no-apply` only when batching changes. It records the TLS mode without changing live Nginx; run `bento apply` afterward.
 
 ## Troubleshooting
 
@@ -220,7 +220,7 @@ Use `--no-apply` only when batching changes. It records the TLS mode without cha
 **ACME remains unavailable:** verify all A and AAAA answers externally, public port 80, firewall/NAT rules, and Nginx logs. Confirm that `ACME_URL` is valid and inspect the issuer state directory without exposing its contents:
 
 ```sh
-bento --stack /var/lib/bento compose -- logs --tail 200 nginx
+bento compose -- logs --tail 200 nginx
 ```
 
 **The site redirects to HTTPS before a usable certificate exists:** switch temporarily to `shared` to restore non-redirected HTTP while correcting ACME, private-CA trust, or external files.
