@@ -11,7 +11,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS node-artifact
 
 # Compile PHP extensions away from the runtime image. Development headers,
 # compilers, PEAR sources, and apt metadata remain in this stage.
-FROM php:${PHP_VERSION}-fpm-bookworm AS php-extension-builder
+FROM php:${PHP_VERSION}-fpm AS php-extension-builder
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
