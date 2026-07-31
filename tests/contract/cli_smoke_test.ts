@@ -491,6 +491,7 @@ Deno.test("cli backup keeps legacy flags and exposes schedule help/run without c
 
     // The existing top-level option remains routed to the default backup command.
     assertEquals(await runCli([...base, "backup", "--all", "--none"]), 0);
+    assertEquals(await runCli([...base, "backup", "--all", "--engine", "mysql", "--none"]), 0);
 
     // Help and an empty all-database run do not use schedule status/register paths,
     // so this smoke coverage never reads or mutates the host user's crontab.

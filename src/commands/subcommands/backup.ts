@@ -7,6 +7,7 @@ import {
 } from "../../services/backup_schedule.ts";
 import {
   type DatabaseBackupArtifact,
+  type DatabaseBackupRequest,
   runDatabaseBackup,
   runDatabaseRestore,
 } from "../../services/database_backup.ts";
@@ -112,6 +113,11 @@ function backupOptions(y: YargsBuilder): YargsBuilder {
   return y
     .option("app", { type: "string", describe: "App slug" })
     .option("database", { type: "string", describe: "Single database" })
+    .option("engine", {
+      type: "string",
+      choices: ["mysql", "postgres", "sqlite"],
+      describe: "Limit local dumps to one database engine",
+    })
     .option("all", {
       type: "boolean",
       default: false,
@@ -144,7 +150,10 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
   // A database-scoped request may still target a local SQLite file on an app
   // that also owns a Litestream file. Only reject an explicitly selected remote
   // file; app/all scope performs local backups and then syncs remote replicas.
-  const litestreamApps = scope === "all"
+  const engine = argv.engine as DatabaseBackupRequest["engine"];
+  const litestreamApps = engine
+    ? []
+    : scope === "all"
     ? Object.values(state.apps).filter((app) =>
       app.databases.some((database) => database.engine === "litestream")
     )
@@ -167,6 +176,7 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     scope,
     slug: argv.app,
     database: argv.database,
+    engine,
     compress: argv.gzip === true ? "gzip" : argv.none === true ? "none" : "zstd",
   });
   logBackupArtifacts(ctx, artifacts);

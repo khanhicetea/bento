@@ -15,7 +15,10 @@ import {
 import { runPostgresBackup, runPostgresRestore } from "./postgres.ts";
 import { runSqliteBackup } from "./sqlite_local.ts";
 
-export type DatabaseBackupRequest = BackupRequest;
+export type DatabaseBackupRequest = BackupRequest & {
+  /** Limit the batch to one local backup engine. Litestream is synchronized separately. */
+  engine?: "mysql" | "postgres" | "sqlite";
+};
 export type DatabaseBackupArtifact = {
   engine: "mysql" | "postgres" | "sqlite";
   path: string;
@@ -161,6 +164,7 @@ function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<
     let matched = false;
     for (const binding of app.databases) {
       if (binding.engine === "litestream") continue;
+      if (req.engine && binding.engine !== req.engine) continue;
       if (binding.engine === "sqlite") {
         if (req.scope !== "database" || req.database === binding.file.id) {
           targets.push({

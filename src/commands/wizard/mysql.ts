@@ -1,4 +1,5 @@
 import { basename } from "@std/path";
+import type { AppState } from "../../domain/state.ts";
 import { parseAbsolutePath, parseMysqlVersion } from "../../schemas/validators.ts";
 import {
   addMysqlVersion,
@@ -36,7 +37,7 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
       { label: "Open shell", value: "shell", hint: "root shell", disabled: versions.length === 0 },
       { label: "Add version", value: "add", hint: "new MySQL service" },
       { label: "Database sizes", value: "size", disabled: versions.length === 0 },
-      { label: "Backup", value: "backup", hint: "database · app · all" },
+      { label: "Backup", value: "backup", hint: "MySQL database · app · all" },
       { label: "Restore", value: "restore", hint: "recent backup or file" },
     ]);
     if (!action) return;
@@ -95,7 +96,7 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
           rows,
         );
       } else if (action === "backup") {
-        await wizardDatabaseBackup(ui, ctx);
+        await wizardDatabaseBackup(ui, ctx, "mysql");
       } else {
         await wizardDatabaseRestore(ui, ctx);
       }
@@ -106,20 +107,52 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
   }
 }
 
-export async function wizardDatabaseBackup(ui: WizardUI, ctx: CliContext): Promise<void> {
+type WizardBackupEngine = "mysql" | "postgres";
+
+export type WizardBackupDatabase = {
+  name: string;
+  service: string;
+};
+
+export function wizardBackupDatabases(
+  app: Pick<AppState, "databases">,
+  engine: WizardBackupEngine,
+): WizardBackupDatabase[] {
+  return app.databases.flatMap((binding) =>
+    binding.engine === engine
+      ? binding.databases.map((database) => ({ name: database.name, service: binding.service }))
+      : []
+  );
+}
+
+export async function wizardDatabaseBackup(
+  ui: WizardUI,
+  ctx: CliContext,
+  engine: WizardBackupEngine,
+): Promise<void> {
   const state = await ctx.store.load();
+  const engineLabel = engine === "mysql" ? "MySQL" : "PostgreSQL";
   const apps = Object.values(state.apps)
-    .filter((app) => app.database.databases.length > 0)
-    .sort((a, b) => a.slug.localeCompare(b.slug));
+    .map((app) => ({ app, databases: wizardBackupDatabases(app, engine) }))
+    .filter((entry) => entry.databases.length > 0)
+    .sort((a, b) => a.app.slug.localeCompare(b.app.slug));
   if (apps.length === 0) {
-    ui.warn("No managed databases to back up");
+    ui.warn(`No ${engineLabel} databases to back up`);
     return;
   }
 
-  const scope = await ui.menu<"database" | "app" | "all">("Backup scope", [
-    { label: "Single database", value: "database" },
-    { label: "Application", value: "app", hint: "all databases for one app" },
-    { label: "All databases", value: "all", hint: "all managed applications" },
+  const scope = await ui.menu<"database" | "app" | "all">(`${engineLabel} backup scope`, [
+    { label: `Single ${engineLabel} database`, value: "database" },
+    {
+      label: "Application",
+      value: "app",
+      hint: `all ${engineLabel} databases for one app`,
+    },
+    {
+      label: `All ${engineLabel} databases`,
+      value: "all",
+      hint: `all applications with ${engineLabel} bindings`,
+    },
   ]);
   if (!scope) return;
 
@@ -128,12 +161,10 @@ export async function wizardDatabaseBackup(ui: WizardUI, ctx: CliContext): Promi
   if (scope !== "all") {
     slug = await ui.menu(
       "Application",
-      apps.map((app) => ({
+      apps.map(({ app, databases }) => ({
         label: app.slug,
         value: app.slug,
-        hint: `${app.database.databases.length} database${
-          app.database.databases.length === 1 ? "" : "s"
-        }`,
+        hint: `${databases.length} ${engineLabel} database${databases.length === 1 ? "" : "s"}`,
       })),
     ) ?? undefined;
     if (!slug) return;
@@ -141,8 +172,12 @@ export async function wizardDatabaseBackup(ui: WizardUI, ctx: CliContext): Promi
     if (scope === "database") {
       const app = state.apps[slug]!;
       database = await ui.menu(
-        "Database",
-        app.database.databases.map((db) => ({ label: db.name, value: db.name })),
+        `${engineLabel} database`,
+        wizardBackupDatabases(app, engine).map((db) => ({
+          label: db.name,
+          value: db.name,
+          hint: db.service,
+        })),
       ) ?? undefined;
       if (!database) return;
     }
@@ -158,7 +193,7 @@ export async function wizardDatabaseBackup(ui: WizardUI, ctx: CliContext): Promi
   ui.message(pcDim(
     `scriptable: bento backup ${scope === "all" ? "--all" : `--app ${slug}`}${
       database ? ` --database ${database}` : ""
-    }${compress === "gzip" ? " --gzip" : compress === "none" ? " --none" : ""}`,
+    } --engine ${engine}${compress === "gzip" ? " --gzip" : compress === "none" ? " --none" : ""}`,
   ));
   if (!(await ui.confirm("Start backup?", { defaultYes: true }))) return;
 
@@ -167,6 +202,7 @@ export async function wizardDatabaseBackup(ui: WizardUI, ctx: CliContext): Promi
     slug,
     database,
     compress,
+    engine,
   });
   ui.success(
     `Backup completed`,

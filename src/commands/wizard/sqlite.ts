@@ -234,6 +234,7 @@ async function wizardLocalBackup(
     slug: target.slug,
     database: target.fileId,
     compress,
+    engine: "sqlite",
   });
   ui.success("Local SQLite backup completed");
   ui.table(

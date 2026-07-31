@@ -6,6 +6,7 @@ import {
   sqliteDatabaseMenuChoices,
 } from "../../src/commands/wizard/apps.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
+import { wizardBackupDatabases } from "../../src/commands/wizard/mysql.ts";
 import { type KeyEvent, type TerminalIO, WizardUI } from "../../src/ui/tui.ts";
 
 function appWizardUi(inputs: string[]): { ui: WizardUI; output: string[] } {
@@ -100,6 +101,12 @@ Deno.test("app database wizard groups SQLite-backed files", () => {
     sqliteChoices.map((choice) => choice.label),
     ["Local · alpha_local", "Litestream · alpha_stream"],
   );
+
+  assertEquals(wizardBackupDatabases(app, "mysql"), [{ name: "alpha", service: "mysql84" }]);
+  assertEquals(wizardBackupDatabases(app, "postgres"), [{
+    name: "alpha_events",
+    service: "postgres17",
+  }]);
 });
 
 Deno.test("app creation draft navigates backward and preserves answers", async () => {

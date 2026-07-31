@@ -135,6 +135,40 @@ Deno.test("Phase 6 mixed-engine all dispatches correctly and defers retention", 
   }
 });
 
+Deno.test("engine-filtered app backup excludes its other database bindings", async () => {
+  const root = await Deno.makeTempDir({ prefix: "bento-pg6-engine-filter-" });
+  try {
+    const fs = createFileSystem();
+    const platform = testPlatform(root, async (command) => {
+      const service = command[4]!;
+      const database = "myapp";
+      const path = join(
+        root,
+        `backups/${service}/${database}/${service}_${database}_2026-07-27T14-00-00-000Z.sql.zst`,
+      );
+      await fs.mkdirp(join(root, `backups/${service}/${database}`));
+      await fs.writeBytes(path, new Uint8Array([1]), 0o600);
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    platform.fs = fs;
+    platform.assets = createAssetResolver(fs);
+    const state = mixedState(platform);
+    state.apps.myapp!.databases.push(state.apps.pgapp!.databases[0]!);
+
+    const artifacts = await runDatabaseBackup(platform, state, {
+      scope: "app",
+      slug: "myapp",
+      engine: "mysql",
+    });
+
+    assertEquals(artifacts.map((artifact) => artifact.engine), ["mysql"]);
+    assertEquals(platform.process.calls.length, 1);
+    assertStringIncludes(platform.process.calls[0]!.command.at(-1)!, "mysqldump");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
 Deno.test("Phase 6 mid-batch failure preserves artifacts and skips retention", async () => {
   const root = await Deno.makeTempDir({ prefix: "bento-pg6-batch-" });
   try {

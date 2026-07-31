@@ -38,6 +38,8 @@ bento backup --app demo
 
 Bento uses Zstandard compression by default. It runs `mysqldump` or the matching `pg_dump` inside the selected database container. Bento publishes the final file only after the dump succeeds and contains data.
 
+When an app has mixed database bindings, limit the batch to one local engine with `--engine mysql`, `--engine postgres`, or `--engine sqlite`. The MySQL and PostgreSQL TUI sections add this filter automatically, so their app and all scopes never include bindings from another engine. Litestream synchronization remains part of an unfiltered app or all backup.
+
 A typical path is:
 
 ```text

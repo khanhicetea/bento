@@ -35,7 +35,7 @@ export async function sectionPostgres(ui: WizardUI, ctx: CliContext): Promise<vo
       { label: "Add version", value: "add", hint: "official major tag, e.g. 17" },
       { label: "Database sizes", value: "size", disabled: versions.length === 0 },
       { label: "Active processes", value: "processlist", disabled: versions.length === 0 },
-      { label: "Logical backup", value: "backup", hint: "database · app · mixed-engine all" },
+      { label: "Logical backup", value: "backup", hint: "PostgreSQL database · app · all" },
       { label: "Logical restore", value: "restore", hint: "recent backup or file" },
     ]);
     if (!action) return;
@@ -69,7 +69,7 @@ export async function sectionPostgres(ui: WizardUI, ctx: CliContext): Promise<vo
           `bento postgres shell --root --service ${service}`,
         );
       } else if (action === "backup") {
-        await wizardDatabaseBackup(ui, ctx);
+        await wizardDatabaseBackup(ui, ctx, "postgres");
       } else if (action === "restore") {
         await wizardDatabaseRestore(ui, ctx);
       } else {
