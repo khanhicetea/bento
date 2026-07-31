@@ -25,9 +25,8 @@ export async function runSqliteBackup(
 ): Promise<SqliteBackupArtifact> {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
-  const database = databaseBindings(app, "sqlite").find((entry) =>
-    !fileId || entry.file.id === fileId
-  );
+  const databases = databaseBindings(app, "sqlite");
+  const database = databases.find((entry) => !fileId || entry.file.id === fileId);
   if (!database) throw validationError(`app ${slug} has no matching plain SQLite database`);
 
   const timestamp = platform.clock.nowIso().replace(/[:.]/g, "-");
@@ -36,7 +35,7 @@ export async function runSqliteBackup(
     : compress === "gzip"
     ? "sqlite.gz"
     : "sqlite.zst";
-  const name = `sqlite_${slug}_${timestamp}.${extension}`;
+  const name = `${database.file.id}_${timestamp}.${extension}`;
   const directory = join(platform.paths.paths.backupsDir, "sqlite", slug);
   const finalPath = join(directory, name);
   const partialPath = `${finalPath}.partial`;
@@ -47,11 +46,17 @@ export async function runSqliteBackup(
   const source = sqliteContainerPath(database.file.id, app.slug, "sqlite");
   await platform.fs.mkdirp(directory, 0o700);
 
+  // .backup creates a real SQLite file, so keep that snapshot in the mounted
+  // backup directory and compress it there. Avoid shell pipelines: the runner
+  // invokes POSIX `sh`, which does not support `pipefail` on every image.
+  const backup = `sqlite3 ${shellQuote(source)} ${shellQuote(".timeout 30000")} ${
+    shellQuote(`.backup '${raw}'`)
+  }`;
   const publish = compress === "gzip"
-    ? `gzip -c "$RAW" > "$PARTIAL"`
+    ? 'gzip -c "$RAW" > "$PARTIAL"'
     : compress === "zstd"
-    ? `zstd -3 -q -c "$RAW" > "$PARTIAL"`
-    : `mv "$RAW" "$PARTIAL"`;
+    ? 'zstd -3 -q -c "$RAW" > "$PARTIAL"'
+    : 'cat "$RAW" > "$PARTIAL"';
   const script = [
     "set -eu",
     "umask 077",
@@ -60,10 +65,7 @@ export async function runSqliteBackup(
     `PARTIAL=${shellQuote(containerPartial)}`,
     `FINAL=${shellQuote(containerFinal)}`,
     'trap \'rm -f "$RAW" "$PARTIAL"\' EXIT',
-    // .backup uses SQLite's online backup API and is safe with active WAL writers.
-    `sqlite3 ${shellQuote(source)} ${shellQuote(".timeout 30000")} ${
-      shellQuote(`.backup '${raw}'`)
-    }`,
+    backup,
     'test -s "$RAW"',
     publish,
     'test -s "$PARTIAL"',

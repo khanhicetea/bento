@@ -41,14 +41,21 @@ bento --stack /var/lib/bento app create demo \
   --database-engine litestream
 ```
 
-For plain SQLite, create a logical backup with:
+For plain SQLite, create a logical backup with either the SQLite-specific command:
+
+```sh
+bento --stack /var/lib/bento sqlite backup local demo
+bento --stack /var/lib/bento sqlite backup local demo --gzip
+```
+
+or include plain SQLite files in the engine-neutral batch command:
 
 ```sh
 bento --stack /var/lib/bento backup --app demo
-bento --stack /var/lib/bento backup --app demo --gzip
 ```
 
-The default artifact ends in `.sqlite.zst`; `--gzip` produces `.sqlite.gz`.
+The default artifact ends in `.sqlite.zst`; `--gzip` produces `.sqlite.gz`. Use
+`--file <sqlite-file-id>` with the SQLite-specific command when an app has more than one local file.
 
 Bento creates one private database file and writes its container path and default busy timeout to `/home/demo/credentials/app.env` as `DB_DATABASE` and `SQLITE_BUSY_TIMEOUT`. Configure your framework to load that protected file, or copy only the needed values into its protected configuration. Bento does not automatically inject the file into PHP's process environment.
 
@@ -149,7 +156,7 @@ bento --stack /var/lib/bento sqlite backup export \
   --output /safe/recovery/demo.sqlite
 ```
 
-Export runs Litestream's full integrity check, publishes the result with mode `0600`, and refuses to overwrite an existing destination. It never changes the application's live database. The same status, sync, verification, and export operations are available under **Manage SQLite** in `bento tui`.
+Export runs Litestream's full integrity check, publishes the result with mode `0600`, and refuses to overwrite an existing destination. It never changes the application's live database. Local `.backup` with Zstandard/gzip and the same Litestream status, sync, verification, and export operations are available under **Manage SQLite** in `bento tui`.
 
 `bento backup --app demo` confirms remote synchronization for a `litestream` app and does not create a local logical dump. For a plain `sqlite` app it uses SQLite's online `.backup` API and publishes a compressed artifact under `backups/sqlite/demo/`.
 

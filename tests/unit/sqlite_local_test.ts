@@ -52,10 +52,11 @@ Deno.test("plain SQLite backup uses .backup and gzip in the runner", async () =>
       domain: "local.test",
       databaseEngine: "sqlite",
     });
+    const scripts: string[] = [];
     platform.process = createRecordingProcessRunner(async (command) => {
       const script = command.at(-1) ?? "";
+      scripts.push(script);
       assertStringIncludes(script, ".backup");
-      assertStringIncludes(script, "gzip -c");
       const match = script.match(/FINAL='\/var\/backups\/bento\/([^']+)'/);
       assert(match);
       const output = join(root, "backups", match[1]!);
@@ -64,10 +65,22 @@ Deno.test("plain SQLite backup uses .backup and gzip in the runner", async () =>
       return { code: 0, stdout: "", stderr: "" };
     });
 
-    const artifact = await runSqliteBackup(platform, result.state, "local", "gzip");
-    assertEquals(artifact.engine, "sqlite");
-    assertEquals(artifact.path.endsWith(".sqlite.gz"), true);
-    assertEquals(artifact.bytes > 0, true);
+    const gzipArtifact = await runSqliteBackup(platform, result.state, "local", "gzip");
+    const zstdArtifact = await runSqliteBackup(platform, result.state, "local", "zstd");
+    assertStringIncludes(scripts[0]!, 'gzip -c "$RAW" > "$PARTIAL"');
+    assertStringIncludes(scripts[1]!, 'zstd -3 -q -c "$RAW" > "$PARTIAL"');
+    assertEquals(scripts[0]!.includes("pipefail"), false);
+    assertEquals(scripts[1]!.includes("pipefail"), false);
+    assertEquals(gzipArtifact.engine, "sqlite");
+    const fileId = gzipArtifact.database;
+    assertEquals(
+      gzipArtifact.path.endsWith(
+        `/backups/sqlite/local/${fileId}_2026-08-03T04-05-06-000Z.sqlite.gz`,
+      ),
+      true,
+    );
+    assertEquals(zstdArtifact.path.endsWith(".sqlite.zst"), true);
+    assertEquals(gzipArtifact.bytes > 0, true);
   } finally {
     await Deno.remove(root, { recursive: true });
   }

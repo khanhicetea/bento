@@ -171,6 +171,9 @@ PostgreSQL is a first-class database kind alongside MySQL, SQLite, and Litestrea
 ### Logical database backup and restore
 
 ```bash
+# Plain SQLite uses the online .backup API and gzip/zstd compression.
+bento sqlite backup local reports --gzip
+
 # Every binding linked to the app is included; --all spans every app.
 bento backup --app reports --gzip
 bento backup --all

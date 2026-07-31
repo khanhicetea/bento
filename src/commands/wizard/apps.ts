@@ -22,7 +22,14 @@ import type { CliContext } from "../context.ts";
 import { runCliExec } from "../subcommands/exec.ts";
 import { sectionCron } from "./cron.ts";
 import { sectionLogs } from "./logs.ts";
-import { ensureState, handleError, openMysqlShell, openPostgresShell, pcDim } from "./shared.ts";
+import {
+  ensureState,
+  handleError,
+  openMysqlShell,
+  openPostgresShell,
+  pcDim,
+  sqliteFileSize,
+} from "./shared.ts";
 import { sectionTemplate } from "./templates.ts";
 import { sectionWorker } from "./workers.ts";
 
@@ -544,16 +551,17 @@ async function sectionAppSqliteDatabases(
 
     ui.clear();
     ui.header(`SQLite: ${slug}`, sqliteBindingSummary(bindings));
-    ui.table(
-      ["mode", "file", "backup"],
-      bindings.map((binding) => [
+    const rows = await Promise.all(
+      bindings.map(async (binding) => [
         binding.engine === "litestream" ? "Litestream" : "Local",
         sqliteContainerPath(binding.file.id, app.slug, binding.engine),
         binding.engine === "litestream"
           ? state.sqliteBackup?.enabled ? "continuous S3" : "disabled"
           : "weekly VACUUM + logical .backup",
+        await sqliteFileSize(ctx.platform, binding.file.id, app.slug, binding.engine),
       ]),
     );
+    ui.table(["mode", "file", "backup", "size"], rows);
     ui.blank();
     const action = await ui.menu("Select a SQLite file", sqliteDatabaseMenuChoices(bindings));
     if (!action) return;

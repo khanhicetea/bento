@@ -75,7 +75,7 @@ export async function runWizard(ctx: CliContext): Promise<number> {
         {
           label: "Manage SQLite",
           value: "sqlite",
-          hint: "app databases · S3 sync · verify · export",
+          hint: "local .backup · S3 sync · verify · export",
         },
         { label: "Manage PHP", value: "php", hint: "add version · reload FPM" },
         { label: "Status / Diag", value: "status", hint: "stack · apps · capacity" },

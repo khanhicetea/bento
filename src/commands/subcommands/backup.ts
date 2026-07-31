@@ -126,10 +126,25 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     ctx.log.error("usage: bento backup --app <app> [--database name] | --all");
     return 2;
   }
+  if (argv.gzip === true && argv.none === true) {
+    ctx.log.error("--gzip and --none cannot be used together");
+    return 2;
+  }
+
+  // A database-scoped request may still target a local SQLite file on an app
+  // that also owns a Litestream file. Only reject an explicitly selected remote
+  // file; app/all scope performs local backups and then syncs remote replicas.
   const litestreamApps = scope === "all"
     ? Object.values(state.apps).filter((app) =>
       app.databases.some((database) => database.engine === "litestream")
     )
+    : scope === "database"
+    ? argv.app &&
+        state.apps[argv.app]?.databases.some((database) =>
+          database.engine === "litestream" && database.file.id === argv.database
+        )
+      ? [state.apps[argv.app]!]
+      : []
     : argv.app &&
         state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
     ? [state.apps[argv.app]!]

@@ -1,3 +1,6 @@
+import { databaseBindings } from "../../domain/state.ts";
+import { notFoundError, validationError } from "../../domain/errors.ts";
+import { runDatabaseBackup } from "../../services/database_backup.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith } from "../args.ts";
 import { bind, type RunState, type YargsBuilder } from "../shared.ts";
@@ -14,13 +17,33 @@ import {
 export function registerSqliteCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(
     "sqlite",
-    "Manage Litestream (continuously replicated SQLite) databases",
+    "Manage local and continuously replicated SQLite databases",
     (y: YargsBuilder) =>
       y.command(
         "backup",
-        "Manage stack-wide Litestream continuous backup",
+        "Manage local logical backups and stack-wide Litestream backup",
         (backup: YargsBuilder) =>
           backup
+            .command(
+              "local [app]",
+              "Create a consistent backup of a plain local SQLite file",
+              (cmd: YargsBuilder) =>
+                cmd
+                  .positional("app", { type: "string" })
+                  .option("app", { type: "string", describe: "App slug" })
+                  .option("file", {
+                    type: "string",
+                    alias: "database",
+                    describe: "SQLite file id when the app has multiple local files",
+                  })
+                  .option("gzip", { type: "boolean", default: false, describe: "gzip compress" })
+                  .option("none", {
+                    type: "boolean",
+                    default: false,
+                    describe: "Do not compress",
+                  }),
+              bind(state, cmdLocal),
+            )
             .command(
               "enable <app>",
               "Enable the directory watcher and prove one app's S3 replica",
@@ -59,10 +82,54 @@ export function registerSqliteCommands(parser: YargsBuilder, state: RunState): Y
                   .option("output", { type: "string", demandOption: true }),
               bind(state, cmdExport),
             )
-            .demandCommand(1, "Choose enable, status, sync, verify, or export"),
+            .demandCommand(1, "Choose local, enable, status, sync, verify, or export"),
         undefined,
       ).demandCommand(1, "Choose backup"),
   );
+}
+
+async function cmdLocal(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
+  if (!argv.app) {
+    ctx.log.error("usage: bento sqlite backup local <app> [--file <sqlite-file-id>]");
+    return 2;
+  }
+  if (argv.gzip === true && argv.none === true) {
+    throw validationError("--gzip and --none cannot be used together");
+  }
+
+  const state = await ctx.store.load();
+  const app = state.apps[argv.app];
+  if (!app) throw notFoundError(`app not found: ${argv.app}`);
+  const databases = databaseBindings(app, "sqlite");
+  if (databases.length === 0) {
+    throw validationError(`app ${argv.app} has no plain SQLite database`);
+  }
+
+  const requestedFile = argv.file ?? argv.database;
+  const database = requestedFile
+    ? databases.find((entry) => entry.file.id === requestedFile)
+    : databases.length === 1
+    ? databases[0]
+    : undefined;
+  if (!database) {
+    if (requestedFile) {
+      throw validationError(`app ${argv.app} has no matching plain SQLite file ${requestedFile}`);
+    }
+    throw validationError(
+      `app ${argv.app} has multiple plain SQLite files; specify --file <sqlite-file-id>`,
+    );
+  }
+
+  const artifacts = await runDatabaseBackup(ctx.platform, state, {
+    scope: "database",
+    slug: argv.app,
+    database: database.file.id,
+    compress: argv.gzip === true ? "gzip" : argv.none === true ? "none" : "zstd",
+  });
+  for (const artifact of artifacts) {
+    ctx.log.info(`backup ${artifact.database} -> ${artifact.path} (${artifact.bytes} bytes)`);
+  }
+  return 0;
 }
 
 async function cmdEnable(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {

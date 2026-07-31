@@ -1,4 +1,6 @@
 import { join } from "@std/path";
+import { databaseBindings, type DesiredState } from "../../domain/state.ts";
+import { runDatabaseBackup } from "../../services/database_backup.ts";
 import {
   enableSqliteBackup,
   exportSqliteBackup,
@@ -11,7 +13,7 @@ import {
 import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { ensureState, handleError, pcDim } from "./shared.ts";
+import { ensureState, handleError, pcDim, sqliteFileSize } from "./shared.ts";
 
 export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Manage SQLite");
@@ -19,59 +21,98 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
 
   while (true) {
     const state = await ctx.store.load();
-    const apps = Object.values(state.apps)
-      .filter((app) => app.database.engine === "litestream")
+    const targets = await listSqliteTargets(ctx.platform, state);
+    const localTargets = targets.filter((target) => target.engine === "sqlite");
+    const litestreamTargets = targets.filter((target) => target.engine === "litestream");
+    const litestreamApps = Object.values(state.apps)
+      .filter((app) => databaseBindings(app, "litestream").length > 0)
       .sort((a, b) => a.slug.localeCompare(b.slug));
 
     ui.clear();
     ui.header(
       "Manage SQLite",
-      `${apps.length} app database${apps.length === 1 ? "" : "s"} · Litestream ${
-        state.sqliteBackup?.enabled ? "enabled" : "disabled"
+      `${localTargets.length} local file${
+        localTargets.length === 1 ? "" : "s"
+      } · ${litestreamApps.length} Litestream app${litestreamApps.length === 1 ? "" : "s"} · ${
+        state.sqliteBackup?.enabled ? "continuous backup enabled" : "continuous backup disabled"
       }`,
     );
     ui.table(
-      ["app", "file", "verified"],
-      apps.map((app) => [
-        app.slug,
-        app.database.engine === "litestream"
-          ? sqliteContainerPath(app.database.file.id, app.slug, "litestream")
-          : "",
-        app.database.engine === "litestream" ? app.database.backupVerifiedAt ?? "never" : "",
-      ]),
+      ["mode", "app", "file", "backup", "size"],
+      [
+        ...localTargets.map((target) => [
+          "Local",
+          target.slug,
+          target.containerPath,
+          target.backup,
+          target.size,
+        ]),
+        ...litestreamTargets.map((target) => [
+          "Litestream",
+          target.slug,
+          target.containerPath,
+          target.backup,
+          target.size,
+        ]),
+      ],
     );
     ui.blank();
 
-    const disabled = apps.length === 0;
+    const hasLitestream = litestreamApps.length > 0;
     const action = await ui.menu("SQLite actions", [
+      {
+        label: "Back up local SQLite",
+        value: "local",
+        hint: "online .backup · Zstandard or gzip",
+        disabled: localTargets.length === 0,
+      },
       {
         label: state.sqliteBackup?.enabled
           ? "Reconfigure continuous backup"
           : "Enable continuous backup",
         value: "enable",
         hint: "stack-wide Litestream replication to S3",
-        disabled,
+        disabled: !hasLitestream,
       },
-      { label: "Replication status", value: "status", disabled },
-      { label: "Force S3 sync", value: "sync", disabled },
+      { label: "Replication status", value: "status", disabled: !hasLitestream },
+      { label: "Force S3 sync", value: "sync", disabled: !hasLitestream },
       {
         label: "Verify S3 restore",
         value: "verify",
         hint: "temporary full integrity check",
-        disabled,
+        disabled: !hasLitestream,
       },
       {
         label: "Export from S3 to database file",
         value: "export",
         hint: "safe restore-to-new",
-        disabled,
+        disabled: !hasLitestream,
       },
     ]);
     if (!action) return;
 
+    if (action === "local") {
+      const target = await ui.menu<SqliteTarget>(
+        "Local SQLite database",
+        localTargets.map((entry) => ({
+          label: `${entry.slug} · ${entry.fileId}`,
+          value: entry,
+          hint: entry.containerPath,
+        })),
+      );
+      if (!target) continue;
+      try {
+        await wizardLocalBackup(ui, ctx, state, target);
+      } catch (err) {
+        handleError(ui, err);
+      }
+      await ui.pause();
+      continue;
+    }
+
     const slug = await ui.menu(
       "SQLite application",
-      apps.map((app) => ({ label: app.slug, value: app.slug })),
+      litestreamApps.map((app) => ({ label: app.slug, value: app.slug })),
     );
     if (!slug) continue;
 
@@ -116,6 +157,86 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
     }
     await ui.pause();
   }
+}
+
+type SqliteTarget = {
+  slug: string;
+  fileId: string;
+  engine: "sqlite" | "litestream";
+  containerPath: string;
+  backup: string;
+  size: string;
+};
+
+type UnsizedSqliteTarget = Omit<SqliteTarget, "size">;
+
+async function listSqliteTargets(
+  platform: CliContext["platform"],
+  state: DesiredState,
+): Promise<SqliteTarget[]> {
+  const targets: UnsizedSqliteTarget[] = Object.values(state.apps)
+    .flatMap((app) => [
+      ...databaseBindings(app, "sqlite").map((database) => ({
+        slug: app.slug,
+        fileId: database.file.id,
+        engine: "sqlite" as const,
+        containerPath: sqliteContainerPath(database.file.id, app.slug, "sqlite"),
+        backup: "logical .backup",
+      })),
+      ...databaseBindings(app, "litestream").map((database) => ({
+        slug: app.slug,
+        fileId: database.file.id,
+        engine: "litestream" as const,
+        containerPath: sqliteContainerPath(database.file.id, app.slug, "litestream"),
+        backup: database.backupVerifiedAt ?? "never",
+      })),
+    ])
+    .sort((a, b) => a.slug.localeCompare(b.slug) || a.fileId.localeCompare(b.fileId));
+
+  return await Promise.all(
+    targets.map(async (target) => ({
+      ...target,
+      size: await sqliteFileSize(platform, target.fileId, target.slug, target.engine),
+    })),
+  );
+}
+
+async function wizardLocalBackup(
+  ui: WizardUI,
+  ctx: CliContext,
+  state: DesiredState,
+  target: SqliteTarget,
+): Promise<void> {
+  const compress = await ui.menu<"zstd" | "gzip" | "none">("Compression", [
+    { label: "Zstandard", value: "zstd", hint: "recommended" },
+    { label: "gzip", value: "gzip" },
+    { label: "None", value: "none" },
+  ]);
+  if (!compress) return;
+
+  const flag = compress === "gzip" ? " --gzip" : compress === "none" ? " --none" : "";
+  ui.message(
+    pcDim(
+      `scriptable: bento sqlite backup local ${target.slug} --file ${target.fileId}${flag}`,
+    ),
+  );
+  ui.warn(
+    "A consistent online SQLite copy will be written under the stack backups directory",
+    "The live database is not replaced.",
+  );
+  if (!(await ui.confirm("Start local SQLite backup?", { defaultYes: true }))) return;
+
+  const artifacts = await runDatabaseBackup(ctx.platform, state, {
+    scope: "database",
+    slug: target.slug,
+    database: target.fileId,
+    compress,
+  });
+  ui.success("Local SQLite backup completed");
+  ui.table(
+    ["file", "bytes", "path"],
+    artifacts.map((artifact) => [artifact.database, String(artifact.bytes), artifact.path]),
+  );
 }
 
 async function wizardEnable(ui: WizardUI, ctx: CliContext, slug: string): Promise<void> {

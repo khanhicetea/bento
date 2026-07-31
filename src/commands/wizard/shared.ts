@@ -1,4 +1,6 @@
 import { isBentoError } from "../../domain/errors.ts";
+import type { Platform } from "../../platform/mod.ts";
+import { sqliteHostPath } from "../../services/sqlite_paths.ts";
 import type { MysqlShellPlan } from "../../services/mysql.ts";
 import { executePostgresShell, type PostgresShellPlan } from "../../services/postgres.ts";
 import { redact } from "../../ui/output.ts";
@@ -8,6 +10,27 @@ import type { CliContext } from "../context.ts";
 export function pcDim(s: string): string {
   // local helper to avoid importing picocolors into every message site for dim-only
   return `\x1b[2m${s}\x1b[22m`;
+}
+
+export async function sqliteFileSize(
+  platform: Platform,
+  fileId: string,
+  slug: string,
+  engine: "sqlite" | "litestream",
+): Promise<string> {
+  try {
+    const stat = await platform.fs.stat(sqliteHostPath(platform, fileId, slug, engine));
+    return stat.isFile ? formatBytes(stat.size) : "not a file";
+  } catch {
+    return "missing";
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
 }
 
 export function handleError(ui: WizardUI, err: unknown): void {
