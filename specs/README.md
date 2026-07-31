@@ -8,13 +8,22 @@ These specifications describe the product that exists in this repository: its pr
 
 ## Specification set
 
+### Implemented baseline
+
 1. [Product specification](01-product-spec.md) — users, value, core values, product areas, capabilities, journeys, and non-goals.
 2. [System architecture](02-system-architecture.md) — control/data planes, app and repository structure, runtime topology, state/storage, security, and failure behavior.
 3. [Technical decisions and reimplementation contract](03-reimplementation-contract.md) — decision record, invariants, verification requirements, and current conformance notes.
 
+### Proposed roadmap
+
+4. [Proposed product enhancements](04-proposed-product-enhancements.md) — prioritized recovery, planning, migration, data lifecycle, automation, capacity, deploy, TLS, and maintenance features.
+5. [Proposed technical improvements](05-proposed-technical-improvements.md) — prioritized CI, documentation, backup, transfer, locking, reload, supply-chain, process, secret, journal, and testing fixes.
+
+Proposal documents describe candidate work only. They do not alter the implemented baseline until the product owner approves them and corresponding code, tests, baseline specs, and operator documentation ship together.
+
 ## Normative language
 
-`MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative. Unqualified present-tense statements describe the reviewed implementation baseline.
+In baseline documents, `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative. In proposal documents, those terms define acceptance requirements only if the proposal is approved. Unqualified present-tense statements in baseline documents describe the reviewed implementation.
 
 When sources conflict, use this precedence for product behavior:
 
