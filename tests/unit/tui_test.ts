@@ -93,6 +93,35 @@ Deno.test("menu cancel with Escape", async () => {
   assertEquals(picked, null);
 });
 
+Deno.test("menu can distinguish Escape back from q cancel", async () => {
+  const backUi = new WizardUI(fakeTerminal(["esc"]));
+  assertEquals(
+    await backUi.menu("Navigate", [{ label: "Continue", value: "next" }], {
+      quitValue: "cancel",
+    }),
+    null,
+  );
+
+  const cancelUi = new WizardUI(fakeTerminal(["q"]));
+  assertEquals(
+    await cancelUi.menu("Navigate", [{ label: "Continue", value: "next" }], {
+      quitValue: "cancel",
+    }),
+    "cancel",
+  );
+});
+
+Deno.test("menu restores the saved selection when revisited", async () => {
+  const ui = new WizardUI(fakeTerminal(["enter"]));
+  assertEquals(
+    await ui.menu("Runtime", [
+      { label: "Small", value: "small" },
+      { label: "Medium", value: "medium" },
+    ], { initialValue: "medium" }),
+    "medium",
+  );
+});
+
 Deno.test("menu rejects disabled then accepts", async () => {
   const io = fakeTerminal(["1", "2"]);
   const ui = new WizardUI(io);
@@ -303,6 +332,38 @@ Deno.test("prompt required retries", async () => {
   };
   const ui = new WizardUI(io);
   assertEquals(await ui.prompt("Name", { required: true }), "ok");
+});
+
+Deno.test("raw prompt handles Escape as back", async () => {
+  const ui = new WizardUI(fakeTerminal(["a", "b", "esc"]));
+  assertEquals(await ui.prompt("Slug", { required: true }), null);
+});
+
+Deno.test("raw prompt validates immediately and preserves rejected input", async () => {
+  const io = fakeTerminal([
+    "b",
+    "a",
+    "d",
+    "enter",
+    "backspace",
+    "backspace",
+    "backspace",
+    "o",
+    "k",
+    "enter",
+  ]);
+  const ui = new WizardUI(io);
+  const value = await ui.prompt("Slug", {
+    format: "a usable slug",
+    validate: (candidate) => candidate === "bad" ? "already in use" : null,
+  });
+
+  assertEquals(value, "ok");
+  const output = io.out.join("");
+  assertEquals(output.includes("Expected: a usable slug"), true);
+  assertEquals(output.includes("Invalid value"), true);
+  assertEquals(output.includes("already in use"), true);
+  assertEquals(output.includes("Slug: bad"), true);
 });
 
 Deno.test("alert and table emit output", () => {

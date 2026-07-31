@@ -252,6 +252,13 @@ export function parseSafeRelativePath(
   return parseWith(safeRelativePathSchema, value, field);
 }
 
+export function parseAbsolutePath(
+  value: unknown,
+  field = "path",
+): ParseResult<string> {
+  return parseWith(absolutePathSchema, value, field);
+}
+
 export function parseCronSchedule(
   value: unknown,
   field = "schedule",

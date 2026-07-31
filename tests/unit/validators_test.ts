@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import {
+  parseAbsolutePath,
   parseAppSlug,
   parseCronSchedule,
   parseDatabaseService,
@@ -34,6 +35,12 @@ Deno.test("parseSafeRelativePath rejects traversal", () => {
   assertEquals(parseSafeRelativePath("../etc").ok, false);
   assertEquals(parseSafeRelativePath("/abs").ok, false);
   assertEquals(parseSafeRelativePath("public").ok, true);
+});
+
+Deno.test("parseAbsolutePath rejects relative paths", () => {
+  assertEquals(parseAbsolutePath("/etc/bento/cert.pem").ok, true);
+  assertEquals(parseAbsolutePath("cert.pem").ok, false);
+  assertEquals(parseAbsolutePath("").ok, false);
 });
 
 Deno.test("parseCronSchedule validates, canonicalizes, and rejects injection", () => {

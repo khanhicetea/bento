@@ -1,8 +1,9 @@
 import type { TlsMode } from "../../domain/state.ts";
-import { createProxy, deleteProxy } from "../../services/proxy.ts";
+import { parseAbsolutePath, parseAppSlug, parseDomainName } from "../../schemas/validators.ts";
+import { createProxy, deleteProxy, validateUpstreams } from "../../services/proxy.ts";
 import { type MenuChoice, WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { ensureState, handleError, pcDim } from "./shared.ts";
+import { ensureState, fieldValidator, handleError, pcDim } from "./shared.ts";
 
 export async function sectionProxies(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Manage reverse proxies");
@@ -93,9 +94,17 @@ async function wizardProxyTls(ui: WizardUI, ctx: CliContext, name: string): Prom
   } else if (mode === "acme") {
     tls = { kind: "acme" };
   } else {
-    const cert = await ui.prompt("Certificate path", { required: true });
+    const cert = await ui.prompt("Certificate path", {
+      required: true,
+      format: "an absolute host path",
+      validate: fieldValidator(parseAbsolutePath),
+    });
     if (!cert) return;
-    const key = await ui.prompt("Private key path", { required: true });
+    const key = await ui.prompt("Private key path", {
+      required: true,
+      format: "an absolute host path",
+      validate: fieldValidator(parseAbsolutePath),
+    });
     if (!key) return;
     tls = { kind: "external", certPath: cert, keyPath: key };
   }
@@ -129,11 +138,23 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.blank();
   ui.message(pcDim("Create a reverse-proxy site with one or more upstream servers."));
 
-  const name = await ui.prompt("Proxy name", { required: true });
+  const name = await ui.prompt("Proxy name", {
+    required: true,
+    format: "2-32 lowercase letters, digits, or hyphens; start with a letter",
+    validate: fieldValidator(parseAppSlug),
+  });
   if (name === null) return;
-  const domain = await ui.prompt("Primary domain", { required: true });
+  const domain = await ui.prompt("Primary domain", {
+    required: true,
+    format: "a DNS name such as proxy.example.com, localhost, or a local label",
+    validate: fieldValidator(parseDomainName),
+  });
   if (domain === null) return;
-  const aliasRaw = await ui.prompt("Domain aliases (comma-separated)", { default: "" });
+  const aliasRaw = await ui.prompt("Domain aliases (comma-separated)", {
+    default: "",
+    format: "comma-separated DNS names, or blank",
+    validate: validateProxyAliases,
+  });
   if (aliasRaw === null) return;
   const aliases = aliasRaw.split(",").map((value) => value.trim()).filter(Boolean);
 
@@ -144,6 +165,8 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
       {
         required: true,
         default: upstreams.length === 0 ? "http://127.0.0.1:3000" : undefined,
+        format: "an http:// or https:// URL without credentials or fragments",
+        validate: (value) => validateProxyUpstream([...upstreams, value]),
       },
     );
     if (upstream === null) return;
@@ -204,4 +227,22 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
     handleError(ui, err);
   }
   await ui.pause();
+}
+
+function validateProxyAliases(raw: string): string | null {
+  const aliases = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  for (const [index, alias] of aliases.entries()) {
+    const result = parseDomainName(alias, `alias ${index + 1}`);
+    if (!result.ok) return result.errors.join("; ");
+  }
+  return null;
+}
+
+function validateProxyUpstream(upstreams: string[]): string | null {
+  try {
+    validateUpstreams(upstreams);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }

@@ -1,5 +1,17 @@
-import type { AppDatabaseBinding, AppState, DatabaseEngine, TlsMode } from "../../domain/state.ts";
+import type {
+  AppDatabaseBinding,
+  AppState,
+  DatabaseEngine,
+  DesiredState,
+  TlsMode,
+} from "../../domain/state.ts";
 import { FPM_PROFILES } from "../../domain/types.ts";
+import {
+  parseAbsolutePath,
+  parseAppSlug,
+  parseDomainName,
+  parseSafeRelativePath,
+} from "../../schemas/validators.ts";
 import {
   applyAppDataPlane,
   capacityWarnings,
@@ -24,6 +36,7 @@ import { sectionCron } from "./cron.ts";
 import { sectionLogs } from "./logs.ts";
 import {
   ensureState,
+  fieldValidator,
   handleError,
   openMysqlShell,
   openPostgresShell,
@@ -176,140 +189,29 @@ async function openAppShell(ui: WizardUI, ctx: CliContext, slug: string): Promis
 
 /** Interactively create or update an application. */
 async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
-  ui.blank();
-  ui.message(pcDim("Create or update an application (same identity on update)."));
-  const slug = await ui.prompt("App slug", { required: true });
-  if (slug === null) return;
-  const domain = await ui.prompt("Primary domain", { required: true });
-  if (domain === null) return;
-  const aliasRaw = await ui.prompt("Domain aliases (comma-separated)", { default: "" });
-  if (aliasRaw === null) return;
-  const aliases = aliasRaw.split(",").map((s) => s.trim()).filter(Boolean);
-
   const state = await ctx.store.load();
-  const phpChoices: MenuChoice<string>[] = state.phpVersions.map((v) => ({
-    label: v.version,
-    value: v.version,
-    hint: v.version === state.defaults.phpVersion ? "default" : v.image,
-  }));
-  phpChoices.push({ label: `Use default (${state.defaults.phpVersion})`, value: "" });
-  const php = await ui.menu("PHP version", phpChoices);
-  if (php === null) return;
-
-  const fpmChoices: MenuChoice<string>[] = Object.keys(FPM_PROFILES).map((p) => ({
-    label: p,
-    value: p,
-    hint: p === state.defaults.fpmProfile ? "default" : undefined,
-  }));
-  fpmChoices.push({ label: `Use default (${state.defaults.fpmProfile})`, value: "" });
-  const fpm = await ui.menu("FPM profile", fpmChoices);
-  if (fpm === null) return;
-
-  const docroot = await ui.prompt("Document root (relative to app home)", {
-    default: "public",
-  });
-  if (docroot === null) return;
-
-  const entry = await ui.menu<"front-controller" | "legacy" | "">("Entrypoint mode", [
-    { label: "Front controller (recommended)", value: "front-controller" },
-    { label: "Legacy (direct PHP file execution)", value: "legacy" },
-    { label: "Keep existing / default", value: "" },
-  ]);
-  if (entry === null) return;
-
-  const existing = state.apps[slug];
-  const databaseChoices: MenuChoice<string>[] = state.databaseServices.map((service) => ({
-    label: `${service.engine}: ${service.version}`,
-    value: `${service.engine}:${service.service}`,
-    hint: existing?.database.engine !== "sqlite" &&
-        existing?.database.engine !== "litestream" &&
-        existing?.database.service === service.service
-      ? "current"
-      : state.defaults.database.service === service.service
-      ? "default"
-      : service.service,
-  }));
-  databaseChoices.push({
-    label: "SQLite",
-    value: "sqlite",
-    hint: existing?.database.engine === "sqlite" ? "current" : "local file · weekly VACUUM",
-  });
-  databaseChoices.push({
-    label: "Litestream",
-    value: "litestream",
-    hint: existing?.database.engine === "litestream"
-      ? "current"
-      : "SQLite · continuous S3 replication",
-  });
-  if (existing) {
-    databaseChoices.unshift({
-      label: existing.database.engine === "sqlite" || existing.database.engine === "litestream"
-        ? `Keep current (${existing.database.engine})`
-        : `Keep current (${existing.database.engine}: ${existing.database.service})`,
-      value: "",
-    });
-  }
-  const databaseSelection = await ui.menu("Database", databaseChoices);
-  if (databaseSelection === null) return;
-  const [databaseEngine, databaseService] = databaseSelection
-    ? databaseSelection.split(":", 2)
-    : [undefined, undefined];
-  const effectiveDatabaseEngine = (databaseEngine ?? existing?.database.engine ??
-    state.defaults.database.engine) as DatabaseEngine;
-  const useSqlite = effectiveDatabaseEngine === "sqlite";
-  const useLitestream = effectiveDatabaseEngine === "litestream";
-  const useFileDatabase = useSqlite || useLitestream;
-
-  const createDb = useFileDatabase
-    ? false
-    : await ui.confirm("Create a namespaced database for this app?");
-  const databaseName = createDb
-    ? await ui.prompt("Database name (blank = auto)", { default: "" })
-    : "";
-  if (createDb && databaseName === null) return;
-  if (useLitestream) {
-    ui.info("Litestream continuous backup will be enabled.");
-    ui.message(
-      state.sqliteBackup?.enabled
-        ? "The existing stack-wide policy will automatically cover this database."
-        : "Requires BENTO_LITESTREAM_ENABLED=true and S3 settings in the stack environment.",
-    );
-  }
-
-  const accessLog = await ui.confirm("Enable per-app access logs?", { defaultYes: false });
-  const noApply = useFileDatabase
-    ? false
-    : !(await ui.confirm("Render & apply after save?", { defaultYes: true }));
-
-  ui.blank();
-  ui.table(
-    ["field", "value"],
-    [
-      ["slug", slug],
-      ["domain", domain],
-      ["aliases", aliases.join(", ") || "-"],
-      ["php", php || `(default ${state.defaults.phpVersion})`],
-      ["fpm", fpm || `(default ${state.defaults.fpmProfile})`],
-      ["docroot", docroot || "public"],
-      ["entry", entry || "default"],
-      [
-        "database",
-        `${useFileDatabase ? effectiveDatabaseEngine : databaseSelection || "keep current"}${
-          createDb ? ` · create ${databaseName || "auto"}` : ""
-        }`,
-      ],
-      ...(useLitestream ? [["sqlite-backup", "Litestream · enabled"]] : []),
-      ...(useSqlite ? [["maintenance", "weekly VACUUM · runner Supercronic"]] : []),
-      ["access-log", accessLog ? "yes" : "no"],
-      ["apply", noApply ? "skip" : "yes"],
-    ],
-  );
-
-  if (!(await ui.confirm("Proceed?", { defaultYes: true }))) {
-    ui.info("Cancelled.");
-    await ui.pause();
-    return;
-  }
+  const draft = await collectAppCreateDraft(ui, state);
+  if (!draft) return;
+  const {
+    slug,
+    domain,
+    php,
+    fpm,
+    docroot,
+    entry,
+    createDb,
+    databaseName,
+    accessLog,
+    noApply,
+  } = draft;
+  const aliases = parseAliases(draft.aliasRaw);
+  const {
+    databaseEngine,
+    databaseService,
+    effectiveDatabaseEngine,
+    useLitestream,
+    useFileDatabase,
+  } = appCreateDatabaseDetails(state, draft);
 
   try {
     const result = await ctx.store.withExclusive(async (s) => {
@@ -386,6 +288,485 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
     handleError(ui, err);
   }
   await ui.pause();
+}
+
+export type AppCreateDraft = {
+  slug: string;
+  domain: string;
+  aliasRaw: string;
+  php: string;
+  fpm: string;
+  docroot: string;
+  entry: "front-controller" | "legacy" | "";
+  databaseSelection: string;
+  createDb: boolean;
+  databaseName: string;
+  accessLog: boolean;
+  noApply: boolean;
+};
+
+type AppCreateField = keyof AppCreateDraft;
+type AppCreateNavigation = "next" | "back" | "cancel";
+
+const APP_CREATE_STEP_NAMES = ["Identity", "Runtime", "Database", "Options", "Review"];
+const APP_CREATE_STEP_FIELDS: AppCreateField[][] = [
+  ["slug", "domain", "aliasRaw"],
+  ["php", "fpm", "docroot", "entry"],
+  ["databaseSelection", "createDb", "databaseName"],
+  ["accessLog", "noApply"],
+];
+
+export async function collectAppCreateDraft(
+  ui: WizardUI,
+  state: DesiredState,
+): Promise<AppCreateDraft | null> {
+  const draft: AppCreateDraft = {
+    slug: "",
+    domain: "",
+    aliasRaw: "",
+    php: "",
+    fpm: "",
+    docroot: "public",
+    entry: "front-controller",
+    databaseSelection: "",
+    createDb: false,
+    databaseName: "",
+    accessLog: false,
+    noApply: false,
+  };
+  let step = 0;
+  let enterAtEnd = false;
+
+  while (true) {
+    if (step < 4) {
+      const navigation = await collectAppCreateStep(ui, state, draft, step, enterAtEnd);
+      if (navigation === "cancel") return null;
+      if (navigation === "back") {
+        if (step === 0) {
+          ui.info("Application creation cancelled.");
+          return null;
+        }
+        step--;
+        enterAtEnd = true;
+        continue;
+      }
+      step++;
+      enterAtEnd = false;
+      continue;
+    }
+
+    renderAppCreateScreen(ui, state, draft, 4);
+    const reviewAction = await ui.menu<"apply" | "change" | "cancel">(
+      "Review application",
+      [
+        { label: "Apply", value: "apply", hint: "save and reconcile the application" },
+        { label: "Change a field", value: "change", hint: "edit one answer, then review again" },
+        { label: "Cancel", value: "cancel", hint: "discard this draft" },
+      ],
+      { cancelLabel: "Back", quitValue: "cancel", initialValue: "apply" },
+    );
+    if (reviewAction === null) {
+      step = 3;
+      enterAtEnd = true;
+      continue;
+    }
+    if (reviewAction === "cancel") {
+      ui.info("Application creation cancelled.");
+      return null;
+    }
+    if (reviewAction === "apply") return draft;
+
+    const field = await chooseAppCreateField(ui, state, draft);
+    if (field === "cancel") return null;
+    if (field !== null) {
+      const navigation = await editAppCreateField(ui, state, draft, field);
+      if (navigation === "cancel") return null;
+    }
+  }
+}
+
+async function collectAppCreateStep(
+  ui: WizardUI,
+  state: DesiredState,
+  draft: AppCreateDraft,
+  step: number,
+  enterAtEnd: boolean,
+): Promise<AppCreateNavigation> {
+  let fields = visibleAppCreateFields(state, draft, step);
+  let index = enterAtEnd ? fields.length - 1 : 0;
+  while (index < fields.length) {
+    renderAppCreateScreen(ui, state, draft, step);
+    const navigation = await editAppCreateField(ui, state, draft, fields[index]!, false);
+    if (navigation === "cancel") return "cancel";
+    if (navigation === "back") {
+      if (index === 0) return "back";
+      index--;
+      continue;
+    }
+    fields = visibleAppCreateFields(state, draft, step);
+    index++;
+  }
+  return "next";
+}
+
+function visibleAppCreateFields(
+  state: DesiredState,
+  draft: AppCreateDraft,
+  step: number,
+): AppCreateField[] {
+  const fields = APP_CREATE_STEP_FIELDS[step] ?? [];
+  const { useFileDatabase } = appCreateDatabaseDetails(state, draft);
+  if (step === 3 && useFileDatabase) return ["accessLog"];
+  if (step !== 2) return fields;
+  if (useFileDatabase) return ["databaseSelection"];
+  return draft.createDb ? fields : ["databaseSelection", "createDb"];
+}
+
+async function chooseAppCreateField(
+  ui: WizardUI,
+  state: DesiredState,
+  draft: AppCreateDraft,
+): Promise<AppCreateField | "cancel" | null> {
+  const details = appCreateDatabaseDetails(state, draft);
+  return await ui.menu<AppCreateField | "cancel">(
+    "Change a field",
+    [
+      { label: "App slug", value: "slug", hint: draft.slug },
+      { label: "Primary domain", value: "domain", hint: draft.domain },
+      { label: "Domain aliases", value: "aliasRaw", hint: draft.aliasRaw || "none" },
+      { label: "PHP version", value: "php", hint: draft.php || state.defaults.phpVersion },
+      { label: "FPM profile", value: "fpm", hint: draft.fpm || state.defaults.fpmProfile },
+      { label: "Document root", value: "docroot", hint: draft.docroot },
+      { label: "Entrypoint mode", value: "entry", hint: draft.entry || "default" },
+      {
+        label: "Database",
+        value: "databaseSelection",
+        hint: draft.databaseSelection || `default (${details.effectiveDatabaseEngine})`,
+      },
+      ...(!details.useFileDatabase
+        ? [{ label: "Create database", value: "createDb" as const, hint: yesNo(draft.createDb) }]
+        : []),
+      ...(!details.useFileDatabase && draft.createDb
+        ? [{
+          label: "Database name",
+          value: "databaseName" as const,
+          hint: draft.databaseName || "auto",
+        }]
+        : []),
+      { label: "Access logs", value: "accessLog", hint: yesNo(draft.accessLog) },
+      ...(!details.useFileDatabase
+        ? [{
+          label: "Render & apply",
+          value: "noApply" as const,
+          hint: draft.noApply ? "skip" : "yes",
+        }]
+        : []),
+    ],
+    { cancelLabel: "Back to review", quitValue: "cancel" },
+  );
+}
+
+async function editAppCreateField(
+  ui: WizardUI,
+  state: DesiredState,
+  draft: AppCreateDraft,
+  field: AppCreateField,
+  render = true,
+): Promise<"next" | "back" | "cancel"> {
+  if (render) {
+    const step = APP_CREATE_STEP_FIELDS.findIndex((fields) => fields.includes(field));
+    renderAppCreateScreen(ui, state, draft, step);
+  }
+
+  if (
+    field === "slug" || field === "domain" || field === "aliasRaw" ||
+    field === "docroot" || field === "databaseName"
+  ) {
+    const prompt = appCreatePrompt(field, draft);
+    const value = await ui.prompt(prompt.label, prompt.options);
+    if (value === null) return "back";
+    draft[field] = value;
+    return "next";
+  }
+
+  let selected: string | boolean | null;
+  const navigation = { cancelLabel: "Back", quitValue: "__cancel" as const };
+  if (field === "php") {
+    selected = await ui.menu("PHP version", appCreatePhpChoices(state), {
+      ...navigation,
+      initialValue: draft.php,
+    });
+  } else if (field === "fpm") {
+    selected = await ui.menu("FPM profile", appCreateFpmChoices(state), {
+      ...navigation,
+      initialValue: draft.fpm,
+    });
+  } else if (field === "entry") {
+    selected = await ui.menu("Entrypoint mode", [
+      { label: "Front controller (recommended)", value: "front-controller" },
+      { label: "Legacy (direct PHP file execution)", value: "legacy" },
+      { label: "Keep existing / default", value: "" },
+    ], { ...navigation, initialValue: draft.entry });
+  } else if (field === "databaseSelection") {
+    selected = await ui.menu("Database", appCreateDatabaseChoices(state, draft), {
+      ...navigation,
+      initialValue: draft.databaseSelection,
+    });
+  } else if (field === "createDb") {
+    selected = await ui.menu<boolean | "__cancel">("Create a namespaced database for this app?", [
+      { label: "No", value: false },
+      { label: "Yes", value: true },
+    ], { ...navigation, initialValue: draft.createDb });
+  } else if (field === "accessLog") {
+    selected = await ui.menu<boolean | "__cancel">("Enable per-app access logs?", [
+      { label: "No", value: false },
+      { label: "Yes", value: true },
+    ], { ...navigation, initialValue: draft.accessLog });
+  } else {
+    selected = await ui.menu<boolean | "__cancel">("Render & apply after save?", [
+      { label: "Yes", value: false },
+      { label: "Skip", value: true },
+    ], { ...navigation, initialValue: draft.noApply });
+  }
+
+  if (selected === null) return "back";
+  if (selected === "__cancel") return "cancel";
+  if (field === "php") draft.php = String(selected);
+  else if (field === "fpm") draft.fpm = String(selected);
+  else if (field === "entry") draft.entry = selected as AppCreateDraft["entry"];
+  else if (field === "databaseSelection") {
+    draft.databaseSelection = String(selected);
+    if (appCreateDatabaseDetails(state, draft).useFileDatabase) {
+      draft.createDb = false;
+      draft.databaseName = "";
+      draft.noApply = false;
+    }
+  } else if (field === "createDb") draft.createDb = selected as boolean;
+  else if (field === "accessLog") draft.accessLog = selected as boolean;
+  else draft.noApply = selected as boolean;
+  return "next";
+}
+
+function appCreatePrompt(
+  field: "slug" | "domain" | "aliasRaw" | "docroot" | "databaseName",
+  draft: AppCreateDraft,
+): { label: string; options: Parameters<WizardUI["prompt"]>[1] } {
+  if (field === "slug") {
+    return {
+      label: "App slug",
+      options: {
+        required: true,
+        default: draft.slug || undefined,
+        format: "2-32 lowercase letters, digits, or hyphens; start with a letter",
+        validate: fieldValidator(parseAppSlug),
+      },
+    };
+  }
+  if (field === "domain") {
+    return {
+      label: "Primary domain",
+      options: {
+        required: true,
+        default: draft.domain || undefined,
+        format: "a DNS name such as app.example.com, localhost, or a local label",
+        validate: fieldValidator(parseDomainName),
+      },
+    };
+  }
+  if (field === "aliasRaw") {
+    return {
+      label: "Domain aliases (comma-separated)",
+      options: {
+        default: draft.aliasRaw,
+        format: "comma-separated DNS names, or blank",
+        validate: validateDomainAliases,
+      },
+    };
+  }
+  if (field === "docroot") {
+    return {
+      label: "Document root (relative to app home)",
+      options: {
+        required: true,
+        default: draft.docroot,
+        format: "a relative path without '..', for example public",
+        validate: fieldValidator(parseSafeRelativePath),
+      },
+    };
+  }
+  return {
+    label: "Database name (blank = auto)",
+    options: {
+      default: draft.databaseName,
+      format: `blank, ${draft.slug}, or a name beginning ${draft.slug}_`,
+      validate: (value) => validateAppDatabaseName(value, draft.slug),
+    },
+  };
+}
+
+function appCreatePhpChoices(state: DesiredState): MenuChoice<string>[] {
+  return [
+    ...state.phpVersions.map((version) => ({
+      label: version.version,
+      value: version.version,
+      hint: version.version === state.defaults.phpVersion ? "default" : version.image,
+    })),
+    { label: `Use default (${state.defaults.phpVersion})`, value: "" },
+  ];
+}
+
+function appCreateFpmChoices(state: DesiredState): MenuChoice<string>[] {
+  return [
+    ...Object.keys(FPM_PROFILES).map((profile) => ({
+      label: profile,
+      value: profile,
+      hint: profile === state.defaults.fpmProfile ? "default" : undefined,
+    })),
+    { label: `Use default (${state.defaults.fpmProfile})`, value: "" },
+  ];
+}
+
+function appCreateDatabaseChoices(
+  state: DesiredState,
+  draft: AppCreateDraft,
+): MenuChoice<string>[] {
+  const existing = state.apps[draft.slug];
+  const choices: MenuChoice<string>[] = state.databaseServices.map((service) => ({
+    label: `${service.engine}: ${service.version}`,
+    value: `${service.engine}:${service.service}`,
+    hint: existing?.database.engine !== "sqlite" &&
+        existing?.database.engine !== "litestream" &&
+        existing?.database.service === service.service
+      ? "current"
+      : state.defaults.database.service === service.service
+      ? "default"
+      : service.service,
+  }));
+  choices.push({
+    label: "SQLite",
+    value: "sqlite",
+    hint: existing?.database.engine === "sqlite" ? "current" : "local file · weekly VACUUM",
+  });
+  choices.push({
+    label: "Litestream",
+    value: "litestream",
+    hint: existing?.database.engine === "litestream"
+      ? "current"
+      : "SQLite · continuous S3 replication",
+  });
+  if (existing) {
+    choices.unshift({
+      label: existing.database.engine === "sqlite" || existing.database.engine === "litestream"
+        ? `Keep current (${existing.database.engine})`
+        : `Keep current (${existing.database.engine}: ${existing.database.service})`,
+      value: "",
+    });
+  } else {
+    choices.unshift({
+      label: `Use default (${state.defaults.database.engine}: ${state.defaults.database.version})`,
+      value: "",
+    });
+  }
+  return choices;
+}
+
+function appCreateDatabaseDetails(state: DesiredState, draft: AppCreateDraft) {
+  const existing = state.apps[draft.slug];
+  const [rawEngine, databaseService] = draft.databaseSelection
+    ? draft.databaseSelection.split(":", 2)
+    : [undefined, undefined];
+  const databaseEngine = rawEngine as DatabaseEngine | undefined;
+  const effectiveDatabaseEngine = (databaseEngine ?? existing?.database.engine ??
+    state.defaults.database.engine) as DatabaseEngine;
+  const useSqlite = effectiveDatabaseEngine === "sqlite";
+  const useLitestream = effectiveDatabaseEngine === "litestream";
+  return {
+    databaseEngine,
+    databaseService,
+    effectiveDatabaseEngine,
+    useSqlite,
+    useLitestream,
+    useFileDatabase: useSqlite || useLitestream,
+  };
+}
+
+function renderAppCreateScreen(
+  ui: WizardUI,
+  state: DesiredState,
+  draft: AppCreateDraft,
+  step: number,
+): void {
+  ui.clear();
+  ui.header("Apps › Create", `Step ${step + 1} of 5 · ${APP_CREATE_STEP_NAMES[step]}`);
+  ui.table(["field", "value"], appCreateSummaryRows(state, draft, step));
+  ui.blank();
+  ui.info(
+    step === 4 ? "Esc Back · Enter Select · q Cancel" : "Esc Previous field · Enter Continue",
+  );
+  ui.blank();
+}
+
+function appCreateSummaryRows(
+  state: DesiredState,
+  draft: AppCreateDraft,
+  step?: number,
+): string[][] {
+  const details = appCreateDatabaseDetails(state, draft);
+  const database = `${
+    details.useFileDatabase
+      ? details.effectiveDatabaseEngine
+      : draft.databaseSelection || `default (${details.effectiveDatabaseEngine})`
+  }${draft.createDb ? ` · create ${draft.databaseName || "auto"}` : ""}`;
+  const groups: string[][][] = [
+    [
+      ["App slug", draft.slug || "—"],
+      ["Primary domain", draft.domain || "—"],
+      ["Domain aliases", parseAliases(draft.aliasRaw).join(", ") || "—"],
+    ],
+    [
+      ["PHP version", draft.php || `(default ${state.defaults.phpVersion})`],
+      ["FPM profile", draft.fpm || `(default ${state.defaults.fpmProfile})`],
+      ["Document root", draft.docroot],
+      ["Entrypoint", draft.entry || "default"],
+    ],
+    [
+      ["Database", database],
+      ...(details.useLitestream ? [["SQLite backup", "Litestream · enabled"]] : []),
+      ...(details.useSqlite ? [["Maintenance", "weekly VACUUM · runner Supercronic"]] : []),
+    ],
+    [
+      ["Access logs", yesNo(draft.accessLog)],
+      ["Render & apply", draft.noApply ? "skip" : "yes"],
+    ],
+  ];
+  return step === undefined || step === 4 ? groups.flat() : groups[step] ?? [];
+}
+
+function parseAliases(raw: string): string[] {
+  return raw.split(",").map((value) => value.trim()).filter(Boolean);
+}
+
+function validateDomainAliases(raw: string): string | null {
+  for (const [index, alias] of parseAliases(raw).entries()) {
+    const result = parseDomainName(alias, `alias ${index + 1}`);
+    if (!result.ok) return result.errors.join("; ");
+  }
+  return null;
+}
+
+function validateAppDatabaseName(value: string, slug: string): string | null {
+  if (value.trim() === "") return null;
+  if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+    return "must contain only letters, digits, or underscores";
+  }
+  if (value !== slug && !value.startsWith(`${slug}_`)) {
+    return `must be ${slug} or begin with ${slug}_`;
+  }
+  return null;
+}
+
+function yesNo(value: boolean): string {
+  return value ? "yes" : "no";
 }
 
 async function sectionAppDatabases(
@@ -638,6 +1019,8 @@ async function sectionAppDatabaseBinding(
         const dbName = await ui.prompt("Database name", {
           required: true,
           default: slug,
+          format: `${slug} or a name beginning ${slug}_; letters, digits, and underscores only`,
+          validate: (value) => validateAppDatabaseName(value, slug),
         });
         if (!dbName) continue;
         await ctx.store.withExclusive(async (currentState) => {
@@ -730,7 +1113,11 @@ async function wizardAddAppDatabaseBinding(
   const createDatabase = fileDatabase ||
     await ui.confirm("Create an initial namespaced logical database?", { defaultYes: true });
   const databaseName = !fileDatabase && createDatabase
-    ? await ui.prompt("Database name (blank = app slug)", { default: "" })
+    ? await ui.prompt("Database name (blank = app slug)", {
+      default: "",
+      format: `${slug} or a name beginning ${slug}_; letters, digits, and underscores only`,
+      validate: (value) => validateAppDatabaseName(value, slug),
+    })
     : "";
   if (databaseName === null) return;
 
@@ -823,10 +1210,14 @@ async function sectionAppDomains(
         const domain = await ui.prompt("Primary domain", {
           required: true,
           default: app.mainDomain,
+          format: "a DNS name such as app.example.com, localhost, or a local label",
+          validate: fieldValidator(parseDomainName),
         });
         if (!domain) continue;
         const aliasesRaw = await ui.prompt("Aliases (comma-separated)", {
           default: app.aliases.join(","),
+          format: "comma-separated DNS names, or blank",
+          validate: validateDomainAliases,
         });
         if (aliasesRaw === null) continue;
         const aliases = aliasesRaw.split(",").map((value) => value.trim()).filter(Boolean);
@@ -861,9 +1252,17 @@ async function sectionAppDomains(
         } else if (mode === "acme") {
           tls = { kind: "acme" };
         } else {
-          const cert = await ui.prompt("Certificate path", { required: true });
+          const cert = await ui.prompt("Certificate path", {
+            required: true,
+            format: "an absolute host path",
+            validate: fieldValidator(parseAbsolutePath),
+          });
           if (!cert) continue;
-          const key = await ui.prompt("Private key path", { required: true });
+          const key = await ui.prompt("Private key path", {
+            required: true,
+            format: "an absolute host path",
+            validate: fieldValidator(parseAbsolutePath),
+          });
           if (!key) continue;
           tls = { kind: "external", certPath: cert, keyPath: key };
         }

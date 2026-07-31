@@ -1,7 +1,8 @@
 import { addPhpVersion, listPhpVersions } from "../../services/php.ts";
+import { parsePhpVersion } from "../../schemas/validators.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { ensureState, handleError } from "./shared.ts";
+import { ensureState, fieldValidator, handleError } from "./shared.ts";
 
 export async function sectionPhp(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Manage PHP");
@@ -38,7 +39,11 @@ export async function sectionPhp(ui: WizardUI, ctx: CliContext): Promise<void> {
     if (!action) return;
 
     if (action === "add") {
-      const version = await ui.prompt("PHP version (e.g. 8.3)", { required: true });
+      const version = await ui.prompt("PHP version", {
+        required: true,
+        format: "major.minor, for example 8.5",
+        validate: fieldValidator(parsePhpVersion),
+      });
       if (!version) continue;
       try {
         await ctx.store.withExclusive(async (state) => {

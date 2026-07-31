@@ -1,4 +1,5 @@
 import { basename } from "@std/path";
+import { parseAbsolutePath, parseMysqlVersion } from "../../schemas/validators.ts";
 import {
   addMysqlVersion,
   buildMysqlShellPlan,
@@ -11,7 +12,7 @@ import { runDatabaseBackup, runDatabaseRestore } from "../../services/database_b
 import { requireMysqlRootPassword } from "../../services/stack_env.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { ensureState, handleError, openMysqlShell, pcDim } from "./shared.ts";
+import { ensureState, fieldValidator, handleError, openMysqlShell, pcDim } from "./shared.ts";
 
 export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Manage MySQL");
@@ -42,7 +43,11 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
 
     try {
       if (action === "add") {
-        const version = await ui.prompt("MySQL version (e.g. 8.4)", { required: true });
+        const version = await ui.prompt("MySQL version", {
+          required: true,
+          format: "major.minor, for example 8.4",
+          validate: fieldValidator(parseMysqlVersion),
+        });
         if (!version) continue;
         await ctx.store.withExclusive(async (current) => {
           const next = addMysqlVersion(current, version);
@@ -197,7 +202,11 @@ export async function wizardDatabaseRestore(ui: WizardUI, ctx: CliContext): Prom
   ]);
   if (!source) return;
   const file = source === customPath
-    ? await ui.prompt("Backup file path", { required: true })
+    ? await ui.prompt("Backup file path", {
+      required: true,
+      format: "an absolute host path",
+      validate: fieldValidator(parseAbsolutePath),
+    })
     : source;
   if (!file) return;
 

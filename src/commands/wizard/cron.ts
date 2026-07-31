@@ -1,7 +1,8 @@
 import { addCronJob, editCronJob, listCronJobs, removeCronJob } from "../../services/cron.ts";
+import { parseCronSchedule } from "../../schemas/validators.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { handleError } from "./shared.ts";
+import { fieldValidator, handleError } from "./shared.ts";
 
 export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): Promise<void> {
   while (true) {
@@ -36,6 +37,8 @@ export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): 
       const schedule = await ui.prompt("Cron schedule", {
         required: true,
         default: "*/5 * * * *",
+        format: "five cron fields, for example */5 * * * *",
+        validate: fieldValidator(parseCronSchedule),
       });
       if (!schedule) continue;
       const cmdRaw = await ui.prompt("Shell command", {
@@ -85,7 +88,10 @@ export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): 
         `Current timezone: ${job.timezone}`,
         "Leave an input empty to keep its current value.",
       ]);
-      const schedule = await ui.prompt("Cron schedule (blank = unchanged)");
+      const schedule = await ui.prompt("Cron schedule (blank = unchanged)", {
+        format: "five cron fields, or blank to keep the current value",
+        validate: (value) => value.trim() === "" ? null : fieldValidator(parseCronSchedule)(value),
+      });
       if (schedule === null) continue;
       const command = await ui.prompt("Shell command (blank = unchanged)");
       if (command === null) continue;

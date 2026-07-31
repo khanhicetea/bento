@@ -2,8 +2,34 @@ import { assertEquals } from "@std/assert";
 import type { AppState } from "../../src/domain/state.ts";
 import {
   appDatabaseMenuChoices,
+  collectAppCreateDraft,
   sqliteDatabaseMenuChoices,
 } from "../../src/commands/wizard/apps.ts";
+import { createEmptyState } from "../../src/domain/state.ts";
+import { type KeyEvent, type TerminalIO, WizardUI } from "../../src/ui/tui.ts";
+
+function appWizardUi(inputs: string[]): { ui: WizardUI; output: string[] } {
+  const output: string[] = [];
+  const io: TerminalIO = {
+    write: (text) => output.push(text),
+    writeLine: (text = "") => output.push(text + "\n"),
+    readLine: () => Promise.resolve(inputs.shift() ?? null),
+    readKey: () => {
+      const value = inputs.shift();
+      const event: KeyEvent = value === undefined
+        ? { type: "eof" }
+        : value === ""
+        ? { type: "enter" }
+        : value === "\x1b"
+        ? { type: "escape" }
+        : { type: "char", char: value };
+      return Promise.resolve(event);
+    },
+    isInteractive: () => true,
+    supportsRawKeys: () => false,
+  };
+  return { ui: new WizardUI(io), output };
+}
 
 Deno.test("app database wizard groups SQLite-backed files", () => {
   const app = {
@@ -74,4 +100,57 @@ Deno.test("app database wizard groups SQLite-backed files", () => {
     sqliteChoices.map((choice) => choice.label),
     ["Local · alpha_local", "Litestream · alpha_stream"],
   );
+});
+
+Deno.test("app creation draft navigates backward and preserves answers", async () => {
+  const inputs = [
+    "demo",
+    "\x1b",
+    "",
+    "demo.test",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ];
+  const { ui, output } = appWizardUi(inputs);
+  const state = createEmptyState("2026-07-31T00:00:00.000Z");
+  const draft = await collectAppCreateDraft(ui, state);
+
+  assertEquals(draft?.slug, "demo");
+  assertEquals(draft?.domain, "demo.test");
+  assertEquals(draft?.docroot, "public");
+  assertEquals(output.join("").includes("Step 5 of 5 · Review"), true);
+});
+
+Deno.test("app review can change one field before apply", async () => {
+  const inputs = [
+    "demo",
+    "demo.test",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "2",
+    "2",
+    "changed.test",
+    "",
+  ];
+  const { ui } = appWizardUi(inputs);
+  const state = createEmptyState("2026-07-31T00:00:00.000Z");
+  const draft = await collectAppCreateDraft(ui, state);
+
+  assertEquals(draft?.slug, "demo");
+  assertEquals(draft?.domain, "changed.test");
 });

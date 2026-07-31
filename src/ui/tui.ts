@@ -28,6 +28,16 @@ export type TableMenuChoice<T = string> = {
   disabled?: boolean;
 };
 
+export type PromptOptions = {
+  default?: string;
+  required?: boolean;
+  secret?: boolean;
+  /** Short human-readable description of the accepted input. */
+  format?: string;
+  /** Return an error message when the value is invalid. */
+  validate?: (value: string) => string | null | undefined;
+};
+
 export type AlertLevel = "info" | "success" | "warn" | "error";
 
 /** Normalized key events from raw or line-mode input. */
@@ -272,7 +282,15 @@ export class WizardUI {
   async menu<T>(
     title: string,
     choices: MenuChoice<T>[],
-    opts?: { allowCancel?: boolean; cancelLabel?: string; subtitle?: string },
+    opts?: {
+      allowCancel?: boolean;
+      cancelLabel?: string;
+      subtitle?: string;
+      /** Optional value returned for `q`, leaving Escape available for Back. */
+      quitValue?: T;
+      /** Value highlighted initially when revisiting an answered field. */
+      initialValue?: T;
+    },
   ): Promise<T | null> {
     const allowCancel = opts?.allowCancel !== false;
     const cancelLabel = opts?.cancelLabel ?? "Back / cancel";
@@ -286,14 +304,21 @@ export class WizardUI {
     this.io.writeLine();
 
     const keys = choices.map((_, i) => menuKey(i));
-    let cursor = firstEnabledIndex(choices);
+    let cursor = opts?.initialValue === undefined
+      ? firstEnabledIndex(choices)
+      : choices.findIndex((choice) =>
+        !choice.disabled && Object.is(choice.value, opts.initialValue)
+      );
+    if (cursor < 0) cursor = firstEnabledIndex(choices);
     if (cursor < 0 && allowCancel) cursor = -1; // cancel row
     if (cursor < 0 && !allowCancel) cursor = 0;
 
     let status = "";
 
     const help = raw
-      ? "↑/↓ move · key selects · Enter confirms · 0/Esc back"
+      ? opts?.quitValue !== undefined
+        ? "↑/↓ move · key selects · Enter confirms · Esc back · q cancel"
+        : "↑/↓ move · key selects · Enter confirms · 0/Esc back"
       : "Type key and press Enter · 0 back";
 
     let lastDrawnLines: string[] = [];
@@ -405,6 +430,7 @@ export class WizardUI {
           }
 
           // Cancel shortcuts
+          if (ch === "q" && opts?.quitValue !== undefined) return opts.quitValue;
           if (ch === "0" || ch === "q") {
             if (allowCancel) return null;
             status = "Selection required";
@@ -477,19 +503,65 @@ export class WizardUI {
   /** Free-text prompt. Returns null on EOF/cancel. Empty allowed unless required. */
   async prompt(
     label: string,
-    opts?: { default?: string; required?: boolean; secret?: boolean },
+    opts?: PromptOptions,
   ): Promise<string | null> {
-    const def = opts?.default;
-    const suffix = def !== undefined && def !== "" ? pc.dim(` [${def}]`) : "";
+    let def = opts?.default;
+    if (opts?.format) this.info(`Expected: ${opts.format}`);
+
     while (true) {
-      const raw = await this.io.readLine(`${pc.bold(label)}${suffix}: `);
-      if (raw === null) return null;
+      const rawKeys = this.io.supportsRawKeys();
+      const suffix = !rawKeys && def !== undefined && def !== "" ? pc.dim(` [${def}]`) : "";
+      const prompt = `${pc.bold(label)}${suffix}: `;
+      const raw = rawKeys
+        ? await this.readRawLine(prompt, opts?.secret ?? false, def)
+        : await this.io.readLine(prompt);
+      if (raw === null || raw === "\x1b") return null;
       const value = raw === "" && def !== undefined ? def : raw;
       if (opts?.required && value.trim() === "") {
         this.warn("A value is required");
         continue;
       }
+      const validationError = opts?.validate?.(value);
+      if (validationError) {
+        this.warn("Invalid value", validationError);
+        // Cooked terminals cannot restore a line buffer, but making the rejected
+        // input the default keeps it visible and lets Enter preserve it.
+        def = value;
+        continue;
+      }
       return value;
+    }
+  }
+
+  /** Minimal raw-mode line editor so Escape can navigate out of text fields. */
+  private async readRawLine(
+    prompt: string,
+    secret: boolean,
+    retryValue?: string,
+  ): Promise<string | null> {
+    let value = retryValue ?? "";
+    this.io.write(prompt + (secret ? "*".repeat(value.length) : value));
+    while (true) {
+      const key = await this.io.readKey();
+      if (key.type === "eof" || key.type === "escape") {
+        this.io.writeLine();
+        return null;
+      }
+      if (key.type === "enter") {
+        this.io.writeLine();
+        return value;
+      }
+      if (key.type === "backspace") {
+        if (value.length > 0) {
+          value = value.slice(0, -1);
+          this.io.write("\b \b");
+        }
+        continue;
+      }
+      if (key.type === "char" && key.char.length === 1 && key.char >= " ") {
+        value += key.char;
+        this.io.write(secret ? "*" : key.char);
+      }
     }
   }
 

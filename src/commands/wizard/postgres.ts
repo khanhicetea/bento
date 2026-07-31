@@ -6,10 +6,11 @@ import {
   queryPostgresDatabaseSizes,
   resolvePostgresServices,
 } from "../../services/postgres.ts";
+import { parsePostgresVersion } from "../../schemas/validators.ts";
 import { requirePostgresRootPassword } from "../../services/stack_env.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { ensureState, handleError, openPostgresShell } from "./shared.ts";
+import { ensureState, fieldValidator, handleError, openPostgresShell } from "./shared.ts";
 import { wizardDatabaseBackup, wizardDatabaseRestore } from "./mysql.ts";
 
 export async function sectionPostgres(ui: WizardUI, ctx: CliContext): Promise<void> {
@@ -41,7 +42,11 @@ export async function sectionPostgres(ui: WizardUI, ctx: CliContext): Promise<vo
 
     try {
       if (action === "add") {
-        const version = await ui.prompt("PostgreSQL major version (e.g. 17)", { required: true });
+        const version = await ui.prompt("PostgreSQL major version", {
+          required: true,
+          format: "an official major-only tag, for example 17",
+          validate: fieldValidator(parsePostgresVersion),
+        });
         if (!version) continue;
         await ctx.store.withExclusive(async (current) => {
           const next = addPostgresVersion(current, version);

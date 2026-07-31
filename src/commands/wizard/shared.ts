@@ -6,10 +6,21 @@ import { executePostgresShell, type PostgresShellPlan } from "../../services/pos
 import { redact } from "../../ui/output.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
+import type { ParseResult } from "../../schemas/validators.ts";
 
 export function pcDim(s: string): string {
   // local helper to avoid importing picocolors into every message site for dim-only
   return `\x1b[2m${s}\x1b[22m`;
+}
+
+/** Adapt domain parsers to the inline validation contract used by text prompts. */
+export function fieldValidator(
+  parse: (value: unknown) => ParseResult<unknown>,
+): (value: string) => string | null {
+  return (value) => {
+    const result = parse(value);
+    return result.ok ? null : result.errors.join("; ");
+  };
 }
 
 export async function sqliteFileSize(

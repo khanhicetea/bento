@@ -1,5 +1,6 @@
 import { join } from "@std/path";
 import { databaseBindings, type DesiredState } from "../../domain/state.ts";
+import { parseAbsolutePath } from "../../schemas/validators.ts";
 import { runDatabaseBackup } from "../../services/database_backup.ts";
 import {
   enableSqliteBackup,
@@ -13,7 +14,7 @@ import {
 import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
 import { WizardUI } from "../../ui/tui.ts";
 import type { CliContext } from "../context.ts";
-import { ensureState, handleError, pcDim, sqliteFileSize } from "./shared.ts";
+import { ensureState, fieldValidator, handleError, pcDim, sqliteFileSize } from "./shared.ts";
 
 export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Manage SQLite");
@@ -139,6 +140,8 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
         const output = await ui.prompt("New database file", {
           default: defaultOutput,
           required: true,
+          format: "an absolute host path",
+          validate: fieldValidator(parseAbsolutePath),
         });
         if (!output) continue;
         ui.warn(
