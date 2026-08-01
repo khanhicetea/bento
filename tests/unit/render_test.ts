@@ -80,6 +80,8 @@ Deno.test("init + render produces startable topology files", async () => {
     assertEquals(appCommon.includes("Never expose dotfiles"), true);
     assertEquals(proxyCommon.includes("proxy_socket_keepalive on;"), true);
     assertEquals(proxyCommon.includes("Connection $connection_upgrade;"), true);
+    assertEquals(nginxMain.includes("error_log /dev/stderr warn;"), true);
+    assertEquals(nginxMain.includes("error_log /var/log/nginx/error.log"), false);
     const composeBase = await platform.fs.readText(base);
     assertEquals(composeBase.includes("./custom/nginx:/etc/nginx/custom:ro"), true);
     assertEquals(composeBase.includes("nofile:"), true);

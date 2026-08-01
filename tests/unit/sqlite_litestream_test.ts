@@ -106,6 +106,10 @@ Deno.test("stack SQLite backup renders one constrained-root directory watcher", 
   assertStringIncludes(compose.content, "CHOWN");
   assertStringIncludes(compose.content, "FOWNER");
   assertStringIncludes(compose.content, "litestream/litestream:0.5.15");
+  assertStringIncludes(compose.content, "logging:");
+  assertStringIncludes(compose.content, "driver: local");
+  assertStringIncludes(compose.content, "max-size: 10m");
+  assertStringIncludes(compose.content, "max-file: '3'");
   assertStringIncludes(compose.content, "/etc/litestream/litestream.yml");
   assertStringIncludes(
     compose.content,

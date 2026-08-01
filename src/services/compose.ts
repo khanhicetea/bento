@@ -331,6 +331,7 @@ function renderLitestreamFragment(environment: StackComposeEnvironment): string 
       litestream: {
         image: "litestream/litestream:0.5.15",
         restart: "unless-stopped",
+        logging: composeLogging(),
         command: ["replicate", "-config", "/etc/litestream/litestream.yml"],
         ...(disabled ? { profiles: ["litestream-disabled"] } : {}),
         user: "0:0",

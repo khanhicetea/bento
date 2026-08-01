@@ -2,7 +2,8 @@ load_module /usr/lib/nginx/modules/ngx_http_acme_module.so;
 
 worker_processes auto;
 worker_shutdown_timeout 10s;
-error_log /var/log/nginx/error.log warn;
+# Send errors through Docker's size-limited local logging driver.
+error_log /dev/stderr warn;
 pid /var/run/nginx.pid;
 
 # Operator-owned main-context drop-ins, loaded lexically.
