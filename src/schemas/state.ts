@@ -160,8 +160,10 @@ const bindingSchema = z.discriminatedUnion("engine", [
         const slug = file.id.slice(0, -11);
         // Legacy schema-v3 SQLite files are now identified as Litestream.
         // New plain SQLite files use .db to stay outside the *.sqlite watcher.
-        return file.path === `sqlite/${file.id}/${slug}.db` ||
-          file.path === `sqlite/${file.id}/${slug}.sqlite`;
+        return (
+          file.path === `sqlite/${file.id}/${slug}.db` ||
+          file.path === `sqlite/${file.id}/${slug}.sqlite`
+        );
       },
       {
         message:
@@ -208,9 +210,10 @@ const appSchema = strict({
         message: "SQLite file identity must belong to the app slug",
       });
     }
-    const identity = database.engine === "sqlite" || database.engine === "litestream"
-      ? database.file.id
-      : `${database.engine}:${database.service}`;
+    const identity =
+      database.engine === "sqlite" || database.engine === "litestream"
+        ? database.file.id
+        : `${database.engine}:${database.service}`;
     if (identities.has(identity)) {
       ctx.addIssue({
         code: "custom",
@@ -233,7 +236,11 @@ const proxySchema = strict({
 });
 const domainOwnerSchema = z.discriminatedUnion("kind", [
   strict({ kind: z.literal("app"), slug: appSlugSchema, primary: z.boolean() }),
-  strict({ kind: z.literal("proxy"), name: appSlugSchema, primary: z.boolean() }),
+  strict({
+    kind: z.literal("proxy"),
+    name: appSlugSchema,
+    primary: z.boolean(),
+  }),
 ]);
 const cronJobSchema = strict({
   name: nonEmptyStringSchema,
@@ -315,8 +322,8 @@ const desiredStateRawSchema = strict({
   ...commonState,
 }).superRefine((state, ctx) => {
   const services = new Set(state.databaseServices.map((s) => s.service));
-  const defaultManaged = state.databaseServices.find((s) =>
-    s.service === state.defaults.database.service
+  const defaultManaged = state.databaseServices.find(
+    (s) => s.service === state.defaults.database.service,
   );
   if (!defaultManaged) {
     ctx.addIssue({
@@ -353,8 +360,7 @@ const desiredStateRawSchema = strict({
         });
       }
       if (
-        new Set(database.databases.map((entry) => entry.name)).size !==
-          database.databases.length
+        new Set(database.databases.map((entry) => entry.name)).size !== database.databases.length
       ) {
         ctx.addIssue({
           code: "custom",
@@ -363,8 +369,8 @@ const desiredStateRawSchema = strict({
         });
       }
     }
-    const links = Object.values(state.domains).filter((owner) =>
-      owner.kind === "app" && owner.slug === slug
+    const links = Object.values(state.domains).filter(
+      (owner) => owner.kind === "app" && owner.slug === slug,
     );
     if (links.filter((owner) => owner.primary).length !== 1) {
       ctx.addIssue({
@@ -399,8 +405,8 @@ const desiredStateRawSchema = strict({
     }
   }
   for (const [name] of Object.entries(state.proxies)) {
-    const links = Object.values(state.domains).filter((owner) =>
-      owner.kind === "proxy" && owner.name === name
+    const links = Object.values(state.domains).filter(
+      (owner) => owner.kind === "proxy" && owner.name === name,
     );
     if (links.filter((owner) => owner.primary).length !== 1) {
       ctx.addIssue({
@@ -410,12 +416,10 @@ const desiredStateRawSchema = strict({
       });
     }
   }
-  for (
-    const [collection, records] of [
-      ["cronJobs", state.cronJobs],
-      ["workers", state.workers],
-    ] as const
-  ) {
+  for (const [collection, records] of [
+    ["cronJobs", state.cronJobs],
+    ["workers", state.workers],
+  ] as const) {
     const identities = new Set<string>();
     for (const [index, record] of records.entries()) {
       const identity = `${record.app}:${record.name}`;
@@ -429,12 +433,10 @@ const desiredStateRawSchema = strict({
       identities.add(identity);
     }
   }
-  for (
-    const [collection, records] of [
-      ["cronJobs", state.cronJobs],
-      ["workers", state.workers],
-    ] as const
-  ) {
+  for (const [collection, records] of [
+    ["cronJobs", state.cronJobs],
+    ["workers", state.workers],
+  ] as const) {
     for (const [index, record] of records.entries()) {
       if (!state.apps[record.app]) {
         ctx.addIssue({
@@ -472,23 +474,23 @@ function brandRedis(r: z.infer<typeof redisSchema>): AppRedisIdentity {
 function brandApp(app: z.infer<typeof appSchema>): AppState {
   const databases: AppState["databases"] = app.databases.map((database) =>
     database.engine === "sqlite" || database.engine === "litestream"
-      ? {
-        engine: database.engine,
-        file: database.file,
-        ...(database.engine === "sqlite" && database.vacuumSchedule
-          ? { vacuumSchedule: database.vacuumSchedule }
-          : {}),
-        ...(database.engine === "litestream" && database.backupVerifiedAt
-          ? { backupVerifiedAt: database.backupVerifiedAt }
-          : {}),
-      } as AppState["databases"][number]
+      ? ({
+          engine: database.engine,
+          file: database.file,
+          ...(database.engine === "sqlite" && database.vacuumSchedule
+            ? { vacuumSchedule: database.vacuumSchedule }
+            : {}),
+          ...(database.engine === "litestream" && database.backupVerifiedAt
+            ? { backupVerifiedAt: database.backupVerifiedAt }
+            : {}),
+        } as AppState["databases"][number])
       : {
-        engine: database.engine,
-        service: asDatabaseService(database.service),
-        user: database.user,
-        password: database.password,
-        databases: database.databases.map(brandDatabase),
-      }
+          engine: database.engine,
+          service: asDatabaseService(database.service),
+          user: database.user,
+          password: database.password,
+          databases: database.databases.map(brandDatabase),
+        },
   );
   return {
     slug: asAppSlug(app.slug),
@@ -562,25 +564,34 @@ function brandWorker(w: z.infer<typeof workerSchema>): Worker {
 function brandDefaults(d: z.infer<typeof defaultsSchema>): StackDefaults {
   return {
     phpVersion: asPhpVersion(d.phpVersion),
-    database: d.database.engine === "mysql"
-      ? {
-        engine: "mysql",
-        version: asMysqlVersion(d.database.version),
-        service: asDatabaseService(d.database.service),
-      }
-      : {
-        engine: "postgres",
-        version: asPostgresVersion(d.database.version),
-        service: asDatabaseService(d.database.service),
-      },
+    database:
+      d.database.engine === "mysql"
+        ? {
+            engine: "mysql",
+            version: asMysqlVersion(d.database.version),
+            service: asDatabaseService(d.database.service),
+          }
+        : {
+            engine: "postgres",
+            version: asPostgresVersion(d.database.version),
+            service: asDatabaseService(d.database.service),
+          },
     fpmProfile: asFpmProfile(d.fpmProfile),
     redisMode: d.redisMode as RedisMode,
   };
 }
 function brandManaged(v: z.infer<typeof managedDatabaseSchema>): ManagedDatabaseService {
   return v.engine === "mysql"
-    ? { ...v, version: asMysqlVersion(v.version), service: asDatabaseService(v.service) }
-    : { ...v, version: asPostgresVersion(v.version), service: asDatabaseService(v.service) };
+    ? {
+        ...v,
+        version: asMysqlVersion(v.version),
+        service: asDatabaseService(v.service),
+      }
+    : {
+        ...v,
+        version: asPostgresVersion(v.version),
+        service: asDatabaseService(v.service),
+      };
 }
 
 export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
@@ -612,12 +623,14 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
   return ok({
     schemaVersion: STATE_SCHEMA_VERSION,
     defaults: brandDefaults(raw.defaults),
-    phpVersions: raw.phpVersions.map((v): ManagedPhpVersion => ({
-      version: asPhpVersion(v.version),
-      service: v.service,
-      image: v.image,
-      processCap: v.processCap,
-    })),
+    phpVersions: raw.phpVersions.map(
+      (v): ManagedPhpVersion => ({
+        version: asPhpVersion(v.version),
+        service: v.service,
+        image: v.image,
+        processCap: v.processCap,
+      }),
+    ),
     databaseServices: raw.databaseServices.map(brandManaged),
     ...(raw.sqliteBackup ? { sqliteBackup: raw.sqliteBackup } : {}),
     apps: Object.fromEntries(
@@ -640,7 +653,9 @@ export function loadStateFromJson(text: string): DesiredState {
   try {
     raw = JSON.parse(text);
   } catch (cause) {
-    throw validationError("state.json is not valid JSON", { cause: String(cause) });
+    throw validationError("state.json is not valid JSON", {
+      cause: String(cause),
+    });
   }
   const result = parseDesiredState(raw);
   if (!result.ok) {

@@ -21,96 +21,96 @@ import {
 } from "../shared.ts";
 
 export function registerWorkerCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command("worker", "Long-running workers", (y: YargsBuilder) =>
-      y
-        .command(
-          "list [app]",
-          "List workers",
-          (y2: YargsBuilder) => y2.positional("app", { type: "string" }),
-          bind(state, cmdWorkerList),
-        )
-        .command(
-          "add",
-          "Add a worker (command after --)",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .option("app", { type: "string", demandOption: true })
-                .option("name", { type: "string", demandOption: true })
-                .option("cmd", {
-                  type: "string",
-                  describe: "Command string (prefer -- argv form)",
-                }),
-            ),
-          bind(state, cmdWorkerAdd),
-        )
-        .command(
-          "remove <app> <name>",
-          "Remove a worker",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .positional("app", { type: "string", demandOption: true })
-                .positional("name", { type: "string", demandOption: true }),
-            ),
-          bind(state, cmdWorkerRemove),
-        )
-        .command(
-          "start <app> <name>",
-          "Start one worker (scoped s6 service)",
-          (y2: YargsBuilder) =>
+  return parser.command("worker", "Long-running workers", (y: YargsBuilder) =>
+    y
+      .command(
+        "list [app]",
+        "List workers",
+        (y2: YargsBuilder) => y2.positional("app", { type: "string" }),
+        bind(state, cmdWorkerList),
+      )
+      .command(
+        "add",
+        "Add a worker (command after --)",
+        (y2: YargsBuilder) =>
+          noApplyOption(
             y2
-              .positional("app", { type: "string", demandOption: true })
-              .positional("name", { type: "string", demandOption: true }),
-          bind(state, cmdWorkerStart),
-        )
-        .command(
-          "stop <app> <name>",
-          "Stop one worker (scoped s6 service)",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("app", { type: "string", demandOption: true })
-              .positional("name", { type: "string", demandOption: true }),
-          bind(state, cmdWorkerStop),
-        )
-        .command(
-          "restart <app> <name>",
-          "Restart one worker (scoped s6 service)",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("app", { type: "string", demandOption: true })
-              .positional("name", { type: "string", demandOption: true }),
-          bind(state, cmdWorkerRestart),
-        )
-        .command(
-          "signal <app> <name>",
-          "Send one signal to one worker service",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("app", { type: "string", demandOption: true })
-              .positional("name", { type: "string", demandOption: true })
-              .option("signal", {
+              .option("app", { type: "string", demandOption: true })
+              .option("name", { type: "string", demandOption: true })
+              .option("cmd", {
                 type: "string",
-                demandOption: true,
-                describe: "HUP|ALRM|INT|QUIT|USR1|USR2|TERM|KILL",
+                describe: "Command string (prefer -- argv form)",
               }),
-          bind(state, cmdWorkerSignal),
-        )
-        .command(
-          "inspect <app> <name>",
-          "Inspect one worker (s6 status)",
-          (y2: YargsBuilder) =>
+          ),
+        bind(state, cmdWorkerAdd),
+      )
+      .command(
+        "remove <app> <name>",
+        "Remove a worker",
+        (y2: YargsBuilder) =>
+          noApplyOption(
             y2
               .positional("app", { type: "string", demandOption: true })
               .positional("name", { type: "string", demandOption: true }),
-          bind(state, cmdWorkerInspect),
-        )
-        .demandCommand(
-          1,
-          "Specify a worker subcommand: add|remove|list|start|stop|restart|signal|inspect",
-        )
-        .recommendCommands());
+          ),
+        bind(state, cmdWorkerRemove),
+      )
+      .command(
+        "start <app> <name>",
+        "Start one worker (scoped s6 service)",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("app", { type: "string", demandOption: true })
+            .positional("name", { type: "string", demandOption: true }),
+        bind(state, cmdWorkerStart),
+      )
+      .command(
+        "stop <app> <name>",
+        "Stop one worker (scoped s6 service)",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("app", { type: "string", demandOption: true })
+            .positional("name", { type: "string", demandOption: true }),
+        bind(state, cmdWorkerStop),
+      )
+      .command(
+        "restart <app> <name>",
+        "Restart one worker (scoped s6 service)",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("app", { type: "string", demandOption: true })
+            .positional("name", { type: "string", demandOption: true }),
+        bind(state, cmdWorkerRestart),
+      )
+      .command(
+        "signal <app> <name>",
+        "Send one signal to one worker service",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("app", { type: "string", demandOption: true })
+            .positional("name", { type: "string", demandOption: true })
+            .option("signal", {
+              type: "string",
+              demandOption: true,
+              describe: "HUP|ALRM|INT|QUIT|USR1|USR2|TERM|KILL",
+            }),
+        bind(state, cmdWorkerSignal),
+      )
+      .command(
+        "inspect <app> <name>",
+        "Inspect one worker (s6 status)",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("app", { type: "string", demandOption: true })
+            .positional("name", { type: "string", demandOption: true }),
+        bind(state, cmdWorkerInspect),
+      )
+      .demandCommand(
+        1,
+        "Specify a worker subcommand: add|remove|list|start|stop|restart|signal|inspect",
+      )
+      .recommendCommands(),
+  );
 }
 
 async function cmdWorkerList(argv: CliArgs, ctx: CliContext): Promise<number> {
@@ -126,25 +126,24 @@ async function cmdWorkerList(argv: CliArgs, ctx: CliContext): Promise<number> {
   return 0;
 }
 
-async function cmdWorkerAdd(
-  argv: ArgsWith<"app" | "name">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdWorkerAdd(argv: ArgsWith<"app" | "name">, ctx: CliContext): Promise<number> {
   const { app, name } = argv;
   const cmd = argv.cmd?.split(/\s+/).filter(Boolean) ?? trailing(argv, 2);
   if (cmd.length === 0) {
-    ctx.log.error(
-      "usage: bento worker add --app <app> --name <name> -- <command...>",
-    );
+    ctx.log.error("usage: bento worker add --app <app> --name <name> -- <command...>");
     return 2;
   }
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const r = addWorker(state, {
-      app,
-      name,
-      command: cmd,
-    }, ctx.platform);
+    const r = addWorker(
+      state,
+      {
+        app,
+        name,
+        command: cmd,
+      },
+      ctx.platform,
+    );
     await ctx.store.save(r.state);
     if (!noApply) {
       await ctx.render.apply(r.state, {
@@ -159,10 +158,7 @@ async function cmdWorkerAdd(
   return 0;
 }
 
-async function cmdWorkerRemove(
-  argv: ArgsWith<"app" | "name">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdWorkerRemove(argv: ArgsWith<"app" | "name">, ctx: CliContext): Promise<number> {
   const { app, name } = argv;
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
@@ -224,27 +220,26 @@ async function cmdWorkerSignal(
   return result.code === 0 ? 0 : 8;
 }
 
-async function cmdWorkerInspect(
-  argv: ArgsWith<"app" | "name">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdWorkerInspect(argv: ArgsWith<"app" | "name">, ctx: CliContext): Promise<number> {
   const { app, name } = argv;
   const state = await ctx.store.load();
   const result = await inspectWorker(ctx.platform, state, app, name);
   if (ctx.json) {
-    ctx.log.out(JSON.stringify(
-      {
-        app: result.worker.app,
-        name: result.worker.name,
-        program: result.plan.program,
-        runner: result.plan.runnerService,
-        command: result.worker.command,
-        enabled: result.worker.enabled,
-        s6: result.stdout.trim(),
-      },
-      null,
-      2,
-    ));
+    ctx.log.out(
+      JSON.stringify(
+        {
+          app: result.worker.app,
+          name: result.worker.name,
+          program: result.plan.program,
+          runner: result.plan.runnerService,
+          command: result.worker.command,
+          enabled: result.worker.enabled,
+          s6: result.stdout.trim(),
+        },
+        null,
+        2,
+      ),
+    );
   } else {
     ctx.log.out(
       [

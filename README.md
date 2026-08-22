@@ -4,7 +4,7 @@ Bento is a self-hosted operations layer for running multiple isolated PHP applic
 
 ![Bento logo](./bento-logo-3d.png)
 
-This repository is a **Deno 2.9 / TypeScript** reimplementation of the Bento host control plane. It preserves the product model described in [`specs/`](specs/):
+This repository is a **Bun 1.4 / TypeScript** reimplementation of the Bento host control plane. It preserves the product model described in [`specs/`](specs/):
 
 - one operator-owned Linux host
 - Nginx as the only public service: host network by default, stack-private bridge mode as a multi-stack opt-in
@@ -16,39 +16,39 @@ This repository is a **Deno 2.9 / TypeScript** reimplementation of the Bento hos
 
 ## Requirements
 
-- Deno **2.9.3** (pinned 2.9.x line — see `src/version.ts` `DENO_TARGET_VERSION` and release notes)
+- Bun **1.4.0** (pinned 1.4.x line — see `src/version.ts` `BUN_TARGET_VERSION` and release notes)
 - Linux with Docker Engine + Docker Compose v2 (data plane)
-- No Python, Node.js, or `npm install` required to run the control plane (JSR/npm packages resolve through Deno + `deno.lock`)
+- Source development uses `bun install --frozen-lockfile`; compiled releases need no runtime or package installation
 
 Install or switch the runtime with the official installer / package pin, for example:
 
 ```bash
-curl -fsSL https://deno.land/install.sh | sh -s v2.9.3
-deno --version   # should report 2.9.3
+curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.0"
+bun --version   # should report 1.4.0
 ```
 
 ## Quick start (source mode)
 
 ```bash
 # pin/check runtime
-deno --version   # expect 2.9.x (CI uses 2.9.3)
+bun --version   # expect 1.4.x (CI uses 1.4.0)
 
 # format, lint, typecheck, test
-deno task fmt
-deno task lint
-deno task check
-deno task test
-deno task test:integration   # soft-skips Docker-only steps when daemon is down
-deno task test:stack         # real Docker stack harness (default name: testbento)
+bun run fmt
+bun run lint
+bun run check
+bun run test
+bun run test:integration   # soft-skips Docker-only steps when daemon is down
+bun run test:stack         # real Docker stack harness (default name: testbento)
 
 # select a stack root once for this shell, then initialize and render
 export BENTO_STACK_ROOT="$PWD/my-stack"
-deno task run init --name my-stack
-deno task run render
-deno task run status
+bun run src/main.ts init --name my-stack
+bun run src/main.ts render
+bun run src/main.ts status
 
 # create a default MySQL application
-deno task run app create demo \
+bun run src/main.ts app create demo \
   --domain demo.example.test \
   --docroot public \
   --db
@@ -57,15 +57,15 @@ deno task run app create demo \
 # Register id_ed25519.pub with the Git host before cloning a private repository.
 
 # add PostgreSQL as another database kind on the same application
-deno task run postgres add 17
-deno task run app update demo \
+bun run src/main.ts postgres add 17
+bun run src/main.ts app update demo \
   --domain demo.example.test \
   --database-engine postgres \
   --postgres 17 \
   --db
 
 # apply (validate + scoped reload when services are up)
-deno task run apply
+bun run src/main.ts apply
 ```
 
 Stack roots are **external** mutable state (desired state, homes, certs, backups, generated output). Immutable templates ship with the repository or compiled binary. The stable stack name is explicit and is not derived from the stack directory; it becomes `COMPOSE_PROJECT_NAME` and prefixes Compose containers, networks, and named volumes. `bento` remains the compatible default when `--name` is omitted.
@@ -91,19 +91,19 @@ Bridge mode keeps Nginx on that stack's private network. Blank `NGINX_HTTP_PORT`
 
 ```bash
 mkdir -p dist
-deno task compile          # native host arch
-deno task compile:amd64    # Linux x86_64 (release)
-deno task compile:arm64    # Linux aarch64 (release)
+bun run compile          # native host arch
+bun run compile:amd64    # Linux x86_64 (release)
+bun run compile:arm64    # Linux aarch64 (release)
 ```
 
-The compiled `bento` executable needs no Deno/Python/Node on the target host. Immutable templates are embedded with `--include=templates` and materialize into a digest-addressed cache under the stack root (`.asset-cache/<digest>/`) before publishing stable Compose paths (`docker/`, `helpers/`). Mutable operator state always lives under an explicit external stack root — never next to the binary.
+The compiled `bento` executable needs no Bun/Python/Node on the target host. Immutable templates are embedded with `--asset=templates` and materialize into a digest-addressed cache under the stack root (`.asset-cache/<digest>/`) before publishing stable Compose paths (`docker/`, `helpers/`). Mutable operator state always lives under an explicit external stack root — never next to the binary.
 
 ```bash
 export BENTO_STACK_ROOT=/var/lib/bento
 ./dist/bento init --name production
 ./dist/bento render
 ./dist/bento status
-./dist/bento version   # reports bento version + pinned Deno target (2.9.x)
+./dist/bento version   # reports bento version + pinned Bun target (1.4.x)
 ```
 
 ### Parity smoke (F-29 / F-30)
@@ -111,19 +111,19 @@ export BENTO_STACK_ROOT=/var/lib/bento
 Source mode and the compiled binary must produce byte-equivalent generated files, equal state transitions/exit codes, and equivalent normalized diagnostics for identical inputs:
 
 ```bash
-deno task test:parity      # compile + require binary parity suite
+bun run test:parity      # compile + require binary parity suite
 # or, with an existing binary:
-BENTO_BIN=$PWD/dist/bento deno task test
+BENTO_BIN=$PWD/dist/bento bun run test
 ```
 
-The checked-in release workflow (`.github/workflows/ci.yml`) currently runs only for tags and published releases and compiles the Linux amd64/arm64 artifacts. The formatting, linting, typecheck, frozen-install, test, integration, smoke, and parity tasks above are available as local gates but are not all enforced by that workflow.
+The checked-in release workflow (`.github/workflows/ci.yml`) runs for tags and published releases. It performs a frozen install, formatting, linting, type checking, unit/contract tests, and integration tests before compiling Linux amd64/arm64 artifacts. Smoke and parity tasks remain additional local gates.
 
-Pin Deno **2.9.3** for source and compile. Documented operator paths use the explicit permission set in `deno.json` tasks (`--allow-read --allow-write --allow-env --allow-run --allow-net --allow-sys`). **Do not use unrestricted `-A` as the supported default.**
+Pin Bun **1.4.0** for source and compile. Dependencies are resolved exactly through the committed `bun.lock`; use `bun install --frozen-lockfile` in CI and release builds.
 
 ## Architecture (short)
 
 ```text
-Operator CLI (Deno/TS)
+Operator CLI (Bun/TS)
    -> desired state (state.json)
    -> complete candidate generation
    -> lock / stage / promote / validate / reload
@@ -282,7 +282,7 @@ Applications on the target server may need their own CA bundle reload or service
 - `permissions repair <app> --recursive` — bounded walk; **never follows symlink targets**
 - App create may apply recursive policy while the home tree is still small; routine startup/apply paths use shallow repairs only.
 
-The stack root comes from `BENTO_STACK_ROOT` and defaults to `./bento`; `--stack PATH` is available as a one-command override. The other global flag is `--json`. Command parsing and help use **yargs**; table layout uses **cliui**; colorized operator output uses **picocolors**. Desired-state and CLI input validation use **zod**; cron schedules use **cron-parser**; PHP/MySQL version ordering uses **semver**; config templates use **mustache**. Standard library helpers come from official `@std/*` packages (path, yaml, encoding, assert).
+The stack root comes from `BENTO_STACK_ROOT` and defaults to `./bento`; `--stack PATH` is available as a one-command override. The other global flag is `--json`. Command parsing and help use **yargs**; table layout uses **cliui**; colorized operator output uses **picocolors**. Desired-state and CLI input validation use **zod**; cron schedules use **cron-parser**; PHP/MySQL version ordering uses **semver**; config templates use **mustache**. Platform helpers use Node-compatible built-ins; YAML uses `js-yaml`, and tests use Bun's native runner.
 
 ## Specs and acceptance
 
@@ -317,7 +317,7 @@ src/
   main.ts                 # entrypoint
   domain/                 # branded types, state model, errors, reload plans
   schemas/                # current-state runtime validation boundary
-  platform/               # Deno adapters (fs, lock, process, assets, paths)
+  platform/               # Bun adapters (fs, lock, process, assets, paths)
   services/               # app, php, mysql, render, deploy, …
   commands/               # CLI router
   ui/                     # operator output + interactive TUI helpers
@@ -370,7 +370,7 @@ Run `bento apply` after changes; Bento validates the candidate before reloading.
 - Bento does not rotate MySQL/PostgreSQL app passwords or reset existing account passwords during reconciliation. Operators must coordinate any password change manually across the database, Bento state/credentials, and dependent applications.
 - Database administrator and app passwords are not passed on host process argv for admin SQL.
 - Deploy HMAC secrets live in desired state / FastCGI params, not app-writable secret files.
-- Deno permissions are explicit in `deno.json` tasks (not `-A` by default).
+- Bun dependencies are pinned by `package.json` and `bun.lock`.
 
 ## License
 

@@ -1,4 +1,4 @@
-import { resolve } from "@std/path";
+import { resolve } from "node:path";
 import { describeReloadPlan } from "../domain/reload.ts";
 import { createPlatform, type Platform } from "../platform/mod.ts";
 import { StateStore } from "../services/state_store.ts";
@@ -21,8 +21,7 @@ export type GlobalFlags = {
 };
 
 export function defaultStackRoot(): string {
-  return Deno.env.get("BENTO_STACK_ROOT") ?? Deno.env.get("BENTO_ROOT") ??
-    "./bento";
+  return Bun.env.BENTO_STACK_ROOT ?? Bun.env.BENTO_ROOT ?? "./bento";
 }
 
 export function createContext(flags: GlobalFlags): CliContext {
@@ -42,9 +41,11 @@ export function createContext(flags: GlobalFlags): CliContext {
 }
 
 /** Build a CliContext from yargs-parsed global options. */
-export function contextFromArgv(
-  argv: { stack: string; json: boolean; repoRoot?: string },
-): CliContext {
+export function contextFromArgv(argv: {
+  stack: string;
+  json: boolean;
+  repoRoot?: string;
+}): CliContext {
   return createContext({
     stackRoot: argv.stack,
     json: argv.json,

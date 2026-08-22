@@ -75,24 +75,20 @@ type NumberArgName =
   | "timeoutSec";
 
 /** Canonical camelCase shape emitted by the configured yargs parser. */
-export type CliArgs =
-  & {
-    _: Array<string | number>;
-    $0: string;
-    stack: string;
-    json: boolean;
-    kind?: TemplateKind;
-    mode?: TlsMode["kind"];
-    ingressMode?: "host" | "bridge";
-    upstream?: string | string[];
-  }
-  & Partial<Record<StringArgName, string>>
-  & Partial<Record<BooleanArgName, boolean>>
-  & Partial<Record<NumberArgName, number>>;
+export type CliArgs = {
+  _: Array<string | number>;
+  $0: string;
+  stack: string;
+  json: boolean;
+  kind?: TemplateKind;
+  mode?: TlsMode["kind"];
+  ingressMode?: "host" | "bridge";
+  upstream?: string | string[];
+} & Partial<Record<StringArgName, string>> &
+  Partial<Record<BooleanArgName, boolean>> &
+  Partial<Record<NumberArgName, number>>;
 
 /** Marks options guaranteed by a command's demandOption/default declaration. */
-export type ArgsWith<K extends keyof CliArgs> =
-  & CliArgs
-  & {
-    [P in K]-?: NonNullable<CliArgs[P]>;
-  };
+export type ArgsWith<K extends keyof CliArgs> = CliArgs & {
+  [P in K]-?: NonNullable<CliArgs[P]>;
+};

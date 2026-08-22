@@ -1,5 +1,18 @@
-import { dirname, join } from "@std/path";
-import type { FileMode, FileSystem } from "./interfaces.ts";
+import { dirname, join } from "node:path";
+import {
+  appendFile,
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import type { FileSystem } from "./interfaces.ts";
 import { platformError } from "../domain/errors.ts";
 
 const encoder = new TextEncoder();
@@ -7,178 +20,134 @@ const decoder = new TextDecoder();
 
 export function createFileSystem(): FileSystem {
   return {
-    async readText(path: string): Promise<string> {
+    async readText(path) {
       try {
-        return await Deno.readTextFile(path);
+        return await readFile(path, "utf8");
       } catch (cause) {
         throw platformError(`failed to read ${path}`, cause);
       }
     },
-
-    async readBytes(path: string): Promise<Uint8Array> {
+    async readBytes(path) {
       try {
-        return await Deno.readFile(path);
+        return new Uint8Array(await readFile(path));
       } catch (cause) {
         throw platformError(`failed to read ${path}`, cause);
       }
     },
-
-    async writeText(path: string, content: string, mode?: FileMode): Promise<void> {
+    async writeText(path, content, mode) {
       await this.writeBytes(path, encoder.encode(content), mode);
     },
-
-    async writeBytes(path: string, content: Uint8Array, mode?: FileMode): Promise<void> {
+    async writeBytes(path, content, mode) {
       try {
-        await Deno.mkdir(dirname(path), { recursive: true });
-        await Deno.writeFile(path, content);
-        if (mode !== undefined) await Deno.chmod(path, mode);
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, content);
+        if (mode !== undefined) await chmod(path, mode);
       } catch (cause) {
         throw platformError(`failed to write ${path}`, cause);
       }
     },
-
-    async appendText(path: string, content: string): Promise<void> {
+    async appendText(path, content) {
       try {
-        await Deno.mkdir(dirname(path), { recursive: true });
-        await Deno.writeTextFile(path, content, { append: true });
+        await mkdir(dirname(path), { recursive: true });
+        await appendFile(path, content);
       } catch (cause) {
         throw platformError(`failed to append ${path}`, cause);
       }
     },
-
-    async exists(path: string): Promise<boolean> {
+    async exists(path) {
       try {
-        await Deno.lstat(path);
+        await lstat(path);
         return true;
       } catch {
         return false;
       }
     },
-
-    async mkdirp(path: string, mode?: FileMode): Promise<void> {
+    async mkdirp(path, mode) {
       try {
-        await Deno.mkdir(path, { recursive: true });
-        if (mode !== undefined) await Deno.chmod(path, mode);
+        await mkdir(path, { recursive: true });
+        if (mode !== undefined) await chmod(path, mode);
       } catch (cause) {
         throw platformError(`failed to create directory ${path}`, cause);
       }
     },
-
-    async remove(path: string, opts?: { recursive?: boolean }): Promise<void> {
+    async remove(path, opts) {
       try {
-        await Deno.remove(path, { recursive: opts?.recursive ?? false });
+        await rm(path, { recursive: opts?.recursive ?? false, force: true });
       } catch (cause) {
-        if (cause instanceof Deno.errors.NotFound) return;
         throw platformError(`failed to remove ${path}`, cause);
       }
     },
-
-    async rename(from: string, to: string): Promise<void> {
+    async rename(from, to) {
       try {
-        await Deno.mkdir(dirname(to), { recursive: true });
-        await Deno.rename(from, to);
+        await mkdir(dirname(to), { recursive: true });
+        await rename(from, to);
       } catch (cause) {
         throw platformError(`failed to rename ${from} -> ${to}`, cause);
       }
     },
-
-    async chmod(path: string, mode: FileMode): Promise<void> {
+    async chmod(path, mode) {
       try {
-        await Deno.chmod(path, mode);
+        await chmod(path, mode);
       } catch (cause) {
         throw platformError(`failed to chmod ${path}`, cause);
       }
     },
-
-    async copyFile(from: string, to: string): Promise<void> {
+    async copyFile(from, to) {
       try {
-        await Deno.mkdir(dirname(to), { recursive: true });
-        await Deno.copyFile(from, to);
+        await mkdir(dirname(to), { recursive: true });
+        await copyFile(from, to);
       } catch (cause) {
         throw platformError(`failed to copy ${from} -> ${to}`, cause);
       }
     },
-
-    async readDir(path: string): Promise<string[]> {
+    async readDir(path) {
       try {
-        const names: string[] = [];
-        for await (const entry of Deno.readDir(path)) {
-          names.push(entry.name);
-        }
-        return names.sort();
+        return (await readdir(path)).sort();
       } catch (cause) {
         throw platformError(`failed to read directory ${path}`, cause);
       }
     },
-
-    async stat(
-      path: string,
-    ): Promise<{
-      isFile: boolean;
-      isDirectory: boolean;
-      mode: number;
-      size: number;
-      modifiedAt: Date | null;
-    }> {
+    async stat(path) {
       try {
-        const s = await Deno.stat(path);
+        const value = await stat(path);
         return {
-          isFile: s.isFile,
-          isDirectory: s.isDirectory,
-          mode: s.mode ?? 0,
-          size: s.size,
-          modifiedAt: s.mtime,
+          isFile: value.isFile(),
+          isDirectory: value.isDirectory(),
+          mode: value.mode,
+          size: value.size,
+          modifiedAt: value.mtime,
         };
       } catch (cause) {
         throw platformError(`failed to stat ${path}`, cause);
       }
     },
-
-    async lstat(
-      path: string,
-    ): Promise<{
-      isFile: boolean;
-      isDirectory: boolean;
-      isSymlink: boolean;
-      mode: number;
-      size: number;
-    }> {
+    async lstat(path) {
       try {
-        const s = await Deno.lstat(path);
+        const value = await lstat(path);
         return {
-          isFile: s.isFile,
-          isDirectory: s.isDirectory,
-          isSymlink: s.isSymlink,
-          mode: s.mode ?? 0,
-          size: s.size,
+          isFile: value.isFile(),
+          isDirectory: value.isDirectory(),
+          isSymlink: value.isSymbolicLink(),
+          mode: value.mode,
+          size: value.size,
         };
       } catch (cause) {
         throw platformError(`failed to lstat ${path}`, cause);
       }
     },
-
-    async atomicWriteText(path: string, content: string, mode?: FileMode): Promise<void> {
+    async atomicWriteText(path, content, mode) {
       await this.atomicWriteBytes(path, encoder.encode(content), mode);
     },
-
-    async atomicWriteBytes(
-      path: string,
-      content: Uint8Array,
-      mode?: FileMode,
-    ): Promise<void> {
+    async atomicWriteBytes(path, content, mode) {
       const dir = dirname(path);
-      await Deno.mkdir(dir, { recursive: true });
+      await mkdir(dir, { recursive: true });
       const tmp = join(dir, `.${crypto.randomUUID()}.tmp`);
       try {
-        await Deno.writeFile(tmp, content);
-        if (mode !== undefined) await Deno.chmod(tmp, mode);
-        await Deno.rename(tmp, path);
+        await writeFile(tmp, content);
+        if (mode !== undefined) await chmod(tmp, mode);
+        await rename(tmp, path);
       } catch (cause) {
-        try {
-          await Deno.remove(tmp);
-        } catch {
-          // ignore cleanup failure
-        }
+        await rm(tmp, { force: true }).catch(() => undefined);
         throw platformError(`failed atomic write to ${path}`, cause);
       }
     },

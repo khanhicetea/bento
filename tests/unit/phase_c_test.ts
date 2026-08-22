@@ -1,8 +1,8 @@
 /**
  * Phase C — Render/apply hardening (R-01 … R-10, C1).
  */
-import { assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertRejects } from "../runtime.ts";
+import { join } from "node:path";
 import {
   emptyReloadPlan,
   type ReloadPlan,
@@ -86,8 +86,8 @@ function assertSnapshotsEqual(
 // R-01 Concurrent mutations: exclusive lock serializes apply/state writers
 // ---------------------------------------------------------------------------
 
-Deno.test("R-01 exclusive lock serializes concurrent apply transactions", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r01-" });
+bunRuntime.test("R-01 exclusive lock serializes concurrent apply transactions", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r01-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -152,12 +152,12 @@ Deno.test("R-01 exclusive lock serializes concurrent apply transactions", async 
     // First must complete before second finishes (serialization).
     assertEquals(order.indexOf("first-done") < order.indexOf("second-done"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("R-01 concurrent state withExclusive writers never overlap", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r01-state-" });
+bunRuntime.test("R-01 concurrent state withExclusive writers never overlap", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r01-state-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -180,7 +180,7 @@ Deno.test("R-01 concurrent state withExclusive writers never overlap", async () 
     ]);
     assertEquals(maxConcurrent, 1);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -188,54 +188,54 @@ Deno.test("R-01 concurrent state withExclusive writers never overlap", async () 
 // R-02 Candidate generation failure leaves live generation byte-identical
 // ---------------------------------------------------------------------------
 
-Deno.test("R-02 candidate generation failure leaves live generation byte-identical", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r02-" });
-  try {
-    const platform = testPlatform(root);
-    const store = new StateStore(platform);
-    const render = new RenderService(platform);
-    await store.init();
-    let state = await store.load();
-    await render.apply(state, { renderOnly: true, skipValidate: true });
+bunRuntime.test(
+  "R-02 candidate generation failure leaves live generation byte-identical",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-r02-" });
+    try {
+      const platform = testPlatform(root);
+      const store = new StateStore(platform);
+      const render = new RenderService(platform);
+      await store.init();
+      let state = await store.load();
+      await render.apply(state, { renderOnly: true, skipValidate: true });
 
-    const before = await snapshotGeneration(platform, root);
+      const before = await snapshotGeneration(platform, root);
 
-    state = provisionApp(platform, state, {
-      slug: "alpha",
-      domain: "alpha.test",
-    }).state;
-    await store.save(state);
+      state = provisionApp(platform, state, {
+        slug: "alpha",
+        domain: "alpha.test",
+      }).state;
+      await store.save(state);
 
-    await assertRejects(
-      () =>
-        render.apply(state, {
-          skipValidate: true,
-          candidateFactory: async () => {
-            throw new Error("injected generator failure");
-          },
-        }),
-      Error,
-      "injected generator failure",
-    );
+      await assertRejects(
+        () =>
+          render.apply(state, {
+            skipValidate: true,
+            candidateFactory: async () => {
+              throw new Error("injected generator failure");
+            },
+          }),
+        Error,
+        "injected generator failure",
+      );
 
-    const after = await snapshotGeneration(platform, root);
-    assertSnapshotsEqual(before, after);
-    // No leftover journal/staging from a generation-phase failure
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/.render-journal.json")),
-      false,
-    );
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      const after = await snapshotGeneration(platform, root);
+      assertSnapshotsEqual(before, after);
+      // No leftover journal/staging from a generation-phase failure
+      assertEquals(await platform.fs.exists(join(root, "generated/.render-journal.json")), false);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // R-03 Mid-promote failure restores all prior files and modes
 // ---------------------------------------------------------------------------
 
-Deno.test("R-03 mid-promote failure restores all prior files and modes", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r03-" });
+bunRuntime.test("R-03 mid-promote failure restores all prior files and modes", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r03-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -279,12 +279,9 @@ Deno.test("R-03 mid-promote failure restores all prior files and modes", async (
     // Secret mode must survive rollback
     assertEquals((await platform.fs.stat(cnfPath)).mode & 0o777, 0o600);
     // New app vhost must not remain from the aborted promote
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/nginx/sites/alpha.conf")),
-      false,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/alpha.conf")), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -292,105 +289,113 @@ Deno.test("R-03 mid-promote failure restores all prior files and modes", async (
 // R-04 Stale managed file removed only after full candidate promote
 // ---------------------------------------------------------------------------
 
-Deno.test("R-04 stale managed file survives mid-promote and is removed after success", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r04-" });
-  try {
-    const platform = testPlatform(root);
-    const store = new StateStore(platform);
-    const render = new RenderService(platform);
-    await store.init();
-    const state = await store.load();
-    await render.apply(state, { renderOnly: true, skipValidate: true });
+bunRuntime.test(
+  "R-04 stale managed file survives mid-promote and is removed after success",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-r04-" });
+    try {
+      const platform = testPlatform(root);
+      const store = new StateStore(platform);
+      const render = new RenderService(platform);
+      await store.init();
+      const state = await store.load();
+      await render.apply(state, { renderOnly: true, skipValidate: true });
 
-    // Plant a stale managed file under a managed tree
-    const staleRel = "nginx/sites/stale-orphan.conf";
-    const stalePath = join(root, "generated", staleRel);
-    await platform.fs.writeText(
-      stalePath,
-      "# bento-managed: true\n# orphan from prior generation\n",
-      0o644,
-    );
-    assertEquals(await platform.fs.exists(stalePath), true);
+      // Plant a stale managed file under a managed tree
+      const staleRel = "nginx/sites/stale-orphan.conf";
+      const stalePath = join(root, "generated", staleRel);
+      await platform.fs.writeText(
+        stalePath,
+        "# bento-managed: true\n# orphan from prior generation\n",
+        0o644,
+      );
+      assertEquals(await platform.fs.exists(stalePath), true);
 
-    // Mid-promote failure: stale must still be present
-    let promoted = 0;
-    await assertRejects(
-      () =>
-        render.apply(state, {
-          skipValidate: true,
-          afterPromoteFile: async () => {
-            promoted++;
-            if (promoted >= 3) throw new Error("injected before stale removal");
-          },
-        }),
-      Error,
-      "injected before stale removal",
-    );
-    assertEquals(await platform.fs.exists(stalePath), true);
+      // Mid-promote failure: stale must still be present
+      let promoted = 0;
+      await assertRejects(
+        () =>
+          render.apply(state, {
+            skipValidate: true,
+            afterPromoteFile: async () => {
+              promoted++;
+              if (promoted >= 3) throw new Error("injected before stale removal");
+            },
+          }),
+        Error,
+        "injected before stale removal",
+      );
+      assertEquals(await platform.fs.exists(stalePath), true);
 
-    // Successful apply: stale is removed only after full promote
-    await render.apply(state, { renderOnly: true, skipValidate: true });
-    assertEquals(await platform.fs.exists(stalePath), false);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      // Successful apply: stale is removed only after full promote
+      await render.apply(state, { renderOnly: true, skipValidate: true });
+      assertEquals(await platform.fs.exists(stalePath), false);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // R-05 Validation failure restores previous generation; no reload signal
 // ---------------------------------------------------------------------------
 
-Deno.test("R-05 validation failure restores generation and never signals reload", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r05-" });
-  try {
-    const platform = testPlatform(root);
-    const store = new StateStore(platform);
-    const render = new RenderService(platform);
-    await store.init();
-    let state = await store.load();
-    await render.apply(state, { renderOnly: true, skipValidate: true });
-    const before = await snapshotGeneration(platform, root);
+bunRuntime.test(
+  "R-05 validation failure restores generation and never signals reload",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-r05-" });
+    try {
+      const platform = testPlatform(root);
+      const store = new StateStore(platform);
+      const render = new RenderService(platform);
+      await store.init();
+      let state = await store.load();
+      await render.apply(state, { renderOnly: true, skipValidate: true });
+      const before = await snapshotGeneration(platform, root);
 
-    state = provisionApp(platform, state, {
-      slug: "alpha",
-      domain: "alpha.test",
-    }).state;
-    await store.save(state);
+      state = provisionApp(platform, state, {
+        slug: "alpha",
+        domain: "alpha.test",
+      }).state;
+      await store.save(state);
 
-    let reloads = 0;
-    await assertRejects(
-      () =>
-        render.apply(state, {
-          validators: [{
-            name: "fail",
-            validate: async () => {
-              throw new Error("nginx -t boom");
+      let reloads = 0;
+      await assertRejects(
+        () =>
+          render.apply(state, {
+            validators: [
+              {
+                name: "fail",
+                validate: async () => {
+                  throw new Error("nginx -t boom");
+                },
+              },
+            ],
+            reloader: {
+              reload: async () => {
+                reloads++;
+              },
             },
-          }],
-          reloader: {
-            reload: async () => {
-              reloads++;
-            },
-          },
-        }),
-      Error,
-      "validation failed",
-    );
+          }),
+        Error,
+        "validation failed",
+      );
 
-    assertEquals(reloads, 0);
-    const after = await snapshotGeneration(platform, root);
-    assertSnapshotsEqual(before, after);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      assertEquals(reloads, 0);
+      const after = await snapshotGeneration(platform, root);
+      assertSnapshotsEqual(before, after);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // R-06 Only requested service groups signaled
 // ---------------------------------------------------------------------------
 
-Deno.test("R-06 reloader receives only requested service groups", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r06-" });
+bunRuntime.test("R-06 reloader receives only requested service groups", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r06-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -418,10 +423,7 @@ Deno.test("R-06 reloader receives only requested service groups", async () => {
       },
       {
         name: "full",
-        plan: reloadPlanForFullApply(
-          ["php85", "php83"],
-          ["php85-runner", "php83-runner"],
-        ),
+        plan: reloadPlanForFullApply(["php85", "php83"], ["php85-runner", "php83-runner"]),
         expect: [
           "nginx",
           "php-fpm:php83",
@@ -466,7 +468,7 @@ Deno.test("R-06 reloader receives only requested service groups", async () => {
       assertEquals(targets, c.expect, `${c.name}: targets`);
     }
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -474,8 +476,8 @@ Deno.test("R-06 reloader receives only requested service groups", async () => {
 // R-07 Reload signal failure keeps validated new generation
 // ---------------------------------------------------------------------------
 
-Deno.test("R-07 reload failure keeps new generation and is actionable", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r07-" });
+bunRuntime.test("R-07 reload failure keeps new generation and is actionable", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r07-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -505,17 +507,11 @@ Deno.test("R-07 reload failure keeps new generation and is actionable", async ()
     assertEquals(String(err).includes("new generation kept live"), true);
     assertEquals(String(err).includes("retry"), true);
 
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/nginx/sites/alpha.conf")),
-      true,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/alpha.conf")), true);
     // Journal cleaned; generation remains
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/.render-journal.json")),
-      false,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/.render-journal.json")), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -523,8 +519,8 @@ Deno.test("R-07 reload failure keeps new generation and is actionable", async ()
 // R-08 Abandoned journal: next render restores deterministic generation
 // ---------------------------------------------------------------------------
 
-Deno.test("R-08 abandoned mid-promote journal is restored on next apply", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r08-" });
+bunRuntime.test("R-08 abandoned mid-promote journal is restored on next apply", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r08-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -540,11 +536,7 @@ Deno.test("R-08 abandoned mid-promote journal is restored on next apply", async 
     // Simulate crash mid-promote: corrupt live file, leave journal + backup
     const backupRoot = join(root, "generated/.transaction-backup");
     await platform.fs.mkdirp(backupRoot);
-    await platform.fs.writeText(
-      join(backupRoot, "MANIFEST.txt"),
-      originalManifest,
-      originalMode,
-    );
+    await platform.fs.writeText(join(backupRoot, "MANIFEST.txt"), originalManifest, originalMode);
     await platform.fs.writeText(
       manifestPath,
       "# bento-managed: true\nCORRUPTED-MID-PROMOTE\n",
@@ -552,11 +544,7 @@ Deno.test("R-08 abandoned mid-promote journal is restored on next apply", async 
     );
     // Also plant a new file that should be removed on rollback
     const ghostPath = join(root, "generated/nginx/sites/ghost.conf");
-    await platform.fs.writeText(
-      ghostPath,
-      "# bento-managed: true\nghost\n",
-      0o644,
-    );
+    await platform.fs.writeText(ghostPath, "# bento-managed: true\nghost\n", 0o644);
 
     const journal = {
       version: 1 as const,
@@ -577,7 +565,11 @@ Deno.test("R-08 abandoned mid-promote journal is restored on next apply", async 
       ],
       promoted: ["MANIFEST.txt", "nginx/sites/ghost.conf"],
       staleToRemove: [] as string[],
-      reloadPlan: { nginx: true, phpFpm: [] as string[], phpRunner: [] as string[] },
+      reloadPlan: {
+        nginx: true,
+        phpFpm: [] as string[],
+        phpRunner: [] as string[],
+      },
     };
     await platform.fs.atomicWriteText(
       join(root, "generated/.render-journal.json"),
@@ -591,81 +583,81 @@ Deno.test("R-08 abandoned mid-promote journal is restored on next apply", async 
     assertEquals(await platform.fs.readText(manifestPath), originalManifest);
     assertEquals((await platform.fs.stat(manifestPath)).mode & 0o777, originalMode);
     assertEquals(await platform.fs.exists(ghostPath), false);
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/.render-journal.json")),
-      false,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/.render-journal.json")), false);
 
     // Next apply succeeds from the restored generation
     await render.apply(state, { renderOnly: true, skipValidate: true });
-    assertEquals(
-      (await platform.fs.readText(manifestPath)).includes("CORRUPTED"),
-      false,
-    );
+    assertEquals((await platform.fs.readText(manifestPath)).includes("CORRUPTED"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("R-08 abandoned validating-phase journal restores previous generation", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r08-val-" });
-  try {
-    const platform = testPlatform(root);
-    const store = new StateStore(platform);
-    const render = new RenderService(platform);
-    await store.init();
-    await render.apply(await store.load(), { renderOnly: true, skipValidate: true });
+bunRuntime.test(
+  "R-08 abandoned validating-phase journal restores previous generation",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-r08-val-" });
+    try {
+      const platform = testPlatform(root);
+      const store = new StateStore(platform);
+      const render = new RenderService(platform);
+      await store.init();
+      await render.apply(await store.load(), {
+        renderOnly: true,
+        skipValidate: true,
+      });
 
-    const cnfPath = join(root, "generated/mysql/mysql84/root.cnf");
-    const original = await platform.fs.readText(cnfPath);
-    const originalMode = (await platform.fs.stat(cnfPath)).mode & 0o777;
+      const cnfPath = join(root, "generated/mysql/mysql84/root.cnf");
+      const original = await platform.fs.readText(cnfPath);
+      const originalMode = (await platform.fs.stat(cnfPath)).mode & 0o777;
 
-    const backupRoot = join(root, "generated/.transaction-backup");
-    await platform.fs.mkdirp(join(backupRoot, "mysql/mysql84"));
-    await platform.fs.writeText(
-      join(backupRoot, "mysql/mysql84/root.cnf"),
-      original,
-      originalMode,
-    );
-    // Simulate promoted-but-not-validated secret with wrong mode
-    await platform.fs.writeText(cnfPath, `${original}\n# corrupted\n`, 0o644);
+      const backupRoot = join(root, "generated/.transaction-backup");
+      await platform.fs.mkdirp(join(backupRoot, "mysql/mysql84"));
+      await platform.fs.writeText(
+        join(backupRoot, "mysql/mysql84/root.cnf"),
+        original,
+        originalMode,
+      );
+      // Simulate promoted-but-not-validated secret with wrong mode
+      await platform.fs.writeText(cnfPath, `${original}\n# corrupted\n`, 0o644);
 
-    await platform.fs.atomicWriteText(
-      join(root, "generated/.render-journal.json"),
-      `${
-        JSON.stringify({
+      await platform.fs.atomicWriteText(
+        join(root, "generated/.render-journal.json"),
+        `${JSON.stringify({
           version: 1,
           phase: "validating",
           startedAt: platform.clock.nowIso(),
           assetVersion: "test",
-          entries: [{
-            path: "mysql/mysql84/root.cnf",
-            existed: true,
-            mode: originalMode,
-            backupRel: "mysql/mysql84/root.cnf",
-          }],
+          entries: [
+            {
+              path: "mysql/mysql84/root.cnf",
+              existed: true,
+              mode: originalMode,
+              backupRel: "mysql/mysql84/root.cnf",
+            },
+          ],
           promoted: ["mysql/mysql84/root.cnf"],
           staleToRemove: [],
           reloadPlan: { nginx: false, phpFpm: [], phpRunner: [] },
-        })
-      }\n`,
-      0o600,
-    );
+        })}\n`,
+        0o600,
+      );
 
-    assertEquals(await render.recoverAbandoned(), "restored");
-    assertEquals(await platform.fs.readText(cnfPath), original);
-    assertEquals((await platform.fs.stat(cnfPath)).mode & 0o777, 0o600);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      assertEquals(await render.recoverAbandoned(), "restored");
+      assertEquals(await platform.fs.readText(cnfPath), original);
+      assertEquals((await platform.fs.stat(cnfPath)).mode & 0o777, 0o600);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // R-09 Render-only never signals services (keep green + explicit)
 // ---------------------------------------------------------------------------
 
-Deno.test("R-09 render-only never signals services even with non-empty plan", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r09-" });
+bunRuntime.test("R-09 render-only never signals services even with non-empty plan", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r09-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -685,7 +677,7 @@ Deno.test("R-09 render-only never signals services even with non-empty plan", as
     assertEquals(reloads, 0);
     assertEquals(await platform.fs.exists(join(root, "generated/nginx/nginx.conf")), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -693,8 +685,8 @@ Deno.test("R-09 render-only never signals services even with non-empty plan", as
 // R-10 Secret file modes restricted across promote and rollback
 // ---------------------------------------------------------------------------
 
-Deno.test("R-10 secret modes stay 0600 across successful promote", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r10-ok-" });
+bunRuntime.test("R-10 secret modes stay 0600 across successful promote", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r10-ok-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -715,12 +707,12 @@ Deno.test("R-10 secret modes stay 0600 across successful promote", async () => {
     await render.apply(state, { renderOnly: true, skipValidate: true });
     assertEquals((await platform.fs.stat(cnf)).mode & 0o777, 0o600);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("R-10 secret modes restored to 0600 after mid-promote rollback", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-r10-rb-" });
+bunRuntime.test("R-10 secret modes restored to 0600 after mid-promote rollback", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-r10-rb-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -756,7 +748,7 @@ Deno.test("R-10 secret modes restored to 0600 after mid-promote rollback", async
     assertEquals(await platform.fs.readText(cnf), beforeContent);
     assertEquals((await platform.fs.stat(cnf)).mode & 0o777, 0o600);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -764,8 +756,8 @@ Deno.test("R-10 secret modes restored to 0600 after mid-promote rollback", async
 // C1 Compose fragment transactional safety
 // ---------------------------------------------------------------------------
 
-Deno.test("C1 compose fragments are managed and roll back with the generation", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-c1-" });
+bunRuntime.test("C1 compose fragments are managed and roll back with the generation", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-c1-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -792,12 +784,14 @@ Deno.test("C1 compose fragments are managed and roll back with the generation", 
     await assertRejects(
       () =>
         render.apply(state, {
-          validators: [{
-            name: "fail",
-            validate: async () => {
-              throw new Error("compose-or-service validation boom");
+          validators: [
+            {
+              name: "fail",
+              validate: async () => {
+                throw new Error("compose-or-service validation boom");
+              },
             },
-          }],
+          ],
           reloader: { reload: async () => {} },
         }),
       Error,
@@ -809,18 +803,16 @@ Deno.test("C1 compose fragments are managed and roll back with the generation", 
     assertEquals(await platform.fs.readText(mysqlFrag), beforeMysql);
     assertEquals(await platform.fs.readText(base), beforeBase);
     assertEquals(
-      await platform.fs.exists(
-        join(root, "generated/compose/docker-compose.php-php83.yml"),
-      ),
+      await platform.fs.exists(join(root, "generated/compose/docker-compose.php-php83.yml")),
       false,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("C1 compose config validator soft-skips when Docker unavailable", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-c1-soft-" });
+bunRuntime.test("C1 compose config validator soft-skips when Docker unavailable", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-c1-soft-" });
   try {
     const fs = createFileSystem();
     const runs: string[][] = [];
@@ -856,17 +848,17 @@ Deno.test("C1 compose config validator soft-skips when Docker unavailable", asyn
       skipValidate: false,
       reloader: { reload: async () => {} },
     });
-    const composeConfigCalls = runs.filter((c) =>
-      c[0] === "docker" && c.includes("compose") && c.includes("config")
+    const composeConfigCalls = runs.filter(
+      (c) => c[0] === "docker" && c.includes("compose") && c.includes("config"),
     );
     assertEquals(composeConfigCalls.length >= 1, true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("C1 compose config validator fails closed on real config errors", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-c1-fail-" });
+bunRuntime.test("C1 compose config validator fails closed on real config errors", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-c1-fail-" });
   try {
     const fs = createFileSystem();
     const platform: Platform = {
@@ -913,13 +905,11 @@ Deno.test("C1 compose config validator fails closed on real config errors", asyn
       "validation failed",
     );
     assertEquals(
-      await platform.fs.readText(
-        join(root, "generated/compose/docker-compose.base.yml"),
-      ),
+      await platform.fs.readText(join(root, "generated/compose/docker-compose.base.yml")),
       before,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
@@ -927,8 +917,8 @@ Deno.test("C1 compose config validator fails closed on real config errors", asyn
 // Extra: candidateFactory can supply a full result (hook sanity)
 // ---------------------------------------------------------------------------
 
-Deno.test("candidateFactory override is used when provided", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-factory-" });
+bunRuntime.test("candidateFactory override is used when provided", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-factory-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -936,12 +926,14 @@ Deno.test("candidateFactory override is used when provided", async () => {
     await store.init();
     const state = await store.load();
 
-    const files: GeneratedFile[] = [{
-      relPath: "MANIFEST.txt",
-      content: "# bento-managed: true\nfrom-factory\n",
-      mode: 0o644,
-      managed: true,
-    }];
+    const files: GeneratedFile[] = [
+      {
+        relPath: "MANIFEST.txt",
+        content: "# bento-managed: true\nfrom-factory\n",
+        mode: 0o644,
+        managed: true,
+      },
+    ];
     const fake: RenderResult = {
       files,
       reloadPlan: emptyReloadPlan(),
@@ -959,6 +951,6 @@ Deno.test("candidateFactory override is used when provided", async () => {
       "# bento-managed: true\nfrom-factory\n",
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

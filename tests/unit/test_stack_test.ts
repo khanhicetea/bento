@@ -2,7 +2,7 @@
  * Pure helpers for the real-stack harness (no Docker required).
  */
 
-import { assertEquals } from "@std/assert";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import {
   DEFAULT_SCHEDULE_WAIT_SEC,
   DEFAULT_TEST_STACK_NAME,
@@ -10,9 +10,9 @@ import {
   resolveTestStackOptions,
   type TestStackReport,
 } from "../../src/services/test_stack.ts";
-import { resolve } from "@std/path";
+import { resolve } from "node:path";
 
-Deno.test("test-stack default name is testbento", () => {
+bunRuntime.test("test-stack default name is testbento", () => {
   assertEquals(DEFAULT_TEST_STACK_NAME, "testbento");
   assertEquals(DEFAULT_SCHEDULE_WAIT_SEC, 61);
   const opts = resolveTestStackOptions({});
@@ -25,7 +25,7 @@ Deno.test("test-stack default name is testbento", () => {
   assertEquals(opts.scheduleWaitSec, 61);
 });
 
-Deno.test("test-stack options honor name/stack/flags", () => {
+bunRuntime.test("test-stack options honor name/stack/flags", () => {
   const opts = resolveTestStackOptions({
     name: "lab",
     stack: "/tmp/lab-stack",
@@ -44,7 +44,7 @@ Deno.test("test-stack options honor name/stack/flags", () => {
   assertEquals(opts.scheduleWaitSec, 5);
 });
 
-Deno.test("formatTestStackReport summarizes pass/fail and chain note", () => {
+bunRuntime.test("formatTestStackReport summarizes pass/fail and chain note", () => {
   const report: TestStackReport = {
     name: "testbento",
     stackRoot: "/tmp/testbento",

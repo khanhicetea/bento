@@ -1,6 +1,6 @@
 /** Destructive cleanup for durable data retained after app removal. */
 
-import { join } from "@std/path";
+import { join } from "node:path";
 import type { AppState, DatabaseEngine, DesiredState } from "../domain/state.ts";
 import { conflictError, safetyError, serviceError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
@@ -37,20 +37,21 @@ export async function writeAppPruneManifest(platform: Platform, app: AppState): 
   const manifest: AppPruneManifest = {
     version: 3,
     slug: app.slug,
-    bindings: app.databases.map((database): AppPruneDatabase =>
-      database.engine === "sqlite" || database.engine === "litestream"
-        ? {
-          engine: database.engine,
-          databaseService: "local-file",
-          databaseUser: app.slug,
-          databases: [database.file.id],
-        }
-        : {
-          engine: database.engine,
-          databaseService: database.service,
-          databaseUser: database.user,
-          databases: database.databases.map((entry) => entry.name),
-        }
+    bindings: app.databases.map(
+      (database): AppPruneDatabase =>
+        database.engine === "sqlite" || database.engine === "litestream"
+          ? {
+              engine: database.engine,
+              databaseService: "local-file",
+              databaseUser: app.slug,
+              databases: [database.file.id],
+            }
+          : {
+              engine: database.engine,
+              databaseService: database.service,
+              databaseUser: database.user,
+              databases: database.databases.map((entry) => entry.name),
+            },
     ),
   };
   await platform.fs.writeText(
@@ -97,9 +98,12 @@ export async function planAppPrune(
   }
   const manifest = normalizeManifest(raw, slug);
   for (const binding of manifest.bindings) {
-    const managed = binding.engine === "sqlite" || binding.engine === "litestream" ||
-      state.databaseServices.some((service) =>
-        service.engine === binding.engine && service.service === binding.databaseService
+    const managed =
+      binding.engine === "sqlite" ||
+      binding.engine === "litestream" ||
+      state.databaseServices.some(
+        (service) =>
+          service.engine === binding.engine && service.service === binding.databaseService,
       );
     if (!managed) throw validationError(`unsafe app prune manifest: ${manifestPath}`);
   }
@@ -122,25 +126,30 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
     const binding = rawBinding as Record<string, unknown>;
     const engine = binding.engine;
     if (
-      engine !== "mysql" && engine !== "postgres" && engine !== "sqlite" &&
+      engine !== "mysql" &&
+      engine !== "postgres" &&
+      engine !== "sqlite" &&
       engine !== "litestream"
     ) {
       throw validationError("invalid app prune database engine");
     }
-    const databaseService = typeof binding.databaseService === "string"
-      ? binding.databaseService
-      : "";
+    const databaseService =
+      typeof binding.databaseService === "string" ? binding.databaseService : "";
     const databaseUser = typeof binding.databaseUser === "string" ? binding.databaseUser : "";
     const databases = Array.isArray(binding.databases) ? binding.databases.filter(isString) : [];
-    const validNames = engine === "sqlite" || engine === "litestream"
-      ? databaseService === "local-file" && databases.length === 1 &&
-        databases.every((name) =>
-          name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1))
-        )
-      : /^[a-zA-Z0-9_-]+$/.test(databaseService) &&
-        databases.every((name) =>
-          /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`))
-        );
+    const validNames =
+      engine === "sqlite" || engine === "litestream"
+        ? databaseService === "local-file" &&
+          databases.length === 1 &&
+          databases.every(
+            (name) =>
+              name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1)),
+          )
+        : /^[a-zA-Z0-9_-]+$/.test(databaseService) &&
+          databases.every(
+            (name) =>
+              /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`)),
+          );
     if (databaseUser !== slug || !validNames) {
       throw validationError("unsafe app prune database binding");
     }
@@ -194,11 +203,7 @@ export async function executeAppPrune(
   return { cleaned };
 }
 
-async function pruneMysql(
-  platform: Platform,
-  slug: string,
-  plan: AppPruneDatabase,
-): Promise<void> {
+async function pruneMysql(platform: Platform, slug: string, plan: AppPruneDatabase): Promise<void> {
   const password = await requireMysqlRootPassword(platform);
   const sql = [
     ...plan.databases.map((database) => `DROP DATABASE IF EXISTS ${mysqlIdent(database)};`),
@@ -219,9 +224,9 @@ async function prunePostgres(
   const password = await requirePostgresRootPassword(platform);
   const sql = [
     ...plan.databases.flatMap((database) => [
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${
-        postgresLiteral(database)
-      } AND pid <> pg_backend_pid();`,
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${postgresLiteral(
+        database,
+      )} AND pid <> pg_backend_pid();`,
       `DROP DATABASE IF EXISTS ${postgresIdentifier(database)};`,
     ]),
     `DROP ROLE IF EXISTS ${postgresIdentifier(plan.databaseUser)};`,

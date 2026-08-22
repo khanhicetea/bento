@@ -3,8 +3,14 @@
  * Deterministic order for every supported Compose invocation.
  */
 
-import { join } from "@std/path";
-import { stringify as stringifyYaml } from "@std/yaml";
+import { join } from "node:path";
+import { dump } from "js-yaml";
+
+function stringifyYaml(value: unknown): string {
+  // Compose interpolation expressions are quoted by the previous serializer;
+  // preserve that stable output and prevent YAML from treating punctuation specially.
+  return dump(value).replace(/^(\s*[A-Za-z0-9_.-]+:\s)(\$\{[^\n]+\})$/gm, "$1'$2'");
+}
 import { assertNever, type DesiredState } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { type GeneratedFile, withManagedMarker } from "./render.ts";
@@ -30,11 +36,7 @@ export function assertSafeComposeArgs(args: string[]): void {
   const lower = args.map((a) => a.toLowerCase());
   const isDown = lower.includes("down");
   if (!isDown) return;
-  if (
-    lower.includes("-v") ||
-    lower.includes("--volumes") ||
-    lower.includes("--rmi")
-  ) {
+  if (lower.includes("-v") || lower.includes("--volumes") || lower.includes("--rmi")) {
     throw safetyError(
       "refusing docker compose down with volume/image destruction",
       "Remove -v/--volumes/--rmi. Durable MySQL/PostgreSQL/Redis volumes must not be deleted through Bento.",
@@ -67,9 +69,9 @@ export function assembleComposeDocuments(
     });
   }
 
-  for (
-    const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))
-  ) {
+  for (const database of [...state.databaseServices].sort((a, b) =>
+    a.service.localeCompare(b.service),
+  )) {
     let content: string;
     switch (database.engine) {
       case "mysql":
@@ -127,20 +129,15 @@ export function assembleComposeDocuments(
   return files;
 }
 
-export function buildComposeFileList(
-  platform: Platform,
-  state: DesiredState,
-): ComposeInvocation {
+export function buildComposeFileList(platform: Platform, state: DesiredState): ComposeInvocation {
   const gen = "generated/compose";
-  const files: string[] = [
-    `${gen}/docker-compose.base.yml`,
-  ];
+  const files: string[] = [`${gen}/docker-compose.base.yml`];
   for (const v of [...state.phpVersions].sort((a, b) => a.service.localeCompare(b.service))) {
     files.push(`${gen}/docker-compose.php-${v.service}.yml`);
   }
-  for (
-    const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))
-  ) {
+  for (const database of [...state.databaseServices].sort((a, b) =>
+    a.service.localeCompare(b.service),
+  )) {
     files.push(`${gen}/docker-compose.${database.service}.yml`);
   }
   if (state.sqliteBackup?.enabled) {
@@ -311,10 +308,7 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
         networks: ["backup-egress"],
         environment: { RCLONE_CONFIG: "/config/rclone/rclone.conf" },
         tmpfs: ["/tmp"],
-        volumes: [
-          "./rclone:/config/rclone",
-          "./backups:/backups:ro",
-        ],
+        volumes: ["./rclone:/config/rclone", "./backups:/backups:ro"],
       },
     },
     volumes: {

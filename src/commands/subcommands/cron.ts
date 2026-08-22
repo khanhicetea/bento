@@ -18,76 +18,85 @@ import {
 } from "../shared.ts";
 
 export function registerCronCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command("cron", "Scheduled jobs", (y: YargsBuilder) =>
-      y
-        .command(
-          "list [app]",
-          "List cron jobs",
-          (y2: YargsBuilder) => y2.positional("app", { type: "string" }),
-          bind(state, cmdCronList),
-        )
-        .command(
-          "add",
-          "Add a cron job (command after --)",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .option("app", { type: "string", demandOption: true })
-                .option("name", { type: "string", demandOption: true })
-                .option("schedule", {
-                  type: "string",
-                  demandOption: true,
-                  describe: "Cron expression",
-                })
-                .option("timezone", { type: "string" })
-                .option("lock", { type: "string" })
-                .option("timeout", { type: "number", describe: "Timeout seconds" })
-                .option("cmd", {
-                  type: "string",
-                  describe: "Shell command string (supports redirects and pipelines)",
-                }),
-            ),
-          bind(state, cmdCronAdd),
-        )
-        .command(
-          "edit <app> <name>",
-          "Edit a cron job (omitted options stay unchanged)",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .positional("app", { type: "string", demandOption: true })
-                .positional("name", { type: "string", demandOption: true })
-                .option("schedule", { type: "string", describe: "Cron expression" })
-                .option("timezone", { type: "string" })
-                .option("lock", { type: "string" })
-                .option("timeout", { type: "number", describe: "Timeout seconds" })
-                .option("cmd", {
-                  type: "string",
-                  describe: "Shell command string (supports redirects and pipelines)",
-                }),
-            ),
-          bind(state, cmdCronEdit),
-        )
-        .command(
-          "reload <app>",
-          "Signal one app's Supercronic service to reread its crontab",
-          (y2: YargsBuilder) => y2.positional("app", { type: "string", demandOption: true }),
-          bind(state, cmdCronReload),
-        )
-        .command(
-          "remove <app> <name>",
-          "Remove a cron job",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .positional("app", { type: "string", demandOption: true })
-                .positional("name", { type: "string", demandOption: true }),
-            ),
-          bind(state, cmdCronRemove),
-        )
-        .demandCommand(1, "Specify a cron subcommand: add|edit|reload|remove|list")
-        .recommendCommands());
+  return parser.command("cron", "Scheduled jobs", (y: YargsBuilder) =>
+    y
+      .command(
+        "list [app]",
+        "List cron jobs",
+        (y2: YargsBuilder) => y2.positional("app", { type: "string" }),
+        bind(state, cmdCronList),
+      )
+      .command(
+        "add",
+        "Add a cron job (command after --)",
+        (y2: YargsBuilder) =>
+          noApplyOption(
+            y2
+              .option("app", { type: "string", demandOption: true })
+              .option("name", { type: "string", demandOption: true })
+              .option("schedule", {
+                type: "string",
+                demandOption: true,
+                describe: "Cron expression",
+              })
+              .option("timezone", { type: "string" })
+              .option("lock", { type: "string" })
+              .option("timeout", {
+                type: "number",
+                describe: "Timeout seconds",
+              })
+              .option("cmd", {
+                type: "string",
+                describe: "Shell command string (supports redirects and pipelines)",
+              }),
+          ),
+        bind(state, cmdCronAdd),
+      )
+      .command(
+        "edit <app> <name>",
+        "Edit a cron job (omitted options stay unchanged)",
+        (y2: YargsBuilder) =>
+          noApplyOption(
+            y2
+              .positional("app", { type: "string", demandOption: true })
+              .positional("name", { type: "string", demandOption: true })
+              .option("schedule", {
+                type: "string",
+                describe: "Cron expression",
+              })
+              .option("timezone", { type: "string" })
+              .option("lock", { type: "string" })
+              .option("timeout", {
+                type: "number",
+                describe: "Timeout seconds",
+              })
+              .option("cmd", {
+                type: "string",
+                describe: "Shell command string (supports redirects and pipelines)",
+              }),
+          ),
+        bind(state, cmdCronEdit),
+      )
+      .command(
+        "reload <app>",
+        "Signal one app's Supercronic service to reread its crontab",
+        (y2: YargsBuilder) => y2.positional("app", { type: "string", demandOption: true }),
+        bind(state, cmdCronReload),
+      )
+      .command(
+        "remove <app> <name>",
+        "Remove a cron job",
+        (y2: YargsBuilder) =>
+          noApplyOption(
+            y2
+              .positional("app", { type: "string", demandOption: true })
+              .positional("name", { type: "string", demandOption: true }),
+          ),
+        bind(state, cmdCronRemove),
+      )
+      .demandCommand(1, "Specify a cron subcommand: add|edit|reload|remove|list")
+      .recommendCommands(),
+  );
 }
 
 async function cmdCronReload(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
@@ -127,16 +136,20 @@ async function cmdCronAdd(
   }
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const r = addCronJob(state, {
-      app,
-      name,
-      schedule,
-      command: cmd,
-      commandMode: shellCommand !== undefined ? "shell" : "argv",
-      timezone: argv.timezone,
-      lock: argv.lock,
-      timeoutSec: argv.timeout,
-    }, ctx.platform);
+    const r = addCronJob(
+      state,
+      {
+        app,
+        name,
+        schedule,
+        command: cmd,
+        commandMode: shellCommand !== undefined ? "shell" : "argv",
+        timezone: argv.timezone,
+        lock: argv.lock,
+        timeoutSec: argv.timeout,
+      },
+      ctx.platform,
+    );
     await ctx.store.save(r.state);
     if (!noApply) {
       await ctx.render.apply(r.state, {
@@ -151,35 +164,34 @@ async function cmdCronAdd(
   return 0;
 }
 
-async function cmdCronEdit(
-  argv: ArgsWith<"app" | "name">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdCronEdit(argv: ArgsWith<"app" | "name">, ctx: CliContext): Promise<number> {
   const { app, name } = argv;
   const shellCommand = nonEmpty(argv.cmd);
   const trailingCommand = trailing(argv, 2);
-  const command = shellCommand !== undefined
-    ? [shellCommand]
-    : trailingCommand.length > 0
-    ? trailingCommand
-    : undefined;
+  const command =
+    shellCommand !== undefined
+      ? [shellCommand]
+      : trailingCommand.length > 0
+        ? trailingCommand
+        : undefined;
   const noApply = wantsNoApply(argv);
 
   await ctx.store.withExclusive(async (state) => {
-    const r = editCronJob(state, {
-      app,
-      name,
-      schedule: nonEmpty(argv.schedule),
-      command,
-      commandMode: shellCommand !== undefined
-        ? "shell"
-        : trailingCommand.length > 0
-        ? "argv"
-        : undefined,
-      timezone: nonEmpty(argv.timezone),
-      lock: nonEmpty(argv.lock),
-      timeoutSec: argv.timeout,
-    }, ctx.platform);
+    const r = editCronJob(
+      state,
+      {
+        app,
+        name,
+        schedule: nonEmpty(argv.schedule),
+        command,
+        commandMode:
+          shellCommand !== undefined ? "shell" : trailingCommand.length > 0 ? "argv" : undefined,
+        timezone: nonEmpty(argv.timezone),
+        lock: nonEmpty(argv.lock),
+        timeoutSec: argv.timeout,
+      },
+      ctx.platform,
+    );
     await ctx.store.save(r.state);
     if (!noApply) {
       await ctx.render.apply(r.state, {
@@ -198,10 +210,7 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value !== undefined && value.trim() !== "" ? value : undefined;
 }
 
-async function cmdCronRemove(
-  argv: ArgsWith<"app" | "name">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdCronRemove(argv: ArgsWith<"app" | "name">, ctx: CliContext): Promise<number> {
   const { app, name } = argv;
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {

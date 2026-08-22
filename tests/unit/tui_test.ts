@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import { type KeyEvent, type MenuChoice, type TerminalIO, WizardUI } from "../../src/ui/tui.ts";
 
 /**
@@ -67,7 +67,7 @@ function fakeTerminal(
   };
 }
 
-Deno.test("menu selects numbered choice instantly when <10 items", async () => {
+bunRuntime.test("menu selects numbered choice instantly when <10 items", async () => {
   const io = fakeTerminal(["2"]);
   const ui = new WizardUI(io);
   const choices: MenuChoice<string>[] = [
@@ -79,21 +79,21 @@ Deno.test("menu selects numbered choice instantly when <10 items", async () => {
   assertEquals(picked, "b");
 });
 
-Deno.test("menu cancel with 0", async () => {
+bunRuntime.test("menu cancel with 0", async () => {
   const io = fakeTerminal(["0"]);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [{ label: "Only", value: "x" }]);
   assertEquals(picked, null);
 });
 
-Deno.test("menu cancel with Escape", async () => {
+bunRuntime.test("menu cancel with Escape", async () => {
   const io = fakeTerminal(["esc"]);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [{ label: "Only", value: "x" }]);
   assertEquals(picked, null);
 });
 
-Deno.test("menu can distinguish Escape back from q cancel", async () => {
+bunRuntime.test("menu can distinguish Escape back from q cancel", async () => {
   const backUi = new WizardUI(fakeTerminal(["esc"]));
   assertEquals(
     await backUi.menu("Navigate", [{ label: "Continue", value: "next" }], {
@@ -111,18 +111,22 @@ Deno.test("menu can distinguish Escape back from q cancel", async () => {
   );
 });
 
-Deno.test("menu restores the saved selection when revisited", async () => {
+bunRuntime.test("menu restores the saved selection when revisited", async () => {
   const ui = new WizardUI(fakeTerminal(["enter"]));
   assertEquals(
-    await ui.menu("Runtime", [
-      { label: "Small", value: "small" },
-      { label: "Medium", value: "medium" },
-    ], { initialValue: "medium" }),
+    await ui.menu(
+      "Runtime",
+      [
+        { label: "Small", value: "small" },
+        { label: "Medium", value: "medium" },
+      ],
+      { initialValue: "medium" },
+    ),
     "medium",
   );
 });
 
-Deno.test("menu rejects disabled then accepts", async () => {
+bunRuntime.test("menu rejects disabled then accepts", async () => {
   const io = fakeTerminal(["1", "2"]);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [
@@ -132,7 +136,7 @@ Deno.test("menu rejects disabled then accepts", async () => {
   assertEquals(picked, "yes");
 });
 
-Deno.test("menu arrow down + enter selects", async () => {
+bunRuntime.test("menu arrow down + enter selects", async () => {
   const io = fakeTerminal(["down", "down", "enter"]);
   const ui = new WizardUI(io);
   const choices: MenuChoice<string>[] = [
@@ -144,7 +148,7 @@ Deno.test("menu arrow down + enter selects", async () => {
   assertEquals(picked, "c");
 });
 
-Deno.test("menu arrow up wraps to cancel then enter", async () => {
+bunRuntime.test("menu arrow up wraps to cancel then enter", async () => {
   const io = fakeTerminal(["up", "enter"]);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [
@@ -154,7 +158,7 @@ Deno.test("menu arrow up wraps to cancel then enter", async () => {
   assertEquals(picked, null);
 });
 
-Deno.test("menu skips disabled with arrows", async () => {
+bunRuntime.test("menu skips disabled with arrows", async () => {
   const io = fakeTerminal(["down", "enter"]);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [
@@ -165,7 +169,7 @@ Deno.test("menu skips disabled with arrows", async () => {
   assertEquals(picked, "third");
 });
 
-Deno.test("menu with >=10 items still selects letter key instantly", async () => {
+bunRuntime.test("menu with >=10 items still selects letter key instantly", async () => {
   const choices: MenuChoice<string>[] = Array.from({ length: 12 }, (_, i) => ({
     label: `Item ${i + 1}`,
     value: `v${i + 1}`,
@@ -177,7 +181,7 @@ Deno.test("menu with >=10 items still selects letter key instantly", async () =>
   assertEquals(picked, "v10");
 });
 
-Deno.test("menu letter b selects item 11 rather than cancelling", async () => {
+bunRuntime.test("menu letter b selects item 11 rather than cancelling", async () => {
   const choices: MenuChoice<string>[] = Array.from({ length: 12 }, (_, i) => ({
     label: `Item ${i + 1}`,
     value: `v${i + 1}`,
@@ -187,14 +191,18 @@ Deno.test("menu letter b selects item 11 rather than cancelling", async () => {
   assertEquals(await ui.menu("Pick", choices), "v11");
 });
 
-Deno.test("table menu aligns columns and selects a row", async () => {
+bunRuntime.test("table menu aligns columns and selects a row", async () => {
   const io = fakeTerminal(["2"]);
   const ui = new WizardUI(io);
-  const picked = await ui.tableMenu("Choose backup", ["File", "Created", "Size"], [
-    { columns: ["older.sql.zst", "2026-07-16", "1.5 MiB"], value: "older" },
-    { columns: ["newer.sql.zst", "2026-07-17", "2 MiB"], value: "newer" },
-    { columns: ["Path of file…", "", ""], value: "path" },
-  ]);
+  const picked = await ui.tableMenu(
+    "Choose backup",
+    ["File", "Created", "Size"],
+    [
+      { columns: ["older.sql.zst", "2026-07-16", "1.5 MiB"], value: "older" },
+      { columns: ["newer.sql.zst", "2026-07-17", "2 MiB"], value: "newer" },
+      { columns: ["Path of file…", "", ""], value: "path" },
+    ],
+  );
   assertEquals(picked, "newer");
   const output = io.out.join("");
   assertEquals(output.includes("Created"), true);
@@ -202,7 +210,7 @@ Deno.test("table menu aligns columns and selects a row", async () => {
   assertEquals(output.includes("Path of file…"), true);
 });
 
-Deno.test("menu j/k navigation when <10", async () => {
+bunRuntime.test("menu j/k navigation when <10", async () => {
   const io = fakeTerminal(["j", "enter"]);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [
@@ -212,7 +220,7 @@ Deno.test("menu j/k navigation when <10", async () => {
   assertEquals(picked, "b");
 });
 
-Deno.test("narrow menu hides hints and erases wrapped physical rows", async () => {
+bunRuntime.test("narrow menu hides hints and erases wrapped physical rows", async () => {
   const io = fakeTerminal(["down", "enter"], { columns: 20 });
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [
@@ -226,17 +234,17 @@ Deno.test("narrow menu hides hints and erases wrapped physical rows", async () =
   assertEquals(output.includes("\x1b[9F\x1b[J"), true);
 });
 
-Deno.test("menu keeps hints at 30 columns", async () => {
+bunRuntime.test("menu keeps hints at 30 columns", async () => {
   const io = fakeTerminal(["enter"], { columns: 30 });
   const ui = new WizardUI(io);
   await ui.menu("Pick", [{ label: "Alpha", value: "a", hint: "description" }]);
   assertEquals(io.out.join("").includes("description"), true);
 });
 
-Deno.test("menu recalculates wrapped rows after a terminal resize", async () => {
+bunRuntime.test("menu recalculates wrapped rows after a terminal resize", async () => {
   const io = fakeTerminal(["down", "enter"]);
   let widthRead = 0;
-  io.terminalColumns = () => widthRead++ === 0 ? 80 : 20;
+  io.terminalColumns = () => (widthRead++ === 0 ? 80 : 20);
   const ui = new WizardUI(io);
   const picked = await ui.menu("Pick", [
     { label: "Alpha", value: "a", hint: "a long description" },
@@ -247,7 +255,7 @@ Deno.test("menu recalculates wrapped rows after a terminal resize", async () => 
   assertEquals(io.out.join("").includes("\x1b[11F\x1b[J"), true);
 });
 
-Deno.test("confirm yes/no/default with raw keys", async () => {
+bunRuntime.test("confirm yes/no/default with raw keys", async () => {
   const io = fakeTerminal(["y", "n", "enter"]);
   const ui = new WizardUI(io);
   assertEquals(await ui.confirm("Go?"), true);
@@ -255,8 +263,10 @@ Deno.test("confirm yes/no/default with raw keys", async () => {
   assertEquals(await ui.confirm("Go?", { defaultYes: true }), true);
 });
 
-Deno.test("confirm line mode without raw", async () => {
-  const io = fakeTerminal(["y", "enter", "n", "enter", "enter"], { raw: false });
+bunRuntime.test("confirm line mode without raw", async () => {
+  const io = fakeTerminal(["y", "enter", "n", "enter", "enter"], {
+    raw: false,
+  });
   // Without raw, confirm uses readLine — feed full answers as line tokens
   const io2 = fakeTerminal([]);
   // custom line-mode terminal
@@ -288,7 +298,7 @@ Deno.test("confirm line mode without raw", async () => {
   assertEquals(io2.out.length, 0);
 });
 
-Deno.test("prompt uses default on empty", async () => {
+bunRuntime.test("prompt uses default on empty", async () => {
   const lines = [""];
   const io: TerminalIO & { out: string[] } = {
     out: [],
@@ -311,7 +321,7 @@ Deno.test("prompt uses default on empty", async () => {
   assertEquals(await ui.prompt("Name", { default: "demo" }), "demo");
 });
 
-Deno.test("prompt required retries", async () => {
+bunRuntime.test("prompt required retries", async () => {
   const lines = ["", "ok"];
   const io: TerminalIO & { out: string[] } = {
     out: [],
@@ -334,12 +344,12 @@ Deno.test("prompt required retries", async () => {
   assertEquals(await ui.prompt("Name", { required: true }), "ok");
 });
 
-Deno.test("raw prompt handles Escape as back", async () => {
+bunRuntime.test("raw prompt handles Escape as back", async () => {
   const ui = new WizardUI(fakeTerminal(["a", "b", "esc"]));
   assertEquals(await ui.prompt("Slug", { required: true }), null);
 });
 
-Deno.test("raw prompt validates immediately and preserves rejected input", async () => {
+bunRuntime.test("raw prompt validates immediately and preserves rejected input", async () => {
   const io = fakeTerminal([
     "b",
     "a",
@@ -355,7 +365,7 @@ Deno.test("raw prompt validates immediately and preserves rejected input", async
   const ui = new WizardUI(io);
   const value = await ui.prompt("Slug", {
     format: "a usable slug",
-    validate: (candidate) => candidate === "bad" ? "already in use" : null,
+    validate: (candidate) => (candidate === "bad" ? "already in use" : null),
   });
 
   assertEquals(value, "ok");
@@ -366,7 +376,7 @@ Deno.test("raw prompt validates immediately and preserves rejected input", async
   assertEquals(output.includes("Slug: bad"), true);
 });
 
-Deno.test("alert and table emit output", () => {
+bunRuntime.test("alert and table emit output", () => {
   const io = fakeTerminal([]);
   const ui = new WizardUI(io);
   ui.alert("success", "done", "detail line");

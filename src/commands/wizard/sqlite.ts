@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import { databaseBindings, type DesiredState } from "../../domain/state.ts";
 import { parseAbsolutePath } from "../../schemas/validators.ts";
 import { runDatabaseBackup } from "../../services/database_backup.ts";
@@ -75,7 +75,11 @@ export async function sectionSqlite(ui: WizardUI, ctx: CliContext): Promise<void
         hint: "stack-wide Litestream replication to S3",
         disabled: !hasLitestream,
       },
-      { label: "Replication status", value: "status", disabled: !hasLitestream },
+      {
+        label: "Replication status",
+        value: "status",
+        disabled: !hasLitestream,
+      },
       { label: "Force S3 sync", value: "sync", disabled: !hasLitestream },
       {
         label: "Verify S3 restore",
@@ -219,9 +223,7 @@ async function wizardLocalBackup(
 
   const flag = compress === "gzip" ? " --gzip" : compress === "none" ? " --none" : "";
   ui.message(
-    pcDim(
-      `scriptable: bento sqlite backup local ${target.slug} --file ${target.fileId}${flag}`,
-    ),
+    pcDim(`scriptable: bento sqlite backup local ${target.slug} --file ${target.fileId}${flag}`),
   );
   ui.warn(
     "A consistent online SQLite copy will be written under the stack backups directory",
@@ -260,7 +262,10 @@ async function wizardEnable(ui: WizardUI, ctx: CliContext, slug: string): Promis
   const next = await ctx.store.withExclusive(async (current) => {
     const changed = await enableSqliteBackup(ctx.platform, current, slug);
     await ctx.store.save(changed);
-    await ctx.render.apply(changed, { alreadyLocked: true, skipValidate: false });
+    await ctx.render.apply(changed, {
+      alreadyLocked: true,
+      skipValidate: false,
+    });
     return changed;
   });
   const up = await sqliteCompose(ctx.platform, next, [

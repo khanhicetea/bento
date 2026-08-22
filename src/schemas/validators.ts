@@ -9,9 +9,7 @@ import { CronExpressionParser } from "cron-parser";
 import { validationError } from "../domain/errors.ts";
 import { FPM_PROFILES } from "../domain/types.ts";
 
-export type ParseResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; errors: string[] };
+export type ParseResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
 
 export function ok<T>(value: T): ParseResult<T> {
   return { ok: true, value };
@@ -44,11 +42,7 @@ export function fromZod<T>(
   );
 }
 
-export function parseWith<T>(
-  schema: z.ZodType<T>,
-  value: unknown,
-  field?: string,
-): ParseResult<T> {
+export function parseWith<T>(schema: z.ZodType<T>, value: unknown, field?: string): ParseResult<T> {
   return fromZod(schema.safeParse(value), field);
 }
 
@@ -76,8 +70,9 @@ export const domainNameSchema = z
       return;
     }
     if (
-      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$|^localhost$|^[a-z0-9-]+$/
-        .test(domain)
+      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$|^localhost$|^[a-z0-9-]+$/.test(
+        domain,
+      )
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -109,10 +104,9 @@ export const postgresVersionSchema = z
   .string()
   .regex(/^[1-9]\d*$/, "must be an official major-only tag (e.g. 17)");
 
-export const databaseServiceSchema = z.string().regex(
-  /^(?:mysql\d+|postgres\d+)$/,
-  "must be a managed database service name",
-);
+export const databaseServiceSchema = z
+  .string()
+  .regex(/^(?:mysql\d+|postgres\d+)$/, "must be a managed database service name");
 
 /** Safe relative path under app home (no traversal). */
 export const safeRelativePathSchema = z.string().superRefine((value, ctx) => {
@@ -178,10 +172,7 @@ export const isoDateSchema = z
 
 export const stringArraySchema = z.array(nonEmptyStringSchema);
 
-export const positiveIntSchema = z
-  .number()
-  .int("must be an integer")
-  .positive("must be positive");
+export const positiveIntSchema = z.number().int("must be an integer").positive("must be positive");
 
 export const uidGidSchema = z
   .number()
@@ -189,12 +180,9 @@ export const uidGidSchema = z
   .min(1000, "must be between 1000 and 65533")
   .max(65533, "must be between 1000 and 65533");
 
-export const fpmProfileSchema = nonEmptyStringSchema.refine(
-  (v) => v in FPM_PROFILES,
-  {
-    message: `must be one of: ${Object.keys(FPM_PROFILES).join(", ")}`,
-  },
-);
+export const fpmProfileSchema = nonEmptyStringSchema.refine((v) => v in FPM_PROFILES, {
+  message: `must be one of: ${Object.keys(FPM_PROFILES).join(", ")}`,
+});
 
 export const absolutePathSchema = nonEmptyStringSchema.refine(
   (v) => v.startsWith("/"),
@@ -203,31 +191,19 @@ export const absolutePathSchema = nonEmptyStringSchema.refine(
 
 // --- Parse helpers (ParseResult API) ---------------------------------------
 
-export function parseAppSlug(
-  value: unknown,
-  field = "slug",
-): ParseResult<string> {
+export function parseAppSlug(value: unknown, field = "slug"): ParseResult<string> {
   return parseWith(appSlugSchema, value, field);
 }
 
-export function parseDomainName(
-  value: unknown,
-  field = "domain",
-): ParseResult<string> {
+export function parseDomainName(value: unknown, field = "domain"): ParseResult<string> {
   return parseWith(domainNameSchema, value, field);
 }
 
-export function parsePhpVersion(
-  value: unknown,
-  field = "phpVersion",
-): ParseResult<string> {
+export function parsePhpVersion(value: unknown, field = "phpVersion"): ParseResult<string> {
   return parseWith(phpVersionSchema, value, field);
 }
 
-export function parseMysqlVersion(
-  value: unknown,
-  field = "mysqlVersion",
-): ParseResult<string> {
+export function parseMysqlVersion(value: unknown, field = "mysqlVersion"): ParseResult<string> {
   return parseWith(mysqlVersionSchema, value, field);
 }
 
@@ -245,52 +221,31 @@ export function parseDatabaseService(
   return parseWith(databaseServiceSchema, value, field);
 }
 
-export function parseSafeRelativePath(
-  value: unknown,
-  field = "path",
-): ParseResult<string> {
+export function parseSafeRelativePath(value: unknown, field = "path"): ParseResult<string> {
   return parseWith(safeRelativePathSchema, value, field);
 }
 
-export function parseAbsolutePath(
-  value: unknown,
-  field = "path",
-): ParseResult<string> {
+export function parseAbsolutePath(value: unknown, field = "path"): ParseResult<string> {
   return parseWith(absolutePathSchema, value, field);
 }
 
-export function parseCronSchedule(
-  value: unknown,
-  field = "schedule",
-): ParseResult<string> {
+export function parseCronSchedule(value: unknown, field = "schedule"): ParseResult<string> {
   return parseWith(cronScheduleSchema, value, field);
 }
 
-export function parseIsoDate(
-  value: unknown,
-  field = "timestamp",
-): ParseResult<string> {
+export function parseIsoDate(value: unknown, field = "timestamp"): ParseResult<string> {
   return parseWith(isoDateSchema, value, field);
 }
 
-export function parseStringArray(
-  value: unknown,
-  field: string,
-): ParseResult<string[]> {
+export function parseStringArray(value: unknown, field: string): ParseResult<string[]> {
   return parseWith(stringArraySchema, value, field);
 }
 
-export function parsePositiveInt(
-  value: unknown,
-  field: string,
-): ParseResult<number> {
+export function parsePositiveInt(value: unknown, field: string): ParseResult<number> {
   return parseWith(positiveIntSchema, value, field);
 }
 
-export function parseUidGid(
-  value: unknown,
-  field: string,
-): ParseResult<number> {
+export function parseUidGid(value: unknown, field: string): ParseResult<number> {
   return parseWith(uidGidSchema, value, field);
 }
 

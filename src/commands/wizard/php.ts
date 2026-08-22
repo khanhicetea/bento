@@ -28,7 +28,11 @@ export async function sectionPhp(ui: WizardUI, ctx: CliContext): Promise<void> {
     );
     ui.blank();
     const action = await ui.menu("PHP actions", [
-      { label: "Add version", value: "add", hint: "creates FPM + runner + CLI" },
+      {
+        label: "Add version",
+        value: "add",
+        hint: "creates FPM + runner + CLI",
+      },
       {
         label: "Reload FPM",
         value: "reload",
@@ -49,7 +53,10 @@ export async function sectionPhp(ui: WizardUI, ctx: CliContext): Promise<void> {
         await ctx.store.withExclusive(async (state) => {
           const next = addPhpVersion(state, version);
           await ctx.store.save(next);
-          await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });
+          await ctx.render.apply(next, {
+            skipValidate: true,
+            alreadyLocked: true,
+          });
           return next;
         });
         ui.success(`Added PHP ${version}`, "FPM + runner + CLI roles");

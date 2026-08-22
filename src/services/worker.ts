@@ -40,10 +40,7 @@ export function addWorker(
   const command = unwrap(parseStringArray(input.command, "command"), "command");
   if (command.length === 0) throw validationError("command must not be empty");
 
-  const workdir = platform.paths.assertInsideHome(
-    app.home,
-    input.workdir ?? `${app.home}/code`,
-  );
+  const workdir = platform.paths.assertInsideHome(app.home, input.workdir ?? `${app.home}/code`);
 
   const worker: Worker = {
     name: asWorkerName(name),
@@ -139,16 +136,17 @@ export function buildWorkerControlPlan(
     throw validationError("use buildWorkerSignalPlan for signal actions");
   }
   const servicePath = `/run/bento-s6/services/${program}`;
-  const composeCommand = action === "status"
-    ? ["exec", "-T", runnerService, "/command/s6-svstat", servicePath]
-    : [
-      "exec",
-      "-T",
-      runnerService,
-      "/command/s6-svc",
-      action === "start" ? "-u" : action === "stop" ? "-d" : "-r",
-      servicePath,
-    ];
+  const composeCommand =
+    action === "status"
+      ? ["exec", "-T", runnerService, "/command/s6-svstat", servicePath]
+      : [
+          "exec",
+          "-T",
+          runnerService,
+          "/command/s6-svc",
+          action === "start" ? "-u" : action === "stop" ? "-d" : "-r",
+          servicePath,
+        ];
   const command = ["docker", "compose", ...composeCommand];
 
   return {
@@ -184,9 +182,7 @@ export function buildWorkerSignalPlan(
   };
   const flag = flags[normalized];
   if (!flag) {
-    throw validationError(
-      "signal must be one of HUP, ALRM, INT, QUIT, USR1, USR2, TERM, KILL",
-    );
+    throw validationError("signal must be one of HUP, ALRM, INT, QUIT, USR1, USR2, TERM, KILL");
   }
   const composeCommand = [
     "exec",

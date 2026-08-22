@@ -1,6 +1,6 @@
 /** Engine-neutral logical backup/restore dispatch. */
 
-import { join, relative, resolve } from "@std/path";
+import { join, relative, resolve } from "node:path";
 import type { AppDatabaseBinding, DesiredState } from "../domain/state.ts";
 import { assertNever } from "../domain/state.ts";
 import { asDatabaseName } from "../domain/types.ts";
@@ -62,7 +62,12 @@ export async function runDatabaseBackup(
           const result = await runMysqlBackup(
             platform,
             state,
-            { scope: "database", slug: target.slug, database: target.database, compress },
+            {
+              scope: "database",
+              slug: target.slug,
+              database: target.database,
+              compress,
+            },
             { skipRetention: true },
           );
           artifacts.push(...result);
@@ -101,10 +106,14 @@ export async function runDatabaseRestore(
 
   switch (database.engine) {
     case "mysql":
-      await runMysqlRestore(platform, {
-        ...state,
-        apps: { ...state.apps, [req.slug]: scopedApp },
-      }, req);
+      await runMysqlRestore(
+        platform,
+        {
+          ...state,
+          apps: { ...state.apps, [req.slug]: scopedApp },
+        },
+        req,
+      );
       break;
     case "postgres":
       await runPostgresRestore(platform, {
@@ -122,8 +131,8 @@ export async function runDatabaseRestore(
     return state;
   }
   const next = structuredClone(state);
-  const nextBinding = next.apps[req.slug]!.databases.find((entry) =>
-    entry.engine === database.engine && entry.service === database.service
+  const nextBinding = next.apps[req.slug]!.databases.find(
+    (entry) => entry.engine === database.engine && entry.service === database.service,
   );
   if (!nextBinding || nextBinding.engine === "sqlite" || nextBinding.engine === "litestream") {
     throw validationError(`database binding disappeared for app ${req.slug}`);
@@ -138,7 +147,10 @@ export async function runDatabaseRestore(
   return next;
 }
 
-function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<{
+function resolveTargets(
+  state: DesiredState,
+  req: DatabaseBackupRequest,
+): Array<{
   engine: "mysql" | "postgres" | "sqlite";
   service: string;
   database: string;
@@ -147,13 +159,15 @@ function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<
   if (req.scope !== "all" && !req.slug) {
     throw validationError(`${req.scope} backup requires --app`);
   }
-  const apps = req.scope === "all"
-    ? Object.values(state.apps).sort((a, b) => a.slug.localeCompare(b.slug))
-    : [
-      state.apps[req.slug!] ?? (() => {
-        throw notFoundError(`app not found: ${req.slug}`);
-      })(),
-    ];
+  const apps =
+    req.scope === "all"
+      ? Object.values(state.apps).sort((a, b) => a.slug.localeCompare(b.slug))
+      : [
+          state.apps[req.slug!] ??
+            (() => {
+              throw notFoundError(`app not found: ${req.slug}`);
+            })(),
+        ];
   const targets: Array<{
     engine: "mysql" | "postgres" | "sqlite";
     service: string;
@@ -177,9 +191,10 @@ function resolveTargets(state: DesiredState, req: DatabaseBackupRequest): Array<
         }
         continue;
       }
-      const databases = req.scope === "database"
-        ? binding.databases.filter((database) => database.name === req.database)
-        : binding.databases;
+      const databases =
+        req.scope === "database"
+          ? binding.databases.filter((database) => database.name === req.database)
+          : binding.databases;
       for (const database of databases) {
         targets.push({
           engine: binding.engine,
@@ -210,16 +225,17 @@ function resolveRestoreBinding(
     ? relational.filter((binding) => binding.engine === req.engine)
     : relational;
   const named = requested.filter((binding) =>
-    binding.databases.some((database) =>
-      database.name === req.replaceOriginal || database.name === req.targetDatabase
-    )
+    binding.databases.some(
+      (database) => database.name === req.replaceOriginal || database.name === req.targetDatabase,
+    ),
   );
   if (named.length === 1) return named[0]!;
 
   const rel = relative(resolve(platform.paths.paths.backupsDir), resolve(req.file));
-  const service = rel && rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\")
-    ? rel.split(/[\\/]/)[0]
-    : undefined;
+  const service =
+    rel && rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\")
+      ? rel.split(/[\\/]/)[0]
+      : undefined;
   const byService = requested.filter((binding) => binding.service === service);
   if (byService.length === 1) return byService[0]!;
   if (requested.length === 1) return requested[0]!;

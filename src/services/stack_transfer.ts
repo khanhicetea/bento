@@ -1,4 +1,4 @@
-import { isAbsolute, join, relative, resolve } from "@std/path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
 import { conflictError, platformError, safetyError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
@@ -65,10 +65,7 @@ export function volumeArchiveName(logicalVolume: string): string {
   return `${logicalVolume}.tar.gz`;
 }
 
-export function stackVolumeNames(
-  state: DesiredState,
-  project: string,
-): StackTransferVolumes {
+export function stackVolumeNames(state: DesiredState, project: string): StackTransferVolumes {
   const databases: DatabaseTransferVolume[] = [...state.databaseServices]
     .sort((a, b) => a.service.localeCompare(b.service))
     .map((entry) => ({
@@ -130,7 +127,12 @@ export async function exportStack(
 
   const dataServices = stackDataServiceNames(state);
   const ps = await runCompose(platform, state, ["ps", "--services", "--filter", "status=running"]);
-  const running = new Set(ps.stdout.split(/\r?\n/).map((v) => v.trim()).filter(Boolean));
+  const running = new Set(
+    ps.stdout
+      .split(/\r?\n/)
+      .map((v) => v.trim())
+      .filter(Boolean),
+  );
   const restart = dataServices.filter((service) => running.has(service));
   const archiveNames = [
     STACK_ARCHIVE,
@@ -173,12 +175,7 @@ export async function exportStack(
     }
   } catch (err) {
     primaryError = err;
-    for (
-      const name of [
-        ...partials,
-        ...archiveNames.map((archive) => join(output, archive)),
-      ]
-    ) {
+    for (const name of [...partials, ...archiveNames.map((archive) => join(output, archive))]) {
       if (await platform.fs.exists(name)) await platform.fs.remove(name);
     }
   } finally {
@@ -206,14 +203,13 @@ export async function importStack(
   options: StackImportOptions = {},
 ): Promise<StackImportResult> {
   if (options.projectName !== undefined) validateComposeProjectName(options.projectName);
-  for (
-    const [name, port] of [["httpPort", options.httpPort], [
-      "httpsPort",
-      options.httpsPort,
-    ]] as const
-  ) {
+  for (const [name, port] of [
+    ["httpPort", options.httpPort],
+    ["httpsPort", options.httpsPort],
+  ] as const) {
     if (
-      port !== undefined && port !== null &&
+      port !== undefined &&
+      port !== null &&
       (!Number.isInteger(port) || port < 1 || port > 65535)
     ) {
       throw validationError(`${name} must be between 1 and 65535`);
@@ -231,16 +227,7 @@ export async function importStack(
 
   await requireCommand(
     platform,
-    [
-      "tar",
-      "--xattrs",
-      "--acls",
-      "--numeric-owner",
-      "-xzpf",
-      stackArchive,
-      "-C",
-      root,
-    ],
+    ["tar", "--xattrs", "--acls", "--numeric-owner", "-xzpf", stackArchive, "-C", root],
     "failed to restore stack directory",
   );
 
@@ -304,7 +291,10 @@ export async function importStack(
 
     // Regenerate with the importing Bento version, then build/start the complete chain.
     const { RenderService } = await import("./render.ts");
-    await new RenderService(platform).apply(state, { renderOnly: true, skipValidate: true });
+    await new RenderService(platform).apply(state, {
+      renderOnly: true,
+      skipValidate: true,
+    });
     await runCompose(platform, state, ["up", "-d", "--build"]);
   } catch (err) {
     // Only volumes created by this failed import are eligible for cleanup.
@@ -372,9 +362,7 @@ async function restoreVolume(
   await requireCommand(platform, command, `failed to restore Docker volume ${volume.docker}`);
 }
 
-function assertUniqueVolumeArchives(
-  volumes: Array<{ logical: string; docker: string }>,
-): void {
+function assertUniqueVolumeArchives(volumes: Array<{ logical: string; docker: string }>): void {
   const logical = new Set<string>();
   const docker = new Set<string>();
   const archives = new Set<string>();

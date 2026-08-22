@@ -10,10 +10,7 @@ export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): 
     const jobs = listCronJobs(state, slug);
 
     ui.clear();
-    ui.header(
-      `Cron jobs: ${slug}`,
-      `${jobs.length} job${jobs.length === 1 ? "" : "s"}`,
-    );
+    ui.header(`Cron jobs: ${slug}`, `${jobs.length} job${jobs.length === 1 ? "" : "s"}`);
     ui.table(
       ["name", "schedule", "command", "enabled"],
       jobs.map((job) => [
@@ -46,18 +43,24 @@ export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): 
         default: "php artisan schedule:run",
       });
       if (!cmdRaw) continue;
-      const timezone = await ui.prompt("Timezone (blank = default)", { default: "" });
+      const timezone = await ui.prompt("Timezone (blank = default)", {
+        default: "",
+      });
       if (timezone === null) continue;
       try {
         await ctx.store.withExclusive(async (state) => {
-          const r = addCronJob(state, {
-            app: slug,
-            name,
-            schedule,
-            command: [cmdRaw],
-            commandMode: "shell",
-            timezone: timezone || undefined,
-          }, ctx.platform);
+          const r = addCronJob(
+            state,
+            {
+              app: slug,
+              name,
+              schedule,
+              command: [cmdRaw],
+              commandMode: "shell",
+              timezone: timezone || undefined,
+            },
+            ctx.platform,
+          );
           await ctx.store.save(r.state);
           await ctx.render.apply(r.state, {
             reloadPlan: r.reloadPlan,
@@ -90,7 +93,8 @@ export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): 
       ]);
       const schedule = await ui.prompt("Cron schedule (blank = unchanged)", {
         format: "five cron fields, or blank to keep the current value",
-        validate: (value) => value.trim() === "" ? null : fieldValidator(parseCronSchedule)(value),
+        validate: (value) =>
+          value.trim() === "" ? null : fieldValidator(parseCronSchedule)(value),
       });
       if (schedule === null) continue;
       const command = await ui.prompt("Shell command (blank = unchanged)");
@@ -100,23 +104,25 @@ export async function sectionCron(ui: WizardUI, ctx: CliContext, slug: string): 
       const scheduleEdit = schedule.trim() === "" ? undefined : schedule;
       const commandEdit = command.trim() === "" ? undefined : command;
       const timezoneEdit = timezone.trim() === "" ? undefined : timezone;
-      if (
-        scheduleEdit === undefined && commandEdit === undefined && timezoneEdit === undefined
-      ) {
+      if (scheduleEdit === undefined && commandEdit === undefined && timezoneEdit === undefined) {
         ui.info("No changes");
         await ui.pause();
         continue;
       }
       try {
         await ctx.store.withExclusive(async (s) => {
-          const r = editCronJob(s, {
-            app: slug,
-            name: picked,
-            schedule: scheduleEdit,
-            command: commandEdit === undefined ? undefined : [commandEdit],
-            commandMode: commandEdit === undefined ? undefined : "shell",
-            timezone: timezoneEdit,
-          }, ctx.platform);
+          const r = editCronJob(
+            s,
+            {
+              app: slug,
+              name: picked,
+              schedule: scheduleEdit,
+              command: commandEdit === undefined ? undefined : [commandEdit],
+              commandMode: commandEdit === undefined ? undefined : "shell",
+              timezone: timezoneEdit,
+            },
+            ctx.platform,
+          );
           await ctx.store.save(r.state);
           await ctx.render.apply(r.state, {
             reloadPlan: r.reloadPlan,

@@ -5,54 +5,49 @@ import type { ArgsWith, CliArgs } from "../args.ts";
 import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
 
 export function registerProxyCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command("proxy", "Reverse-proxy sites", (y: YargsBuilder) =>
-      y
-        .command(
-          "list",
-          "List reverse proxies",
-          () => {},
-          bind(state, cmdProxyList),
-        )
-        .command(
-          "create <name>",
-          "Create a reverse-proxy site",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .positional("name", { type: "string", demandOption: true })
-                .option("domain", {
-                  type: "string",
-                  demandOption: true,
-                  describe: "Primary domain",
-                })
-                .option("upstream", {
-                  type: "string",
-                  array: true,
-                  demandOption: true,
-                  describe: "Upstream URL; repeat for multiple servers",
-                })
-                .option("alias", {
-                  type: "string",
-                  describe: "Comma-separated domain aliases",
-                }),
-            ),
-          bind(state, cmdProxyCreate),
-        )
-        .command(
-          "delete <name>",
-          "Remove a reverse-proxy site",
-          proxyDeleteOptions,
-          bind(state, cmdProxyDelete),
-        )
-        .command(
-          "remove <name>",
-          "Alias for proxy delete",
-          proxyDeleteOptions,
-          bind(state, cmdProxyDelete),
-        )
-        .demandCommand(1, "Specify a proxy subcommand: create|list|delete")
-        .recommendCommands());
+  return parser.command("proxy", "Reverse-proxy sites", (y: YargsBuilder) =>
+    y
+      .command("list", "List reverse proxies", () => {}, bind(state, cmdProxyList))
+      .command(
+        "create <name>",
+        "Create a reverse-proxy site",
+        (y2: YargsBuilder) =>
+          noApplyOption(
+            y2
+              .positional("name", { type: "string", demandOption: true })
+              .option("domain", {
+                type: "string",
+                demandOption: true,
+                describe: "Primary domain",
+              })
+              .option("upstream", {
+                type: "string",
+                array: true,
+                demandOption: true,
+                describe: "Upstream URL; repeat for multiple servers",
+              })
+              .option("alias", {
+                type: "string",
+                describe: "Comma-separated domain aliases",
+              }),
+          ),
+        bind(state, cmdProxyCreate),
+      )
+      .command(
+        "delete <name>",
+        "Remove a reverse-proxy site",
+        proxyDeleteOptions,
+        bind(state, cmdProxyDelete),
+      )
+      .command(
+        "remove <name>",
+        "Alias for proxy delete",
+        proxyDeleteOptions,
+        bind(state, cmdProxyDelete),
+      )
+      .demandCommand(1, "Specify a proxy subcommand: create|list|delete")
+      .recommendCommands(),
+  );
 }
 
 async function cmdProxyList(_argv: CliArgs, ctx: CliContext): Promise<number> {
@@ -75,12 +70,16 @@ async function cmdProxyCreate(
   const upstreams = Array.isArray(upstream) ? upstream : [upstream];
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const result = createProxy(state, {
-      name,
-      domain,
-      upstreams,
-      aliases: argv.alias?.split(",") ?? [],
-    }, ctx.platform.clock.nowIso());
+    const result = createProxy(
+      state,
+      {
+        name,
+        domain,
+        upstreams,
+        aliases: argv.alias?.split(",") ?? [],
+      },
+      ctx.platform.clock.nowIso(),
+    );
     await ctx.store.save(result.state);
     if (!noApply) {
       await ctx.render.apply(result.state, {
@@ -99,24 +98,17 @@ async function cmdProxyCreate(
 
 function proxyDeleteOptions(y: YargsBuilder): YargsBuilder {
   return noApplyOption(
-    y
-      .positional("name", { type: "string", demandOption: true })
-      .option("confirm", {
-        type: "string",
-        describe: "Exact confirmation text: delete <name>",
-      }),
+    y.positional("name", { type: "string", demandOption: true }).option("confirm", {
+      type: "string",
+      describe: "Exact confirmation text: delete <name>",
+    }),
   );
 }
 
 async function cmdProxyDelete(argv: ArgsWith<"name">, ctx: CliContext): Promise<number> {
   const noApply = wantsNoApply(argv);
   const result = await ctx.store.withExclusive(async (state) => {
-    const removed = deleteProxy(
-      state,
-      argv.name,
-      argv.confirm,
-      ctx.platform.clock.nowIso(),
-    );
+    const removed = deleteProxy(state, argv.name, argv.confirm, ctx.platform.clock.nowIso());
     await ctx.store.save(removed.state);
     if (!noApply) {
       await ctx.render.apply(removed.state, {

@@ -9,51 +9,56 @@ import type { ArgsWith } from "../args.ts";
 import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
 
 export function registerTlsCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command("tls", "TLS mode management", (y: YargsBuilder) =>
-      y
-        .command(
-          "set",
-          "Set TLS mode for app or proxy",
-          (y2: YargsBuilder) =>
-            noApplyOption(
-              y2
-                .option("app", { type: "string", describe: "App slug" })
-                .option("proxy", { type: "string", describe: "Proxy name" })
-                .option("mode", {
+  return parser.command("tls", "TLS mode management", (y: YargsBuilder) =>
+    y
+      .command(
+        "set",
+        "Set TLS mode for app or proxy",
+        (y2: YargsBuilder) =>
+          noApplyOption(
+            y2
+              .option("app", { type: "string", describe: "App slug" })
+              .option("proxy", { type: "string", describe: "Proxy name" })
+              .option("mode", {
+                type: "string",
+                demandOption: true,
+                choices: ["self-ca", "shared", "acme", "external"] as const,
+              })
+              .option("cert", {
+                type: "string",
+                describe: "External certificate path",
+              })
+              .option("key", {
+                type: "string",
+                describe: "External private key path",
+              }),
+          ),
+        bind(state, cmdTlsSet),
+      )
+      .command("ca", "Private CA management", (y2: YargsBuilder) =>
+        y2
+          .command(
+            "export",
+            "Export the public CA certificate (never the private key)",
+            (y3: YargsBuilder) =>
+              y3
+                .option("output", {
                   type: "string",
                   demandOption: true,
-                  choices: ["self-ca", "shared", "acme", "external"] as const,
+                  describe: "Destination path for the public CA certificate",
                 })
-                .option("cert", { type: "string", describe: "External certificate path" })
-                .option("key", { type: "string", describe: "External private key path" }),
-            ),
-          bind(state, cmdTlsSet),
-        )
-        .command(
-          "ca",
-          "Private CA management",
-          (y2: YargsBuilder) =>
-            y2.command(
-              "export",
-              "Export the public CA certificate (never the private key)",
-              (y3: YargsBuilder) =>
-                y3
-                  .option("output", {
-                    type: "string",
-                    demandOption: true,
-                    describe: "Destination path for the public CA certificate",
-                  })
-                  .option("force", {
-                    type: "boolean",
-                    default: false,
-                    describe: "Replace an existing destination",
-                  }),
-              bind(state, cmdTlsCaExport),
-            ).demandCommand(1, "Specify a tls ca subcommand: export"),
-        )
-        .demandCommand(1, "Specify a tls subcommand: set|ca")
-        .recommendCommands());
+                .option("force", {
+                  type: "boolean",
+                  default: false,
+                  describe: "Replace an existing destination",
+                }),
+            bind(state, cmdTlsCaExport),
+          )
+          .demandCommand(1, "Specify a tls ca subcommand: export"),
+      )
+      .demandCommand(1, "Specify a tls subcommand: set|ca")
+      .recommendCommands(),
+  );
 }
 
 async function cmdTlsSet(argv: ArgsWith<"mode">, ctx: CliContext): Promise<number> {
@@ -70,11 +75,7 @@ async function cmdTlsSet(argv: ArgsWith<"mode">, ctx: CliContext): Promise<numbe
       return 2;
     }
     try {
-      await validateExternalTlsPaths(
-        ctx.platform,
-        argv.cert,
-        argv.key,
-      );
+      await validateExternalTlsPaths(ctx.platform, argv.cert, argv.key);
     } catch (e) {
       ctx.log.error(e instanceof Error ? e.message : String(e));
       return 2;
@@ -140,12 +141,8 @@ async function cmdTlsCaExport(
   ctx: CliContext,
 ): Promise<number> {
   try {
-    const destination = await ctx.store.withExclusive(async () =>
-      await exportPrivateCaCertificate(
-        ctx.platform,
-        argv.output,
-        argv.force === true,
-      )
+    const destination = await ctx.store.withExclusive(
+      async () => await exportPrivateCaCertificate(ctx.platform, argv.output, argv.force === true),
     );
     ctx.log.info(`exported public CA certificate to ${destination}`);
     ctx.log.info("Only ca.crt was exported; keep certs/private-ca/ca.key secret.");

@@ -4,5 +4,5 @@ testbento/
 dist/
 *.partial
 .DS_Store
-.deno/
+node_modules/
 coverage/

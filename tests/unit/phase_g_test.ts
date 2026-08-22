@@ -5,7 +5,7 @@
  * or per-app CPU/memory quotas in shared PHP containers.
  */
 
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertThrows } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { isBentoError } from "../../src/domain/errors.ts";
 import { deleteApp, provisionApp } from "../../src/services/app.ts";
@@ -46,7 +46,7 @@ function assertSafety(fn: () => unknown, messagePart: string): void {
   assertEquals(isBentoError(err) ? err.exitCode : 0, 10);
 }
 
-Deno.test("app delete requires exact typed confirmation", () => {
+bunRuntime.test("app delete requires exact typed confirmation", () => {
   const platform = testPlatform("/tmp/bento-lifecycle-test");
   const state = provisionApp(platform, createEmptyState(), {
     slug: "demo",
@@ -59,8 +59,8 @@ Deno.test("app delete requires exact typed confirmation", () => {
   assertEquals(!!removed.state.domains["demo.test"], false);
 });
 
-Deno.test("app prune lists retained parts and requires literal delete", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-prune-" });
+bunRuntime.test("app prune lists retained parts and requires literal delete", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-prune-" });
   try {
     const platform = testPlatform(root);
     await platform.fs.writeText(
@@ -74,12 +74,7 @@ Deno.test("app prune lists retained parts and requires literal delete", async ()
       createDatabase: true,
     });
     await writeAppPruneManifest(platform, provisioned.app);
-    const removed = deleteApp(
-      provisioned.state,
-      "demo",
-      "delete demo",
-      platform.clock.nowIso(),
-    );
+    const removed = deleteApp(provisioned.state, "demo", "delete demo", platform.clock.nowIso());
     const plan = await planAppPrune(platform, removed.state, "demo");
     assertEquals(plan.bindings[0]?.databases, ["demo"]);
     assertEquals(plan.home, platform.paths.appHome("demo"));
@@ -95,16 +90,20 @@ Deno.test("app prune lists retained parts and requires literal delete", async ()
     assertEquals(calls[0]!.command.join(" ").includes("root-secret"), false);
     assertEquals(String(calls[0]!.options?.stdin).includes("DROP DATABASE IF EXISTS `demo`"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("proxy delete requires exact typed confirmation", () => {
-  const state = createProxy(createEmptyState(), {
-    name: "api",
-    domain: "api.test",
-    upstreams: ["http://127.0.0.1:3000"],
-  }, "2026-07-17T12:00:00.000Z").state;
+bunRuntime.test("proxy delete requires exact typed confirmation", () => {
+  const state = createProxy(
+    createEmptyState(),
+    {
+      name: "api",
+      domain: "api.test",
+      upstreams: ["http://127.0.0.1:3000"],
+    },
+    "2026-07-17T12:00:00.000Z",
+  ).state;
   assertSafety(() => deleteProxy(state, "api", "delete wrong"), "confirmation");
   assertEquals(!!state.proxies.api, true);
   const removed = deleteProxy(state, "api", "delete api", "2026-07-17T12:00:00.000Z");
@@ -112,70 +111,67 @@ Deno.test("proxy delete requires exact typed confirmation", () => {
   assertEquals(!!removed.state.domains["api.test"], false);
 });
 
-Deno.test("G MySQL version/volume removal is safety-blocked", () => {
+bunRuntime.test("G MySQL version/volume removal is safety-blocked", () => {
   const state = createEmptyState();
   assertSafety(() => removeMysqlVersion(state, "8.4"), "MySQL version removal");
   assertEquals(state.databaseServices.length > 0, true);
 });
 
-Deno.test("G compose refuses volume-destructive down flags", () => {
+bunRuntime.test("G compose refuses volume-destructive down flags", () => {
   assertSafety(() => assertSafeComposeArgs(["down", "-v"]), "volume/image destruction");
-  assertSafety(
-    () => assertSafeComposeArgs(["down", "--volumes"]),
-    "volume/image destruction",
-  );
-  assertSafety(
-    () => assertSafeComposeArgs(["--rmi", "all", "down"]),
-    "volume/image destruction",
-  );
+  assertSafety(() => assertSafeComposeArgs(["down", "--volumes"]), "volume/image destruction");
+  assertSafety(() => assertSafeComposeArgs(["--rmi", "all", "down"]), "volume/image destruction");
   // Non-destructive down remains allowed.
   assertSafeComposeArgs(["down"]);
   assertSafeComposeArgs(["up", "-d"]);
 });
 
-Deno.test("G shared PHP topology — not one container per app; no per-app quotas", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-g-" });
-  try {
-    const platform = testPlatform(root);
-    let state = createEmptyState();
-    state = provisionApp(platform, state, {
-      slug: "alpha",
-      domain: "alpha.test",
-    }).state;
-    state = provisionApp(platform, state, {
-      slug: "beta",
-      domain: "beta.test",
-    }).state;
-    // Two apps share the same default PHP version service identity.
-    assertEquals(state.apps["alpha"]!.phpVersion, state.apps["beta"]!.phpVersion);
-    const phpVersion = state.apps["alpha"]!.phpVersion;
-    const phpService = state.phpVersions.find((v) => v.version === phpVersion)?.service;
-    assertEquals(typeof phpService, "string");
+bunRuntime.test(
+  "G shared PHP topology — not one container per app; no per-app quotas",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-g-" });
+    try {
+      const platform = testPlatform(root);
+      let state = createEmptyState();
+      state = provisionApp(platform, state, {
+        slug: "alpha",
+        domain: "alpha.test",
+      }).state;
+      state = provisionApp(platform, state, {
+        slug: "beta",
+        domain: "beta.test",
+      }).state;
+      // Two apps share the same default PHP version service identity.
+      assertEquals(state.apps["alpha"]!.phpVersion, state.apps["beta"]!.phpVersion);
+      const phpVersion = state.apps["alpha"]!.phpVersion;
+      const phpService = state.phpVersions.find((v) => v.version === phpVersion)?.service;
+      assertEquals(typeof phpService, "string");
 
-    const docs = assembleComposeDocuments(platform, state);
-    const phpFrag = docs.find((f) => f.relPath.includes(`php-${phpService}`));
-    assertEquals(!!phpFrag, true);
-    const raw = phpFrag!.content;
-    const yaml = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
-    // Shared FPM/runner/cli roles only — no per-app service keys.
-    assertEquals(yaml.includes(`  ${phpService}:`), true);
-    assertEquals(yaml.includes(`  ${phpService}-runner:`), true);
-    assertEquals(yaml.includes(`  ${phpService}-cli:`), true);
-    assertEquals(yaml.includes("  alpha:"), false);
-    assertEquals(yaml.includes("  beta:"), false);
-    assertEquals(yaml.includes("bento-app-alpha"), false);
-    // No hard CPU/memory quotas inside shared PHP containers.
-    assertEquals(/cpus?\s*:/i.test(yaml), false);
-    assertEquals(/mem_limit\s*:/i.test(yaml), false);
-    assertEquals(/memory\s*:/i.test(yaml), false);
-    assertEquals(/deploy:\s*\n\s*resources:/i.test(yaml), false);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      const docs = assembleComposeDocuments(platform, state);
+      const phpFrag = docs.find((f) => f.relPath.includes(`php-${phpService}`));
+      assertEquals(!!phpFrag, true);
+      const raw = phpFrag!.content;
+      const yaml = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+      // Shared FPM/runner/cli roles only — no per-app service keys.
+      assertEquals(yaml.includes(`  ${phpService}:`), true);
+      assertEquals(yaml.includes(`  ${phpService}-runner:`), true);
+      assertEquals(yaml.includes(`  ${phpService}-cli:`), true);
+      assertEquals(yaml.includes("  alpha:"), false);
+      assertEquals(yaml.includes("  beta:"), false);
+      assertEquals(yaml.includes("bento-app-alpha"), false);
+      // No hard CPU/memory quotas inside shared PHP containers.
+      assertEquals(/cpus?\s*:/i.test(yaml), false);
+      assertEquals(/mem_limit\s*:/i.test(yaml), false);
+      assertEquals(/memory\s*:/i.test(yaml), false);
+      assertEquals(/deploy:\s*\n\s*resources:/i.test(yaml), false);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("G deploy is orchestration-only (no hard-coded Git workflow)", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-g-deploy-" });
+bunRuntime.test("G deploy is orchestration-only (no hard-coded Git workflow)", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-g-deploy-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -194,49 +190,56 @@ Deno.test("G deploy is orchestration-only (no hard-coded Git workflow)", async (
     assertEquals(/checkout/i.test(text), false);
     assertEquals(/github\.com|gitlab\.com|bitbucket/i.test(text), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("G control plane has no Python runtime dependency surface", async () => {
-  // deno.json imports are JS/TS-only; no python shebang/runtime in src entry.
-  const main = await Deno.readTextFile(new URL("../../src/main.ts", import.meta.url));
+bunRuntime.test("G control plane has no Python runtime dependency surface", async () => {
+  // Bun dependencies and scripts are JS/TS-only; no Python runtime is required.
+  const main = await bunRuntime.readTextFile(new URL("../../src/main.ts", import.meta.url));
   assertEquals(main.includes("python"), false);
   assertEquals(main.startsWith("#!") && main.includes("python"), false);
-  const denoJson = JSON.parse(
-    await Deno.readTextFile(new URL("../../deno.json", import.meta.url)),
+  const packageJson = JSON.parse(
+    await bunRuntime.readTextFile(new URL("../../package.json", import.meta.url)),
   );
-  const importBlob = JSON.stringify(denoJson.imports ?? {});
-  assertEquals(/python/i.test(importBlob), false);
-  const tasks = JSON.stringify(denoJson.tasks ?? {});
-  assertEquals(/python3?|pip\b/i.test(tasks), false);
+  const dependencyBlob = JSON.stringify(packageJson.dependencies ?? {});
+  assertEquals(/python/i.test(dependencyBlob), false);
+  const scripts = JSON.stringify(packageJson.scripts ?? {});
+  assertEquals(/python3?|pip\b/i.test(scripts), false);
 });
 
-Deno.test("G backup paths stay on-host under stack backupsDir (no off-host replication API)", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-g-backup-" });
-  try {
-    const platform = testPlatform(root);
-    // Backups are local stack paths only; no s3/rsync/remote helpers exported.
-    assertEquals(platform.paths.paths.backupsDir.startsWith(root), true);
-    const mysqlSrc = await Deno.readTextFile(
-      new URL("../../src/services/mysql.ts", import.meta.url),
-    );
-    assertEquals(/s3:|aws\s+s3|rsync|rclone|off-?host.*replicat/i.test(mysqlSrc), false);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+bunRuntime.test(
+  "G backup paths stay on-host under stack backupsDir (no off-host replication API)",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-g-backup-" });
+    try {
+      const platform = testPlatform(root);
+      // Backups are local stack paths only; no s3/rsync/remote helpers exported.
+      assertEquals(platform.paths.paths.backupsDir.startsWith(root), true);
+      const mysqlSrc = await bunRuntime.readTextFile(
+        new URL("../../src/services/mysql.ts", import.meta.url),
+      );
+      assertEquals(/s3:|aws\s+s3|rsync|rclone|off-?host.*replicat/i.test(mysqlSrc), false);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("G proxy create and guarded delete work", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-g-proxy-" });
+bunRuntime.test("G proxy create and guarded delete work", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-g-proxy-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    const created = createProxy(state, {
-      name: "edge",
-      domain: "edge.test",
-      upstreams: ["http://127.0.0.1:3000"],
-    }, platform.clock.nowIso());
+    const created = createProxy(
+      state,
+      {
+        name: "edge",
+        domain: "edge.test",
+        upstreams: ["http://127.0.0.1:3000"],
+      },
+      platform.clock.nowIso(),
+    );
     state = created.state;
     assertEquals(!!state.proxies["edge"], true);
     assertSafety(() => deleteProxy(state, "edge"), "confirmation");
@@ -244,6 +247,6 @@ Deno.test("G proxy create and guarded delete work", async () => {
     const removed = deleteProxy(state, "edge", "delete edge", platform.clock.nowIso());
     assertEquals(!!removed.state.proxies["edge"], false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

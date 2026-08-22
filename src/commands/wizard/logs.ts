@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "../../platform/runtime.ts";
 import {
   generateAccessReport,
   rotateAccessLog,
@@ -15,7 +16,11 @@ export async function sectionLogs(ui: WizardUI, ctx: CliContext, slug: string): 
       { label: "Enable", value: "enable", hint: "nginx-only reload" },
       { label: "Disable", value: "disable", hint: "preserves files" },
       { label: "Rotate + reopen", value: "rotate" },
-      { label: "Open GoAccess terminal", value: "report-terminal", hint: "attach container" },
+      {
+        label: "Open GoAccess terminal",
+        value: "report-terminal",
+        hint: "attach container",
+      },
       { label: "Generate GoAccess HTML report", value: "report-html" },
     ]);
     if (!action) return;
@@ -61,7 +66,7 @@ export async function sectionLogs(ui: WizardUI, ctx: CliContext, slug: string): 
         ui.blank();
 
         const [cmd, ...args] = plan.command;
-        const child = new Deno.Command(cmd!, {
+        const child = new RuntimeCommand(cmd!, {
           args,
           cwd: ctx.stackRoot,
           stdin: "inherit",

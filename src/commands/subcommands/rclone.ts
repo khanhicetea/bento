@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "../../platform/runtime.ts";
 /** Ephemeral rclone sidecar passthrough. */
 
 import { materializeDockerAssets } from "../../services/assets_materialize.ts";
@@ -32,7 +33,7 @@ async function cmdRclone(argv: CliArgs, ctx: CliContext): Promise<number> {
   const command = await rcloneComposeCommand(ctx.platform, state, args);
   ctx.log.info(`running rclone ${args.join(" ")}`);
   const [cmd, ...cmdArgs] = command;
-  const child = new Deno.Command(cmd!, {
+  const child = new RuntimeCommand(cmd!, {
     args: cmdArgs,
     cwd: ctx.stackRoot,
     stdin: "inherit",

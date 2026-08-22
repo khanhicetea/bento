@@ -3,15 +3,15 @@
  * Soft-skips only when Docker/the official PHP image is unavailable.
  */
 
-import { assertEquals } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
+import { join } from "node:path";
 import { isDockerAvailable } from "./helpers.ts";
 
 async function runDocker(
   args: string[],
   opts: { timeoutMs?: number } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const child = new Deno.Command("docker", {
+  const child = new bunRuntime.Command("docker", {
     args,
     stdout: "piped",
     stderr: "piped",
@@ -61,7 +61,7 @@ async function waitFor(probe: () => Promise<boolean>, timeoutMs = 15_000): Promi
   return false;
 }
 
-Deno.test({
+bunRuntime.test({
   name: "live webhook -> queue -> runner hook -> FPM OPcache reset",
   sanitizeOps: false,
   sanitizeResources: false,
@@ -72,7 +72,9 @@ Deno.test({
     }
 
     const image = "php:8.4-fpm";
-    const inspect = await runDocker(["image", "inspect", image], { timeoutMs: 15_000 });
+    const inspect = await runDocker(["image", "inspect", image], {
+      timeoutMs: 15_000,
+    });
     if (inspect.code !== 0) {
       const pull = await runDocker(["pull", image], { timeoutMs: 180_000 });
       if (pull.code !== 0) {
@@ -81,7 +83,7 @@ Deno.test({
       }
     }
 
-    const root = await Deno.makeTempDir({ prefix: "bento-live-deploy-" });
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-live-deploy-" });
     const home = join(root, "home", "alpha");
     const bentoDir = join(home, ".bento");
     const logsDir = join(home, "logs");
@@ -89,17 +91,17 @@ Deno.test({
     const poolPath = join(root, "alpha-pool.conf");
     let container = "";
     try {
-      await Deno.mkdir(bentoDir, { recursive: true, mode: 0o777 });
-      await Deno.mkdir(logsDir, { recursive: true, mode: 0o777 });
-      await Deno.mkdir(socketDir, { recursive: true, mode: 0o777 });
+      await bunRuntime.mkdir(bentoDir, { recursive: true, mode: 0o777 });
+      await bunRuntime.mkdir(logsDir, { recursive: true, mode: 0o777 });
+      await bunRuntime.mkdir(socketDir, { recursive: true, mode: 0o777 });
       // The container's www-data user owns runtime writes; permissive fixture
       // directories avoid requiring host root/chown in CI.
-      await Deno.chmod(home, 0o777);
-      await Deno.chmod(bentoDir, 0o777);
-      await Deno.chmod(logsDir, 0o777);
-      await Deno.chmod(socketDir, 0o777);
+      await bunRuntime.chmod(home, 0o777);
+      await bunRuntime.chmod(bentoDir, 0o777);
+      await bunRuntime.chmod(logsDir, 0o777);
+      await bunRuntime.chmod(socketDir, 0o777);
 
-      await Deno.writeTextFile(
+      await bunRuntime.writeTextFile(
         poolPath,
         `[alpha]
 user = www-data
@@ -112,18 +114,16 @@ pm = ondemand
 pm.max_children = 2
 `,
       );
-      await Deno.writeTextFile(
+      await bunRuntime.writeTextFile(
         join(bentoDir, "deploy.json"),
-        `${
-          JSON.stringify({
-            timeoutSec: 10,
-            workdir: "/home/alpha",
-            argv: ["sh", "/home/alpha/.bento/deploy.sh"],
-            queuePolicy: "latest",
-          })
-        }\n`,
+        `${JSON.stringify({
+          timeoutSec: 10,
+          workdir: "/home/alpha",
+          argv: ["sh", "/home/alpha/.bento/deploy.sh"],
+          queuePolicy: "latest",
+        })}\n`,
       );
-      await Deno.writeTextFile(
+      await bunRuntime.writeTextFile(
         join(bentoDir, "deploy.sh"),
         `#!/bin/sh
 set -eu
@@ -132,34 +132,37 @@ printf '%s\n' "$BENTO_DEPLOY_ID" > "$HOME/.bento/hook-ran"
 echo "live hook executed: $BENTO_DEPLOY_ID"
 `,
       );
-      await Deno.chmod(join(bentoDir, "deploy.sh"), 0o755);
+      await bunRuntime.chmod(join(bentoDir, "deploy.sh"), 0o755);
       // Let the webhook create queue.json as www-data, matching the real app
       // ownership model (the host test process cannot chown to container UIDs).
-      await Deno.chmod(join(bentoDir, "deploy.json"), 0o666);
+      await bunRuntime.chmod(join(bentoDir, "deploy.json"), 0o666);
 
-      const started = await runDocker([
-        "run",
-        "-d",
-        "--rm",
-        "-p",
-        "127.0.0.1::8080",
-        "-v",
-        `${join(root, "home")}:/home`,
-        "-v",
-        `${join(Deno.cwd(), "templates", "helpers")}:/opt/bento/helpers:ro`,
-        "-v",
-        `${socketDir}:/run/php-fpm/php85`,
-        "-v",
-        `${poolPath}:/usr/local/etc/php-fpm.d/zz-alpha.conf:ro`,
-        image,
-      ], { timeoutMs: 30_000 });
+      const started = await runDocker(
+        [
+          "run",
+          "-d",
+          "--rm",
+          "-p",
+          "127.0.0.1::8080",
+          "-v",
+          `${join(root, "home")}:/home`,
+          "-v",
+          `${join(bunRuntime.cwd(), "templates", "helpers")}:/opt/bento/helpers:ro`,
+          "-v",
+          `${socketDir}:/run/php-fpm/php85`,
+          "-v",
+          `${poolPath}:/usr/local/etc/php-fpm.d/zz-alpha.conf:ro`,
+          image,
+        ],
+        { timeoutMs: 30_000 },
+      );
       assertEquals(started.code, 0, started.stderr);
       container = started.stdout.trim();
       assertEquals(container.length > 0, true);
 
       const socketReady = await waitFor(async () => {
         try {
-          return (await Deno.stat(join(socketDir, "alpha.sock"))).isSocket === true;
+          return (await bunRuntime.stat(join(socketDir, "alpha.sock"))).isSocket === true;
         } catch {
           return false;
         }
@@ -167,23 +170,26 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       assertEquals(socketReady, true, "PHP-FPM app socket was not created");
 
       const secret = "live-integration-secret";
-      const server = await runDocker([
-        "exec",
-        "-d",
-        "-u",
-        "www-data",
-        "-e",
-        "BENTO_APP=alpha",
-        "-e",
-        `BENTO_DEPLOY_SECRET=${secret}`,
-        container,
-        "php",
-        "-d",
-        "variables_order=EGPCS",
-        "-S",
-        "0.0.0.0:8080",
-        "/opt/bento/helpers/bento.php",
-      ], { timeoutMs: 15_000 });
+      const server = await runDocker(
+        [
+          "exec",
+          "-d",
+          "-u",
+          "www-data",
+          "-e",
+          "BENTO_APP=alpha",
+          "-e",
+          `BENTO_DEPLOY_SECRET=${secret}`,
+          container,
+          "php",
+          "-d",
+          "variables_order=EGPCS",
+          "-S",
+          "0.0.0.0:8080",
+          "/opt/bento/helpers/bento.php",
+        ],
+        { timeoutMs: 15_000 },
+      );
       assertEquals(server.code, 0, server.stderr);
 
       const portResult = await runDocker(["port", container, "8080/tcp"], {
@@ -215,53 +221,61 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       });
       const responseText = await response.text();
       assertEquals(response.status, 202, responseText);
-      const accepted = JSON.parse(responseText) as { id: string; status: string };
+      const accepted = JSON.parse(responseText) as {
+        id: string;
+        status: string;
+      };
       assertEquals(accepted.status, "queued");
 
-      let queue = JSON.parse(await Deno.readTextFile(join(bentoDir, "queue.json"))) as {
-        jobs: Array<{ id: string; status: string; exitCode?: number; logName?: string }>;
+      let queue = JSON.parse(await bunRuntime.readTextFile(join(bentoDir, "queue.json"))) as {
+        jobs: Array<{
+          id: string;
+          status: string;
+          exitCode?: number;
+          logName?: string;
+        }>;
       };
       assertEquals(queue.jobs.find((job) => job.id === accepted.id)?.status, "queued");
 
       // Use a separate ephemeral PHP container as the runner. It has no Bento
       // binary and sees the FPM socket directory read-only, matching Compose.
-      const drained = await runDocker([
-        "run",
-        "--rm",
-        "-u",
-        "www-data",
-        "--entrypoint",
-        "sh",
-        "-v",
-        `${join(root, "home")}:/home`,
-        "-v",
-        `${join(Deno.cwd(), "templates", "helpers")}:/opt/bento/helpers:ro`,
-        "-v",
-        `${socketDir}:/run/php-fpm/php85:ro`,
-        image,
-        "/opt/bento/helpers/deploy-drain.sh",
-        "alpha",
-        "/run/php-fpm/php85/alpha.sock",
-      ], { timeoutMs: 30_000 });
+      const drained = await runDocker(
+        [
+          "run",
+          "--rm",
+          "-u",
+          "www-data",
+          "--entrypoint",
+          "sh",
+          "-v",
+          `${join(root, "home")}:/home`,
+          "-v",
+          `${join(bunRuntime.cwd(), "templates", "helpers")}:/opt/bento/helpers:ro`,
+          "-v",
+          `${socketDir}:/run/php-fpm/php85:ro`,
+          image,
+          "/opt/bento/helpers/deploy-drain.sh",
+          "alpha",
+          "/run/php-fpm/php85/alpha.sock",
+        ],
+        { timeoutMs: 30_000 },
+      );
       assertEquals(drained.code, 0, drained.stderr + drained.stdout);
       assertEquals(drained.stdout.includes(`drained ${accepted.id} -> success`), true);
 
-      queue = JSON.parse(await Deno.readTextFile(join(bentoDir, "queue.json")));
+      queue = JSON.parse(await bunRuntime.readTextFile(join(bentoDir, "queue.json")));
       const job = queue.jobs.find((candidate) => candidate.id === accepted.id);
       assertEquals(job?.status, "success");
       assertEquals(job?.exitCode, 0);
-      assertEquals(
-        (await Deno.readTextFile(join(bentoDir, "hook-ran"))).trim(),
-        accepted.id,
-      );
-      const log = await Deno.readTextFile(
+      assertEquals((await bunRuntime.readTextFile(join(bentoDir, "hook-ran"))).trim(), accepted.id);
+      const log = await bunRuntime.readTextFile(
         join(logsDir, job?.logName ?? `deploy-${accepted.id}.log`),
       );
       assertEquals(log.includes("live hook executed"), true);
       assertEquals(log.includes("opcache reset: reset"), true);
       let payloadExists = true;
       try {
-        await Deno.stat(join(bentoDir, `payload-${accepted.id}.json`));
+        await bunRuntime.stat(join(bentoDir, `payload-${accepted.id}.json`));
       } catch {
         payloadExists = false;
       }
@@ -270,7 +284,7 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       if (container !== "") {
         await runDocker(["rm", "-f", container], { timeoutMs: 30_000 });
       }
-      await Deno.remove(root, { recursive: true }).catch(() => {});
+      await bunRuntime.remove(root, { recursive: true }).catch(() => {});
     }
   },
 });

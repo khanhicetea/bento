@@ -1,4 +1,4 @@
-import { join, resolve } from "@std/path";
+import { join, resolve } from "node:path";
 import type { AppDatabaseBinding, DesiredState, SqliteBackupPolicy } from "../domain/state.ts";
 import { databaseBindings } from "../domain/state.ts";
 import { conflictError, notFoundError, serviceError, validationError } from "../domain/errors.ts";
@@ -103,14 +103,7 @@ export async function enableSqliteBackup(
   }
 
   const env = await loadStackEnv(platform);
-  for (
-    const key of [
-      "S3_BUCKET_NAME",
-      "S3_REGION",
-      "S3_ACCESS_KEY_ID",
-      "S3_SECRET_ACCESS_KEY",
-    ]
-  ) {
+  for (const key of ["S3_BUCKET_NAME", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]) {
     if (!env[key]) throw validationError(`${key} is required in the stack .env`);
   }
 
@@ -154,7 +147,9 @@ export async function listSqliteBackups(
   requireSqliteBackupPolicy(state);
   const result = await runSocketCommand(platform, state, ["list", "-json"]);
   try {
-    const parsed = JSON.parse(result.stdout) as { databases?: WatchedSqliteDatabase[] };
+    const parsed = JSON.parse(result.stdout) as {
+      databases?: WatchedSqliteDatabase[];
+    };
     return Array.isArray(parsed.databases) ? parsed.databases : [];
   } catch (cause) {
     throw serviceError(`invalid Litestream database list: ${String(cause)}`);
@@ -173,9 +168,9 @@ export async function getSqliteBackupStatus(
     : { code: 0, stdout: "", stderr: "" };
   const containerRunning = ps.stdout.includes("litestream");
   const watched = containerRunning
-    ? (await listSqliteBackups(platform, state)).find((entry) =>
-      entry.path === sqliteContainerPath(database.file.id, slug)
-    )
+    ? (await listSqliteBackups(platform, state)).find(
+        (entry) => entry.path === sqliteContainerPath(database.file.id, slug),
+      )
     : undefined;
   return {
     app: slug,
@@ -303,7 +298,11 @@ async function runSocketCommand(
   state: DesiredState,
   args: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  let result = { code: 1, stdout: "", stderr: "Litestream control socket not ready" };
+  let result = {
+    code: 1,
+    stdout: "",
+    stderr: "Litestream control socket not ready",
+  };
   const [command, ...commandArgs] = args;
   if (!command) throw new Error("Litestream command is required");
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -323,11 +322,7 @@ async function runSocketCommand(
   throw serviceError(`Litestream command failed: ${result.stderr.trim()}`);
 }
 
-async function sqliteReplicaUrl(
-  platform: Platform,
-  fileId: string,
-  slug: string,
-): Promise<string> {
+async function sqliteReplicaUrl(platform: Platform, fileId: string, slug: string): Promise<string> {
   const env = await loadStackEnv(platform);
   const composeEnvironment = await loadStackComposeEnvironment(platform);
   const params = new URLSearchParams();

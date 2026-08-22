@@ -3,7 +3,7 @@
  * SQL and credentials are streamed over stdin and never placed on host argv.
  */
 
-import { basename, isAbsolute, join, relative, resolve } from "@std/path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { AppState, DesiredState, ManagedPostgresVersion } from "../domain/state.ts";
 import { databaseBindings, postgresImage, postgresServiceName } from "../domain/state.ts";
 import { asDatabaseName, asPostgresVersion } from "../domain/types.ts";
@@ -33,9 +33,7 @@ function postgresDatabase(app: AppState, service?: string) {
 
 /** Stable names derived from Bento's major-only PostgreSQL version format. */
 export function postgresVersionDetails(versionInput: string): ManagedPostgresVersion {
-  const version = asPostgresVersion(
-    unwrap(parsePostgresVersion(versionInput), "postgresVersion"),
-  );
+  const version = asPostgresVersion(unwrap(parsePostgresVersion(versionInput), "postgresVersion"));
   const service = postgresServiceName(version);
   return {
     engine: "postgres",
@@ -46,14 +44,11 @@ export function postgresVersionDetails(versionInput: string): ManagedPostgresVer
   };
 }
 
-export function addPostgresVersion(
-  state: DesiredState,
-  versionInput: string,
-): DesiredState {
+export function addPostgresVersion(state: DesiredState, versionInput: string): DesiredState {
   const managed = postgresVersionDetails(versionInput);
   if (
-    state.databaseServices.some((entry) =>
-      entry.engine === "postgres" && entry.version === managed.version
+    state.databaseServices.some(
+      (entry) => entry.engine === "postgres" && entry.version === managed.version,
     )
   ) {
     throw conflictError(`PostgreSQL version ${managed.version} is already managed`);
@@ -61,15 +56,16 @@ export function addPostgresVersion(
   return {
     ...state,
     databaseServices: [...state.databaseServices, managed].sort((a, b) =>
-      a.service.localeCompare(b.service)
+      a.service.localeCompare(b.service),
     ),
     updatedAt: new Date().toISOString(),
   };
 }
 
 export function listPostgresVersions(state: DesiredState): ManagedPostgresVersion[] {
-  return [...state.databaseServices.filter((entry) => entry.engine === "postgres")]
-    .sort((a, b) => Number(a.version) - Number(b.version));
+  return [...state.databaseServices.filter((entry) => entry.engine === "postgres")].sort(
+    (a, b) => Number(a.version) - Number(b.version),
+  );
 }
 
 export function removePostgresVersion(_state: DesiredState, _version: string): never {
@@ -137,7 +133,10 @@ async function execPostgresSqlAs(
   sql: string,
   password: string,
 ): Promise<RunResult> {
-  for (const [value, kind] of [[user, "user"], [database, "database"]] as const) {
+  for (const [value, kind] of [
+    [user, "user"],
+    [database, "database"],
+  ] as const) {
     if (/\r|\n|\0/.test(value) || value === "") {
       throw validationError(`PostgreSQL ${kind} must not be empty or contain a line break`);
     }
@@ -180,9 +179,9 @@ export function postgresRoleSql(app: AppState): string {
   return [
     `SELECT format('CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', ${role}, ${password})`,
     `WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${role}) \\gexec`,
-    `ALTER ROLE ${
-      postgresIdentifier(postgresDatabase(app).user)
-    } WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;`,
+    `ALTER ROLE ${postgresIdentifier(
+      postgresDatabase(app).user,
+    )} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;`,
   ].join("\n");
 }
 
@@ -227,9 +226,11 @@ export async function applyAppPostgresRole(
   );
   if (result.code !== 0) {
     throw serviceError(
-      `PostgreSQL role setup failed for ${app.slug} on ${postgresDatabase(app).service}: ${
-        (result.stderr || result.stdout || "unknown error").trim()
-      }`,
+      `PostgreSQL role setup failed for ${app.slug} on ${postgresDatabase(app).service}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown error"
+      ).trim()}`,
       "Ensure PostgreSQL is running and POSTGRES_PASSWORD matches the container, then retry app provisioning.",
     );
   }
@@ -250,9 +251,11 @@ export async function applyAppPostgresDatabase(
   );
   if (create.code !== 0) {
     throw serviceError(
-      `PostgreSQL database setup failed for ${database} on ${postgresDatabase(app).service}: ${
-        (create.stderr || create.stdout || "unknown error").trim()
-      }`,
+      `PostgreSQL database setup failed for ${database} on ${postgresDatabase(app).service}: ${(
+        create.stderr ||
+        create.stdout ||
+        "unknown error"
+      ).trim()}`,
       "The database was not recorded; correct PostgreSQL availability/credentials and retry.",
     );
   }
@@ -266,9 +269,11 @@ export async function applyAppPostgresDatabase(
   );
   if (schema.code !== 0) {
     throw serviceError(
-      `PostgreSQL schema isolation failed for ${database} on ${postgresDatabase(app).service}: ${
-        (schema.stderr || schema.stdout || "unknown error").trim()
-      }`,
+      `PostgreSQL schema isolation failed for ${database} on ${postgresDatabase(app).service}: ${(
+        schema.stderr ||
+        schema.stdout ||
+        "unknown error"
+      ).trim()}`,
       "The database was not recorded; correct PostgreSQL permissions and retry.",
     );
   }
@@ -291,10 +296,7 @@ export async function tryBestEffortPostgresRole(
 }
 
 /** True when the PostgreSQL server in the managed container accepts connections. */
-export async function isPostgresReachable(
-  platform: Platform,
-  service: string,
-): Promise<boolean> {
+export async function isPostgresReachable(platform: Platform, service: string): Promise<boolean> {
   try {
     const result = await platform.process.run(
       [
@@ -325,9 +327,11 @@ export async function verifyPostgresSql(
   const result = await execPostgresSql(platform, service, "SELECT 1;", password);
   if (result.code !== 0) {
     throw serviceError(
-      `PostgreSQL authentication failed on ${service}: ${
-        (result.stderr || result.stdout || "unknown error").trim()
-      }`,
+      `PostgreSQL authentication failed on ${service}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown error"
+      ).trim()}`,
       "Ensure the PostgreSQL service is running and POSTGRES_PASSWORD matches the container.",
     );
   }
@@ -351,9 +355,7 @@ export function createPostgresAppDatabase(
     throw validationError(`invalid database name ${database}`);
   }
   if (database !== slug && !database.startsWith(`${slug}_`)) {
-    throw validationError(
-      `database ${database} outside app namespace; use ${slug} or ${slug}_*`,
-    );
+    throw validationError(`database ${database} outside app namespace; use ${slug} or ${slug}_*`);
   }
   const current = postgresDatabase(app, service);
   if (current.databases.some((entry) => entry.name === database)) {
@@ -361,12 +363,9 @@ export function createPostgresAppDatabase(
   }
   const binding = {
     ...current,
-    databases: [
-      ...current.databases,
-      { name: asDatabaseName(database), createdAt: now },
-    ],
+    databases: [...current.databases, { name: asDatabaseName(database), createdAt: now }],
   };
-  const databases = app.databases.map((entry) => entry === current ? binding : entry);
+  const databases = app.databases.map((entry) => (entry === current ? binding : entry));
   const nextApp: AppState = {
     ...app,
     databases,
@@ -467,9 +466,9 @@ export function buildPostgresShellPlan(
     throw validationError(`database ${opts.database} is not recorded for app ${identity.app.slug}`);
   }
   const credentialPath = `/tmp/bento-postgres-${platform.random.hex(8)}.pgpass`;
-  const pgpass = `*:*:*:${user.replaceAll("\\", "\\\\").replaceAll(":", "\\:")}:${
-    pgpassPassword(password)
-  }\n`;
+  const pgpass = `*:*:*:${user.replaceAll("\\", "\\\\").replaceAll(":", "\\:")}:${pgpassPassword(
+    password,
+  )}\n`;
   const stageScript = [
     "set -eu",
     "umask 077",
@@ -551,9 +550,11 @@ export async function executePostgresShell(
     });
     if (result.code !== 0) {
       throw serviceError(
-        `failed to stage PostgreSQL credentials: ${
-          (result.stderr || result.stdout || "unknown error").trim()
-        }`,
+        `failed to stage PostgreSQL credentials: ${(
+          result.stderr ||
+          result.stdout ||
+          "unknown error"
+        ).trim()}`,
       );
     }
   }
@@ -561,10 +562,12 @@ export async function executePostgresShell(
     return await open(plan.open.command);
   } finally {
     if (plan.cleanup) {
-      await platform.process.run(plan.cleanup.command, {
-        cwd: platform.paths.paths.root,
-        timeoutMs: 10_000,
-      }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+      await platform.process
+        .run(plan.cleanup.command, {
+          cwd: platform.paths.paths.root,
+          timeoutMs: 10_000,
+        })
+        .catch(() => ({ code: 1, stdout: "", stderr: "" }));
     }
   }
 }
@@ -625,9 +628,11 @@ async function queryPostgresRows(
   const result = await execPostgresSql(platform, service, copySql, password);
   if (result.code !== 0) {
     throw serviceError(
-      `PostgreSQL ${label} query failed on ${service}: ${
-        (result.stderr || result.stdout || "unknown error").trim()
-      }`,
+      `PostgreSQL ${label} query failed on ${service}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown error"
+      ).trim()}`,
       "Ensure PostgreSQL is running and POSTGRES_PASSWORD matches the container.",
     );
   }
@@ -640,13 +645,19 @@ export async function queryPostgresDatabaseSizes(
   rootPassword: string,
   databases: string[] = [],
 ): Promise<PostgresSizeRow[]> {
-  return (await queryPostgresRows(
-    platform,
-    service,
-    rootPassword,
-    postgresDatabaseSizeSql(databases),
-    "size",
-  )).map(([database, bytes, size]) => ({ database: database!, bytes: bytes!, size: size! }));
+  return (
+    await queryPostgresRows(
+      platform,
+      service,
+      rootPassword,
+      postgresDatabaseSizeSql(databases),
+      "size",
+    )
+  ).map(([database, bytes, size]) => ({
+    database: database!,
+    bytes: bytes!,
+    size: size!,
+  }));
 }
 
 export async function queryPostgresActivity(
@@ -654,13 +665,9 @@ export async function queryPostgresActivity(
   service: string,
   rootPassword: string,
 ): Promise<PostgresActivityRow[]> {
-  return (await queryPostgresRows(
-    platform,
-    service,
-    rootPassword,
-    postgresActivitySql(),
-    "activity",
-  )).map(([pid, user, database, state, client, backendStart, queryStart]) => ({
+  return (
+    await queryPostgresRows(platform, service, rootPassword, postgresActivitySql(), "activity")
+  ).map(([pid, user, database, state, client, backendStart, queryStart]) => ({
     pid: pid!,
     user: user!,
     database: database!,
@@ -695,22 +702,23 @@ export async function runPostgresBackup(
   const partialPath = `${finalPath}.partial`;
   const containerFinal = `/var/backups/bento/${target.database}/${finalName}`;
   const containerPartial = `${containerFinal}.partial`;
-  const dump = `PGPASSFILE=/etc/bento/postgres/root.pgpass pg_dump --username=postgres --dbname=${
-    pgShellQuote(target.database)
-  } --no-owner --no-acl`;
-  const pipeline = compress === "gzip"
-    ? `${dump} | gzip -c`
-    : compress === "zstd"
-    ? `${dump} | zstd -3 -q -c`
-    : dump;
+  const dump = `PGPASSFILE=/etc/bento/postgres/root.pgpass pg_dump --username=postgres --dbname=${pgShellQuote(
+    target.database,
+  )} --no-owner --no-acl`;
+  const pipeline =
+    compress === "gzip"
+      ? `${dump} | gzip -c`
+      : compress === "zstd"
+        ? `${dump} | zstd -3 -q -c`
+        : dump;
   const script = [
     "set -e",
     "set -o pipefail",
     "umask 077",
     "test -r /etc/bento/postgres/root.pgpass || { echo 'missing generated PostgreSQL root credential file; run bento render' >&2; exit 1; }",
-    `test -d ${
-      pgShellQuote(`/var/backups/bento/${target.database}`)
-    } || { echo 'PostgreSQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
+    `test -d ${pgShellQuote(
+      `/var/backups/bento/${target.database}`,
+    )} || { echo 'PostgreSQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
     `PARTIAL=${pgShellQuote(containerPartial)}`,
     `FINAL=${pgShellQuote(containerFinal)}`,
     "trap 'rm -f \"$PARTIAL\"' EXIT",
@@ -767,10 +775,7 @@ export async function runPostgresRestore(
   if (!/^[a-zA-Z0-9_]+$/.test(req.targetDatabase)) {
     throw validationError(`invalid target database ${req.targetDatabase}`);
   }
-  if (
-    req.targetDatabase !== app.slug &&
-    !req.targetDatabase.startsWith(`${app.slug}_`)
-  ) {
+  if (req.targetDatabase !== app.slug && !req.targetDatabase.startsWith(`${app.slug}_`)) {
     throw validationError("target database outside app namespace");
   }
   if (!(await platform.fs.exists(req.file))) {
@@ -796,9 +801,9 @@ export async function runPostgresRestore(
 
   const db = postgresIdentifier(req.targetDatabase);
   const role = postgresIdentifier(postgresDatabase(app).user);
-  const terminate = `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${
-    postgresLiteral(req.targetDatabase)
-  } AND pid <> pg_backend_pid();`;
+  const terminate = `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${postgresLiteral(
+    req.targetDatabase,
+  )} AND pid <> pg_backend_pid();`;
   const createCommands = [
     ...(req.replaceOriginal ? [terminate, `DROP DATABASE IF EXISTS ${db};`] : []),
     `CREATE DATABASE ${db} OWNER ${role};`,
@@ -808,8 +813,8 @@ export async function runPostgresRestore(
   const decompress = req.file.endsWith(".gz")
     ? `gzip -dc -- ${pgShellQuote(containerFile)}`
     : req.file.endsWith(".zst") || req.file.endsWith(".zstd")
-    ? `zstd -dc -- ${pgShellQuote(containerFile)}`
-    : `cat -- ${pgShellQuote(containerFile)}`;
+      ? `zstd -dc -- ${pgShellQuote(containerFile)}`
+      : `cat -- ${pgShellQuote(containerFile)}`;
   const script = [
     "set -e",
     "set -o pipefail",
@@ -820,24 +825,25 @@ export async function runPostgresRestore(
     'printf \'%s\\n\' "$passline" > "$PASS"',
     'chmod 600 "$PASS"',
     "test -r /etc/bento/postgres/root.pgpass || { echo 'missing generated PostgreSQL root credential file; run bento render' >&2; exit 1; }",
-    `test -r ${
-      pgShellQuote(containerFile)
-    } || { echo 'PostgreSQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
-    ...createCommands.map((sql) =>
-      `PGPASSFILE=/etc/bento/postgres/root.pgpass psql --username=postgres --dbname=postgres --no-psqlrc --set=ON_ERROR_STOP=1 --command=${
-        pgShellQuote(sql)
-      }`
+    `test -r ${pgShellQuote(
+      containerFile,
+    )} || { echo 'PostgreSQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
+    ...createCommands.map(
+      (sql) =>
+        `PGPASSFILE=/etc/bento/postgres/root.pgpass psql --username=postgres --dbname=postgres --no-psqlrc --set=ON_ERROR_STOP=1 --command=${pgShellQuote(
+          sql,
+        )}`,
     ),
-    `${decompress} | PGPASSFILE="$PASS" psql --username=${
-      pgShellQuote(postgresDatabase(app).user)
-    } --dbname=${pgShellQuote(req.targetDatabase)} --no-psqlrc --set=ON_ERROR_STOP=1`,
-    `PGPASSFILE=/etc/bento/postgres/root.pgpass psql --username=postgres --dbname=${
-      pgShellQuote(req.targetDatabase)
-    } --no-psqlrc --set=ON_ERROR_STOP=1 --command=${pgShellQuote(postgresSchemaSql(app))}`,
+    `${decompress} | PGPASSFILE="$PASS" psql --username=${pgShellQuote(
+      postgresDatabase(app).user,
+    )} --dbname=${pgShellQuote(req.targetDatabase)} --no-psqlrc --set=ON_ERROR_STOP=1`,
+    `PGPASSFILE=/etc/bento/postgres/root.pgpass psql --username=postgres --dbname=${pgShellQuote(
+      req.targetDatabase,
+    )} --no-psqlrc --set=ON_ERROR_STOP=1 --command=${pgShellQuote(postgresSchemaSql(app))}`,
   ].join("\n");
-  const stdin = `*:*:*:${
-    postgresDatabase(app).user.replaceAll("\\", "\\\\").replaceAll(":", "\\:")
-  }:${pgpassPassword(postgresDatabase(app).password)}\n`;
+  const stdin = `*:*:*:${postgresDatabase(app)
+    .user.replaceAll("\\", "\\\\")
+    .replaceAll(":", "\\:")}:${pgpassPassword(postgresDatabase(app).password)}\n`;
   try {
     const result = await platform.process.run(
       ["docker", "compose", "exec", "-T", postgresDatabase(app).service, "sh", "-c", script],
@@ -877,9 +883,10 @@ export function resolvePostgresServices(
     throw validationError(`app ${opts!.app} is not PostgreSQL-backed`);
   }
   if (opts?.service) {
-    const found = state.databaseServices.find((entry) =>
-      entry.engine === "postgres" &&
-      (entry.service === opts.service || entry.version === opts.service)
+    const found = state.databaseServices.find(
+      (entry) =>
+        entry.engine === "postgres" &&
+        (entry.service === opts.service || entry.version === opts.service),
     );
     if (!found) throw notFoundError(`PostgreSQL service not found: ${opts.service}`);
     if (selectedApp && selectedApp.database.service !== found.service) {

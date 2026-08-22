@@ -1,5 +1,10 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { join } from "@std/path";
+import {
+  runtime as bunRuntime,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "../runtime.ts";
+import { join } from "node:path";
 import { isBentoError } from "../../src/domain/errors.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
@@ -42,92 +47,106 @@ function testPlatform(
   };
 }
 
-Deno.test("backup schedule helpers quote commands and preserve unrelated crontab bytes", () => {
-  assertEquals(shellSingleQuote("/opt/Bento's bin"), "'/opt/Bento'\\''s bin'");
-  const root = "/srv/bento stack";
-  const fragment = backupScheduleCronFragment({
-    schedule: "  15   3 * * *  ",
-    bentoBin: "/opt/Bento's bin",
-    stackRoot: root,
-  });
-  assertStringIncludes(fragment, "15 3 * * * '/opt/Bento'\\''s bin' --stack '/srv/bento stack'");
-  assertStringIncludes(fragment, "backup schedule run >/dev/null 2>&1");
-
-  const other = backupScheduleCronFragment({
-    schedule: "0 4 * * *",
-    bentoBin: "/usr/local/bin/bento",
-    stackRoot: "/srv/other",
-  });
-  const existing = `MAILTO=ops@example.test\n${other}5 5 * * * echo keep`;
-  const installed = mergeBackupScheduleCrontab(existing, {
-    action: "install",
-    stackRoot: root,
-    fragment,
-  });
-  assertEquals(installed.changed, true);
-  assertEquals(installed.crontab.startsWith(existing + "\n"), true);
-  assertStringIncludes(installed.crontab, other);
-
-  const idempotent = mergeBackupScheduleCrontab(installed.crontab, {
-    action: "install",
-    stackRoot: root,
-    fragment,
-  });
-  assertEquals(idempotent.changed, false);
-  const removed = mergeBackupScheduleCrontab(installed.crontab, {
-    action: "remove",
-    stackRoot: root,
-  });
-  assertEquals(removed.crontab, existing + "\n");
-  assertEquals(removed.crontab.includes("/srv/other"), true);
-});
-
-Deno.test("backup schedule service registers, reports, and unregisters through injected crontab", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-backup-schedule-service-" });
-  try {
-    let crontab = "MAILTO=ops@example.test\n";
-    const platform = testPlatform(root, (command, options) => {
-      assertEquals(command[0], "crontab");
-      if (command[1] === "-l") return { code: 0, stdout: crontab, stderr: "" };
-      assertEquals(command, ["crontab", "-"]);
-      crontab = String(options?.stdin ?? "");
-      return { code: 0, stdout: "", stderr: "" };
+bunRuntime.test(
+  "backup schedule helpers quote commands and preserve unrelated crontab bytes",
+  () => {
+    assertEquals(shellSingleQuote("/opt/Bento's bin"), "'/opt/Bento'\\''s bin'");
+    const root = "/srv/bento stack";
+    const fragment = backupScheduleCronFragment({
+      schedule: "  15   3 * * *  ",
+      bentoBin: "/opt/Bento's bin",
+      stackRoot: root,
     });
-    const bin = join(root, "bento executable");
-    await platform.fs.writeText(bin, "#!/bin/sh\n", 0o700);
+    assertStringIncludes(fragment, "15 3 * * * '/opt/Bento'\\''s bin' --stack '/srv/bento stack'");
+    assertStringIncludes(fragment, "backup schedule run >/dev/null 2>&1");
 
-    const installed = await registerBackupSchedule(platform, {
-      schedule: "15 3 * * *",
-      bentoBin: bin,
+    const other = backupScheduleCronFragment({
+      schedule: "0 4 * * *",
+      bentoBin: "/usr/local/bin/bento",
+      stackRoot: "/srv/other",
+    });
+    const existing = `MAILTO=ops@example.test\n${other}5 5 * * * echo keep`;
+    const installed = mergeBackupScheduleCrontab(existing, {
+      action: "install",
+      stackRoot: root,
+      fragment,
     });
     assertEquals(installed.changed, true);
-    assertEquals(
-      (await registerBackupSchedule(platform, {
+    assertEquals(installed.crontab.startsWith(existing + "\n"), true);
+    assertStringIncludes(installed.crontab, other);
+
+    const idempotent = mergeBackupScheduleCrontab(installed.crontab, {
+      action: "install",
+      stackRoot: root,
+      fragment,
+    });
+    assertEquals(idempotent.changed, false);
+    const removed = mergeBackupScheduleCrontab(installed.crontab, {
+      action: "remove",
+      stackRoot: root,
+    });
+    assertEquals(removed.crontab, existing + "\n");
+    assertEquals(removed.crontab.includes("/srv/other"), true);
+  },
+);
+
+bunRuntime.test(
+  "backup schedule service registers, reports, and unregisters through injected crontab",
+  async () => {
+    const root = await bunRuntime.makeTempDir({
+      prefix: "bento-backup-schedule-service-",
+    });
+    try {
+      let crontab = "MAILTO=ops@example.test\n";
+      const platform = testPlatform(root, (command, options) => {
+        assertEquals(command[0], "crontab");
+        if (command[1] === "-l") return { code: 0, stdout: crontab, stderr: "" };
+        assertEquals(command, ["crontab", "-"]);
+        crontab = String(options?.stdin ?? "");
+        return { code: 0, stdout: "", stderr: "" };
+      });
+      const bin = join(root, "bento executable");
+      await platform.fs.writeText(bin, "#!/bin/sh\n", 0o700);
+
+      const installed = await registerBackupSchedule(platform, {
         schedule: "15 3 * * *",
         bentoBin: bin,
-      })).changed,
-      false,
-    );
-    const status = await getBackupScheduleStatus(platform);
-    assertEquals(status.installed, true);
-    assertEquals(status.schedule, "15 3 * * *");
-    assertEquals(status.lastRun, null);
+      });
+      assertEquals(installed.changed, true);
+      assertEquals(
+        (
+          await registerBackupSchedule(platform, {
+            schedule: "15 3 * * *",
+            bentoBin: bin,
+          })
+        ).changed,
+        false,
+      );
+      const status = await getBackupScheduleStatus(platform);
+      assertEquals(status.installed, true);
+      assertEquals(status.schedule, "15 3 * * *");
+      assertEquals(status.lastRun, null);
 
-    assertEquals((await unregisterBackupSchedule(platform)).changed, true);
-    assertEquals(crontab, "MAILTO=ops@example.test\n");
-    assertEquals((await unregisterBackupSchedule(platform)).changed, false);
-    assertEquals(
-      platform.process.calls.every((call) => call.command[0] === "crontab"),
-      true,
-    );
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      assertEquals((await unregisterBackupSchedule(platform)).changed, true);
+      assertEquals(crontab, "MAILTO=ops@example.test\n");
+      assertEquals((await unregisterBackupSchedule(platform)).changed, false);
+      assertEquals(
+        platform.process.calls.every((call) => call.command[0] === "crontab"),
+        true,
+      );
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("backup schedule serializes crontab updates across stack roots", async () => {
-  const rootA = await Deno.makeTempDir({ prefix: "bento-backup-stack-a-" });
-  const rootB = await Deno.makeTempDir({ prefix: "bento-backup-stack-b-" });
+bunRuntime.test("backup schedule serializes crontab updates across stack roots", async () => {
+  const rootA = await bunRuntime.makeTempDir({
+    prefix: "bento-backup-stack-a-",
+  });
+  const rootB = await bunRuntime.makeTempDir({
+    prefix: "bento-backup-stack-b-",
+  });
   try {
     let crontab = "";
     const runner = createRecordingProcessRunner((command, options) => {
@@ -148,19 +167,25 @@ Deno.test("backup schedule serializes crontab updates across stack roots", async
     await platformB.fs.writeText(binB, "#!/bin/sh\n", 0o700);
 
     await Promise.all([
-      registerBackupSchedule(platformA, { schedule: "1 1 * * *", bentoBin: binA }),
-      registerBackupSchedule(platformB, { schedule: "2 2 * * *", bentoBin: binB }),
+      registerBackupSchedule(platformA, {
+        schedule: "1 1 * * *",
+        bentoBin: binA,
+      }),
+      registerBackupSchedule(platformB, {
+        schedule: "2 2 * * *",
+        bentoBin: binB,
+      }),
     ]);
 
     assertStringIncludes(crontab, rootA);
     assertStringIncludes(crontab, rootB);
   } finally {
-    await Deno.remove(rootA, { recursive: true });
-    await Deno.remove(rootB, { recursive: true });
+    await bunRuntime.remove(rootA, { recursive: true });
+    await bunRuntime.remove(rootB, { recursive: true });
   }
 });
 
-Deno.test("memory and file tryExclusive locks reject immediately while held", async () => {
+bunRuntime.test("memory and file tryExclusive locks reject immediately while held", async () => {
   const memory = createMemoryLock();
   const releaseMemory = await memory.tryExclusive("backup");
   assertEquals(typeof releaseMemory, "function");
@@ -170,7 +195,7 @@ Deno.test("memory and file tryExclusive locks reject immediately while held", as
   assertEquals(typeof reacquiredMemory, "function");
   await reacquiredMemory!();
 
-  const root = await Deno.makeTempDir({ prefix: "bento-backup-lock-" });
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-backup-lock-" });
   try {
     const lock = createFileLock();
     const path = join(root, "backup.lock");
@@ -182,17 +207,21 @@ Deno.test("memory and file tryExclusive locks reject immediately while held", as
     assertEquals(typeof reacquired, "function");
     await reacquired!();
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("database backup rejects overlapping batches without waiting", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-backup-overlap-" });
+bunRuntime.test("database backup rejects overlapping batches without waiting", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-backup-overlap-",
+  });
   try {
     const platform = testPlatform(root);
     const lockPath = join(platform.paths.paths.lockDir, "database-backup.lock");
     const release = await platform.lock.tryExclusive(lockPath);
-    const conflict = await runDatabaseBackup(platform, createEmptyState(), { scope: "all" })
+    const conflict = await runDatabaseBackup(platform, createEmptyState(), {
+      scope: "all",
+    })
       .then(() => null)
       .catch((error: unknown) => error);
     assertEquals(isBentoError(conflict), true);
@@ -202,56 +231,60 @@ Deno.test("database backup rejects overlapping batches without waiting", async (
       assertStringIncludes(conflict.message, "another logical backup batch is already running");
     }
     await release!();
-    assertEquals(
-      await runDatabaseBackup(platform, createEmptyState(), { scope: "all" }),
-      [],
-    );
+    assertEquals(await runDatabaseBackup(platform, createEmptyState(), { scope: "all" }), []);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("scheduled backup persists bounded redacted last-run records with private modes", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-backup-last-run-" });
-  try {
-    const secret = "schedule-super-secret";
-    const platform = testPlatform(root, () => ({
-      code: 1,
-      stdout: "",
-      stderr: `password=${secret}`,
-    }));
-    let state = addPostgresVersion(createEmptyState(), "17");
-    state = provisionApp(platform, state, {
-      slug: "reports",
-      domain: "reports.test",
-      databaseEngine: "postgres",
-      postgresVersion: "17",
-      createDatabase: true,
-    }).state;
+bunRuntime.test(
+  "scheduled backup persists bounded redacted last-run records with private modes",
+  async () => {
+    const root = await bunRuntime.makeTempDir({
+      prefix: "bento-backup-last-run-",
+    });
+    try {
+      const secret = "schedule-super-secret";
+      const platform = testPlatform(root, () => ({
+        code: 1,
+        stdout: "",
+        stderr: `password=${secret}`,
+      }));
+      let state = addPostgresVersion(createEmptyState(), "17");
+      state = provisionApp(platform, state, {
+        slug: "reports",
+        domain: "reports.test",
+        databaseEngine: "postgres",
+        postgresVersion: "17",
+        createDatabase: true,
+      }).state;
 
-    await assertRejects(() => runScheduledBackup(platform, state), Error, "dump failed");
-    const failed = await readBackupScheduleLastRun(platform);
-    assertEquals(failed?.status, "failed");
-    assertEquals(failed?.exitCode, 1);
-    assertEquals(failed?.error?.includes(secret), false);
-    assertStringIncludes(failed?.error ?? "", "password=***");
+      await assertRejects(() => runScheduledBackup(platform, state), Error, "dump failed");
+      const failed = await readBackupScheduleLastRun(platform);
+      assertEquals(failed?.status, "failed");
+      assertEquals(failed?.exitCode, 1);
+      assertEquals(failed?.error?.includes(secret), false);
+      assertStringIncludes(failed?.error ?? "", "password=***");
 
-    const recordPath = backupScheduleLastRunPath(platform);
-    assertEquals((await platform.fs.stat(recordPath)).mode & 0o777, 0o600);
-    assertEquals((await platform.fs.stat(join(recordPath, ".."))).mode & 0o777, 0o700);
+      const recordPath = backupScheduleLastRunPath(platform);
+      assertEquals((await platform.fs.stat(recordPath)).mode & 0o777, 0o600);
+      assertEquals((await platform.fs.stat(join(recordPath, ".."))).mode & 0o777, 0o700);
 
-    assertEquals(await runScheduledBackup(platform, createEmptyState()), []);
-    const succeeded = await readBackupScheduleLastRun(platform);
-    assertEquals(succeeded?.status, "succeeded");
-    assertEquals(succeeded?.exitCode, 0);
-    assertEquals(succeeded?.artifactCount, 0);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      assertEquals(await runScheduledBackup(platform, createEmptyState()), []);
+      const succeeded = await readBackupScheduleLastRun(platform);
+      assertEquals(succeeded?.status, "succeeded");
+      assertEquals(succeeded?.exitCode, 0);
+      assertEquals(succeeded?.artifactCount, 0);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("backup retention removes only allowlisted regular dump files", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-backup-retention-" });
+bunRuntime.test("backup retention removes only allowlisted regular dump files", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-backup-retention-",
+  });
   try {
     const platform = testPlatform(root);
     const dir = join(platform.paths.paths.backupsDir, "postgres17", "reports");
@@ -276,32 +309,26 @@ Deno.test("backup retention removes only allowlisted regular dump files", async 
     await platform.fs.writeText(join(dir, "notes.txt"), "keep\n");
     await platform.fs.writeText(join(dir, `${generated[11]}.partial`), "keep\n");
     await platform.fs.mkdirp(join(dir, "directory.sql"));
-    await Deno.symlink(join(dir, generated[11]!), join(dir, "symlink.sql"));
+    await bunRuntime.symlink(join(dir, generated[11]!), join(dir, "symlink.sql"));
 
-    await applyBackupRetention(
-      platform,
-      [{ service: "postgres17", database: "reports" }],
-      10,
-    );
+    await applyBackupRetention(platform, [{ service: "postgres17", database: "reports" }], 10);
 
     assertEquals(await platform.fs.exists(join(dir, generated[0]!)), false);
     assertEquals(await platform.fs.exists(join(dir, generated[1]!)), false);
-    for (
-      const name of [
-        generated[2]!,
-        generated[11]!,
-        "aaa-manual.sql",
-        "postgres17_reports_2026-08-01T03-15-00-000Z.sql.zstd",
-        "postgres17_reports_2026-99-99T99-99-99-999Z.sql.gz",
-        "notes.txt",
-        `${generated[11]}.partial`,
-        "directory.sql",
-        "symlink.sql",
-      ]
-    ) {
+    for (const name of [
+      generated[2]!,
+      generated[11]!,
+      "aaa-manual.sql",
+      "postgres17_reports_2026-08-01T03-15-00-000Z.sql.zstd",
+      "postgres17_reports_2026-99-99T99-99-99-999Z.sql.gz",
+      "notes.txt",
+      `${generated[11]}.partial`,
+      "directory.sql",
+      "symlink.sql",
+    ]) {
       assertEquals(await platform.fs.exists(join(dir, name)), true, name);
     }
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

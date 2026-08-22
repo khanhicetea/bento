@@ -3,7 +3,7 @@
  * Enable/disable is nginx-only (no PHP/runner reload). Rotation uses reopen, not config reload.
  */
 
-import { basename, dirname, isAbsolute, join, resolve } from "@std/path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
 import { notFoundError, serviceError, validationError } from "../domain/errors.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
@@ -82,16 +82,7 @@ export function buildAccessLogRotatePlan(
     logPath,
     rotatedPath,
     hostRename: { from: logPath, to: rotatedPath },
-    reopenCommand: [
-      "docker",
-      "compose",
-      "exec",
-      "-T",
-      "nginx",
-      "nginx",
-      "-s",
-      "reopen",
-    ],
+    reopenCommand: ["docker", "compose", "exec", "-T", "nginx", "nginx", "-s", "reopen"],
   };
 }
 
@@ -212,10 +203,9 @@ export async function generateAccessReport(
   const plan = buildGoAccessReportPlan(platform, slug, opts);
 
   if (!(await platform.fs.exists(plan.logPath))) {
-    throw validationError(
-      `access log not found for ${slug}: ${plan.logPath}`,
-      { recovery: "Enable logging and generate traffic, or pass an existing log path." },
-    );
+    throw validationError(`access log not found for ${slug}: ${plan.logPath}`, {
+      recovery: "Enable logging and generate traffic, or pass an existing log path.",
+    });
   }
 
   if (!plan.attach) await platform.fs.mkdirp(dirname(plan.reportPath), 0o755);
@@ -234,7 +224,12 @@ export async function generateAccessReport(
       "Ensure Docker can pull allinurl/goaccess and the access log is readable.",
     );
   }
-  return { ...plan, code: result.code, stdout: result.stdout, stderr: result.stderr };
+  return {
+    ...plan,
+    code: result.code,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 
 /** True when a reload plan is nginx-only (no PHP/runner). */

@@ -75,8 +75,12 @@ export function reloadPlanForFullApply(
 }
 
 export function reloadPlanIsEmpty(plan: ReloadPlan): boolean {
-  return !plan.nginx && plan.phpFpm.size === 0 && plan.phpRunner.size === 0 &&
-    (plan.cronSchedulers?.size ?? 0) === 0;
+  return (
+    !plan.nginx &&
+    plan.phpFpm.size === 0 &&
+    plan.phpRunner.size === 0 &&
+    (plan.cronSchedulers?.size ?? 0) === 0
+  );
 }
 
 export function describeReloadPlan(plan: ReloadPlan): string[] {

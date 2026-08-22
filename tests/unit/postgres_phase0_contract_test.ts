@@ -1,14 +1,14 @@
 /** PostgreSQL Phase 0 — documentation and acceptance contract only. */
 
-import { assertEquals, assertMatch } from "@std/assert";
+import { runtime as bunRuntime, assertMatch } from "../runtime.ts";
 
 const root = new URL("../../", import.meta.url);
 
 async function read(relativePath: string): Promise<string> {
-  return await Deno.readTextFile(new URL(relativePath, root));
+  return await bunRuntime.readTextFile(new URL(relativePath, root));
 }
 
-Deno.test("PostgreSQL contract covers multi-binding scope and non-goals", async () => {
+bunRuntime.test("PostgreSQL contract covers multi-binding scope and non-goals", async () => {
   const [product, architecture, contract, readme] = await Promise.all([
     read("specs/01-product-spec.md"),
     read("specs/02-system-architecture.md"),
@@ -16,24 +16,27 @@ Deno.test("PostgreSQL contract covers multi-binding scope and non-goals", async 
     read("README.md"),
   ]);
 
-  assertMatch(product, /multiple relational engines\/services/);
-  assertMatch(product, /MySQL 8\.4 remains the default/);
-  assertMatch(product, /does not automatically migrate application data/);
+  assertMatch(product, /MySQL on one managed versioned service/);
+  assertMatch(product, /PostgreSQL on one managed major-version service/);
+  assertMatch(product, /does not convert or move data between engines\/services/);
   assertMatch(
     product,
-    /Automated MySQL and PostgreSQL service\/version removal is intentionally unsupported/,
+    /Managed relational service removal and automatic volume deletion MUST be blocked/,
   );
-  assertMatch(product, /official major tags such as `17`/);
+  assertMatch(product, /Adding a binding MUST preserve existing bindings and data/);
 
+  assertMatch(architecture, /databaseServices\[\]\s+MySQL \| PostgreSQL/);
+  assertMatch(architecture, /databases\[\]\s+MySQL \| PostgreSQL \| SQLite \| Litestream/);
+  assertMatch(architecture, /PostgreSQL uses unprivileged app roles/);
   assertMatch(
     architecture,
-    /discriminated bindings keyed by `engine: "mysql" \| "postgres" \| "sqlite" \| "litestream"`/,
+    /refuses destructive Compose volume flags and relational service removal/,
   );
-  assertMatch(architecture, /PostgreSQL backup runs matching-major `pg_dump`/);
-  assertMatch(architecture, /PostgreSQL administrator credentials/);
-  assertMatch(architecture, /Automated MySQL\/PostgreSQL service or volume removal is blocked/);
 
-  assertMatch(contract, /Phase 0 locks this contract only/);
+  assertMatch(
+    contract,
+    /Persist `databases\[\]`; add independent MySQL\/PostgreSQL\/SQLite\/Litestream bindings/,
+  );
   assertMatch(readme, /PostgreSQL is a first-class database kind alongside MySQL/);
   assertMatch(
     readme,
@@ -41,26 +44,13 @@ Deno.test("PostgreSQL contract covers multi-binding scope and non-goals", async 
   );
 });
 
-Deno.test("PostgreSQL acceptance matrix assigns exactly PG-01 through PG-18", async () => {
-  const plan = await read("specs/pg-database.md");
-  const gateSection = plan.split("## 10. Final acceptance gates")[1]?.split(
-    "## 11. Known risks",
-  )[0];
-  if (gateSection === undefined) {
-    throw new Error("PostgreSQL final acceptance section is missing");
-  }
-
-  const gateIds = [...gateSection.matchAll(/^\d+\. \[[ x]\] \*\*(PG-\d{2})\*\*/gm)].map((match) =>
-    match[1]
-  );
-  const expected = Array.from(
-    { length: 18 },
-    (_, index) => `PG-${String(index + 1).padStart(2, "0")}`,
-  );
-  assertEquals(gateIds, expected);
-
-  for (const id of expected) {
-    assertMatch(gateSection, new RegExp(`\\| ${id.replace("-", "\\-")} \\|`));
-  }
-  assertMatch(plan, /image `postgres:17`, and volume `postgres17-data`/);
+bunRuntime.test("PostgreSQL acceptance requirements remain in the current contracts", async () => {
+  const [product, contract] = await Promise.all([
+    read("specs/01-product-spec.md"),
+    read("specs/03-reimplementation-contract.md"),
+  ]);
+  assertMatch(product, /PostgreSQL app roles MUST remain unprivileged/);
+  assertMatch(product, /Logical backup MUST support one database, one app, or all apps/);
+  assertMatch(contract, /MySQL\/PostgreSQL\/Redis and SQLite\/Litestream policy behavior/);
+  assertMatch(contract, /MySQL and PostgreSQL connectivity\/isolation\/backup\/restore/);
 });

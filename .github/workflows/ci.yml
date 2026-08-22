@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  DENO_VERSION: "2.9.3"
+  BUN_VERSION: "1.4.0"
 
 jobs:
   build:
@@ -22,14 +22,25 @@ jobs:
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: ${{ env.DENO_VERSION }}
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run quality and test gates
+        run: |
+          bun run fmt:check
+          bun run lint
+          bun run check
+          bun run test
+          bun run test:integration
 
       - name: Compile amd64 and arm64 binaries
         run: |
-          deno task compile:amd64
-          deno task compile:arm64
+          bun run compile:amd64
+          bun run compile:arm64
 
       - name: Upload release binaries
         uses: softprops/action-gh-release@v2

@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import {
   getBackupScheduleStatus,
   registerBackupSchedule,
@@ -24,62 +24,53 @@ export function registerBackupCommands(parser: YargsBuilder, state: RunState): Y
       "Logical database backup",
       (y: YargsBuilder) =>
         y
-          .command(
-            "$0",
-            "Back up managed databases",
-            backupOptions,
-            bind(state, cmdBackup),
-          )
-          .command(
-            "schedule",
-            "Manage unattended logical backups",
-            (schedule: YargsBuilder) =>
-              schedule
-                .command(
-                  "register",
-                  "Register this stack in the user's crontab",
-                  (register: YargsBuilder) =>
-                    register
-                      .option("schedule", {
-                        type: "string",
-                        default: "15 3 * * *",
-                        describe: "Five-field cron schedule",
-                      })
-                      .option("bin", {
-                        type: "string",
-                        demandOption: true,
-                        describe: "Absolute path to the executable Bento binary",
-                      })
-                      .option("rclone-remote", {
-                        type: "string",
-                        describe: "Configured rclone remote name to upload each new scheduled dump",
-                      })
-                      .option("rclone-prefix", {
-                        type: "string",
-                        describe:
-                          "Optional path below the rclone remote (requires --rclone-remote)",
-                      }),
-                  bind(state, cmdScheduleRegister),
-                )
-                .command(
-                  "status",
-                  "Show registration and bounded last-run status",
-                  (status: YargsBuilder) => status,
-                  bind(state, cmdScheduleStatus),
-                )
-                .command(
-                  "unregister",
-                  "Remove only this stack's managed crontab block",
-                  (unregister: YargsBuilder) => unregister,
-                  bind(state, cmdScheduleUnregister),
-                )
-                .command(
-                  "run",
-                  "Run the scheduled all-database backup now",
-                  (run: YargsBuilder) => run,
-                  bind(state, cmdScheduleRun),
-                )
-                .demandCommand(1, "Choose register, status, unregister, or run"),
+          .command("$0", "Back up managed databases", backupOptions, bind(state, cmdBackup))
+          .command("schedule", "Manage unattended logical backups", (schedule: YargsBuilder) =>
+            schedule
+              .command(
+                "register",
+                "Register this stack in the user's crontab",
+                (register: YargsBuilder) =>
+                  register
+                    .option("schedule", {
+                      type: "string",
+                      default: "15 3 * * *",
+                      describe: "Five-field cron schedule",
+                    })
+                    .option("bin", {
+                      type: "string",
+                      demandOption: true,
+                      describe: "Absolute path to the executable Bento binary",
+                    })
+                    .option("rclone-remote", {
+                      type: "string",
+                      describe: "Configured rclone remote name to upload each new scheduled dump",
+                    })
+                    .option("rclone-prefix", {
+                      type: "string",
+                      describe: "Optional path below the rclone remote (requires --rclone-remote)",
+                    }),
+                bind(state, cmdScheduleRegister),
+              )
+              .command(
+                "status",
+                "Show registration and bounded last-run status",
+                (status: YargsBuilder) => status,
+                bind(state, cmdScheduleStatus),
+              )
+              .command(
+                "unregister",
+                "Remove only this stack's managed crontab block",
+                (unregister: YargsBuilder) => unregister,
+                bind(state, cmdScheduleUnregister),
+              )
+              .command(
+                "run",
+                "Run the scheduled all-database backup now",
+                (run: YargsBuilder) => run,
+                bind(state, cmdScheduleRun),
+              )
+              .demandCommand(1, "Choose register, status, unregister, or run"),
           ),
       undefined,
     )
@@ -88,7 +79,11 @@ export function registerBackupCommands(parser: YargsBuilder, state: RunState): Y
       "Logical database restore",
       (y: YargsBuilder) =>
         y
-          .option("file", { type: "string", demandOption: true, describe: "Dump path" })
+          .option("file", {
+            type: "string",
+            demandOption: true,
+            describe: "Dump path",
+          })
           .option("app", { type: "string", demandOption: true })
           .option("engine", {
             type: "string",
@@ -123,7 +118,11 @@ function backupOptions(y: YargsBuilder): YargsBuilder {
       default: false,
       describe: "Backup all managed databases",
     })
-    .option("gzip", { type: "boolean", default: false, describe: "gzip compress" })
+    .option("gzip", {
+      type: "boolean",
+      default: false,
+      describe: "gzip compress",
+    })
     .option("none", {
       type: "boolean",
       default: false,
@@ -133,11 +132,8 @@ function backupOptions(y: YargsBuilder): YargsBuilder {
 
 async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
   const state = await ctx.store.load();
-  const scope = argv.all === true
-    ? "all" as const
-    : argv.database
-    ? "database" as const
-    : "app" as const;
+  const scope =
+    argv.all === true ? ("all" as const) : argv.database ? ("database" as const) : ("app" as const);
   if (scope !== "all" && !argv.app) {
     ctx.log.error("usage: bento backup --app <app> [--database name] | --all");
     return 2;
@@ -154,20 +150,20 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
   const litestreamApps = engine
     ? []
     : scope === "all"
-    ? Object.values(state.apps).filter((app) =>
-      app.databases.some((database) => database.engine === "litestream")
-    )
-    : scope === "database"
-    ? argv.app &&
-        state.apps[argv.app]?.databases.some((database) =>
-          database.engine === "litestream" && database.file.id === argv.database
+      ? Object.values(state.apps).filter((app) =>
+          app.databases.some((database) => database.engine === "litestream"),
         )
-      ? [state.apps[argv.app]!]
-      : []
-    : argv.app &&
-        state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
-    ? [state.apps[argv.app]!]
-    : [];
+      : scope === "database"
+        ? argv.app &&
+          state.apps[argv.app]?.databases.some(
+            (database) => database.engine === "litestream" && database.file.id === argv.database,
+          )
+          ? [state.apps[argv.app]!]
+          : []
+        : argv.app &&
+            state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
+          ? [state.apps[argv.app]!]
+          : [];
   if (scope === "database" && litestreamApps.length > 0) {
     ctx.log.error("Litestream has one explicit SQLite file; omit --database");
     return 2;
@@ -221,11 +217,16 @@ async function cmdScheduleStatus(_argv: CliArgs, ctx: CliContext): Promise<numbe
   const backupsDir = ctx.platform.paths.paths.backupsDir;
   const rcloneTarget = await readRcloneBackupTarget(ctx.platform);
   if (ctx.json) {
-    ctx.log.out(JSON.stringify({
-      ...status,
-      onHostBackupsDir: backupsDir,
-      rclone: rcloneTarget && { remote: rcloneTarget.remote, prefix: rcloneTarget.prefix },
-    }));
+    ctx.log.out(
+      JSON.stringify({
+        ...status,
+        onHostBackupsDir: backupsDir,
+        rclone: rcloneTarget && {
+          remote: rcloneTarget.remote,
+          prefix: rcloneTarget.prefix,
+        },
+      }),
+    );
   } else {
     ctx.log.out(`registered: ${status.installed ? "yes" : "no"}`);
     ctx.log.out(`schedule: ${status.schedule ?? "not registered"}`);
@@ -267,17 +268,16 @@ async function cmdScheduleRun(_argv: CliArgs, ctx: CliContext): Promise<number> 
 
 function logBackupArtifacts(ctx: CliContext, artifacts: DatabaseBackupArtifact[]): void {
   for (const artifact of artifacts) {
-    ctx.log.info(
-      `backup ${artifact.database} -> ${artifact.path} (${artifact.bytes} bytes)`,
-    );
+    ctx.log.info(`backup ${artifact.database} -> ${artifact.path} (${artifact.bytes} bytes)`);
   }
 }
 
 function warnOnHostOnly(ctx: CliContext): void {
   ctx.log.warn(
-    `logical dumps remain only on this host under ${
-      join(ctx.stackRoot, "backups")
-    }; Bento does not create an off-host copy`,
+    `logical dumps remain only on this host under ${join(
+      ctx.stackRoot,
+      "backups",
+    )}; Bento does not create an off-host copy`,
   );
 }
 

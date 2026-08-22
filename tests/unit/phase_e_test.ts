@@ -1,8 +1,8 @@
 /**
  * Phase E: TLS, PHP routing, deploy surface, permissions, status, schema, compose inspect.
  */
-import { assertEquals, assertThrows } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts";
+import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { createProxy } from "../../src/services/proxy.ts";
@@ -39,13 +39,10 @@ import { createProcessRunner, createRecordingProcessRunner } from "../../src/pla
 import { createAssetResolver } from "../../src/platform/assets.ts";
 import { createPathPolicy } from "../../src/platform/paths.ts";
 import type { Platform } from "../../src/platform/mod.ts";
-import { encodeHex } from "@std/encoding/hex";
+import { encodeHex } from "../runtime.ts";
 import { STATE_SCHEMA_VERSION } from "../../src/version.ts";
 
-function testPlatform(
-  root: string,
-  process?: Platform["process"],
-): Platform {
+function testPlatform(root: string, process?: Platform["process"]): Platform {
   const fs = createFileSystem();
   return {
     clock: createFixedClock("2026-07-17T12:00:00.000Z"),
@@ -76,12 +73,15 @@ async function hmacSha256(secret: string, body: Uint8Array): Promise<string> {
 
 // --- E1 TLS -----------------------------------------------------------------
 
-Deno.test("E1 shared TLS: no HTTPS redirect, shared ssl include", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-" });
+bunRuntime.test("E1 shared TLS: no HTTPS redirect, shared ssl include", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     state = p.state;
     const files = await generateAll(platform, state, "digest");
     const vhost = textContent(files.find((f) => f.relPath === "nginx/sites/alpha.conf")!.content);
@@ -89,16 +89,19 @@ Deno.test("E1 shared TLS: no HTTPS redirect, shared ssl include", async () => {
     assertEquals(vhost.includes("boot-ssl.conf"), true);
     assertEquals(vhost.includes("acme-challenge"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E1 ACME TLS: native issuer + managed certificate variables", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-" });
+bunRuntime.test("E1 ACME TLS: native issuer + managed certificate variables", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     state = {
       ...p.state,
       apps: {
@@ -130,20 +133,24 @@ Deno.test("E1 ACME TLS: native issuer + managed certificate variables", async ()
     assertEquals(snippet.includes("ssl_certificate     $acme_certificate;"), true);
     assertEquals(snippet.includes("ssl_certificate_key $acme_certificate_key;"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E1 ACME TLS works for reverse proxies", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-proxy-acme-" });
+bunRuntime.test("E1 ACME TLS works for reverse proxies", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-proxy-acme-" });
   try {
     const platform = testPlatform(root);
-    const created = createProxy(createEmptyState(), {
-      name: "edge",
-      domain: "edge.test",
-      aliases: ["www.edge.test"],
-      upstreams: ["http://127.0.0.1:3000"],
-    }, platform.clock.nowIso());
+    const created = createProxy(
+      createEmptyState(),
+      {
+        name: "edge",
+        domain: "edge.test",
+        aliases: ["www.edge.test"],
+        upstreams: ["http://127.0.0.1:3000"],
+      },
+      platform.clock.nowIso(),
+    );
     const state = {
       ...created.state,
       proxies: {
@@ -164,19 +171,23 @@ Deno.test("E1 ACME TLS works for reverse proxies", async () => {
     assertEquals(vhost.includes("acme-ssl.conf"), true);
     assertEquals(snippet.includes("acme_certificate bento_acme;"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E1 proxy renders named multi-server upstream with keepalive", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-proxy-" });
+bunRuntime.test("E1 proxy renders named multi-server upstream with keepalive", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-proxy-" });
   try {
     const platform = testPlatform(root);
-    const state = createProxy(createEmptyState(), {
-      name: "edge",
-      domain: "edge.test",
-      upstreams: ["http://127.0.0.1:3000", "http://10.0.0.2:3000"],
-    }, platform.clock.nowIso()).state;
+    const state = createProxy(
+      createEmptyState(),
+      {
+        name: "edge",
+        domain: "edge.test",
+        upstreams: ["http://127.0.0.1:3000", "http://10.0.0.2:3000"],
+      },
+      platform.clock.nowIso(),
+    ).state;
 
     const files = await generateAll(platform, state, "digest");
     const vhost = textContent(
@@ -200,21 +211,28 @@ Deno.test("E1 proxy renders named multi-server upstream with keepalive", async (
     assertEquals(vhost.includes("custom/proxies/edge/upstream.d/*.conf"), true);
     assertEquals(vhost.match(/custom\/proxies\/edge\/server\.d\/\*\.conf/g)?.length, 2);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E1 HTTP/3 follows HTTP3 in the stack environment", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-http3-" });
+bunRuntime.test("E1 HTTP/3 follows HTTP3 in the stack environment", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-http3-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    state = provisionApp(platform, state, { slug: "alpha", domain: "a.test" }).state;
-    state = createProxy(state, {
-      name: "edge",
-      domain: "edge.test",
-      upstreams: ["http://127.0.0.1:3000"],
-    }, platform.clock.nowIso()).state;
+    state = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    }).state;
+    state = createProxy(
+      state,
+      {
+        name: "edge",
+        domain: "edge.test",
+        upstreams: ["http://127.0.0.1:3000"],
+      },
+      platform.clock.nowIso(),
+    ).state;
 
     await platform.fs.atomicWriteText(platform.paths.paths.envFile, "HTTP3=true\n");
     let files = await generateAll(platform, state, "digest");
@@ -234,18 +252,15 @@ Deno.test("E1 HTTP/3 follows HTTP3 in the stack environment", async () => {
       assertEquals(vhost.includes("http2 on;"), true);
     }
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E1 self-CA TLS: manages SAN leaf and exports only public CA", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-ca-" });
+bunRuntime.test("E1 self-CA TLS: manages SAN leaf and exports only public CA", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-ca-" });
   try {
     const platform = testPlatform(root, createProcessRunner());
-    const leaf = await ensurePrivateCaSiteCertificate(platform, "alpha", [
-      "a.test",
-      "www.a.test",
-    ]);
+    const leaf = await ensurePrivateCaSiteCertificate(platform, "alpha", ["a.test", "www.a.test"]);
     assertEquals(await platform.fs.exists(leaf.certPath), true);
     assertEquals((await platform.fs.stat(leaf.keyPath)).mode & 0o777, 0o600);
     const originalLeaf = await platform.fs.readBytes(leaf.certPath);
@@ -282,15 +297,11 @@ Deno.test("E1 self-CA TLS: manages SAN leaf and exports only public CA", async (
       files.find((file) => file.relPath === "nginx/sites/alpha.conf")!.content,
     );
     assertEquals(
-      vhost.includes(
-        "ssl_certificate     /etc/nginx/certs/private-ca/sites/alpha.crt;",
-      ),
+      vhost.includes("ssl_certificate     /etc/nginx/certs/private-ca/sites/alpha.crt;"),
       true,
     );
     assertEquals(
-      vhost.includes(
-        "ssl_certificate_key /etc/nginx/certs/private-ca/sites/alpha.key;",
-      ),
+      vhost.includes("ssl_certificate_key /etc/nginx/certs/private-ca/sites/alpha.key;"),
       true,
     );
     assertEquals(vhost.includes("include /etc/nginx/snippets/ssl-common.conf;"), true);
@@ -304,12 +315,12 @@ Deno.test("E1 self-CA TLS: manages SAN leaf and exports only public CA", async (
     assertEquals(await platform.fs.exists(exported), true);
     assertEquals(await platform.fs.exists(join(root, "export", "ca.key")), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E1 external TLS: validates paths and key mode", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e1-" });
+bunRuntime.test("E1 external TLS: validates paths and key mode", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-" });
   try {
     const platform = testPlatform(root);
     const certs = platform.paths.paths.certsDir;
@@ -339,14 +350,14 @@ Deno.test("E1 external TLS: validates paths and key mode", async () => {
     assertEquals(ssl.snippetContent?.includes("/etc/nginx/certs/site.crt"), true);
     assertEquals(containerCertPath("site.crt"), "/etc/nginx/certs/site.crt");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- E2 PHP routing ---------------------------------------------------------
 
-Deno.test("E2 front-controller rejects non-index PHP; legacy allows scripts", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e2-" });
+bunRuntime.test("E2 front-controller rejects non-index PHP; legacy allows scripts", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e2-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -389,18 +400,21 @@ Deno.test("E2 front-controller rejects non-index PHP; legacy allows scripts", as
     assertEquals(front.includes("custom/apps/front/http.d/*.conf"), true);
     assertEquals(front.includes("custom/apps/front/https.d/*.conf"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- E3 Deploy HTTP surface -------------------------------------------------
 
-Deno.test("E3 disabled deploy omits /_bento routes; enabled matches helpers", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e3-" });
+bunRuntime.test("E3 disabled deploy omits /_bento routes; enabled matches helpers", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e3-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     state = p.state;
     // disabled by default
     let files = await generateAll(platform, state, "digest");
@@ -414,10 +428,7 @@ Deno.test("E3 disabled deploy omits /_bento routes; enabled matches helpers", as
     files = await generateAll(platform, state, "digest");
     vhost = textContent(files.find((f) => f.relPath === "nginx/sites/alpha.conf")!.content);
     assertEquals(vhost.includes("location ^~ /_bento/"), true);
-    assertEquals(
-      vhost.includes("SCRIPT_FILENAME /opt/bento/helpers/bento.php"),
-      true,
-    );
+    assertEquals(vhost.includes("SCRIPT_FILENAME /opt/bento/helpers/bento.php"), true);
     assertEquals(vhost.includes("fastcgi_param BENTO_HTTP_REQUEST 1"), true);
     // default argv and container-local drain wiring
     const app = state.apps["alpha"]!;
@@ -433,9 +444,7 @@ Deno.test("E3 disabled deploy omits /_bento routes; enabled matches helpers", as
       files.find((f) => f.relPath === "runner/php85/services/scheduler-alpha/run")!.content,
     );
     assertEquals(
-      scheduler.includes(
-        `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c`,
-      ),
+      scheduler.includes(`/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c`),
       true,
     );
     assertEquals(scheduler.includes("/usr/local/bin/supercronic"), true);
@@ -445,17 +454,14 @@ Deno.test("E3 disabled deploy omits /_bento routes; enabled matches helpers", as
     const compose = textContent(
       files.find((f) => f.relPath === "compose/docker-compose.php-php85.yml")!.content,
     );
-    assertEquals(
-      compose.includes("./runtime/php-fpm/php85:/run/php-fpm/php85:ro"),
-      true,
-    );
+    assertEquals(compose.includes("./runtime/php-fpm/php85:/run/php-fpm/php85:ro"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E3 drain reclaim interrupted + log retention prune", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e3-" });
+bunRuntime.test("E3 drain reclaim interrupted + log retention prune", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e3-" });
   try {
     const platform = testPlatform(root);
     const p = provisionApp(platform, createEmptyState(), {
@@ -463,11 +469,7 @@ Deno.test("E3 drain reclaim interrupted + log retention prune", async () => {
       domain: "a.test",
     });
     await materializeAppHome(platform, p.app);
-    const enabled = enableDeploy(
-      p.state,
-      { slug: "alpha", timeoutSec: 1 },
-      platform,
-    );
+    const enabled = enableDeploy(p.state, { slug: "alpha", timeoutSec: 1 }, platform);
     const app = {
       ...enabled.state.apps["alpha"]!,
       deploy: { ...enabled.state.apps["alpha"]!.deploy, timeoutSec: 1 },
@@ -568,14 +570,14 @@ Deno.test("E3 drain reclaim interrupted + log retention prune", async () => {
     }
     void leftoverOrphans;
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- E4 Permissions ---------------------------------------------------------
 
-Deno.test("E4 permissions walk does not follow symlink targets", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e4-" });
+bunRuntime.test("E4 permissions walk does not follow symlink targets", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e4-" });
   try {
     const platform = testPlatform(root);
     const p = provisionApp(platform, createEmptyState(), {
@@ -589,7 +591,7 @@ Deno.test("E4 permissions walk does not follow symlink targets", async () => {
     await platform.fs.mkdirp(outside);
     await platform.fs.atomicWriteText(join(outside, "secret.txt"), "NOPE\n", 0o600);
     // Symlink from code/escape -> outside (must not be descended into)
-    await Deno.symlink(outside, join(code, "escape"));
+    await bunRuntime.symlink(outside, join(code, "escape"));
 
     const report = await checkPermissions(platform, p.state, "alpha", {
       recursive: true,
@@ -599,27 +601,30 @@ Deno.test("E4 permissions walk does not follow symlink targets", async () => {
     assertEquals(leaked, false);
 
     // Repair recursive must not chmod the outside tree through the symlink
-    const outsideModeBefore = (await Deno.lstat(join(outside, "secret.txt"))).mode ?? 0;
+    const outsideModeBefore = (await bunRuntime.lstat(join(outside, "secret.txt"))).mode ?? 0;
     await repairPermissions(platform, p.state, "alpha", {
       recursive: true,
     });
-    const outsideModeAfter = (await Deno.lstat(join(outside, "secret.txt"))).mode ?? 0;
+    const outsideModeAfter = (await bunRuntime.lstat(join(outside, "secret.txt"))).mode ?? 0;
     assertEquals(outsideModeAfter & 0o777, outsideModeBefore & 0o777);
 
     // Shallow policy path still works
     const actions = await applyAppPermissionPolicy(platform, p.app, {
       recursive: false,
     });
-    assertEquals(actions.some((a) => a.includes("identity")), true);
+    assertEquals(
+      actions.some((a) => a.includes("identity")),
+      true,
+    );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- E5 Status --------------------------------------------------------------
 
-Deno.test("E5 status covers roles, domains, TLS, capacity, redacts secrets", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e5-" });
+bunRuntime.test("E5 status covers roles, domains, TLS, capacity, redacts secrets", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e5-" });
   try {
     // docker compose ps fails → roles unknown / config-ready notes
     const runner = createRecordingProcessRunner(async (cmd) => {
@@ -650,8 +655,14 @@ Deno.test("E5 status covers roles, domains, TLS, capacity, redacts secrets", asy
     assertEquals(report.roles.length >= 4, true); // nginx, redis, php, runner, mysql
     assertEquals(report.apps[0]?.tls, "shared");
     assertEquals(report.apps[0]?.entrypointMode, "front-controller");
-    assertEquals(report.domains.some((d) => d.domain === "a.test"), true);
-    assertEquals(report.warnings.some((w) => w.toLowerCase().includes("cap")), true);
+    assertEquals(
+      report.domains.some((d) => d.domain === "a.test"),
+      true,
+    );
+    assertEquals(
+      report.warnings.some((w) => w.toLowerCase().includes("cap")),
+      true,
+    );
     assertEquals(report.notes.length >= 1, true);
 
     const human = formatStatus(report);
@@ -663,14 +674,14 @@ Deno.test("E5 status covers roles, domains, TLS, capacity, redacts secrets", asy
     assertEquals(json.includes(p.app.database.password), false);
     assertEquals(json.includes("hmacSecret"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- E6 State schema --------------------------------------------------------
 
-Deno.test("E6 only current schemaVersion is accepted; load does not rewrite", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e6-" });
+bunRuntime.test("E6 only current schemaVersion is accepted; load does not rewrite", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e6-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -692,14 +703,14 @@ Deno.test("E6 only current schemaVersion is accepted; load does not rewrite", as
     const loaded = loadStateFromJson(stateToJson(createEmptyState()));
     assertEquals(loaded.schemaVersion, STATE_SCHEMA_VERSION);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- E8 Overlay / Compose inspect -------------------------------------------
 
-Deno.test("E8 overlay order is lexicographic; compose files lists them", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e8-" });
+bunRuntime.test("E8 overlay order is lexicographic; compose files lists them", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e8-" });
   try {
     const platform = testPlatform(root);
     const state = createEmptyState();
@@ -723,12 +734,12 @@ Deno.test("E8 overlay order is lexicographic; compose files lists them", async (
 
     assertThrows(() => assertSafeComposeArgs(["down", "--volumes"]));
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("E8 status includes compose file list with overlays", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-e8-" });
+bunRuntime.test("E8 status includes compose file list with overlays", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e8-" });
   try {
     const platform = testPlatform(root);
     const state = createEmptyState();
@@ -738,8 +749,11 @@ Deno.test("E8 status includes compose file list with overlays", async () => {
       "services: {}\n",
     );
     const report = await buildStatus(platform, state);
-    assertEquals(report.composeFiles.some((f) => f === "overlays/custom.yml"), true);
+    assertEquals(
+      report.composeFiles.some((f) => f === "overlays/custom.yml"),
+      true,
+    );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

@@ -45,7 +45,7 @@ export function createLogger(opts?: { json?: boolean }): Logger {
 /** Format a simple aligned table via cliui. */
 export function printTable(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length), 1)
+    Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length), 1),
   );
   const colGap = 2;
   const totalWidth = widths.reduce((sum, w) => sum + w + colGap, 0);
@@ -74,25 +74,24 @@ export function printColumns(
   const leftWidth = opts?.leftWidth ?? 28;
   const ui = cliui({ width: opts?.width ?? 100, wrap: true });
   for (const [left, right] of pairs) {
-    ui.div(
-      { text: pc.bold(left), width: leftWidth, padding: [0, 2, 0, 0] },
-      { text: right },
-    );
+    ui.div({ text: pc.bold(left), width: leftWidth, padding: [0, 2, 0, 0] }, { text: right });
   }
   return ui.toString().replace(/\s+$/gm, "");
 }
 
 /** Redact common secret-like values from diagnostics. */
 export function redact(text: string): string {
-  return text
-    .replace(/(password["']?\s*[:=]\s*["']?)([^"'\s]+)/gi, "$1***")
-    .replace(/(secret["']?\s*[:=]\s*["']?)([^"'\s]+)/gi, "$1***")
-    .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD)=)(\S+)/g, "$1***")
-    .replace(/((?:CREATE|ALTER)\s+ROLE[\s\S]{0,200}?\sPASSWORD\s+(?:E)?["'])([^"']+)/gi, "$1***")
-    .replace(/((?:postgres(?:ql)?):\/\/[^:\s/]+:)([^@\s/]+)(@)/gi, "$1***$3")
-    // PostgreSQL's .pgpass records are `host:port:database:user:password`.
-    // Require a numeric/wildcard port rather than treating arbitrary timestamped
-    // diagnostics (for example rclone errors) as a credential record.
-    .replace(/(^|\n)([^:\s\n]+:(?:\d+|\*):[^:\n]*:[^:\n]*:)([^\n]+)/g, "$1$2***")
-    .replace(/(hmacSecret["']?\s*:\s*["'])([^"']+)/g, "$1***");
+  return (
+    text
+      .replace(/(password["']?\s*[:=]\s*["']?)([^"'\s]+)/gi, "$1***")
+      .replace(/(secret["']?\s*[:=]\s*["']?)([^"'\s]+)/gi, "$1***")
+      .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD)=)(\S+)/g, "$1***")
+      .replace(/((?:CREATE|ALTER)\s+ROLE[\s\S]{0,200}?\sPASSWORD\s+(?:E)?["'])([^"']+)/gi, "$1***")
+      .replace(/((?:postgres(?:ql)?):\/\/[^:\s/]+:)([^@\s/]+)(@)/gi, "$1***$3")
+      // PostgreSQL's .pgpass records are `host:port:database:user:password`.
+      // Require a numeric/wildcard port rather than treating arbitrary timestamped
+      // diagnostics (for example rclone errors) as a credential record.
+      .replace(/(^|\n)([^:\s\n]+:(?:\d+|\*):[^:\n]*:[^:\n]*:)([^\n]+)/g, "$1$2***")
+      .replace(/(hmacSecret["']?\s*:\s*["'])([^"']+)/g, "$1***")
+  );
 }

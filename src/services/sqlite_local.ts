@@ -1,6 +1,6 @@
 /** Local SQLite maintenance and logical backup through the PHP runner image. */
 
-import { join } from "@std/path";
+import { join } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
 import { databaseBindings } from "../domain/state.ts";
 import { notFoundError, serviceError, validationError } from "../domain/errors.ts";
@@ -30,11 +30,8 @@ export async function runSqliteBackup(
   if (!database) throw validationError(`app ${slug} has no matching plain SQLite database`);
 
   const timestamp = platform.clock.nowIso().replace(/[:.]/g, "-");
-  const extension = compress === "none"
-    ? "sqlite"
-    : compress === "gzip"
-    ? "sqlite.gz"
-    : "sqlite.zst";
+  const extension =
+    compress === "none" ? "sqlite" : compress === "gzip" ? "sqlite.gz" : "sqlite.zst";
   const name = `${database.file.id}_${timestamp}.${extension}`;
   const directory = join(platform.paths.paths.backupsDir, "sqlite", slug);
   const finalPath = join(directory, name);
@@ -49,14 +46,15 @@ export async function runSqliteBackup(
   // .backup creates a real SQLite file, so keep that snapshot in the mounted
   // backup directory and compress it there. Avoid shell pipelines: the runner
   // invokes POSIX `sh`, which does not support `pipefail` on every image.
-  const backup = `sqlite3 ${shellQuote(source)} ${shellQuote(".timeout 30000")} ${
-    shellQuote(`.backup '${raw}'`)
-  }`;
-  const publish = compress === "gzip"
-    ? 'gzip -c "$RAW" > "$PARTIAL"'
-    : compress === "zstd"
-    ? 'zstd -3 -q -c "$RAW" > "$PARTIAL"'
-    : 'cat "$RAW" > "$PARTIAL"';
+  const backup = `sqlite3 ${shellQuote(source)} ${shellQuote(".timeout 30000")} ${shellQuote(
+    `.backup '${raw}'`,
+  )}`;
+  const publish =
+    compress === "gzip"
+      ? 'gzip -c "$RAW" > "$PARTIAL"'
+      : compress === "zstd"
+        ? 'zstd -3 -q -c "$RAW" > "$PARTIAL"'
+        : 'cat "$RAW" > "$PARTIAL"';
   const script = [
     "set -eu",
     "umask 077",

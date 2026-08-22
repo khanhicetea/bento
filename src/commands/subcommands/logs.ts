@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "../../platform/runtime.ts";
 import {
   generateAccessReport,
   isNginxOnlyReloadPlan,
@@ -9,67 +10,66 @@ import type { ArgsWith } from "../args.ts";
 import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
 
 export function registerLogCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command("logs", "Access log control and reports", (y: YargsBuilder) =>
-      y
-        .command(
-          "access",
-          "Per-app access logs (enable|disable|rotate|report)",
-          (y2: YargsBuilder) =>
-            y2
-              .command(
-                "enable",
-                "Enable access logs for an app (nginx-only reload)",
-                (y3: YargsBuilder) =>
-                  noApplyOption(
-                    y3.option("app", { type: "string", demandOption: true }),
-                  ),
-                bind(state, cmdLogsAccessEnable),
-              )
-              .command(
-                "disable",
-                "Disable access logs (preserves existing files)",
-                (y3: YargsBuilder) =>
-                  noApplyOption(
-                    y3.option("app", { type: "string", demandOption: true }),
-                  ),
-                bind(state, cmdLogsAccessDisable),
-              )
-              .command(
-                "rotate",
-                "Rotate access log and reopen nginx (not config reload)",
-                (y3: YargsBuilder) => y3.option("app", { type: "string", demandOption: true }),
-                bind(state, cmdLogsAccessRotate),
-              )
-              .command(
-                "report",
-                "One-shot GoAccess HTML report or attached terminal dashboard",
-                (y3: YargsBuilder) =>
-                  y3
-                    .option("app", { type: "string", demandOption: true })
-                    .option("output", { type: "string", describe: "Report HTML path" })
-                    .option("attach", {
-                      alias: "terminal",
-                      type: "boolean",
-                      default: false,
-                      describe: "Attach an interactive GoAccess terminal dashboard",
-                    })
-                    .option("dry-run", {
-                      type: "boolean",
-                      default: false,
-                      describe: "Print planned docker run argv",
-                    })
-                    .conflicts("attach", "output"),
-                bind(state, cmdLogsAccessReport),
-              )
-              .demandCommand(1, "Specify: enable|disable|rotate|report")
-              .recommendCommands(),
-          () => {
-            /* nested */
-          },
-        )
-        .demandCommand(1, "Specify a logs subcommand: access")
-        .recommendCommands());
+  return parser.command("logs", "Access log control and reports", (y: YargsBuilder) =>
+    y
+      .command(
+        "access",
+        "Per-app access logs (enable|disable|rotate|report)",
+        (y2: YargsBuilder) =>
+          y2
+            .command(
+              "enable",
+              "Enable access logs for an app (nginx-only reload)",
+              (y3: YargsBuilder) =>
+                noApplyOption(y3.option("app", { type: "string", demandOption: true })),
+              bind(state, cmdLogsAccessEnable),
+            )
+            .command(
+              "disable",
+              "Disable access logs (preserves existing files)",
+              (y3: YargsBuilder) =>
+                noApplyOption(y3.option("app", { type: "string", demandOption: true })),
+              bind(state, cmdLogsAccessDisable),
+            )
+            .command(
+              "rotate",
+              "Rotate access log and reopen nginx (not config reload)",
+              (y3: YargsBuilder) => y3.option("app", { type: "string", demandOption: true }),
+              bind(state, cmdLogsAccessRotate),
+            )
+            .command(
+              "report",
+              "One-shot GoAccess HTML report or attached terminal dashboard",
+              (y3: YargsBuilder) =>
+                y3
+                  .option("app", { type: "string", demandOption: true })
+                  .option("output", {
+                    type: "string",
+                    describe: "Report HTML path",
+                  })
+                  .option("attach", {
+                    alias: "terminal",
+                    type: "boolean",
+                    default: false,
+                    describe: "Attach an interactive GoAccess terminal dashboard",
+                  })
+                  .option("dry-run", {
+                    type: "boolean",
+                    default: false,
+                    describe: "Print planned docker run argv",
+                  })
+                  .conflicts("attach", "output"),
+              bind(state, cmdLogsAccessReport),
+            )
+            .demandCommand(1, "Specify: enable|disable|rotate|report")
+            .recommendCommands(),
+        () => {
+          /* nested */
+        },
+      )
+      .demandCommand(1, "Specify a logs subcommand: access")
+      .recommendCommands(),
+  );
 }
 
 // --- access logs (F-23) ------------------------------------------------------
@@ -118,10 +118,7 @@ async function mutateAccessLog(
   return 0;
 }
 
-async function cmdLogsAccessRotate(
-  argv: ArgsWith<"app">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdLogsAccessRotate(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
   const { app: slug } = argv;
   const state = await ctx.store.load();
   const result = await rotateAccessLog(ctx.platform, state, slug);
@@ -135,16 +132,13 @@ async function cmdLogsAccessRotate(
     result.rotated
       ? `rotated ${result.plan.logPath} -> ${result.plan.rotatedPath}`
       : `no active log file at ${result.plan.logPath}; reopen ${
-        result.reopened ? "ok" : "skipped (nginx unavailable)"
-      }`,
+          result.reopened ? "ok" : "skipped (nginx unavailable)"
+        }`,
   );
   return 0;
 }
 
-async function cmdLogsAccessReport(
-  argv: ArgsWith<"app">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdLogsAccessReport(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
   const { app: slug } = argv;
   const state = await ctx.store.load();
   const dryRun = argv.dryRun === true;
@@ -162,7 +156,7 @@ async function cmdLogsAccessReport(
   if (attach) {
     let tty = false;
     try {
-      tty = Deno.stdin.isTerminal() && Deno.stdout.isTerminal();
+      tty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
     } catch {
       tty = false;
     }
@@ -175,7 +169,7 @@ async function cmdLogsAccessReport(
 
     ctx.log.info("attaching GoAccess terminal; press q to return");
     const [cmd, ...args] = result.command;
-    const child = new Deno.Command(cmd!, {
+    const child = new RuntimeCommand(cmd!, {
       args,
       cwd: ctx.stackRoot,
       stdin: "inherit",

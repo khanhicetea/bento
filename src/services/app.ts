@@ -2,7 +2,7 @@
  * Application provisioning and lifecycle.
  */
 
-import { join } from "@std/path";
+import { join } from "node:path";
 import type {
   AppDatabase,
   AppDatabaseBinding,
@@ -131,29 +131,26 @@ export function provisionApp(
   // Runtime selection: omitted choices preserve existing recorded runtime
   const phpVersionStr = input.phpVersion
     ? unwrap(parsePhpVersion(input.phpVersion), "phpVersion")
-    : existing?.phpVersion ?? state.defaults.phpVersion;
+    : (existing?.phpVersion ?? state.defaults.phpVersion);
   const phpVersion = asPhpVersion(String(phpVersionStr));
   const managedPhp = state.phpVersions.find((v) => v.version === phpVersion);
   if (!managedPhp) {
-    throw validationError(
-      `PHP version ${phpVersion} is not managed. Add it first.`,
-    );
+    throw validationError(`PHP version ${phpVersion} is not managed. Add it first.`);
   }
 
-  const fpmProfileStr = input.fpmProfile ??
-    existing?.fpmProfile ??
-    state.defaults.fpmProfile;
+  const fpmProfileStr = input.fpmProfile ?? existing?.fpmProfile ?? state.defaults.fpmProfile;
   if (!(String(fpmProfileStr) in FPM_PROFILES)) {
     throw validationError(
-      `unknown FPM profile ${fpmProfileStr}; choose one of: ${
-        Object.keys(FPM_PROFILES).join(", ")
-      }`,
+      `unknown FPM profile ${fpmProfileStr}; choose one of: ${Object.keys(FPM_PROFILES).join(
+        ", ",
+      )}`,
     );
   }
   const fpmProfile = asFpmProfile(String(fpmProfileStr));
 
   const currentPrimary = existing ? primaryDatabase(existing) : undefined;
-  const databaseEngine = (input.databaseEngine ?? currentPrimary?.engine ??
+  const databaseEngine = (input.databaseEngine ??
+    currentPrimary?.engine ??
     state.defaults.database.engine) as DatabaseEngine;
   const fileDatabase = databaseEngine === "sqlite" || databaseEngine === "litestream";
   const managedDatabase = fileDatabase
@@ -166,9 +163,8 @@ export function provisionApp(
     parseSafeRelativePath(input.documentRoot ?? existing?.documentRoot ?? "public"),
     "documentRoot",
   );
-  const entrypointMode: EntrypointMode = input.entrypointMode ??
-    existing?.entrypointMode ??
-    "front-controller";
+  const entrypointMode: EntrypointMode =
+    input.entrypointMode ?? existing?.entrypointMode ?? "front-controller";
   const tls: TlsMode = input.tls ?? existing?.tls ?? { kind: "shared" };
   const accessLog = input.accessLog ?? existing?.accessLog ?? false;
 
@@ -183,36 +179,41 @@ export function provisionApp(
   // Generate once for a new app; all later reconciliation preserves it.
   const existingBinding = fileDatabase
     ? existing?.databases.find((database) => database.engine === databaseEngine)
-    : existing?.databases.find((database) =>
-      database.engine === managedDatabase?.engine &&
-      database.service === managedDatabase.service
-    );
-  const databasePassword = existingBinding &&
-      existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
-    ? existingBinding.password
-    : platform.random.hex(18);
-  const redisPassword = existing?.redis.password ??
+    : existing?.databases.find(
+        (database) =>
+          database.engine === managedDatabase?.engine &&
+          database.service === managedDatabase.service,
+      );
+  const databasePassword =
+    existingBinding &&
+    existingBinding.engine !== "sqlite" &&
+    existingBinding.engine !== "litestream"
+      ? existingBinding.password
+      : platform.random.hex(18);
+  const redisPassword =
+    existing?.redis.password ??
     (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
 
-  let redis = existing?.redis ??
-    defaultRedisIdentity(slug, state.defaults.redisMode);
+  let redis = existing?.redis ?? defaultRedisIdentity(slug, state.defaults.redisMode);
   if (!existing) {
     redis = {
       ...redis,
       ...(redisPassword ? { password: redisPassword } : {}),
       ...(redis.mode === "acl"
         ? {
-          aclPassword: platform.random.hex(18),
-          aclUsername: `app_${slug}`,
-        }
+            aclPassword: platform.random.hex(18),
+            aclUsername: `app_${slug}`,
+          }
         : {}),
     };
   }
 
-  const databases = existingBinding &&
-      existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
-    ? [...existingBinding.databases]
-    : [];
+  const databases =
+    existingBinding &&
+    existingBinding.engine !== "sqlite" &&
+    existingBinding.engine !== "litestream"
+      ? [...existingBinding.databases]
+      : [];
   if (input.createDatabase && !fileDatabase) {
     const dbName = input.databaseName ?? slug;
     if (!/^[a-zA-Z0-9_]+$/.test(dbName)) {
@@ -230,24 +231,21 @@ export function provisionApp(
   }
 
   const selectedBinding = fileDatabase
-    ? existingBinding && !input.createDatabase ? existingBinding : createSqliteBinding(
-      platform,
-      state,
-      slug,
-      now,
-      databaseEngine as "sqlite" | "litestream",
-    )
+    ? existingBinding && !input.createDatabase
+      ? existingBinding
+      : createSqliteBinding(platform, state, slug, now, databaseEngine as "sqlite" | "litestream")
     : databaseBinding(
-      managedDatabase!.engine,
-      String(managedDatabase!.service),
-      slug,
-      databasePassword,
-      databases,
-    );
+        managedDatabase!.engine,
+        String(managedDatabase!.service),
+        slug,
+        databasePassword,
+        databases,
+      );
   const appDatabases = existing ? [...existing.databases] : [];
-  const selectedIndex = existingBinding && !(fileDatabase && input.createDatabase)
-    ? appDatabases.indexOf(existingBinding)
-    : -1;
+  const selectedIndex =
+    existingBinding && !(fileDatabase && input.createDatabase)
+      ? appDatabases.indexOf(existingBinding)
+      : -1;
   if (selectedIndex >= 0) appDatabases[selectedIndex] = selectedBinding;
   else appDatabases.push(selectedBinding);
 
@@ -313,7 +311,11 @@ function createSqliteBinding(
   engine: "sqlite" | "litestream",
 ): AppDatabaseBinding {
   const id = `${slug}_${platform.random.hex(5)}`;
-  const file = { id, path: sqliteRelativePath(id, slug, engine), createdAt: now };
+  const file = {
+    id,
+    path: sqliteRelativePath(id, slug, engine),
+    createdAt: now,
+  };
   if (engine === "litestream") return { engine, file } as AppDatabaseBinding;
 
   const occupied = new Set(
@@ -333,7 +335,12 @@ function databaseBinding(
   password: string,
   databases: AppDatabase[],
 ): AppDatabaseBinding {
-  const common = { service: asDatabaseService(service), user, password, databases };
+  const common = {
+    service: asDatabaseService(service),
+    user,
+    password,
+    databases,
+  };
   return engine === "mysql" ? { engine: "mysql", ...common } : { engine: "postgres", ...common };
 }
 
@@ -368,13 +375,14 @@ function resolveAppDatabaseService(
 
   const requestedEngine = (input.databaseEngine ??
     (input.mysqlVersion ? "mysql" : input.postgresVersion ? "postgres" : undefined)) as
-      | Exclude<DatabaseEngine, "sqlite" | "litestream">
-      | undefined;
+    | Exclude<DatabaseEngine, "sqlite" | "litestream">
+    | undefined;
   const current = existing
-    ? existing.databases.find((database) =>
-      database.engine === requestedEngine &&
-      (database.engine === "mysql" || database.engine === "postgres")
-    ) ?? primaryDatabase(existing)
+    ? (existing.databases.find(
+        (database) =>
+          database.engine === requestedEngine &&
+          (database.engine === "mysql" || database.engine === "postgres"),
+      ) ?? primaryDatabase(existing))
     : undefined;
   const engine = requestedEngine ?? current?.engine ?? state.defaults.database.engine;
   if (engine === "sqlite" || engine === "litestream") {
@@ -382,11 +390,14 @@ function resolveAppDatabaseService(
   }
   const token = engine === "mysql" ? input.mysqlVersion : input.postgresVersion;
   if (
-    current && current.engine !== "sqlite" && current.engine !== "litestream" &&
-    current.engine === engine && token === undefined
+    current &&
+    current.engine !== "sqlite" &&
+    current.engine !== "litestream" &&
+    current.engine === engine &&
+    token === undefined
   ) {
-    const preserved = state.databaseServices.find((entry) =>
-      entry.engine === engine && entry.service === current.service
+    const preserved = state.databaseServices.find(
+      (entry) => entry.engine === engine && entry.service === current.service,
     );
     if (!preserved) {
       throw validationError(`${engine} service ${current.service} is not managed`);
@@ -413,9 +424,10 @@ function resolveAppDatabaseService(
   return selected;
 }
 
-export function allocateIdentity(
-  state: DesiredState,
-): { uid: ReturnType<typeof asUid>; gid: ReturnType<typeof asGid> } {
+export function allocateIdentity(state: DesiredState): {
+  uid: ReturnType<typeof asUid>;
+  gid: ReturnType<typeof asGid>;
+} {
   const used = new Set<number>();
   for (const app of Object.values(state.apps)) {
     used.add(app.uid);
@@ -438,9 +450,10 @@ export async function materializeAppHome(
   app: AppState,
   recursivePermsOrOpts: boolean | MaterializeAppHomeOptions = true,
 ): Promise<void> {
-  const opts: MaterializeAppHomeOptions = typeof recursivePermsOrOpts === "boolean"
-    ? { recursivePerms: recursivePermsOrOpts }
-    : recursivePermsOrOpts;
+  const opts: MaterializeAppHomeOptions =
+    typeof recursivePermsOrOpts === "boolean"
+      ? { recursivePerms: recursivePermsOrOpts }
+      : recursivePermsOrOpts;
   const recursivePerms = opts.recursivePerms ?? true;
   const home = platform.paths.appHome(app.slug);
   const dirs = [
@@ -458,19 +471,12 @@ export async function materializeAppHome(
   for (const d of dirs) {
     await platform.fs.mkdirp(d, 0o750);
   }
-  for (
-    const database of app.databases.filter((database) =>
-      database.engine === "sqlite" || database.engine === "litestream"
-    )
-  ) {
+  for (const database of app.databases.filter(
+    (database) => database.engine === "sqlite" || database.engine === "litestream",
+  )) {
     if (database.engine !== "sqlite" && database.engine !== "litestream") continue;
     const sqliteDir = sqliteHostDir(platform, database.file.id);
-    const sqlitePath = sqliteHostPath(
-      platform,
-      database.file.id,
-      app.slug,
-      database.engine,
-    );
+    const sqlitePath = sqliteHostPath(platform, database.file.id, app.slug, database.engine);
     await platform.fs.mkdirp(sqliteDir, 0o700);
     if (!(await platform.fs.exists(sqlitePath))) {
       await platform.fs.writeBytes(sqlitePath, new Uint8Array(), 0o600);
@@ -492,43 +498,45 @@ export async function materializeAppHome(
 
   // Credentials (mode 0600); shared Redis auth comes from stack env when not on app state.
   const sharedRedisPassword = app.redis.password ?? opts.redisSharedPassword ?? "";
-  const redisLines = app.redis.mode === "shared"
-    ? [
-      `REDIS_PASSWORD=${sharedRedisPassword}`,
-      `REDIS_PREFIX=${app.redis.prefix}`,
-      `REDIS_MODE=shared`,
-    ]
-    : [
-      `REDIS_USERNAME=${app.redis.aclUsername ?? ""}`,
-      `REDIS_PASSWORD=${app.redis.aclPassword ?? ""}`,
-      `REDIS_ACL_USERNAME=${app.redis.aclUsername ?? ""}`,
-      `REDIS_ACL_PASSWORD=${app.redis.aclPassword ?? ""}`,
-      `REDIS_PREFIX=${app.redis.prefix}`,
-      `REDIS_MODE=acl`,
-    ];
+  const redisLines =
+    app.redis.mode === "shared"
+      ? [
+          `REDIS_PASSWORD=${sharedRedisPassword}`,
+          `REDIS_PREFIX=${app.redis.prefix}`,
+          `REDIS_MODE=shared`,
+        ]
+      : [
+          `REDIS_USERNAME=${app.redis.aclUsername ?? ""}`,
+          `REDIS_PASSWORD=${app.redis.aclPassword ?? ""}`,
+          `REDIS_ACL_USERNAME=${app.redis.aclUsername ?? ""}`,
+          `REDIS_ACL_PASSWORD=${app.redis.aclPassword ?? ""}`,
+          `REDIS_PREFIX=${app.redis.prefix}`,
+          `REDIS_MODE=acl`,
+        ];
   const database = primaryDatabase(app);
-  const databaseLines = database.engine === "mysql"
-    ? [
-      "DB_CONNECTION=mysql",
-      `MYSQL_HOST=${database.service}`,
-      `MYSQL_USER=${database.user}`,
-      `MYSQL_PASSWORD=${database.password}`,
-      `MYSQL_DATABASE=${database.databases[0]?.name ?? app.slug}`,
-    ]
-    : database.engine === "postgres"
-    ? [
-      "DB_CONNECTION=pgsql",
-      `PGHOST=${database.service}`,
-      "PGPORT=5432",
-      `PGUSER=${database.user}`,
-      `PGPASSWORD=${database.password}`,
-      `PGDATABASE=${database.databases[0]?.name ?? app.slug}`,
-    ]
-    : [
-      "DB_CONNECTION=sqlite",
-      `DB_DATABASE=${sqliteContainerPath(database.file.id, app.slug, database.engine)}`,
-      "SQLITE_BUSY_TIMEOUT=5000",
-    ];
+  const databaseLines =
+    database.engine === "mysql"
+      ? [
+          "DB_CONNECTION=mysql",
+          `MYSQL_HOST=${database.service}`,
+          `MYSQL_USER=${database.user}`,
+          `MYSQL_PASSWORD=${database.password}`,
+          `MYSQL_DATABASE=${database.databases[0]?.name ?? app.slug}`,
+        ]
+      : database.engine === "postgres"
+        ? [
+            "DB_CONNECTION=pgsql",
+            `PGHOST=${database.service}`,
+            "PGPORT=5432",
+            `PGUSER=${database.user}`,
+            `PGPASSWORD=${database.password}`,
+            `PGDATABASE=${database.databases[0]?.name ?? app.slug}`,
+          ]
+        : [
+            "DB_CONNECTION=sqlite",
+            `DB_DATABASE=${sqliteContainerPath(database.file.id, app.slug, database.engine)}`,
+            "SQLITE_BUSY_TIMEOUT=5000",
+          ];
   const linkedDatabaseLines = app.databases.flatMap((binding, index) => {
     const prefix = `BENTO_DB_${index + 1}`;
     if (binding.engine === "mysql" || binding.engine === "postgres") {
@@ -569,18 +577,16 @@ export async function materializeAppHome(
   // deploy.json without webhook secret
   await platform.fs.atomicWriteText(
     join(home, ".bento", "deploy.json"),
-    `${
-      JSON.stringify(
-        {
-          timeoutSec: app.deploy.timeoutSec,
-          workdir: app.deploy.workdir,
-          argv: app.deploy.argv,
-          queuePolicy: app.deploy.queuePolicy,
-        },
-        null,
-        2,
-      )
-    }\n`,
+    `${JSON.stringify(
+      {
+        timeoutSec: app.deploy.timeoutSec,
+        workdir: app.deploy.workdir,
+        argv: app.deploy.argv,
+        queuePolicy: app.deploy.queuePolicy,
+      },
+      null,
+      2,
+    )}\n`,
     0o640,
   );
 
@@ -599,11 +605,7 @@ export async function materializeAppHome(
   await platform.fs.mkdirp(docRoot);
   const index = join(docRoot, "index.php");
   if (!(await platform.fs.exists(index))) {
-    await platform.fs.atomicWriteText(
-      index,
-      `<?php\necho "bento app ${app.slug}\\n";\n`,
-      0o644,
-    );
+    await platform.fs.atomicWriteText(index, `<?php\necho "bento app ${app.slug}\\n";\n`, 0o644);
   }
 
   if (recursivePerms) {
@@ -615,10 +617,7 @@ export async function materializeAppHome(
 }
 
 /** Ensure every app has a stable Ed25519 deploy key for private Git clones. */
-export async function ensureAppSshKeyPair(
-  platform: Platform,
-  app: AppState,
-): Promise<void> {
+export async function ensureAppSshKeyPair(platform: Platform, app: AppState): Promise<void> {
   const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
   const privateKey = join(sshDir, "id_ed25519");
   const publicKey = `${privateKey}.pub`;
@@ -635,31 +634,35 @@ export async function ensureAppSshKeyPair(
   }
 
   if (!hasPrivateKey) {
-    const result = await platform.process.run([
-      "ssh-keygen",
-      "-q",
-      "-t",
-      "ed25519",
-      "-N",
-      "",
-      "-C",
-      `bento-app-${app.slug}`,
-      "-f",
-      privateKey,
-    ], { timeoutMs: 10_000 });
+    const result = await platform.process.run(
+      [
+        "ssh-keygen",
+        "-q",
+        "-t",
+        "ed25519",
+        "-N",
+        "",
+        "-C",
+        `bento-app-${app.slug}`,
+        "-f",
+        privateKey,
+      ],
+      { timeoutMs: 10_000 },
+    );
     if (result.code !== 0) {
       throw serviceError(
-        `failed to generate SSH key pair for app ${app.slug}: ${
-          (result.stderr || result.stdout || `ssh-keygen exited ${result.code}`).trim()
-        }`,
+        `failed to generate SSH key pair for app ${app.slug}: ${(
+          result.stderr ||
+          result.stdout ||
+          `ssh-keygen exited ${result.code}`
+        ).trim()}`,
         "Install OpenSSH ssh-keygen, check the app home permissions, and retry.",
       );
     }
   } else if (!hasPublicKey) {
-    const result = await platform.process.run(
-      ["ssh-keygen", "-y", "-f", privateKey],
-      { timeoutMs: 10_000 },
-    );
+    const result = await platform.process.run(["ssh-keygen", "-y", "-f", privateKey], {
+      timeoutMs: 10_000,
+    });
     if (result.code !== 0 || !result.stdout.trim()) {
       throw serviceError(
         `failed to recreate SSH public key for app ${app.slug}`,
@@ -712,19 +715,21 @@ export async function applyAppDataPlane(
   let mysqlApplied = false;
   const selectedDatabases = opts.explicitDatabase
     ? app.databases.filter((database) => {
-      if (opts.databaseEngine && database.engine !== opts.databaseEngine) return false;
-      if (
-        opts.databaseService &&
-        (database.engine === "mysql" || database.engine === "postgres") &&
-        database.service !== opts.databaseService
-      ) return false;
-      if (
-        opts.databaseName &&
-        (database.engine === "mysql" || database.engine === "postgres") &&
-        !database.databases.some((entry) => entry.name === opts.databaseName)
-      ) return false;
-      return true;
-    })
+        if (opts.databaseEngine && database.engine !== opts.databaseEngine) return false;
+        if (
+          opts.databaseService &&
+          (database.engine === "mysql" || database.engine === "postgres") &&
+          database.service !== opts.databaseService
+        )
+          return false;
+        if (
+          opts.databaseName &&
+          (database.engine === "mysql" || database.engine === "postgres") &&
+          !database.databases.some((entry) => entry.name === opts.databaseName)
+        )
+          return false;
+        return true;
+      })
     : app.databases;
   for (const database of selectedDatabases) {
     const scopedApp = { ...app, databases: [database] };
@@ -790,9 +795,7 @@ export async function applyAppDataPlane(
   const redisShared = await loadRedisPassword(platform);
   redisApplied = await tryApplyAppRedisAcl(platform, app, redisShared);
   if (app.redis.mode === "acl" && !redisApplied) {
-    deferredNotes.push(
-      `Redis ACL apply deferred for ${app.slug}; re-apply when redis is up`,
-    );
+    deferredNotes.push(`Redis ACL apply deferred for ${app.slug}; re-apply when redis is up`);
   }
 
   return {

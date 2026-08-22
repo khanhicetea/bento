@@ -1,12 +1,12 @@
 import type { Argv } from "yargs";
 import { isBentoError } from "../domain/errors.ts";
-import { BENTO_VERSION, DENO_TARGET_VERSION, versionBanner } from "../version.ts";
+import { BENTO_VERSION, BUN_TARGET_VERSION, versionBanner } from "../version.ts";
 import { redact } from "../ui/output.ts";
 import { type CliContext, contextFromArgv } from "./context.ts";
 import type { CliArgs } from "./args.ts";
 
 export type RunState = { code: number };
-export type YargsBuilder = Argv<CliArgs>;
+export type YargsBuilder = any;
 
 export class EarlyExit extends Error {
   constructor(readonly code: number) {
@@ -60,5 +60,5 @@ export function bind<A extends CliArgs>(
 export function printVersion(): void {
   console.log(versionBanner());
   console.log(`bento ${BENTO_VERSION}`);
-  console.log(`deno-target ${DENO_TARGET_VERSION}`);
+  console.log(`bun-target ${BUN_TARGET_VERSION}`);
 }

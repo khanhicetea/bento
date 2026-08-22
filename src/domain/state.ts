@@ -48,7 +48,12 @@ export type QueuePolicy = "latest" | "fifo";
 export type DeployStatus = "queued" | "running" | "success" | "failed" | "skipped";
 export type TemplateProvenance =
   | { kind: "upstream" }
-  | { kind: "custom"; sourcePath: string; copiedFromVersion?: string; activatedAt: string };
+  | {
+      kind: "custom";
+      sourcePath: string;
+      copiedFromVersion?: string;
+      activatedAt: string;
+    };
 export type DomainOwner =
   | { kind: "app"; slug: AppSlug; primary: boolean }
   | { kind: "proxy"; name: ProxySiteName; primary: boolean };
@@ -77,42 +82,42 @@ export type SqliteVacuumSchedule = {
 
 export type AppDatabaseBinding =
   | {
-    engine: "mysql";
-    service: DatabaseService;
-    user: string;
-    password: string;
-    databases: AppDatabase[];
-  }
+      engine: "mysql";
+      service: DatabaseService;
+      user: string;
+      password: string;
+      databases: AppDatabase[];
+    }
   | {
-    engine: "postgres";
-    service: DatabaseService;
-    user: string;
-    password: string;
-    databases: AppDatabase[];
-  }
+      engine: "postgres";
+      service: DatabaseService;
+      user: string;
+      password: string;
+      databases: AppDatabase[];
+    }
   | {
-    /** Local SQLite file maintained weekly by the app runner. */
-    engine: "sqlite";
-    file: { id: string; path: string; createdAt: string };
-    /** Stable weekly local-time slot selected when the file is created. */
-    vacuumSchedule?: SqliteVacuumSchedule;
-    /** Type-only compatibility members; file bindings never persist these. */
-    service: DatabaseService;
-    user: string;
-    password: string;
-    databases: AppDatabase[];
-  }
+      /** Local SQLite file maintained weekly by the app runner. */
+      engine: "sqlite";
+      file: { id: string; path: string; createdAt: string };
+      /** Stable weekly local-time slot selected when the file is created. */
+      vacuumSchedule?: SqliteVacuumSchedule;
+      /** Type-only compatibility members; file bindings never persist these. */
+      service: DatabaseService;
+      user: string;
+      password: string;
+      databases: AppDatabase[];
+    }
   | {
-    /** SQLite file continuously replicated by the stack Litestream service. */
-    engine: "litestream";
-    file: { id: string; path: string; createdAt: string };
-    backupVerifiedAt?: string;
-    /** Type-only compatibility members; file bindings never persist these. */
-    service: DatabaseService;
-    user: string;
-    password: string;
-    databases: AppDatabase[];
-  };
+      /** SQLite file continuously replicated by the stack Litestream service. */
+      engine: "litestream";
+      file: { id: string; path: string; createdAt: string };
+      backupVerifiedAt?: string;
+      /** Type-only compatibility members; file bindings never persist these. */
+      service: DatabaseService;
+      user: string;
+      password: string;
+      databases: AppDatabase[];
+    };
 
 export type AppState = {
   slug: AppSlug;
@@ -195,19 +200,19 @@ export type ManagedPhpVersion = {
 };
 export type ManagedDatabaseService =
   | {
-    engine: "mysql";
-    version: MysqlVersion;
-    service: DatabaseService;
-    image: string;
-    volume: string;
-  }
+      engine: "mysql";
+      version: MysqlVersion;
+      service: DatabaseService;
+      image: string;
+      volume: string;
+    }
   | {
-    engine: "postgres";
-    version: PostgresVersion;
-    service: DatabaseService;
-    image: string;
-    volume: string;
-  };
+      engine: "postgres";
+      version: PostgresVersion;
+      service: DatabaseService;
+      image: string;
+      volume: string;
+    };
 export type ManagedMysqlVersion = Extract<ManagedDatabaseService, { engine: "mysql" }>;
 export type ManagedPostgresVersion = Extract<ManagedDatabaseService, { engine: "postgres" }>;
 
@@ -257,19 +262,23 @@ export function createEmptyState(now: string = new Date().toISOString()): Desire
       fpmProfile: DEFAULT_FPM_PROFILE,
       redisMode: "shared",
     },
-    phpVersions: [{
-      version: php,
-      service: phpServiceName(php),
-      image: phpImage(php),
-      processCap: 200,
-    }],
-    databaseServices: [{
-      engine: "mysql",
-      version: mysql,
-      service: mysqlService,
-      image: mysqlImage(mysql),
-      volume: `${mysqlService}-data`,
-    }],
+    phpVersions: [
+      {
+        version: php,
+        service: phpServiceName(php),
+        image: phpImage(php),
+        processCap: 200,
+      },
+    ],
+    databaseServices: [
+      {
+        engine: "mysql",
+        version: mysql,
+        service: mysqlService,
+        image: mysqlImage(mysql),
+        volume: `${mysqlService}-data`,
+      },
+    ],
     apps: {},
     proxies: {},
     domains: {},
@@ -312,8 +321,8 @@ export function listAppDomains(state: DesiredState, slug: string): DomainName[] 
     .map(([domain]) => domain as DomainName);
 }
 export function getAppPrimaryDomain(state: DesiredState, slug: string): DomainName | undefined {
-  const primary = Object.entries(state.domains).find(([, owner]) =>
-    owner.kind === "app" && owner.slug === slug && owner.primary
+  const primary = Object.entries(state.domains).find(
+    ([, owner]) => owner.kind === "app" && owner.slug === slug && owner.primary,
   );
   return primary?.[0] as DomainName | undefined;
 }

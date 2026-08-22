@@ -18,167 +18,169 @@ import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } f
 import { runCliExec } from "./exec.ts";
 
 export function registerAppCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command("app", "Provision and inspect applications", (y: YargsBuilder) =>
-      y
-        .command(
-          "list",
-          "List applications",
-          () => {},
-          bind(state, cmdAppList),
-        )
-        .command(
-          "show <slug>",
-          "Show one application (secrets redacted)",
-          (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
-          bind(state, cmdAppShow),
-        )
-        .command(
-          "create <slug>",
-          "Create or update an application",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("slug", { type: "string", demandOption: true })
-              .option("domain", {
-                type: "string",
-                demandOption: true,
-                describe: "Primary domain",
-              })
-              .option("alias", {
-                type: "string",
-                describe: "Comma-separated domain aliases",
-              })
-              .option("docroot", {
-                type: "string",
-                describe: "Document root relative to app home",
-              })
-              .option("php", { type: "string", describe: "PHP version" })
-              .option("fpm", { type: "string", describe: "FPM capacity profile" })
-              .option("database-engine", {
-                type: "string",
-                choices: ["mysql", "postgres", "sqlite", "litestream"],
-                describe:
-                  "Database engine (sqlite is local; litestream adds continuous S3 replication)",
-              })
-              .option("mysql", { type: "string", describe: "MySQL version/service shorthand" })
-              .option("postgres", { type: "string", describe: "PostgreSQL version/service" })
-              .option("database", { type: "string", describe: "Initial database name" })
-              .option("db", {
-                type: "boolean",
-                default: false,
-                describe: "Create a database for the app",
-              })
-              .option("legacy", {
-                type: "boolean",
-                default: false,
-                describe: "Allow direct PHP file execution",
-              })
-              .option("front", {
-                type: "boolean",
-                default: false,
-                describe: "Force front-controller routing",
-              })
-              .option("access-log", {
-                type: "boolean",
-                default: false,
-                describe: "Enable per-app access logs",
-              })
-              .option("no-apply", {
-                type: "boolean",
-                default: false,
-                describe: "Skip render/apply after state mutation",
-              })
-              .option("skip-validate", {
-                type: "boolean",
-                default: false,
-                describe: "Skip validators when applying",
-              }),
-          bind(state, cmdAppCreate),
-        )
-        .command(
-          "update <slug>",
-          "Update an application (same options as create)",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("slug", { type: "string", demandOption: true })
-              .option("domain", { type: "string", demandOption: true })
-              .option("alias", { type: "string" })
-              .option("docroot", { type: "string" })
-              .option("php", { type: "string" })
-              .option("fpm", { type: "string" })
-              .option("database-engine", {
-                type: "string",
-                choices: ["mysql", "postgres", "sqlite", "litestream"],
-              })
-              .option("mysql", { type: "string" })
-              .option("postgres", { type: "string" })
-              .option("database", { type: "string" })
-              .option("db", { type: "boolean", default: false })
-              .option("legacy", { type: "boolean", default: false })
-              .option("front", { type: "boolean", default: false })
-              .option("access-log", { type: "boolean", default: false })
-              .option("no-apply", { type: "boolean", default: false })
-              .option("skip-validate", { type: "boolean", default: false }),
-          bind(state, cmdAppCreate),
-        )
-        .command(
-          "enable <slug>",
-          "Enable an application and its runtime configuration",
-          (y2: YargsBuilder) =>
-            noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
-          bind(state, cmdAppEnable),
-        )
-        .command(
-          "disable <slug>",
-          "Disable runtime configuration while retaining app data",
-          (y2: YargsBuilder) =>
-            noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
-          bind(state, cmdAppDisable),
-        )
-        .command(
-          "delete <slug>",
-          "Remove an application from Bento (durable data is retained)",
-          appDeleteOptions,
-          bind(state, cmdAppDelete),
-        )
-        .command(
-          "remove <slug>",
-          "Alias for app delete",
-          appDeleteOptions,
-          bind(state, cmdAppDelete),
-        )
-        .command(
-          "prune <slug>",
-          "Permanently delete data retained after app removal",
-          (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
-          bind(state, cmdAppPrune),
-        )
-        .command(
-          "shell <slug>",
-          "Attach interactive app CLI shell (ephemeral PHP identity)",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("slug", { type: "string", demandOption: true })
-              .option("workdir", {
-                type: "string",
-                describe: "Working directory inside app home",
-              })
-              .option("php", {
-                type: "string",
-                describe: "Managed PHP version override",
-              })
-              .option("print", {
-                type: "boolean",
-                default: false,
-                describe: "Print compose argv instead of attaching",
-              }),
-          bind(state, cmdAppShell),
-        )
-        .demandCommand(
-          1,
-          "Specify an app subcommand: create|list|show|update|enable|disable|delete|prune|shell",
-        )
-        .recommendCommands());
+  return parser.command("app", "Provision and inspect applications", (y: YargsBuilder) =>
+    y
+      .command("list", "List applications", () => {}, bind(state, cmdAppList))
+      .command(
+        "show <slug>",
+        "Show one application (secrets redacted)",
+        (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
+        bind(state, cmdAppShow),
+      )
+      .command(
+        "create <slug>",
+        "Create or update an application",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("slug", { type: "string", demandOption: true })
+            .option("domain", {
+              type: "string",
+              demandOption: true,
+              describe: "Primary domain",
+            })
+            .option("alias", {
+              type: "string",
+              describe: "Comma-separated domain aliases",
+            })
+            .option("docroot", {
+              type: "string",
+              describe: "Document root relative to app home",
+            })
+            .option("php", { type: "string", describe: "PHP version" })
+            .option("fpm", {
+              type: "string",
+              describe: "FPM capacity profile",
+            })
+            .option("database-engine", {
+              type: "string",
+              choices: ["mysql", "postgres", "sqlite", "litestream"],
+              describe:
+                "Database engine (sqlite is local; litestream adds continuous S3 replication)",
+            })
+            .option("mysql", {
+              type: "string",
+              describe: "MySQL version/service shorthand",
+            })
+            .option("postgres", {
+              type: "string",
+              describe: "PostgreSQL version/service",
+            })
+            .option("database", {
+              type: "string",
+              describe: "Initial database name",
+            })
+            .option("db", {
+              type: "boolean",
+              default: false,
+              describe: "Create a database for the app",
+            })
+            .option("legacy", {
+              type: "boolean",
+              default: false,
+              describe: "Allow direct PHP file execution",
+            })
+            .option("front", {
+              type: "boolean",
+              default: false,
+              describe: "Force front-controller routing",
+            })
+            .option("access-log", {
+              type: "boolean",
+              default: false,
+              describe: "Enable per-app access logs",
+            })
+            .option("no-apply", {
+              type: "boolean",
+              default: false,
+              describe: "Skip render/apply after state mutation",
+            })
+            .option("skip-validate", {
+              type: "boolean",
+              default: false,
+              describe: "Skip validators when applying",
+            }),
+        bind(state, cmdAppCreate),
+      )
+      .command(
+        "update <slug>",
+        "Update an application (same options as create)",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("slug", { type: "string", demandOption: true })
+            .option("domain", { type: "string", demandOption: true })
+            .option("alias", { type: "string" })
+            .option("docroot", { type: "string" })
+            .option("php", { type: "string" })
+            .option("fpm", { type: "string" })
+            .option("database-engine", {
+              type: "string",
+              choices: ["mysql", "postgres", "sqlite", "litestream"],
+            })
+            .option("mysql", { type: "string" })
+            .option("postgres", { type: "string" })
+            .option("database", { type: "string" })
+            .option("db", { type: "boolean", default: false })
+            .option("legacy", { type: "boolean", default: false })
+            .option("front", { type: "boolean", default: false })
+            .option("access-log", { type: "boolean", default: false })
+            .option("no-apply", { type: "boolean", default: false })
+            .option("skip-validate", { type: "boolean", default: false }),
+        bind(state, cmdAppCreate),
+      )
+      .command(
+        "enable <slug>",
+        "Enable an application and its runtime configuration",
+        (y2: YargsBuilder) =>
+          noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
+        bind(state, cmdAppEnable),
+      )
+      .command(
+        "disable <slug>",
+        "Disable runtime configuration while retaining app data",
+        (y2: YargsBuilder) =>
+          noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
+        bind(state, cmdAppDisable),
+      )
+      .command(
+        "delete <slug>",
+        "Remove an application from Bento (durable data is retained)",
+        appDeleteOptions,
+        bind(state, cmdAppDelete),
+      )
+      .command("remove <slug>", "Alias for app delete", appDeleteOptions, bind(state, cmdAppDelete))
+      .command(
+        "prune <slug>",
+        "Permanently delete data retained after app removal",
+        (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
+        bind(state, cmdAppPrune),
+      )
+      .command(
+        "shell <slug>",
+        "Attach interactive app CLI shell (ephemeral PHP identity)",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("slug", { type: "string", demandOption: true })
+            .option("workdir", {
+              type: "string",
+              describe: "Working directory inside app home",
+            })
+            .option("php", {
+              type: "string",
+              describe: "Managed PHP version override",
+            })
+            .option("print", {
+              type: "boolean",
+              default: false,
+              describe: "Print compose argv instead of attaching",
+            }),
+        bind(state, cmdAppShell),
+      )
+      .demandCommand(
+        1,
+        "Specify an app subcommand: create|list|show|update|enable|disable|delete|prune|shell",
+      )
+      .recommendCommands(),
+  );
 }
 
 async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
@@ -193,17 +195,16 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.phpVersion,
       a.fpmProfile,
       a.tls.kind,
-      a.databases.map((database) =>
-        database.engine === "sqlite" || database.engine === "litestream"
-          ? `${database.engine}/${sqliteContainerPath(database.file.id, a.slug, database.engine)}`
-          : `${database.engine}/${database.service}`
-      ).join(", "),
+      a.databases
+        .map((database) =>
+          database.engine === "sqlite" || database.engine === "litestream"
+            ? `${database.engine}/${sqliteContainerPath(database.file.id, a.slug, database.engine)}`
+            : `${database.engine}/${database.service}`,
+        )
+        .join(", "),
     ]);
   ctx.log.out(
-    printTable(
-      ["slug", "status", "uid", "domain", "php", "fpm", "tls", "database"],
-      rows,
-    ),
+    printTable(["slug", "status", "uid", "domain", "php", "fpm", "tls", "database"], rows),
   );
   return 0;
 }
@@ -224,7 +225,7 @@ export function redactAppForOutput(app: AppState): AppState {
   const databases = app.databases.map((database) =>
     database.engine === "sqlite" || database.engine === "litestream"
       ? database
-      : { ...database, password: "***" }
+      : { ...database, password: "***" },
   );
   return {
     ...app,
@@ -242,38 +243,33 @@ export function redactAppForOutput(app: AppState): AppState {
   };
 }
 
-async function cmdAppCreate(
-  argv: ArgsWith<"slug" | "domain">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext): Promise<number> {
   const { slug, domain } = argv;
   const aliases = argv.alias?.split(",").filter(Boolean) ?? [];
   const noApply = wantsNoApply(argv);
   const skipValidate = argv.skipValidate === true;
   const explicitDb = argv.db === true;
   const result = await ctx.store.withExclusive(async (state) => {
-    const requestedDatabaseEngine =
-      (argv.databaseEngine ?? (argv.mysql ? "mysql" : argv.postgres ? "postgres" : undefined)) as
-        | "mysql"
-        | "postgres"
-        | "sqlite"
-        | "litestream"
-        | undefined;
-    const requestedDatabaseToken = requestedDatabaseEngine === "mysql"
-      ? argv.mysql
-      : requestedDatabaseEngine === "postgres"
-      ? argv.postgres
-      : undefined;
+    const requestedDatabaseEngine = (argv.databaseEngine ??
+      (argv.mysql ? "mysql" : argv.postgres ? "postgres" : undefined)) as
+      | "mysql"
+      | "postgres"
+      | "sqlite"
+      | "litestream"
+      | undefined;
+    const requestedDatabaseToken =
+      requestedDatabaseEngine === "mysql"
+        ? argv.mysql
+        : requestedDatabaseEngine === "postgres"
+          ? argv.postgres
+          : undefined;
     const provisioned = provisionApp(ctx.platform, state, {
       slug,
       domain,
       aliases,
       documentRoot: argv.docroot,
-      entrypointMode: argv.legacy === true
-        ? "legacy"
-        : argv.front === true
-        ? "front-controller"
-        : undefined,
+      entrypointMode:
+        argv.legacy === true ? "legacy" : argv.front === true ? "front-controller" : undefined,
       phpVersion: argv.php,
       fpmProfile: argv.fpm,
       databaseEngine: argv.databaseEngine,
@@ -288,10 +284,12 @@ async function cmdAppCreate(
       explicitDatabase: explicitDb,
       databaseEngine: requestedDatabaseEngine,
       databaseService: requestedDatabaseToken
-        ? state.databaseServices.find((service) =>
-          service.engine === requestedDatabaseEngine &&
-          (service.version === requestedDatabaseToken || service.service === requestedDatabaseToken)
-        )?.service
+        ? state.databaseServices.find(
+            (service) =>
+              service.engine === requestedDatabaseEngine &&
+              (service.version === requestedDatabaseToken ||
+                service.service === requestedDatabaseToken),
+          )?.service
         : undefined,
       databaseName: argv.database ?? (explicitDb ? slug : undefined),
     });
@@ -322,12 +320,10 @@ async function cmdAppCreate(
 
 function appDeleteOptions(y: YargsBuilder): YargsBuilder {
   return noApplyOption(
-    y
-      .positional("slug", { type: "string", demandOption: true })
-      .option("confirm", {
-        type: "string",
-        describe: "Exact confirmation text: delete <slug>",
-      }),
+    y.positional("slug", { type: "string", demandOption: true }).option("confirm", {
+      type: "string",
+      describe: "Exact confirmation text: delete <slug>",
+    }),
   );
 }
 
@@ -368,12 +364,7 @@ async function cmdAppDisable(argv: ArgsWith<"slug">, ctx: CliContext): Promise<n
 async function cmdAppDelete(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
   const noApply = wantsNoApply(argv);
   const result = await ctx.store.withExclusive(async (state) => {
-    const removed = deleteApp(
-      state,
-      argv.slug,
-      argv.confirm,
-      ctx.platform.clock.nowIso(),
-    );
+    const removed = deleteApp(state, argv.slug, argv.confirm, ctx.platform.clock.nowIso());
     await writeAppPruneManifest(ctx.platform, removed.app);
     await ctx.store.save(removed.state);
     if (!noApply) {
@@ -400,11 +391,12 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   ctx.log.out(`The following retained data for app ${plan.slug} will be permanently deleted:`);
   if (plan.manifestFound) {
     for (const binding of plan.bindings) {
-      const engineLabel = binding.engine === "mysql"
-        ? "MySQL"
-        : binding.engine === "postgres"
-        ? "PostgreSQL"
-        : "SQLite";
+      const engineLabel =
+        binding.engine === "mysql"
+          ? "MySQL"
+          : binding.engine === "postgres"
+            ? "PostgreSQL"
+            : "SQLite";
       for (const database of binding.databases) {
         ctx.log.out(
           binding.engine === "sqlite" || binding.engine === "litestream"
@@ -413,9 +405,8 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
         );
       }
       if (binding.engine !== "sqlite" && binding.engine !== "litestream") {
-        const identity = binding.engine === "mysql"
-          ? `${binding.databaseUser}@%`
-          : binding.databaseUser;
+        const identity =
+          binding.engine === "mysql" ? `${binding.databaseUser}@%` : binding.databaseUser;
         ctx.log.out(
           `  - ${engineLabel} ${
             binding.engine === "mysql" ? "account" : "role"

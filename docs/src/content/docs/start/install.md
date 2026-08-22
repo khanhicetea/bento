@@ -7,7 +7,7 @@ description: Install the Bento command and choose a safe location for stack data
 
 Install the compiled `bento` command on a supported Linux host. Then choose a durable location for stack data.
 
-The compiled command includes its templates. A production host does not need Deno, Node.js, Python, or a source checkout.
+The compiled command includes its templates. A production host does not need Bun, Node.js, Python, or a source checkout.
 
 ## Before you begin
 
@@ -41,7 +41,7 @@ The compiled command includes its templates. A production host does not need Den
    bento version
    ```
 
-   `command -v` should report `/usr/local/bin/bento`. The version output identifies both the Bento version and the Deno target embedded in that build. A production host does not need a separate Deno installation.
+   `command -v` should report `/usr/local/bin/bento`. The version output identifies both the Bento version and the Bun target embedded in that build. A production host does not need a separate Bun installation.
 
 ## Choose a stack root
 
@@ -78,20 +78,20 @@ Use `--stack PATH` when you deliberately need to target another stack for one co
 
 ## Run from source instead
 
-Source mode is for development or for a reviewed checkout when no compiled release is suitable. It requires Deno 2.9.3 and must be run from the repository checkout:
+Source mode is for development or for a reviewed checkout when no compiled release is suitable. It requires Bun 1.4.0 and must be run from the repository checkout:
 
 ```sh
-deno --version
-deno task run version
+bun --version
+bun run src/main.ts version
 ```
 
-Use the permission set in the repository's `deno.json`; do not replace it with unrestricted `-A`. Source mode and the compiled binary are tested to produce equivalent state transitions and generated files. Mutable data still belongs in the external stack root, not beside the source or binary.
+Use `bun install --frozen-lockfile` so dependency resolution matches the committed lockfile. Source mode and the compiled binary are tested to produce equivalent state transitions and generated files. Mutable data still belongs in the external stack root, not beside the source or binary.
 
 To build a binary from a reviewed checkout, select the task for the target host:
 
 ```sh
-deno task compile:amd64
-deno task compile:arm64
+bun run compile:amd64
+bun run compile:arm64
 ```
 
 These tasks write `dist/bento-linux-amd64` and `dist/bento-linux-arm64`. Install only the matching artifact with the same `install` command shown above.
@@ -104,7 +104,7 @@ These tasks write `dist/bento-linux-amd64` and `dist/bento-linux-arm64`. Install
 
 **The stack root is not writable:** correct its owner and mode for the Bento operator. Do not work around the problem by moving production state into a temporary directory.
 
-**Source mode cannot find `deno.json` or a task:** change to the repository root before running `deno task run`, and confirm that the checkout contains `deno.json` and `templates/`.
+**Source mode cannot find `package.json` or a task:** change to the repository root before running `bun run src/main.ts`, and confirm that the checkout contains `package.json` and `templates/`.
 
 ## Next steps
 

@@ -11,7 +11,7 @@ Bento is an on-demand, host-local desired-state controller around Docker Compose
 Operator
   |
   v
-bento CLI (Deno/TypeScript; one process per invocation)
+bento CLI (Bun/TypeScript; one process per invocation)
   |  validate intent and external boundaries
   v
 state.json + .env + custom/ + overlays/
@@ -75,7 +75,7 @@ Services receive a `Platform` and SHOULD remain independent from terminal format
 
 ### 3.4 Platform adapters
 
-`src/platform/` isolates Deno and host effects behind narrow interfaces:
+`src/platform/` isolates Bun and host effects behind narrow interfaces:
 
 - `FileSystem` with atomic writes and non-following `lstat`;
 - exclusive/shared `FileLock`;
@@ -84,7 +84,7 @@ Services receive a `Platform` and SHOULD remain independent from terminal format
 - source/compiled `AssetResolver`;
 - stack-root `PathPolicy` with app-home containment.
 
-Domain code MUST NOT import `Deno.*` directly. Test adapters provide fixed clocks, seeded randomness, in-memory locks, and recorded subprocesses.
+Domain code MUST NOT import Bun/Node runtime globals directly. Test adapters provide fixed clocks, seeded randomness, in-memory locks, and recorded subprocesses.
 
 ### 3.5 Immutable assets
 
@@ -115,19 +115,19 @@ Apps are not Compose services. Apps assigned to a PHP version share that version
 
 | Concern | Technology/decision |
 | --- | --- |
-| Runtime/language | Deno 2.9.3, strict TypeScript |
+| Runtime/language | Bun 1.4.0, strict TypeScript |
 | CLI | yargs 18 |
 | Layout/colors | cliui 9, picocolors 1 |
 | Runtime validation | zod 3 |
 | Templates | mustache 4 |
 | Cron parsing | cron-parser 5 |
 | Version ordering | semver 7 |
-| Standard helpers | official `@std/*` packages |
-| Dependency resolution | centralized `deno.json`, committed `deno.lock` |
-| Distribution | `deno compile`, embedded `templates`, Linux amd64/arm64 |
+| Standard helpers | Node-compatible built-ins and focused npm packages |
+| Dependency resolution | centralized `package.json`, committed `bun.lock` |
+| Distribution | `bun build --compile`, embedded `templates`, Linux amd64/arm64 |
 | Host orchestration | Docker Engine + Docker Compose v2 |
 
-The docs site is a separate developer toolchain: Astro 7/Starlight on Node.js 22+. Node is not a control-plane runtime requirement.
+The docs site is a separate Bun workspace using Astro 7/Starlight. It is not a control-plane runtime requirement.
 
 ### 5.2 Container/runtime stack
 

@@ -54,12 +54,7 @@ export async function sectionStatus(ui: WizardUI, ctx: CliContext): Promise<void
     ]);
     ui.table(["version", "fpm", "runner", "image", "cap"], rows);
   } else if (action === "mysql") {
-    const rows = listMysqlVersions(state).map((v) => [
-      v.version,
-      v.service,
-      v.volume,
-      v.image,
-    ]);
+    const rows = listMysqlVersions(state).map((v) => [v.version, v.service, v.volume, v.image]);
     ui.table(["version", "service", "volume", "image"], rows);
   } else if (action === "proxy") {
     const rows = Object.values(state.proxies).map((p) => [

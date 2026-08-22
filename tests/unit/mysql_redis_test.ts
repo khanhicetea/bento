@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertRejects } from "../runtime.ts";
+import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { applyAppDataPlane, materializeAppHome, provisionApp } from "../../src/services/app.ts";
 import {
@@ -48,14 +48,14 @@ function testPlatform(
   };
 }
 
-Deno.test("parseDotEnv reads MYSQL_ROOT_PASSWORD", () => {
+bunRuntime.test("parseDotEnv reads MYSQL_ROOT_PASSWORD", () => {
   const env = parseDotEnv("# comment\nMYSQL_ROOT_PASSWORD=s3cret\nREDIS_PASSWORD=r1\n");
   assertEquals(env.MYSQL_ROOT_PASSWORD, "s3cret");
   assertEquals(env.REDIS_PASSWORD, "r1");
 });
 
-Deno.test("stack init generates the MySQL root password only once", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-mysql-init-" });
+bunRuntime.test("stack init generates the MySQL root password only once", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-mysql-init-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -71,11 +71,11 @@ Deno.test("stack init generates the MySQL root password only once", async () => 
     await assertRejects(() => store.init(), Error, "already initialized");
     assertEquals(await platform.fs.readText(platform.paths.paths.envFile), initialEnv);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("grantSql sets the password only when creating the app user", () => {
+bunRuntime.test("grantSql sets the password only when creating the app user", () => {
   const state = createEmptyState("2026-07-16T12:00:00.000Z");
   const platform = testPlatform("/tmp/unused");
   const { app } = provisionApp(platform, state, {
@@ -94,7 +94,7 @@ Deno.test("grantSql sets the password only when creating the app user", () => {
   assertEquals(/IDENTIFIED BY 'p'ass/.test(sql), false);
 });
 
-Deno.test("accountSetupSql does not create a database", () => {
+bunRuntime.test("accountSetupSql does not create a database", () => {
   const platform = testPlatform("/tmp/unused");
   const { app } = provisionApp(platform, createEmptyState(), {
     slug: "alpha",
@@ -106,11 +106,15 @@ Deno.test("accountSetupSql does not create a database", () => {
   assertEquals(sql.includes("ALTER USER"), false);
 });
 
-Deno.test("execMysqlSql keeps password off host argv (stdin only)", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-mysql-" });
+bunRuntime.test("execMysqlSql keeps password off host argv (stdin only)", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-mysql-" });
   try {
     const password = "root-secret-value";
-    const platform = testPlatform(root, () => ({ code: 0, stdout: "", stderr: "" }));
+    const platform = testPlatform(root, () => ({
+      code: 0,
+      stdout: "",
+      stderr: "",
+    }));
     const result = await execMysqlSql(platform, "mysql84", "SELECT 1;", password);
     assertEquals(result.code, 0);
     assertEquals(platform.process.calls.length, 1);
@@ -120,18 +124,19 @@ Deno.test("execMysqlSql keeps password off host argv (stdin only)", async () => 
     assertEquals(call.command.includes("docker"), true);
     assertEquals(call.command.includes("mysql84"), true);
     // password only on stdin
-    const stdin = typeof call.options?.stdin === "string"
-      ? call.options.stdin
-      : new TextDecoder().decode(call.options?.stdin as Uint8Array);
+    const stdin =
+      typeof call.options?.stdin === "string"
+        ? call.options.stdin
+        : new TextDecoder().decode(call.options?.stdin as Uint8Array);
     assertEquals(stdin.includes(`password=${password}`), true);
     assertEquals(stdin.includes("SELECT 1;"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("explicit database fails before recording when MySQL exec fails", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-mysql-" });
+bunRuntime.test("explicit database fails before recording when MySQL exec fails", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-mysql-" });
   try {
     const platform = testPlatform(root, (cmd) => {
       // reachability true; grant fails
@@ -158,14 +163,18 @@ Deno.test("explicit database fails before recording when MySQL exec fails", asyn
     const reloaded = await store.load();
     assertEquals(reloaded.apps["alpha"]?.database.databases.length ?? 0, 0);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("explicit database fails when MySQL is unreachable", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-mysql-" });
+bunRuntime.test("explicit database fails when MySQL is unreachable", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-mysql-" });
   try {
-    const platform = testPlatform(root, () => ({ code: 1, stdout: "", stderr: "not running" }));
+    const platform = testPlatform(root, () => ({
+      code: 1,
+      stdout: "",
+      stderr: "not running",
+    }));
     const store = new StateStore(platform);
     await store.init();
     let state = await store.load();
@@ -181,14 +190,18 @@ Deno.test("explicit database fails when MySQL is unreachable", async () => {
     );
     assertEquals(state.apps["alpha"]?.database.databases.length ?? 0, 0);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("applyAppDataPlane with --db applies grants via exec when reachable", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-mysql-" });
+bunRuntime.test("applyAppDataPlane with --db applies grants via exec when reachable", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-mysql-" });
   try {
-    const platform = testPlatform(root, () => ({ code: 0, stdout: "ok", stderr: "" }));
+    const platform = testPlatform(root, () => ({
+      code: 0,
+      stdout: "ok",
+      stderr: "",
+    }));
     const store = new StateStore(platform);
     await store.init();
     const { app } = provisionApp(platform, await store.load(), {
@@ -196,7 +209,9 @@ Deno.test("applyAppDataPlane with --db applies grants via exec when reachable", 
       domain: "alpha.test",
       createDatabase: true,
     });
-    const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
+    const plane = await applyAppDataPlane(platform, app, {
+      explicitDatabase: true,
+    });
     assertEquals(plane.mysqlApplied, true);
     // at least reachability + grant
     assertEquals(platform.process.calls.length >= 2, true);
@@ -205,12 +220,12 @@ Deno.test("applyAppDataPlane with --db applies grants via exec when reachable", 
       assertEquals(joined.includes(app.database.password), false);
     }
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("shared redis credentials include prefix and stack password", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-redis-" });
+bunRuntime.test("shared redis credentials include prefix and stack password", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-redis-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -243,11 +258,11 @@ Deno.test("shared redis credentials include prefix and stack password", async ()
     assertEquals(env.REDIS_PREFIX, "alpha:");
     assertEquals(env.REDIS_PASSWORD, "shared-secret");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("ACL rules limit keys/channels to app prefix", () => {
+bunRuntime.test("ACL rules limit keys/channels to app prefix", () => {
   const identity = {
     mode: "acl" as const,
     prefix: "beta:",
@@ -265,10 +280,14 @@ Deno.test("ACL rules limit keys/channels to app prefix", () => {
   assertEquals(parts.capabilityArgs.includes("&beta:*"), true);
 });
 
-Deno.test("apply Redis ACL keeps secrets off host argv", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-redis-" });
+bunRuntime.test("apply Redis ACL keeps secrets off host argv", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-redis-" });
   try {
-    const platform = testPlatform(root, () => ({ code: 0, stdout: "OK", stderr: "" }));
+    const platform = testPlatform(root, () => ({
+      code: 0,
+      stdout: "OK",
+      stderr: "",
+    }));
     // Force ACL mode app
     let state = createEmptyState();
     state = {
@@ -290,20 +309,20 @@ Deno.test("apply Redis ACL keeps secrets off host argv", async () => {
       assertEquals(joined.includes("redis-auth"), false);
     }
     // secrets on stdin only
-    const aclCall = platform.process.calls.find((c) =>
-      c.command.includes("redis") && c.options?.stdin
+    const aclCall = platform.process.calls.find(
+      (c) => c.command.includes("redis") && c.options?.stdin,
     );
     assertEquals(!!aclCall, true);
     const stdin = String(aclCall!.options!.stdin);
     assertEquals(stdin.includes("redis-auth"), true);
     assertEquals(stdin.includes(app.redis.aclPassword!), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("root MySQL client option files get real password and mode 0600", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-rootcnf-" });
+bunRuntime.test("root MySQL client option files get real password and mode 0600", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-rootcnf-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -347,12 +366,12 @@ Deno.test("root MySQL client option files get real password and mode 0600", asyn
     );
     assertEquals(compose.includes("./backups/mysql84:/var/backups/bento"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("root.cnf mode restored to 0600 after validation rollback", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-rootcnf-rb-" });
+bunRuntime.test("root.cnf mode restored to 0600 after validation rollback", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-rootcnf-rb-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -375,12 +394,14 @@ Deno.test("root.cnf mode restored to 0600 after validation rollback", async () =
       () =>
         render.apply(state, {
           skipValidate: false,
-          validators: [{
-            name: "fail",
-            validate: async () => {
-              throw new Error("boom");
+          validators: [
+            {
+              name: "fail",
+              validate: async () => {
+                throw new Error("boom");
+              },
             },
-          }],
+          ],
         }),
       Error,
       "validation failed",
@@ -390,18 +411,22 @@ Deno.test("root.cnf mode restored to 0600 after validation rollback", async () =
     assertEquals(after, before);
     assertEquals((await platform.fs.stat(cnfPath)).mode & 0o777, 0o600);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("isMysqlReachable reflects process exit code", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-ping-" });
+bunRuntime.test("isMysqlReachable reflects process exit code", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-ping-" });
   try {
     const up = testPlatform(root, () => ({ code: 0, stdout: "", stderr: "" }));
     assertEquals(await isMysqlReachable(up, "mysql84"), true);
-    const down = testPlatform(root, () => ({ code: 1, stdout: "", stderr: "dead" }));
+    const down = testPlatform(root, () => ({
+      code: 1,
+      stdout: "",
+      stderr: "dead",
+    }));
     assertEquals(await isMysqlReachable(down, "mysql84"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

@@ -52,4 +52,4 @@ bento app create --help
 bento compose --help
 ```
 
-Source contributors may substitute `deno task run --`; production examples use the compiled `bento` binary.
+Source contributors may substitute `bun run src/main.ts --`; production examples use the compiled `bento` binary.

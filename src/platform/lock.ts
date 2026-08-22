@@ -1,80 +1,75 @@
-import { dirname } from "@std/path";
+import { dirname } from "node:path";
+import { mkdir } from "node:fs/promises";
+import type { Subprocess } from "bun";
 import type { FileLock } from "./interfaces.ts";
 import { platformError } from "../domain/errors.ts";
 
-/**
- * Exclusive/shared file locks using Deno flock on a lock file.
- * Suitable for serializing state/render mutations and deploy queue access.
- */
-export function createFileLock(): FileLock {
-  async function openLock(path: string): Promise<Deno.FsFile> {
-    await Deno.mkdir(dirname(path), { recursive: true });
-    return await Deno.open(path, { create: true, read: true, write: true });
-  }
+async function acquire(
+  path: string,
+  shared: boolean,
+  nonblocking: boolean,
+): Promise<(() => Promise<void>) | null> {
+  await mkdir(dirname(path), { recursive: true });
+  const command = ["flock", shared ? "--shared" : "--exclusive"];
+  if (nonblocking) command.push("--nonblock");
+  command.push(path, "sh", "-c", "printf 'locked\\n'; cat >/dev/null");
 
+  let child: Subprocess | undefined;
+  try {
+    child = Bun.spawn(command, {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (!(child.stdout instanceof ReadableStream)) throw new Error("flock stdout unavailable");
+    const reader = child.stdout.getReader();
+    const first = await reader.read();
+    reader.releaseLock();
+    if (first.done || !new TextDecoder().decode(first.value).startsWith("locked\n")) {
+      const code = await child.exited;
+      if (nonblocking && code === 1) return null;
+      const stderr =
+        child.stderr instanceof ReadableStream ? await new Response(child.stderr).text() : "";
+      throw new Error(stderr.trim() || `flock exited ${code}`);
+    }
+
+    let released = false;
+    return async () => {
+      if (released) return;
+      released = true;
+      const stdin = child!.stdin;
+      if (typeof stdin !== "number" && stdin !== undefined) await stdin.end();
+      await child!.exited;
+    };
+  } catch (cause) {
+    child?.kill();
+    throw cause;
+  }
+}
+
+/** Linux advisory locks held by a small util-linux flock subprocess. */
+export function createFileLock(): FileLock {
   return {
-    async exclusive(path: string): Promise<() => Promise<void>> {
-      let file: Deno.FsFile;
+    async exclusive(path) {
       try {
-        file = await openLock(path);
-        await file.lock(true);
+        return (await acquire(path, false, false))!;
       } catch (cause) {
         throw platformError(`failed to acquire exclusive lock ${path}`, cause);
       }
-      let released = false;
-      return async () => {
-        if (released) return;
-        released = true;
-        try {
-          await file.unlock();
-        } finally {
-          file.close();
-        }
-      };
     },
-
-    async tryExclusive(path: string): Promise<(() => Promise<void>) | null> {
-      let file: Deno.FsFile | undefined;
+    async tryExclusive(path) {
       try {
-        file = await openLock(path);
-        if (!(await file.tryLock(true))) {
-          file.close();
-          return null;
-        }
+        return await acquire(path, false, true);
       } catch (cause) {
-        file?.close();
         throw platformError(`failed to try exclusive lock ${path}`, cause);
       }
-      let released = false;
-      return async () => {
-        if (released) return;
-        released = true;
-        try {
-          await file.unlock();
-        } finally {
-          file.close();
-        }
-      };
     },
-
-    async shared(path: string): Promise<() => Promise<void>> {
-      let file: Deno.FsFile;
+    async shared(path) {
       try {
-        file = await openLock(path);
-        await file.lock(false);
+        return (await acquire(path, true, false))!;
       } catch (cause) {
         throw platformError(`failed to acquire shared lock ${path}`, cause);
       }
-      let released = false;
-      return async () => {
-        if (released) return;
-        released = true;
-        try {
-          await file.unlock();
-        } finally {
-          file.close();
-        }
-      };
     },
   };
 }
@@ -84,17 +79,13 @@ export function createMemoryLock(): FileLock {
   const exclusiveOwners = new Map<string, number>();
   const sharedCounts = new Map<string, number>();
   let waiters: Array<() => void> = [];
-
   function notify() {
     const current = waiters;
     waiters = [];
-    for (const w of current) w();
+    for (const waiter of current) waiter();
   }
-
   return {
-    async exclusive(path: string): Promise<() => Promise<void>> {
-      // Check-and-set must be synchronous (no await between) so concurrent
-      // acquirers cannot all observe a free lock in the same turn (R-01).
+    async exclusive(path) {
       while (true) {
         if (!exclusiveOwners.has(path) && (sharedCounts.get(path) ?? 0) === 0) {
           exclusiveOwners.set(path, 1);
@@ -107,29 +98,25 @@ export function createMemoryLock(): FileLock {
         notify();
       };
     },
-    async tryExclusive(path: string): Promise<(() => Promise<void>) | null> {
+    async tryExclusive(path) {
       if (exclusiveOwners.has(path) || (sharedCounts.get(path) ?? 0) !== 0) return null;
       exclusiveOwners.set(path, 1);
       let released = false;
       return async () => {
-        if (released) return;
-        released = true;
-        exclusiveOwners.delete(path);
-        notify();
+        if (!released) {
+          released = true;
+          exclusiveOwners.delete(path);
+          notify();
+        }
       };
     },
-    async shared(path: string): Promise<() => Promise<void>> {
-      while (true) {
-        if (!exclusiveOwners.has(path)) {
-          sharedCounts.set(path, (sharedCounts.get(path) ?? 0) + 1);
-          break;
-        }
-        await new Promise<void>((resolve) => waiters.push(resolve));
-      }
+    async shared(path) {
+      while (exclusiveOwners.has(path)) await new Promise<void>((resolve) => waiters.push(resolve));
+      sharedCounts.set(path, (sharedCounts.get(path) ?? 0) + 1);
       return async () => {
-        const n = (sharedCounts.get(path) ?? 1) - 1;
-        if (n <= 0) sharedCounts.delete(path);
-        else sharedCounts.set(path, n);
+        const count = (sharedCounts.get(path) ?? 1) - 1;
+        if (count <= 0) sharedCounts.delete(path);
+        else sharedCounts.set(path, count);
         notify();
       };
     },

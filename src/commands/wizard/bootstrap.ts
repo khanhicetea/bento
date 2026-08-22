@@ -10,8 +10,16 @@ import {
 export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<void> {
   ui.header("Bootstrap", ctx.stackRoot);
   const actions = [
-    { label: "Render generated config (no reload)", value: "render", hint: "bento render" },
-    { label: "Apply (render + validate + reload)", value: "apply", hint: "bento apply" },
+    {
+      label: "Render generated config (no reload)",
+      value: "render",
+      hint: "bento render",
+    },
+    {
+      label: "Apply (render + validate + reload)",
+      value: "apply",
+      hint: "bento apply",
+    },
     {
       label: "Render only (skip service signals)",
       value: "apply-ro",
@@ -37,7 +45,10 @@ export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<v
         // Let init report malformed existing configuration.
       }
     }
-    const name = await ui.prompt("Stable stack name", { default: defaultName, required: true });
+    const name = await ui.prompt("Stable stack name", {
+      default: defaultName,
+      required: true,
+    });
     if (!name) return;
     try {
       const state = await ctx.store.init({ projectName: name });
@@ -51,7 +62,10 @@ export async function sectionBootstrap(ui: WizardUI, ctx: CliContext): Promise<v
   } else if (action === "render") {
     if (!(await ensureState(ui, ctx))) return;
     const state = await ctx.store.load();
-    const result = await ctx.render.apply(state, { renderOnly: true, skipValidate: true });
+    const result = await ctx.render.apply(state, {
+      renderOnly: true,
+      skipValidate: true,
+    });
     ui.success(`Rendered ${result.files.length} files`, "render-only, no service signals");
   } else if (action === "apply" || action === "apply-ro") {
     if (!(await ensureState(ui, ctx))) return;

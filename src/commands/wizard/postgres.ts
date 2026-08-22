@@ -32,11 +32,31 @@ export async function sectionPostgres(ui: WizardUI, ctx: CliContext): Promise<vo
     ui.blank();
     const action = await ui.menu("PostgreSQL actions", [
       { label: "Open shell", value: "shell", disabled: versions.length === 0 },
-      { label: "Add version", value: "add", hint: "official major tag, e.g. 17" },
-      { label: "Database sizes", value: "size", disabled: versions.length === 0 },
-      { label: "Active processes", value: "processlist", disabled: versions.length === 0 },
-      { label: "Logical backup", value: "backup", hint: "PostgreSQL database · app · all" },
-      { label: "Logical restore", value: "restore", hint: "recent backup or file" },
+      {
+        label: "Add version",
+        value: "add",
+        hint: "official major tag, e.g. 17",
+      },
+      {
+        label: "Database sizes",
+        value: "size",
+        disabled: versions.length === 0,
+      },
+      {
+        label: "Active processes",
+        value: "processlist",
+        disabled: versions.length === 0,
+      },
+      {
+        label: "Logical backup",
+        value: "backup",
+        hint: "PostgreSQL database · app · all",
+      },
+      {
+        label: "Logical restore",
+        value: "restore",
+        hint: "recent backup or file",
+      },
     ]);
     if (!action) return;
 
@@ -51,16 +71,22 @@ export async function sectionPostgres(ui: WizardUI, ctx: CliContext): Promise<vo
         await ctx.store.withExclusive(async (current) => {
           const next = addPostgresVersion(current, version);
           await ctx.store.save(next);
-          await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });
+          await ctx.render.apply(next, {
+            skipValidate: true,
+            alreadyLocked: true,
+          });
           return next;
         });
         ui.success(`Added PostgreSQL ${version}`);
       } else if (action === "shell") {
         const services = resolvePostgresServices(state);
-        const service = services.length === 1 ? services[0]! : await ui.menu(
-          "PostgreSQL service",
-          services.map((value) => ({ label: value, value })),
-        );
+        const service =
+          services.length === 1
+            ? services[0]!
+            : await ui.menu(
+                "PostgreSQL service",
+                services.map((value) => ({ label: value, value })),
+              );
         if (!service) continue;
         await openPostgresShell(
           ui,

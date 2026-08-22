@@ -274,7 +274,7 @@ Supported customization points are:
 
 Custom input is trusted and MAY violate invariants; it MUST be validated with the resulting service configuration. Returning to upstream templates MUST preserve custom source.
 
-The control plane MUST run under pinned Deno with explicit permissions and compile to Linux amd64/arm64 binaries embedding immutable templates. A compiled release MUST not require Deno, Node.js, Python, npm install, or a repository checkout on the target. Source and compiled modes MUST preserve equivalent state transitions, generated content, diagnostics, exits, and safety behavior.
+The control plane MUST run under pinned Bun with locked dependencies and compile to Linux amd64/arm64 binaries embedding immutable templates. A compiled release MUST not require Bun, Node.js, Python, npm install, or a repository checkout on the target. Source and compiled modes MUST preserve equivalent state transitions, generated content, diagnostics, exits, and safety behavior.
 
 ## 8. Critical journeys
 

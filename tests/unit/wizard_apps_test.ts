@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import type { AppState } from "../../src/domain/state.ts";
 import {
   appDatabaseMenuChoices,
@@ -17,13 +17,14 @@ function appWizardUi(inputs: string[]): { ui: WizardUI; output: string[] } {
     readLine: () => Promise.resolve(inputs.shift() ?? null),
     readKey: () => {
       const value = inputs.shift();
-      const event: KeyEvent = value === undefined
-        ? { type: "eof" }
-        : value === ""
-        ? { type: "enter" }
-        : value === "\x1b"
-        ? { type: "escape" }
-        : { type: "char", char: value };
+      const event: KeyEvent =
+        value === undefined
+          ? { type: "eof" }
+          : value === ""
+            ? { type: "enter" }
+            : value === "\x1b"
+              ? { type: "escape" }
+              : { type: "char", char: value };
       return Promise.resolve(event);
     },
     isInteractive: () => true,
@@ -32,7 +33,7 @@ function appWizardUi(inputs: string[]): { ui: WizardUI; output: string[] } {
   return { ui: new WizardUI(io), output };
 }
 
-Deno.test("app database wizard groups SQLite-backed files", () => {
+bunRuntime.test("app database wizard groups SQLite-backed files", () => {
   const app = {
     slug: "alpha",
     databases: [
@@ -72,25 +73,17 @@ Deno.test("app database wizard groups SQLite-backed files", () => {
   const choices = appDatabaseMenuChoices(app);
   assertEquals(
     choices.map((choice) => choice.value),
-    [
-      "mysql:mysql84",
-      "postgres:postgres17",
-      "__sqlite",
-    ],
+    ["mysql:mysql84", "postgres:postgres17", "__sqlite"],
   );
   assertEquals(
     choices.map((choice) => choice.label),
-    [
-      "MySQL · mysql84",
-      "PostgreSQL · postgres17",
-      "SQLite",
-    ],
+    ["MySQL · mysql84", "PostgreSQL · postgres17", "SQLite"],
   );
   assertEquals(choices[2]?.hint, "2 files · 1 local · 1 Litestream");
 
   const sqliteChoices = sqliteDatabaseMenuChoices(
-    app.databases.filter((binding) =>
-      binding.engine === "sqlite" || binding.engine === "litestream"
+    app.databases.filter(
+      (binding) => binding.engine === "sqlite" || binding.engine === "litestream",
     ),
   );
   assertEquals(
@@ -103,29 +96,16 @@ Deno.test("app database wizard groups SQLite-backed files", () => {
   );
 
   assertEquals(wizardBackupDatabases(app, "mysql"), [{ name: "alpha", service: "mysql84" }]);
-  assertEquals(wizardBackupDatabases(app, "postgres"), [{
-    name: "alpha_events",
-    service: "postgres17",
-  }]);
+  assertEquals(wizardBackupDatabases(app, "postgres"), [
+    {
+      name: "alpha_events",
+      service: "postgres17",
+    },
+  ]);
 });
 
-Deno.test("app creation draft navigates backward and preserves answers", async () => {
-  const inputs = [
-    "demo",
-    "\x1b",
-    "",
-    "demo.test",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-  ];
+bunRuntime.test("app creation draft navigates backward and preserves answers", async () => {
+  const inputs = ["demo", "\x1b", "", "demo.test", "", "", "", "", "", "", "", "", "", ""];
   const { ui, output } = appWizardUi(inputs);
   const state = createEmptyState("2026-07-31T00:00:00.000Z");
   const draft = await collectAppCreateDraft(ui, state);
@@ -136,7 +116,7 @@ Deno.test("app creation draft navigates backward and preserves answers", async (
   assertEquals(output.join("").includes("Step 5 of 5 · Review"), true);
 });
 
-Deno.test("app review can change one field before apply", async () => {
+bunRuntime.test("app review can change one field before apply", async () => {
   const inputs = [
     "demo",
     "demo.test",

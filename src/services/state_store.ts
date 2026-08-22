@@ -72,7 +72,7 @@ export class StateStore {
       let requestedProject = options.projectName;
       if (
         requestedProject === undefined &&
-        await this.platform.fs.exists(this.platform.paths.paths.envFile)
+        (await this.platform.fs.exists(this.platform.paths.paths.envFile))
       ) {
         const existingEnv = parseDotEnv(
           await this.platform.fs.readText(this.platform.paths.paths.envFile),
@@ -158,9 +158,7 @@ export class StateStore {
 
   /** Mutate state under exclusive lock. */
   async withExclusive<T>(fn: (state: DesiredState) => Promise<T> | T): Promise<T> {
-    const release = await this.platform.lock.exclusive(
-      this.platform.paths.paths.renderLock,
-    );
+    const release = await this.platform.lock.exclusive(this.platform.paths.paths.renderLock);
     try {
       const state = await this.load();
       return await fn(state);
@@ -171,9 +169,7 @@ export class StateStore {
 
   /** Load under shared lock for read-only operations. */
   async withShared<T>(fn: (state: DesiredState) => Promise<T> | T): Promise<T> {
-    const release = await this.platform.lock.shared(
-      this.platform.paths.paths.renderLock,
-    );
+    const release = await this.platform.lock.shared(this.platform.paths.paths.renderLock);
     try {
       const state = await this.load();
       return await fn(state);

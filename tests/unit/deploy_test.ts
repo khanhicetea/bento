@@ -1,5 +1,5 @@
-import { assertEquals } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
+import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { materializeAppHome, provisionApp } from "../../src/services/app.ts";
 import {
@@ -20,7 +20,7 @@ import { createRecordingProcessRunner } from "../../src/platform/process.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
 import { createPathPolicy } from "../../src/platform/paths.ts";
 import type { Platform } from "../../src/platform/mod.ts";
-import { encodeHex } from "@std/encoding/hex";
+import { encodeHex } from "../runtime.ts";
 
 function testPlatform(root: string): Platform {
   const fs = createFileSystem();
@@ -47,7 +47,7 @@ async function hmacSha256(secret: string, body: Uint8Array): Promise<string> {
   return encodeHex(new Uint8Array(sig));
 }
 
-Deno.test("deploy surface changes reload the required data-plane services", () => {
+bunRuntime.test("deploy surface changes reload the required data-plane services", () => {
   const root = "/tmp/bento-deploy-reload";
   const platform = testPlatform(root);
   const provisioned = provisionApp(platform, createEmptyState(), {
@@ -71,27 +71,25 @@ Deno.test("deploy surface changes reload the required data-plane services", () =
   assertEquals(disabled.reloadPlan.phpRunner.has("php85-runner"), true);
 });
 
-Deno.test("verifyDeploySignature accepts valid sha256", async () => {
+bunRuntime.test("verifyDeploySignature accepts valid sha256", async () => {
   const body = new TextEncoder().encode('{"ref":"refs/heads/main"}');
   const secret = "topsecret";
   const hex = await hmacSha256(secret, body);
-  const ok = await verifyDeploySignature(
-    body,
-    secret,
-    `sha256=${hex}`,
-    null,
-  );
+  const ok = await verifyDeploySignature(body, secret, `sha256=${hex}`, null);
   assertEquals(ok, true);
   const bad = await verifyDeploySignature(body, secret, "sha256=deadbeef", null);
   assertEquals(bad, false);
 });
 
-Deno.test("enqueue auth and size limits", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("enqueue auth and size limits", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     state = p.state;
     await materializeAppHome(platform, p.app);
     const enabled = enableDeploy(state, { slug: "alpha" }, platform);
@@ -125,16 +123,19 @@ Deno.test("enqueue auth and size limits", async () => {
     const deployJson = await platform.fs.readText(join(home, ".bento", "deploy.json"));
     assertEquals(deployJson.includes(enabled.secret), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("latest policy supersedes queued jobs", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("latest policy supersedes queued jobs", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     await materializeAppHome(platform, p.app);
     const enabled = enableDeploy(p.state, { slug: "alpha", queuePolicy: "latest" }, platform);
     const app = enabled.state.apps["alpha"]!;
@@ -149,24 +150,27 @@ Deno.test("latest policy supersedes queued jobs", async () => {
       });
       assertEquals(r.ok, true);
     }
-    const queue = JSON.parse(
-      await platform.fs.readText(join(home, ".bento", "queue.json")),
-    ) as { jobs: DeployJob[] };
+    const queue = JSON.parse(await platform.fs.readText(join(home, ".bento", "queue.json"))) as {
+      jobs: DeployJob[];
+    };
     const queued = queue.jobs.filter((j) => j.status === "queued");
     const superseded = queue.jobs.filter((j) => j.error === "superseded");
     assertEquals(queued.length, 1);
     assertEquals(superseded.length, 2);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("fifo rejects 21st queued job", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("fifo rejects 21st queued job", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     await materializeAppHome(platform, p.app);
     const enabled = enableDeploy(p.state, { slug: "alpha", queuePolicy: "fifo" }, platform);
     const app = enabled.state.apps["alpha"]!;
@@ -189,12 +193,12 @@ Deno.test("fifo rejects 21st queued job", async () => {
     assertEquals(r.ok, false);
     if (!r.ok) assertEquals(r.status, 429);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("drain maps exit codes and keeps result on opcache failure", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("drain maps exit codes and keeps result on opcache failure", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const p = provisionApp(platform, createEmptyState(), {
@@ -222,12 +226,12 @@ Deno.test("drain maps exit codes and keeps result on opcache failure", async () 
     const log = await platform.fs.readText(join(home, "logs", job!.logName!));
     assertEquals(log.includes("opcache reset failed"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("drain success path", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("drain success path", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const p = provisionApp(platform, createEmptyState(), {
@@ -251,11 +255,11 @@ Deno.test("drain success path", async () => {
     });
     assertEquals(job?.status, "success");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("retainJobs keeps at most 30", () => {
+bunRuntime.test("retainJobs keeps at most 30", () => {
   const jobs: DeployJob[] = [];
   for (let i = 0; i < 40; i++) {
     jobs.push({

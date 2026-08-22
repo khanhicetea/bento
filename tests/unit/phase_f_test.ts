@@ -2,8 +2,8 @@
  * Phase F1 — acceptance matrix gaps (validators, app identity, deploy prune/interrupt).
  * Complements existing unit suites; maps F-* and R-* coverage noted in specs/todo.md.
  */
-import { assertEquals, assertThrows } from "@std/assert";
-import { basename, join } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts";
+import { basename, join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { materializeAppHome, provisionApp } from "../../src/services/app.ts";
 import {
@@ -47,7 +47,7 @@ import { createRecordingProcessRunner } from "../../src/platform/process.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
 import { createPathPolicy } from "../../src/platform/paths.ts";
 import type { Platform } from "../../src/platform/mod.ts";
-import { encodeHex } from "@std/encoding/hex";
+import { encodeHex } from "../runtime.ts";
 
 function testPlatform(root: string): Platform {
   const fs = createFileSystem();
@@ -80,7 +80,7 @@ async function hmacSha256(secret: string, body: Uint8Array): Promise<string> {
 
 // --- F-31 env / CLI token rejection ----------------------------------------
 
-Deno.test("F1 env: empty and whitespace MYSQL_ROOT_PASSWORD ignored by parseDotEnv", () => {
+bunRuntime.test("F1 env: empty and whitespace MYSQL_ROOT_PASSWORD ignored by parseDotEnv", () => {
   // Keys present with empty values are still keys; callers treat empty as missing.
   const env = parseDotEnv("MYSQL_ROOT_PASSWORD=\nREDIS_PASSWORD=  \nFOO=bar\n");
   assertEquals(env.MYSQL_ROOT_PASSWORD, "");
@@ -88,14 +88,14 @@ Deno.test("F1 env: empty and whitespace MYSQL_ROOT_PASSWORD ignored by parseDotE
   assertEquals(env.FOO, "bar");
 });
 
-Deno.test("F1 env: malformed lines do not throw or invent keys", () => {
+bunRuntime.test("F1 env: malformed lines do not throw or invent keys", () => {
   const env = parseDotEnv("=novalue\nnoequals\n# only comment\nKEY=ok\n");
   assertEquals(env.KEY, "ok");
   assertEquals(Object.keys(env).includes(""), false);
   assertEquals(Object.keys(env).includes("noequals"), false);
 });
 
-Deno.test("F1 CLI tokens: reject empty, uppercase, and reserved-looking slugs", () => {
+bunRuntime.test("F1 CLI tokens: reject empty, uppercase, and reserved-looking slugs", () => {
   assertEquals(parseAppSlug("").ok, false);
   assertEquals(parseAppSlug("MyApp").ok, false);
   assertEquals(parseAppSlug("-leading").ok, false);
@@ -107,7 +107,7 @@ Deno.test("F1 CLI tokens: reject empty, uppercase, and reserved-looking slugs", 
   assertEquals(parseWith(domainNameSchema, { host: "x.com" }).ok, false);
 });
 
-Deno.test("F1 CLI tokens: domain / path / cron / version rejection cases", () => {
+bunRuntime.test("F1 CLI tokens: domain / path / cron / version rejection cases", () => {
   assertEquals(parseDomainName("").ok, false);
   assertEquals(parseDomainName("no spaces.com").ok, false);
   assertEquals(parseDomainName("-bad.example").ok, false);
@@ -128,21 +128,24 @@ Deno.test("F1 CLI tokens: domain / path / cron / version rejection cases", () =>
   assertEquals(parseUidGid(1000, "uid").ok, true);
 });
 
-Deno.test("F1 state boundary: corrupt and future schema rejected before parse succeeds", () => {
-  const future = {
-    ...createEmptyState("2026-01-01T00:00:00.000Z"),
-    schemaVersion: 999,
-  };
-  assertEquals(parseDesiredState(future).ok, false);
-  assertThrows(() => loadStateFromJson("{"), Error);
-  assertThrows(() => loadStateFromJson("null"), Error);
-  assertThrows(() => loadStateFromJson("[]"), Error);
-});
+bunRuntime.test(
+  "F1 state boundary: corrupt and future schema rejected before parse succeeds",
+  () => {
+    const future = {
+      ...createEmptyState("2026-01-01T00:00:00.000Z"),
+      schemaVersion: 999,
+    };
+    assertEquals(parseDesiredState(future).ok, false);
+    assertThrows(() => loadStateFromJson("{"), Error);
+    assertThrows(() => loadStateFromJson("null"), Error);
+    assertThrows(() => loadStateFromJson("[]"), Error);
+  },
+);
 
 // --- F-02 / F-04 docroot safety + legacy generation ------------------------
 
-Deno.test("F1 app docroot safety rejects traversal", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 app docroot safety rejects traversal", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
     assertThrows(
@@ -170,53 +173,56 @@ Deno.test("F1 app docroot safety rejects traversal", async () => {
     });
     assertEquals(ok.app.documentRoot, "web/public");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 legacy flag generation allows non-index PHP; front-controller does not", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
-  try {
-    const platform = testPlatform(root);
-    let state = createEmptyState();
-    const front = provisionApp(platform, state, {
-      slug: "front",
-      domain: "front.test",
-      entrypointMode: "front-controller",
-      documentRoot: "public",
-    });
-    state = front.state;
-    const legacy = provisionApp(platform, state, {
-      slug: "legacy",
-      domain: "legacy.test",
-      entrypointMode: "legacy",
-      documentRoot: "htdocs",
-    });
-    state = legacy.state;
-    const files = await generateAll(platform, state, "digest");
-    const frontVhost = textContent(
-      files.find((f) => f.relPath === "nginx/sites/front.conf")!.content,
-    );
-    const legacyVhost = textContent(
-      files.find((f) => f.relPath === "nginx/sites/legacy.conf")!.content,
-    );
-    assertEquals(frontVhost.includes("if ($uri !~ ^/index\\.php$)"), true);
-    assertEquals(frontVhost.includes("return 404"), true);
-    assertEquals(legacyVhost.includes("if ($uri !~ ^/index\\.php$)"), false);
-    assertEquals(legacyVhost.includes("try_files $uri =404;"), true);
-    assertEquals(front.app.documentRoot, "public");
-    assertEquals(legacy.app.documentRoot, "htdocs");
-    // Generated paths embed docroot under code/
-    assertEquals(frontVhost.includes("/code/public") || frontVhost.includes("public"), true);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+bunRuntime.test(
+  "F1 legacy flag generation allows non-index PHP; front-controller does not",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
+    try {
+      const platform = testPlatform(root);
+      let state = createEmptyState();
+      const front = provisionApp(platform, state, {
+        slug: "front",
+        domain: "front.test",
+        entrypointMode: "front-controller",
+        documentRoot: "public",
+      });
+      state = front.state;
+      const legacy = provisionApp(platform, state, {
+        slug: "legacy",
+        domain: "legacy.test",
+        entrypointMode: "legacy",
+        documentRoot: "htdocs",
+      });
+      state = legacy.state;
+      const files = await generateAll(platform, state, "digest");
+      const frontVhost = textContent(
+        files.find((f) => f.relPath === "nginx/sites/front.conf")!.content,
+      );
+      const legacyVhost = textContent(
+        files.find((f) => f.relPath === "nginx/sites/legacy.conf")!.content,
+      );
+      assertEquals(frontVhost.includes("if ($uri !~ ^/index\\.php$)"), true);
+      assertEquals(frontVhost.includes("return 404"), true);
+      assertEquals(legacyVhost.includes("if ($uri !~ ^/index\\.php$)"), false);
+      assertEquals(legacyVhost.includes("try_files $uri =404;"), true);
+      assertEquals(front.app.documentRoot, "public");
+      assertEquals(legacy.app.documentRoot, "htdocs");
+      // Generated paths embed docroot under code/
+      assertEquals(frontVhost.includes("/code/public") || frontVhost.includes("public"), true);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 // --- F-09 / F-10 / F-11 matrix anchors -------------------------------------
 
-Deno.test("F1 MySQL namespace refuse + one-time app passwords", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 MySQL namespace refuse + one-time app passwords", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -249,12 +255,12 @@ Deno.test("F1 MySQL namespace refuse + one-time app passwords", async () => {
     assertEquals(updated.app.database.password, pwA);
     assertEquals(updated.state.apps["beta"]!.database.password, pwB);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 Redis shared prefix vs ACL rules", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 Redis shared prefix vs ACL rules", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
     const shared = provisionApp(platform, createEmptyState(), {
@@ -263,7 +269,10 @@ Deno.test("F1 Redis shared prefix vs ACL rules", async () => {
     }).app;
     // force shared mode defaults
     const sharedEnv = redisConnectionEnv(
-      { ...shared, redis: { ...shared.redis, mode: "shared", password: "shared-pw" } },
+      {
+        ...shared,
+        redis: { ...shared.redis, mode: "shared", password: "shared-pw" },
+      },
       "shared-pw",
     );
     assertEquals(sharedEnv.REDIS_MODE, "shared");
@@ -289,25 +298,32 @@ Deno.test("F1 Redis shared prefix vs ACL rules", async () => {
     // Must not grant unrestricted keys
     assertEquals(joined.includes("~*"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- F-14 / F-15 cron + worker scoped plans --------------------------------
 
-Deno.test("F1 cron/worker config generation + scoped runner reload", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 cron/worker config generation + scoped runner reload", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
-    const p = provisionApp(platform, state, { slug: "alpha", domain: "a.test" });
+    const p = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "a.test",
+    });
     state = p.state;
-    const cron = addCronJob(state, {
-      app: "alpha",
-      name: "tick",
-      schedule: "*/5 * * * *",
-      command: ["php", "artisan", "schedule:run"],
-    }, platform);
+    const cron = addCronJob(
+      state,
+      {
+        app: "alpha",
+        name: "tick",
+        schedule: "*/5 * * * *",
+        command: ["php", "artisan", "schedule:run"],
+      },
+      platform,
+    );
     state = cron.state;
     assertEquals(cron.job.workdir, "/home/alpha/code");
     assertEquals(
@@ -317,34 +333,43 @@ Deno.test("F1 cron/worker config generation + scoped runner reload", async () =>
     );
     assertEquals(cron.reloadPlan.nginx, false);
     assertEquals(cron.reloadPlan.phpFpm.size, 0);
-    assertEquals(
-      cron.reloadPlan.cronSchedulers?.get("php85-runner")?.has("alpha"),
-      true,
-    );
+    assertEquals(cron.reloadPlan.cronSchedulers?.get("php85-runner")?.has("alpha"), true);
     const cronReload = buildCronReloadCommand(state, "alpha");
     assertEquals(cronReload.includes("-2"), true);
-    assertEquals(cronReload.some((arg) => arg.endsWith("/scheduler-alpha")), true);
+    assertEquals(
+      cronReload.some((arg) => arg.endsWith("/scheduler-alpha")),
+      true,
+    );
 
-    const worker = addWorker(state, {
-      app: "alpha",
-      name: "queue",
-      command: ["php", "artisan", "queue:work"],
-    }, platform);
+    const worker = addWorker(
+      state,
+      {
+        app: "alpha",
+        name: "queue",
+        command: ["php", "artisan", "queue:work"],
+      },
+      platform,
+    );
     state = worker.state;
     assertEquals(worker.worker.workdir, "/home/alpha/code");
     assertEquals(worker.reloadPlan.nginx, false);
     assertEquals(workerProgramName("alpha", "queue"), "worker-alpha-queue");
 
     const files = await generateAll(platform, state, "digest");
-    const runnerFiles = files.filter((f) =>
-      f.relPath.includes("runner") || f.relPath.includes("services") ||
-      f.relPath.includes("cron") || f.relPath.includes("supercronic")
+    const runnerFiles = files.filter(
+      (f) =>
+        f.relPath.includes("runner") ||
+        f.relPath.includes("services") ||
+        f.relPath.includes("cron") ||
+        f.relPath.includes("supercronic"),
     );
     const blob = runnerFiles.map((f) => textContent(f.content)).join("\n");
     const allBlob = files.map((f) => textContent(f.content)).join("\n");
     assertEquals(
-      allBlob.includes("schedule:run") || blob.includes("schedule:run") ||
-        allBlob.includes("tick") || allBlob.includes("queue:work") ||
+      allBlob.includes("schedule:run") ||
+        blob.includes("schedule:run") ||
+        allBlob.includes("tick") ||
+        allBlob.includes("queue:work") ||
         allBlob.includes("worker-alpha-queue"),
       true,
     );
@@ -401,33 +426,41 @@ Deno.test("F1 cron/worker config generation + scoped runner reload", async () =>
     assertEquals(logrotateRun.includes("/usr/local/bin/supercronic"), true);
     assertEquals(logrotateRun.includes("sleep"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("cron edit changes supplied fields and preserves omitted fields", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-cron-edit-" });
+bunRuntime.test("cron edit changes supplied fields and preserves omitted fields", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-edit-" });
   try {
     const platform = testPlatform(root);
     const provisioned = provisionApp(platform, createEmptyState(), {
       slug: "alpha",
       domain: "a.test",
     });
-    const added = addCronJob(provisioned.state, {
-      app: "alpha",
-      name: "tick",
-      schedule: "*/5 * * * *",
-      command: ["php", "artisan", "schedule:run"],
-      timezone: "UTC",
-      lock: "scheduler",
-      timeoutSec: 60,
-    }, platform);
+    const added = addCronJob(
+      provisioned.state,
+      {
+        app: "alpha",
+        name: "tick",
+        schedule: "*/5 * * * *",
+        command: ["php", "artisan", "schedule:run"],
+        timezone: "UTC",
+        lock: "scheduler",
+        timeoutSec: 60,
+      },
+      platform,
+    );
 
-    const edited = editCronJob(added.state, {
-      app: "alpha",
-      name: "tick",
-      schedule: "0 * * * *",
-    }, platform);
+    const edited = editCronJob(
+      added.state,
+      {
+        app: "alpha",
+        name: "tick",
+        schedule: "0 * * * *",
+      },
+      platform,
+    );
 
     assertEquals(edited.job.schedule, "0 * * * *");
     assertEquals(edited.job.command, ["php", "artisan", "schedule:run"]);
@@ -435,40 +468,45 @@ Deno.test("cron edit changes supplied fields and preserves omitted fields", asyn
     assertEquals(edited.job.timezone, "UTC");
     assertEquals(edited.job.lock, "scheduler");
     assertEquals(edited.job.timeoutSec, 60);
-    assertEquals(
-      edited.reloadPlan.cronSchedulers?.get("php85-runner")?.has("alpha"),
-      true,
-    );
+    assertEquals(edited.reloadPlan.cronSchedulers?.get("php85-runner")?.has("alpha"), true);
 
-    const commandEdited = editCronJob(edited.state, {
-      app: "alpha",
-      name: "tick",
-      command: ["php artisan schedule:run >> logs/scheduler.log"],
-      commandMode: "shell",
-      timezone: "Europe/London",
-    }, platform);
+    const commandEdited = editCronJob(
+      edited.state,
+      {
+        app: "alpha",
+        name: "tick",
+        command: ["php artisan schedule:run >> logs/scheduler.log"],
+        commandMode: "shell",
+        timezone: "Europe/London",
+      },
+      platform,
+    );
     assertEquals(commandEdited.job.commandMode, "shell");
     assertEquals(commandEdited.job.timezone, "Europe/London");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("cron shell scripts preserve user redirects outside Bento's job log", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-cron-script-" });
+bunRuntime.test("cron shell scripts preserve user redirects outside Bento's job log", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-script-" });
   try {
     const platform = testPlatform(root);
     const provisioned = provisionApp(platform, createEmptyState(), {
       slug: "alpha",
       domain: "a.test",
     });
-    const added = addCronJob(provisioned.state, {
-      app: "alpha",
-      name: "redirect",
-      schedule: "* * * * *",
-      command: ["echo 'Hello' >> public/abc.txt"],
-      commandMode: "shell",
-    }, platform);
+    const added = addCronJob(
+      provisioned.state,
+      {
+        app: "alpha",
+        name: "redirect",
+        schedule: "* * * * *",
+        command: ["echo 'Hello' >> public/abc.txt"],
+        commandMode: "shell",
+      },
+      platform,
+    );
 
     const files = await generateAll(platform, added.state, "digest");
     const script = textContent(
@@ -485,31 +523,31 @@ Deno.test("cron shell scripts preserve user redirects outside Bento's job log", 
 
     // Exercise the same parent-log/child-script redirect hierarchy locally.
     const workdir = join(root, "home", "code");
-    await Deno.mkdir(join(workdir, "public"), { recursive: true });
+    await bunRuntime.mkdir(join(workdir, "public"), { recursive: true });
     const runnable = script.replace("cd /home/alpha/code", `cd ${workdir}`);
     const scriptPath = join(root, "redirect.sh");
     const bentoLog = join(root, "cron-redirect.log");
-    await Deno.writeTextFile(scriptPath, runnable);
-    const result = await new Deno.Command("sh", {
+    await bunRuntime.writeTextFile(scriptPath, runnable);
+    const result = await new bunRuntime.Command("sh", {
       args: ["-c", 'sh "$1" >> "$2" 2>&1', "cron-test", scriptPath, bentoLog],
       stdout: "piped",
       stderr: "piped",
     }).output();
     assertEquals(result.success, true);
-    assertEquals(await Deno.readTextFile(join(workdir, "public/abc.txt")), "Hello\n");
+    assertEquals(await bunRuntime.readTextFile(join(workdir, "public/abc.txt")), "Hello\n");
     assertEquals(
       /^\n= Run at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} =\n\n$/.test(
-        await Deno.readTextFile(bentoLog),
+        await bunRuntime.readTextFile(bentoLog),
       ),
       true,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("cron add/remove renders crontab and reloads existing Supercronic", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-cron-reload-" });
+bunRuntime.test("cron add/remove renders crontab and reloads existing Supercronic", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-reload-" });
   try {
     const process = createRecordingProcessRunner();
     const platform: Platform = { ...testPlatform(root), process };
@@ -519,25 +557,36 @@ Deno.test("cron add/remove renders crontab and reloads existing Supercronic", as
       domain: "a.test",
     }).state;
 
-    const first = addCronJob(state, {
-      app: "alpha",
-      name: "first",
-      schedule: "*/5 * * * *",
-      command: ["echo", "first-job"],
-    }, platform);
+    const first = addCronJob(
+      state,
+      {
+        app: "alpha",
+        name: "first",
+        schedule: "*/5 * * * *",
+        command: ["echo", "first-job"],
+      },
+      platform,
+    );
     state = first.state;
     await render.apply(state, { renderOnly: true, skipValidate: true });
 
     // Adding another job leaves the s6 service definition unchanged, so
     // reconciliation alone is insufficient; Supercronic still needs USR2.
-    const second = addCronJob(state, {
-      app: "alpha",
-      name: "second",
-      schedule: "*/10 * * * *",
-      command: ["echo", "second-job"],
-    }, platform);
+    const second = addCronJob(
+      state,
+      {
+        app: "alpha",
+        name: "second",
+        schedule: "*/10 * * * *",
+        command: ["echo", "second-job"],
+      },
+      platform,
+    );
     state = second.state;
-    await render.apply(state, { reloadPlan: second.reloadPlan, skipValidate: true });
+    await render.apply(state, {
+      reloadPlan: second.reloadPlan,
+      skipValidate: true,
+    });
     let crontab = await platform.fs.readText(
       join(root, "generated/runner/php85/cron/alpha.crontab"),
     );
@@ -552,44 +601,47 @@ Deno.test("cron add/remove renders crontab and reloads existing Supercronic", as
     assertEquals(firstScript.includes("exec echo first-job"), true);
     assertEquals(secondScript.includes("exec echo second-job"), true);
     assertEquals(
-      process.calls.some(({ command }) =>
-        command.includes("/command/s6-svc") && command.includes("-2") &&
-        command.some((arg) => arg.endsWith("/scheduler-alpha"))
+      process.calls.some(
+        ({ command }) =>
+          command.includes("/command/s6-svc") &&
+          command.includes("-2") &&
+          command.some((arg) => arg.endsWith("/scheduler-alpha")),
       ),
       true,
     );
-    assertEquals(process.calls.some(({ command }) => command.includes("restart")), false);
+    assertEquals(
+      process.calls.some(({ command }) => command.includes("restart")),
+      false,
+    );
 
     process.calls.length = 0;
-    const removed = removeCronJob(
-      state,
-      "alpha",
-      "second",
-      platform.clock.nowIso(),
-    );
+    const removed = removeCronJob(state, "alpha", "second", platform.clock.nowIso());
     state = removed.state;
-    await render.apply(state, { reloadPlan: removed.reloadPlan, skipValidate: true });
-    crontab = await platform.fs.readText(
-      join(root, "generated/runner/php85/cron/alpha.crontab"),
-    );
+    await render.apply(state, {
+      reloadPlan: removed.reloadPlan,
+      skipValidate: true,
+    });
+    crontab = await platform.fs.readText(join(root, "generated/runner/php85/cron/alpha.crontab"));
     assertEquals(crontab.includes("/jobs/alpha/first.sh"), true);
     assertEquals(crontab.includes("/jobs/alpha/second.sh"), false);
     assertEquals(
-      process.calls.some(({ command }) =>
-        command.includes("/command/s6-svc") && command.includes("-2") &&
-        command.some((arg) => arg.endsWith("/scheduler-alpha"))
+      process.calls.some(
+        ({ command }) =>
+          command.includes("/command/s6-svc") &&
+          command.includes("-2") &&
+          command.some((arg) => arg.endsWith("/scheduler-alpha")),
       ),
       true,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- F-18 / F-19 deploy history prune + interrupt reclaim ------------------
 
-Deno.test("F1 deploy history prune removes orphan log files", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 deploy history prune removes orphan log files", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
     const p = provisionApp(platform, createEmptyState(), {
@@ -647,12 +699,12 @@ Deno.test("F1 deploy history prune removes orphan log files", async () => {
     // At least the 10 oldest hist logs should be gone
     assertEquals(await platform.fs.exists(join(home, "logs", "deploy-dep_hist_0.log")), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 deploy interrupt reclaim marks stale running failed", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 deploy interrupt reclaim marks stale running failed", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
     const p = provisionApp(platform, createEmptyState(), {
@@ -660,11 +712,7 @@ Deno.test("F1 deploy interrupt reclaim marks stale running failed", async () => 
       domain: "a.test",
     });
     await materializeAppHome(platform, p.app);
-    const enabled = enableDeploy(
-      p.state,
-      { slug: "alpha", timeoutSec: 1 },
-      platform,
-    );
+    const enabled = enableDeploy(p.state, { slug: "alpha", timeoutSec: 1 }, platform);
     const app = {
       ...enabled.state.apps["alpha"]!,
       deploy: { ...enabled.state.apps["alpha"]!.deploy, timeoutSec: 1 },
@@ -695,21 +743,23 @@ Deno.test("F1 deploy interrupt reclaim marks stale running failed", async () => 
     });
     assertEquals(job?.status, "failed");
 
-    const queue = JSON.parse(
-      await platform.fs.readText(join(home, ".bento", "queue.json")),
-    ) as { jobs: DeployJob[] };
+    const queue = JSON.parse(await platform.fs.readText(join(home, ".bento", "queue.json"))) as {
+      jobs: DeployJob[];
+    };
     const stuck = queue.jobs.find((j) => j.id === "dep_stuck");
     assertEquals(stuck?.status, "failed");
     assertEquals(stuck?.error, "interrupted");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
 // --- F-20 backup dry path (no docker) --------------------------------------
 
-Deno.test("restore picker finds only the latest 20 finalized backup files", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-restore-picker-" });
+bunRuntime.test("restore picker finds only the latest 20 finalized backup files", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-restore-picker-",
+  });
   try {
     const platform = testPlatform(root);
     const dir = join(platform.paths.paths.backupsDir, "mysql84", "alpha");
@@ -719,14 +769,11 @@ Deno.test("restore picker finds only the latest 20 finalized backup files", asyn
       const path = join(dir, `backup-${String(i).padStart(2, "0")}.sql.zst`);
       await platform.fs.writeBytes(path, new Uint8Array(i + 1).fill(1));
       const time = new Date(Date.UTC(2026, 0, 1, 0, 0, i));
-      await Deno.utime(path, time, time);
+      await bunRuntime.utime(path, time, time);
     }
     await platform.fs.writeText(join(dir, "notes.txt"), "not a dump");
     await platform.fs.writeText(join(dir, "unfinished.sql.partial"), "partial");
-    await platform.fs.writeText(
-      join(platform.paths.paths.backupsDir, "state", "state.json"),
-      "{}",
-    );
+    await platform.fs.writeText(join(platform.paths.paths.backupsDir, "state", "state.json"), "{}");
 
     const files = await listRecentBackupFiles(platform);
     assertEquals(files.length, 20);
@@ -734,12 +781,12 @@ Deno.test("restore picker finds only the latest 20 finalized backup files", asyn
     assertEquals(basename(files.at(-1)!.path), "backup-02.sql.zst");
     assertEquals(files[0]!.bytes, 22);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 backup refuses empty dump and leaves no final artifact", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 backup refuses empty dump and leaves no final artifact", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const fs = createFileSystem();
     const process = createRecordingProcessRunner(() => ({
@@ -767,7 +814,11 @@ Deno.test("F1 backup refuses empty dump and leaves no final artifact", async () 
     const { runBackup } = await import("../../src/services/mysql.ts");
     let threw = false;
     try {
-      await runBackup(platform, state, { scope: "app", slug: "alpha", compress: "none" });
+      await runBackup(platform, state, {
+        scope: "app",
+        slug: "alpha",
+        compress: "none",
+      });
     } catch (e) {
       threw = true;
       assertEquals(String(e).includes("empty"), true);
@@ -784,12 +835,12 @@ Deno.test("F1 backup refuses empty dump and leaves no final artifact", async () 
       }
     }
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 backup writes in-container with socket config and zstd level 3", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 backup writes in-container with socket config and zstd level 3", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const fs = createFileSystem();
     const finalPath = join(
@@ -818,7 +869,10 @@ Deno.test("F1 backup writes in-container with socket config and zstd level 3", a
       createDatabase: true,
     }).state;
     const { runBackup } = await import("../../src/services/mysql.ts");
-    const artifacts = await runBackup(platform, state, { scope: "app", slug: "alpha" });
+    const artifacts = await runBackup(platform, state, {
+      scope: "app",
+      slug: "alpha",
+    });
 
     assertEquals(artifacts[0]?.path, finalPath);
     assertEquals(artifacts[0]?.bytes, 4);
@@ -829,12 +883,12 @@ Deno.test("F1 backup writes in-container with socket config and zstd level 3", a
     assertEquals(script.includes("/var/backups/bento/alpha/"), true);
     assertEquals(call.options?.stdin, undefined);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 restore refuses cross-namespace target before side effects", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 restore refuses cross-namespace target before side effects", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const process = createRecordingProcessRunner();
     const fs = createFileSystem();
@@ -867,14 +921,18 @@ Deno.test("F1 restore refuses cross-namespace target before side effects", async
     // No docker compose exec should have been attempted
     assertEquals(process.calls.length, 0);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("F1 restore imports in-container from the writable backup bind", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-f1-" });
+bunRuntime.test("F1 restore imports in-container from the writable backup bind", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
-    const process = createRecordingProcessRunner(() => ({ code: 0, stdout: "", stderr: "" }));
+    const process = createRecordingProcessRunner(() => ({
+      code: 0,
+      stdout: "",
+      stderr: "",
+    }));
     const fs = createFileSystem();
     const platform: Platform = {
       clock: createFixedClock("2026-07-17T15:00:00.000Z"),
@@ -909,7 +967,7 @@ Deno.test("F1 restore imports in-container from the writable backup bind", async
     const stageDir = join(root, "backups", "mysql84", ".restore");
     assertEquals(await fs.readDir(stageDir), []);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 

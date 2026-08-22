@@ -1,14 +1,19 @@
 /**
  * Lightweight interactive terminal primitives for the Bento wizard.
  * Numbered menus, tables, alerts, messages, and text prompts.
- * No external TUI dependency — works under Deno source and compiled binaries.
+ * No external TUI dependency — works under Bun source and compiled binaries.
  */
 
 import pc from "picocolors";
 import { printTable } from "./output.ts";
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const stdinReader = Bun.stdin.stream().getReader();
+
+async function readStdin(): Promise<Uint8Array | null> {
+  const { value, done } = await stdinReader.read();
+  return done ? null : value;
+}
 
 export type MenuChoice<T = string> = {
   /** Display label */
@@ -67,26 +72,28 @@ export type TerminalIO = {
 export function createStdTerminal(): TerminalIO {
   return {
     write(text: string) {
-      Deno.stdout.writeSync(encoder.encode(text));
+      process.stdout.write(text);
     },
     writeLine(text = "") {
-      Deno.stdout.writeSync(encoder.encode(text + "\n"));
+      process.stdout.write(text + "\n");
     },
     async readLine(prompt?: string) {
       // Cooked TTY already echoes; do not re-echo. Read until newline.
-      if (prompt) Deno.stdout.writeSync(encoder.encode(prompt));
+      if (prompt) process.stdout.write(prompt);
       const chunks: Uint8Array[] = [];
-      const chunk = new Uint8Array(256);
       while (true) {
-        const n = await Deno.stdin.read(chunk);
-        if (n === null) {
+        const chunk = await readStdin();
+        if (chunk === null) {
           if (chunks.length === 0) return null;
           break;
         }
-        chunks.push(chunk.slice(0, n));
-        if (chunk.subarray(0, n).includes(0x0a)) break;
+        chunks.push(chunk);
+        if (chunk.includes(0x0a)) break;
       }
-      return decoder.decode(concatChunks(chunks)).replace(/\r?\n$/, "").trim();
+      return decoder
+        .decode(concatChunks(chunks))
+        .replace(/\r?\n$/, "")
+        .trim();
     },
     async readKey() {
       if (!this.supportsRawKeys()) {
@@ -97,12 +104,12 @@ export function createStdTerminal(): TerminalIO {
         return { type: "char", char: line.trim() };
       }
 
-      Deno.stdin.setRaw(true);
+      process.stdin.setRawMode(true);
       try {
         return await readRawKey();
       } finally {
         try {
-          Deno.stdin.setRaw(false);
+          process.stdin.setRawMode(false);
         } catch {
           // ignore restore failures
         }
@@ -110,21 +117,21 @@ export function createStdTerminal(): TerminalIO {
     },
     isInteractive() {
       try {
-        return Deno.stdin.isTerminal() && Deno.stdout.isTerminal();
+        return Boolean(process.stdin.isTTY && process.stdout.isTTY);
       } catch {
         return false;
       }
     },
     supportsRawKeys() {
       try {
-        return Deno.stdin.isTerminal();
+        return Boolean(process.stdin.isTTY);
       } catch {
         return false;
       }
     },
     terminalColumns() {
       try {
-        return Deno.consoleSize().columns;
+        return process.stdout.columns ?? null;
       } catch {
         return null;
       }
@@ -137,9 +144,9 @@ export function createStdTerminal(): TerminalIO {
  * Arrow keys arrive as ESC [ A / ESC [ B (often one read of 3 bytes).
  */
 async function readRawKey(): Promise<KeyEvent> {
-  const buf = new Uint8Array(32);
-  const n = await Deno.stdin.read(buf);
-  if (n === null) return { type: "eof" };
+  const buf = await readStdin();
+  if (buf === null) return { type: "eof" };
+  const n = buf.length;
   if (n === 0) return await readRawKey();
 
   const b0 = buf[0]!;
@@ -153,7 +160,7 @@ async function readRawKey(): Promise<KeyEvent> {
 
   // ESC sequences (arrows) or bare Escape
   if (b0 === 0x1b) {
-    if (n >= 3 && (buf[1] === 0x5b /* [ */ || buf[1] === 0x4f /* O */)) {
+    if (n >= 3 && (buf[1] === 0x5b /* [ */ || buf[1] === 0x4f) /* O */) {
       const final = buf[n - 1]!;
       if (final === 0x41 /* A */) return { type: "up" };
       if (final === 0x42 /* B */) return { type: "down" };
@@ -304,11 +311,12 @@ export class WizardUI {
     this.io.writeLine();
 
     const keys = choices.map((_, i) => menuKey(i));
-    let cursor = opts?.initialValue === undefined
-      ? firstEnabledIndex(choices)
-      : choices.findIndex((choice) =>
-        !choice.disabled && Object.is(choice.value, opts.initialValue)
-      );
+    let cursor =
+      opts?.initialValue === undefined
+        ? firstEnabledIndex(choices)
+        : choices.findIndex(
+            (choice) => !choice.disabled && Object.is(choice.value, opts.initialValue),
+          );
     if (cursor < 0) cursor = firstEnabledIndex(choices);
     if (cursor < 0 && allowCancel) cursor = -1; // cancel row
     if (cursor < 0 && !allowCancel) cursor = 0;
@@ -350,10 +358,10 @@ export class WizardUI {
       // Recalculate at the current width: the terminal may have reflowed the
       // menu after a resize while readKey was waiting.
       const columns = this.io.terminalColumns?.() ?? null;
-      const rowCount = columns === null ? previousRowCount : lastDrawnLines.reduce(
-        (total, line) => total + renderedTerminalRows(line, columns),
-        0,
-      );
+      const rowCount =
+        columns === null
+          ? previousRowCount
+          : lastDrawnLines.reduce((total, line) => total + renderedTerminalRows(line, columns), 0);
       if (rowCount <= 0) return;
       // `F` moves to column one as well, so a redraw cannot continue inside a
       // wrapped choice.
@@ -477,13 +485,15 @@ export class WizardUI {
     opts?: { allowCancel?: boolean; cancelLabel?: string },
   ): Promise<T | null> {
     const widths = headers.map((header, index) =>
-      Math.max(header.length, ...rows.map((row) => (row.columns[index] ?? "").length), 1)
+      Math.max(header.length, ...rows.map((row) => (row.columns[index] ?? "").length), 1),
     );
     const formatRow = (columns: string[]) =>
-      headers.map((_, index) => {
-        const cell = columns[index] ?? "";
-        return index === headers.length - 1 ? cell : cell.padEnd(widths[index]!) + "  ";
-      }).join("");
+      headers
+        .map((_, index) => {
+          const cell = columns[index] ?? "";
+          return index === headers.length - 1 ? cell : cell.padEnd(widths[index]!) + "  ";
+        })
+        .join("");
 
     return await this.menu(
       title,
@@ -501,10 +511,7 @@ export class WizardUI {
   }
 
   /** Free-text prompt. Returns null on EOF/cancel. Empty allowed unless required. */
-  async prompt(
-    label: string,
-    opts?: PromptOptions,
-  ): Promise<string | null> {
+  async prompt(label: string, opts?: PromptOptions): Promise<string | null> {
     let def = opts?.default;
     if (opts?.format) this.info(`Expected: ${opts.format}`);
 
@@ -673,13 +680,13 @@ function formatChoiceLine<T>(
   const prefix = choice.disabled
     ? pc.dim(` ${marker} [${key}]`)
     : selected
-    ? pc.bold(pc.cyan(` ${marker} [${key}]`))
-    : pc.bold(pc.green(` ${marker} [${key}]`));
+      ? pc.bold(pc.cyan(` ${marker} [${key}]`))
+      : pc.bold(pc.green(` ${marker} [${key}]`));
   const label = choice.disabled
     ? pc.dim(choice.label)
     : selected
-    ? pc.bold(pc.cyan(choice.label))
-    : choice.label;
+      ? pc.bold(pc.cyan(choice.label))
+      : choice.label;
   const hint = showHint && choice.hint ? pc.dim(`  — ${choice.hint}`) : "";
   return `${prefix}  ${label}${hint}`;
 }
@@ -703,7 +710,8 @@ function terminalDisplayWidth(text: string): number {
       codePoint === 0x200d ||
       (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
       /\p{Mark}/u.test(char)
-    ) continue;
+    )
+      continue;
     width += isWideCodePoint(codePoint) ? 2 : 1;
   }
   return width;
@@ -734,7 +742,8 @@ function stripAnsi(text: string): string {
 }
 
 function isWideCodePoint(codePoint: number): boolean {
-  return codePoint >= 0x1100 &&
+  return (
+    codePoint >= 0x1100 &&
     (codePoint <= 0x115f ||
       codePoint === 0x2329 ||
       codePoint === 0x232a ||
@@ -746,7 +755,8 @@ function isWideCodePoint(codePoint: number): boolean {
       (codePoint >= 0xff00 && codePoint <= 0xff60) ||
       (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
       (codePoint >= 0x1f300 && codePoint <= 0x1faff) ||
-      (codePoint >= 0x20000 && codePoint <= 0x3fffd));
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd))
+  );
 }
 
 function formatCancelLine(label: string, selected: boolean): string {
@@ -757,11 +767,7 @@ function formatCancelLine(label: string, selected: boolean): string {
   return pc.dim(` ${marker} [0]  ${label}`);
 }
 
-type ResolveResult<T> =
-  | { value: T }
-  | "cancel"
-  | "disabled"
-  | "invalid";
+type ResolveResult<T> = { value: T } | "cancel" | "disabled" | "invalid";
 
 function resolveKey<T>(
   answer: string,

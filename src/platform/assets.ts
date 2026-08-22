@@ -1,5 +1,6 @@
-import { dirname, fromFileUrl, join, normalize } from "@std/path";
-import { encodeHex } from "@std/encoding/hex";
+import { dirname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
+import { encodeHex } from "./hex.ts";
 import type { AssetResolver, FileSystem } from "./interfaces.ts";
 import { platformError } from "../domain/errors.ts";
 
@@ -7,9 +8,9 @@ import { platformError } from "../domain/errors.ts";
  * Resolve immutable assets from repository (source mode) or embedded compile includes.
  * Operator state always lives under the external stack root, never next to the binary.
  *
- * Compiled binaries built with `deno compile --include=templates` expose the same
- * templates tree via Deno's embedded VFS. `import.meta.url` resolves into that VFS,
- * so defaultRepoRoot() works for both distributions without reading the host CWD.
+ * Bun standalone builds embed the templates directory with `bun build --asset=templates`.
+ * `import.meta.url` resolves inside Bun's virtual filesystem, so defaultRepoRoot()
+ * works for source and compiled distributions without reading the host CWD.
  */
 export function createAssetResolver(fs: FileSystem, repoRoot?: string): AssetResolver {
   const root = resolveAssetRoot(repoRoot);
@@ -17,10 +18,7 @@ export function createAssetResolver(fs: FileSystem, repoRoot?: string): AssetRes
   async function resolveAsset(assetPath: string): Promise<string> {
     const clean = normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
     // Prefer templates/ tree (source repo layout and compile --include=templates)
-    const candidates = [
-      join(root, "templates", clean),
-      join(root, clean),
-    ];
+    const candidates = [join(root, "templates", clean), join(root, clean)];
     for (const c of candidates) {
       if (await fs.exists(c)) return c;
     }
@@ -73,14 +71,9 @@ export function createAssetResolver(fs: FileSystem, repoRoot?: string): AssetRes
   };
 }
 
-/** True when running inside a `deno compile` executable with embedded VFS. */
+/** True when running inside a Bun standalone executable with embedded assets. */
 export function isCompiledDistribution(): boolean {
-  try {
-    const url = import.meta.url;
-    return url.includes("deno-compile") || url.startsWith("file:///tmp/deno-compile");
-  } catch {
-    return false;
-  }
+  return import.meta.url.includes("/$bunfs/") || import.meta.url.startsWith("bun:");
 }
 
 /**
@@ -96,9 +89,11 @@ export function resolveAssetRoot(repoRoot?: string): string {
 function defaultRepoRoot(): string {
   // src/platform/assets.ts -> package root (repository or compiled VFS root)
   try {
-    const here = dirname(fromFileUrl(import.meta.url));
-    return join(here, "..", "..");
+    const here = dirname(fileURLToPath(import.meta.url));
+    // Bundling collapses module URLs to /$bunfs/root/<executable>; assets are
+    // embedded directly below that root. Source modules remain under src/platform.
+    return isCompiledDistribution() ? here : join(here, "..", "..");
   } catch {
-    return Deno.cwd();
+    return process.cwd();
   }
 }

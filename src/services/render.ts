@@ -4,7 +4,7 @@
  * lock -> stage -> promote -> validate -> reload -> finalize
  */
 
-import { join, relative } from "@std/path";
+import { join, relative } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
 import { describeReloadPlan, emptyReloadPlan, reloadPlanIsEmpty } from "../domain/reload.ts";
@@ -93,21 +93,11 @@ type RenderJournal = {
 const MANAGED_MARKER_HASH = "# bento-managed: true\n";
 const MANAGED_MARKER_SEMI = "; bento-managed: true\n";
 
-const NGINX_CUSTOM_DIRS = [
-  "main.d",
-  "events.d",
-  "http.d",
-  "sites.d",
-  "apps",
-  "proxies",
-] as const;
+const NGINX_CUSTOM_DIRS = ["main.d", "events.d", "http.d", "sites.d", "apps", "proxies"] as const;
 
 export type ManagedMarkerStyle = "hash" | "semicolon" | "none";
 
-export function withManagedMarker(
-  content: string,
-  style: ManagedMarkerStyle = "hash",
-): string {
+export function withManagedMarker(content: string, style: ManagedMarkerStyle = "hash"): string {
   if (style === "none") return content;
   const marker = style === "semicolon" ? MANAGED_MARKER_SEMI : MANAGED_MARKER_HASH;
   if (
@@ -186,9 +176,8 @@ export class RenderService {
 
       for (const file of candidate.files) {
         const dest = join(staging, file.relPath);
-        const content = typeof file.content === "string"
-          ? new TextEncoder().encode(file.content)
-          : file.content;
+        const content =
+          typeof file.content === "string" ? new TextEncoder().encode(file.content) : file.content;
         await this.platform.fs.writeBytes(dest, content, file.mode);
       }
 
@@ -282,8 +271,8 @@ export class RenderService {
         await this.writeJournal(journal);
 
         if (!options.skipValidate) {
-          const validators = options.validators ??
-            defaultValidators(this.platform, reloadPlan, state);
+          const validators =
+            options.validators ?? defaultValidators(this.platform, reloadPlan, state);
           try {
             for (const v of validators) {
               await v.validate();
@@ -337,18 +326,16 @@ export class RenderService {
         // Write generation metadata
         await this.platform.fs.atomicWriteText(
           join(liveRoot, ".generation.json"),
-          `${
-            JSON.stringify(
-              {
-                assetVersion: ASSET_VERSION,
-                assetDigest: candidate.assetDigest,
-                renderedAt: this.platform.clock.nowIso(),
-                managedFiles: candidate.managedManifest,
-              },
-              null,
-              2,
-            )
-          }\n`,
+          `${JSON.stringify(
+            {
+              assetVersion: ASSET_VERSION,
+              assetDigest: candidate.assetDigest,
+              renderedAt: this.platform.clock.nowIso(),
+              managedFiles: candidate.managedManifest,
+            },
+            null,
+            2,
+          )}\n`,
           0o644,
         );
 
@@ -417,10 +404,7 @@ export class RenderService {
     await this.platform.fs.remove(this.platform.paths.paths.journalFile);
   }
 
-  private async rollbackFromJournal(
-    journal: RenderJournal,
-    backupRoot: string,
-  ): Promise<void> {
+  private async rollbackFromJournal(journal: RenderJournal, backupRoot: string): Promise<void> {
     const liveRoot = this.platform.paths.paths.generatedDir;
     // Restore in reverse order
     for (const entry of [...journal.entries].reverse()) {
@@ -471,7 +455,8 @@ export class RenderService {
           if (st.isDirectory) await walk(full, rel);
           else if (st.isFile) {
             // Consider managed if marked or under known managed trees
-            let managed = rel.startsWith("compose/") ||
+            let managed =
+              rel.startsWith("compose/") ||
               rel.startsWith("nginx/") ||
               rel.startsWith("php/") ||
               rel.startsWith("mysql/") ||
@@ -532,9 +517,11 @@ function generatedReloadPlan(state: DesiredState): ReloadPlan {
     // reconciliation notices service-directory changes, not changes to the
     // separately mounted crontabs, so every live scheduler must also reload.
     const scheduledApps = Object.values(state.apps)
-      .filter((app) =>
-        app.enabled && app.phpVersion === v.version &&
-        (app.deploy.enabled || state.cronJobs.some((job) => job.app === app.slug && job.enabled))
+      .filter(
+        (app) =>
+          app.enabled &&
+          app.phpVersion === v.version &&
+          (app.deploy.enabled || state.cronJobs.some((job) => job.app === app.slug && job.enabled)),
       )
       .map((app) => String(app.slug));
     if (scheduledApps.length > 0) {
@@ -579,15 +566,15 @@ function defaultValidators(
     name: "compose",
     validate: async () => {
       const command = await composeArgs(platform, state, ["config", "-q"]);
-      const result = await platform.process.run(command, {
-        cwd: platform.paths.paths.root,
-        timeoutMs: 8_000,
-      }).catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
+      const result = await platform.process
+        .run(command, {
+          cwd: platform.paths.paths.root,
+          timeoutMs: 8_000,
+        })
+        .catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
       const detail = `${result.stderr}\n${result.stdout}`;
       if (result.code !== 0 && !isDockerUnavailable(detail)) {
-        throw platformError(
-          `compose config validation failed: ${result.stderr || result.stdout}`,
-        );
+        throw platformError(`compose config validation failed: ${result.stderr || result.stdout}`);
       }
     },
   });
@@ -597,10 +584,12 @@ function defaultValidators(
     validators.push({
       name: "nginx",
       validate: async () => {
-        const result = await platform.process.run(
-          ["docker", "compose", "exec", "-T", "nginx", "nginx", "-t"],
-          { cwd: platform.paths.paths.root, timeoutMs: 3_000 },
-        ).catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
+        const result = await platform.process
+          .run(["docker", "compose", "exec", "-T", "nginx", "nginx", "-t"], {
+            cwd: platform.paths.paths.root,
+            timeoutMs: 3_000,
+          })
+          .catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
         const detail = `${result.stderr}\n${result.stdout}`;
         if (result.code !== 0 && !isDockerUnavailable(detail)) {
           throw platformError(`nginx validation failed: ${result.stderr || result.stdout}`);
@@ -612,10 +601,12 @@ function defaultValidators(
     validators.push({
       name: `php-fpm:${svc}`,
       validate: async () => {
-        const result = await platform.process.run(
-          ["docker", "compose", "exec", "-T", svc, "php-fpm", "-t"],
-          { cwd: platform.paths.paths.root, timeoutMs: 3_000 },
-        ).catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
+        const result = await platform.process
+          .run(["docker", "compose", "exec", "-T", svc, "php-fpm", "-t"], {
+            cwd: platform.paths.paths.root,
+            timeoutMs: 3_000,
+          })
+          .catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
         const detail = `${result.stderr}\n${result.stdout}`;
         if (result.code !== 0 && !isDockerUnavailable(detail)) {
           throw platformError(
@@ -633,27 +624,21 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
     reload: async (plan: ReloadPlan) => {
       const root = platform.paths.paths.root;
       const soft = async (command: string[]) => {
-        const assembled = command[0] === "docker" && command[1] === "compose"
-          ? await composeArgs(platform, state, command.slice(2))
-          : command;
-        const r = await platform.process.run(assembled, {
-          cwd: root,
-          timeoutMs: 3_000,
-        }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+        const assembled =
+          command[0] === "docker" && command[1] === "compose"
+            ? await composeArgs(platform, state, command.slice(2))
+            : command;
+        const r = await platform.process
+          .run(assembled, {
+            cwd: root,
+            timeoutMs: 3_000,
+          })
+          .catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
         return r;
       };
 
       if (plan.nginx) {
-        const r = await soft([
-          "docker",
-          "compose",
-          "exec",
-          "-T",
-          "nginx",
-          "nginx",
-          "-s",
-          "reload",
-        ]);
+        const r = await soft(["docker", "compose", "exec", "-T", "nginx", "nginx", "-s", "reload"]);
         const detail = `${r.stderr}\n${r.stdout}`;
         // ngx_http_acme_module cannot add an issuer to an already-running master
         // that started without it. Recover this one-time upgrade case by restarting
@@ -662,7 +647,8 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
           const restarted = await soft(["docker", "compose", "restart", "nginx"]);
           const restartDetail = `${restarted.stderr}\n${restarted.stdout}`;
           if (
-            restarted.code !== 0 && !isDockerUnavailable(restartDetail) &&
+            restarted.code !== 0 &&
+            !isDockerUnavailable(restartDetail) &&
             restarted.code !== 124
           ) {
             throw platformError(
@@ -693,7 +679,8 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
         ]);
         const reconcileDetail = `${reconciled.stderr}\n${reconciled.stdout}`;
         if (
-          reconciled.code !== 0 && !isDockerUnavailable(reconcileDetail) &&
+          reconciled.code !== 0 &&
+          !isDockerUnavailable(reconcileDetail) &&
           reconciled.code !== 124
         ) {
           throw platformError(
@@ -722,9 +709,6 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
   };
 }
 
-export function relativeGenerated(
-  generatedDir: string,
-  absolutePath: string,
-): string {
+export function relativeGenerated(generatedDir: string, absolutePath: string): string {
   return relative(generatedDir, absolutePath);
 }

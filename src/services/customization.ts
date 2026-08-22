@@ -3,8 +3,8 @@
  * Custom sources are user-owned; returning to upstream never deletes them.
  */
 
-import { dirname, join } from "@std/path";
-import { encodeHex } from "@std/encoding/hex";
+import { dirname, join } from "node:path";
+import { encodeHex } from "../platform/hex.ts";
 import type { DesiredState, TemplateProvenance } from "../domain/state.ts";
 import { notFoundError, validationError } from "../domain/errors.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
@@ -123,12 +123,7 @@ export async function selectCustomTemplate(
 
   let recordedPath = input.sourcePath;
   if (copy) {
-    const destDir = join(
-      platform.paths.paths.customDir,
-      "apps",
-      input.slug,
-      input.kind,
-    );
+    const destDir = join(platform.paths.paths.customDir, "apps", input.slug, input.kind);
     await platform.fs.mkdirp(destDir, 0o755);
     const dest = join(destDir, input.kind === "vhost" ? "vhost.conf.tpl" : "pool.conf.tpl");
     await platform.fs.writeText(dest, sourceText, 0o644);
@@ -142,13 +137,13 @@ export async function selectCustomTemplate(
     activatedAt: now,
   };
 
-  const nextApp = input.kind === "vhost"
-    ? { ...app, vhostTemplate: provenance, updatedAt: now }
-    : { ...app, poolTemplate: provenance, updatedAt: now };
+  const nextApp =
+    input.kind === "vhost"
+      ? { ...app, vhostTemplate: provenance, updatedAt: now }
+      : { ...app, poolTemplate: provenance, updatedAt: now };
 
-  const reloadPlan = input.kind === "vhost"
-    ? reloadPlanForDomainChange()
-    : reloadPlanForPoolChange(app.phpService);
+  const reloadPlan =
+    input.kind === "vhost" ? reloadPlanForDomainChange() : reloadPlanForPoolChange(app.phpService);
 
   return {
     state: {
@@ -186,13 +181,13 @@ export function returnToUpstreamTemplate(
   const current = kind === "vhost" ? app.vhostTemplate : app.poolTemplate;
   const preservedPath = current.kind === "custom" ? current.sourcePath : undefined;
 
-  const nextApp = kind === "vhost"
-    ? { ...app, vhostTemplate: { kind: "upstream" as const }, updatedAt: now }
-    : { ...app, poolTemplate: { kind: "upstream" as const }, updatedAt: now };
+  const nextApp =
+    kind === "vhost"
+      ? { ...app, vhostTemplate: { kind: "upstream" as const }, updatedAt: now }
+      : { ...app, poolTemplate: { kind: "upstream" as const }, updatedAt: now };
 
-  const reloadPlan = kind === "vhost"
-    ? reloadPlanForDomainChange()
-    : reloadPlanForPoolChange(app.phpService);
+  const reloadPlan =
+    kind === "vhost" ? reloadPlanForDomainChange() : reloadPlanForPoolChange(app.phpService);
 
   return {
     state: {

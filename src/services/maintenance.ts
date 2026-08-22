@@ -3,7 +3,7 @@
  * In-runner service logs are separate from host maintenance.
  */
 
-import { join } from "@std/path";
+import { join } from "node:path";
 import type { Platform } from "../platform/mod.ts";
 import { validationError } from "../domain/errors.ts";
 
@@ -110,9 +110,7 @@ async function pruneDir(
 
 /** Parse ISO-like stamps from rotated filenames (e.g. app.access.log.2026-07-16T12-00-00-000Z). */
 export function extractStampMs(name: string): number | undefined {
-  const m = name.match(
-    /(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?Z)/,
-  );
+  const m = name.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:-\d+)?Z)/);
   if (!m) return undefined;
   // Convert filename-safe stamp back toward ISO
   const raw = m[1]!;
@@ -140,9 +138,9 @@ export function maintenanceCronFragment(opts: {
   stackRoot: string;
 }): string {
   const schedule = opts.schedule ?? "15 3 * * *";
-  const line = `${schedule} ${opts.bentoBin} --stack ${
-    shellSingle(opts.stackRoot)
-  } maintenance run >/dev/null 2>&1`;
+  const line = `${schedule} ${opts.bentoBin} --stack ${shellSingle(
+    opts.stackRoot,
+  )} maintenance run >/dev/null 2>&1`;
   return `${CRON_BEGIN_MARKER}\n${line}\n${CRON_END_MARKER}\n`;
 }
 
@@ -152,9 +150,7 @@ export function maintenanceCronFragment(opts: {
  */
 export function mergeCrontab(
   existing: string,
-  opts:
-    | { action: "install"; fragment: string }
-    | { action: "remove" },
+  opts: { action: "install"; fragment: string } | { action: "remove" },
 ): CrontabMergeResult {
   const without = stripManagedBlock(existing);
   if (opts.action === "remove") {

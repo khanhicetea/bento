@@ -6,9 +6,9 @@
  * then published to the stable Compose-relative paths (docker/, helpers/).
  */
 
-import { dirname, join } from "@std/path";
+import { dirname, join } from "node:path";
 import type { Platform } from "../platform/mod.ts";
-import { encodeHex } from "@std/encoding/hex";
+import { encodeHex } from "../platform/hex.ts";
 
 export type MaterializeResult = {
   dockerRoot: string;
@@ -92,18 +92,16 @@ export async function materializeDockerAssets(
     }
     await platform.fs.atomicWriteText(
       join(dockerRoot, ".materialized.json"),
-      `${
-        JSON.stringify(
-          {
-            digest,
-            phpVersions,
-            at: platform.clock.nowIso(),
-            cacheDir: ".asset-cache/" + digest,
-          },
-          null,
-          2,
-        )
-      }\n`,
+      `${JSON.stringify(
+        {
+          digest,
+          phpVersions,
+          at: platform.clock.nowIso(),
+          cacheDir: ".asset-cache/" + digest,
+        },
+        null,
+        2,
+      )}\n`,
     );
     published = true;
   }
@@ -204,7 +202,9 @@ async function isPublishedCurrent(
   if (!(await platform.fs.exists(join(dockerRoot, "nginx")))) return false;
   if (!(await platform.fs.exists(helpersDir))) return false;
   try {
-    const meta = JSON.parse(await platform.fs.readText(metaPath)) as { digest?: string };
+    const meta = JSON.parse(await platform.fs.readText(metaPath)) as {
+      digest?: string;
+    };
     return meta.digest === digest;
   } catch {
     return false;
@@ -221,11 +221,7 @@ async function publishFromCache(
   await copyTree(platform, join(cacheDir, "helpers"), helpersDir);
 }
 
-async function copyTree(
-  platform: Platform,
-  fromDir: string,
-  toDir: string,
-): Promise<void> {
+async function copyTree(platform: Platform, fromDir: string, toDir: string): Promise<void> {
   if (!(await platform.fs.exists(fromDir))) {
     await platform.fs.mkdirp(toDir);
     return;
@@ -288,24 +284,29 @@ async function ensureBootCert(platform: Platform): Promise<void> {
   const certDir = platform.paths.paths.certsDir;
   const crt = join(certDir, "boot.crt");
   const key = join(certDir, "boot.key");
-  if (await platform.fs.exists(crt) && await platform.fs.exists(key)) return;
+  if ((await platform.fs.exists(crt)) && (await platform.fs.exists(key))) return;
 
-  const result = await platform.process.run([
-    "openssl",
-    "req",
-    "-x509",
-    "-nodes",
-    "-newkey",
-    "rsa:2048",
-    "-keyout",
-    key,
-    "-out",
-    crt,
-    "-days",
-    "825",
-    "-subj",
-    "/CN=bento-boot/O=Bento/C=US",
-  ], { timeoutMs: 15_000 }).catch(() => ({ code: 1, stdout: "", stderr: "openssl missing" }));
+  const result = await platform.process
+    .run(
+      [
+        "openssl",
+        "req",
+        "-x509",
+        "-nodes",
+        "-newkey",
+        "rsa:2048",
+        "-keyout",
+        key,
+        "-out",
+        crt,
+        "-days",
+        "825",
+        "-subj",
+        "/CN=bento-boot/O=Bento/C=US",
+      ],
+      { timeoutMs: 15_000 },
+    )
+    .catch(() => ({ code: 1, stdout: "", stderr: "openssl missing" }));
 
   if (result.code !== 0) {
     await platform.fs.atomicWriteText(
@@ -321,10 +322,7 @@ async function ensureBootCert(platform: Platform): Promise<void> {
   }
 }
 
-export async function assetContentDigest(
-  platform: Platform,
-  paths: string[],
-): Promise<string> {
+export async function assetContentDigest(platform: Platform, paths: string[]): Promise<string> {
   const chunks: string[] = [];
   for (const p of [...paths].sort()) {
     try {

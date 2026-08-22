@@ -63,20 +63,14 @@ export function addCronJob(
   }
 
   const schedule = unwrap(parseCronSchedule(input.schedule), "schedule");
-  const command = unwrap(
-    parseStringArray(input.command, "command"),
-    "command",
-  );
+  const command = unwrap(parseStringArray(input.command, "command"), "command");
   if (command.length === 0) throw validationError("command must not be empty");
   const commandMode = input.commandMode ?? "argv";
   if (commandMode === "shell" && command.length !== 1) {
     throw validationError("shell command must be supplied as one unparsed string");
   }
 
-  const workdir = platform.paths.assertInsideHome(
-    app.home,
-    input.workdir ?? `${app.home}/code`,
-  );
+  const workdir = platform.paths.assertInsideHome(app.home, input.workdir ?? `${app.home}/code`);
 
   const job: CronJob = {
     name: asCronJobName(name),
@@ -118,12 +112,14 @@ export function editCronJob(
   }
   const current = state.cronJobs[index]!;
 
-  const schedule = input.schedule === undefined
-    ? current.schedule
-    : unwrap(parseCronSchedule(input.schedule), "schedule");
-  const command = input.command === undefined
-    ? current.command
-    : unwrap(parseStringArray(input.command, "command"), "command");
+  const schedule =
+    input.schedule === undefined
+      ? current.schedule
+      : unwrap(parseCronSchedule(input.schedule), "schedule");
+  const command =
+    input.command === undefined
+      ? current.command
+      : unwrap(parseStringArray(input.command, "command"), "command");
   if (command.length === 0) throw validationError("command must not be empty");
   const commandMode = input.commandMode ?? current.commandMode;
   if (commandMode === "shell" && command.length !== 1) {
@@ -145,9 +141,10 @@ export function editCronJob(
     command,
     commandMode,
     timezone,
-    workdir: input.workdir === undefined
-      ? current.workdir
-      : platform.paths.assertInsideHome(app.home, input.workdir),
+    workdir:
+      input.workdir === undefined
+        ? current.workdir
+        : platform.paths.assertInsideHome(app.home, input.workdir),
     output: input.output ?? current.output,
     ...(input.timeoutSec !== undefined ? { timeoutSec: input.timeoutSec } : {}),
     ...(input.lock !== undefined ? { lock: input.lock } : {}),
@@ -179,8 +176,8 @@ export function removeCronJob(
   // If another schedule (or deploy drain) remains, the s6 service definition
   // is unchanged and Supercronic itself must reread the mounted crontab. When
   // the final schedule is removed, s6 reconciliation stops the service.
-  const schedulerRemains = app.deploy.enabled ||
-    cronJobs.some((j) => j.app === appSlug && j.enabled);
+  const schedulerRemains =
+    app.deploy.enabled || cronJobs.some((j) => j.app === appSlug && j.enabled);
   return {
     state: { ...state, cronJobs, updatedAt: now },
     reloadPlan: schedulerRemains
@@ -193,8 +190,8 @@ export function removeCronJob(
 export function buildCronReloadCommand(state: DesiredState, appSlug: string): string[] {
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
-  const hasScheduler = app.deploy.enabled ||
-    state.cronJobs.some((job) => job.app === appSlug && job.enabled);
+  const hasScheduler =
+    app.deploy.enabled || state.cronJobs.some((job) => job.app === appSlug && job.enabled);
   if (!hasScheduler) throw notFoundError(`no scheduler service for app ${appSlug}`);
   return [
     "docker",

@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertThrows } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import type { Platform, RunOptions, RunResult } from "../../src/platform/mod.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
@@ -36,7 +36,7 @@ function testPlatform(
   };
 }
 
-Deno.test("PostgreSQL managed-version helpers validate stable names", () => {
+bunRuntime.test("PostgreSQL managed-version helpers validate stable names", () => {
   assertEquals(postgresVersionDetails("17"), {
     engine: "postgres",
     version: "17",
@@ -49,15 +49,18 @@ Deno.test("PostgreSQL managed-version helpers validate stable names", () => {
   }
 });
 
-Deno.test("PostgreSQL add/list is sorted and rejects duplicates", () => {
+bunRuntime.test("PostgreSQL add/list is sorted and rejects duplicates", () => {
   let state = createEmptyState("2026-07-26T12:00:00.000Z");
   state = addPostgresVersion(state, "17");
   state = addPostgresVersion(state, "15");
-  assertEquals(listPostgresVersions(state).map((entry) => entry.version), ["15", "17"]);
+  assertEquals(
+    listPostgresVersions(state).map((entry) => entry.version),
+    ["15", "17"],
+  );
   assertThrows(() => addPostgresVersion(state, "17"), Error, "already managed");
 });
 
-Deno.test("PostgreSQL version removal is always refused", () => {
+bunRuntime.test("PostgreSQL version removal is always refused", () => {
   assertThrows(
     () => removePostgresVersion(createEmptyState(), "17"),
     Error,
@@ -65,7 +68,7 @@ Deno.test("PostgreSQL version removal is always refused", () => {
   );
 });
 
-Deno.test("PostgreSQL identifier and literal quoting contains hostile input", () => {
+bunRuntime.test("PostgreSQL identifier and literal quoting contains hostile input", () => {
   assertEquals(postgresIdentifier("plain_name"), '"plain_name"');
   assertEquals(postgresIdentifier("my-app"), '"my-app"');
   assertEquals(postgresIdentifier('role"name'), '"role""name"');
@@ -79,7 +82,7 @@ Deno.test("PostgreSQL identifier and literal quoting contains hostile input", ()
   assertThrows(() => postgresLiteral("bad\0value"));
 });
 
-Deno.test("protected PostgreSQL SQL execution keeps SQL and password off argv", async () => {
+bunRuntime.test("protected PostgreSQL SQL execution keeps SQL and password off argv", async () => {
   const password = "root:secret\\value";
   const sql = "SELECT 'hostile'; -- private payload";
   const platform = testPlatform("/tmp/postgres-phase3", () => ({
@@ -101,20 +104,23 @@ Deno.test("protected PostgreSQL SQL execution keeps SQL and password off argv", 
   assertEquals(stdin.includes(sql), true);
 });
 
-Deno.test("PostgreSQL reachability uses pg_isready and authenticated check reports failure", async () => {
-  const platform = testPlatform("/tmp/postgres-phase3", (command) => ({
-    code: command.includes("pg_isready") ? 0 : 1,
-    stdout: "",
-    stderr: "authentication failed",
-  }));
-  assertEquals(await isPostgresReachable(platform, "postgres17"), true);
-  const reachabilityArgv = platform.process.calls[0]!.command.join(" ");
-  assertEquals(reachabilityArgv.includes("pg_isready"), true);
-  assertEquals(reachabilityArgv.includes("password"), false);
-  await assertRejects(
-    () => verifyPostgresSql(platform, "postgres17", "not-on-argv"),
-    Error,
-    "authentication failed",
-  );
-  assertEquals(platform.process.calls[1]!.command.join(" ").includes("not-on-argv"), false);
-});
+bunRuntime.test(
+  "PostgreSQL reachability uses pg_isready and authenticated check reports failure",
+  async () => {
+    const platform = testPlatform("/tmp/postgres-phase3", (command) => ({
+      code: command.includes("pg_isready") ? 0 : 1,
+      stdout: "",
+      stderr: "authentication failed",
+    }));
+    assertEquals(await isPostgresReachable(platform, "postgres17"), true);
+    const reachabilityArgv = platform.process.calls[0]!.command.join(" ");
+    assertEquals(reachabilityArgv.includes("pg_isready"), true);
+    assertEquals(reachabilityArgv.includes("password"), false);
+    await assertRejects(
+      () => verifyPostgresSql(platform, "postgres17", "not-on-argv"),
+      Error,
+      "authentication failed",
+    );
+    assertEquals(platform.process.calls[1]!.command.join(" ").includes("not-on-argv"), false);
+  },
+);

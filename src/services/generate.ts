@@ -45,10 +45,10 @@ export async function generateAll(
   for (const f of composeFiles) files.push(f);
 
   // Nginx core + sites
-  files.push(...await generateNginx(platform, state));
+  files.push(...(await generateNginx(platform, state)));
 
   // PHP pools per app
-  files.push(...await generatePhpPools(platform, state));
+  files.push(...(await generatePhpPools(platform, state)));
 
   // Runner: Supercronic and worker service directories supervised by s6
   files.push(...generateRunnerConfig(state));
@@ -72,14 +72,14 @@ export async function generateAll(
         `assetDigest=${assetDigest}`,
         `apps=${Object.keys(state.apps).sort().join(",")}`,
         `php=${state.phpVersions.map((v) => v.version).join(",")}`,
-        `mysql=${
-          state.databaseServices.filter((v) => v.engine === "mysql").map((v) => v.version).join(",")
-        }`,
-        `postgres=${
-          state.databaseServices.filter((v) => v.engine === "postgres").map((v) => v.version).join(
-            ",",
-          )
-        }`,
+        `mysql=${state.databaseServices
+          .filter((v) => v.engine === "mysql")
+          .map((v) => v.version)
+          .join(",")}`,
+        `postgres=${state.databaseServices
+          .filter((v) => v.engine === "postgres")
+          .map((v) => v.version)
+          .join(",")}`,
         "",
       ].join("\n"),
     ),
@@ -90,16 +90,13 @@ export async function generateAll(
   return files;
 }
 
-async function generateNginx(
-  platform: Platform,
-  state: DesiredState,
-): Promise<GeneratedFile[]> {
+async function generateNginx(platform: Platform, state: DesiredState): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = [];
   const http3 = await loadHttp3Enabled(platform);
   const composeEnvironment = await loadStackComposeEnvironment(platform);
   const publishedHttpsPort = composeEnvironment.nginx.hostNetwork
     ? 443
-    : composeEnvironment.nginx.httpsPort ?? 443;
+    : (composeEnvironment.nginx.httpsPort ?? 443);
   const httpsPortSuffix = publishedHttpsPort === 443 ? "" : `:${publishedHttpsPort}`;
   // Nginx templates are compiled immutable assets. Fail candidate generation when
   // one is missing instead of silently rendering a stale in-code fallback.
@@ -110,10 +107,12 @@ async function generateNginx(
   const acmeIssuers = renderAcmeIssuer(acme.url, acme.email);
   files.push({
     relPath: "nginx/nginx.conf",
-    content: withManagedMarker(renderTemplate(mainTpl, {
-      workerConnections: 8192,
-      acmeIssuers,
-    })),
+    content: withManagedMarker(
+      renderTemplate(mainTpl, {
+        workerConnections: 8192,
+        acmeIssuers,
+      }),
+    ),
     mode: 0o644,
     managed: true,
   });
@@ -142,17 +141,13 @@ async function generateNginx(
   });
   files.push({
     relPath: "nginx/snippets/app-common.conf",
-    content: withManagedMarker(
-      await platform.assets.readText("nginx/snippets/app-common.conf"),
-    ),
+    content: withManagedMarker(await platform.assets.readText("nginx/snippets/app-common.conf")),
     mode: 0o644,
     managed: true,
   });
   files.push({
     relPath: "nginx/snippets/proxy-common.conf",
-    content: withManagedMarker(
-      await platform.assets.readText("nginx/snippets/proxy-common.conf"),
-    ),
+    content: withManagedMarker(await platform.assets.readText("nginx/snippets/proxy-common.conf")),
     mode: 0o644,
     managed: true,
   });
@@ -168,26 +163,20 @@ async function generateNginx(
   for (const app of Object.values(state.apps)) {
     if (app.enabled) {
       files.push(
-        ...await generateAppVhost(
+        ...(await generateAppVhost(
           platform,
           state,
           app,
           http3,
           httpsPortSuffix,
           publishedHttpsPort,
-        ),
+        )),
       );
     }
   }
   for (const proxy of Object.values(state.proxies)) {
     files.push(
-      ...await generateProxyVhost(
-        platform,
-        proxy,
-        http3,
-        httpsPortSuffix,
-        publishedHttpsPort,
-      ),
+      ...(await generateProxyVhost(platform, proxy, http3, httpsPortSuffix, publishedHttpsPort)),
     );
   }
 
@@ -216,9 +205,8 @@ async function generateAppVhost(
   const serverNames = [app.mainDomain, ...app.aliases].join(" ");
   // App code lives under /home/<slug>/code; documentRoot is relative to that tree.
   const codeRoot = `${containerAppHome(app.slug)}/code`;
-  const docRoot = app.documentRoot && app.documentRoot !== "."
-    ? `${codeRoot}/${app.documentRoot}`
-    : codeRoot;
+  const docRoot =
+    app.documentRoot && app.documentRoot !== "." ? `${codeRoot}/${app.documentRoot}` : codeRoot;
   const socketPath = `/run/php-fpm/${app.phpService}/${app.slug}.sock`;
   const ssl = resolveSslForSite(app.tls, app.slug, String(app.mainDomain));
   const content = renderTemplate(tpl, {
@@ -247,12 +235,14 @@ async function generateAppVhost(
     home: containerAppHome(app.slug),
   });
 
-  const files: GeneratedFile[] = [{
-    relPath: `nginx/sites/${app.slug}.conf`,
-    content: withManagedMarker(content),
-    mode: 0o644,
-    managed: true,
-  }];
+  const files: GeneratedFile[] = [
+    {
+      relPath: `nginx/sites/${app.slug}.conf`,
+      content: withManagedMarker(content),
+      mode: 0o644,
+      managed: true,
+    },
+  ];
   if (ssl.snippetRelPath && ssl.snippetContent) {
     files.push({
       relPath: ssl.snippetRelPath,
@@ -294,12 +284,14 @@ async function generateProxyVhost(
     sslCertificateKey: ssl.certificateKeyPath,
     http3,
   });
-  const files: GeneratedFile[] = [{
-    relPath: `nginx/sites/proxy-${proxy.name}.conf`,
-    content: withManagedMarker(content),
-    mode: 0o644,
-    managed: true,
-  }];
+  const files: GeneratedFile[] = [
+    {
+      relPath: `nginx/sites/proxy-${proxy.name}.conf`,
+      content: withManagedMarker(content),
+      mode: 0o644,
+      managed: true,
+    },
+  ];
   if (ssl.snippetRelPath && ssl.snippetContent) {
     files.push({
       relPath: ssl.snippetRelPath,
@@ -311,10 +303,7 @@ async function generateProxyVhost(
   return files;
 }
 
-async function generatePhpPools(
-  platform: Platform,
-  state: DesiredState,
-): Promise<GeneratedFile[]> {
+async function generatePhpPools(platform: Platform, state: DesiredState): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = [];
   for (const app of Object.values(state.apps)) {
     if (!app.enabled) continue;
@@ -345,16 +334,14 @@ async function generatePhpPools(
       maxSpare: dynamic ? profile.maxSpare : 0,
       processIdleTimeout: dynamic ? "" : profile.processIdleTimeout,
       socketPath: `/run/php-fpm/${app.slug}.sock`,
-      openBasedir: `${home}:/usr/share/php:/tmp${
-        app.databases
-          .filter((database) => database.engine === "sqlite" || database.engine === "litestream")
-          .map((database) =>
-            database.engine === "sqlite" || database.engine === "litestream"
-              ? `:/sqlite/${database.file.id}`
-              : ""
-          )
-          .join("")
-      }${app.deploy.enabled ? ":/opt/bento/helpers" : ""}`,
+      openBasedir: `${home}:/usr/share/php:/tmp${app.databases
+        .filter((database) => database.engine === "sqlite" || database.engine === "litestream")
+        .map((database) =>
+          database.engine === "sqlite" || database.engine === "litestream"
+            ? `:/sqlite/${database.file.id}`
+            : "",
+        )
+        .join("")}${app.deploy.enabled ? ":/opt/bento/helpers" : ""}`,
       deployEnabled: app.deploy.enabled,
     });
     files.push({
@@ -420,13 +407,15 @@ export function generateLitestreamConfig(state: DesiredState): GeneratedFile[] {
     "      url: s3://${S3_BUCKET_NAME}/bento/${COMPOSE_PROJECT_NAME}?endpoint=${S3_ENDPOINT}&region=${S3_REGION}",
     "",
   ];
-  return [{
-    relPath: "litestream/litestream.yml",
-    content: withManagedMarker(lines.join("\n")),
-    // Contains environment references but never credential values.
-    mode: 0o644,
-    managed: true,
-  }];
+  return [
+    {
+      relPath: "litestream/litestream.yml",
+      content: withManagedMarker(lines.join("\n")),
+      // Contains environment references but never credential values.
+      mode: 0o644,
+      managed: true,
+    },
+  ];
 }
 
 export function generateLitestreamEnvironment(
@@ -450,34 +439,38 @@ export function generateLitestreamEnvironment(
     }
   }
 
-  return [{
-    relPath: "secrets/litestream/stack-s3.env",
-    content: withManagedMarker([
-      `S3_BUCKET_NAME=${env.S3_BUCKET_NAME}`,
-      `S3_REGION=${env.S3_REGION}`,
-      `S3_ENDPOINT=${env.S3_ENDPOINT ?? ""}`,
-      `AWS_ACCESS_KEY_ID=${env.S3_ACCESS_KEY_ID}`,
-      `AWS_SECRET_ACCESS_KEY=${env.S3_SECRET_ACCESS_KEY}`,
-      `AWS_REGION=${env.S3_REGION}`,
-      "",
-    ].join("\n")),
-    mode: 0o600,
-    managed: true,
-  }];
+  return [
+    {
+      relPath: "secrets/litestream/stack-s3.env",
+      content: withManagedMarker(
+        [
+          `S3_BUCKET_NAME=${env.S3_BUCKET_NAME}`,
+          `S3_REGION=${env.S3_REGION}`,
+          `S3_ENDPOINT=${env.S3_ENDPOINT ?? ""}`,
+          `AWS_ACCESS_KEY_ID=${env.S3_ACCESS_KEY_ID}`,
+          `AWS_SECRET_ACCESS_KEY=${env.S3_SECRET_ACCESS_KEY}`,
+          `AWS_REGION=${env.S3_REGION}`,
+          "",
+        ].join("\n"),
+      ),
+      mode: 0o600,
+      managed: true,
+    },
+  ];
 }
 
 function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
   const files: GeneratedFile[] = [];
   const vacuumSchedules = resolveSqliteVacuumSchedules(state);
   for (const v of state.phpVersions) {
-    const appsOnVersion = Object.values(state.apps).filter((a) =>
-      a.enabled && a.phpVersion === v.version
+    const appsOnVersion = Object.values(state.apps).filter(
+      (a) => a.enabled && a.phpVersion === v.version,
     );
-    const jobs = state.cronJobs.filter((j) =>
-      appsOnVersion.some((a) => a.slug === j.app) && j.enabled
+    const jobs = state.cronJobs.filter(
+      (j) => appsOnVersion.some((a) => a.slug === j.app) && j.enabled,
     );
-    const workers = state.workers.filter((w) =>
-      appsOnVersion.some((a) => a.slug === w.app) && w.enabled
+    const workers = state.workers.filter(
+      (w) => appsOnVersion.some((a) => a.slug === w.app) && w.enabled,
     );
 
     // Per-app crontab files
@@ -502,9 +495,9 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
         );
         if (!schedule) throw validationError("missing SQLite VACUUM schedule");
         lines.push(
-          `${formatSqliteVacuumSchedule(schedule)} /usr/bin/sqlite3 ${shellQuote(database)} ${
-            shellQuote("PRAGMA busy_timeout=30000; VACUUM;")
-          }`,
+          `${formatSqliteVacuumSchedule(schedule)} /usr/bin/sqlite3 ${shellQuote(database)} ${shellQuote(
+            "PRAGMA busy_timeout=30000; VACUUM;",
+          )}`,
         );
       }
       for (const job of appJobs) {
@@ -520,9 +513,7 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
       }
       files.push({
         relPath: `runner/${v.service}/cron/${app.slug}.crontab`,
-        content: withManagedMarker(
-          lines.length ? lines.join("\n") + "\n" : "# no jobs\n",
-        ),
+        content: withManagedMarker(lines.length ? lines.join("\n") + "\n" : "# no jobs\n"),
         mode: 0o644,
         managed: true,
       });
@@ -567,7 +558,8 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
 
       const appJobs = jobs.filter((j) => j.app === app.slug);
       if (
-        appJobs.length > 0 || app.deploy.enabled ||
+        appJobs.length > 0 ||
+        app.deploy.enabled ||
         app.databases.some((database) => database.engine === "sqlite")
       ) {
         const service = `scheduler-${app.slug}`;
@@ -575,16 +567,14 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
         // Open the app-owned log only after dropping privileges. Besides giving
         // the app ownership of a newly created log, this avoids root following
         // an app-controlled symlink during shell redirection.
-        const scheduler = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c ${
-          shellQuote(
-            `exec ${supercronic} >>${shellQuote(`${app.home}/logs/cron/scheduler.log`)} 2>&1`,
-          )
-        }`;
+        const scheduler = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c ${shellQuote(
+          `exec ${supercronic} >>${shellQuote(`${app.home}/logs/cron/scheduler.log`)} 2>&1`,
+        )}`;
         files.push({
           relPath: `runner/${v.service}/services/${service}/run`,
-          content: `#!/bin/sh\n# bento-managed: true\nexport HOME=${shellQuote(app.home)} USER=${
-            shellQuote(String(app.slug))
-          } BENTO_APP=${shellQuote(String(app.slug))}\nexec ${scheduler}\n`,
+          content: `#!/bin/sh\n# bento-managed: true\nexport HOME=${shellQuote(app.home)} USER=${shellQuote(
+            String(app.slug),
+          )} BENTO_APP=${shellQuote(String(app.slug))}\nexec ${scheduler}\n`,
           mode: 0o755,
           managed: true,
         });
@@ -616,18 +606,16 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
       // app-owned and root never follows an app-controlled symlink.
       const workerLog = `${app.home}/logs/worker/${w.name}.log`;
       const workerErrorLog = `${app.home}/logs/worker/${w.name}.err`;
-      const dropped = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c ${
-        shellQuote(
-          `cd ${w.workdir} && exec ${cmd} >>${shellQuote(workerLog)} 2>>${
-            shellQuote(workerErrorLog)
-          }`,
-        )
-      }`;
+      const dropped = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c ${shellQuote(
+        `cd ${w.workdir} && exec ${cmd} >>${shellQuote(workerLog)} 2>>${shellQuote(
+          workerErrorLog,
+        )}`,
+      )}`;
       files.push({
         relPath: `runner/${v.service}/services/${service}/run`,
-        content: `#!/bin/sh\n# bento-managed: true\nexport HOME=${shellQuote(app.home)} USER=${
-          shellQuote(String(app.slug))
-        } BENTO_APP=${shellQuote(String(app.slug))}\nexec ${dropped}\n`,
+        content: `#!/bin/sh\n# bento-managed: true\nexport HOME=${shellQuote(app.home)} USER=${shellQuote(
+          String(app.slug),
+        )} BENTO_APP=${shellQuote(String(app.slug))}\nexec ${dropped}\n`,
         mode: 0o755,
         managed: true,
       });
@@ -668,7 +656,9 @@ export function generatePostgresSecrets(
   const files: GeneratedFile[] = [];
   // .pgpass escapes backslashes and field delimiters. Strip line breaks so an
   // operator-supplied value cannot create a second credential record.
-  const escapedPassword = rootPassword.replace(/[\r\n]/g, "").replace(/\\/g, "\\\\")
+  const escapedPassword = rootPassword
+    .replace(/[\r\n]/g, "")
+    .replace(/\\/g, "\\\\")
     .replace(/:/g, "\\:");
   for (const postgres of state.databaseServices.filter((v) => v.engine === "postgres")) {
     files.push({
@@ -681,10 +671,7 @@ export function generatePostgresSecrets(
   return files;
 }
 
-export function generateMysqlSecrets(
-  state: DesiredState,
-  rootPassword: string,
-): GeneratedFile[] {
+export function generateMysqlSecrets(state: DesiredState, rootPassword: string): GeneratedFile[] {
   const files: GeneratedFile[] = [];
   for (const m of state.databaseServices.filter((v) => v.engine === "mysql")) {
     // MySQL accepts # comments; marker keeps file in the managed set.
@@ -726,13 +713,12 @@ function formatCronLine(job: CronJob, app: AppState): string {
 }
 
 function formatCronScript(job: CronJob): string {
-  const command = job.commandMode === "shell"
-    ? job.command[0]!
-    : `exec ${job.command.map(shellQuote).join(" ")}`;
+  const command =
+    job.commandMode === "shell" ? job.command[0]! : `exec ${job.command.map(shellQuote).join(" ")}`;
   return withManagedMarker(
-    `cd ${
-      shellQuote(job.workdir)
-    } || exit 1\nprintf '\\n= Run at %s =\\n\\n' "$(date '+%Y-%m-%d %H:%M:%S')"\n${command}\n`,
+    `cd ${shellQuote(
+      job.workdir,
+    )} || exit 1\nprintf '\\n= Run at %s =\\n\\n' "$(date '+%Y-%m-%d %H:%M:%S')"\n${command}\n`,
   );
 }
 

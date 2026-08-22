@@ -5,11 +5,11 @@
  * - When BENTO_BIN (or dist/bento) is available, smoke-test the compiled artifact and
  *   compare generated managed files against source mode for identical inputs.
  *
- * Set REQUIRE_BENTO_BIN=1 to fail when no binary is present (used by `deno task test:parity`).
+ * Set REQUIRE_BENTO_BIN=1 to fail when no binary is present (used by `bun run test:parity`).
  */
 
-import { assertEquals, assertNotEquals } from "@std/assert";
-import { join, resolve } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertNotEquals } from "../runtime.ts";
+import { join, resolve } from "node:path";
 import { runCli } from "../../src/main.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
 import {
@@ -17,22 +17,22 @@ import {
   materializeDockerAssets,
   normalizeParityText,
 } from "../../src/services/assets_materialize.ts";
-import { BENTO_VERSION, DENO_TARGET_VERSION, versionBanner } from "../../src/version.ts";
+import { BENTO_VERSION, BUN_TARGET_VERSION, versionBanner } from "../../src/version.ts";
 
 async function withStack(fn: (stack: string) => Promise<void>) {
-  const stack = await Deno.makeTempDir({ prefix: "bento-parity-" });
+  const stack = await bunRuntime.makeTempDir({ prefix: "bento-parity-" });
   try {
     await fn(stack);
   } finally {
-    await Deno.remove(stack, { recursive: true });
+    await bunRuntime.remove(stack, { recursive: true });
   }
 }
 
 async function resolveBentoBin(): Promise<string | null> {
-  const envBin = Deno.env.get("BENTO_BIN");
+  const envBin = bunRuntime.env.get("BENTO_BIN");
   if (envBin && envBin.length > 0) {
     try {
-      const st = await Deno.stat(envBin);
+      const st = await bunRuntime.stat(envBin);
       if (st.isFile) return resolve(envBin);
     } catch {
       // fall through
@@ -40,7 +40,7 @@ async function resolveBentoBin(): Promise<string | null> {
   }
   const dist = resolve("dist/bento");
   try {
-    const st = await Deno.stat(dist);
+    const st = await bunRuntime.stat(dist);
     if (st.isFile) return dist;
   } catch {
     // missing
@@ -53,7 +53,7 @@ async function runBin(
   args: string[],
   opts?: { cwd?: string; env?: Record<string, string> },
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const cmd = new Deno.Command(bin, {
+  const cmd = new bunRuntime.Command(bin, {
     args,
     cwd: opts?.cwd,
     env: opts?.env,
@@ -74,7 +74,7 @@ async function collectFiles(root: string, base = ""): Promise<Map<string, string
     let names: string[];
     try {
       names = [];
-      for await (const e of Deno.readDir(dir)) names.push(e.name);
+      for await (const e of bunRuntime.readDir(dir)) names.push(e.name);
     } catch {
       return;
     }
@@ -82,7 +82,7 @@ async function collectFiles(root: string, base = ""): Promise<Map<string, string
     for (const name of names) {
       const full = join(dir, name);
       const childRel = rel ? `${rel}/${name}` : name;
-      const st = await Deno.lstat(full);
+      const st = await bunRuntime.lstat(full);
       if (st.isDirectory) {
         // Skip volatile transaction dirs; walk other trees (including .asset-cache filter below).
         if (name === ".staging" || name === ".transaction-backup") continue;
@@ -94,7 +94,7 @@ async function collectFiles(root: string, base = ""): Promise<Map<string, string
         if (childRel.startsWith("certs/")) continue;
         if (childRel.endsWith(".materialized.json")) continue;
         if (childRel.endsWith(".generation.json")) continue;
-        const bytes = await Deno.readFile(full);
+        const bytes = await bunRuntime.readFile(full);
         // text compare for config; binary would be hex
         try {
           map.set(childRel, normalizeParityText(new TextDecoder().decode(bytes)));
@@ -108,50 +108,47 @@ async function collectFiles(root: string, base = ""): Promise<Map<string, string
   return map;
 }
 
-Deno.test("version banner reports bento and pinned deno target", () => {
+bunRuntime.test("version banner reports bento and pinned Bun target", () => {
   const banner = versionBanner();
   assertEquals(banner.includes(BENTO_VERSION), true);
-  assertEquals(banner.includes(DENO_TARGET_VERSION), true);
-  assertEquals(banner, `bento ${BENTO_VERSION} (deno ${DENO_TARGET_VERSION})`);
+  assertEquals(banner.includes(BUN_TARGET_VERSION), true);
+  assertEquals(banner, `bento ${BENTO_VERSION} (bun ${BUN_TARGET_VERSION})`);
 });
 
-Deno.test("asset digest is stable across resolver instances", async () => {
-  const a = createPlatform(await Deno.makeTempDir(), Deno.cwd());
-  const b = createPlatform(await Deno.makeTempDir(), Deno.cwd());
+bunRuntime.test("asset digest is stable across resolver instances", async () => {
+  const a = createPlatform(await bunRuntime.makeTempDir(), bunRuntime.cwd());
+  const b = createPlatform(await bunRuntime.makeTempDir(), bunRuntime.cwd());
   const da = await a.assets.digest();
   const db = await b.assets.digest();
   assertEquals(da, db);
   assertEquals(da.length, 64);
 });
 
-Deno.test("materialize uses digest-addressed cache and skips republish", async () => {
+bunRuntime.test("materialize uses digest-addressed cache and skips republish", async () => {
   await withStack(async (stack) => {
-    const platform = createPlatform(stack, Deno.cwd());
+    const platform = createPlatform(stack, bunRuntime.cwd());
     const first = await materializeDockerAssets(platform, ["8.5"]);
     assertEquals(first.digest.length, 64);
     assertEquals(first.published, true);
-    assertEquals(await Deno.stat(join(first.cacheDir, ".ready")).then(() => true), true);
+    assertEquals(await bunRuntime.stat(join(first.cacheDir, ".ready")).then(() => true), true);
     assertEquals(
-      await Deno.stat(join(stack, "docker/nginx/Dockerfile")).then(() => true),
+      await bunRuntime.stat(join(stack, "docker/nginx/Dockerfile")).then(() => true),
       true,
     );
-    assertEquals(
-      await Deno.stat(join(stack, "helpers/bento.php")).then(() => true),
-      true,
-    );
-    const drainPhp = await Deno.readTextFile(join(stack, "helpers/deploy-drain.php"));
-    const drainSh = await Deno.readTextFile(join(stack, "helpers/deploy-drain.sh"));
+    assertEquals(await bunRuntime.stat(join(stack, "helpers/bento.php")).then(() => true), true);
+    const drainPhp = await bunRuntime.readTextFile(join(stack, "helpers/deploy-drain.php"));
+    const drainSh = await bunRuntime.readTextFile(join(stack, "helpers/deploy-drain.sh"));
     assertEquals(drainPhp.includes("resetOpcache"), true);
     assertEquals(drainPhp.includes("$previousUmask = umask(0022);"), true);
     assertEquals(drainPhp.includes("umask($previousUmask);"), true);
     assertEquals(drainSh.includes("deploy-drain.php"), true);
     assertEquals(drainSh.includes("bento deploy drain"), false);
     assertEquals(
-      await Deno.stat(join(stack, "docker/php/helpers/deploy-drain.php")).then(() => true),
+      await bunRuntime.stat(join(stack, "docker/php/helpers/deploy-drain.php")).then(() => true),
       true,
     );
 
-    const meta1 = await Deno.readTextFile(join(stack, "docker/.materialized.json"));
+    const meta1 = await bunRuntime.readTextFile(join(stack, "docker/.materialized.json"));
     assertEquals(JSON.parse(meta1).digest, first.digest);
     assertEquals(JSON.parse(meta1).cacheDir, `.asset-cache/${first.digest}`);
 
@@ -163,13 +160,16 @@ Deno.test("materialize uses digest-addressed cache and skips republish", async (
     // Cache entry remains the single source of truth
     const cacheDocker = join(first.cacheDir, "docker/nginx/Dockerfile");
     const pubDocker = join(stack, "docker/nginx/Dockerfile");
-    assertEquals(await Deno.readTextFile(cacheDocker), await Deno.readTextFile(pubDocker));
+    assertEquals(
+      await bunRuntime.readTextFile(cacheDocker),
+      await bunRuntime.readTextFile(pubDocker),
+    );
   });
 });
 
-Deno.test("source init/render/status smoke (F-28)", async () => {
+bunRuntime.test("source init/render/status smoke (F-28)", async () => {
   await withStack(async (stack) => {
-    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init"]), 0);
     assertEquals(await runCli([...base, "render"]), 0);
     assertEquals(await runCli([...base, "status"]), 0);
@@ -177,26 +177,26 @@ Deno.test("source init/render/status smoke (F-28)", async () => {
 
     // digest-addressed cache present after render
     const meta = JSON.parse(
-      await Deno.readTextFile(join(stack, "docker/.materialized.json")),
+      await bunRuntime.readTextFile(join(stack, "docker/.materialized.json")),
     );
     assertEquals(typeof meta.digest, "string");
     assertEquals(
-      await Deno.stat(join(stack, ".asset-cache", meta.digest, ".ready")).then(() => true),
+      await bunRuntime.stat(join(stack, ".asset-cache", meta.digest, ".ready")).then(() => true),
       true,
     );
   });
 });
 
-Deno.test({
+bunRuntime.test({
   name: "compiled binary smoke + source/compiled parity (F-29 / F-30)",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
     const bin = await resolveBentoBin();
     if (!bin) {
-      if (Deno.env.get("REQUIRE_BENTO_BIN") === "1") {
+      if (bunRuntime.env.get("REQUIRE_BENTO_BIN") === "1") {
         throw new Error(
-          "BENTO_BIN not set and dist/bento missing; run `deno task compile` or `deno task test:parity`",
+          "BENTO_BIN not set and dist/bento missing; run `bun run compile` or `bun run test:parity`",
         );
       }
       console.log(
@@ -205,32 +205,37 @@ Deno.test({
       return;
     }
 
-    // F-29: version / init / render / status without needing Deno on PATH
+    // F-29: version / init / render / status without needing Bun on PATH
     {
       const ver = await runBin(bin, ["version"], {
         cwd: "/tmp",
-        env: { PATH: "/usr/bin:/bin", HOME: Deno.env.get("HOME") ?? "/tmp" },
+        env: {
+          PATH: "/usr/bin:/bin",
+          HOME: bunRuntime.env.get("HOME") ?? "/tmp",
+        },
       });
       assertEquals(ver.code, 0, ver.stderr);
       assertEquals(ver.stdout.includes(BENTO_VERSION), true);
-      assertEquals(ver.stdout.includes(DENO_TARGET_VERSION), true);
+      assertEquals(ver.stdout.includes(BUN_TARGET_VERSION), true);
     }
 
     // PostgreSQL command smoke in the freshly compiled distribution. A plain
-    // `deno task test` may discover an older optional dist/bento, so only run
+    // `bun run test` may discover an older optional dist/bento, so only run
     // new-command assertions when the parity task explicitly requires it.
-    if (Deno.env.get("REQUIRE_BENTO_BIN") === "1") {
+    if (bunRuntime.env.get("REQUIRE_BENTO_BIN") === "1") {
       await withStack(async (stack) => {
-        const env = { PATH: "/usr/bin:/bin", HOME: Deno.env.get("HOME") ?? "/tmp" };
+        const env = {
+          PATH: "/usr/bin:/bin",
+          HOME: bunRuntime.env.get("HOME") ?? "/tmp",
+        };
+        assertEquals((await runBin(bin, ["--stack", stack, "init"], { cwd: "/tmp", env })).code, 0);
         assertEquals(
-          (await runBin(bin, ["--stack", stack, "init"], { cwd: "/tmp", env })).code,
-          0,
-        );
-        assertEquals(
-          (await runBin(bin, ["--stack", stack, "postgres", "add", "17", "--no-apply"], {
-            cwd: "/tmp",
-            env,
-          })).code,
+          (
+            await runBin(bin, ["--stack", stack, "postgres", "add", "17", "--no-apply"], {
+              cwd: "/tmp",
+              env,
+            })
+          ).code,
           0,
         );
         const list = await runBin(bin, ["--stack", stack, "postgres", "list"], {
@@ -240,20 +245,26 @@ Deno.test({
         assertEquals(list.code, 0, list.stderr);
         assertEquals(list.stdout.includes("postgres17"), true);
         assertEquals(
-          (await runBin(bin, [
-            "--stack",
-            stack,
-            "app",
-            "create",
-            "pgparity",
-            "--domain",
-            "pgparity.test",
-            "--database-engine",
-            "postgres",
-            "--postgres",
-            "17",
-            "--no-apply",
-          ], { cwd: "/tmp", env })).code,
+          (
+            await runBin(
+              bin,
+              [
+                "--stack",
+                stack,
+                "app",
+                "create",
+                "pgparity",
+                "--domain",
+                "pgparity.test",
+                "--database-engine",
+                "postgres",
+                "--postgres",
+                "17",
+                "--no-apply",
+              ],
+              { cwd: "/tmp", env },
+            )
+          ).code,
           0,
         );
         const shellPlan = await runBin(
@@ -263,19 +274,18 @@ Deno.test({
         );
         assertEquals(shellPlan.code, 0, shellPlan.stderr);
         assertEquals(shellPlan.stdout.includes("psql"), true);
-        const state = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+        const state = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
         const postgresBinding = state.apps.pgparity.databases.find(
           (binding: { engine: string }) => binding.engine === "postgres",
         );
+        assertEquals(shellPlan.stdout.includes(postgresBinding.password), false);
         assertEquals(
-          shellPlan.stdout.includes(postgresBinding.password),
-          false,
-        );
-        assertEquals(
-          (await runBin(bin, ["--stack", stack, "postgres", "remove", "17"], {
-            cwd: "/tmp",
-            env,
-          })).code,
+          (
+            await runBin(bin, ["--stack", stack, "postgres", "remove", "17"], {
+              cwd: "/tmp",
+              env,
+            })
+          ).code,
           10,
         );
       });
@@ -283,7 +293,7 @@ Deno.test({
 
     await withStack(async (baseStack) => {
       // Shared inputs: init once via source, clone to two stacks
-      const seed = ["--stack", baseStack, "--repo-root", Deno.cwd()];
+      const seed = ["--stack", baseStack, "--repo-root", bunRuntime.cwd()];
       assertEquals(await runCli([...seed, "init"]), 0);
       assertEquals(await runCli([...seed, "postgres", "add", "17", "--no-apply"]), 0);
       // Create an app so generated surface is non-trivial
@@ -304,29 +314,36 @@ Deno.test({
         0,
       );
 
-      const srcStack = await Deno.makeTempDir({ prefix: "bento-parity-src-" });
-      const binStack = await Deno.makeTempDir({ prefix: "bento-parity-bin-" });
+      const srcStack = await bunRuntime.makeTempDir({
+        prefix: "bento-parity-src-",
+      });
+      const binStack = await bunRuntime.makeTempDir({
+        prefix: "bento-parity-bin-",
+      });
       try {
         await copyDir(baseStack, srcStack);
         await copyDir(baseStack, binStack);
         // Drop any generated output so both modes re-render cleanly
         for (const s of [srcStack, binStack]) {
-          await Deno.remove(join(s, "generated"), { recursive: true }).catch(() => {});
-          await Deno.remove(join(s, "docker"), { recursive: true }).catch(() => {});
-          await Deno.remove(join(s, "helpers"), { recursive: true }).catch(() => {});
-          await Deno.remove(join(s, ".asset-cache"), { recursive: true }).catch(() => {});
+          await bunRuntime.remove(join(s, "generated"), { recursive: true }).catch(() => {});
+          await bunRuntime.remove(join(s, "docker"), { recursive: true }).catch(() => {});
+          await bunRuntime.remove(join(s, "helpers"), { recursive: true }).catch(() => {});
+          await bunRuntime.remove(join(s, ".asset-cache"), { recursive: true }).catch(() => {});
         }
 
         const srcCode = await runCli([
           "--stack",
           srcStack,
           "--repo-root",
-          Deno.cwd(),
+          bunRuntime.cwd(),
           "render",
         ]);
         const binRender = await runBin(bin, ["--stack", binStack, "render"], {
           cwd: "/tmp",
-          env: { PATH: "/usr/bin:/bin", HOME: Deno.env.get("HOME") ?? "/tmp" },
+          env: {
+            PATH: "/usr/bin:/bin",
+            HOME: bunRuntime.env.get("HOME") ?? "/tmp",
+          },
         });
         assertEquals(srcCode, 0);
         assertEquals(binRender.code, 0, binRender.stderr + binRender.stdout);
@@ -335,27 +352,30 @@ Deno.test({
           "--stack",
           srcStack,
           "--repo-root",
-          Deno.cwd(),
+          bunRuntime.cwd(),
           "status",
         ]);
         const binStatus = await runBin(bin, ["--stack", binStack, "status"], {
           cwd: "/tmp",
-          env: { PATH: "/usr/bin:/bin", HOME: Deno.env.get("HOME") ?? "/tmp" },
+          env: {
+            PATH: "/usr/bin:/bin",
+            HOME: bunRuntime.env.get("HOME") ?? "/tmp",
+          },
         });
         assertEquals(srcStatus, 0);
         assertEquals(binStatus.code, 0, binStatus.stderr);
 
         // State transitions equal
-        const srcState = await Deno.readTextFile(join(srcStack, "state.json"));
-        const binState = await Deno.readTextFile(join(binStack, "state.json"));
+        const srcState = await bunRuntime.readTextFile(join(srcStack, "state.json"));
+        const binState = await bunRuntime.readTextFile(join(binStack, "state.json"));
         assertEquals(normalizeParityText(srcState), normalizeParityText(binState));
 
         // Asset digests equal
         const srcMeta = JSON.parse(
-          await Deno.readTextFile(join(srcStack, "docker/.materialized.json")),
+          await bunRuntime.readTextFile(join(srcStack, "docker/.materialized.json")),
         );
         const binMeta = JSON.parse(
-          await Deno.readTextFile(join(binStack, "docker/.materialized.json")),
+          await bunRuntime.readTextFile(join(binStack, "docker/.materialized.json")),
         );
         assertEquals(srcMeta.digest, binMeta.digest);
 
@@ -387,22 +407,22 @@ Deno.test({
         assertEquals(binStatus.stdout.includes("parity"), true);
         assertEquals(binStatus.stdout.includes(binStack), true);
       } finally {
-        await Deno.remove(srcStack, { recursive: true }).catch(() => {});
-        await Deno.remove(binStack, { recursive: true }).catch(() => {});
+        await bunRuntime.remove(srcStack, { recursive: true }).catch(() => {});
+        await bunRuntime.remove(binStack, { recursive: true }).catch(() => {});
       }
     });
   },
 });
 
 async function copyDir(from: string, to: string) {
-  await Deno.mkdir(to, { recursive: true });
-  for await (const entry of Deno.readDir(from)) {
+  await bunRuntime.mkdir(to, { recursive: true });
+  for await (const entry of bunRuntime.readDir(from)) {
     const src = join(from, entry.name);
     const dest = join(to, entry.name);
     if (entry.isDirectory) {
       await copyDir(src, dest);
     } else if (entry.isFile) {
-      await Deno.copyFile(src, dest);
+      await bunRuntime.copyFile(src, dest);
     }
   }
 }

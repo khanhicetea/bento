@@ -96,11 +96,7 @@ export async function loadStackComposeEnvironment(
   const projectName = validateComposeProjectName(
     env.COMPOSE_PROJECT_NAME?.trim() || DEFAULT_COMPOSE_PROJECT_NAME,
   );
-  const hostNetwork = parseEnvBoolean(
-    env.NGINX_HOST_NETWORK,
-    true,
-    "NGINX_HOST_NETWORK",
-  );
+  const hostNetwork = parseEnvBoolean(env.NGINX_HOST_NETWORK, true, "NGINX_HOST_NETWORK");
   const httpPort = parseOptionalPort(env.NGINX_HTTP_PORT, "NGINX_HTTP_PORT");
   const httpsPort = parseOptionalPort(env.NGINX_HTTPS_PORT, "NGINX_HTTPS_PORT");
   if (!hostNetwork && httpPort !== undefined && httpPort === httpsPort) {
@@ -128,7 +124,7 @@ export async function updateStackEnv(
   updates: Record<string, string>,
 ): Promise<void> {
   const path = platform.paths.paths.envFile;
-  const existing = await platform.fs.exists(path) ? await platform.fs.readText(path) : "";
+  const existing = (await platform.fs.exists(path)) ? await platform.fs.readText(path) : "";
   const entries = new Map(Object.entries(updates));
   const updated = new Set<string>();
   const lines = existing.split("\n").flatMap((line) => {
@@ -146,9 +142,7 @@ export async function updateStackEnv(
   await platform.fs.atomicWriteText(path, `${lines.join("\n")}\n`, 0o600);
 }
 
-export async function loadMysqlRootPassword(
-  platform: Platform,
-): Promise<string | undefined> {
+export async function loadMysqlRootPassword(platform: Platform): Promise<string | undefined> {
   const env = await loadStackEnv(platform);
   const value = env.MYSQL_ROOT_PASSWORD;
   if (value === undefined || value === "") return undefined;
@@ -166,9 +160,7 @@ export async function requireMysqlRootPassword(platform: Platform): Promise<stri
   return value;
 }
 
-export async function loadPostgresRootPassword(
-  platform: Platform,
-): Promise<string | undefined> {
+export async function loadPostgresRootPassword(platform: Platform): Promise<string | undefined> {
   const env = await loadStackEnv(platform);
   const value = env.POSTGRES_PASSWORD;
   if (value === undefined || value.trim() === "") return undefined;

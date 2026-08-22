@@ -56,7 +56,7 @@ A pull-request workflow SHOULD run the fast/static/unit contract. A protected ta
 
 - Deliberately failing a unit, integration, or parity test blocks publication.
 - A Docker-unavailable skip cannot be displayed as integration success without qualification.
-- Published checksum/provenance identifies source commit, Deno target, Bento/asset/schema versions, architecture, and workflow run.
+- Published checksum/provenance identifies source commit, Bun target, Bento/asset/schema versions, architecture, and workflow run.
 - Release artifacts are byte-stable where the compiler/toolchain permits; otherwise reproducibility differences are documented.
 
 ## 4. T-02 — Eliminate contract and documentation drift
@@ -84,7 +84,7 @@ The generated inventory MUST NOT become a second runtime source of truth. Code/s
 ### Acceptance criteria
 
 - A command added without CLI-reference update fails verification.
-- Deno/Bento/schema/asset version references are checked against `src/version.ts`.
+- Bun/Bento/schema/asset version references are checked against `src/version.ts`.
 - The docs consistently describe multiple bindings, rclone, actual Litestream backup behavior, and transfer SQLite semantics.
 - Historical tests are renamed/reworded without weakening safety assertions.
 
@@ -266,7 +266,7 @@ Implement one versioned result/error envelope in the CLI presentation layer, whi
 
 ### Finding
 
-Deno dependencies are locked, and some in-image tools are checksum-pinned. Several base/runtime images use mutable tags, and release artifacts currently lack a complete SBOM/signature/provenance contract.
+Bun dependencies are locked, and some in-image tools are checksum-pinned. Several base/runtime images use mutable tags, and release artifacts currently lack a complete SBOM/signature/provenance contract.
 
 ### Decision
 

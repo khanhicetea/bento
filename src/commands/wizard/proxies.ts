@@ -45,7 +45,11 @@ export async function sectionProxies(ui: WizardUI, ctx: CliContext): Promise<voi
       ],
     );
     const action = await ui.menu("Reverse proxy actions", [
-      { label: "Configure TLS", value: "tls", hint: "self-CA · shared · ACME · external" },
+      {
+        label: "Configure TLS",
+        value: "tls",
+        hint: "self-CA · shared · ACME · external",
+      },
       { label: "Remove reverse proxy", value: "remove" },
     ]);
     if (action === "tls") await wizardProxyTls(ui, ctx, name);
@@ -116,7 +120,10 @@ async function wizardProxyTls(ui: WizardUI, ctx: CliContext, name: string): Prom
       const now = ctx.platform.clock.nowIso();
       const next = {
         ...state,
-        proxies: { ...state.proxies, [name]: { ...current, tls, updatedAt: now } },
+        proxies: {
+          ...state.proxies,
+          [name]: { ...current, tls, updatedAt: now },
+        },
         updatedAt: now,
       };
       await ctx.store.save(next);
@@ -156,7 +163,10 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
     validate: validateProxyAliases,
   });
   if (aliasRaw === null) return;
-  const aliases = aliasRaw.split(",").map((value) => value.trim()).filter(Boolean);
+  const aliases = aliasRaw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
 
   const upstreams: string[] = [];
   while (true) {
@@ -174,8 +184,12 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
     if (!(await ui.confirm("Add another upstream server?", { defaultYes: false }))) break;
   }
 
-  const accessLog = await ui.confirm("Enable access logs?", { defaultYes: false });
-  const noApply = !(await ui.confirm("Render & apply after save?", { defaultYes: true }));
+  const accessLog = await ui.confirm("Enable access logs?", {
+    defaultYes: false,
+  });
+  const noApply = !(await ui.confirm("Render & apply after save?", {
+    defaultYes: true,
+  }));
 
   ui.blank();
   ui.table(
@@ -200,13 +214,17 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
 
   try {
     const result = await ctx.store.withExclusive(async (state) => {
-      const created = createProxy(state, {
-        name,
-        domain,
-        aliases,
-        upstreams,
-        accessLog,
-      }, ctx.platform.clock.nowIso());
+      const created = createProxy(
+        state,
+        {
+          name,
+          domain,
+          aliases,
+          upstreams,
+          accessLog,
+        },
+        ctx.platform.clock.nowIso(),
+      );
       await ctx.store.save(created.state);
       if (!noApply) {
         await ctx.render.apply(created.state, {
@@ -230,7 +248,10 @@ async function wizardProxyCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
 }
 
 function validateProxyAliases(raw: string): string | null {
-  const aliases = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  const aliases = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   for (const [index, alias] of aliases.entries()) {
     const result = parseDomainName(alias, `alias ${index + 1}`);
     if (!result.ok) return result.errors.join("; ");

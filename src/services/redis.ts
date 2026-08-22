@@ -7,10 +7,7 @@ import type { AppRedisIdentity, AppState, DesiredState } from "../domain/state.t
 import { notFoundError, serviceError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 
-export function redisConnectionEnv(
-  app: AppState,
-  sharedPassword?: string,
-): Record<string, string> {
+export function redisConnectionEnv(app: AppState, sharedPassword?: string): Record<string, string> {
   const base: Record<string, string> = {
     REDIS_HOST: "redis",
     REDIS_PORT: "6379",
@@ -45,9 +42,7 @@ export function aclRuleParts(identity: AppRedisIdentity): {
 export function aclRules(identity: AppRedisIdentity): string[] {
   const { username, capabilityArgs } = aclRuleParts(identity);
   const pw = identity.aclPassword ?? "";
-  return [
-    `ACL SETUSER ${username} on >${pw} ${capabilityArgs.join(" ")}`,
-  ];
+  return [`ACL SETUSER ${username} on >${pw} ${capabilityArgs.join(" ")}`];
 }
 
 /**
@@ -78,9 +73,9 @@ export async function applyAppRedisAcl(
     "IFS= read -r AUTH",
     "IFS= read -r ACLPW",
     'if [ -n "$AUTH" ]; then export REDISCLI_AUTH="$AUTH"; fi',
-    `redis-cli --no-auth-warning ACL SETUSER ${
-      shellQuote(username)
-    } on "$(printf '>%s' "$ACLPW")" ${capabilityArgs.map(shellQuote).join(" ")}`,
+    `redis-cli --no-auth-warning ACL SETUSER ${shellQuote(
+      username,
+    )} on "$(printf '>%s' "$ACLPW")" ${capabilityArgs.map(shellQuote).join(" ")}`,
   ].join("\n");
 
   const stdin = `${redisAuthPassword ?? ""}\n${password}\n`;
@@ -94,9 +89,11 @@ export async function applyAppRedisAcl(
   );
   if (result.code !== 0) {
     throw serviceError(
-      `Redis ACL apply failed for app ${app.slug}: ${
-        (result.stderr || result.stdout || "unknown error").trim()
-      }`,
+      `Redis ACL apply failed for app ${app.slug}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown error"
+      ).trim()}`,
       "Ensure the redis service is running and REDIS_PASSWORD matches, then retry.",
     );
   }

@@ -1,7 +1,7 @@
 # Bento product specifications
 
 Status: current-product baseline  
-Implementation snapshot: `bento 0.1.0`, state schema `4`, Deno target `2.9.3`  
+Implementation snapshot: `bento 0.1.0`, state schema `4`, Bun target `1.4.0`  
 Repository snapshot reviewed: `3b4345b`
 
 These specifications describe the product that exists in this repository: its product model, operator promises, architecture, technology choices, safety boundaries, and acceptance contract. They replace the removed historical specifications and normalize the current implementation where older prose in `docs/` is stale.
@@ -38,7 +38,7 @@ A specification change does not by itself change runtime behavior. Product chang
 
 The baseline was derived from:
 
-- `README.md`, `deno.json`, `deno.lock`, and `.github/workflows/ci.yml`;
+- `README.md`, `package.json`, `bun.lock`, and `.github/workflows/ci.yml`;
 - `src/domain/`, `src/schemas/`, `src/platform/`, `src/services/`, `src/commands/`, and `src/ui/`;
 - immutable assets in `templates/`;
 - unit, contract, parity, and integration tests in `tests/`;
@@ -52,4 +52,4 @@ These specs intentionally follow current code over older documentation:
 - An app persists `databases[]` and can hold multiple add-only MySQL, PostgreSQL, plain SQLite, and Litestream bindings. The first binding is the compatibility/default connection, not the only possible binding.
 - Scheduled logical backups can upload newly created artifacts through the isolated rclone sidecar. This supersedes older statements that all off-host replication is manual.
 - `stack.tar.gz` mechanically includes the stack-root `sqlite/` tree because it archives the root; it is not a consistency-guaranteed live SQLite backup. Use SQLite `.backup` or Litestream for recovery assurance.
-- The checked-in GitHub workflow currently builds release binaries on tags/releases only. The broader formatting, linting, typecheck, test, smoke, and parity gates exist as Deno tasks but are not all enforced by that workflow.
+- The checked-in GitHub workflow runs frozen install, formatting, linting, typecheck, unit/contract tests, integration tests, and release builds on tags/releases. Smoke and parity remain additional local gates.

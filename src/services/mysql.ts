@@ -3,7 +3,7 @@
  * Passwords never appear in host process arguments.
  */
 
-import { basename, isAbsolute, join, relative, resolve } from "@std/path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { AppState, DesiredState, ManagedMysqlVersion } from "../domain/state.ts";
 import { databaseBindings, mysqlImage, mysqlServiceName } from "../domain/state.ts";
 import { asDatabaseName, asMysqlService, asMysqlVersion } from "../domain/types.ts";
@@ -32,10 +32,7 @@ function mysqlDatabase(app: AppState, service?: string) {
   return database;
 }
 
-export function addMysqlVersion(
-  state: DesiredState,
-  versionInput: string,
-): DesiredState {
+export function addMysqlVersion(state: DesiredState, versionInput: string): DesiredState {
   const version = asMysqlVersion(unwrap(parseMysqlVersion(versionInput), "mysqlVersion"));
   if (
     state.databaseServices.filter((v) => v.engine === "mysql").some((v) => v.version === version)
@@ -53,7 +50,7 @@ export function addMysqlVersion(
   return {
     ...state,
     databaseServices: [...state.databaseServices, managed].sort((a, b) =>
-      a.service.localeCompare(b.service)
+      a.service.localeCompare(b.service),
     ),
     updatedAt: new Date().toISOString(),
   };
@@ -79,9 +76,7 @@ export function createAppDatabase(
     throw validationError(`invalid database name ${dbName}`);
   }
   if (dbName !== slug && !dbName.startsWith(`${slug}_`)) {
-    throw validationError(
-      `database ${dbName} outside app namespace; use ${slug} or ${slug}_*`,
-    );
+    throw validationError(`database ${dbName} outside app namespace; use ${slug} or ${slug}_*`);
   }
   const current = mysqlDatabase(app, service);
   if (current.databases.some((d) => d.name === dbName)) {
@@ -89,12 +84,9 @@ export function createAppDatabase(
   }
   const database = {
     ...current,
-    databases: [
-      ...current.databases,
-      { name: asDatabaseName(dbName), createdAt: now },
-    ],
+    databases: [...current.databases, { name: asDatabaseName(dbName), createdAt: now }],
   };
-  const databases = app.databases.map((entry) => entry === current ? database : entry);
+  const databases = app.databases.map((entry) => (entry === current ? database : entry));
   const nextApp: AppState = {
     ...app,
     databases,
@@ -181,10 +173,7 @@ export async function execMysqlSql(
 }
 
 /** True when the MySQL service container accepts compose exec. */
-export async function isMysqlReachable(
-  platform: Platform,
-  service: string,
-): Promise<boolean> {
+export async function isMysqlReachable(platform: Platform, service: string): Promise<boolean> {
   try {
     const result = await platform.process.run(
       ["docker", "compose", "exec", "-T", service, "true"],
@@ -210,9 +199,11 @@ export async function applyAppMysqlGrants(
   const result = await execMysqlSql(platform, mysqlDatabase(app).service, sql, rootPassword);
   if (result.code !== 0) {
     throw serviceError(
-      `MySQL grant failed for database ${dbName} on ${mysqlDatabase(app).service}: ${
-        (result.stderr || result.stdout || "unknown error").trim()
-      }`,
+      `MySQL grant failed for database ${dbName} on ${mysqlDatabase(app).service}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown error"
+      ).trim()}`,
       "Ensure the MySQL service is running and MYSQL_ROOT_PASSWORD matches the container, then retry `bento mysql db`.",
     );
   }
@@ -247,13 +238,7 @@ export async function createAppDatabaseLive(
   service?: string,
 ): Promise<DesiredState> {
   // Validate namespace / uniqueness first (pure).
-  const validated = createAppDatabase(
-    state,
-    slug,
-    dbName,
-    platform.clock.nowIso(),
-    service,
-  );
+  const validated = createAppDatabase(state, slug, dbName, platform.clock.nowIso(), service);
   const app = validated.apps[slug]!;
   const database = mysqlDatabase(app, service);
   if (!(await isMysqlReachable(platform, database.service))) {
@@ -353,77 +338,74 @@ export async function runBackup(
   const artifacts: BackupArtifact[] = [];
   const compress = req.compress ?? "zstd";
 
-  try {
-    for (const t of targets) {
-      const ts = platform.clock.nowIso().replace(/[:.]/g, "-");
-      const ext = compress === "none" ? "sql" : compress === "gzip" ? "sql.gz" : "sql.zst";
-      const finalName = `${t.service}_${t.database}_${ts}.${ext}`;
-      const dir = join(platform.paths.paths.backupsDir, t.service, t.database);
-      await platform.fs.mkdirp(dir, 0o700);
-      const finalPath = join(dir, finalName);
-      const partialPath = `${finalPath}.partial`;
-      const containerFinal = `/var/backups/bento/${t.database}/${finalName}`;
-      const containerPartial = `${containerFinal}.partial`;
-      const dump = `mysqldump --defaults-extra-file=/etc/bento/mysql/root.cnf ` +
-        `--single-transaction --routines --triggers ${shellQuote(t.database)}`;
-      const pipeline = compress === "gzip"
+  for (const t of targets) {
+    const ts = platform.clock.nowIso().replace(/[:.]/g, "-");
+    const ext = compress === "none" ? "sql" : compress === "gzip" ? "sql.gz" : "sql.zst";
+    const finalName = `${t.service}_${t.database}_${ts}.${ext}`;
+    const dir = join(platform.paths.paths.backupsDir, t.service, t.database);
+    await platform.fs.mkdirp(dir, 0o700);
+    const finalPath = join(dir, finalName);
+    const partialPath = `${finalPath}.partial`;
+    const containerFinal = `/var/backups/bento/${t.database}/${finalName}`;
+    const containerPartial = `${containerFinal}.partial`;
+    const dump =
+      `mysqldump --defaults-extra-file=/etc/bento/mysql/root.cnf ` +
+      `--single-transaction --routines --triggers ${shellQuote(t.database)}`;
+    const pipeline =
+      compress === "gzip"
         ? `${dump} | gzip -c`
         : compress === "zstd"
-        ? `${dump} | zstd -3 -q -c`
-        : dump;
+          ? `${dump} | zstd -3 -q -c`
+          : dump;
 
-      // The dump and compression run beside mysqld over its Unix socket. The
-      // bind-mounted backup directory keeps dump bytes off the exec stream.
-      const script = [
-        "set -e",
-        "set -o pipefail",
-        "umask 077",
-        "test -r /etc/bento/mysql/root.cnf || { echo 'missing generated MySQL root option file; run bento render' >&2; exit 1; }",
-        "grep -q '^protocol=socket$' /etc/bento/mysql/root.cnf || { echo 'stale MySQL root option file; run bento render' >&2; exit 1; }",
-        `test -d ${
-          shellQuote(`/var/backups/bento/${t.database}`)
-        } || { echo 'MySQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
-        `PARTIAL=${shellQuote(containerPartial)}`,
-        `FINAL=${shellQuote(containerFinal)}`,
-        "trap 'rm -f \"$PARTIAL\"' EXIT",
-        `${pipeline} > "$PARTIAL"`,
-        'test -s "$PARTIAL"',
-        'chmod 600 "$PARTIAL"',
-        'mv -f "$PARTIAL" "$FINAL"',
-        "trap - EXIT",
-      ].join("\n");
+    // The dump and compression run beside mysqld over its Unix socket. The
+    // bind-mounted backup directory keeps dump bytes off the exec stream.
+    const script = [
+      "set -e",
+      "set -o pipefail",
+      "umask 077",
+      "test -r /etc/bento/mysql/root.cnf || { echo 'missing generated MySQL root option file; run bento render' >&2; exit 1; }",
+      "grep -q '^protocol=socket$' /etc/bento/mysql/root.cnf || { echo 'stale MySQL root option file; run bento render' >&2; exit 1; }",
+      `test -d ${shellQuote(
+        `/var/backups/bento/${t.database}`,
+      )} || { echo 'MySQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
+      `PARTIAL=${shellQuote(containerPartial)}`,
+      `FINAL=${shellQuote(containerFinal)}`,
+      "trap 'rm -f \"$PARTIAL\"' EXIT",
+      `${pipeline} > "$PARTIAL"`,
+      'test -s "$PARTIAL"',
+      'chmod 600 "$PARTIAL"',
+      'mv -f "$PARTIAL" "$FINAL"',
+      "trap - EXIT",
+    ].join("\n");
 
-      const result = await platform.process.run(
-        ["docker", "compose", "exec", "-T", t.service, "sh", "-c", script],
-        {
-          cwd: platform.paths.paths.root,
-          timeoutMs: 30 * 60_000,
-        },
-      );
+    const result = await platform.process.run(
+      ["docker", "compose", "exec", "-T", t.service, "sh", "-c", script],
+      {
+        cwd: platform.paths.paths.root,
+        timeoutMs: 30 * 60_000,
+      },
+    );
 
-      if (result.code !== 0) {
-        await platform.fs.remove(partialPath).catch(() => {});
-        throw new Error(`dump failed for ${t.database}: ${result.stderr || result.stdout}`);
-      }
-      if (!(await platform.fs.exists(finalPath))) {
-        throw new Error(`dump for ${t.database} was empty; not publishing`);
-      }
-      const stat = await platform.fs.stat(finalPath);
-      if (!stat.isFile || stat.size === 0) {
-        await platform.fs.remove(finalPath).catch(() => {});
-        throw new Error(`dump for ${t.database} was empty; not publishing`);
-      }
-      artifacts.push({
-        engine: "mysql",
-        path: finalPath,
-        database: t.database,
-        service: t.service,
-        bytes: stat.size,
-      });
+    if (result.code !== 0) {
+      await platform.fs.remove(partialPath).catch(() => {});
+      throw new Error(`dump failed for ${t.database}: ${result.stderr || result.stdout}`);
     }
-  } catch (cause) {
-    // Mid-batch failure preserves earlier good dumps; skip retention
-    throw cause;
+    if (!(await platform.fs.exists(finalPath))) {
+      throw new Error(`dump for ${t.database} was empty; not publishing`);
+    }
+    const stat = await platform.fs.stat(finalPath);
+    if (!stat.isFile || stat.size === 0) {
+      await platform.fs.remove(finalPath).catch(() => {});
+      throw new Error(`dump for ${t.database} was empty; not publishing`);
+    }
+    artifacts.push({
+      engine: "mysql",
+      path: finalPath,
+      database: t.database,
+      service: t.service,
+      bytes: stat.size,
+    });
   }
 
   // The engine-neutral dispatcher defers this until its complete mixed-engine
@@ -448,7 +430,13 @@ function resolveBackupTargets(
     if (!mysqlDatabase(app).databases.some((d) => d.name === req.database)) {
       throw notFoundError(`database ${req.database} not recorded for app ${req.slug}`);
     }
-    return [{ service: mysqlDatabase(app).service, database: req.database, slug: req.slug }];
+    return [
+      {
+        service: mysqlDatabase(app).service,
+        database: req.database,
+        slug: req.slug,
+      },
+    ];
   }
   if (req.scope === "app") {
     if (!req.slug) throw validationError("app backup requires --app");
@@ -468,7 +456,11 @@ function resolveBackupTargets(
   for (const app of Object.values(state.apps)) {
     if (mysqlDatabase(app).engine !== "mysql") continue;
     for (const d of mysqlDatabase(app).databases) {
-      out.push({ service: mysqlDatabase(app).service, database: d.name, slug: app.slug });
+      out.push({
+        service: mysqlDatabase(app).service,
+        database: d.name,
+        slug: app.slug,
+      });
     }
   }
   return out;
@@ -531,9 +523,7 @@ export async function runRestore(
 
   if (req.replaceOriginal !== undefined) {
     if (req.replaceOriginal !== req.targetDatabase) {
-      throw safetyError(
-        "replace confirmation must exactly match the target database name",
-      );
+      throw safetyError("replace confirmation must exactly match the target database name");
     }
   }
 
@@ -573,8 +563,8 @@ export async function runRestore(
   const decompress = file.endsWith(".gz")
     ? `gzip -dc -- ${shellQuote(containerFile)}`
     : file.endsWith(".zst") || file.endsWith(".zstd")
-    ? `zstd -dc -- ${shellQuote(containerFile)}`
-    : `cat -- ${shellQuote(containerFile)}`;
+      ? `zstd -dc -- ${shellQuote(containerFile)}`
+      : `cat -- ${shellQuote(containerFile)}`;
 
   // Create and import in the matching MySQL container. Both clients use the
   // generated root option file and local mysqld Unix socket.
@@ -586,9 +576,9 @@ export async function runRestore(
     "set -o pipefail",
     "test -r /etc/bento/mysql/root.cnf || { echo 'missing generated MySQL root option file; run bento render' >&2; exit 1; }",
     "grep -q '^protocol=socket$' /etc/bento/mysql/root.cnf || { echo 'stale MySQL root option file; run bento render' >&2; exit 1; }",
-    `test -r ${
-      shellQuote(containerFile)
-    } || { echo 'MySQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
+    `test -r ${shellQuote(
+      containerFile,
+    )} || { echo 'MySQL backup bind is not active; run bento render then bento compose -- up -d' >&2; exit 1; }`,
     `mysql --defaults-extra-file=/etc/bento/mysql/root.cnf -e ${shellQuote(createSql)}`,
     `${decompress} | mysql --defaults-extra-file=/etc/bento/mysql/root.cnf ${shellQuote(dbName)}`,
   ].join("\n");
@@ -616,9 +606,7 @@ export async function runRestore(
 /** Map a host file already under a service backup bind to its container path. */
 function pathInsideBackupMount(serviceBackupDir: string, file: string): string | undefined {
   const rel = relative(resolve(serviceBackupDir), resolve(file));
-  if (
-    !rel || isAbsolute(rel) || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")
-  ) {
+  if (!rel || isAbsolute(rel) || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
     return undefined;
   }
   return `/var/backups/bento/${rel.replaceAll("\\", "/")}`;
@@ -630,7 +618,7 @@ function shellQuote(s: string): string {
 
 export function listMysqlVersions(state: DesiredState): ManagedMysqlVersion[] {
   return [...state.databaseServices.filter((v) => v.engine === "mysql")].sort((a, b) =>
-    compareMajorMinor(a.version, b.version)
+    compareMajorMinor(a.version, b.version),
   );
 }
 
@@ -643,9 +631,7 @@ export function mysqlClientOptionPath(token: string): string {
   return `/tmp/bento-mysql-${token}.cnf`;
 }
 
-export type MysqlShellIdentity =
-  | { kind: "root"; service: string }
-  | { kind: "app"; app: AppState };
+export type MysqlShellIdentity = { kind: "root"; service: string } | { kind: "app"; app: AppState };
 
 export type MysqlShellPlan = {
   service: string;
@@ -745,10 +731,7 @@ export function buildMysqlShellPlan(
 }
 
 /** Assert no secret material appears in shell plan argv. */
-export function assertShellPlanSecretsOffArgv(
-  plan: MysqlShellPlan,
-  secrets: string[],
-): void {
+export function assertShellPlanSecretsOffArgv(plan: MysqlShellPlan, secrets: string[]): void {
   const argv = [
     ...(plan.stage?.command ?? []),
     ...plan.open.command,
@@ -805,9 +788,11 @@ export async function queryDatabaseSizes(
   const result = await execMysqlSql(platform, service, sql, rootPassword);
   if (result.code !== 0) {
     throw serviceError(
-      `MySQL size query failed on ${service}: ${
-        (result.stderr || result.stdout || "unknown").trim()
-      }`,
+      `MySQL size query failed on ${service}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown"
+      ).trim()}`,
       "Ensure the MySQL service is running and MYSQL_ROOT_PASSWORD matches the container.",
     );
   }
@@ -819,9 +804,13 @@ export async function queryDatabaseSizes(
     if (parts.length < 5) continue;
     // mysql prints column headings by default; they are metadata, not a database row.
     if (
-      parts[0] === "db_name" && parts[1] === "tables" && parts[2] === "data_size" &&
-      parts[3] === "index_size" && parts[4] === "total_size"
-    ) continue;
+      parts[0] === "db_name" &&
+      parts[1] === "tables" &&
+      parts[2] === "data_size" &&
+      parts[3] === "index_size" &&
+      parts[4] === "total_size"
+    )
+      continue;
     rows.push({
       database: parts[0] ?? "",
       tables: parts[1] ?? "0",
@@ -844,9 +833,11 @@ export async function queryProcesslist(
   const result = await execMysqlSql(platform, service, processlistSql(), rootPassword);
   if (result.code !== 0) {
     throw serviceError(
-      `MySQL processlist failed on ${service}: ${
-        (result.stderr || result.stdout || "unknown").trim()
-      }`,
+      `MySQL processlist failed on ${service}: ${(
+        result.stderr ||
+        result.stdout ||
+        "unknown"
+      ).trim()}`,
       "Ensure the MySQL service is running and MYSQL_ROOT_PASSWORD matches the container.",
     );
   }
@@ -859,9 +850,9 @@ export function resolveMysqlServices(
   opts?: { service?: string; app?: string },
 ): string[] {
   if (opts?.service) {
-    const found = state.databaseServices.filter((v) => v.engine === "mysql").find(
-      (v) => v.service === opts.service || v.version === opts.service,
-    );
+    const found = state.databaseServices
+      .filter((v) => v.engine === "mysql")
+      .find((v) => v.service === opts.service || v.version === opts.service);
     if (!found) throw notFoundError(`MySQL service not found: ${opts.service}`);
     return [found.service];
   }

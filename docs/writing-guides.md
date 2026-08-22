@@ -220,7 +220,7 @@ Do not rewrite source files module by module. Explain stable responsibilities an
   bento status
   ```
 
-- Use `deno task run ...` only in contributor/source-mode documentation.
+- Use `bun run src/main.ts ...` only in contributor/source-mode documentation.
 - Establish `BENTO_STACK_ROOT` once, then omit repeated `--stack` options from examples. Document the `./bento` default and reserve `--stack PATH` for a deliberate one-command override.
 - Put placeholders in clearly recognizable forms such as `app.example.com`, `<app>`, and `/path/to/export`. Use RFC-reserved example domains (`example.com`, `example.test`) instead of real domains.
 - Use one sample stack consistently where practical: stack root `/var/lib/bento`, stack name `production`, app `demo`, domain `demo.example.com`.

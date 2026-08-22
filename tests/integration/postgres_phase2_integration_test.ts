@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import { createEmptyState, postgresImage, postgresServiceName } from "../../src/domain/state.ts";
 import { asPostgresVersion } from "../../src/domain/types.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
@@ -7,15 +7,15 @@ import { RenderService } from "../../src/services/render.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 import { isComposeAvailable } from "./helpers.ts";
 
-Deno.test("PG-04 rendered PostgreSQL starts privately and passes pg_isready", async () => {
+bunRuntime.test("PG-04 rendered PostgreSQL starts privately and passes pg_isready", async () => {
   if (!(await isComposeAvailable())) {
     console.log("  [skip] Docker Compose unavailable — PostgreSQL live check skipped");
     return;
   }
 
-  const root = await Deno.makeTempDir({ prefix: "bento-pg2-live-" });
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-pg2-live-" });
   const project = `bentopg2${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`;
-  const platform = createPlatform(root, Deno.cwd());
+  const platform = createPlatform(root, bunRuntime.cwd());
   const store = new StateStore(platform);
   const service = postgresServiceName(asPostgresVersion("17"));
   try {
@@ -85,14 +85,16 @@ Deno.test("PG-04 rendered PostgreSQL starts privately and passes pg_isready", as
   } finally {
     const state = await store.load().catch(() => undefined);
     if (state) {
-      await platform.process.run(
-        await composeArgs(platform, state, ["rm", "-f", "-s", String(service)]),
-        { cwd: root, timeoutMs: 30_000 },
-      ).catch(() => undefined);
+      await platform.process
+        .run(await composeArgs(platform, state, ["rm", "-f", "-s", String(service)]), {
+          cwd: root,
+          timeoutMs: 30_000,
+        })
+        .catch(() => undefined);
     }
-    await platform.process.run(["docker", "volume", "rm", `${project}_${service}-data`]).catch(
-      () => undefined,
-    );
-    await Deno.remove(root, { recursive: true }).catch(() => undefined);
+    await platform.process
+      .run(["docker", "volume", "rm", `${project}_${service}-data`])
+      .catch(() => undefined);
+    await bunRuntime.remove(root, { recursive: true }).catch(() => undefined);
   }
 });

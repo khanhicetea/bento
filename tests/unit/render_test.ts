@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertRejects } from "../runtime.ts";
+import { join } from "node:path";
 import { describeReloadPlan, reloadPlanForPoolChange } from "../../src/domain/reload.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { materializeAppHome, provisionApp, setAppEnabled } from "../../src/services/app.ts";
@@ -30,8 +30,8 @@ function testPlatform(root: string): Platform {
   };
 }
 
-Deno.test("init + render produces startable topology files", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("init + render produces startable topology files", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -128,12 +128,12 @@ Deno.test("init + render produces startable topology files", async () => {
     assertEquals(await platform.fs.readText(userDropIn), "worker_priority -5;\n");
     assertEquals((await platform.fs.stat(userDropIn)).mode & 0o777, 0o640);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("render-only does not call reloader", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("render-only does not call reloader", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -151,12 +151,12 @@ Deno.test("render-only does not call reloader", async () => {
     });
     assertEquals(reloads, 0);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("successful reload reports the services in the executed plan", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("successful reload reports the services in the executed plan", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -176,12 +176,12 @@ Deno.test("successful reload reports the services in the executed plan", async (
     assertEquals(reported, [["nginx", "php-fpm:php85"]]);
     assertEquals(describeReloadPlan(result.reloadPlan), ["nginx", "php-fpm:php85"]);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("default PHP-FPM reload uses the shell kill builtin", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("default PHP-FPM reload uses the shell kill builtin", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const process = createRecordingProcessRunner();
     const platform = { ...testPlatform(root), process };
@@ -195,19 +195,18 @@ Deno.test("default PHP-FPM reload uses the shell kill builtin", async () => {
     });
 
     assertEquals(
-      process.calls.some(({ command }) =>
-        command.slice(-6).join(" ") ===
-          "exec -T php85 sh -c kill -USR2 1"
+      process.calls.some(
+        ({ command }) => command.slice(-6).join(" ") === "exec -T php85 sh -c kill -USR2 1",
       ),
       true,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("validation failure restores previous generation", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("validation failure restores previous generation", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -229,12 +228,14 @@ Deno.test("validation failure restores previous generation", async () => {
       () =>
         render.apply(state, {
           skipValidate: false,
-          validators: [{
-            name: "fail",
-            validate: async () => {
-              throw new Error("boom");
+          validators: [
+            {
+              name: "fail",
+              validate: async () => {
+                throw new Error("boom");
+              },
             },
-          }],
+          ],
           reloader: { reload: async () => {} },
         }),
       Error,
@@ -244,12 +245,12 @@ Deno.test("validation failure restores previous generation", async () => {
     const after = await platform.fs.readText(marker);
     assertEquals(after, before);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("reload failure keeps new generation", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("reload failure keeps new generation", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const store = new StateStore(platform);
@@ -277,16 +278,13 @@ Deno.test("reload failure keeps new generation", async () => {
     );
 
     // New files should exist (app vhost)
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/nginx/sites/alpha.conf")),
-      true,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/alpha.conf")), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("compose wrapper refuses down -v", () => {
+bunRuntime.test("compose wrapper refuses down -v", () => {
   let threw = false;
   try {
     assertSafeComposeArgs(["down", "-v"]);
@@ -296,7 +294,7 @@ Deno.test("compose wrapper refuses down -v", () => {
   assertEquals(threw, true);
 });
 
-Deno.test("php remove constraints", () => {
+bunRuntime.test("php remove constraints", () => {
   let state = createEmptyState();
   state = addPhpVersion(state, "8.3");
   // cannot remove default
@@ -309,10 +307,13 @@ Deno.test("php remove constraints", () => {
   assertEquals(threw, true);
   // can remove unused non-default
   state = removePhpVersion(state, "8.3");
-  assertEquals(state.phpVersions.some((v) => v.version === "8.3"), false);
+  assertEquals(
+    state.phpVersions.some((v) => v.version === "8.3"),
+    false,
+  );
 });
 
-Deno.test("mysql remove unsupported", () => {
+bunRuntime.test("mysql remove unsupported", () => {
   const state = createEmptyState();
   let threw = false;
   try {
@@ -323,8 +324,8 @@ Deno.test("mysql remove unsupported", () => {
   assertEquals(threw, true);
 });
 
-Deno.test("app provision materializes home without secrets in public tree", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("app provision materializes home without secrets in public tree", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const state = createEmptyState();
@@ -343,7 +344,9 @@ Deno.test("app provision materializes home without secrets in public tree", asyn
     // Applying an app created before structured logs repairs missing categories.
     await platform.fs.remove(join(home, "logs", "cron"), { recursive: true });
     await platform.fs.remove(join(home, "logs", "php"), { recursive: true });
-    await platform.fs.remove(join(home, "logs", "worker"), { recursive: true });
+    await platform.fs.remove(join(home, "logs", "worker"), {
+      recursive: true,
+    });
     await new RenderService(platform).apply(provisioned.state, {
       renderOnly: true,
       skipValidate: true,
@@ -352,12 +355,12 @@ Deno.test("app provision materializes home without secrets in public tree", asyn
       assertEquals(await platform.fs.exists(join(home, "logs", category)), true);
     }
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("ondemand FPM profile renders only ondemand directives", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("ondemand FPM profile renders only ondemand directives", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const render = new RenderService(platform);
@@ -368,9 +371,7 @@ Deno.test("ondemand FPM profile renders only ondemand directives", async () => {
     }).state;
     await render.apply(state, { renderOnly: true, skipValidate: true });
 
-    const pool = await platform.fs.readText(
-      join(root, "generated/php/php85/pools/idle-app.conf"),
-    );
+    const pool = await platform.fs.readText(join(root, "generated/php/php85/pools/idle-app.conf"));
     assertEquals(pool.includes("pm = ondemand"), true);
     assertEquals(pool.includes("pm.max_children = 10"), true);
     assertEquals(pool.includes("pm.process_idle_timeout = 10s"), true);
@@ -378,105 +379,108 @@ Deno.test("ondemand FPM profile renders only ondemand directives", async () => {
     assertEquals(pool.includes("pm.min_spare_servers"), false);
     assertEquals(pool.includes("pm.max_spare_servers"), false);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("disabled app retains data and emits no vhost, pool, or runner config", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-disabled-" });
-  try {
-    const platform = testPlatform(root);
-    const render = new RenderService(platform);
-    let state = provisionApp(platform, createEmptyState(), {
-      slug: "paused",
-      domain: "paused.test",
-    }).state;
-    await platform.fs.mkdirp(platform.paths.appHome("paused"));
-    await platform.fs.writeText(join(platform.paths.appHome("paused"), "keep.txt"), "data");
-    await render.apply(state, { renderOnly: true, skipValidate: true });
-    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")), true);
+bunRuntime.test(
+  "disabled app retains data and emits no vhost, pool, or runner config",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-disabled-" });
+    try {
+      const platform = testPlatform(root);
+      const render = new RenderService(platform);
+      let state = provisionApp(platform, createEmptyState(), {
+        slug: "paused",
+        domain: "paused.test",
+      }).state;
+      await platform.fs.mkdirp(platform.paths.appHome("paused"));
+      await platform.fs.writeText(join(platform.paths.appHome("paused"), "keep.txt"), "data");
+      await render.apply(state, { renderOnly: true, skipValidate: true });
+      assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")), true);
 
-    state = setAppEnabled(state, "paused", false, platform.clock.nowIso()).state;
-    await render.apply(state, { renderOnly: true, skipValidate: true });
-    assertEquals(state.apps.paused?.enabled, false);
-    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")), false);
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/php/php85/pools/paused.conf")),
-      false,
-    );
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/runner/php85/cron/paused.crontab")),
-      false,
-    );
-    assertEquals(
-      await platform.fs.readText(join(platform.paths.appHome("paused"), "keep.txt")),
-      "data",
-    );
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
-
-Deno.test("app apply emits INI-safe pool marker, include file, and code/ docroot", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
-  try {
-    const platform = testPlatform(root);
-    const store = new StateStore(platform);
-    const render = new RenderService(platform);
-    await store.init();
-    let state = await store.load();
-    state = provisionApp(platform, state, {
-      slug: "alpha",
-      domain: "alpha.test",
-      documentRoot: "public",
-    }).state;
-    await store.save(state);
-    await render.apply(state, {
-      renderOnly: true,
-      skipValidate: true,
-    });
-
-    const pool = await platform.fs.readText(
-      join(root, "generated/php/php85/pools/alpha.conf"),
-    );
-    assertEquals(pool.startsWith("; bento-managed: true\n"), true);
-    assertEquals(pool.includes("# bento-managed"), false);
-    assertEquals(pool.includes("[alpha]"), true);
-    assertEquals(pool.includes("listen = /run/php-fpm/alpha.sock"), true);
-
-    const includeFile = await platform.fs.readText(
-      join(root, "generated/php/php85/zz-bento-pools.conf"),
-    );
-    assertEquals(includeFile.includes("include=/usr/local/etc/php-fpm.d/bento/*.conf"), true);
-
-    const vhost = await platform.fs.readText(
-      join(root, "generated/nginx/sites/alpha.conf"),
-    );
-    assertEquals(vhost.includes("root /home/alpha/code/public;"), true);
-    assertEquals(vhost.includes("fastcgi_pass unix:/run/php-fpm/php85/alpha.sock;"), true);
-    for (const name of ["server.d", "http.d", "https.d"]) {
+      state = setAppEnabled(state, "paused", false, platform.clock.nowIso()).state;
+      await render.apply(state, { renderOnly: true, skipValidate: true });
+      assertEquals(state.apps.paused?.enabled, false);
       assertEquals(
-        (await platform.fs.stat(join(root, "custom/nginx/apps/alpha", name))).isDirectory,
+        await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")),
+        false,
+      );
+      assertEquals(
+        await platform.fs.exists(join(root, "generated/php/php85/pools/paused.conf")),
+        false,
+      );
+      assertEquals(
+        await platform.fs.exists(join(root, "generated/runner/php85/cron/paused.crontab")),
+        false,
+      );
+      assertEquals(
+        await platform.fs.readText(join(platform.paths.appHome("paused"), "keep.txt")),
+        "data",
+      );
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
+
+bunRuntime.test(
+  "app apply emits INI-safe pool marker, include file, and code/ docroot",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
+    try {
+      const platform = testPlatform(root);
+      const store = new StateStore(platform);
+      const render = new RenderService(platform);
+      await store.init();
+      let state = await store.load();
+      state = provisionApp(platform, state, {
+        slug: "alpha",
+        domain: "alpha.test",
+        documentRoot: "public",
+      }).state;
+      await store.save(state);
+      await render.apply(state, {
+        renderOnly: true,
+        skipValidate: true,
+      });
+
+      const pool = await platform.fs.readText(join(root, "generated/php/php85/pools/alpha.conf"));
+      assertEquals(pool.startsWith("; bento-managed: true\n"), true);
+      assertEquals(pool.includes("# bento-managed"), false);
+      assertEquals(pool.includes("[alpha]"), true);
+      assertEquals(pool.includes("listen = /run/php-fpm/alpha.sock"), true);
+
+      const includeFile = await platform.fs.readText(
+        join(root, "generated/php/php85/zz-bento-pools.conf"),
+      );
+      assertEquals(includeFile.includes("include=/usr/local/etc/php-fpm.d/bento/*.conf"), true);
+
+      const vhost = await platform.fs.readText(join(root, "generated/nginx/sites/alpha.conf"));
+      assertEquals(vhost.includes("root /home/alpha/code/public;"), true);
+      assertEquals(vhost.includes("fastcgi_pass unix:/run/php-fpm/php85/alpha.sock;"), true);
+      for (const name of ["server.d", "http.d", "https.d"]) {
+        assertEquals(
+          (await platform.fs.stat(join(root, "custom/nginx/apps/alpha", name))).isDirectory,
+          true,
+        );
+      }
+
+      const phpCompose = await platform.fs.readText(
+        join(root, "generated/compose/docker-compose.php-php85.yml"),
+      );
+      assertEquals(
+        phpCompose.includes("zz-bento-pools.conf:/usr/local/etc/php-fpm.d/zz-bento-pools.conf:ro"),
         true,
       );
+      assertEquals(
+        phpCompose.includes("entrypoint.sh:/usr/local/bin/bento-php-entrypoint:ro"),
+        true,
+      );
+      // PHP-FPM needs ptrace to write slow-request backtraces to each pool's slowlog.
+      assertEquals(phpCompose.includes("SYS_PTRACE"), true);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
     }
-
-    const phpCompose = await platform.fs.readText(
-      join(root, "generated/compose/docker-compose.php-php85.yml"),
-    );
-    assertEquals(
-      phpCompose.includes("zz-bento-pools.conf:/usr/local/etc/php-fpm.d/zz-bento-pools.conf:ro"),
-      true,
-    );
-    assertEquals(
-      phpCompose.includes(
-        "entrypoint.sh:/usr/local/bin/bento-php-entrypoint:ro",
-      ),
-      true,
-    );
-    // PHP-FPM needs ptrace to write slow-request backtraces to each pool's slowlog.
-    assertEquals(phpCompose.includes("SYS_PTRACE"), true);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+  },
+);

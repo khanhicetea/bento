@@ -1,7 +1,7 @@
 # Bento technical decisions and reimplementation contract
 
 Status: normative maintenance/reimplementation contract  
-Baseline: Bento `0.1.0`, schema `4`, Deno `2.9.3`
+Baseline: Bento `0.1.0`, schema `4`, Bun `1.4.0`
 
 ## 1. Purpose
 
@@ -40,13 +40,13 @@ Technical choices are evaluated in this order:
 **Trade-offs:** External drift is not continuously healed and operators must invoke apply.  
 **Invariant:** Every operation resolves its stack from `BENTO_STACK_ROOT`, the `./bento` default, or a one-command `--stack` override; no process remembers a global current stack.
 
-### D-03 — Deno, strict TypeScript, and one entrypoint
+### D-03 — Bun, strict TypeScript, and one entrypoint
 
 **Context:** The code handles hostile JSON/env/process boundaries but releases should not require a runtime install.  
-**Decision:** Deno 2.9.3, strict TypeScript, runtime validation, `src/main.ts` for source and compiled modes.  
+**Decision:** Bun 1.4.0, strict TypeScript, runtime validation, `src/main.ts` for source and compiled modes.  
 **Benefits:** One toolchain, typed domain, testable adapters, standalone binaries.  
 **Trade-offs:** Runtime and dependencies are pinned; compiled asset resolution requires care.  
-**Rejected:** Python compatibility layer, unrestricted `-A` as the documented default, separate source/binary implementations.
+**Rejected:** Python compatibility layer, unlocked dependency installation as the documented default, separate source/binary implementations.
 
 ### D-04 — Versioned strict desired state
 
@@ -172,9 +172,9 @@ Technical choices are evaluated in this order:
 
 **Context:** Filesystem, process, time, randomness, locking, and compiled assets are difficult to verify when called globally.  
 **Decision:** Inject narrow platform interfaces and deterministic test adapters.  
-**Benefits:** Fast unit tests, controlled failure simulation, fewer Deno leaks into domain logic.  
+**Benefits:** Fast unit tests, controlled failure simulation, fewer runtime leaks into domain logic.  
 **Trade-offs:** Adapter ceremony and explicit plumbing.  
-**Invariant:** Domain code does not directly depend on `Deno.*`.
+**Invariant:** Domain code does not directly depend on Bun/Node runtime globals.
 
 ### D-20 — Source/compiled parity is product behavior
 
@@ -217,17 +217,17 @@ The following require an explicit product/architecture revision rather than an i
 A conforming source tree MUST pass:
 
 ```sh
-deno task fmt:check
-deno task lint
-deno task check
-deno install --frozen=true
+bun run fmt:check
+bun run lint
+bun run check
+bun install --frozen-lockfile
 ```
 
 Strict compiler options MUST remain enabled, including no implicit `any`, unchecked-index awareness, exhaustive returns/switches, and `unknown` catches. Imports MUST remain centralized and lockfile-resolved.
 
 ### A-02 — Unit and contract behavior
 
-`deno task test` MUST pass. Tests MUST cover at minimum:
+`bun run test` MUST pass. Tests MUST cover at minimum:
 
 - validators, strict state loading, relationships, and unsupported schema refusal;
 - app identity/domain/runtime/data binding transitions;
@@ -244,7 +244,7 @@ Safety refusals MUST return the stable safety error category/exit behavior expec
 
 ### A-03 — Integration behavior
 
-`deno task test:integration` MUST run. Docker-dependent cases MAY soft-skip only when the daemon/environment is unavailable; release evidence MUST distinguish skip from proof.
+`bun run test:integration` MUST run. Docker-dependent cases MAY soft-skip only when the daemon/environment is unavailable; release evidence MUST distinguish skip from proof.
 
 A live supported host SHOULD prove:
 
@@ -257,7 +257,7 @@ A live supported host SHOULD prove:
 - TLS modes except production ACME where test DNS is unavailable;
 - validation rollback and service reload.
 
-`deno task test:stack` provides the operator-visible real Docker harness and MUST use a disposable named stack.
+`bun run test:stack` provides the operator-visible real Docker harness and MUST use a disposable named stack.
 
 ### A-04 — Render/apply transaction
 
@@ -343,10 +343,10 @@ Tests MUST prove:
 
 ### A-10 — Distribution parity
 
-`deno task test:parity` MUST:
+`bun run test:parity` MUST:
 
 - compile a native binary;
-- run version/init/render/status without a Deno/Node/Python runtime on `PATH`;
+- run version/init/render/status without a Bun/Node/Python runtime on `PATH`;
 - verify embedded asset digest and digest-addressed materialization;
 - compare normalized source/compiled state transitions;
 - compare managed generated files and published immutable assets;
@@ -371,15 +371,15 @@ Documentation MUST NOT claim a quality gate is enforced by CI unless the checked
 Before a release is considered conforming, run:
 
 ```sh
-deno task fmt:check
-deno task lint
-deno task check
-deno install --frozen=true
-deno task test
-deno task test:integration
-deno task test:parity
-deno task compile:amd64
-deno task compile:arm64
+bun run fmt:check
+bun run lint
+bun run check
+bun install --frozen-lockfile
+bun run test
+bun run test:integration
+bun run test:parity
+bun run compile:amd64
+bun run compile:arm64
 ```
 
 A release record SHOULD state Docker integration skips, target architectures actually executed, known recovery limitations, and any state/asset version change.
@@ -398,7 +398,7 @@ Those pages SHOULD be reconciled with these specs.
 
 ### 7.2 Workflow enforcement gap
 
-`deno.json` exposes the required quality, test, compile, smoke, and parity tasks. The checked-in `.github/workflows/ci.yml` currently triggers for tags/releases and compiles/uploads amd64 and arm64 binaries, but it does not execute the complete release gate in section 6.
+`package.json` exposes the required quality, test, compile, smoke, and parity tasks. The checked-in `.github/workflows/ci.yml` currently triggers for tags/releases and compiles/uploads amd64 and arm64 binaries, but it does not execute the complete release gate in section 6.
 
 Until the workflow is expanded, the repository cannot infer full gate success from the release workflow alone; maintainers MUST run and record the missing gates elsewhere.
 

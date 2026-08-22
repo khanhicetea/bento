@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { runtime as bunRuntime, assert, assertEquals, assertRejects } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
 import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
@@ -7,8 +7,8 @@ import { addPostgresVersion } from "../../src/services/postgres.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 import { STATE_SCHEMA_VERSION } from "../../src/version.ts";
 
-Deno.test("schema v1 persists linked domains and multiple database-engine bindings", () => {
-  const platform = createPlatform("/tmp/unused", Deno.cwd());
+bunRuntime.test("schema v1 persists linked domains and multiple database-engine bindings", () => {
+  const platform = createPlatform("/tmp/unused", bunRuntime.cwd());
   let state = addPostgresVersion(createEmptyState("2026-01-01T00:00:00.000Z"), "17");
   state = provisionApp(platform, state, {
     slug: "alpha",
@@ -28,14 +28,18 @@ Deno.test("schema v1 persists linked domains and multiple database-engine bindin
 
   const raw = JSON.parse(stateToJson(state));
   assertEquals(raw.schemaVersion, STATE_SCHEMA_VERSION);
-  assertEquals(raw.apps.alpha.databases.map((database: { engine: string }) => database.engine), [
-    "mysql",
-    "postgres",
-  ]);
+  assertEquals(
+    raw.apps.alpha.databases.map((database: { engine: string }) => database.engine),
+    ["mysql", "postgres"],
+  );
   assertEquals("database" in raw.apps.alpha, false);
   assertEquals("mainDomain" in raw.apps.alpha, false);
   assertEquals("aliases" in raw.apps.alpha, false);
-  assertEquals(raw.domains["alpha.test"], { kind: "app", slug: "alpha", primary: true });
+  assertEquals(raw.domains["alpha.test"], {
+    kind: "app",
+    slug: "alpha",
+    primary: true,
+  });
   assertEquals(raw.domains["www.alpha.test"], {
     kind: "app",
     slug: "alpha",
@@ -48,8 +52,8 @@ Deno.test("schema v1 persists linked domains and multiple database-engine bindin
   assertEquals(parsed.value.apps.alpha?.aliases, ["www.alpha.test"]);
 });
 
-Deno.test("schema v1 rejects app-owned ingress and singular database fields", () => {
-  const platform = createPlatform("/tmp/unused", Deno.cwd());
+bunRuntime.test("schema v1 rejects app-owned ingress and singular database fields", () => {
+  const platform = createPlatform("/tmp/unused", bunRuntime.cwd());
   const state = provisionApp(platform, createEmptyState(), {
     slug: "demo",
     domain: "demo.test",
@@ -60,10 +64,10 @@ Deno.test("schema v1 rejects app-owned ingress and singular database fields", ()
   assertEquals(parseDesiredState(raw).ok, false);
 });
 
-Deno.test("state store rejects another schema without rewriting it", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-v1-state-" });
+bunRuntime.test("state store rejects another schema without rewriting it", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-v1-state-" });
   try {
-    const platform = createPlatform(root, Deno.cwd());
+    const platform = createPlatform(root, bunRuntime.cwd());
     const store = new StateStore(platform);
     await platform.fs.mkdirp(root);
     const original = `${JSON.stringify({ ...createEmptyState(), schemaVersion: 2 }, null, 2)}\n`;
@@ -71,6 +75,6 @@ Deno.test("state store rejects another schema without rewriting it", async () =>
     await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 2");
     assertEquals(await platform.fs.readText(platform.paths.paths.stateFile), original);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

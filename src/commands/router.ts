@@ -118,12 +118,7 @@ export async function runCli(argv: string[]): Promise<number> {
     printVersion();
     return 0;
   }
-  if (
-    tokens.length === 0 ||
-    tokens[0] === "help" ||
-    tokens[0] === "--help" ||
-    tokens[0] === "-h"
-  ) {
+  if (tokens.length === 0 || tokens[0] === "help" || tokens[0] === "--help" || tokens[0] === "-h") {
     buildParser({ code: 0 }).showHelp();
     return 0;
   }

@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import {
   allocateIdentity,
@@ -20,7 +20,7 @@ import { createRecordingProcessRunner } from "../../src/platform/process.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
 import { createPathPolicy } from "../../src/platform/paths.ts";
 import type { Platform } from "../../src/platform/mod.ts";
-import { join } from "@std/path";
+import { join } from "node:path";
 
 function testPlatform(root: string): Platform {
   const fs = createFileSystem();
@@ -35,8 +35,8 @@ function testPlatform(root: string): Platform {
   };
 }
 
-Deno.test("provisionApp creates distinct identities and domain ownership", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("provisionApp creates distinct identities and domain ownership", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState("2026-07-16T12:00:00.000Z");
@@ -60,11 +60,11 @@ Deno.test("provisionApp creates distinct identities and domain ownership", async
     assertEquals(a.app.database.databases[0]?.name, "alpha");
     assertEquals(a.app.database.service, b.app.database.service); // same default service
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("provisionApp rejects duplicate domain links before state is built", () => {
+bunRuntime.test("provisionApp rejects duplicate domain links before state is built", () => {
   const platform = testPlatform("/tmp/bento-domain-duplicates");
   assertThrows(
     () =>
@@ -78,38 +78,44 @@ Deno.test("provisionApp rejects duplicate domain links before state is built", (
   );
 });
 
-Deno.test("materializeAppHome generates one stable SSH key pair with strict modes", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
-  try {
-    const process = createRecordingProcessRunner(async (command) => {
-      if (command[0] === "ssh-keygen" && command.includes("-f")) {
-        const keyPath = command[command.indexOf("-f") + 1]!;
-        await Deno.writeTextFile(keyPath, "private-key\n");
-        await Deno.writeTextFile(`${keyPath}.pub`, "ssh-ed25519 public-key bento-app-alpha\n");
-      }
-      return { code: 0, stdout: "", stderr: "" };
-    });
-    const platform = { ...testPlatform(root), process };
-    const app = provisionApp(platform, createEmptyState(), {
-      slug: "alpha",
-      domain: "alpha.example",
-    }).app;
+bunRuntime.test(
+  "materializeAppHome generates one stable SSH key pair with strict modes",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
+    try {
+      const process = createRecordingProcessRunner(async (command) => {
+        if (command[0] === "ssh-keygen" && command.includes("-f")) {
+          const keyPath = command[command.indexOf("-f") + 1]!;
+          await bunRuntime.writeTextFile(keyPath, "private-key\n");
+          await bunRuntime.writeTextFile(
+            `${keyPath}.pub`,
+            "ssh-ed25519 public-key bento-app-alpha\n",
+          );
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      });
+      const platform = { ...testPlatform(root), process };
+      const app = provisionApp(platform, createEmptyState(), {
+        slug: "alpha",
+        domain: "alpha.example",
+      }).app;
 
-    await materializeAppHome(platform, app);
-    await materializeAppHome(platform, app, false);
+      await materializeAppHome(platform, app);
+      await materializeAppHome(platform, app, false);
 
-    const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
-    assertEquals((await platform.fs.stat(sshDir)).mode & 0o777, 0o700);
-    assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519"))).mode & 0o777, 0o600);
-    assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519.pub"))).mode & 0o777, 0o644);
-    assertEquals(process.calls.filter((call) => call.command[0] === "ssh-keygen").length, 1);
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
+      assertEquals((await platform.fs.stat(sshDir)).mode & 0o777, 0o700);
+      assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519"))).mode & 0o777, 0o600);
+      assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519.pub"))).mode & 0o777, 0o644);
+      assertEquals(process.calls.filter((call) => call.command[0] === "ssh-keygen").length, 1);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("domain collision is refused", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("domain collision is refused", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -127,12 +133,12 @@ Deno.test("domain collision is refused", async () => {
       "already owned",
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("main domain change retains identity", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("main domain change retains identity", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -151,12 +157,12 @@ Deno.test("main domain change retains identity", async () => {
     assertEquals(second.state.domains["old.example"], undefined);
     assertEquals(second.state.domains["new.example"]?.kind, "app");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("omitted php version preserves existing", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("omitted php version preserves existing", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -190,12 +196,12 @@ Deno.test("omitted php version preserves existing", async () => {
     });
     assertEquals(second.app.phpVersion, "8.3");
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("database namespace enforced", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("database namespace enforced", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     const state = createEmptyState();
@@ -211,11 +217,11 @@ Deno.test("database namespace enforced", async () => {
       "namespace",
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("MySQL operations target a selected binding without changing the primary", () => {
+bunRuntime.test("MySQL operations target a selected binding without changing the primary", () => {
   const platform = testPlatform("/tmp/bento-multi-mysql");
   let state = addMysqlVersion(createEmptyState(), "8.0");
   state = provisionApp(platform, state, {
@@ -237,11 +243,11 @@ Deno.test("MySQL operations target a selected binding without changing the prima
     "mysql80",
   );
   const app = next.apps.alpha!;
-  const mysql84 = app.databases.find((binding) =>
-    binding.engine === "mysql" && binding.service === "mysql84"
+  const mysql84 = app.databases.find(
+    (binding) => binding.engine === "mysql" && binding.service === "mysql84",
   );
-  const mysql80 = app.databases.find((binding) =>
-    binding.engine === "mysql" && binding.service === "mysql80"
+  const mysql80 = app.databases.find(
+    (binding) => binding.engine === "mysql" && binding.service === "mysql80",
   );
 
   assertEquals(mysql84?.engine === "mysql" ? mysql84.databases.length : -1, 0);
@@ -256,8 +262,8 @@ Deno.test("MySQL operations target a selected binding without changing the prima
   );
 });
 
-Deno.test("capacity warnings when pools exceed cap", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("capacity warnings when pools exceed cap", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState();
@@ -278,21 +284,20 @@ Deno.test("capacity warnings when pools exceed cap", async () => {
     const warnings = capacityWarnings(state);
     assertEquals(warnings.length >= 1, true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("allocateIdentity skips used uids", () => {
+bunRuntime.test("allocateIdentity skips used uids", () => {
   const state = createEmptyState();
   const withApp = {
     ...state,
     apps: {
       x: {
-        ...provisionApp(
-          testPlatform("/tmp"),
-          state,
-          { slug: "xapp", domain: "x.example" },
-        ).app,
+        ...provisionApp(testPlatform("/tmp"), state, {
+          slug: "xapp",
+          domain: "x.example",
+        }).app,
       },
     },
   };
@@ -302,8 +307,8 @@ Deno.test("allocateIdentity skips used uids", () => {
   assertEquals(next, { uid: 10001, gid: 10001 });
 });
 
-Deno.test("workdir escape rejected by path policy", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("workdir escape rejected by path policy", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     assertThrows(
@@ -311,12 +316,12 @@ Deno.test("workdir escape rejected by path policy", async () => {
       Error,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("buildCliExec targets profile-gated -cli service with app identity", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-test-" });
+bunRuntime.test("buildCliExec targets profile-gated -cli service with app identity", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
     let state = createEmptyState("2026-07-16T12:00:00.000Z");
@@ -347,20 +352,16 @@ Deno.test("buildCliExec targets profile-gated -cli service with app identity", a
     assertEquals(runArgs.includes(`BENTO_UID=${app.uid}`), true);
     assertEquals(runArgs.includes(`BENTO_GID=${app.gid}`), true);
 
-    const scripted = cliRunComposeCommand(
-      buildCliExec(platform, state, "alpha", ["php", "-v"]),
-      { tty: false },
-    );
+    const scripted = cliRunComposeCommand(buildCliExec(platform, state, "alpha", ["php", "-v"]), {
+      tty: false,
+    });
     assertEquals(scripted.includes("-T"), true);
     assertEquals(scripted.includes("-it"), false);
     assertEquals(scripted.includes("-u"), false);
     assertEquals(scripted.slice(-2), ["php", "-v"]);
 
     // workdir must stay inside app home
-    assertThrows(
-      () => buildCliExec(platform, state, "alpha", [], { workdir: "/etc" }),
-      Error,
-    );
+    assertThrows(() => buildCliExec(platform, state, "alpha", [], { workdir: "/etc" }), Error);
 
     // PHP override must be managed
     state = addPhpVersion(state, "8.3");
@@ -370,10 +371,13 @@ Deno.test("buildCliExec targets profile-gated -cli service with app identity", a
     assertEquals(ov.service, "php83-cli");
     assertEquals(ov.phpVersion, "8.3");
     assertThrows(
-      () => buildCliExec(platform, state, "alpha", [], { phpVersionOverride: "7.4" }),
+      () =>
+        buildCliExec(platform, state, "alpha", [], {
+          phpVersionOverride: "7.4",
+        }),
       Error,
     );
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

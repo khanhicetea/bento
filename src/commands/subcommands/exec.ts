@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "../../platform/runtime.ts";
 import { composeArgs } from "../../services/compose.ts";
 import { buildCliExec, cliRunComposeCommand } from "../../services/php.ts";
 import type { CliContext } from "../context.ts";
@@ -5,28 +6,27 @@ import type { ArgsWith } from "../args.ts";
 import { bind, type RunState, trailing, type YargsBuilder } from "../shared.ts";
 
 export function registerExecCommand(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command(
-      "exec <app>",
-      "Ephemeral CLI as app identity (shell when no command; args after --)",
-      (y: YargsBuilder) =>
-        y
-          .positional("app", { type: "string", demandOption: true })
-          .option("workdir", {
-            type: "string",
-            describe: "Working directory inside app home",
-          })
-          .option("php", {
-            type: "string",
-            describe: "Managed PHP version override",
-          })
-          .option("print", {
-            type: "boolean",
-            default: false,
-            describe: "Print compose argv instead of running",
-          }),
-      bind(state, cmdExec),
-    );
+  return parser.command(
+    "exec <app>",
+    "Ephemeral CLI as app identity (shell when no command; args after --)",
+    (y: YargsBuilder) =>
+      y
+        .positional("app", { type: "string", demandOption: true })
+        .option("workdir", {
+          type: "string",
+          describe: "Working directory inside app home",
+        })
+        .option("php", {
+          type: "string",
+          describe: "Managed PHP version override",
+        })
+        .option("print", {
+          type: "boolean",
+          default: false,
+          describe: "Print compose argv instead of running",
+        }),
+    bind(state, cmdExec),
+  );
 }
 
 async function cmdExec(argv: ArgsWith<"app">, ctx: CliContext): Promise<number> {
@@ -69,29 +69,33 @@ export async function runCliExec(
 
   let tty = false;
   try {
-    tty = Deno.stdin.isTerminal() && Deno.stdout.isTerminal();
+    tty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   } catch {
     tty = false;
   }
   // --print always uses non-TTY form for stable scripted output.
-  const composeCmd = cliRunComposeCommand(plan, { tty: !opts.printOnly && tty });
+  const composeCmd = cliRunComposeCommand(plan, {
+    tty: !opts.printOnly && tty,
+  });
   const compose = await composeArgs(ctx.platform, state, composeCmd);
 
   if (opts.printOnly) {
     if (ctx.json) {
-      ctx.log.out(JSON.stringify(
-        {
-          service: plan.service,
-          profile: plan.profile,
-          user: plan.user,
-          workdir: plan.workdir,
-          phpVersion: plan.phpVersion,
-          argv: plan.argv,
-          command: compose,
-        },
-        null,
-        2,
-      ));
+      ctx.log.out(
+        JSON.stringify(
+          {
+            service: plan.service,
+            profile: plan.profile,
+            user: plan.user,
+            workdir: plan.workdir,
+            phpVersion: plan.phpVersion,
+            argv: plan.argv,
+            command: compose,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       ctx.log.out(compose.join(" "));
     }
@@ -100,7 +104,7 @@ export async function runCliExec(
 
   // Interactive attach / inherited stdio — do not capture pipes (breaks shells).
   const [cmd, ...args] = compose;
-  const child = new Deno.Command(cmd!, {
+  const child = new RuntimeCommand(cmd!, {
     args,
     cwd: ctx.stackRoot,
     stdin: "inherit",

@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "../../platform/runtime.ts";
 import { assertSafeComposeArgs, composeArgs, resolveComposeFiles } from "../../services/compose.ts";
 import { materializeDockerAssets } from "../../services/assets_materialize.ts";
 import type { CliContext } from "../context.ts";
@@ -5,25 +6,24 @@ import type { CliArgs } from "../args.ts";
 import { bind, type RunState, trailing, type YargsBuilder } from "../shared.ts";
 
 export function registerComposeCommand(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser
-    .command(
-      "compose",
-      "Safe docker compose wrapper (args after --)",
-      (y: YargsBuilder) =>
-        y
-          .command(
-            "files",
-            "List merged Compose files in deterministic order",
-            (y2: YargsBuilder) => y2,
-            bind(state, cmdComposeFiles),
-          )
-          .option("print", {
-            type: "boolean",
-            default: false,
-            describe: "Print full docker compose argv",
-          }),
-      bind(state, cmdCompose),
-    );
+  return parser.command(
+    "compose",
+    "Safe docker compose wrapper (args after --)",
+    (y: YargsBuilder) =>
+      y
+        .command(
+          "files",
+          "List merged Compose files in deterministic order",
+          (y2: YargsBuilder) => y2,
+          bind(state, cmdComposeFiles),
+        )
+        .option("print", {
+          type: "boolean",
+          default: false,
+          describe: "Print full docker compose argv",
+        }),
+    bind(state, cmdCompose),
+  );
 }
 
 async function cmdCompose(argv: CliArgs, ctx: CliContext): Promise<number> {
@@ -43,7 +43,7 @@ async function cmdCompose(argv: CliArgs, ctx: CliContext): Promise<number> {
   }
   ctx.log.info(`running: docker compose ${command.join(" ")}`);
   const [cmd, ...cmdArgs] = full;
-  const child = new Deno.Command(cmd!, {
+  const child = new RuntimeCommand(cmd!, {
     args: cmdArgs,
     cwd: ctx.stackRoot,
     stdin: "inherit",
@@ -61,8 +61,7 @@ async function cmdComposeFiles(_argv: CliArgs, ctx: CliContext): Promise<number>
     ctx.log.out(JSON.stringify({ files }, null, 2));
   } else {
     ctx.log.out(
-      "Compose files (deterministic order):\n" + files.map((f) => `  - ${f}`).join("\n") +
-        "\n",
+      "Compose files (deterministic order):\n" + files.map((f) => `  - ${f}`).join("\n") + "\n",
     );
   }
   return 0;

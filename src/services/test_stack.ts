@@ -1,3 +1,5 @@
+import { RuntimeCommand } from "../platform/runtime.ts";
+import { chmod, chown, readFile, stat } from "node:fs/promises";
 /**
  * Real-stack end-to-end harness — multi-chain operator ops against live Docker.
  *
@@ -17,7 +19,7 @@
  * or global:  `bento --test-stack [name]`
  */
 
-import { join, resolve } from "@std/path";
+import { join, resolve } from "node:path";
 import type { Platform } from "../platform/mod.ts";
 import type { AppState, DesiredState } from "../domain/state.ts";
 import { StateStore } from "./state_store.ts";
@@ -86,7 +88,11 @@ export type TestStackReport = {
   ok: boolean;
 };
 
-type StepFn = () => Promise<{ ok: boolean; detail?: string; skipped?: boolean }>;
+type StepFn = () => Promise<{
+  ok: boolean;
+  detail?: string;
+  skipped?: boolean;
+}>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -94,7 +100,7 @@ function sleep(ms: number): Promise<void> {
 
 async function dockerAvailable(): Promise<boolean> {
   try {
-    const out = await new Deno.Command("docker", {
+    const out = await new RuntimeCommand("docker", {
       args: ["info"],
       stdout: "null",
       stderr: "null",
@@ -107,7 +113,7 @@ async function dockerAvailable(): Promise<boolean> {
 
 async function composeAvailable(): Promise<boolean> {
   try {
-    const out = await new Deno.Command("docker", {
+    const out = await new RuntimeCommand("docker", {
       args: ["compose", "version"],
       stdout: "null",
       stderr: "null",
@@ -120,12 +126,17 @@ async function composeAvailable(): Promise<boolean> {
 
 async function runCapture(
   cmd: string[],
-  opts?: { cwd?: string; stdin?: string; timeoutMs?: number; env?: Record<string, string> },
+  opts?: {
+    cwd?: string;
+    stdin?: string;
+    timeoutMs?: number;
+    env?: Record<string, string>;
+  },
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const [bin, ...args] = cmd;
   if (!bin) return { code: 1, stdout: "", stderr: "empty command" };
   try {
-    const proc = new Deno.Command(bin, {
+    const proc = new RuntimeCommand(bin, {
       args,
       cwd: opts?.cwd,
       env: opts?.env,
@@ -167,10 +178,7 @@ async function runCapture(
   }
 }
 
-async function patchStackEnv(
-  platform: Platform,
-  patch: Record<string, string>,
-): Promise<void> {
+async function patchStackEnv(platform: Platform, patch: Record<string, string>): Promise<void> {
   const path = platform.paths.paths.envFile;
   let text = "";
   if (await platform.fs.exists(path)) {
@@ -363,8 +371,7 @@ async function loadAppCredEnv(
     env.MYSQL_HOST = cred.MYSQL_HOST ?? app.database.service;
     env.MYSQL_USER = cred.MYSQL_USER ?? app.database.user;
     env.MYSQL_PASSWORD = cred.MYSQL_PASSWORD ?? app.database.password;
-    env.MYSQL_DATABASE = cred.MYSQL_DATABASE ?? app.database.databases[0]?.name ??
-      `${app.slug}_db`;
+    env.MYSQL_DATABASE = cred.MYSQL_DATABASE ?? app.database.databases[0]?.name ?? `${app.slug}_db`;
   }
   return env;
 }
@@ -467,7 +474,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("docker", "Docker daemon available", async () => {
     if (!(await dockerAvailable())) {
-      return { ok: false, detail: "docker info failed — start Docker and retry" };
+      return {
+        ok: false,
+        detail: "docker info failed — start Docker and retry",
+      };
     }
     if (!(await composeAvailable())) {
       return { ok: false, detail: "docker compose plugin missing" };
@@ -496,18 +506,13 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       NGINX_HTTP_PORT: String(nginxHttpPort),
       NGINX_HTTPS_PORT: String(nginxHttpsPort),
     });
-    for (
-      const d of [
-        "runtime/php-fpm",
-        "runtime/locks",
-        "logs/nginx",
-        "certs",
-        "overlays",
-      ]
-    ) {
+    for (const d of ["runtime/php-fpm", "runtime/locks", "logs/nginx", "certs", "overlays"]) {
       await platform.fs.mkdirp(join(opts.stackRoot, d));
     }
-    return { ok: true, detail: exists ? "reused existing state" : "fresh state" };
+    return {
+      ok: true,
+      detail: exists ? "reused existing state" : "fresh state",
+    };
   });
 
   await record("render", "Materialize docker assets and render generation", async () => {
@@ -581,8 +586,8 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("mysql-ready", "MySQL service reachable", async () => {
     state = await store.load();
-    const service = state.databaseServices.filter((v) => v.engine === "mysql")[0]?.service ??
-      "mysql84";
+    const service =
+      state.databaseServices.filter((v) => v.engine === "mysql")[0]?.service ?? "mysql84";
     const ok = await waitFor(
       `mysql ${service}`,
       opts.timeoutMs,
@@ -603,9 +608,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
             "done",
             'mysqladmin --defaults-extra-file="$OPT" ping',
           ].join("\n");
-          const stdin = ["[client]", "user=root", `password=${pw}`, "__END_CNF__", ""].join(
-            "\n",
-          );
+          const stdin = ["[client]", "user=root", `password=${pw}`, "__END_CNF__", ""].join("\n");
           const r = await runCapture(
             ["docker", "compose", "exec", "-T", service, "sh", "-c", script],
             { cwd: opts.stackRoot, stdin, timeoutMs: 10_000 },
@@ -619,13 +622,16 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     );
     return ok
       ? { ok: true, detail: service }
-      : { ok: false, detail: `timed out after ${opts.timeoutMs}ms waiting for ${service}` };
+      : {
+          ok: false,
+          detail: `timed out after ${opts.timeoutMs}ms waiting for ${service}`,
+        };
   });
 
   await record("postgres-ready", "PostgreSQL service reachable on private network", async () => {
     state = await store.load();
-    const service = state.databaseServices.find((entry) => entry.engine === "postgres")?.service ??
-      "postgres17";
+    const service =
+      state.databaseServices.find((entry) => entry.engine === "postgres")?.service ?? "postgres17";
     const ok = await waitFor(
       `postgres ${service}`,
       opts.timeoutMs,
@@ -634,7 +640,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     );
     return ok
       ? { ok: true, detail: service }
-      : { ok: false, detail: `timed out after ${opts.timeoutMs}ms waiting for ${service}` };
+      : {
+          ok: false,
+          detail: `timed out after ${opts.timeoutMs}ms waiting for ${service}`,
+        };
   });
 
   await record("redis-ready", "Redis service reachable on private network", async () => {
@@ -648,31 +657,34 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const pw = await loadRedisPassword(platform);
     const r = pw
       ? await runCapture(
-        [
-          "docker",
-          "compose",
-          "exec",
-          "-T",
-          "-e",
-          `REDISCLI_AUTH=${pw}`,
-          "redis",
-          "redis-cli",
-          "--no-auth-warning",
-          "PING",
-        ],
-        { cwd: opts.stackRoot, timeoutMs: 10_000 },
-      )
-      : await runCapture(
-        ["docker", "compose", "exec", "-T", "redis", "redis-cli", "PING"],
-        { cwd: opts.stackRoot, timeoutMs: 10_000 },
-      );
+          [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "-e",
+            `REDISCLI_AUTH=${pw}`,
+            "redis",
+            "redis-cli",
+            "--no-auth-warning",
+            "PING",
+          ],
+          { cwd: opts.stackRoot, timeoutMs: 10_000 },
+        )
+      : await runCapture(["docker", "compose", "exec", "-T", "redis", "redis-cli", "PING"], {
+          cwd: opts.stackRoot,
+          timeoutMs: 10_000,
+        });
     if (r.code !== 0 || !/PONG/i.test(r.stdout)) {
       return {
         ok: false,
         detail: `redis PING failed: ${(r.stderr || r.stdout).trim().slice(0, 200)}`,
       };
     }
-    return { ok: true, detail: pw ? "auth ok" : "no-auth (protected-mode off)" };
+    return {
+      ok: true,
+      detail: pw ? "auth ok" : "no-auth (protected-mode off)",
+    };
   });
 
   await record("php-up", "PHP-FPM container running", async () => {
@@ -682,24 +694,24 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       `php ${service}`,
       opts.timeoutMs,
       async () => {
-        const r = await runCapture(
-          ["docker", "compose", "exec", "-T", service, "true"],
-          { cwd: opts.stackRoot, timeoutMs: 8_000 },
-        );
+        const r = await runCapture(["docker", "compose", "exec", "-T", service, "true"], {
+          cwd: opts.stackRoot,
+          timeoutMs: 8_000,
+        });
         return r.code === 0;
       },
       log,
     );
     if (!ok) {
-      const logs = await runCapture(
-        ["docker", "compose", "logs", "--tail", "40", service],
-        { cwd: opts.stackRoot, timeoutMs: 15_000 },
-      );
+      const logs = await runCapture(["docker", "compose", "logs", "--tail", "40", service], {
+        cwd: opts.stackRoot,
+        timeoutMs: 15_000,
+      });
       return {
         ok: false,
-        detail: `php service ${service} not up. logs:\n${
-          (logs.stdout + logs.stderr).trim().slice(0, 500)
-        }`,
+        detail: `php service ${service} not up. logs:\n${(logs.stdout + logs.stderr)
+          .trim()
+          .slice(0, 500)}`,
       };
     }
     return { ok: true, detail: service };
@@ -757,7 +769,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         documentRoot: "public",
       });
       const redisShared = await loadRedisPassword(platform);
-      await applyAppDataPlane(platform, provisioned.app, { explicitDatabase: false });
+      await applyAppDataPlane(platform, provisioned.app, {
+        explicitDatabase: false,
+      });
       await materializeAppHome(platform, provisioned.app, {
         recursivePerms: true,
         redisSharedPassword: redisShared,
@@ -786,8 +800,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("php-reload", "Reload PHP-FPM to pick up pools", async () => {
     state = await store.load();
-    const service = state.apps[appSlug]?.phpService ??
-      state.phpVersions[0]?.service ?? "php85";
+    const service = state.apps[appSlug]?.phpService ?? state.phpVersions[0]?.service ?? "php85";
     await runCapture(
       [
         "docker",
@@ -801,14 +814,17 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       ],
       { cwd: opts.stackRoot, timeoutMs: 15_000 },
     );
-    const up = await runCapture(
-      ["docker", "compose", "exec", "-T", service, "true"],
-      { cwd: opts.stackRoot, timeoutMs: 8_000 },
-    );
+    const up = await runCapture(["docker", "compose", "exec", "-T", service, "true"], {
+      cwd: opts.stackRoot,
+      timeoutMs: 8_000,
+    });
     if (up.code !== 0) {
       const restart = await composeCmd(platform, state, ["restart", service], 120_000);
       if (restart.code !== 0) {
-        return { ok: false, detail: (restart.stderr || restart.stdout).slice(0, 300) };
+        return {
+          ok: false,
+          detail: (restart.stderr || restart.stdout).slice(0, 300),
+        };
       }
     }
     await sleep(2000);
@@ -821,12 +837,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (!app) return { ok: false, detail: `app ${appSlug} missing` };
     await writeProbePhp(platform, appSlug, "_bento_version.php", phpVersionProbe());
     const env = await loadAppCredEnv(platform, app, await loadRedisPassword(platform));
-    const r = await runPhpAsApp(
-      opts.stackRoot,
-      app,
-      "code/public/_bento_version.php",
-      env,
-    );
+    const r = await runPhpAsApp(opts.stackRoot, app, "code/public/_bento_version.php", env);
     const got = (r.stdout || "").trim();
     if (r.code !== 0) {
       return {
@@ -835,7 +846,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       };
     }
     if (got !== app.phpVersion) {
-      return { ok: false, detail: `expected PHP ${app.phpVersion}, got '${got}'` };
+      return {
+        ok: false,
+        detail: `expected PHP ${app.phpVersion}, got '${got}'`,
+      };
     }
     return { ok: true, detail: `PHP ${got}` };
   });
@@ -852,7 +866,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const dbName = `${appSlug}_db`;
     if (app.database.databases.some((d) => d.name === dbName)) {
       // Re-apply grants in case MySQL volume was recreated
-      const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
+      const plane = await applyAppDataPlane(platform, app, {
+        explicitDatabase: true,
+      });
       const redisShared = await loadRedisPassword(platform);
       await materializeAppHome(platform, app, {
         recursivePerms: false,
@@ -866,13 +882,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       };
     }
     const rootPassword = await requireMysqlRootPassword(platform);
-    const next = await createAppDatabaseLive(
-      platform,
-      state,
-      appSlug,
-      dbName,
-      rootPassword,
-    );
+    const next = await createAppDatabaseLive(platform, state, appSlug, dbName, rootPassword);
     const redisShared = await loadRedisPassword(platform);
     await materializeAppHome(platform, next.apps[appSlug]!, {
       recursivePerms: false,
@@ -892,13 +902,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return { ok: true, detail: `already recorded ${dbName}` };
     }
     const rootPassword = await requireMysqlRootPassword(platform);
-    const next = await createAppDatabaseLive(
-      platform,
-      state,
-      appSlug,
-      dbName,
-      rootPassword,
-    );
+    const next = await createAppDatabaseLive(platform, state, appSlug, dbName, rootPassword);
     const redisShared = await loadRedisPassword(platform);
     await materializeAppHome(platform, next.apps[appSlug]!, {
       recursivePerms: false,
@@ -915,13 +919,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (!app) return { ok: false, detail: "demo app missing" };
     await writeProbePhp(platform, appSlug, "_bento_mysql.php", phpMysqlProbe());
     const env = await loadAppCredEnv(platform, app, await loadRedisPassword(platform));
-    const r = await runPhpAsApp(
-      opts.stackRoot,
-      app,
-      "code/public/_bento_mysql.php",
-      env,
-      { MYSQL_DATABASE: `${appSlug}_db` },
-    );
+    const r = await runPhpAsApp(opts.stackRoot, app, "code/public/_bento_mysql.php", env, {
+      MYSQL_DATABASE: `${appSlug}_db`,
+    });
     if (r.code !== 0 || !/mysql_ok/.test(r.stdout)) {
       return {
         ok: false,
@@ -937,13 +937,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (!app) return { ok: false, detail: "demo app missing" };
     await writeProbePhp(platform, appSlug, "_bento_mysql.php", phpMysqlProbe());
     const env = await loadAppCredEnv(platform, app, await loadRedisPassword(platform));
-    const r = await runPhpAsApp(
-      opts.stackRoot,
-      app,
-      "code/public/_bento_mysql.php",
-      env,
-      { MYSQL_DATABASE: `${appSlug}_appdata` },
-    );
+    const r = await runPhpAsApp(opts.stackRoot, app, "code/public/_bento_mysql.php", env, {
+      MYSQL_DATABASE: `${appSlug}_appdata`,
+    });
     if (r.code !== 0 || !/mysql_ok/.test(r.stdout)) {
       return {
         ok: false,
@@ -959,12 +955,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (!app) return { ok: false, detail: "demo app missing" };
     await writeProbePhp(platform, appSlug, "_bento_redis.php", phpRedisProbe());
     const env = await loadAppCredEnv(platform, app, await loadRedisPassword(platform));
-    const r = await runPhpAsApp(
-      opts.stackRoot,
-      app,
-      "code/public/_bento_redis.php",
-      env,
-    );
+    const r = await runPhpAsApp(opts.stackRoot, app, "code/public/_bento_redis.php", env);
     if (r.code !== 0 || !/redis_ok/.test(r.stdout)) {
       return {
         ok: false,
@@ -981,12 +972,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("pg-apps-create", "Create two PostgreSQL-backed apps", async () => {
     state = await store.load();
-    for (
-      const [slug, domain] of [
-        [pgAppSlug, `${pgAppSlug}.${opts.name}.test`],
-        [pgAppSlug2, `${pgAppSlug2}.${opts.name}.test`],
-      ] as const
-    ) {
+    for (const [slug, domain] of [
+      [pgAppSlug, `${pgAppSlug}.${opts.name}.test`],
+      [pgAppSlug2, `${pgAppSlug2}.${opts.name}.test`],
+    ] as const) {
       let app = state.apps[slug];
       if (!app) {
         const provisioned = provisionApp(platform, state, {
@@ -997,9 +986,14 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
           createDatabase: true,
         });
         app = provisioned.app;
-        const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
+        const plane = await applyAppDataPlane(platform, app, {
+          explicitDatabase: true,
+        });
         if (!plane.databaseApplied) {
-          return { ok: false, detail: `database provisioning deferred for ${slug}` };
+          return {
+            ok: false,
+            detail: `database provisioning deferred for ${slug}`,
+          };
         }
         const redisShared = await loadRedisPassword(platform);
         await materializeAppHome(platform, app, {
@@ -1014,11 +1008,19 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         state = provisioned.state;
       } else {
         if (app.database.engine !== "postgres") {
-          return { ok: false, detail: `${slug} already exists with ${app.database.engine}` };
+          return {
+            ok: false,
+            detail: `${slug} already exists with ${app.database.engine}`,
+          };
         }
-        const plane = await applyAppDataPlane(platform, app, { explicitDatabase: true });
+        const plane = await applyAppDataPlane(platform, app, {
+          explicitDatabase: true,
+        });
         if (!plane.databaseApplied) {
-          return { ok: false, detail: `database reconciliation failed for ${slug}` };
+          return {
+            ok: false,
+            detail: `database reconciliation failed for ${slug}`,
+          };
         }
         await materializeAppHome(platform, app, {
           recursivePerms: false,
@@ -1042,12 +1044,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     }
     await writeProbePhp(platform, pgAppSlug, "_bento_postgres.php", phpPostgresProbe());
     const env = await loadAppCredEnv(platform, app, await loadRedisPassword(platform));
-    const result = await runPhpAsApp(
-      opts.stackRoot,
-      app,
-      "code/public/_bento_postgres.php",
-      env,
-    );
+    const result = await runPhpAsApp(opts.stackRoot, app, "code/public/_bento_postgres.php", env);
     if (result.code !== 0 || !/postgres_ok/.test(result.stdout)) {
       return {
         ok: false,
@@ -1062,7 +1059,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const alpha = state.apps[pgAppSlug];
     const beta = state.apps[pgAppSlug2];
     if (
-      !alpha || !beta || alpha.database.engine !== "postgres" || beta.database.engine !== "postgres"
+      !alpha ||
+      !beta ||
+      alpha.database.engine !== "postgres" ||
+      beta.database.engine !== "postgres"
     ) {
       return { ok: false, detail: "PostgreSQL test apps missing" };
     }
@@ -1085,12 +1085,15 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (own.code !== 0 || cross.code === 0) {
       return {
         ok: false,
-        detail: `own=${own.code} cross=${cross.code}: ${
-          (cross.stderr || own.stderr).trim().slice(0, 240)
-        }`,
+        detail: `own=${own.code} cross=${cross.code}: ${(cross.stderr || own.stderr)
+          .trim()
+          .slice(0, 240)}`,
       };
     }
-    return { ok: true, detail: `${pgAppSlug} own=allowed; ${pgAppSlug2}=denied` };
+    return {
+      ok: true,
+      detail: `${pgAppSlug} own=allowed; ${pgAppSlug2}=denied`,
+    };
   });
 
   await record(
@@ -1139,7 +1142,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         app.database.password,
       );
       if (verified.code !== 0 || !verified.stdout.includes("restored")) {
-        return { ok: false, detail: (verified.stderr || verified.stdout).trim().slice(0, 300) };
+        return {
+          ok: false,
+          detail: (verified.stderr || verified.stdout).trim().slice(0, 300),
+        };
       }
       return { ok: true, detail: `${artifact.path} → ${target}` };
     },
@@ -1168,11 +1174,14 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     });
     state = provisioned.state;
     const next = state.apps[appSlug]!;
-    if (!next.aliases.includes(aliasDomain as typeof next.aliases[number])) {
+    if (!next.aliases.includes(aliasDomain as (typeof next.aliases)[number])) {
       return { ok: false, detail: `alias ${aliasDomain} not in state` };
     }
     if (!state.domains[aliasDomain]) {
-      return { ok: false, detail: `alias ${aliasDomain} missing from domain map` };
+      return {
+        ok: false,
+        detail: `alias ${aliasDomain} missing from domain map`,
+      };
     }
     const vhost = await platform.fs.readText(
       join(opts.stackRoot, "generated", "nginx", "sites", `${appSlug}.conf`),
@@ -1203,7 +1212,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     state = provisioned.state;
     const next = state.apps[appSlug]!;
     if (next.aliases.length > 0) {
-      return { ok: false, detail: `aliases still present: ${next.aliases.join(",")}` };
+      return {
+        ok: false,
+        detail: `aliases still present: ${next.aliases.join(",")}`,
+      };
     }
     if (state.domains[aliasDomain]) {
       return { ok: false, detail: `domain map still owns ${aliasDomain}` };
@@ -1229,41 +1241,30 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     state = await store.load();
     // Idempotent: drop prior job so this run owns a fresh log window
     if (state.cronJobs.some((j) => j.app === appSlug && j.name === "print")) {
-      const removed = removeCronJob(
-        state,
-        appSlug,
-        "print",
-        platform.clock.nowIso(),
-      );
+      const removed = removeCronJob(state, appSlug, "print", platform.clock.nowIso());
       state = removed.state;
       await store.save(state);
     }
-    const added = addCronJob(state, {
-      app: appSlug,
-      name: "print",
-      schedule: "* * * * *",
-      command: ["sh", "-c", "echo cron-ok $(date -Iseconds)"],
-      output: "log",
-    }, platform);
+    const added = addCronJob(
+      state,
+      {
+        app: appSlug,
+        name: "print",
+        schedule: "* * * * *",
+        command: ["sh", "-c", "echo cron-ok $(date -Iseconds)"],
+        output: "log",
+      },
+      platform,
+    );
     await store.save(added.state);
     state = added.state;
     // Clear prior log so we only count new ticks
-    const cronLog = join(
-      platform.paths.paths.homesDir,
-      appSlug,
-      "logs",
-      "cron",
-      "print.log",
-    );
+    const cronLog = join(platform.paths.paths.homesDir, appSlug, "logs", "cron", "print.log");
     await platform.fs.mkdirp(join(cronLog, ".."));
     await platform.fs.atomicWriteText(cronLog, "", 0o644);
     // Ensure app uid can write
     try {
-      await Deno.chown(
-        cronLog,
-        state.apps[appSlug]!.uid,
-        state.apps[appSlug]!.gid,
-      );
+      await chown(cronLog, state.apps[appSlug]!.uid, state.apps[appSlug]!.gid);
     } catch {
       // best-effort on platforms without chown
     }
@@ -1280,7 +1281,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       join(opts.stackRoot, "generated", "runner", service, "cron", "jobs", appSlug, "print.sh"),
     );
     if (!ct.includes("* * * * *") || !ct.includes("/jobs/") || !jobScript.includes("cron-ok")) {
-      return { ok: false, detail: `crontab or job script missing job: ${ct.slice(0, 200)}` };
+      return {
+        ok: false,
+        detail: `crontab or job script missing job: ${ct.slice(0, 200)}`,
+      };
     }
     return { ok: true, detail: "schedule=* * * * * → logs/cron/print.log" };
   });
@@ -1288,43 +1292,28 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   await record("worker-add", "Add worker that prints to logs/worker/print.log", async () => {
     state = await store.load();
     if (state.workers.some((w) => w.app === appSlug && w.name === "print")) {
-      const removed = removeWorker(
-        state,
-        appSlug,
-        "print",
-        platform.clock.nowIso(),
-      );
+      const removed = removeWorker(state, appSlug, "print", platform.clock.nowIso());
       state = removed.state;
       await store.save(state);
     }
-    const workerLog = join(
-      platform.paths.paths.homesDir,
-      appSlug,
-      "logs",
-      "worker",
-      "print.log",
-    );
+    const workerLog = join(platform.paths.paths.homesDir, appSlug, "logs", "worker", "print.log");
     await platform.fs.mkdirp(join(workerLog, ".."));
     await platform.fs.atomicWriteText(workerLog, "", 0o644);
     try {
-      await Deno.chown(
-        workerLog,
-        state.apps[appSlug]!.uid,
-        state.apps[appSlug]!.gid,
-      );
+      await chown(workerLog, state.apps[appSlug]!.uid, state.apps[appSlug]!.gid);
     } catch {
       // best-effort
     }
-    const added = addWorker(state, {
-      app: appSlug,
-      name: "print",
-      command: [
-        "sh",
-        "-c",
-        "while true; do echo worker-ok $(date -Iseconds); sleep 5; done",
-      ],
-      workdir: state.apps[appSlug]!.home,
-    }, platform);
+    const added = addWorker(
+      state,
+      {
+        app: appSlug,
+        name: "print",
+        command: ["sh", "-c", "while true; do echo worker-ok $(date -Iseconds); sleep 5; done"],
+        workdir: state.apps[appSlug]!.home,
+      },
+      platform,
+    );
     await store.save(added.state);
     state = added.state;
     await render.apply(state, {
@@ -1337,7 +1326,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       join(opts.stackRoot, "generated", "runner", service, "services", prog, "run"),
     );
     if (!run.includes("/command/s6-applyuidgid") || run.includes("setpriv")) {
-      return { ok: false, detail: `s6 service privilege drop missing ${prog}` };
+      return {
+        ok: false,
+        detail: `s6 service privilege drop missing ${prog}`,
+      };
     }
     return { ok: true, detail: `service=${prog}` };
   });
@@ -1352,27 +1344,19 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       // Ensure the singleton exists, but do not restart it to load new definitions.
       const up = await composeCmd(platform, runnerState, ["up", "-d", runner], 120_000);
       if (up.code !== 0) {
-        return { ok: false, detail: (up.stderr || up.stdout).trim().slice(0, 300) };
+        return {
+          ok: false,
+          detail: (up.stderr || up.stdout).trim().slice(0, 300),
+        };
       }
-      await composeCmd(
-        platform,
-        runnerState,
-        ["exec", "-T", runner, "bento-s6-reconcile"],
-        10_000,
-      );
+      await composeCmd(platform, runnerState, ["exec", "-T", runner, "bento-s6-reconcile"], 10_000);
       const workerProg = workerProgramName(appSlug, "print");
       const schedProg = `scheduler-${appSlug}`;
       const serviceStatus = async (program: string) =>
         await composeCmd(
           platform,
           runnerState,
-          [
-            "exec",
-            "-T",
-            runner,
-            "/command/s6-svstat",
-            `/run/bento-s6/services/${program}`,
-          ],
+          ["exec", "-T", runner, "/command/s6-svstat", `/run/bento-s6/services/${program}`],
           10_000,
         );
       const ok = await waitFor(
@@ -1383,9 +1367,12 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
             serviceStatus(workerProg),
             serviceStatus(schedProg),
           ]);
-          return worker.code === 0 && scheduler.code === 0 &&
+          return (
+            worker.code === 0 &&
+            scheduler.code === 0 &&
             (worker.stdout + worker.stderr).startsWith("up") &&
-            (scheduler.stdout + scheduler.stderr).startsWith("up");
+            (scheduler.stdout + scheduler.stderr).startsWith("up")
+          );
         },
         log,
       );
@@ -1396,12 +1383,18 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         ]);
         return {
           ok: false,
-          detail: `services not running: worker=${
-            (worker.stdout + worker.stderr).trim().slice(0, 180)
-          }; scheduler=${(scheduler.stdout + scheduler.stderr).trim().slice(0, 180)}`,
+          detail: `services not running: worker=${(worker.stdout + worker.stderr)
+            .trim()
+            .slice(
+              0,
+              180,
+            )}; scheduler=${(scheduler.stdout + scheduler.stderr).trim().slice(0, 180)}`,
         };
       }
-      return { ok: true, detail: `runner=${runner}; ${schedProg}+${workerProg} up` };
+      return {
+        ok: true,
+        detail: `runner=${runner}; ${schedProg}+${workerProg} up`,
+      };
     },
   );
 
@@ -1430,13 +1423,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   );
 
   await record("cron-verify", "Cron print wrote to logs/cron/print.log", async () => {
-    const cronLog = join(
-      platform.paths.paths.homesDir,
-      appSlug,
-      "logs",
-      "cron",
-      "print.log",
-    );
+    const cronLog = join(platform.paths.paths.homesDir, appSlug, "logs", "cron", "print.log");
     if (!(await platform.fs.exists(cronLog))) {
       return { ok: false, detail: `missing ${cronLog}` };
     }
@@ -1460,9 +1447,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       );
       return {
         ok: false,
-        detail: `no cron-ok in log (bytes=${text.length}); s6: ${
-          (slog.stdout + slog.stderr).trim().slice(0, 300)
-        }`,
+        detail: `no cron-ok in log (bytes=${text.length}); s6: ${(slog.stdout + slog.stderr)
+          .trim()
+          .slice(0, 300)}`,
       };
     }
     const lines = text.split("\n").filter((l) => l.includes("cron-ok")).length;
@@ -1470,13 +1457,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   });
 
   await record("worker-verify", "Worker print wrote to logs/worker/print.log", async () => {
-    const workerLog = join(
-      platform.paths.paths.homesDir,
-      appSlug,
-      "logs",
-      "worker",
-      "print.log",
-    );
+    const workerLog = join(platform.paths.paths.homesDir, appSlug, "logs", "worker", "print.log");
     if (!(await platform.fs.exists(workerLog))) {
       return { ok: false, detail: `missing ${workerLog}` };
     }
@@ -1488,20 +1469,14 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       const st = await composeCmd(
         platform,
         current,
-        [
-          "exec",
-          "-T",
-          runner,
-          "/command/s6-svstat",
-          `/run/bento-s6/services/${prog}`,
-        ],
+        ["exec", "-T", runner, "/command/s6-svstat", `/run/bento-s6/services/${prog}`],
         10_000,
       );
       return {
         ok: false,
-        detail: `no worker-ok in log (bytes=${text.length}); status: ${
-          (st.stdout + st.stderr).trim().slice(0, 200)
-        }`,
+        detail: `no worker-ok in log (bytes=${text.length}); status: ${(st.stdout + st.stderr)
+          .trim()
+          .slice(0, 200)}`,
       };
     }
     const lines = text.split("\n").filter((l) => l.includes("worker-ok")).length;
@@ -1527,12 +1502,12 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return { ok: false, detail: "credentials/app.env missing" };
     }
     // Make private dir world-readable (policy violation)
-    await Deno.chmod(credDir, 0o755);
-    await Deno.chmod(credFile, 0o644);
+    await chmod(credDir, 0o755);
+    await chmod(credFile, 0o644);
     // Drop world-traverse on home so nginx path breaks (if present)
     const home = join(platform.paths.paths.homesDir, appSlug);
     try {
-      await Deno.chmod(home, 0o700);
+      await chmod(home, 0o700);
     } catch {
       // ignore
     }
@@ -1560,14 +1535,15 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (result.report.issues.length > 0) {
       return {
         ok: false,
-        detail: `still ${result.report.issues.length} issue(s): ${
-          result.report.issues.map((i) => i.issue).join("; ").slice(0, 200)
-        }`,
+        detail: `still ${result.report.issues.length} issue(s): ${result.report.issues
+          .map((i) => i.issue)
+          .join("; ")
+          .slice(0, 200)}`,
       };
     }
     // Spot-check credentials mode bits
     const credDir = join(platform.paths.paths.homesDir, appSlug, "credentials");
-    const st = await Deno.stat(credDir);
+    const st = await stat(credDir);
     const mode = (st.mode ?? 0) & 0o777;
     if ((mode & 0o077) !== 0) {
       return {
@@ -1589,7 +1565,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (report.issues.length > 0) {
       return {
         ok: false,
-        detail: report.issues.map((i) => `${i.path}: ${i.issue}`).join("; ").slice(0, 300),
+        detail: report.issues
+          .map((i) => `${i.path}: ${i.issue}`)
+          .join("; ")
+          .slice(0, 300),
       };
     }
     return { ok: true, detail: `checked=${report.checked} issues=0` };
@@ -1605,29 +1584,13 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return { ok: true, skipped: true, detail: "--skip-http set" };
     }
     state = await store.load();
-    const index = join(
-      platform.paths.paths.homesDir,
-      appSlug,
-      "code",
-      "public",
-      "index.php",
-    );
+    const index = join(platform.paths.paths.homesDir, appSlug, "code", "public", "index.php");
     if (!(await platform.fs.exists(index))) {
-      await platform.fs.atomicWriteText(
-        index,
-        `<?php echo "bento app ${appSlug}\\n";\n`,
-        0o644,
-      );
+      await platform.fs.atomicWriteText(index, `<?php echo "bento app ${appSlug}\\n";\n`, 0o644);
     }
 
     const phpService = state.apps[appSlug]?.phpService ?? "php85";
-    const sockHost = join(
-      opts.stackRoot,
-      "runtime",
-      "php-fpm",
-      phpService,
-      `${appSlug}.sock`,
-    );
+    const sockHost = join(opts.stackRoot, "runtime", "php-fpm", phpService, `${appSlug}.sock`);
     const sockOk = await waitFor(
       "php-fpm socket",
       30_000,
@@ -1640,10 +1603,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
     await composeCmd(platform, state, ["up", "-d", "nginx"], 120_000);
 
-    const ngx = await runCapture(
-      ["docker", "compose", "exec", "-T", "nginx", "nginx", "-t"],
-      { cwd: opts.stackRoot, timeoutMs: 15_000 },
-    );
+    const ngx = await runCapture(["docker", "compose", "exec", "-T", "nginx", "nginx", "-t"], {
+      cwd: opts.stackRoot,
+      timeoutMs: 15_000,
+    });
     if (ngx.code !== 0) {
       return {
         ok: true,
@@ -1651,10 +1614,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         detail: `nginx not healthy/available: ${(ngx.stderr || ngx.stdout).trim().slice(0, 200)}`,
       };
     }
-    await runCapture(
-      ["docker", "compose", "exec", "-T", "nginx", "nginx", "-s", "reload"],
-      { cwd: opts.stackRoot, timeoutMs: 15_000 },
-    );
+    await runCapture(["docker", "compose", "exec", "-T", "nginx", "nginx", "-s", "reload"], {
+      cwd: opts.stackRoot,
+      timeoutMs: 15_000,
+    });
     await sleep(1500);
 
     const sockInNginx = await runCapture(
@@ -1696,7 +1659,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const code = (curl.stdout || "").trim();
     let body = "";
     try {
-      body = await Deno.readTextFile("/tmp/bento-test-stack-body.txt");
+      body = await readFile("/tmp/bento-test-stack-body.txt", "utf8");
     } catch {
       // ignore
     }
@@ -1704,9 +1667,9 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return {
         ok: true,
         skipped: true,
-        detail: `curl failed on test port ${nginxHttpPort}: ${
-          (curl.stderr || "").trim().slice(0, 200)
-        }`,
+        detail: `curl failed on test port ${nginxHttpPort}: ${(curl.stderr || "")
+          .trim()
+          .slice(0, 200)}`,
       };
     }
     if (code !== "200") {
@@ -1720,9 +1683,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       }
       return {
         ok: false,
-        detail: `HTTP ${code} for Host:${domain}; body=${body.slice(0, 80)}; nginx_err=${
-          errTail.slice(0, 200)
-        }`,
+        detail: `HTTP ${code} for Host:${domain}; body=${body.slice(0, 80)}; nginx_err=${errTail.slice(
+          0,
+          200,
+        )}`,
       };
     }
     if (!body.includes(appSlug) && !body.toLowerCase().includes("bento")) {
@@ -1743,23 +1707,16 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     }
     const bootCrt = join(opts.stackRoot, "certs", "boot.crt");
     const bootKey = join(opts.stackRoot, "certs", "boot.key");
-    const hasBoot = (await platform.fs.exists(bootCrt)) &&
-      (await platform.fs.exists(bootKey));
-    const vhost = join(
-      opts.stackRoot,
-      "generated",
-      "nginx",
-      "sites",
-      `${appSlug}.conf`,
-    );
+    const hasBoot = (await platform.fs.exists(bootCrt)) && (await platform.fs.exists(bootKey));
+    const vhost = join(opts.stackRoot, "generated", "nginx", "sites", `${appSlug}.conf`);
     const vhostText = await platform.fs.readText(vhost);
     const hasSsl = /listen 443 ssl/.test(vhostText);
     return {
       ok: hasSsl,
       detail: hasSsl
         ? `tls.kind=${app.tls.kind}; shared_cert=${
-          hasBoot ? "present" : "pending-entrypoint"
-        }; ACME not tested`
+            hasBoot ? "present" : "pending-entrypoint"
+          }; ACME not tested`
         : "vhost missing 443 ssl listener",
     };
   });
@@ -1775,15 +1732,19 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (
       apps.get(appSlug)?.databaseEngine !== "mysql" ||
       apps.get(pgAppSlug)?.databaseEngine !== "postgres" ||
-      report.mysqlVersions.length === 0 || report.postgresVersions.length === 0
+      report.mysqlVersions.length === 0 ||
+      report.postgresVersions.length === 0
     ) {
-      return { ok: false, detail: "mixed-engine status classification failed" };
+      return {
+        ok: false,
+        detail: "mixed-engine status classification failed",
+      };
     }
     return {
       ok: true,
-      detail: `apps=${
-        expected.join(",")
-      }; mysql=${report.mysqlVersions.length}; postgres=${report.postgresVersions.length}`,
+      detail: `apps=${expected.join(
+        ",",
+      )}; mysql=${report.mysqlVersions.length}; postgres=${report.postgresVersions.length}`,
     };
   });
 
@@ -1880,9 +1841,9 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
       if (restarted.code !== 0) {
         return {
           ok: false,
-          detail: `deploy service restart failed: ${
-            (restarted.stderr || restarted.stdout).trim().slice(0, 400)
-          }`,
+          detail: `deploy service restart failed: ${(restarted.stderr || restarted.stdout)
+            .trim()
+            .slice(0, 400)}`,
         };
       }
       const ready = await waitFor(
@@ -1894,7 +1855,11 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
           ),
         log,
       );
-      if (!ready) return { ok: false, detail: "app FPM socket did not return after restart" };
+      if (!ready)
+        return {
+          ok: false,
+          detail: "app FPM socket did not return after restart",
+        };
       await sleep(1500);
 
       const body = JSON.stringify({ ref: "refs/heads/main", live: true });
@@ -1925,20 +1890,28 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
       if (webhook.code !== 0 || statusCode !== "202") {
         return {
           ok: false,
-          detail: `webhook exit=${webhook.code} HTTP=${statusCode}: ${
-            (webhook.stderr || responseBody).trim().slice(0, 300)
-          }`,
+          detail: `webhook exit=${webhook.code} HTTP=${statusCode}: ${(
+            webhook.stderr || responseBody
+          )
+            .trim()
+            .slice(0, 300)}`,
         };
       }
       let accepted: { id?: string; status?: string };
       try {
         accepted = JSON.parse(responseBody) as { id?: string; status?: string };
       } catch {
-        return { ok: false, detail: `invalid webhook response: ${responseBody.slice(0, 200)}` };
+        return {
+          ok: false,
+          detail: `invalid webhook response: ${responseBody.slice(0, 200)}`,
+        };
       }
       const jobId = accepted.id ?? "";
       if (!/^dep_[A-Za-z0-9_-]+$/.test(jobId) || accepted.status !== "queued") {
-        return { ok: false, detail: `unexpected webhook response: ${responseBody.slice(0, 200)}` };
+        return {
+          ok: false,
+          detail: `unexpected webhook response: ${responseBody.slice(0, 200)}`,
+        };
       }
 
       const socketPath = `/run/php-fpm/${phpService}/${appSlug}.sock`;
@@ -1963,14 +1936,19 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
       if (drained.code !== 0) {
         return {
           ok: false,
-          detail: `runner drain exit ${drained.code}: ${
-            (drained.stderr || drained.stdout).trim().slice(0, 400)
-          }`,
+          detail: `runner drain exit ${drained.code}: ${(drained.stderr || drained.stdout)
+            .trim()
+            .slice(0, 400)}`,
         };
       }
 
       const queue = JSON.parse(await platform.fs.readText(queuePath)) as {
-        jobs: Array<{ id?: string; status?: string; exitCode?: number; logName?: string }>;
+        jobs: Array<{
+          id?: string;
+          status?: string;
+          exitCode?: number;
+          logName?: string;
+        }>;
       };
       const job = queue.jobs.find((candidate) => candidate.id === jobId);
       if (job?.status !== "success" || job.exitCode !== 0) {
@@ -1995,7 +1973,10 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
         };
       }
       if (await platform.fs.exists(join(bentoDir, `payload-${jobId}.json`))) {
-        return { ok: false, detail: "deploy payload snapshot was not cleaned up" };
+        return {
+          ok: false,
+          detail: "deploy payload snapshot was not cleaned up",
+        };
       }
       return {
         ok: true,
@@ -2060,9 +2041,7 @@ export function formatTestStackReport(report: TestStackReport): string {
   lines.push("");
   for (const s of report.steps) {
     const mark = s.skipped ? "SKIP" : s.ok ? "PASS" : "FAIL";
-    lines.push(
-      `  [${mark}] ${s.id.padEnd(18)} ${s.title}${s.detail ? ` — ${s.detail}` : ""}`,
-    );
+    lines.push(`  [${mark}] ${s.id.padEnd(18)} ${s.title}${s.detail ? ` — ${s.detail}` : ""}`);
   }
   lines.push("");
   lines.push(
@@ -2089,10 +2068,8 @@ export function resolveTestStackOptions(argv: {
   repoRoot?: string;
   log?: TestStackOptions["log"];
 }): TestStackOptions {
-  const name = (argv.name && argv.name.length > 0) ? argv.name : DEFAULT_TEST_STACK_NAME;
-  const stackRoot = resolve(
-    argv.stack && argv.stack.length > 0 ? argv.stack : join(".", name),
-  );
+  const name = argv.name && argv.name.length > 0 ? argv.name : DEFAULT_TEST_STACK_NAME;
+  const stackRoot = resolve(argv.stack && argv.stack.length > 0 ? argv.stack : join(".", name));
   return {
     name,
     stackRoot,
@@ -2101,12 +2078,13 @@ export function resolveTestStackOptions(argv: {
     skipBuild: !!argv.skipBuild,
     skipHttp: !!argv.skipHttp,
     timeoutMs: Math.max(30, argv.timeoutSec ?? 180) * 1000,
-    scheduleWaitSec: argv.scheduleWaitSec != null
-      ? Math.max(0, argv.scheduleWaitSec)
-      : DEFAULT_SCHEDULE_WAIT_SEC,
-    log: argv.log ?? ((level, msg) => {
-      const prefix = level === "error" ? "error" : level === "warn" ? "warning" : "info";
-      console.error(`${prefix}: ${msg}`);
-    }),
+    scheduleWaitSec:
+      argv.scheduleWaitSec != null ? Math.max(0, argv.scheduleWaitSec) : DEFAULT_SCHEDULE_WAIT_SEC,
+    log:
+      argv.log ??
+      ((level, msg) => {
+        const prefix = level === "error" ? "error" : level === "warn" ? "warning" : "info";
+        console.error(`${prefix}: ${msg}`);
+      }),
   };
 }

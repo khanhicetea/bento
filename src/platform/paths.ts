@@ -1,4 +1,4 @@
-import { join, normalize, resolve } from "@std/path";
+import { join, normalize, resolve } from "node:path";
 import type { PathPolicy, StackPaths } from "./interfaces.ts";
 import { validationError } from "../domain/errors.ts";
 import { APP_HOME_ROOT } from "../domain/types.ts";
@@ -43,10 +43,10 @@ export function createPathPolicy(stackRoot: string): PathPolicy {
       const workResolved = resolve(homeResolved, workdir);
       const prefix = homeResolved.endsWith("/") ? homeResolved : `${homeResolved}/`;
       if (workResolved !== homeResolved && !workResolved.startsWith(prefix)) {
-        throw validationError(
-          `working directory escapes app home: ${workdir}`,
-          { home: homeResolved, workdir: workResolved },
-        );
+        throw validationError(`working directory escapes app home: ${workdir}`, {
+          home: homeResolved,
+          workdir: workResolved,
+        });
       }
       // Reject symlink escape is best-effort at call sites; path normalize check here.
       if (normalize(workResolved).includes("..")) {

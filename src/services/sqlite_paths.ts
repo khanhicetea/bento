@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join } from "node:path";
 import type { Platform } from "../platform/mod.ts";
 
 export const SQLITE_CONTAINER_ROOT = "/sqlite";

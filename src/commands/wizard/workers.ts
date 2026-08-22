@@ -19,10 +19,7 @@ export async function sectionWorker(ui: WizardUI, ctx: CliContext, slug: string)
     const noWorkers = workers.length === 0;
 
     ui.clear();
-    ui.header(
-      `Workers: ${slug}`,
-      `${workers.length} worker${workers.length === 1 ? "" : "s"}`,
-    );
+    ui.header(`Workers: ${slug}`, `${workers.length} worker${workers.length === 1 ? "" : "s"}`);
     ui.table(
       ["name", "command", "enabled"],
       workers.map((worker) => [
@@ -96,8 +93,11 @@ export async function sectionWorker(ui: WizardUI, ctx: CliContext, slug: string)
       }
       await ui.pause();
     } else if (
-      action === "start" || action === "stop" || action === "restart" ||
-      action === "signal" || action === "inspect"
+      action === "start" ||
+      action === "stop" ||
+      action === "restart" ||
+      action === "signal" ||
+      action === "inspect"
     ) {
       const picked = await ui.menu(
         `${action} worker`,
@@ -119,18 +119,15 @@ export async function sectionWorker(ui: WizardUI, ctx: CliContext, slug: string)
             ].join("\n"),
           );
         } else {
-          const signal = action === "signal"
-            ? await ui.prompt("Signal", { required: true, default: "HUP" })
-            : undefined;
+          const signal =
+            action === "signal"
+              ? await ui.prompt("Signal", { required: true, default: "HUP" })
+              : undefined;
           if (action === "signal" && !signal) continue;
-          const plan = action === "signal"
-            ? buildWorkerSignalPlan(state, slug, picked, signal!)
-            : buildWorkerControlPlan(
-              state,
-              slug,
-              picked,
-              action as WorkerControlAction,
-            );
+          const plan =
+            action === "signal"
+              ? buildWorkerSignalPlan(state, slug, picked, signal!)
+              : buildWorkerControlPlan(state, slug, picked, action as WorkerControlAction);
           const result = await controlWorker(ctx.platform, plan);
           if (result.code === 0) {
             ui.success(`${action} ${plan.program}`);

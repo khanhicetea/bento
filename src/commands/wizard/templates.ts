@@ -16,7 +16,11 @@ export async function sectionTemplate(ui: WizardUI, ctx: CliContext, slug: strin
 
   while (true) {
     const action = await ui.menu("Templates", [
-      { label: "Create / edit custom template", value: "select", hint: "opens your editor" },
+      {
+        label: "Create / edit custom template",
+        value: "select",
+        hint: "opens your editor",
+      },
       { label: "Return to upstream", value: "return" },
       { label: "Check upstream drift", value: "drift" },
     ]);
@@ -25,18 +29,14 @@ export async function sectionTemplate(ui: WizardUI, ctx: CliContext, slug: strin
     try {
       if (action === "drift") {
         const state = await ctx.store.load();
-        const drifts = (await detectTemplateDrift(ctx.platform, state)).filter((drift) =>
-          drift.slug === slug
+        const drifts = (await detectTemplateDrift(ctx.platform, state)).filter(
+          (drift) => drift.slug === slug,
         );
         if (drifts.length === 0) ui.info("No custom templates");
         else {
           ui.table(
             ["kind", "status", "source"],
-            drifts.map((d) => [
-              d.kind,
-              d.drifted ? "DRIFT" : "ok",
-              d.sourcePath,
-            ]),
+            drifts.map((d) => [d.kind, d.drifted ? "DRIFT" : "ok", d.sourcePath]),
           );
           for (const w of formatDriftWarnings(drifts)) ui.warn(w);
         }
@@ -82,12 +82,7 @@ export async function sectionTemplate(ui: WizardUI, ctx: CliContext, slug: strin
         ui.success(`Activated custom ${kind}`, result.recordedPath);
       } else if (action === "return") {
         const result = await ctx.store.withExclusive(async (state) => {
-          const returned = returnToUpstreamTemplate(
-            state,
-            slug,
-            kind,
-            ctx.platform.clock.nowIso(),
-          );
+          const returned = returnToUpstreamTemplate(state, slug, kind, ctx.platform.clock.nowIso());
           await ctx.store.save(returned.state);
           await ctx.render.apply(returned.state, {
             reloadPlan: returned.reloadPlan,

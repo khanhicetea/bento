@@ -25,7 +25,7 @@ uname -s
 uname -m
 ```
 
-Expect `Linux`, followed by `x86_64` or `aarch64`. The compiled binary includes the Bento control plane and immutable templates. It does not require Deno, Node.js, Python, `npm install`, or a source checkout on the production host.
+Expect `Linux`, followed by `x86_64` or `aarch64`. The compiled binary includes the Bento control plane and immutable templates. It does not require Bun, Node.js, Python, `npm install`, or a source checkout on the production host.
 
 ### Docker Engine and Compose
 
@@ -110,21 +110,21 @@ Confirm that the returned address is the intended server address. DNS changes ma
 
 ## Source-development requirements
 
-You need the source toolchain only when running or modifying Bento from a repository checkout. Install Deno 2.9.3, the version pinned by the implementation and CI:
+You need the source toolchain only when running or modifying Bento from a repository checkout. Install Bun 1.4.0, the version pinned by the implementation and CI:
 
 ```sh
-deno --version
+bun --version
 ```
 
-The first line must report `deno 2.9.3`. Source tasks use the permissions declared in `deno.json`; do not replace them with unrestricted `-A` in the supported workflow. Dependencies resolve through Deno and the lockfile, so source mode still does not require Node.js, Python, or `npm install` for the Bento control plane.
+The command must report `1.4.0`. Run `bun install --frozen-lockfile` before source tasks so dependencies match the committed lockfile. Source mode does not require Node.js, Python, or `npm install`.
 
 Before changing Bento, verify the checkout:
 
 ```sh
-deno task fmt:check
-deno task lint
-deno task check
-deno task test
+bun run fmt:check
+bun run lint
+bun run check
+bun run test
 ```
 
 Docker is also required for integration tests and the real stack harness. Those development checks are not production installation steps.
@@ -140,7 +140,7 @@ Before installing Bento, confirm this checklist:
 - ports 80 and 443 are available for the first host-mode stack;
 - firewall and DNS changes are possible for each public domain;
 - OpenSSL and `ssh-keygen` are installed;
-- Deno 2.9.3 is installed only if you intend to use source mode.
+- Bun 1.4.0 is installed only if you intend to use source mode.
 
 ## Troubleshooting
 

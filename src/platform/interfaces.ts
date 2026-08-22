@@ -1,6 +1,6 @@
 /**
  * Narrow platform interfaces injected into domain services.
- * Domain code must not import Deno.* directly.
+ * Domain code must not depend on runtime globals directly.
  */
 
 export type FileMode = number;
@@ -49,9 +49,7 @@ export interface FileSystem {
   chmod(path: string, mode: FileMode): Promise<void>;
   copyFile(from: string, to: string): Promise<void>;
   readDir(path: string): Promise<string[]>;
-  stat(
-    path: string,
-  ): Promise<{
+  stat(path: string): Promise<{
     isFile: boolean;
     isDirectory: boolean;
     mode: number;
@@ -62,9 +60,7 @@ export interface FileSystem {
    * lstat does not follow symlinks. Use this when walking trees so repair/check
    * never chases symlink targets outside the app home.
    */
-  lstat(
-    path: string,
-  ): Promise<{
+  lstat(path: string): Promise<{
     isFile: boolean;
     isDirectory: boolean;
     isSymlink: boolean;

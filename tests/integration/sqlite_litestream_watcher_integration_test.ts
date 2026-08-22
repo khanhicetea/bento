@@ -1,40 +1,45 @@
-import { assertEquals } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
+import { join } from "node:path";
 import { isDockerAvailable, skipIf } from "./helpers.ts";
 
 const IMAGE = "litestream/litestream:0.5.15";
 
-Deno.test("Litestream watcher discovers private app databases and preserves WAL ownership", async () => {
-  if (skipIf(!(await isDockerAvailable()), "Docker unavailable")) return;
-  if (skipIf(Deno.uid() !== 0, "test requires root to model distinct app UIDs")) return;
-  if (skipIf(!(await commandExists("python3")), "python3 unavailable for SQLite fixture")) return;
-  if (skipIf(!(await commandExists("setpriv")), "setpriv unavailable for app UID fixture")) return;
+bunRuntime.test(
+  "Litestream watcher discovers private app databases and preserves WAL ownership",
+  async () => {
+    if (skipIf(!(await isDockerAvailable()), "Docker unavailable")) return;
+    if (skipIf(bunRuntime.uid() !== 0, "test requires root to model distinct app UIDs")) return;
+    if (skipIf(!(await commandExists("python3")), "python3 unavailable for SQLite fixture")) return;
+    if (skipIf(!(await commandExists("setpriv")), "setpriv unavailable for app UID fixture"))
+      return;
 
-  const root = await Deno.makeTempDir({ prefix: "bento-litestream-watcher-" });
-  const name = `bento-litestream-watcher-${crypto.randomUUID().slice(0, 8)}`;
-  const data = join(root, "data");
-  const meta = join(root, "meta");
-  const replica = join(root, "replica");
-  const runtime = join(root, "run");
-  const appA = join(data, "app-a_1234567890");
-  const appB = join(data, "app-b_abcdef1234");
-  const uidA = 12001;
-  const uidB = 12002;
+    const root = await bunRuntime.makeTempDir({
+      prefix: "bento-litestream-watcher-",
+    });
+    const name = `bento-litestream-watcher-${crypto.randomUUID().slice(0, 8)}`;
+    const data = join(root, "data");
+    const meta = join(root, "meta");
+    const replica = join(root, "replica");
+    const runtime = join(root, "run");
+    const appA = join(data, "app-a_1234567890");
+    const appB = join(data, "app-b_abcdef1234");
+    const uidA = 12001;
+    const uidB = 12002;
 
-  try {
-    await Deno.chmod(root, 0o755);
-    for (const path of [data, meta, replica, runtime, appA, appB]) {
-      await Deno.mkdir(path, { recursive: true, mode: 0o755 });
-    }
-    await Deno.chown(appA, uidA, uidA);
-    await Deno.chown(appB, uidB, uidB);
-    await Deno.chmod(appA, 0o700);
-    await Deno.chmod(appB, 0o700);
+    try {
+      await bunRuntime.chmod(root, 0o755);
+      for (const path of [data, meta, replica, runtime, appA, appB]) {
+        await bunRuntime.mkdir(path, { recursive: true, mode: 0o755 });
+      }
+      await bunRuntime.chown(appA, uidA, uidA);
+      await bunRuntime.chown(appB, uidB, uidB);
+      await bunRuntime.chmod(appA, 0o700);
+      await bunRuntime.chmod(appB, 0o700);
 
-    const configPath = join(root, "litestream.yml");
-    await Deno.writeTextFile(
-      configPath,
-      `socket:
+      const configPath = join(root, "litestream.yml");
+      await bunRuntime.writeTextFile(
+        configPath,
+        `socket:
   enabled: true
   path: /run/litestream/control.sock
   permissions: 0600
@@ -48,11 +53,11 @@ dbs:
       url: file:///replica
       sync-interval: 1s
 `,
-    );
-    const fixturePath = join(root, "fixture.py");
-    await Deno.writeTextFile(
-      fixturePath,
-      `import sqlite3, sys
+      );
+      const fixturePath = join(root, "fixture.py");
+      await bunRuntime.writeTextFile(
+        fixturePath,
+        `import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
 c.execute("pragma journal_mode=wal")
 c.execute("create table if not exists t(x)")
@@ -60,71 +65,78 @@ c.execute("insert into t values (?)", (sys.argv[2],))
 c.commit()
 c.close()
 `,
-    );
-    await Deno.chmod(fixturePath, 0o644);
+      );
+      await bunRuntime.chmod(fixturePath, 0o644);
 
-    await startWatcher(name, { data, meta, replica, runtime, configPath });
-    await runAs(uidA, fixturePath, join(appA, "app-a.sqlite"), "1");
-    await runAs(uidB, fixturePath, join(appB, "app-b.sqlite"), "2");
+      await startWatcher(name, { data, meta, replica, runtime, configPath });
+      await runAs(uidA, fixturePath, join(appA, "app-a.sqlite"), "1");
+      await runAs(uidB, fixturePath, join(appB, "app-b.sqlite"), "2");
 
-    await waitFor(async () => {
-      const out = await run([
+      await waitFor(async () => {
+        const out = await run([
+          "docker",
+          "exec",
+          name,
+          "litestream",
+          "list",
+          "-socket",
+          "/run/litestream/control.sock",
+          "-json",
+        ]);
+        if (out.code !== 0) return false;
+        const parsed = JSON.parse(out.stdout) as { databases?: unknown[] };
+        return parsed.databases?.length === 2;
+      }, "two dynamically discovered databases");
+
+      const sync = await run([
         "docker",
         "exec",
         name,
         "litestream",
-        "list",
+        "sync",
         "-socket",
         "/run/litestream/control.sock",
-        "-json",
+        "-wait",
+        "-timeout",
+        "10",
+        "/sqlite/app-a_1234567890/app-a.sqlite",
       ]);
-      if (out.code !== 0) return false;
-      const parsed = JSON.parse(out.stdout) as { databases?: unknown[] };
-      return parsed.databases?.length === 2;
-    }, "two dynamically discovered databases");
+      assertEquals(sync.code, 0, sync.stderr);
+      await stopWatcher(name);
 
-    const sync = await run([
-      "docker",
-      "exec",
-      name,
-      "litestream",
-      "sync",
-      "-socket",
-      "/run/litestream/control.sock",
-      "-wait",
-      "-timeout",
-      "10",
-      "/sqlite/app-a_1234567890/app-a.sqlite",
-    ]);
-    assertEquals(sync.code, 0, sync.stderr);
-    await stopWatcher(name);
-
-    for (const suffix of ["-wal", "-shm"]) {
-      await Deno.remove(join(appA, `app-a.sqlite${suffix}`)).catch(() => {});
-    }
-    await startWatcher(name, { data, meta, replica, runtime, configPath });
-    await waitFor(async () => {
-      try {
-        await Deno.stat(join(appA, "app-a.sqlite-wal"));
-        await Deno.stat(join(appA, "app-a.sqlite-shm"));
-        return true;
-      } catch {
-        return false;
+      for (const suffix of ["-wal", "-shm"]) {
+        await bunRuntime.remove(join(appA, `app-a.sqlite${suffix}`)).catch(() => {});
       }
-    }, "Litestream-recreated WAL and SHM files");
+      await startWatcher(name, { data, meta, replica, runtime, configPath });
+      await waitFor(async () => {
+        try {
+          await bunRuntime.stat(join(appA, "app-a.sqlite-wal"));
+          await bunRuntime.stat(join(appA, "app-a.sqlite-shm"));
+          return true;
+        } catch {
+          return false;
+        }
+      }, "Litestream-recreated WAL and SHM files");
 
-    assertEquals((await Deno.stat(join(appA, "app-a.sqlite-wal"))).uid, uidA);
-    assertEquals((await Deno.stat(join(appA, "app-a.sqlite-shm"))).uid, uidA);
-    await runAs(uidA, fixturePath, join(appA, "app-a.sqlite"), "3");
-  } finally {
-    await stopWatcher(name);
-    await Deno.remove(root, { recursive: true }).catch(() => {});
-  }
-});
+      assertEquals((await bunRuntime.stat(join(appA, "app-a.sqlite-wal"))).uid, uidA);
+      assertEquals((await bunRuntime.stat(join(appA, "app-a.sqlite-shm"))).uid, uidA);
+      await runAs(uidA, fixturePath, join(appA, "app-a.sqlite"), "3");
+    } finally {
+      await stopWatcher(name);
+      await bunRuntime.remove(root, { recursive: true }).catch(() => {});
+    }
+  },
+);
 
 async function startWatcher(
   name: string,
-  paths: { data: string; meta: string; replica: string; runtime: string; configPath: string },
+  paths: {
+    data: string;
+    meta: string;
+    replica: string;
+    runtime: string;
+    configPath: string;
+  },
 ): Promise<void> {
   const out = await run([
     "docker",
@@ -203,7 +215,7 @@ async function commandExists(name: string): Promise<boolean> {
 
 async function run(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    const out = await new Deno.Command(args[0]!, {
+    const out = await new bunRuntime.Command(args[0]!, {
       args: args.slice(1),
       stdout: "piped",
       stderr: "piped",
@@ -214,6 +226,10 @@ async function run(args: string[]): Promise<{ code: number; stdout: string; stde
       stderr: new TextDecoder().decode(out.stderr),
     };
   } catch (cause) {
-    return { code: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) };
+    return {
+      code: 1,
+      stdout: "",
+      stderr: cause instanceof Error ? cause.message : String(cause),
+    };
   }
 }

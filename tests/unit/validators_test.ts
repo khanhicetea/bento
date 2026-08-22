@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts";
 import {
   parseAbsolutePath,
   parseAppSlug,
@@ -14,55 +14,53 @@ import { loadStateFromJson, parseDesiredState } from "../../src/schemas/state.ts
 import { createEmptyState, stateToJson } from "../../src/schemas/state.ts";
 import { STATE_SCHEMA_VERSION } from "../../src/version.ts";
 
-Deno.test("parseAppSlug accepts valid slugs", () => {
+bunRuntime.test("parseAppSlug accepts valid slugs", () => {
   assertEquals(parseAppSlug("my-app").ok, true);
   assertEquals(parseAppSlug("ab").ok, true);
 });
 
-Deno.test("parseAppSlug rejects invalid slugs", () => {
+bunRuntime.test("parseAppSlug rejects invalid slugs", () => {
   assertEquals(parseAppSlug("A").ok, false);
   assertEquals(parseAppSlug("1abc").ok, false);
   assertEquals(parseAppSlug("has_underscore").ok, false);
 });
 
-Deno.test("parseDomainName normalizes case", () => {
+bunRuntime.test("parseDomainName normalizes case", () => {
   const r = parseDomainName("Example.COM");
   assertEquals(r.ok, true);
   if (r.ok) assertEquals(r.value, "example.com");
 });
 
-Deno.test("parseSafeRelativePath rejects traversal", () => {
+bunRuntime.test("parseSafeRelativePath rejects traversal", () => {
   assertEquals(parseSafeRelativePath("../etc").ok, false);
   assertEquals(parseSafeRelativePath("/abs").ok, false);
   assertEquals(parseSafeRelativePath("public").ok, true);
 });
 
-Deno.test("parseAbsolutePath rejects relative paths", () => {
+bunRuntime.test("parseAbsolutePath rejects relative paths", () => {
   assertEquals(parseAbsolutePath("/etc/bento/cert.pem").ok, true);
   assertEquals(parseAbsolutePath("cert.pem").ok, false);
   assertEquals(parseAbsolutePath("").ok, false);
 });
 
-Deno.test("parseCronSchedule validates, canonicalizes, and rejects injection", () => {
+bunRuntime.test("parseCronSchedule validates, canonicalizes, and rejects injection", () => {
   const canonical = parseCronSchedule("  */5\t *  * * *  ");
   assertEquals(canonical.ok, true);
   if (canonical.ok) assertEquals(canonical.value, "*/5 * * * *");
-  for (
-    const invalid of [
-      "* * * *",
-      "61 * * * *",
-      "* * * * *; rm -rf /",
-      "* * * * *\nMAILTO=attacker@example.test",
-      "* * * * *\rcommand",
-      "* * * * *%newline",
-      "* * * * *$(id)",
-    ]
-  ) {
+  for (const invalid of [
+    "* * * *",
+    "61 * * * *",
+    "* * * * *; rm -rf /",
+    "* * * * *\nMAILTO=attacker@example.test",
+    "* * * * *\rcommand",
+    "* * * * *%newline",
+    "* * * * *$(id)",
+  ]) {
     assertEquals(parseCronSchedule(invalid).ok, false, invalid);
   }
 });
 
-Deno.test("database version and service validators", () => {
+bunRuntime.test("database version and service validators", () => {
   assertEquals(parsePhpVersion("8.5").ok, true);
   assertEquals(parsePhpVersion("8").ok, false);
   assertEquals(parsePostgresVersion("17").ok, true);
@@ -74,7 +72,7 @@ Deno.test("database version and service validators", () => {
   assertEquals(parseDatabaseService("postgres17.2").ok, false);
 });
 
-Deno.test("empty state round-trips through schema", () => {
+bunRuntime.test("empty state round-trips through schema", () => {
   const state = createEmptyState("2026-01-01T00:00:00.000Z");
   const json = stateToJson(state);
   const loaded = loadStateFromJson(json);
@@ -84,7 +82,7 @@ Deno.test("empty state round-trips through schema", () => {
   assertEquals(loaded.databaseServices.length, 1);
 });
 
-Deno.test("future schema version is rejected without mutation", () => {
+bunRuntime.test("future schema version is rejected without mutation", () => {
   const raw = {
     ...createEmptyState("2026-01-01T00:00:00.000Z"),
     schemaVersion: 999,
@@ -93,15 +91,15 @@ Deno.test("future schema version is rejected without mutation", () => {
   assertEquals(result.ok, false);
 });
 
-Deno.test("corrupt JSON throws", () => {
+bunRuntime.test("corrupt JSON throws", () => {
   assertThrows(() => loadStateFromJson("{not json"), Error);
 });
 
-Deno.test("unwrap throws on error", () => {
+bunRuntime.test("unwrap throws on error", () => {
   assertThrows(() => unwrap(parseAppSlug(""), "slug"), Error);
 });
 
-Deno.test("CLI token rejection: empty, uppercase slug, bad domain, shell cron", () => {
+bunRuntime.test("CLI token rejection: empty, uppercase slug, bad domain, shell cron", () => {
   assertEquals(parseAppSlug("").ok, false);
   assertEquals(parseAppSlug("Upper").ok, false);
   assertEquals(parseDomainName("").ok, false);

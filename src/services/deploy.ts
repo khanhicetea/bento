@@ -2,8 +2,8 @@
  * Webhook deployment queue: auth verification, flocked queue, drain, OPcache cleanup.
  */
 
-import { join } from "@std/path";
-import { encodeHex } from "@std/encoding/hex";
+import { join } from "node:path";
+import { encodeHex } from "../platform/hex.ts";
 import type { AppState, DesiredState, QueuePolicy } from "../domain/state.ts";
 import {
   asDeployJobId,
@@ -18,12 +18,7 @@ import { conflictError, notFoundError, safetyError, validationError } from "../d
 import type { Platform } from "../platform/mod.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
 
-export type DeployJobStatus =
-  | "queued"
-  | "running"
-  | "success"
-  | "failed"
-  | "skipped";
+export type DeployJobStatus = "queued" | "running" | "success" | "failed" | "skipped";
 
 export type DeployJob = {
   id: DeployJobId;
@@ -61,7 +56,9 @@ function deploySurfaceReloadPlan(app: AppState, schedulerRemains: boolean): Relo
     phpFpm: new Set([app.phpService]),
     phpRunner: new Set([runnerService]),
     ...(schedulerRemains
-      ? { cronSchedulers: new Map([[runnerService, new Set([String(app.slug)])]]) }
+      ? {
+          cronSchedulers: new Map([[runnerService, new Set([String(app.slug)])]]),
+        }
       : {}),
   };
 }
@@ -174,7 +171,11 @@ export async function verifyDeploySignature(
   for (const h of [signatureHeader, legacyHeader]) {
     if (!h) continue;
     const m = /^(sha256|sha1)=([0-9a-fA-F]+)$/.exec(h.trim());
-    if (m) candidates.push({ alg: m[1] as "sha256" | "sha1", hex: m[2]!.toLowerCase() });
+    if (m)
+      candidates.push({
+        alg: m[1] as "sha256" | "sha1",
+        hex: m[2]!.toLowerCase(),
+      });
   }
   if (candidates.length === 0) return false;
 
@@ -215,10 +216,7 @@ function constantTimeEqual(a: string, b: string): boolean {
   return ok === 0;
 }
 
-export async function loadQueue(
-  platform: Platform,
-  appHomeHost: string,
-): Promise<DeployQueue> {
+export async function loadQueue(platform: Platform, appHomeHost: string): Promise<DeployQueue> {
   const path = join(appHomeHost, ".bento", "queue.json");
   const lockPath = join(appHomeHost, ".bento", "queue.lock");
   const release = await platform.lock.shared(lockPath);
@@ -246,11 +244,7 @@ export async function saveQueue(
   const lockPath = join(appHomeHost, ".bento", "queue.lock");
   const release = await platform.lock.exclusive(lockPath);
   try {
-    await platform.fs.atomicWriteText(
-      path,
-      `${JSON.stringify(queue, null, 2)}\n`,
-      0o600,
-    );
+    await platform.fs.atomicWriteText(path, `${JSON.stringify(queue, null, 2)}\n`, 0o600);
   } finally {
     await release();
   }
@@ -339,11 +333,7 @@ export async function enqueueDeploy(
     await platform.fs.atomicWriteBytes(payloadPath, rawBody, 0o600);
 
     queue.jobs = retainJobs(queue.jobs);
-    await platform.fs.atomicWriteText(
-      path,
-      `${JSON.stringify(queue, null, 2)}\n`,
-      0o600,
-    );
+    await platform.fs.atomicWriteText(path, `${JSON.stringify(queue, null, 2)}\n`, 0o600);
 
     return { ok: true, status: 202, body: { id, status: "queued" } };
   } finally {
@@ -441,14 +431,16 @@ export async function drainDeploy(
     try {
       // Validate workdir/script
       platform.paths.assertInsideHome(app.home, app.deploy.workdir);
-      const runner = opts?.runCommand ?? (async (argv, e, wd, timeoutMs) => {
-        const r = await platform.process.run(argv, {
-          cwd: wd,
-          env: e,
-          timeoutMs,
+      const runner =
+        opts?.runCommand ??
+        (async (argv, e, wd, timeoutMs) => {
+          const r = await platform.process.run(argv, {
+            cwd: wd,
+            env: e,
+            timeoutMs,
+          });
+          return { code: r.code, log: r.stdout + r.stderr };
         });
-        return { code: r.code, log: r.stdout + r.stderr };
-      });
       const result = await runner(
         app.deploy.argv,
         env,
@@ -481,10 +473,7 @@ export async function drainDeploy(
     try {
       const r = await reset();
       if (!r.ok) {
-        await platform.fs.appendText(
-          logPath,
-          `opcache reset failed: ${r.detail}\n`,
-        );
+        await platform.fs.appendText(logPath, `opcache reset failed: ${r.detail}\n`);
       } else {
         await platform.fs.appendText(logPath, `opcache reset: ${r.detail}\n`);
       }
@@ -507,11 +496,7 @@ export async function drainDeploy(
       latest.jobs = retainJobs(latest.jobs);
       // prune old logs
       await pruneDeployLogs(platform, appHomeHost, latest.jobs);
-      await platform.fs.atomicWriteText(
-        path,
-        `${JSON.stringify(latest, null, 2)}\n`,
-        0o600,
-      );
+      await platform.fs.atomicWriteText(path, `${JSON.stringify(latest, null, 2)}\n`, 0o600);
     } finally {
       await qRelease2();
     }
@@ -529,9 +514,7 @@ async function pruneDeployLogs(
 ): Promise<void> {
   const logsDir = join(appHomeHost, "logs");
   if (!(await platform.fs.exists(logsDir))) return;
-  const keep = new Set(
-    jobs.map((j) => j.logName).filter((x): x is string => !!x),
-  );
+  const keep = new Set(jobs.map((j) => j.logName).filter((x): x is string => !!x));
   const names = await platform.fs.readDir(logsDir);
   for (const n of names) {
     if (n.startsWith("deploy-") && n.endsWith(".log") && !keep.has(n)) {
@@ -540,11 +523,7 @@ async function pruneDeployLogs(
   }
 }
 
-export function deployWebhookInstructions(
-  app: AppState,
-  secret: string,
-  httpsPort = 443,
-): string {
+export function deployWebhookInstructions(app: AppState, secret: string, httpsPort = 443): string {
   const authority = `${app.mainDomain}${httpsPort === 443 ? "" : `:${httpsPort}`}`;
   return [
     `Deploy webhook for app ${app.slug}`,

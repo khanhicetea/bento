@@ -6,8 +6,8 @@
  * data-plane steps soft-skip when those services are not up.
  */
 
-import { assertEquals } from "@std/assert";
-import { join, resolve } from "@std/path";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
+import { join, resolve } from "node:path";
 import { runCli } from "../../src/main.ts";
 
 export type StackHarness = {
@@ -22,7 +22,7 @@ let dockerAvailable: boolean | undefined;
 export async function isDockerAvailable(): Promise<boolean> {
   if (dockerAvailable !== undefined) return dockerAvailable;
   try {
-    const cmd = new Deno.Command("docker", {
+    const cmd = new bunRuntime.Command("docker", {
       args: ["info"],
       stdout: "null",
       stderr: "null",
@@ -39,7 +39,7 @@ export async function isDockerAvailable(): Promise<boolean> {
 export async function isComposeAvailable(): Promise<boolean> {
   if (!(await isDockerAvailable())) return false;
   try {
-    const cmd = new Deno.Command("docker", {
+    const cmd = new bunRuntime.Command("docker", {
       args: ["compose", "version"],
       stdout: "null",
       stderr: "null",
@@ -52,8 +52,8 @@ export async function isComposeAvailable(): Promise<boolean> {
 }
 
 export async function withStack(fn: (h: StackHarness) => Promise<void>): Promise<void> {
-  const stack = await Deno.makeTempDir({ prefix: "bento-int-" });
-  const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+  const stack = await bunRuntime.makeTempDir({ prefix: "bento-int-" });
+  const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
   const harness: StackHarness = {
     stack,
     base,
@@ -62,7 +62,7 @@ export async function withStack(fn: (h: StackHarness) => Promise<void>): Promise
   try {
     await fn(harness);
   } finally {
-    await Deno.remove(stack, { recursive: true }).catch(() => {});
+    await bunRuntime.remove(stack, { recursive: true }).catch(() => {});
   }
 }
 
@@ -72,12 +72,12 @@ export async function bootstrapStack(h: StackHarness): Promise<void> {
 }
 
 export async function readText(path: string): Promise<string> {
-  return await Deno.readTextFile(path);
+  return await bunRuntime.readTextFile(path);
 }
 
 export async function exists(path: string): Promise<boolean> {
   try {
-    await Deno.stat(path);
+    await bunRuntime.stat(path);
     return true;
   } catch {
     return false;
@@ -122,20 +122,19 @@ export async function composeConfigValidate(
   }
   args.push("config", "-q");
   try {
-    const cmd = new Deno.Command("docker", {
+    const cmd = new bunRuntime.Command("docker", {
       args,
       cwd: h.stack,
       stdout: "piped",
       stderr: "piped",
       env: {
-        ...Deno.env.toObject(),
+        ...bunRuntime.env.toObject(),
         // Compose may interpolate; seed from stack .env if present
       },
     });
     // docker compose reads .env from project directory
     const out = await cmd.output();
-    const detail = new TextDecoder().decode(out.stderr) +
-      new TextDecoder().decode(out.stdout);
+    const detail = new TextDecoder().decode(out.stderr) + new TextDecoder().decode(out.stdout);
     return { ok: out.code === 0, detail };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) };
@@ -143,13 +142,10 @@ export async function composeConfigValidate(
 }
 
 /** Soft-check whether a named compose service is running (best-effort). */
-export async function isServiceRunning(
-  h: StackHarness,
-  service: string,
-): Promise<boolean> {
+export async function isServiceRunning(h: StackHarness, service: string): Promise<boolean> {
   if (!(await isDockerAvailable())) return false;
   try {
-    const cmd = new Deno.Command("docker", {
+    const cmd = new bunRuntime.Command("docker", {
       args: ["compose", "ps", "--status", "running", "-q", service],
       cwd: h.stack,
       stdout: "piped",
@@ -163,10 +159,7 @@ export async function isServiceRunning(
   }
 }
 
-export function skipIf(
-  condition: boolean,
-  reason: string,
-): boolean {
+export function skipIf(condition: boolean, reason: string): boolean {
   if (condition) {
     console.log(`  [skip] ${reason}`);
     return true;

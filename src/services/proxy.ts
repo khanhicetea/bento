@@ -54,7 +54,11 @@ export function createProxy(
 
   const domains = { ...state.domains };
   for (const [index, d] of [domain, ...aliases].entries()) {
-    domains[d] = { kind: "proxy", name: asProxySiteName(name), primary: index === 0 };
+    domains[d] = {
+      kind: "proxy",
+      name: asProxySiteName(name),
+      primary: index === 0,
+    };
   }
 
   return {
@@ -115,7 +119,7 @@ export function validateUpstreams(upstreams: string[]): NginxUpstreamConfig {
   return {
     scheme: first.protocol.slice(0, -1) as "http" | "https",
     servers: urls.map((url) =>
-      url.port ? url.host : `${url.hostname}:${url.protocol === "https:" ? "443" : "80"}`
+      url.port ? url.host : `${url.hostname}:${url.protocol === "https:" ? "443" : "80"}`,
     ),
     uri,
   };

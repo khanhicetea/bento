@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "./runtime.ts";
 import type { ProcessRunner, RunOptions, RunResult } from "./interfaces.ts";
 import { platformError } from "../domain/errors.ts";
 
@@ -9,7 +10,7 @@ export function createProcessRunner(): ProcessRunner {
       }
       const [cmd, ...args] = command;
       try {
-        const proc = new Deno.Command(cmd!, {
+        const proc = new RuntimeCommand(cmd!, {
           args,
           cwd: options?.cwd,
           env: options?.env,
@@ -21,9 +22,10 @@ export function createProcessRunner(): ProcessRunner {
 
         if (options?.stdin !== undefined) {
           const writer = child.stdin.getWriter();
-          const data = typeof options.stdin === "string"
-            ? new TextEncoder().encode(options.stdin)
-            : options.stdin;
+          const data =
+            typeof options.stdin === "string"
+              ? new TextEncoder().encode(options.stdin)
+              : options.stdin;
           await writer.write(data);
           await writer.close();
         }
@@ -60,7 +62,9 @@ export function createProcessRunner(): ProcessRunner {
 /** Recording process runner for tests. */
 export function createRecordingProcessRunner(
   handler?: (command: string[], options?: RunOptions) => Promise<RunResult> | RunResult,
-): ProcessRunner & { calls: Array<{ command: string[]; options?: RunOptions }> } {
+): ProcessRunner & {
+  calls: Array<{ command: string[]; options?: RunOptions }>;
+} {
   const calls: Array<{ command: string[]; options?: RunOptions }> = [];
   return {
     calls,

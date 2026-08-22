@@ -75,20 +75,44 @@ export async function sectionApps(ui: WizardUI, ctx: CliContext): Promise<void> 
       ui.header(`App: ${slug}`, `${current.mainDomain} · php ${current.phpVersion}`);
       const action = await ui.menu("Manage application", [
         { label: "Shell", value: "shell", hint: "enter app CLI shell" },
-        { label: "Databases", value: "databases", hint: "list · create · shell" },
-        { label: "Cron jobs", value: "cron", hint: "list · add · edit · remove" },
+        {
+          label: "Databases",
+          value: "databases",
+          hint: "list · create · shell",
+        },
+        {
+          label: "Cron jobs",
+          value: "cron",
+          hint: "list · add · edit · remove",
+        },
         { label: "Workers", value: "workers", hint: "list · add · control" },
         { label: "Domains", value: "domains", hint: "primary · aliases · TLS" },
-        { label: "Access logs", value: "logs", hint: "enable · rotate · report" },
-        { label: "Templates", value: "templates", hint: "vhost · FPM pool · drift" },
+        {
+          label: "Access logs",
+          value: "logs",
+          hint: "enable · rotate · report",
+        },
+        {
+          label: "Templates",
+          value: "templates",
+          hint: "vhost · FPM pool · drift",
+        },
         current.enabled
           ? {
-            label: "Disable application",
-            value: "disable",
-            hint: "stop pool, runner jobs, and vhost",
-          }
-          : { label: "Enable application", value: "enable", hint: "restore runtime configuration" },
-        { label: "Remove application", value: "remove", hint: "durable data is retained" },
+              label: "Disable application",
+              value: "disable",
+              hint: "stop pool, runner jobs, and vhost",
+            }
+          : {
+              label: "Enable application",
+              value: "enable",
+              hint: "restore runtime configuration",
+            },
+        {
+          label: "Remove application",
+          value: "remove",
+          hint: "durable data is retained",
+        },
       ]);
       if (!action) break;
 
@@ -134,11 +158,7 @@ async function wizardSetAppEnabled(
   await ui.pause();
 }
 
-async function wizardRemoveApp(
-  ui: WizardUI,
-  ctx: CliContext,
-  slug: string,
-): Promise<boolean> {
+async function wizardRemoveApp(ui: WizardUI, ctx: CliContext, slug: string): Promise<boolean> {
   const expected = `delete ${slug}`;
   const confirmation = await ui.prompt(`Type '${expected}' to confirm removal`, {
     required: true,
@@ -192,18 +212,8 @@ async function wizardAppCreate(ui: WizardUI, ctx: CliContext): Promise<void> {
   const state = await ctx.store.load();
   const draft = await collectAppCreateDraft(ui, state);
   if (!draft) return;
-  const {
-    slug,
-    domain,
-    php,
-    fpm,
-    docroot,
-    entry,
-    createDb,
-    databaseName,
-    accessLog,
-    noApply,
-  } = draft;
+  const { slug, domain, php, fpm, docroot, entry, createDb, databaseName, accessLog, noApply } =
+    draft;
   const aliases = parseAliases(draft.aliasRaw);
   const {
     databaseEngine,
@@ -359,8 +369,16 @@ export async function collectAppCreateDraft(
     const reviewAction = await ui.menu<"apply" | "change" | "cancel">(
       "Review application",
       [
-        { label: "Apply", value: "apply", hint: "save and reconcile the application" },
-        { label: "Change a field", value: "change", hint: "edit one answer, then review again" },
+        {
+          label: "Apply",
+          value: "apply",
+          hint: "save and reconcile the application",
+        },
+        {
+          label: "Change a field",
+          value: "change",
+          hint: "edit one answer, then review again",
+        },
         { label: "Cancel", value: "cancel", hint: "discard this draft" },
       ],
       { cancelLabel: "Back", quitValue: "cancel", initialValue: "apply" },
@@ -433,33 +451,63 @@ async function chooseAppCreateField(
     [
       { label: "App slug", value: "slug", hint: draft.slug },
       { label: "Primary domain", value: "domain", hint: draft.domain },
-      { label: "Domain aliases", value: "aliasRaw", hint: draft.aliasRaw || "none" },
-      { label: "PHP version", value: "php", hint: draft.php || state.defaults.phpVersion },
-      { label: "FPM profile", value: "fpm", hint: draft.fpm || state.defaults.fpmProfile },
+      {
+        label: "Domain aliases",
+        value: "aliasRaw",
+        hint: draft.aliasRaw || "none",
+      },
+      {
+        label: "PHP version",
+        value: "php",
+        hint: draft.php || state.defaults.phpVersion,
+      },
+      {
+        label: "FPM profile",
+        value: "fpm",
+        hint: draft.fpm || state.defaults.fpmProfile,
+      },
       { label: "Document root", value: "docroot", hint: draft.docroot },
-      { label: "Entrypoint mode", value: "entry", hint: draft.entry || "default" },
+      {
+        label: "Entrypoint mode",
+        value: "entry",
+        hint: draft.entry || "default",
+      },
       {
         label: "Database",
         value: "databaseSelection",
         hint: draft.databaseSelection || `default (${details.effectiveDatabaseEngine})`,
       },
       ...(!details.useFileDatabase
-        ? [{ label: "Create database", value: "createDb" as const, hint: yesNo(draft.createDb) }]
+        ? [
+            {
+              label: "Create database",
+              value: "createDb" as const,
+              hint: yesNo(draft.createDb),
+            },
+          ]
         : []),
       ...(!details.useFileDatabase && draft.createDb
-        ? [{
-          label: "Database name",
-          value: "databaseName" as const,
-          hint: draft.databaseName || "auto",
-        }]
+        ? [
+            {
+              label: "Database name",
+              value: "databaseName" as const,
+              hint: draft.databaseName || "auto",
+            },
+          ]
         : []),
-      { label: "Access logs", value: "accessLog", hint: yesNo(draft.accessLog) },
+      {
+        label: "Access logs",
+        value: "accessLog",
+        hint: yesNo(draft.accessLog),
+      },
       ...(!details.useFileDatabase
-        ? [{
-          label: "Render & apply",
-          value: "noApply" as const,
-          hint: draft.noApply ? "skip" : "yes",
-        }]
+        ? [
+            {
+              label: "Render & apply",
+              value: "noApply" as const,
+              hint: draft.noApply ? "skip" : "yes",
+            },
+          ]
         : []),
     ],
     { cancelLabel: "Back to review", quitValue: "cancel" },
@@ -479,8 +527,11 @@ async function editAppCreateField(
   }
 
   if (
-    field === "slug" || field === "domain" || field === "aliasRaw" ||
-    field === "docroot" || field === "databaseName"
+    field === "slug" ||
+    field === "domain" ||
+    field === "aliasRaw" ||
+    field === "docroot" ||
+    field === "databaseName"
   ) {
     const prompt = appCreatePrompt(field, draft);
     const value = await ui.prompt(prompt.label, prompt.options);
@@ -502,31 +553,47 @@ async function editAppCreateField(
       initialValue: draft.fpm,
     });
   } else if (field === "entry") {
-    selected = await ui.menu("Entrypoint mode", [
-      { label: "Front controller (recommended)", value: "front-controller" },
-      { label: "Legacy (direct PHP file execution)", value: "legacy" },
-      { label: "Keep existing / default", value: "" },
-    ], { ...navigation, initialValue: draft.entry });
+    selected = await ui.menu(
+      "Entrypoint mode",
+      [
+        { label: "Front controller (recommended)", value: "front-controller" },
+        { label: "Legacy (direct PHP file execution)", value: "legacy" },
+        { label: "Keep existing / default", value: "" },
+      ],
+      { ...navigation, initialValue: draft.entry },
+    );
   } else if (field === "databaseSelection") {
     selected = await ui.menu("Database", appCreateDatabaseChoices(state, draft), {
       ...navigation,
       initialValue: draft.databaseSelection,
     });
   } else if (field === "createDb") {
-    selected = await ui.menu<boolean | "__cancel">("Create a namespaced database for this app?", [
-      { label: "No", value: false },
-      { label: "Yes", value: true },
-    ], { ...navigation, initialValue: draft.createDb });
+    selected = await ui.menu<boolean | "__cancel">(
+      "Create a namespaced database for this app?",
+      [
+        { label: "No", value: false },
+        { label: "Yes", value: true },
+      ],
+      { ...navigation, initialValue: draft.createDb },
+    );
   } else if (field === "accessLog") {
-    selected = await ui.menu<boolean | "__cancel">("Enable per-app access logs?", [
-      { label: "No", value: false },
-      { label: "Yes", value: true },
-    ], { ...navigation, initialValue: draft.accessLog });
+    selected = await ui.menu<boolean | "__cancel">(
+      "Enable per-app access logs?",
+      [
+        { label: "No", value: false },
+        { label: "Yes", value: true },
+      ],
+      { ...navigation, initialValue: draft.accessLog },
+    );
   } else {
-    selected = await ui.menu<boolean | "__cancel">("Render & apply after save?", [
-      { label: "Yes", value: false },
-      { label: "Skip", value: true },
-    ], { ...navigation, initialValue: draft.noApply });
+    selected = await ui.menu<boolean | "__cancel">(
+      "Render & apply after save?",
+      [
+        { label: "Yes", value: false },
+        { label: "Skip", value: true },
+      ],
+      { ...navigation, initialValue: draft.noApply },
+    );
   }
 
   if (selected === null) return "back";
@@ -634,13 +701,14 @@ function appCreateDatabaseChoices(
   const choices: MenuChoice<string>[] = state.databaseServices.map((service) => ({
     label: `${service.engine}: ${service.version}`,
     value: `${service.engine}:${service.service}`,
-    hint: existing?.database.engine !== "sqlite" &&
-        existing?.database.engine !== "litestream" &&
-        existing?.database.service === service.service
-      ? "current"
-      : state.defaults.database.service === service.service
-      ? "default"
-      : service.service,
+    hint:
+      existing?.database.engine !== "sqlite" &&
+      existing?.database.engine !== "litestream" &&
+      existing?.database.service === service.service
+        ? "current"
+        : state.defaults.database.service === service.service
+          ? "default"
+          : service.service,
   }));
   choices.push({
     label: "SQLite",
@@ -650,15 +718,15 @@ function appCreateDatabaseChoices(
   choices.push({
     label: "Litestream",
     value: "litestream",
-    hint: existing?.database.engine === "litestream"
-      ? "current"
-      : "SQLite · continuous S3 replication",
+    hint:
+      existing?.database.engine === "litestream" ? "current" : "SQLite · continuous S3 replication",
   });
   if (existing) {
     choices.unshift({
-      label: existing.database.engine === "sqlite" || existing.database.engine === "litestream"
-        ? `Keep current (${existing.database.engine})`
-        : `Keep current (${existing.database.engine}: ${existing.database.service})`,
+      label:
+        existing.database.engine === "sqlite" || existing.database.engine === "litestream"
+          ? `Keep current (${existing.database.engine})`
+          : `Keep current (${existing.database.engine}: ${existing.database.service})`,
       value: "",
     });
   } else {
@@ -676,7 +744,8 @@ function appCreateDatabaseDetails(state: DesiredState, draft: AppCreateDraft) {
     ? draft.databaseSelection.split(":", 2)
     : [undefined, undefined];
   const databaseEngine = rawEngine as DatabaseEngine | undefined;
-  const effectiveDatabaseEngine = (databaseEngine ?? existing?.database.engine ??
+  const effectiveDatabaseEngine = (databaseEngine ??
+    existing?.database.engine ??
     state.defaults.database.engine) as DatabaseEngine;
   const useSqlite = effectiveDatabaseEngine === "sqlite";
   const useLitestream = effectiveDatabaseEngine === "litestream";
@@ -739,11 +808,14 @@ function appCreateSummaryRows(
       ["Render & apply", draft.noApply ? "skip" : "yes"],
     ],
   ];
-  return step === undefined || step === 4 ? groups.flat() : groups[step] ?? [];
+  return step === undefined || step === 4 ? groups.flat() : (groups[step] ?? []);
 }
 
 function parseAliases(raw: string): string[] {
-  return raw.split(",").map((value) => value.trim()).filter(Boolean);
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 function validateDomainAliases(raw: string): string | null {
@@ -769,11 +841,7 @@ function yesNo(value: boolean): string {
   return value ? "yes" : "no";
 }
 
-async function sectionAppDatabases(
-  ui: WizardUI,
-  ctx: CliContext,
-  slug: string,
-): Promise<void> {
+async function sectionAppDatabases(ui: WizardUI, ctx: CliContext, slug: string): Promise<void> {
   while (true) {
     const state = await ctx.store.load();
     const app = state.apps[slug];
@@ -786,10 +854,7 @@ async function sectionAppDatabases(
         app.databases.length === 1 ? "" : "s"
       } · multiple kinds allowed`,
     );
-    ui.table(
-      ["kind", "service / files", "databases"],
-      appDatabaseSummaryRows(app),
-    );
+    ui.table(["kind", "service / files", "databases"], appDatabaseSummaryRows(app));
     ui.blank();
     const action = await ui.menu("Select a binding", [
       ...appDatabaseMenuChoices(app),
@@ -908,9 +973,7 @@ function sqliteBindingSummary(bindings: SqliteBinding[]): string {
   return `${sqliteBindingCount(bindings)} · ${sqliteModeSummary(bindings)}`;
 }
 
-export function sqliteDatabaseMenuChoices(
-  bindings: SqliteBinding[],
-): MenuChoice<string>[] {
+export function sqliteDatabaseMenuChoices(bindings: SqliteBinding[]): MenuChoice<string>[] {
   return bindings.map((binding) => ({
     label: `${binding.engine === "litestream" ? "Litestream" : "Local"} · ${binding.file.id}`,
     value: databaseBindingKey(binding),
@@ -937,7 +1000,9 @@ async function sectionAppSqliteDatabases(
         binding.engine === "litestream" ? "Litestream" : "Local",
         sqliteContainerPath(binding.file.id, app.slug, binding.engine),
         binding.engine === "litestream"
-          ? state.sqliteBackup?.enabled ? "continuous S3" : "disabled"
+          ? state.sqliteBackup?.enabled
+            ? "continuous S3"
+            : "disabled"
           : "weekly VACUUM + logical .backup",
         await sqliteFileSize(ctx.platform, binding.file.id, app.slug, binding.engine),
       ]),
@@ -962,8 +1027,8 @@ async function sectionAppDatabaseBinding(
     const state = await ctx.store.load();
     const app = state.apps[slug];
     if (!app) return;
-    const binding = app.databases.find((entry) =>
-      databaseBindingKey(entry) === databaseBindingKey(selected)
+    const binding = app.databases.find(
+      (entry) => databaseBindingKey(entry) === databaseBindingKey(selected),
     );
     if (!binding) return;
 
@@ -981,7 +1046,9 @@ async function sectionAppDatabaseBinding(
           [
             "backup",
             binding.engine === "litestream"
-              ? state.sqliteBackup?.enabled ? "continuous S3" : "disabled"
+              ? state.sqliteBackup?.enabled
+                ? "continuous S3"
+                : "disabled"
               : "logical .backup via bento backup",
           ],
           ...(binding.engine === "litestream"
@@ -1024,23 +1091,24 @@ async function sectionAppDatabaseBinding(
         });
         if (!dbName) continue;
         await ctx.store.withExclusive(async (currentState) => {
-          const next = binding.engine === "postgres"
-            ? await createPostgresAppDatabaseLive(
-              ctx.platform,
-              currentState,
-              slug,
-              dbName,
-              await requirePostgresRootPassword(ctx.platform),
-              binding.service,
-            )
-            : await createAppDatabaseLive(
-              ctx.platform,
-              currentState,
-              slug,
-              dbName,
-              await requireMysqlRootPassword(ctx.platform),
-              binding.service,
-            );
+          const next =
+            binding.engine === "postgres"
+              ? await createPostgresAppDatabaseLive(
+                  ctx.platform,
+                  currentState,
+                  slug,
+                  dbName,
+                  await requirePostgresRootPassword(ctx.platform),
+                  binding.service,
+                )
+              : await createAppDatabaseLive(
+                  ctx.platform,
+                  currentState,
+                  slug,
+                  dbName,
+                  await requireMysqlRootPassword(ctx.platform),
+                  binding.service,
+                );
           const nextApp = next.apps[slug]!;
           const redisShared = await loadRedisPassword(ctx.platform);
           await materializeAppHome(ctx.platform, nextApp, {
@@ -1055,18 +1123,26 @@ async function sectionAppDatabaseBinding(
         await openPostgresShell(
           ui,
           ctx,
-          buildPostgresShellPlan(ctx.platform, { kind: "app", app }, {
-            service: binding.service,
-          }),
+          buildPostgresShellPlan(
+            ctx.platform,
+            { kind: "app", app },
+            {
+              service: binding.service,
+            },
+          ),
           `bento postgres shell --app ${slug}`,
         );
       } else {
         await openMysqlShell(
           ui,
           ctx,
-          buildMysqlShellPlan(ctx.platform, { kind: "app", app }, {
-            service: binding.service,
-          }),
+          buildMysqlShellPlan(
+            ctx.platform,
+            { kind: "app", app },
+            {
+              service: binding.service,
+            },
+          ),
           `bento mysql shell --app ${slug}`,
         );
       }
@@ -1095,7 +1171,11 @@ async function wizardAddAppDatabaseBinding(
       hint: service.service,
     }));
   choices.push(
-    { label: "SQLite", value: "sqlite", hint: "new local database file · weekly VACUUM" },
+    {
+      label: "SQLite",
+      value: "sqlite",
+      hint: "new local database file · weekly VACUUM",
+    },
     {
       label: "Litestream",
       value: "litestream",
@@ -1110,15 +1190,19 @@ async function wizardAddAppDatabaseBinding(
     string | undefined,
   ];
   const fileDatabase = engine === "sqlite" || engine === "litestream";
-  const createDatabase = fileDatabase ||
-    await ui.confirm("Create an initial namespaced logical database?", { defaultYes: true });
-  const databaseName = !fileDatabase && createDatabase
-    ? await ui.prompt("Database name (blank = app slug)", {
-      default: "",
-      format: `${slug} or a name beginning ${slug}_; letters, digits, and underscores only`,
-      validate: (value) => validateAppDatabaseName(value, slug),
-    })
-    : "";
+  const createDatabase =
+    fileDatabase ||
+    (await ui.confirm("Create an initial namespaced logical database?", {
+      defaultYes: true,
+    }));
+  const databaseName =
+    !fileDatabase && createDatabase
+      ? await ui.prompt("Database name (blank = app slug)", {
+          default: "",
+          format: `${slug} or a name beginning ${slug}_; letters, digits, and underscores only`,
+          validate: (value) => validateAppDatabaseName(value, slug),
+        })
+      : "";
   if (databaseName === null) return;
 
   const target = service ? `${engine} · ${service}` : engine;
@@ -1184,11 +1268,7 @@ async function wizardAddAppDatabaseBinding(
   await ui.pause();
 }
 
-async function sectionAppDomains(
-  ui: WizardUI,
-  ctx: CliContext,
-  slug: string,
-): Promise<void> {
+async function sectionAppDomains(ui: WizardUI, ctx: CliContext, slug: string): Promise<void> {
   while (true) {
     const app = (await ctx.store.load()).apps[slug];
     if (!app) return;
@@ -1220,12 +1300,23 @@ async function sectionAppDomains(
           validate: validateDomainAliases,
         });
         if (aliasesRaw === null) continue;
-        const aliases = aliasesRaw.split(",").map((value) => value.trim()).filter(Boolean);
+        const aliases = aliasesRaw
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
         await ctx.store.withExclusive(async (state) => {
-          const result = provisionApp(ctx.platform, state, { slug, domain, aliases });
+          const result = provisionApp(ctx.platform, state, {
+            slug,
+            domain,
+            aliases,
+          });
           await ctx.store.save(result.state);
           await ctx.render.apply(result.state, {
-            reloadPlan: { nginx: true, phpFpm: new Set(), phpRunner: new Set() },
+            reloadPlan: {
+              nginx: true,
+              phpFpm: new Set(),
+              phpRunner: new Set(),
+            },
             skipValidate: false,
             alreadyLocked: true,
           });
@@ -1233,15 +1324,15 @@ async function sectionAppDomains(
         });
         ui.success(`Updated domains for ${slug}`, [domain, ...aliases].join(", "));
       } else {
-        const mode = await ui.menu<"self-ca" | "shared" | "acme" | "external">(
-          "TLS mode",
-          [
-            { label: "Self-CA (private CA, per-site certificate)", value: "self-ca" },
-            { label: "Shared self-signed starter", value: "shared" },
-            { label: "ACME (Let's Encrypt)", value: "acme" },
-            { label: "External certificate files", value: "external" },
-          ],
-        );
+        const mode = await ui.menu<"self-ca" | "shared" | "acme" | "external">("TLS mode", [
+          {
+            label: "Self-CA (private CA, per-site certificate)",
+            value: "self-ca",
+          },
+          { label: "Shared self-signed starter", value: "shared" },
+          { label: "ACME (Let's Encrypt)", value: "acme" },
+          { label: "External certificate files", value: "external" },
+        ]);
         if (!mode) continue;
 
         let tls: TlsMode;
@@ -1273,12 +1364,19 @@ async function sectionAppDomains(
           const now = ctx.platform.clock.nowIso();
           const next = {
             ...state,
-            apps: { ...state.apps, [slug]: { ...current, tls, updatedAt: now } },
+            apps: {
+              ...state.apps,
+              [slug]: { ...current, tls, updatedAt: now },
+            },
             updatedAt: now,
           };
           await ctx.store.save(next);
           await ctx.render.apply(next, {
-            reloadPlan: { nginx: true, phpFpm: new Set(), phpRunner: new Set() },
+            reloadPlan: {
+              nginx: true,
+              phpFpm: new Set(),
+              phpRunner: new Set(),
+            },
             skipValidate: true,
             alreadyLocked: true,
           });

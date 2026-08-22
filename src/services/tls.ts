@@ -5,7 +5,7 @@
  * include the primary domain and aliases as SANs and are renewed during apply.
  */
 
-import { dirname, isAbsolute, join, relative, resolve } from "@std/path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { DesiredState, TlsMode } from "../domain/state.ts";
 import { validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
@@ -15,7 +15,7 @@ export const ACME_ISSUER = "bento_acme";
 export const ACME_STATE_ROOT = "/var/cache/nginx/acme";
 
 function nginxQuoted(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/\"/g, '\\"')}"`;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 /** Render the single native Nginx ACME issuer shared by all ACME sites. */
@@ -47,18 +47,12 @@ export type ResolvedSsl = {
  * Resolve SSL include + snippet generation for a site (app slug or proxy name).
  * `mainDomain` is used for ACME path layout.
  */
-export function resolveSslForSite(
-  tls: TlsMode,
-  siteId: string,
-  mainDomain: string,
-): ResolvedSsl {
+export function resolveSslForSite(tls: TlsMode, siteId: string, mainDomain: string): ResolvedSsl {
   if (tls.kind === "shared") {
     return {
       includePath: "/etc/nginx/snippets/boot-ssl.conf",
       redirectHttps: false,
-      notes: [
-        "Shared TLS uses one self-signed starter certificate for every site.",
-      ],
+      notes: ["Shared TLS uses one self-signed starter certificate for every site."],
     };
   }
 
@@ -166,13 +160,10 @@ export async function validateExternalTlsPaths(
     const abs = isAbsolute(p) ? resolve(p) : resolve(certsDir, p);
     const rel = relative(certsDir, abs);
     if (rel.startsWith("..") || isAbsolute(rel)) {
-      throw validationError(
-        `TLS path must be under stack certs directory (${certsDir}): ${p}`,
-        {
-          recovery:
-            "Place certificate files under the stack certs/ directory and pass paths relative to it, or absolute paths under that tree.",
-        },
-      );
+      throw validationError(`TLS path must be under stack certs directory (${certsDir}): ${p}`, {
+        recovery:
+          "Place certificate files under the stack certs/ directory and pass paths relative to it, or absolute paths under that tree.",
+      });
     }
     return abs;
   };
@@ -222,12 +213,10 @@ function opensslFailure(action: string, stderr: string, stdout: string): Error {
   });
 }
 
-async function runOpenSsl(
-  platform: Platform,
-  args: string[],
-  action: string,
-): Promise<void> {
-  const result = await platform.process.run(["openssl", ...args], { timeoutMs: 30_000 });
+async function runOpenSsl(platform: Platform, args: string[], action: string): Promise<void> {
+  const result = await platform.process.run(["openssl", ...args], {
+    timeoutMs: 30_000,
+  });
   if (result.code !== 0) throw opensslFailure(action, result.stderr, result.stdout);
 }
 
@@ -249,28 +238,32 @@ export async function ensurePrivateCa(platform: Platform): Promise<string> {
   }
 
   if (!hasCert) {
-    await runOpenSsl(platform, [
-      "req",
-      "-x509",
-      "-nodes",
-      "-newkey",
-      "rsa:4096",
-      "-sha256",
-      "-keyout",
-      keyPath,
-      "-out",
-      certPath,
-      "-days",
-      "3650",
-      "-subj",
-      "/CN=Bento Private CA/O=Bento",
-      "-addext",
-      "basicConstraints=critical,CA:TRUE,pathlen:0",
-      "-addext",
-      "keyUsage=critical,keyCertSign,cRLSign",
-      "-addext",
-      "subjectKeyIdentifier=hash",
-    ], "private CA creation");
+    await runOpenSsl(
+      platform,
+      [
+        "req",
+        "-x509",
+        "-nodes",
+        "-newkey",
+        "rsa:4096",
+        "-sha256",
+        "-keyout",
+        keyPath,
+        "-out",
+        certPath,
+        "-days",
+        "3650",
+        "-subj",
+        "/CN=Bento Private CA/O=Bento",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE,pathlen:0",
+        "-addext",
+        "keyUsage=critical,keyCertSign,cRLSign",
+        "-addext",
+        "subjectKeyIdentifier=hash",
+      ],
+      "private CA creation",
+    );
   }
 
   const caValid = await platform.process.run([
@@ -297,15 +290,10 @@ export async function ensurePrivateCa(platform: Platform): Promise<string> {
     "-pubkey",
     "-noout",
   ]);
-  const caKeyPublic = await platform.process.run([
-    "openssl",
-    "pkey",
-    "-in",
-    keyPath,
-    "-pubout",
-  ]);
+  const caKeyPublic = await platform.process.run(["openssl", "pkey", "-in", keyPath, "-pubout"]);
   if (
-    caCertPublic.code !== 0 || caKeyPublic.code !== 0 ||
+    caCertPublic.code !== 0 ||
+    caKeyPublic.code !== 0 ||
     caCertPublic.stdout.trim() !== caKeyPublic.stdout.trim()
   ) {
     throw validationError(`private CA certificate and key do not match under ${caDir}`, {
@@ -327,9 +315,11 @@ async function privateCaLeafIsCurrent(
   caCertPath: string,
 ): Promise<boolean> {
   if (
-    !(await platform.fs.exists(certPath)) || !(await platform.fs.exists(keyPath)) ||
+    !(await platform.fs.exists(certPath)) ||
+    !(await platform.fs.exists(keyPath)) ||
     !(await platform.fs.exists(metadataPath))
-  ) return false;
+  )
+    return false;
   try {
     const metadata = JSON.parse(await platform.fs.readText(metadataPath)) as {
       version?: number;
@@ -364,15 +354,12 @@ async function privateCaLeafIsCurrent(
       "-pubkey",
       "-noout",
     ]);
-    const keyPublic = await platform.process.run([
-      "openssl",
-      "pkey",
-      "-in",
-      keyPath,
-      "-pubout",
-    ]);
-    return certPublic.code === 0 && keyPublic.code === 0 &&
-      certPublic.stdout.trim() === keyPublic.stdout.trim();
+    const keyPublic = await platform.process.run(["openssl", "pkey", "-in", keyPath, "-pubout"]);
+    return (
+      certPublic.code === 0 &&
+      keyPublic.code === 0 &&
+      certPublic.stdout.trim() === keyPublic.stdout.trim()
+    );
   } catch {
     return false;
   }
@@ -391,7 +378,8 @@ export async function ensurePrivateCaSiteCertificate(
   if (domains.length === 0) throw validationError("private CA site requires at least one domain");
   for (const domain of domains) {
     if (
-      domain.length > 253 || domain.includes("..") ||
+      domain.length > 253 ||
+      domain.includes("..") ||
       !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(domain)
     ) {
       throw validationError(`invalid DNS name for private CA certificate: ${domain}`);
@@ -412,14 +400,7 @@ export async function ensurePrivateCaSiteCertificate(
   const extensionsPath = join(sitesDir, `${siteId}.ext.tmp`);
   const metadataPath = join(sitesDir, `${siteId}.json`);
   if (
-    await privateCaLeafIsCurrent(
-      platform,
-      certPath,
-      keyPath,
-      metadataPath,
-      domains,
-      caCertPath,
-    )
+    await privateCaLeafIsCurrent(platform, certPath, keyPath, metadataPath, domains, caCertPath)
   ) {
     await platform.fs.chmod(keyPath, 0o600);
     return { certPath, keyPath };
@@ -440,49 +421,49 @@ export async function ensurePrivateCaSiteCertificate(
   );
 
   try {
-    await runOpenSsl(platform, [
-      "req",
-      "-new",
-      "-nodes",
-      "-newkey",
-      "rsa:2048",
-      "-sha256",
-      "-keyout",
-      keyTempPath,
-      "-out",
-      csrPath,
-      "-subj",
-      `/CN=${domains[0]}`,
-    ], `private CA key/CSR creation for ${siteId}`);
+    await runOpenSsl(
+      platform,
+      [
+        "req",
+        "-new",
+        "-nodes",
+        "-newkey",
+        "rsa:2048",
+        "-sha256",
+        "-keyout",
+        keyTempPath,
+        "-out",
+        csrPath,
+        "-subj",
+        `/CN=${domains[0]}`,
+      ],
+      `private CA key/CSR creation for ${siteId}`,
+    );
     await platform.fs.chmod(keyTempPath, 0o600);
-    await runOpenSsl(platform, [
-      "x509",
-      "-req",
-      "-sha256",
-      "-in",
-      csrPath,
-      "-CA",
-      caCertPath,
-      "-CAkey",
-      caKeyPath,
-      "-CAcreateserial",
-      "-out",
-      certTempPath,
-      "-days",
-      "825",
-      "-extfile",
-      extensionsPath,
-    ], `private CA certificate signing for ${siteId}`);
-    await platform.fs.atomicWriteBytes(
-      keyPath,
-      await platform.fs.readBytes(keyTempPath),
-      0o600,
+    await runOpenSsl(
+      platform,
+      [
+        "x509",
+        "-req",
+        "-sha256",
+        "-in",
+        csrPath,
+        "-CA",
+        caCertPath,
+        "-CAkey",
+        caKeyPath,
+        "-CAcreateserial",
+        "-out",
+        certTempPath,
+        "-days",
+        "825",
+        "-extfile",
+        extensionsPath,
+      ],
+      `private CA certificate signing for ${siteId}`,
     );
-    await platform.fs.atomicWriteBytes(
-      certPath,
-      await platform.fs.readBytes(certTempPath),
-      0o644,
-    );
+    await platform.fs.atomicWriteBytes(keyPath, await platform.fs.readBytes(keyTempPath), 0o600);
+    await platform.fs.atomicWriteBytes(certPath, await platform.fs.readBytes(certTempPath), 0o644);
     await platform.fs.atomicWriteText(
       metadataPath,
       `${JSON.stringify({ version: 1, domains }, null, 2)}\n`,
@@ -505,20 +486,18 @@ export async function ensureManagedTlsCertificates(
 ): Promise<void> {
   for (const app of Object.values(state.apps)) {
     if (app.enabled && app.tls.kind === "self-ca") {
-      await ensurePrivateCaSiteCertificate(
-        platform,
-        String(app.slug),
-        [String(app.mainDomain), ...app.aliases.map(String)],
-      );
+      await ensurePrivateCaSiteCertificate(platform, String(app.slug), [
+        String(app.mainDomain),
+        ...app.aliases.map(String),
+      ]);
     }
   }
   for (const proxy of Object.values(state.proxies)) {
     if (proxy.tls.kind === "self-ca") {
-      await ensurePrivateCaSiteCertificate(
-        platform,
-        `proxy-${proxy.name}`,
-        [String(proxy.mainDomain), ...proxy.aliases.map(String)],
-      );
+      await ensurePrivateCaSiteCertificate(platform, `proxy-${proxy.name}`, [
+        String(proxy.mainDomain),
+        ...proxy.aliases.map(String),
+      ]);
     }
   }
 }
@@ -541,7 +520,7 @@ export async function exportPrivateCaCertificate(
       },
     );
   }
-  if (await platform.fs.exists(destination) && !force) {
+  if ((await platform.fs.exists(destination)) && !force) {
     throw validationError(`CA export destination already exists: ${destination}`, {
       recovery: "Choose another path or pass --force to replace it.",
     });

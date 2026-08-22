@@ -3,8 +3,8 @@
  * template customization/drift, maintenance crontab merge, batched --no-apply.
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertRejects } from "../runtime.ts";
+import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import {
@@ -73,7 +73,7 @@ function testPlatform(
     fs,
     lock: createMemoryLock(),
     process,
-    assets: createAssetResolver(fs, Deno.cwd()),
+    assets: createAssetResolver(fs, bunRuntime.cwd()),
     paths: createPathPolicy(root),
   };
 }
@@ -81,18 +81,18 @@ function testPlatform(
 async function withRoot(
   fn: (root: string, platform: ReturnType<typeof testPlatform>) => Promise<void>,
 ) {
-  const root = await Deno.makeTempDir({ prefix: "bento-phase-b-" });
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-phase-b-" });
   try {
     const platform = testPlatform(root);
     await fn(root, platform);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 }
 
 // --- B1 MySQL shell / size / processlist ------------------------------------
 
-Deno.test("root mysql shell uses generated socket option file", async () => {
+bunRuntime.test("root mysql shell uses generated socket option file", async () => {
   await withRoot(async (_root, platform) => {
     const plan = buildMysqlShellPlan(platform, {
       kind: "root",
@@ -110,16 +110,20 @@ Deno.test("root mysql shell uses generated socket option file", async () => {
   });
 });
 
-Deno.test("mysql shell plan for app uses app credentials on stdin only", async () => {
+bunRuntime.test("mysql shell plan for app uses app credentials on stdin only", async () => {
   await withRoot(async (_root, platform) => {
     const state = createEmptyState();
     const { app } = provisionApp(platform, state, {
       slug: "shop",
       domain: "shop.test",
     });
-    const plan = buildMysqlShellPlan(platform, { kind: "app", app }, {
-      interactive: false,
-    });
+    const plan = buildMysqlShellPlan(
+      platform,
+      { kind: "app", app },
+      {
+        interactive: false,
+      },
+    );
     assertShellPlanSecretsOffArgv(plan, [app.database.password]);
     assertEquals(plan.user, app.database.user);
     assertEquals(plan.service, app.database.service);
@@ -129,14 +133,14 @@ Deno.test("mysql shell plan for app uses app credentials on stdin only", async (
   });
 });
 
-Deno.test("databaseSizeSql and processlistSql contain no credentials", () => {
+bunRuntime.test("databaseSizeSql and processlistSql contain no credentials", () => {
   const size = databaseSizeSql(["app_db"]);
   assertEquals(size.includes("information_schema"), true);
   assertEquals(size.toLowerCase().includes("password"), false);
   assertEquals(processlistSql(), "SHOW FULL PROCESSLIST;");
 });
 
-Deno.test("queryDatabaseSizes uses stdin-staged password", async () => {
+bunRuntime.test("queryDatabaseSizes uses stdin-staged password", async () => {
   await withRoot(async (root) => {
     const password = "root-pw-xyz";
     const platform = testPlatform(root, () => ({
@@ -157,7 +161,7 @@ Deno.test("queryDatabaseSizes uses stdin-staged password", async () => {
   });
 });
 
-Deno.test("queryProcesslist fails closed on non-zero", async () => {
+bunRuntime.test("queryProcesslist fails closed on non-zero", async () => {
   await withRoot(async (root) => {
     const platform = testPlatform(root, () => ({
       code: 1,
@@ -174,7 +178,7 @@ Deno.test("queryProcesslist fails closed on non-zero", async () => {
 
 // --- B2 Worker lifecycle ----------------------------------------------------
 
-Deno.test("worker program names are stable and flat", async () => {
+bunRuntime.test("worker program names are stable and flat", async () => {
   await withRoot(async (_root, platform) => {
     let state = createEmptyState();
     const provisioned = provisionApp(platform, state, {
@@ -182,17 +186,25 @@ Deno.test("worker program names are stable and flat", async () => {
       domain: "demo.test",
     });
     state = provisioned.state;
-    const a = addWorker(state, {
-      app: "demo",
-      name: "queue",
-      command: ["php", "artisan", "queue:work"],
-    }, platform);
+    const a = addWorker(
+      state,
+      {
+        app: "demo",
+        name: "queue",
+        command: ["php", "artisan", "queue:work"],
+      },
+      platform,
+    );
     state = a.state;
-    const b = addWorker(state, {
-      app: "demo",
-      name: "mail",
-      command: ["php", "artisan", "queue:work", "--queue=mail"],
-    }, platform);
+    const b = addWorker(
+      state,
+      {
+        app: "demo",
+        name: "mail",
+        command: ["php", "artisan", "queue:work", "--queue=mail"],
+      },
+      platform,
+    );
     state = b.state;
 
     assertEquals(workerProgramName("demo", "queue"), "worker-demo-queue");
@@ -203,18 +215,24 @@ Deno.test("worker program names are stable and flat", async () => {
     assertEquals(restart.runnerService, "php85-runner");
     assertEquals(restart.command.includes("/command/s6-svc"), true);
     assertEquals(restart.command.includes("-r"), true);
-    assertEquals(restart.command.some((arg) => arg.endsWith("/worker-demo-queue")), true);
+    assertEquals(
+      restart.command.some((arg) => arg.endsWith("/worker-demo-queue")),
+      true,
+    );
     const hup = buildWorkerSignalPlan(state, "demo", "queue", "HUP");
     assertEquals(hup.command.includes("-h"), true);
-    assertEquals(hup.command.some((arg) => arg.endsWith("/worker-demo-queue")), true);
+    assertEquals(
+      hup.command.some((arg) => arg.endsWith("/worker-demo-queue")),
+      true,
+    );
     // Sibling not targeted
     assertEquals(restart.command.includes("worker-demo-mail"), false);
     assertEquals(
-      isScopedWorkerCommand(
-        restart.command,
+      isScopedWorkerCommand(restart.command, "worker-demo-queue", [
         "worker-demo-queue",
-        ["worker-demo-queue", "worker-demo-mail", "scheduler-demo"],
-      ),
+        "worker-demo-mail",
+        "scheduler-demo",
+      ]),
       true,
     );
     // Reload plan for add targets runner only (not nginx)
@@ -225,7 +243,7 @@ Deno.test("worker program names are stable and flat", async () => {
 
 // --- B3 Access logs ---------------------------------------------------------
 
-Deno.test("access log enable is nginx-only and disable preserves path", async () => {
+bunRuntime.test("access log enable is nginx-only and disable preserves path", async () => {
   await withRoot(async (root, platform) => {
     let state = createEmptyState();
     const { state: s1, app } = provisionApp(platform, state, {
@@ -255,7 +273,7 @@ Deno.test("access log enable is nginx-only and disable preserves path", async ()
   });
 });
 
-Deno.test("access log rotate uses reopen not reload", async () => {
+bunRuntime.test("access log rotate uses reopen not reload", async () => {
   await withRoot(async (root, platform) => {
     let state = createEmptyState();
     state = provisionApp(platform, state, {
@@ -284,7 +302,7 @@ Deno.test("access log rotate uses reopen not reload", async () => {
   });
 });
 
-Deno.test("goaccess report plan is one-shot docker run", async () => {
+bunRuntime.test("goaccess report plan is one-shot docker run", async () => {
   await withRoot(async (root, platform) => {
     const plan = buildGoAccessReportPlan(platform, "demo", { dryRun: true });
     assertEquals(plan.command[0], "docker");
@@ -297,7 +315,7 @@ Deno.test("goaccess report plan is one-shot docker run", async () => {
   });
 });
 
-Deno.test("goaccess terminal plan attaches the one-shot container", async () => {
+bunRuntime.test("goaccess terminal plan attaches the one-shot container", async () => {
   await withRoot(async (_root, platform) => {
     const plan = buildGoAccessReportPlan(platform, "demo", {
       attach: true,
@@ -307,13 +325,16 @@ Deno.test("goaccess terminal plan attaches the one-shot container", async () => 
     assertEquals(plan.command.includes("--rm"), true);
     assertEquals(plan.command.includes("-it"), true);
     assertEquals(plan.command.includes("-o"), false);
-    assertEquals(plan.command.some((arg) => arg.includes("demo.access.log")), true);
+    assertEquals(
+      plan.command.some((arg) => arg.includes("demo.access.log")),
+      true,
+    );
   });
 });
 
 // --- B4 Template customization + drift --------------------------------------
 
-Deno.test("prepare custom template copies upstream once and preserves edits", async () => {
+bunRuntime.test("prepare custom template copies upstream once and preserves edits", async () => {
   await withRoot(async (_root, platform) => {
     let state = createEmptyState();
     state = provisionApp(platform, state, {
@@ -332,7 +353,7 @@ Deno.test("prepare custom template copies upstream once and preserves edits", as
   });
 });
 
-Deno.test("custom template provenance round-trip and return preserves file", async () => {
+bunRuntime.test("custom template provenance round-trip and return preserves file", async () => {
   await withRoot(async (root, platform) => {
     let state = createEmptyState();
     state = provisionApp(platform, state, {
@@ -381,12 +402,7 @@ Deno.test("custom template provenance round-trip and return preserves file", asy
     const drifted = await detectTemplateDrift(platform, state, "demo");
     assertEquals(drifted[0]?.drifted, true);
 
-    const returned = returnToUpstreamTemplate(
-      state,
-      "demo",
-      "vhost",
-      platform.clock.nowIso(),
-    );
+    const returned = returnToUpstreamTemplate(state, "demo", "vhost", platform.clock.nowIso());
     assertEquals(returned.state.apps["demo"]!.vhostTemplate.kind, "upstream");
     assertEquals(returned.preservedPath, selected.recordedPath);
     // custom source still on disk
@@ -394,7 +410,7 @@ Deno.test("custom template provenance round-trip and return preserves file", asy
   });
 });
 
-Deno.test("upstream template digest is stable for same content", async () => {
+bunRuntime.test("upstream template digest is stable for same content", async () => {
   await withRoot(async (_root, platform) => {
     const a = await upstreamTemplateDigest(platform, "vhost");
     const b = await upstreamTemplateDigest(platform, "vhost");
@@ -405,12 +421,10 @@ Deno.test("upstream template digest is stable for same content", async () => {
 
 // --- B5 Host maintenance / crontab ------------------------------------------
 
-Deno.test("crontab merge preserves unrelated entries", () => {
-  const existing = [
-    "MAILTO=ops@example.com",
-    "0 1 * * * /usr/local/bin/host-backup",
-    "",
-  ].join("\n");
+bunRuntime.test("crontab merge preserves unrelated entries", () => {
+  const existing = ["MAILTO=ops@example.com", "0 1 * * * /usr/local/bin/host-backup", ""].join(
+    "\n",
+  );
 
   const fragment = maintenanceCronFragment({
     bentoBin: "/usr/local/bin/bento",
@@ -426,7 +440,10 @@ Deno.test("crontab merge preserves unrelated entries", () => {
   assertEquals(installed.crontab.includes("MAILTO=ops@example.com"), true);
 
   // idempotent re-install
-  const again = mergeCrontab(installed.crontab, { action: "install", fragment });
+  const again = mergeCrontab(installed.crontab, {
+    action: "install",
+    fragment,
+  });
   // may still be "installed" if normalize differs slightly, but unrelated stay
   assertEquals(again.crontab.includes("host-backup"), true);
   // only one BEGIN marker
@@ -439,7 +456,7 @@ Deno.test("crontab merge preserves unrelated entries", () => {
   assertEquals(removed.crontab.includes("bento"), false);
 });
 
-Deno.test("stripManagedBlock removes only bento section", () => {
+bunRuntime.test("stripManagedBlock removes only bento section", () => {
   const body = [
     "A=1",
     CRON_BEGIN_MARKER,
@@ -453,23 +470,20 @@ Deno.test("stripManagedBlock removes only bento section", () => {
   assertEquals(stripped.includes("bento"), false);
 });
 
-Deno.test("maintenance prunes old rotated logs and keeps active", async () => {
+bunRuntime.test("maintenance prunes old rotated logs and keeps active", async () => {
   await withRoot(async (root, platform) => {
     const dir = join(root, "logs", "nginx");
     await platform.fs.mkdirp(dir, 0o755);
     await platform.fs.writeText(join(dir, "demo.access.log"), "active\n");
-    await platform.fs.writeText(
-      join(dir, "demo.access.log.2020-01-01T00-00-00-000Z"),
-      "old\n",
-    );
+    await platform.fs.writeText(join(dir, "demo.access.log.2020-01-01T00-00-00-000Z"), "old\n");
     // stamp extraction
-    assertEquals(
-      extractStampMs("demo.access.log.2020-01-01T00-00-00-000Z") !== undefined,
-      true,
-    );
+    assertEquals(extractStampMs("demo.access.log.2020-01-01T00-00-00-000Z") !== undefined, true);
 
     const result = await runStackMaintenance(platform, { retainDays: 14 });
-    assertEquals(result.notes.some((n) => n.includes("In-runner s6 service logs")), true);
+    assertEquals(
+      result.notes.some((n) => n.includes("In-runner s6 service logs")),
+      true,
+    );
     assertEquals(await platform.fs.exists(join(dir, "demo.access.log")), true);
     assertEquals(
       await platform.fs.exists(join(dir, "demo.access.log.2020-01-01T00-00-00-000Z")),
@@ -480,7 +494,7 @@ Deno.test("maintenance prunes old rotated logs and keeps active", async () => {
 
 // --- B6 Deferred / batched mutations ----------------------------------------
 
-Deno.test("multiple --no-apply mutations then single apply is one transaction", async () => {
+bunRuntime.test("multiple --no-apply mutations then single apply is one transaction", async () => {
   await withRoot(async (root, platform) => {
     const store = new StateStore(platform);
     const render = new RenderService(platform);
@@ -496,23 +510,25 @@ Deno.test("multiple --no-apply mutations then single apply is one transaction", 
         slug: "two",
         domain: "two.test",
       }).state;
-      next = addWorker(next, {
-        app: "one",
-        name: "q",
-        command: ["php", "artisan", "queue:work"],
-      }, platform).state;
-      next = addWorker(next, {
-        app: "two",
-        name: "q",
-        command: ["sleep", "infinity"],
-      }, platform).state;
-      const access = setAppAccessLog(
+      next = addWorker(
         next,
-        "one",
-        true,
-        platform.clock.nowIso(),
+        {
+          app: "one",
+          name: "q",
+          command: ["php", "artisan", "queue:work"],
+        },
         platform,
-      );
+      ).state;
+      next = addWorker(
+        next,
+        {
+          app: "two",
+          name: "q",
+          command: ["sleep", "infinity"],
+        },
+        platform,
+      ).state;
+      const access = setAppAccessLog(next, "one", true, platform.clock.nowIso(), platform);
       await store.save(access.state);
       return access.state;
     });
@@ -529,15 +545,18 @@ Deno.test("multiple --no-apply mutations then single apply is one transaction", 
     });
     // One result with both apps rendered
     const vhosts = result.files.filter((f) => f.relPath.startsWith("nginx/sites/"));
-    assertEquals(vhosts.some((f) => f.relPath.includes("one.conf")), true);
-    assertEquals(vhosts.some((f) => f.relPath.includes("two.conf")), true);
+    assertEquals(
+      vhosts.some((f) => f.relPath.includes("one.conf")),
+      true,
+    );
+    assertEquals(
+      vhosts.some((f) => f.relPath.includes("two.conf")),
+      true,
+    );
     const oneVhost = vhosts.find((f) => f.relPath.includes("one.conf"));
     assertEquals(String(oneVhost?.content ?? "").includes("access_log"), true);
 
     // generation metadata written once
-    assertEquals(
-      await platform.fs.exists(join(root, "generated", ".generation.json")),
-      true,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated", ".generation.json")), true);
   });
 });

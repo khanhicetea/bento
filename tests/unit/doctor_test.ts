@@ -1,5 +1,5 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
-import { dirname } from "@std/path";
+import { runtime as bunRuntime, assertEquals, assertStringIncludes } from "../runtime.ts";
+import { dirname } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
 import { createFixedClock } from "../../src/platform/clock.ts";
@@ -45,7 +45,11 @@ function healthyCommand(command: string[]): RunResult {
   }
   if (command[0] === "timedatectl") return { code: 0, stdout: "yes\n", stderr: "" };
   if (command[0] === "ss") {
-    return { code: 0, stdout: "LISTEN 0 128 0.0.0.0:80 0.0.0.0:*\n", stderr: "" };
+    return {
+      code: 0,
+      stdout: "LISTEN 0 128 0.0.0.0:80 0.0.0.0:*\n",
+      stderr: "",
+    };
   }
   if (command[0] === "docker" && command[1] === "version") {
     return { code: 0, stdout: "25.0.0\n", stderr: "" };
@@ -59,34 +63,39 @@ function healthyCommand(command: string[]): RunResult {
   return { code: 0, stdout: "ok\n", stderr: "" };
 }
 
-Deno.test("doctor reports invalid stack environment and incomplete generation instead of throwing", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-doctor-env-" });
-  try {
-    const platform = testPlatform(root);
-    await platform.fs.writeText(
-      platform.paths.paths.envFile,
-      "NGINX_HOST_NETWORK=perhaps\n",
-      0o600,
-    );
-    await platform.fs.mkdirp(platform.paths.paths.generatedDir);
-    await platform.fs.writeText(
-      `${platform.paths.paths.generatedDir}/.generation.json`,
-      JSON.stringify({ managedFiles: ["nginx/missing.conf"] }),
-      0o644,
-    );
+bunRuntime.test(
+  "doctor reports invalid stack environment and incomplete generation instead of throwing",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-doctor-env-" });
+    try {
+      const platform = testPlatform(root);
+      await platform.fs.writeText(
+        platform.paths.paths.envFile,
+        "NGINX_HOST_NETWORK=perhaps\n",
+        0o600,
+      );
+      await platform.fs.mkdirp(platform.paths.paths.generatedDir);
+      await platform.fs.writeText(
+        `${platform.paths.paths.generatedDir}/.generation.json`,
+        JSON.stringify({ managedFiles: ["nginx/missing.conf"] }),
+        0o644,
+      );
 
-    const report = await runDoctor(platform, createEmptyState(platform.clock.nowIso()));
-    assertEquals(report.checks.find((check) => check.id === "stack-environment")?.status, "fail");
-    const generation = report.checks.find((check) => check.id === "generation");
-    assertEquals(generation?.status, "fail");
-    assertStringIncludes(generation?.detail ?? "", "managed generated file");
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      const report = await runDoctor(platform, createEmptyState(platform.clock.nowIso()));
+      assertEquals(report.checks.find((check) => check.id === "stack-environment")?.status, "fail");
+      const generation = report.checks.find((check) => check.id === "generation");
+      assertEquals(generation?.status, "fail");
+      assertStringIncludes(generation?.detail ?? "", "managed generated file");
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("doctor runs a read-only quick_check for SQLite bindings", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-doctor-sqlite-" });
+bunRuntime.test("doctor runs a read-only quick_check for SQLite bindings", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-doctor-sqlite-",
+  });
   try {
     const platform = testPlatform(root);
     const provisioned = provisionApp(platform, createEmptyState(platform.clock.nowIso()), {
@@ -107,21 +116,36 @@ Deno.test("doctor runs a read-only quick_check for SQLite bindings", async () =>
     assertEquals(call?.command.includes("-readonly"), true);
     assertEquals(call?.command.includes("PRAGMA quick_check;"), true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("doctor output groups categories once and collects failures at the bottom", () => {
+bunRuntime.test("doctor output groups categories once and collects failures at the bottom", () => {
   const output = formatDoctor({
     generatedAt: "2026-07-28T12:00:00.000Z",
     stackRoot: "/srv/bento",
     ok: false,
     checks: [
       { id: "disk", category: "storage", status: "pass", detail: "ok" },
-      { id: "docker", category: "runtime", status: "fail", detail: "daemon unavailable" },
-      { id: "clock", category: "host", status: "warn", detail: "NTP unknown" },
+      {
+        id: "docker",
+        category: "runtime",
+        status: "fail",
+        detail: "daemon unavailable",
+      },
+      {
+        id: "clock",
+        category: "host",
+        status: "warn",
+        detail: "NTP unknown",
+      },
       { id: "volume", category: "storage", status: "pass", detail: "ok" },
-      { id: "nginx", category: "health", status: "fail", detail: "not running" },
+      {
+        id: "nginx",
+        category: "health",
+        status: "fail",
+        detail: "not running",
+      },
     ],
     summary: { pass: 2, warn: 1, fail: 2 },
   });

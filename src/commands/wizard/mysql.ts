@@ -1,4 +1,4 @@
-import { basename } from "@std/path";
+import { basename } from "node:path";
 import type { AppState } from "../../domain/state.ts";
 import { parseAbsolutePath, parseMysqlVersion } from "../../schemas/validators.ts";
 import {
@@ -34,9 +34,18 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
     );
     ui.blank();
     const action = await ui.menu("MySQL actions", [
-      { label: "Open shell", value: "shell", hint: "root shell", disabled: versions.length === 0 },
+      {
+        label: "Open shell",
+        value: "shell",
+        hint: "root shell",
+        disabled: versions.length === 0,
+      },
       { label: "Add version", value: "add", hint: "new MySQL service" },
-      { label: "Database sizes", value: "size", disabled: versions.length === 0 },
+      {
+        label: "Database sizes",
+        value: "size",
+        disabled: versions.length === 0,
+      },
       { label: "Backup", value: "backup", hint: "MySQL database · app · all" },
       { label: "Restore", value: "restore", hint: "recent backup or file" },
     ]);
@@ -53,7 +62,10 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
         await ctx.store.withExclusive(async (current) => {
           const next = addMysqlVersion(current, version);
           await ctx.store.save(next);
-          await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });
+          await ctx.render.apply(next, {
+            skipValidate: true,
+            alreadyLocked: true,
+          });
           return next;
         });
         ui.success(`Added MySQL ${version}`);
@@ -64,10 +76,13 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
           await ui.pause();
           continue;
         }
-        const service = services.length === 1 ? services[0]! : await ui.menu(
-          "MySQL service",
-          services.map((value) => ({ label: value, value })),
-        );
+        const service =
+          services.length === 1
+            ? services[0]!
+            : await ui.menu(
+                "MySQL service",
+                services.map((value) => ({ label: value, value })),
+              );
         if (!service) continue;
         await openMysqlShell(
           ui,
@@ -91,10 +106,7 @@ export async function sectionMysql(ui: WizardUI, ctx: CliContext): Promise<void>
             ]);
           }
         }
-        ui.table(
-          ["service", "database", "tables", "data_size", "index_size", "total_size"],
-          rows,
-        );
+        ui.table(["service", "database", "tables", "data_size", "index_size", "total_size"], rows);
       } else if (action === "backup") {
         await wizardDatabaseBackup(ui, ctx, "mysql");
       } else {
@@ -120,8 +132,11 @@ export function wizardBackupDatabases(
 ): WizardBackupDatabase[] {
   return app.databases.flatMap((binding) =>
     binding.engine === engine
-      ? binding.databases.map((database) => ({ name: database.name, service: binding.service }))
-      : []
+      ? binding.databases.map((database) => ({
+          name: database.name,
+          service: binding.service,
+        }))
+      : [],
   );
 }
 
@@ -159,26 +174,28 @@ export async function wizardDatabaseBackup(
   let slug: string | undefined;
   let database: string | undefined;
   if (scope !== "all") {
-    slug = await ui.menu(
-      "Application",
-      apps.map(({ app, databases }) => ({
-        label: app.slug,
-        value: app.slug,
-        hint: `${databases.length} ${engineLabel} database${databases.length === 1 ? "" : "s"}`,
-      })),
-    ) ?? undefined;
+    slug =
+      (await ui.menu(
+        "Application",
+        apps.map(({ app, databases }) => ({
+          label: app.slug,
+          value: app.slug,
+          hint: `${databases.length} ${engineLabel} database${databases.length === 1 ? "" : "s"}`,
+        })),
+      )) ?? undefined;
     if (!slug) return;
 
     if (scope === "database") {
       const app = state.apps[slug]!;
-      database = await ui.menu(
-        `${engineLabel} database`,
-        wizardBackupDatabases(app, engine).map((db) => ({
-          label: db.name,
-          value: db.name,
-          hint: db.service,
-        })),
-      ) ?? undefined;
+      database =
+        (await ui.menu(
+          `${engineLabel} database`,
+          wizardBackupDatabases(app, engine).map((db) => ({
+            label: db.name,
+            value: db.name,
+            hint: db.service,
+          })),
+        )) ?? undefined;
       if (!database) return;
     }
   }
@@ -190,11 +207,13 @@ export async function wizardDatabaseBackup(
   ]);
   if (!compress) return;
 
-  ui.message(pcDim(
-    `scriptable: bento backup ${scope === "all" ? "--all" : `--app ${slug}`}${
-      database ? ` --database ${database}` : ""
-    } --engine ${engine}${compress === "gzip" ? " --gzip" : compress === "none" ? " --none" : ""}`,
-  ));
+  ui.message(
+    pcDim(
+      `scriptable: bento backup ${scope === "all" ? "--all" : `--app ${slug}`}${
+        database ? ` --database ${database}` : ""
+      } --engine ${engine}${compress === "gzip" ? " --gzip" : compress === "none" ? " --none" : ""}`,
+    ),
+  );
   if (!(await ui.confirm("Start backup?", { defaultYes: true }))) return;
 
   const artifacts = await runDatabaseBackup(ctx.platform, state, {
@@ -210,11 +229,7 @@ export async function wizardDatabaseBackup(
   );
   ui.table(
     ["database", "size", "file"],
-    artifacts.map((artifact) => [
-      artifact.database,
-      formatBytes(artifact.bytes),
-      artifact.path,
-    ]),
+    artifacts.map((artifact) => [artifact.database, formatBytes(artifact.bytes), artifact.path]),
   );
 }
 
@@ -237,13 +252,14 @@ export async function wizardDatabaseRestore(ui: WizardUI, ctx: CliContext): Prom
     { label: "Enter another path…", value: customPath },
   ]);
   if (!source) return;
-  const file = source === customPath
-    ? await ui.prompt("Backup file path", {
-      required: true,
-      format: "an absolute host path",
-      validate: fieldValidator(parseAbsolutePath),
-    })
-    : source;
+  const file =
+    source === customPath
+      ? await ui.prompt("Backup file path", {
+          required: true,
+          format: "an absolute host path",
+          validate: fieldValidator(parseAbsolutePath),
+        })
+      : source;
   if (!file) return;
 
   const slug = await ui.menu(
@@ -267,9 +283,13 @@ export async function wizardDatabaseRestore(ui: WizardUI, ctx: CliContext): Prom
     { label: "New database…", value: newTarget },
   ]);
   if (!selectedTarget) return;
-  const target = selectedTarget === newTarget
-    ? await ui.prompt("New database name", { default: `${slug}_restored`, required: true })
-    : selectedTarget;
+  const target =
+    selectedTarget === newTarget
+      ? await ui.prompt("New database name", {
+          default: `${slug}_restored`,
+          required: true,
+        })
+      : selectedTarget;
   if (!target) return;
 
   let replaceOriginal: string | undefined;
@@ -294,11 +314,13 @@ export async function wizardDatabaseRestore(ui: WizardUI, ctx: CliContext): Prom
     if (!(await ui.confirm("Start restore?"))) return;
   }
 
-  ui.message(pcDim(
-    `scriptable: bento restore --file ${file} --app ${slug} --target ${target}${
-      replaceOriginal ? ` --replace ${replaceOriginal}` : ""
-    }`,
-  ));
+  ui.message(
+    pcDim(
+      `scriptable: bento restore --file ${file} --app ${slug} --target ${target}${
+        replaceOriginal ? ` --replace ${replaceOriginal}` : ""
+      }`,
+    ),
+  );
   await ctx.store.withExclusive(async (current) => {
     const next = await runDatabaseRestore(ctx.platform, current, {
       file,

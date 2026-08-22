@@ -94,17 +94,17 @@ export const APP_HOME_ROOT = "/home";
 /** Named FPM capacity profiles. */
 export type FpmPoolProfile =
   | {
-    manager: "dynamic";
-    maxChildren: number;
-    startServers: number;
-    minSpare: number;
-    maxSpare: number;
-  }
+      manager: "dynamic";
+      maxChildren: number;
+      startServers: number;
+      minSpare: number;
+      maxSpare: number;
+    }
   | {
-    manager: "ondemand";
-    maxChildren: number;
-    processIdleTimeout: string;
-  };
+      manager: "ondemand";
+      maxChildren: number;
+      processIdleTimeout: string;
+    };
 
 export const FPM_PROFILES: Readonly<Record<string, FpmPoolProfile>> = {
   tiny: {

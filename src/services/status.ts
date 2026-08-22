@@ -98,10 +98,7 @@ type DatabaseVersionStatus = {
   healthDetail?: string;
 };
 
-export async function buildStatus(
-  platform: Platform,
-  state: DesiredState,
-): Promise<StatusReport> {
+export async function buildStatus(platform: Platform, state: DesiredState): Promise<StatusReport> {
   const warnings = capacityWarnings(state);
   const notes: string[] = [];
   const composeEnvironment = await loadStackComposeEnvironment(platform);
@@ -113,7 +110,8 @@ export async function buildStatus(
     warnings.push("Nginx bridge-mode port settings are ignored while host networking is active");
   }
   if (
-    !nginxEnvironment.hostNetwork && nginxEnvironment.httpPort === undefined &&
+    !nginxEnvironment.hostNetwork &&
+    nginxEnvironment.httpPort === undefined &&
     nginxEnvironment.httpsPort === undefined
   ) {
     notes.push("Nginx uses the private stack network and has no host ports published");
@@ -171,14 +169,14 @@ export async function buildStatus(
   // remain down/config-ready rather than being reported as healthy.
   const databaseVersions = await Promise.all(
     state.databaseServices.map((managed) =>
-      databaseVersionStatus(platform, state, managed, runningNames)
+      databaseVersionStatus(platform, state, managed, runningNames),
     ),
   );
-  const mysqlVersions = databaseVersions.filter((_, index) =>
-    state.databaseServices[index]?.engine === "mysql"
+  const mysqlVersions = databaseVersions.filter(
+    (_, index) => state.databaseServices[index]?.engine === "mysql",
   );
-  const postgresVersions = databaseVersions.filter((_, index) =>
-    state.databaseServices[index]?.engine === "postgres"
+  const postgresVersions = databaseVersions.filter(
+    (_, index) => state.databaseServices[index]?.engine === "postgres",
   );
 
   return {
@@ -219,24 +217,28 @@ export async function buildStatus(
         tls: a.tls.kind,
         accessLog: a.accessLog,
         databaseEngine: a.database.engine,
-        databaseService: a.database.engine === "sqlite"
-          ? "local-file"
-          : a.database.engine === "litestream"
-          ? "litestream"
-          : a.database.service,
-        databases: a.database.engine === "sqlite" || a.database.engine === "litestream"
-          ? [sqliteContainerPath(a.database.file.id, a.slug, a.database.engine)]
-          : a.database.databases.map((d) => d.name),
+        databaseService:
+          a.database.engine === "sqlite"
+            ? "local-file"
+            : a.database.engine === "litestream"
+              ? "litestream"
+              : a.database.service,
+        databases:
+          a.database.engine === "sqlite" || a.database.engine === "litestream"
+            ? [sqliteContainerPath(a.database.file.id, a.slug, a.database.engine)]
+            : a.database.databases.map((d) => d.name),
         databaseBindings: a.databases.map((database) => ({
           engine: database.engine,
-          service: database.engine === "sqlite"
-            ? "local-file"
-            : database.engine === "litestream"
-            ? "litestream"
-            : database.service,
-          databases: database.engine === "sqlite" || database.engine === "litestream"
-            ? [sqliteContainerPath(database.file.id, a.slug, database.engine)]
-            : database.databases.map((entry) => String(entry.name)),
+          service:
+            database.engine === "sqlite"
+              ? "local-file"
+              : database.engine === "litestream"
+                ? "litestream"
+                : database.service,
+          databases:
+            database.engine === "sqlite" || database.engine === "litestream"
+              ? [sqliteContainerPath(database.file.id, a.slug, database.engine)]
+              : database.databases.map((entry) => String(entry.name)),
         })),
         redisMode: a.redis.mode,
         deploy: a.deploy.enabled,
@@ -270,12 +272,11 @@ async function databaseVersionStatus(
   managed: ManagedDatabaseService,
   runningNames: Set<string> | null,
 ): Promise<DatabaseVersionStatus> {
-  const appCount =
-    Object.values(state.apps).filter((app) =>
-      app.databases.some((database) =>
-        database.engine === managed.engine && database.service === managed.service
-      )
-    ).length;
+  const appCount = Object.values(state.apps).filter((app) =>
+    app.databases.some(
+      (database) => database.engine === managed.engine && database.service === managed.service,
+    ),
+  ).length;
   let health: DatabaseVersionStatus["health"] = "unknown";
   let healthDetail: string | undefined;
   if (runningNames === null) {
@@ -284,13 +285,16 @@ async function databaseVersionStatus(
     health = "down";
     healthDetail = "service not running; config ready for next start";
   } else {
-    const command = managed.engine === "mysql"
-      ? ["mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
-      : ["pg_isready", "--username", "postgres", "--dbname", "postgres"];
-    const probe = await platform.process.run(
-      ["docker", "compose", "exec", "-T", managed.service, ...command],
-      { cwd: platform.paths.paths.root, timeoutMs: 3_000 },
-    ).catch(() => ({ code: 1, stdout: "", stderr: "probe failed" }));
+    const command =
+      managed.engine === "mysql"
+        ? ["mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+        : ["pg_isready", "--username", "postgres", "--dbname", "postgres"];
+    const probe = await platform.process
+      .run(["docker", "compose", "exec", "-T", managed.service, ...command], {
+        cwd: platform.paths.paths.root,
+        timeoutMs: 3_000,
+      })
+      .catch(() => ({ code: 1, stdout: "", stderr: "probe failed" }));
     if (probe.code === 0) health = "ok";
     else {
       health = "error";
@@ -315,10 +319,7 @@ function buildExpectedRoles(
   notes: string[],
 ): RoleStatus[] {
   const roles: RoleStatus[] = [];
-  const push = (
-    name: string,
-    kind: RoleStatus["kind"],
-  ) => {
+  const push = (name: string, kind: RoleStatus["kind"]) => {
     if (running === null) {
       roles.push({
         name,
@@ -372,17 +373,21 @@ function buildExpectedRoles(
  * Returns null when Docker is unavailable.
  */
 async function observeRunningServices(platform: Platform): Promise<Set<string> | null> {
-  const result = await platform.process.run(
-    ["docker", "compose", "ps", "--services", "--status", "running"],
-    { cwd: platform.paths.paths.root, timeoutMs: 4_000 },
-  ).catch(() => ({ code: 1, stdout: "", stderr: "unavailable" }));
+  const result = await platform.process
+    .run(["docker", "compose", "ps", "--services", "--status", "running"], {
+      cwd: platform.paths.paths.root,
+      timeoutMs: 4_000,
+    })
+    .catch(() => ({ code: 1, stdout: "", stderr: "unavailable" }));
 
   if (result.code !== 0) {
     // Older compose may not support --status; try plain ps --services
-    const fallback = await platform.process.run(
-      ["docker", "compose", "ps", "--services"],
-      { cwd: platform.paths.paths.root, timeoutMs: 4_000 },
-    ).catch(() => ({ code: 1, stdout: "", stderr: "unavailable" }));
+    const fallback = await platform.process
+      .run(["docker", "compose", "ps", "--services"], {
+        cwd: platform.paths.paths.root,
+        timeoutMs: 4_000,
+      })
+      .catch(() => ({ code: 1, stdout: "", stderr: "unavailable" }));
     if (fallback.code !== 0) return null;
     // Without status filter we cannot know running; treat as unknown
     return null;
@@ -399,11 +404,12 @@ export function formatStatus(report: StatusReport): string {
   const lines: string[] = [];
   lines.push(`Bento status`);
   lines.push(`  stack: ${report.stackName} (${report.stackRoot})`);
-  const ingressDetail = report.ingress.mode === "host"
-    ? "direct host :80/:443"
-    : `http=${report.ingress.httpPort ?? "internal-only"}, https=${
-      report.ingress.httpsPort ?? "internal-only"
-    }${report.ingress.http3 && report.ingress.httpsPort ? ", HTTP/3 UDP published" : ""}`;
+  const ingressDetail =
+    report.ingress.mode === "host"
+      ? "direct host :80/:443"
+      : `http=${report.ingress.httpPort ?? "internal-only"}, https=${
+          report.ingress.httpsPort ?? "internal-only"
+        }${report.ingress.http3 && report.ingress.httpsPort ? ", HTTP/3 UDP published" : ""}`;
   lines.push(`  ingress: ${report.ingress.mode} (${ingressDetail})`);
   if (report.generation?.renderedAt) {
     lines.push(
@@ -478,9 +484,7 @@ export function formatStatus(report: StatusReport): string {
     lines.push(`  - ${f}`);
   }
   lines.push("");
-  lines.push(
-    `Background: cron_jobs=${report.cronJobs} workers=${report.workers}`,
-  );
+  lines.push(`Background: cron_jobs=${report.cronJobs} workers=${report.workers}`);
   if (report.notes.length) {
     lines.push("");
     lines.push("Notes:");

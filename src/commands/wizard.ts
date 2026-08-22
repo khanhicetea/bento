@@ -51,36 +51,52 @@ export async function runWizard(ctx: CliContext): Promise<number> {
 
   try {
     while (true) {
-      const choice = await ui.menu<WizardSection>("Main menu", [
-        {
-          label: "Manage app",
-          value: "apps",
-          hint: "shell · databases · cron jobs · workers · domains · logs · templates",
-        },
-        {
-          label: "Manage reverse proxies",
-          value: "proxies",
-          hint: "create · multiple upstreams · inspect",
-        },
-        {
-          label: "Manage MySQL",
-          value: "mysql",
-          hint: "shell · versions · sizes · backup · restore",
-        },
-        {
-          label: "Manage PostgreSQL",
-          value: "postgres",
-          hint: "shell · versions · sizes · backup · restore",
-        },
-        {
-          label: "Manage SQLite",
-          value: "sqlite",
-          hint: "local .backup · S3 sync · verify · export",
-        },
-        { label: "Manage PHP", value: "php", hint: "add version · reload FPM" },
-        { label: "Status / Diag", value: "status", hint: "stack · apps · capacity" },
-        { label: "Bootstrap", value: "bootstrap", hint: "init · render · apply" },
-      ], { cancelLabel: "Quit", allowCancel: true });
+      const choice = await ui.menu<WizardSection>(
+        "Main menu",
+        [
+          {
+            label: "Manage app",
+            value: "apps",
+            hint: "shell · databases · cron jobs · workers · domains · logs · templates",
+          },
+          {
+            label: "Manage reverse proxies",
+            value: "proxies",
+            hint: "create · multiple upstreams · inspect",
+          },
+          {
+            label: "Manage MySQL",
+            value: "mysql",
+            hint: "shell · versions · sizes · backup · restore",
+          },
+          {
+            label: "Manage PostgreSQL",
+            value: "postgres",
+            hint: "shell · versions · sizes · backup · restore",
+          },
+          {
+            label: "Manage SQLite",
+            value: "sqlite",
+            hint: "local .backup · S3 sync · verify · export",
+          },
+          {
+            label: "Manage PHP",
+            value: "php",
+            hint: "add version · reload FPM",
+          },
+          {
+            label: "Status / Diag",
+            value: "status",
+            hint: "stack · apps · capacity",
+          },
+          {
+            label: "Bootstrap",
+            value: "bootstrap",
+            hint: "init · render · apply",
+          },
+        ],
+        { cancelLabel: "Quit", allowCancel: true },
+      );
 
       if (choice === null) {
         ui.blank();

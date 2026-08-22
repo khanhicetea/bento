@@ -1,3 +1,4 @@
+import { RuntimeCommand } from "../../platform/runtime.ts";
 import { isBentoError } from "../../domain/errors.ts";
 import type { Platform } from "../../platform/mod.ts";
 import { sqliteHostPath } from "../../services/sqlite_paths.ts";
@@ -81,13 +82,15 @@ export async function openPostgresShell(
   ui.blank();
   const exitCode = await executePostgresShell(ctx.platform, plan, async (command) => {
     const [cmd, ...args] = command;
-    return (await new Deno.Command(cmd!, {
-      args,
-      cwd: ctx.stackRoot,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    }).output()).code;
+    return (
+      await new RuntimeCommand(cmd!, {
+        args,
+        cwd: ctx.stackRoot,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      }).output()
+    ).code;
   });
   ui.blank();
   if (exitCode === 0) ui.success("PostgreSQL shell closed", plan.service);
@@ -128,7 +131,7 @@ export async function openMysqlShell(
   let exitCode = 1;
   try {
     const [cmd, ...args] = plan.open.command;
-    const child = new Deno.Command(cmd!, {
+    const child = new RuntimeCommand(cmd!, {
       args,
       cwd: ctx.stackRoot,
       stdin: "inherit",
@@ -138,10 +141,12 @@ export async function openMysqlShell(
     exitCode = (await child.output()).code;
   } finally {
     if (plan.cleanup) {
-      await ctx.platform.process.run(plan.cleanup.command, {
-        cwd: ctx.stackRoot,
-        timeoutMs: 10_000,
-      }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+      await ctx.platform.process
+        .run(plan.cleanup.command, {
+          cwd: ctx.stackRoot,
+          timeoutMs: 10_000,
+        })
+        .catch(() => ({ code: 1, stdout: "", stderr: "" }));
     }
   }
 

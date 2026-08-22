@@ -16,8 +16,7 @@ export function formatSqliteVacuumSchedule(schedule: SqliteVacuumSchedule): stri
 }
 
 export function sqliteVacuumScheduleSlot(schedule: SqliteVacuumSchedule): number {
-  return schedule.dayOfWeek * SQLITE_VACUUM_WINDOW_MINUTES +
-    schedule.hour * 60 + schedule.minute;
+  return schedule.dayOfWeek * SQLITE_VACUUM_WINDOW_MINUTES + schedule.hour * 60 + schedule.minute;
 }
 
 /**
@@ -28,14 +27,16 @@ export function sqliteVacuumScheduleSlot(schedule: SqliteVacuumSchedule): number
 export function resolveSqliteVacuumSchedules(
   state: DesiredState,
 ): Map<string, SqliteVacuumSchedule> {
-  const entries = Object.values(state.apps).flatMap((app) =>
-    app.databases
-      .filter((database): database is LocalSqliteBinding => database.engine === "sqlite")
-      .map((binding) => ({
-        key: sqliteVacuumScheduleKey(String(app.slug), binding.file.id),
-        binding,
-      }))
-  ).sort((a, b) => a.key.localeCompare(b.key));
+  const entries = Object.values(state.apps)
+    .flatMap((app) =>
+      app.databases
+        .filter((database): database is LocalSqliteBinding => database.engine === "sqlite")
+        .map((binding) => ({
+          key: sqliteVacuumScheduleKey(String(app.slug), binding.file.id),
+          binding,
+        })),
+    )
+    .sort((a, b) => a.key.localeCompare(b.key));
 
   const schedules = new Map<string, SqliteVacuumSchedule>();
   const occupied = new Set<number>();
@@ -51,10 +52,7 @@ export function resolveSqliteVacuumSchedules(
 
   for (const entry of entries) {
     if (schedules.has(entry.key)) continue;
-    schedules.set(
-      entry.key,
-      stableSqliteVacuumSchedule(entry.key, occupied),
-    );
+    schedules.set(entry.key, stableSqliteVacuumSchedule(entry.key, occupied));
   }
 
   return schedules;
@@ -65,19 +63,14 @@ export function randomSqliteVacuumSchedule(
   random: Random,
   occupied: Set<number>,
 ): SqliteVacuumSchedule {
-  const start = random.bytes(4).reduce(
-    (value, byte) => value * 256 + byte,
-    0,
-  ) % SQLITE_VACUUM_SLOT_COUNT;
+  const start =
+    random.bytes(4).reduce((value, byte) => value * 256 + byte, 0) % SQLITE_VACUUM_SLOT_COUNT;
   const slot = firstAvailableSlot(start, occupied);
   occupied.add(slot);
   return scheduleFromSlot(slot);
 }
 
-function stableSqliteVacuumSchedule(
-  identity: string,
-  occupied: Set<number>,
-): SqliteVacuumSchedule {
+function stableSqliteVacuumSchedule(identity: string, occupied: Set<number>): SqliteVacuumSchedule {
   let hash = 2166136261;
   for (const char of identity) {
     hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);

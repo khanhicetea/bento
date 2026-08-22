@@ -1,5 +1,5 @@
-import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { dirname, join } from "@std/path";
+import { runtime as bunRuntime, assert, assertEquals, assertStringIncludes } from "../runtime.ts";
+import { dirname, join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createPlatform, createRecordingProcessRunner } from "../../src/platform/mod.ts";
 import { createFixedClock } from "../../src/platform/clock.ts";
@@ -9,8 +9,8 @@ import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import { generateAll } from "../../src/services/generate.ts";
 import { runSqliteBackup } from "../../src/services/sqlite_local.ts";
 
-Deno.test("one app can persist independent SQLite and Litestream bindings", () => {
-  const platform = createPlatform("/tmp/bento-sqlite-multiple", Deno.cwd());
+bunRuntime.test("one app can persist independent SQLite and Litestream bindings", () => {
+  const platform = createPlatform("/tmp/bento-sqlite-multiple", bunRuntime.cwd());
   const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
     slug: "files",
     domain: "files.test",
@@ -42,10 +42,12 @@ Deno.test("one app can persist independent SQLite and Litestream bindings", () =
   }
 });
 
-Deno.test("plain SQLite backup uses .backup and gzip in the runner", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-sqlite-backup-" });
+bunRuntime.test("plain SQLite backup uses .backup and gzip in the runner", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-sqlite-backup-",
+  });
   try {
-    const platform = createPlatform(root, Deno.cwd());
+    const platform = createPlatform(root, bunRuntime.cwd());
     platform.clock = createFixedClock("2026-08-03T04:05:06.000Z");
     const result = provisionApp(platform, createEmptyState(), {
       slug: "local",
@@ -82,61 +84,69 @@ Deno.test("plain SQLite backup uses .backup and gzip in the runner", async () =>
     assertEquals(zstdArtifact.path.endsWith(".sqlite.zst"), true);
     assertEquals(gzipArtifact.bytes > 0, true);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-Deno.test("plain SQLite is distinct from Litestream and gets weekly runner maintenance", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-sqlite-local-" });
-  try {
-    const platform = createPlatform(root, Deno.cwd());
-    const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
-      slug: "local",
-      domain: "local.test",
-      databaseEngine: "sqlite",
+bunRuntime.test(
+  "plain SQLite is distinct from Litestream and gets weekly runner maintenance",
+  async () => {
+    const root = await bunRuntime.makeTempDir({
+      prefix: "bento-sqlite-local-",
     });
-    assert(result.app.database.engine === "sqlite");
-    assertEquals(result.app.database.file.path.endsWith("/local.db"), true);
-    assert(parseDesiredState(JSON.parse(stateToJson(result.state))).ok);
+    try {
+      const platform = createPlatform(root, bunRuntime.cwd());
+      const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
+        slug: "local",
+        domain: "local.test",
+        databaseEngine: "sqlite",
+      });
+      assert(result.app.database.engine === "sqlite");
+      assertEquals(result.app.database.file.path.endsWith("/local.db"), true);
+      assert(parseDesiredState(JSON.parse(stateToJson(result.state))).ok);
 
-    const files = await generateAll(platform, result.state, "digest");
-    const crontab = files.find((file) => file.relPath.endsWith("cron/local.crontab"));
-    const scheduler = files.find((file) => file.relPath.endsWith("services/scheduler-local/run"));
-    assert(crontab && typeof crontab.content === "string");
-    const vacuumLine = crontab.content.split("\n").find((line) => line.includes("VACUUM;"));
-    assert(vacuumLine);
-    const schedule = vacuumLine.match(/^(\d+) (\d+) \* \* (\d+) /);
-    assert(schedule);
-    assertEquals(Number(schedule[1]), result.app.database.vacuumSchedule?.minute);
-    assertEquals(Number(schedule[2]), result.app.database.vacuumSchedule?.hour);
-    assertEquals(Number(schedule[3]), result.app.database.vacuumSchedule?.dayOfWeek);
-    assert(Number(schedule[1]) >= 0 && Number(schedule[1]) <= 59);
-    assert(Number(schedule[2]) >= 0 && Number(schedule[2]) <= 4);
-    assert(Number(schedule[3]) >= 0 && Number(schedule[3]) <= 6);
-    assertStringIncludes(crontab.content, "sqlite3");
-    assertStringIncludes(crontab.content, "VACUUM;");
-    assert(scheduler, "plain SQLite must start a Supercronic scheduler");
+      const files = await generateAll(platform, result.state, "digest");
+      const crontab = files.find((file) => file.relPath.endsWith("cron/local.crontab"));
+      const scheduler = files.find((file) => file.relPath.endsWith("services/scheduler-local/run"));
+      assert(crontab && typeof crontab.content === "string");
+      const vacuumLine = crontab.content.split("\n").find((line) => line.includes("VACUUM;"));
+      assert(vacuumLine);
+      const schedule = vacuumLine.match(/^(\d+) (\d+) \* \* (\d+) /);
+      assert(schedule);
+      assertEquals(Number(schedule[1]), result.app.database.vacuumSchedule?.minute);
+      assertEquals(Number(schedule[2]), result.app.database.vacuumSchedule?.hour);
+      assertEquals(Number(schedule[3]), result.app.database.vacuumSchedule?.dayOfWeek);
+      assert(Number(schedule[1]) >= 0 && Number(schedule[1]) <= 59);
+      assert(Number(schedule[2]) >= 0 && Number(schedule[2]) <= 4);
+      assert(Number(schedule[3]) >= 0 && Number(schedule[3]) <= 6);
+      assertStringIncludes(crontab.content, "sqlite3");
+      assertStringIncludes(crontab.content, "VACUUM;");
+      assert(scheduler, "plain SQLite must start a Supercronic scheduler");
 
-    const rerendered = await generateAll(platform, result.state, "digest");
-    const rerenderedCrontab = rerendered.find((file) =>
-      file.relPath.endsWith("cron/local.crontab")
-    );
-    assert(rerenderedCrontab && typeof rerenderedCrontab.content === "string");
-    assertEquals(rerenderedCrontab.content, crontab.content);
+      const rerendered = await generateAll(platform, result.state, "digest");
+      const rerenderedCrontab = rerendered.find((file) =>
+        file.relPath.endsWith("cron/local.crontab"),
+      );
+      assert(rerenderedCrontab && typeof rerenderedCrontab.content === "string");
+      assertEquals(rerenderedCrontab.content, crontab.content);
 
-    const compose = assembleComposeDocuments(platform, result.state)
-      .find((file) => file.relPath.includes("php-php85"));
-    assert(compose && typeof compose.content === "string");
-    assertStringIncludes(compose.content, "./backups/sqlite:/var/backups/bento/sqlite");
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
+      const compose = assembleComposeDocuments(platform, result.state).find((file) =>
+        file.relPath.includes("php-php85"),
+      );
+      assert(compose && typeof compose.content === "string");
+      assertStringIncludes(compose.content, "./backups/sqlite:/var/backups/bento/sqlite");
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
-Deno.test("local SQLite VACUUM slots do not overlap when files are added", async () => {
-  const root = await Deno.makeTempDir({ prefix: "bento-sqlite-schedule-" });
+bunRuntime.test("local SQLite VACUUM slots do not overlap when files are added", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-sqlite-schedule-",
+  });
   try {
-    const platform = createPlatform(root, Deno.cwd());
+    const platform = createPlatform(root, bunRuntime.cwd());
     const first = provisionApp(platform, createEmptyState(), {
       slug: "first",
       domain: "first.test",
@@ -161,6 +171,6 @@ Deno.test("local SQLite VACUUM slots do not overlap when files are added", async
     assertEquals(schedules.length, 2);
     assertEquals(new Set(schedules).size, schedules.length);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await bunRuntime.remove(root, { recursive: true });
   }
 });

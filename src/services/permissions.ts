@@ -8,7 +8,7 @@
  * - Private dirs (credentials, .ssh, .composer, .bento, logs, tmp): owner-only (or 750 for logs/tmp)
  */
 
-import { join } from "@std/path";
+import { join } from "node:path";
 import type { AppState, DesiredState } from "../domain/state.ts";
 import { notFoundError } from "../domain/errors.ts";
 import { SHARED_SOCKET_GID } from "../domain/types.ts";
@@ -35,14 +35,7 @@ export type PermReport = {
   checked: number;
 };
 
-const PRIVATE_DIRS = [
-  "credentials",
-  ".ssh",
-  ".composer",
-  ".bento",
-  "logs",
-  "tmp",
-];
+const PRIVATE_DIRS = ["credentials", ".ssh", ".composer", ".bento", "logs", "tmp"];
 
 export async function checkPermissions(
   platform: Platform,
@@ -85,9 +78,9 @@ export async function checkPermissions(
       if (expect.worldTraverse && (mode & 0o001) === 0) {
         issues.push({
           path,
-          issue: `mode ${
-            mode.toString(8)
-          } is not world-traversable (nginx cannot reach public tree)`,
+          issue: `mode ${mode.toString(
+            8,
+          )} is not world-traversable (nginx cannot reach public tree)`,
           fix: `chmod 751 ${path}`,
         });
       }
@@ -133,8 +126,7 @@ export async function checkPermissions(
       if (id.uid !== app.uid || id.gid !== app.gid) {
         issues.push({
           path: idPath,
-          issue:
-            `identity meta uid/gid mismatch (meta ${id.uid}:${id.gid} vs state ${app.uid}:${app.gid})`,
+          issue: `identity meta uid/gid mismatch (meta ${id.uid}:${id.gid} vs state ${app.uid}:${app.gid})`,
           fix: "run permissions repair",
         });
       }
@@ -153,10 +145,7 @@ export async function checkPermissions(
 }
 
 /** Ensure category log directories exist for both new and previously provisioned apps. */
-export async function ensureAppLogDirs(
-  platform: Platform,
-  app: AppState,
-): Promise<void> {
+export async function ensureAppLogDirs(platform: Platform, app: AppState): Promise<void> {
   const logs = join(platform.paths.appHome(app.slug), "logs");
   // Render-only stacks and imported state may not have materialized app homes yet.
   if (!(await platform.fs.exists(logs))) return;
@@ -165,9 +154,11 @@ export async function ensureAppLogDirs(
     const path = join(logs, category);
     if (await platform.fs.exists(path)) continue;
     await platform.fs.mkdirp(path, 0o750);
-    await platform.process.run(["chown", `${app.uid}:${app.gid}`, path], {
-      timeoutMs: 10_000,
-    }).catch(() => undefined);
+    await platform.process
+      .run(["chown", `${app.uid}:${app.gid}`, path], {
+        timeoutMs: 10_000,
+      })
+      .catch(() => undefined);
   }
 }
 
@@ -267,25 +258,23 @@ export async function applyAppPermissionPolicy(
   await chown(home, `${uid}:${gid}`, opts.recursive === true);
   if (!opts.recursive) {
     // Shallow: still chown core leaves
-    for (
-      const p of [
-        home,
-        join(home, "code"),
-        join(home, "logs"),
-        join(home, "logs", "cron"),
-        join(home, "logs", "php"),
-        join(home, "logs", "worker"),
-        join(home, "tmp"),
-        join(home, "tmp", "sessions"),
-        join(home, ".bento"),
-        join(home, ".ssh"),
-        join(home, ".ssh", "id_ed25519"),
-        join(home, ".ssh", "id_ed25519.pub"),
-        join(home, ".composer"),
-        join(home, "credentials"),
-        docRoot,
-      ]
-    ) {
+    for (const p of [
+      home,
+      join(home, "code"),
+      join(home, "logs"),
+      join(home, "logs", "cron"),
+      join(home, "logs", "php"),
+      join(home, "logs", "worker"),
+      join(home, "tmp"),
+      join(home, "tmp", "sessions"),
+      join(home, ".bento"),
+      join(home, ".ssh"),
+      join(home, ".ssh", "id_ed25519"),
+      join(home, ".ssh", "id_ed25519.pub"),
+      join(home, ".composer"),
+      join(home, "credentials"),
+      docRoot,
+    ]) {
       if (await platform.fs.exists(p)) await chown(p, `${uid}:${gid}`, false);
     }
   }
@@ -324,37 +313,33 @@ export async function applyAppPermissionPolicy(
 
   await platform.fs.atomicWriteText(
     join(home, ".bento", "permission-policy.json"),
-    `${
-      JSON.stringify(
-        {
-          uid,
-          gid,
-          publicGroup: BENTO_WEB_GID,
-          recursive: opts.recursive === true,
-          updatedAt: platform.clock.nowIso(),
-        },
-        null,
-        2,
-      )
-    }\n`,
+    `${JSON.stringify(
+      {
+        uid,
+        gid,
+        publicGroup: BENTO_WEB_GID,
+        recursive: opts.recursive === true,
+        updatedAt: platform.clock.nowIso(),
+      },
+      null,
+      2,
+    )}\n`,
     0o640,
   );
   actions.push("wrote permission-policy metadata");
 
   // Atomic control-plane rewrites create new inodes. Re-assert ownership on the
   // app-readable runtime files after all writes so the privilege-dropped runner can drain.
-  for (
-    const p of [
-      join(home, "credentials", "app.env"),
-      join(home, ".ssh", "id_ed25519"),
-      join(home, ".ssh", "id_ed25519.pub"),
-      join(home, ".bento", "deploy.sh"),
-      join(home, ".bento", "deploy.json"),
-      join(home, ".bento", "queue.json"),
-      join(home, ".bento", "identity.json"),
-      join(home, ".bento", "permission-policy.json"),
-    ]
-  ) {
+  for (const p of [
+    join(home, "credentials", "app.env"),
+    join(home, ".ssh", "id_ed25519"),
+    join(home, ".ssh", "id_ed25519.pub"),
+    join(home, ".bento", "deploy.sh"),
+    join(home, ".bento", "deploy.json"),
+    join(home, ".bento", "queue.json"),
+    join(home, ".bento", "identity.json"),
+    join(home, ".bento", "permission-policy.json"),
+  ]) {
     if (await platform.fs.exists(p)) await chown(p, `${uid}:${gid}`, false);
   }
 

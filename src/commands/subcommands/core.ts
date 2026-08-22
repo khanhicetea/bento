@@ -19,7 +19,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
   return parser
     .command(
       "version",
-      "Show bento and deno target versions",
+      "Show bento and Bun target versions",
       () => {},
       () => {
         printVersion();
@@ -43,12 +43,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
         }),
       bind(state, cmdInit),
     )
-    .command(
-      "render",
-      "Render generated config (no reload)",
-      () => {},
-      bind(state, cmdRender),
-    )
+    .command("render", "Render generated config (no reload)", () => {}, bind(state, cmdRender))
     .command(
       "apply",
       "Render, validate, and reload targeted services",
@@ -71,12 +66,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           }),
       bind(state, cmdApply),
     )
-    .command(
-      "status",
-      "Show stack/app/runtime status",
-      () => {},
-      bind(state, cmdStatus),
-    )
+    .command("status", "Show stack/app/runtime status", () => {}, bind(state, cmdStatus))
     .command(
       "doctor",
       "Validate host, network, storage, TLS, services, and stack safety",
@@ -101,8 +91,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           .positional("name", {
             type: "string",
             default: DEFAULT_TEST_STACK_NAME,
-            describe:
-              `Compose project / stack directory name (default: ${DEFAULT_TEST_STACK_NAME})`,
+            describe: `Compose project / stack directory name (default: ${DEFAULT_TEST_STACK_NAME})`,
           })
           .option("keep", {
             type: "boolean",
@@ -127,8 +116,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           .option("schedule-wait-sec", {
             type: "number",
             default: DEFAULT_SCHEDULE_WAIT_SEC,
-            describe:
-              `Seconds to wait for * * * * * cron + worker output (default: ${DEFAULT_SCHEDULE_WAIT_SEC})`,
+            describe: `Seconds to wait for * * * * * cron + worker output (default: ${DEFAULT_SCHEDULE_WAIT_SEC})`,
           }),
       bind(state, cmdTestStack),
     );
@@ -156,9 +144,7 @@ async function cmdRender(_argv: CliArgs, ctx: CliContext): Promise<number> {
     renderOnly: true,
     skipValidate: true,
   });
-  ctx.log.info(
-    `rendered ${result.files.length} files (render-only, no service signals)`,
-  );
+  ctx.log.info(`rendered ${result.files.length} files (render-only, no service signals)`);
   if (ctx.json) {
     ctx.log.out(JSON.stringify({ files: result.managedManifest }, null, 2));
   }
@@ -181,15 +167,17 @@ async function cmdApply(
     const plan = describeReloadPlan(candidate.reloadPlan);
     ctx.log.info(`preview: ${candidate.files.length} files; reload=${plan.join(",")}`);
     if (ctx.json) {
-      ctx.log.out(JSON.stringify(
-        {
-          files: candidate.managedManifest,
-          reloadPlan: plan,
-          driftWarnings: formatDriftWarnings(drifts),
-        },
-        null,
-        2,
-      ));
+      ctx.log.out(
+        JSON.stringify(
+          {
+            files: candidate.managedManifest,
+            reloadPlan: plan,
+            driftWarnings: formatDriftWarnings(drifts),
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       ctx.log.out(plan.map((p) => `  - ${p}`).join("\n"));
     }
@@ -198,9 +186,9 @@ async function cmdApply(
 
   const result = await ctx.render.apply(state, { renderOnly, skipValidate });
   ctx.log.info(
-    `applied ${result.files.length} files; reload=${
-      describeReloadPlan(result.reloadPlan).join(",")
-    }${renderOnly ? " (render-only)" : ""}`,
+    `applied ${result.files.length} files; reload=${describeReloadPlan(result.reloadPlan).join(
+      ",",
+    )}${renderOnly ? " (render-only)" : ""}`,
   );
   return 0;
 }
@@ -234,7 +222,9 @@ async function cmdTestStack(
 ): Promise<number> {
   const { name } = argv;
   // Only honor --stack when the operator actually passed it (yargs always fills the default).
-  const explicitStack = Deno.args.some((a) => a === "--stack" || a.startsWith("--stack="));
+  const explicitStack = process.argv
+    .slice(2)
+    .some((a) => a === "--stack" || a.startsWith("--stack="));
   const opts = resolveTestStackOptions({
     name,
     stack: explicitStack ? argv.stack : undefined,

@@ -17,13 +17,13 @@ Each section explains the problem, Bento's choice, its benefit, and its cost.
 - **Cost:** A host failure affects the whole stack. Bento leaves scaling and high availability to other systems.
 - **Boundary:** Bento does not include Kubernetes or a multi-host scheduler.
 
-## Deno, strict TypeScript, one entrypoint
+## Bun, strict TypeScript, one entrypoint
 
 - **Problem:** Bento must validate JSON, environment, and process data at runtime, while production releases should not require a language runtime.
-- **Choice:** Use Deno 2.9.x, strict TypeScript, runtime validation, and compiled releases.
+- **Choice:** Use Bun 1.4.x, strict TypeScript, runtime validation, and compiled releases.
 - **Benefit:** Source and compiled builds share one toolchain and parity tests.
 - **Cost:** The project pins the runtime and dependencies and must package its assets into each binary.
-- **Boundary:** Bento does not include a Python compatibility layer or use unrestricted `-A` by default.
+- **Boundary:** Bento does not include a Python compatibility layer and uses a frozen Bun lockfile by default.
 
 ## Desired state without a daemon
 

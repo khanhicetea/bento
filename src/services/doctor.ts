@@ -1,6 +1,6 @@
 /** Comprehensive, non-mutating host and stack diagnostics. */
 
-import { basename, dirname, join, resolve } from "@std/path";
+import { basename, dirname, join, resolve } from "node:path";
 import pc from "picocolors";
 import type { DesiredState, TlsMode } from "../domain/state.ts";
 import type { Platform, RunResult } from "../platform/mod.ts";
@@ -67,12 +67,7 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
 
   const docker = await run(platform, ["docker", "version", "--format", "{{.Server.Version}}"]);
   if (docker.code !== 0) {
-    add(
-      "docker-version",
-      "runtime",
-      "fail",
-      `Docker daemon unavailable: ${failureDetail(docker)}`,
-    );
+    add("docker-version", "runtime", "fail", `Docker daemon unavailable: ${failureDetail(docker)}`);
   } else {
     const version = docker.stdout.trim();
     add(
@@ -129,8 +124,8 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
   const expectedPorts = nginxEnvironment.hostNetwork
     ? [80, 443]
     : [nginxEnvironment.httpPort, nginxEnvironment.httpsPort].filter(
-      (port): port is number => port !== undefined,
-    );
+        (port): port is number => port !== undefined,
+      );
   add(
     "nginx-network",
     "network",
@@ -138,8 +133,8 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     nginxEnvironment.hostNetwork
       ? "Nginx uses host networking"
       : expectedPorts.length > 0
-      ? `Nginx uses stack-private network; published TCP ports ${expectedPorts.join(", ")}`
-      : "Nginx uses stack-private network with no base host publications",
+        ? `Nginx uses stack-private network; published TCP ports ${expectedPorts.join(", ")}`
+        : "Nginx uses stack-private network with no base host publications",
   );
   if (
     nginxEnvironment.hostNetwork &&
@@ -157,9 +152,9 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     if (ports.code !== 0) {
       add(`port-${port}`, "network", "warn", "cannot inspect listening TCP ports (ss unavailable)");
     } else {
-      const listening = ports.stdout.split("\n").some((line) =>
-        new RegExp(`[:.]${port}\\s`).test(line)
-      );
+      const listening = ports.stdout
+        .split("\n")
+        .some((line) => new RegExp(`[:.]${port}\\s`).test(line));
       add(
         `port-${port}`,
         "network",
@@ -168,11 +163,10 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
       );
     }
   }
-  const hasAcme = Object.values(state.apps).some((app) => app.tls.kind === "acme") ||
+  const hasAcme =
+    Object.values(state.apps).some((app) => app.tls.kind === "acme") ||
     Object.values(state.proxies).some((proxy) => proxy.tls.kind === "acme");
-  if (
-    hasAcme && !nginxEnvironment.hostNetwork && nginxEnvironment.httpPort !== 80
-  ) {
+  if (hasAcme && !nginxEnvironment.hostNetwork && nginxEnvironment.httpPort !== 80) {
     add(
       "acme-http-port",
       "tls",
@@ -189,7 +183,9 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     const dns = await run(platform, ["getent", "ahosts", domain], 3_000);
     const addresses = [
       ...new Set(
-        dns.stdout.split("\n").map((line) => line.trim().split(/\s+/)[0])
+        dns.stdout
+          .split("\n")
+          .map((line) => line.trim().split(/\s+/)[0])
           .filter((value): value is string => !!value),
       ),
     ];
@@ -200,8 +196,8 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
       resolved ? "pass" : "fail",
       resolved
         ? `${domain} resolves to ${addresses.slice(0, 4).join(", ")}${
-          addresses.length > 4 ? ` (+${addresses.length - 4} more)` : ""
-        }`
+            addresses.length > 4 ? ` (+${addresses.length - 4} more)` : ""
+          }`
         : `${domain} does not resolve: ${failureDetail(dns)}`,
     );
   }
@@ -219,17 +215,21 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     composeEnvironmentOk ? composeEnvironment.projectName : undefined,
   );
 
-  const overlays = await platform.fs.exists(platform.paths.paths.overlaysDir)
+  const overlays = (await platform.fs.exists(platform.paths.paths.overlaysDir))
     ? (await platform.fs.readDir(platform.paths.paths.overlaysDir)).filter((n) =>
-      /\.ya?ml$/.test(n)
-    )
+        /\.ya?ml$/.test(n),
+      )
     : [];
   let config: RunResult;
   try {
     const configArgs = await composeArgs(platform, state, ["config", "--quiet"]);
     config = await run(platform, configArgs, 10_000);
   } catch (e) {
-    config = { code: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
+    config = {
+      code: 1,
+      stdout: "",
+      stderr: e instanceof Error ? e.message : String(e),
+    };
   }
   add(
     "compose-config",
@@ -263,8 +263,8 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
   const supportedArchitecture = ["x86_64", "amd64", "aarch64", "arm64"].includes(
     architectureName.toLowerCase(),
   );
-  const hostSupported = kernel.code === 0 && kernelName === "Linux" &&
-    architecture.code === 0 && supportedArchitecture;
+  const hostSupported =
+    kernel.code === 0 && kernelName === "Linux" && architecture.code === 0 && supportedArchitecture;
   add(
     "host-platform",
     "host",
@@ -274,15 +274,13 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
       : `unsupported or unknown host platform: ${kernelName || "?"} ${architectureName || "?"}`,
   );
 
-  for (
-    const [tool, required, purpose] of [
-      ["openssl", true, "TLS operations"],
-      ["ssh-keygen", true, "app deploy keys"],
-      ["getent", false, "DNS diagnostics"],
-      ["ss", false, "listener diagnostics"],
-      ["tar", false, "support bundles and stack transfer"],
-    ] as const
-  ) {
+  for (const [tool, required, purpose] of [
+    ["openssl", true, "TLS operations"],
+    ["ssh-keygen", true, "app deploy keys"],
+    ["getent", false, "DNS diagnostics"],
+    ["ss", false, "listener diagnostics"],
+    ["tar", false, "support bundles and stack transfer"],
+  ] as const) {
     const found = await run(platform, ["sh", "-c", `command -v ${tool} >/dev/null 2>&1`]);
     add(
       `tool:${tool}`,
@@ -298,7 +296,7 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
     ["r", "w", "x"].map((mode) => run(platform, ["test", `-${mode}`, platform.paths.paths.root])),
   );
   const labels = ["read", "write", "traverse"];
-  const denied = access.flatMap((result, index) => result.code === 0 ? [] : [labels[index]!]);
+  const denied = access.flatMap((result, index) => (result.code === 0 ? [] : [labels[index]!]));
   add(
     "stack-root-access",
     "host",
@@ -329,8 +327,8 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
       readOnly
         ? `stack filesystem is read-only (${description})`
         : ephemeral
-        ? `stack may be on ephemeral storage (${description})`
-        : `stack filesystem ${description}`,
+          ? `stack may be on ephemeral storage (${description})`
+          : `stack filesystem ${description}`,
     );
   }
 }
@@ -355,8 +353,12 @@ async function addGenerationChecks(platform: Platform, add: AddCheck) {
     };
     if (
       !Array.isArray(metadata.managedFiles) ||
-      !metadata.managedFiles.every((p) =>
-        typeof p === "string" && p.length > 0 && !p.startsWith("/") && !p.split("/").includes("..")
+      !metadata.managedFiles.every(
+        (p) =>
+          typeof p === "string" &&
+          p.length > 0 &&
+          !p.startsWith("/") &&
+          !p.split("/").includes(".."),
       )
     ) {
       add(
@@ -394,10 +396,10 @@ async function addGenerationChecks(platform: Platform, add: AddCheck) {
       assetMismatch
         ? "generated files use different bundled assets; review and apply the current Bento version"
         : assetUnknown
-        ? "managed files are present, but their bundled-asset identity cannot be verified"
-        : `${metadata.managedFiles.length} managed file(s) present; rendered ${
-          metadata.renderedAt ?? "at an unknown time"
-        } with assets ${metadata.assetVersion ?? "unknown"}`,
+          ? "managed files are present, but their bundled-asset identity cannot be verified"
+          : `${metadata.managedFiles.length} managed file(s) present; rendered ${
+              metadata.renderedAt ?? "at an unknown time"
+            } with assets ${metadata.assetVersion ?? "unknown"}`,
     );
   } catch (e) {
     add(
@@ -410,19 +412,19 @@ async function addGenerationChecks(platform: Platform, add: AddCheck) {
 }
 
 async function addFilesystemChecks(platform: Platform, add: AddCheck) {
-  for (
-    const [id, flag, label] of [["disk-space", "-Pk", "disk"], [
-      "disk-inodes",
-      "-Pi",
-      "inodes",
-    ]] as const
-  ) {
+  for (const [id, flag, label] of [
+    ["disk-space", "-Pk", "disk"],
+    ["disk-inodes", "-Pi", "inodes"],
+  ] as const) {
     const result = await run(platform, ["df", flag, platform.paths.paths.root]);
     const columns = result.stdout.trim().split("\n").at(-1)?.trim().split(/\s+/);
     const available = Number(columns?.[3]);
     const used = Number(columns?.[4]?.replace("%", ""));
     if (
-      result.code !== 0 || !Number.isFinite(available) || !Number.isFinite(used) || used < 0 ||
+      result.code !== 0 ||
+      !Number.isFinite(available) ||
+      !Number.isFinite(used) ||
+      used < 0 ||
       used > 100
     ) {
       add(id, "storage", "warn", `cannot inspect ${label}`);
@@ -430,9 +432,10 @@ async function addFilesystemChecks(platform: Platform, add: AddCheck) {
     }
     const criticallyLow = label === "disk" && available * 1024 < 100 * 1024 ** 2;
     const low = label === "disk" && available * 1024 < 1024 ** 3;
-    const detail = label === "disk"
-      ? `${used}% used, ${formatBytes(available * 1024)} available on the stack filesystem`
-      : `${used}% used, ${available.toLocaleString("en-US")} inodes available`;
+    const detail =
+      label === "disk"
+        ? `${used}% used, ${formatBytes(available * 1024)} available on the stack filesystem`
+        : `${used}% used, ${available.toLocaleString("en-US")} inodes available`;
     add(
       id,
       "storage",
@@ -473,25 +476,19 @@ async function addServiceChecks(
   const probes: Array<[string, string, string[]]> = [
     ["nginx", "nginx", ["nginx", "-t"]],
     ["redis", "redis", ["redis-cli", "ping"]],
-    ...state.phpVersions.map((
-      v,
-    ): [string, string, string[]] => [`php:${v.service}`, v.service, ["php-fpm", "-t"]]),
+    ...state.phpVersions.map((v): [string, string, string[]] => [
+      `php:${v.service}`,
+      v.service,
+      ["php-fpm", "-t"],
+    ]),
     ...state.databaseServices.map((v): [string, string, string[]] =>
       v.engine === "mysql"
-        ? [`mysql:${v.service}`, v.service, [
-          "mysqladmin",
-          "ping",
-          "-h",
-          "127.0.0.1",
-          "--silent",
-        ]]
-        : [`postgres:${v.service}`, v.service, [
-          "pg_isready",
-          "--username",
-          "postgres",
-          "--dbname",
-          "postgres",
-        ]]
+        ? [`mysql:${v.service}`, v.service, ["mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]]
+        : [
+            `postgres:${v.service}`,
+            v.service,
+            ["pg_isready", "--username", "postgres", "--dbname", "postgres"],
+          ],
     ),
   ];
   for (const [id, service, command] of probes) {
@@ -500,7 +497,11 @@ async function addServiceChecks(
       const args = await composeArgs(platform, state, ["exec", "-T", service, ...command]);
       result = await run(platform, args, 5_000);
     } catch (e) {
-      result = { code: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
+      result = {
+        code: 1,
+        stdout: "",
+        stderr: e instanceof Error ? e.message : String(e),
+      };
     }
     const redisOk = id === "redis" ? result.stdout.trim().toUpperCase() === "PONG" : true;
     add(
@@ -552,9 +553,9 @@ async function addSqliteChecks(
           id,
           "storage",
           "warn",
-          `${database.engine} file exists (${
-            formatBytes(stat.size)
-          }); integrity check skipped because Docker is unavailable`,
+          `${database.engine} file exists (${formatBytes(
+            stat.size,
+          )}); integrity check skipped because Docker is unavailable`,
         );
         continue;
       }
@@ -571,7 +572,11 @@ async function addSqliteChecks(
         ]);
         result = await run(platform, args, 10_000);
       } catch (e) {
-        result = { code: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
+        result = {
+          code: 1,
+          stdout: "",
+          stderr: e instanceof Error ? e.message : String(e),
+        };
       }
       const integrityOk = result.code === 0 && result.stdout.trim().toLowerCase() === "ok";
       add(
@@ -587,11 +592,9 @@ async function addSqliteChecks(
 }
 
 async function addPermissionChecks(platform: Platform, state: DesiredState, add: AddCheck) {
-  for (
-    const app of Object.values(state.apps).sort((a, b) =>
-      String(a.slug).localeCompare(String(b.slug))
-    )
-  ) {
+  for (const app of Object.values(state.apps).sort((a, b) =>
+    String(a.slug).localeCompare(String(b.slug)),
+  )) {
     try {
       const report = await checkPermissions(platform, state, String(app.slug));
       add(
@@ -599,9 +602,10 @@ async function addPermissionChecks(platform: Platform, state: DesiredState, add:
         "permissions",
         report.issues.length ? "fail" : "pass",
         report.issues.length
-          ? `${report.issues.length} issue(s): ${
-            report.issues.slice(0, 3).map((i) => `${i.path}: ${i.issue}`).join("; ")
-          }`
+          ? `${report.issues.length} issue(s): ${report.issues
+              .slice(0, 3)
+              .map((i) => `${i.path}: ${i.issue}`)
+              .join("; ")}`
           : `${report.checked} paths checked`,
       );
     } catch (e) {
@@ -625,10 +629,7 @@ async function addVolumeChecks(
     add("volumes", "storage", "warn", "volume checks skipped because stack name is invalid");
     return;
   }
-  const volumes = [
-    "redis-data",
-    ...state.databaseServices.map((database) => database.volume),
-  ];
+  const volumes = ["redis-data", ...state.databaseServices.map((database) => database.volume)];
   for (const logical of volumes) {
     const name = `${project}_${logical}`;
     const result = await run(platform, ["docker", "volume", "inspect", name]);
@@ -641,11 +642,7 @@ async function addVolumeChecks(
   }
 }
 
-async function addSecretModeChecks(
-  platform: Platform,
-  state: DesiredState,
-  add: AddCheck,
-) {
+async function addSecretModeChecks(platform: Platform, state: DesiredState, add: AddCheck) {
   const paths = platform.paths.paths;
   const candidates = [
     paths.envFile,
@@ -735,9 +732,9 @@ async function addCertificateChecks(platform: Platform, state: DesiredState, add
       const failures: string[] = [];
       for (const host of cert.hosts) {
         const command =
-          `openssl s_client -connect ${shellQuote(`${host}:443`)} -servername ${
-            shellQuote(host)
-          } ` +
+          `openssl s_client -connect ${shellQuote(`${host}:443`)} -servername ${shellQuote(
+            host,
+          )} ` +
           `</dev/null 2>/dev/null | openssl x509 -noout -checkhost ${shellQuote(host)} ` +
           "-checkend 2592000";
         const result = await run(platform, ["sh", "-c", command], 8_000);
@@ -772,17 +769,18 @@ async function addCertificateChecks(platform: Platform, state: DesiredState, add
       "-checkend",
       "0",
     ]);
-    const validThirtyDays = validNow.code === 0
-      ? await run(platform, [
-        "openssl",
-        "x509",
-        "-in",
-        cert.path,
-        "-noout",
-        "-checkend",
-        "2592000",
-      ])
-      : validNow;
+    const validThirtyDays =
+      validNow.code === 0
+        ? await run(platform, [
+            "openssl",
+            "x509",
+            "-in",
+            cert.path,
+            "-noout",
+            "-checkend",
+            "2592000",
+          ])
+        : validNow;
     const dates = await run(platform, [
       "openssl",
       "x509",
@@ -820,19 +818,15 @@ async function addCertificateChecks(platform: Platform, state: DesiredState, add
         "-noout",
         "-pubkey",
       ]);
-      const privateKey = await run(platform, [
-        "openssl",
-        "pkey",
-        "-in",
-        cert.keyPath,
-        "-pubout",
-      ]);
-      keyMatches = certificateKey.code === 0 && privateKey.code === 0 &&
+      const privateKey = await run(platform, ["openssl", "pkey", "-in", cert.keyPath, "-pubout"]);
+      keyMatches =
+        certificateKey.code === 0 &&
+        privateKey.code === 0 &&
         certificateKey.stdout.trim() === privateKey.stdout.trim();
     }
 
-    const invalid = validNow.code !== 0 || !datesReadable || notYetValid || uncovered.length > 0 ||
-      !keyMatches;
+    const invalid =
+      validNow.code !== 0 || !datesReadable || notYetValid || uncovered.length > 0 || !keyMatches;
     const expiring = validThirtyDays.code !== 0;
     const status: DoctorStatus = invalid ? "fail" : expiring || cert.sharedBoot ? "warn" : "pass";
     const details: string[] = [];
@@ -880,8 +874,8 @@ function certificatePaths(platform: Platform, state: DesiredState): CertificateT
     add(String(proxy.mainDomain), proxy.aliases.map(String), proxy.tls, `proxy-${proxy.name}`);
   }
   if (
-    [...Object.values(state.apps), ...Object.values(state.proxies)].some((site) =>
-      site.tls.kind === "shared"
+    [...Object.values(state.apps), ...Object.values(state.proxies)].some(
+      (site) => site.tls.kind === "shared",
     )
   ) {
     certs.push({
@@ -980,13 +974,11 @@ export async function createSupportBundle(
       "ps",
       "--all",
     ]);
-    for (
-      const [name, command] of [
-        ["docker-info.txt", ["docker", "info"]],
-        ["compose-ps.txt", composePs],
-        ["system.txt", ["uname", "-a"]],
-      ] as Array<[string, string[]]>
-    ) {
+    for (const [name, command] of [
+      ["docker-info.txt", ["docker", "info"]],
+      ["compose-ps.txt", composePs],
+      ["system.txt", ["uname", "-a"]],
+    ] as Array<[string, string[]]>) {
       const result: RunResult = await run(platform, command, 10_000);
       await platform.fs.writeText(
         join(temp, name),
@@ -1028,9 +1020,12 @@ function safeJson(value: unknown) {
   return JSON.stringify(value, null, 2) + "\n";
 }
 function redactEnvironment(text: string): string {
-  return text.split("\n").map((line) => {
-    const match = line.match(/^([^#=]+)=(.*)$/);
-    if (!match) return line;
-    return /(PASS|SECRET|TOKEN|KEY|CREDENTIAL|AUTH)/i.test(match[1]!) ? `${match[1]}=***` : line;
-  }).join("\n");
+  return text
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^([^#=]+)=(.*)$/);
+      if (!match) return line;
+      return /(PASS|SECRET|TOKEN|KEY|CREDENTIAL|AUTH)/i.test(match[1]!) ? `${match[1]}=***` : line;
+    })
+    .join("\n");
 }

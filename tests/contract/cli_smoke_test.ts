@@ -1,11 +1,11 @@
-import { assertEquals } from "@std/assert";
-import { join } from "@std/path";
+import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
+import { join } from "node:path";
 import { runCli } from "../../src/main.ts";
 import { createFileLock } from "../../src/platform/lock.ts";
 
 async function fileExists(path: string): Promise<boolean> {
   try {
-    await Deno.stat(path);
+    await bunRuntime.stat(path);
     return true;
   } catch {
     return false;
@@ -13,31 +13,23 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 async function withStack(fn: (stack: string) => Promise<void>) {
-  const stack = await Deno.makeTempDir({ prefix: "bento-cli-" });
+  const stack = await bunRuntime.makeTempDir({ prefix: "bento-cli-" });
   try {
     await fn(stack);
   } finally {
-    await Deno.remove(stack, { recursive: true });
+    await bunRuntime.remove(stack, { recursive: true });
   }
 }
 
-Deno.test("cli init render status app create", async () => {
+bunRuntime.test("cli init render status app create", async () => {
   await withStack(async (stack) => {
-    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init"]), 0);
     assertEquals(await runCli([...base, "render"]), 0);
     assertEquals(await runCli([...base, "status"]), 0);
     // Without --db: best-effort MySQL may defer when the service is down.
     assertEquals(
-      await runCli([
-        ...base,
-        "app",
-        "create",
-        "demo",
-        "--domain",
-        "demo.test",
-        "--no-apply",
-      ]),
+      await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]),
       0,
     );
     // Explicit --db must fail closed when MySQL is unavailable (no database recorded).
@@ -57,15 +49,15 @@ Deno.test("cli init render status app create", async () => {
 
     // Root client option file materializes real password from stack .env (mode 0600).
     const rootCnf = join(stack, "generated/mysql/mysql84/root.cnf");
-    const cnfText = await Deno.readTextFile(rootCnf);
+    const cnfText = await bunRuntime.readTextFile(rootCnf);
     assertEquals(cnfText.includes("password="), true);
     assertEquals(cnfText.includes("{{MYSQL_ROOT_PASSWORD}}"), false);
-    const cnfStat = await Deno.stat(rootCnf);
+    const cnfStat = await bunRuntime.stat(rootCnf);
     assertEquals((cnfStat.mode ?? 0) & 0o777, 0o600);
 
     // generated app vhost exists
     const vhost = join(stack, "generated/nginx/sites/demo.conf");
-    const text = await Deno.readTextFile(vhost);
+    const text = await bunRuntime.readTextFile(vhost);
     assertEquals(text.includes("demo.test"), true);
     assertEquals(text.includes("index.php"), true); // front-controller routes via index.php
 
@@ -130,10 +122,10 @@ Deno.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const pgState = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    const pgState = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
     assertEquals(pgState.apps.pgdemo.databases[0].engine, "postgres");
     assertEquals(pgState.apps.pgdemo.databases[0].service, "postgres17");
-    const pgCred = await Deno.readTextFile(join(stack, "homes/pgdemo/credentials/app.env"));
+    const pgCred = await bunRuntime.readTextFile(join(stack, "homes/pgdemo/credentials/app.env"));
     assertEquals(pgCred.includes("DB_CONNECTION=pgsql"), true);
     assertEquals(pgCred.includes("MYSQL_"), false);
     assertEquals(
@@ -166,7 +158,7 @@ Deno.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const afterRefusals = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    const afterRefusals = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
     assertEquals(afterRefusals.apps.badflags, undefined);
     assertEquals(
       afterRefusals.apps.pgdemo.databases.map((database: { engine: string }) => database.engine),
@@ -193,7 +185,7 @@ Deno.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const proxyVhost = await Deno.readTextFile(
+    const proxyVhost = await bunRuntime.readTextFile(
       join(stack, "generated/nginx/sites/proxy-api.conf"),
     );
     assertEquals(proxyVhost.includes("upstream upstream_api {"), true);
@@ -206,18 +198,10 @@ Deno.test("cli init render status app create", async () => {
     // proxy still listed after unconfirmed delete, then exact confirmation removes it
     assertEquals(await runCli([...base, "proxy", "list"]), 0);
     assertEquals(
-      await runCli([
-        ...base,
-        "proxy",
-        "delete",
-        "api",
-        "--confirm",
-        "delete api",
-        "--no-apply",
-      ]),
+      await runCli([...base, "proxy", "delete", "api", "--confirm", "delete api", "--no-apply"]),
       0,
     );
-    const afterProxyDelete = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    const afterProxyDelete = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
     assertEquals(afterProxyDelete.proxies.api, undefined);
 
     // cron + worker
@@ -254,7 +238,7 @@ Deno.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const cronState = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    const cronState = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
     assertEquals(cronState.cronJobs[0].schedule, "0 * * * *");
     assertEquals(cronState.cronJobs[0].timezone, "UTC");
     assertEquals(cronState.cronJobs[0].commandMode, "shell");
@@ -281,24 +265,15 @@ Deno.test("cli init render status app create", async () => {
     assertEquals(await runCli([...base, "deploy", "status", "demo"]), 0);
 
     // compose wrapper materializes assets and renders before assembling argv
-    assertEquals(
-      await runCli([...base, "compose", "--print", "--", "build", "php85"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "compose", "--print", "--", "build", "php85"]), 0);
     // compose safety
-    assertEquals(
-      (await runCli([...base, "compose", "--", "down", "-v"])) !== 0,
-      true,
-    );
+    assertEquals((await runCli([...base, "compose", "--", "down", "-v"])) !== 0, true);
 
     // version
     assertEquals(await runCli([...base, "version"]), 0);
 
     // Phase B: worker control help surface + scoped inspect usage
-    assertEquals(
-      (await runCli([...base, "worker", "inspect", "missing", "x"])) !== 0,
-      true,
-    );
+    assertEquals((await runCli([...base, "worker", "inspect", "missing", "x"])) !== 0, true);
 
     // Phase B: access logs enable (nginx-only) + rotate + report dry-run
     assertEquals(
@@ -307,42 +282,24 @@ Deno.test("cli init render status app create", async () => {
     );
     // vhost should include access_log after apply
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
-    const vhostLogged = await Deno.readTextFile(vhost);
+    const vhostLogged = await bunRuntime.readTextFile(vhost);
     assertEquals(vhostLogged.includes("access_log"), true);
-    assertEquals(
-      await runCli([...base, "logs", "access", "rotate", "--app", "demo"]),
-      0,
-    );
-    await Deno.mkdir(join(stack, "logs", "nginx"), { recursive: true });
-    await Deno.writeTextFile(join(stack, "logs", "nginx", "demo.access.log"), "request\n");
+    assertEquals(await runCli([...base, "logs", "access", "rotate", "--app", "demo"]), 0);
+    await bunRuntime.mkdir(join(stack, "logs", "nginx"), { recursive: true });
+    await bunRuntime.writeTextFile(join(stack, "logs", "nginx", "demo.access.log"), "request\n");
     assertEquals(
       await runCli([...base, "logs", "access", "report", "--app", "demo", "--dry-run"]),
       0,
     );
     assertEquals(
-      await runCli([
-        ...base,
-        "logs",
-        "access",
-        "report",
-        "--app",
-        "demo",
-        "--attach",
-        "--dry-run",
-      ]),
+      await runCli([...base, "logs", "access", "report", "--app", "demo", "--attach", "--dry-run"]),
       0,
     );
 
     // Phase B: mysql shell --print keeps secrets off printed argv
     // (stack .env has MYSQL_ROOT_PASSWORD from init)
-    assertEquals(
-      await runCli([...base, "mysql", "shell", "--root", "--print"]),
-      0,
-    );
-    assertEquals(
-      await runCli([...base, "mysql", "shell", "--app", "demo", "--print"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "mysql", "shell", "--root", "--print"]), 0);
+    assertEquals(await runCli([...base, "mysql", "shell", "--app", "demo", "--print"]), 0);
 
     // PostgreSQL routine administration help and dry shell plans are process-free.
     for (const command of ["db", "shell", "size", "processlist"]) {
@@ -352,24 +309,15 @@ Deno.test("cli init render status app create", async () => {
       await runCli([...base, "postgres", "shell", "--root", "--service", "17", "--print"]),
       0,
     );
-    assertEquals(
-      await runCli([...base, "postgres", "shell", "--app", "pgdemo", "--print"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "postgres", "shell", "--app", "pgdemo", "--print"]), 0);
 
     // App CLI shell / exec --print (profile-gated php*-cli; no live attach)
-    assertEquals(
-      await runCli([...base, "app", "shell", "demo", "--print"]),
-      0,
-    );
-    assertEquals(
-      await runCli([...base, "exec", "demo", "--print", "--", "php", "-v"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "app", "shell", "demo", "--print"]), 0);
+    assertEquals(await runCli([...base, "exec", "demo", "--print", "--", "php", "-v"]), 0);
 
     // Phase B: template select / drift / return
     const customTpl = join(stack, "custom-vhost.tpl");
-    await Deno.writeTextFile(customTpl, "# custom\nserver { listen 80; }\n");
+    await bunRuntime.writeTextFile(customTpl, "# custom\nserver { listen 80; }\n");
     assertEquals(
       await runCli([
         ...base,
@@ -401,7 +349,13 @@ Deno.test("cli init render status app create", async () => {
     );
     // custom source preserved under stack custom/
     const customCopied = join(stack, "custom/apps/demo/vhost/vhost.conf.tpl");
-    assertEquals(await Deno.stat(customCopied).then(() => true).catch(() => false), true);
+    assertEquals(
+      await bunRuntime
+        .stat(customCopied)
+        .then(() => true)
+        .catch(() => false),
+      true,
+    );
 
     // Phase B: maintenance run + apply --preview
     assertEquals(await runCli([...base, "maintenance", "run", "--retain-days", "14"]), 0);
@@ -445,137 +399,103 @@ Deno.test("cli init render status app create", async () => {
 
     // Exact typed confirmation removes desired state/config but retains durable home data.
     assertEquals(
-      await runCli([
-        ...base,
-        "app",
-        "delete",
-        "demo",
-        "--confirm",
-        "delete demo",
-        "--no-apply",
-      ]),
+      await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]),
       0,
     );
-    const afterDelete = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    const afterDelete = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
     assertEquals(afterDelete.apps.demo, undefined);
     assertEquals(await fileExists(join(stack, "homes/demo/code/public/index.php")), true);
 
     // future state rejection
-    const badState = JSON.parse(await Deno.readTextFile(join(stack, "state.json")));
+    const badState = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
     badState.schemaVersion = 999;
-    await Deno.writeTextFile(join(stack, "state.json"), JSON.stringify(badState));
+    await bunRuntime.writeTextFile(join(stack, "state.json"), JSON.stringify(badState));
     assertEquals((await runCli([...base, "status"])) !== 0, true);
   });
 });
 
-Deno.test("cli refuses to reinitialize an existing stack", async () => {
+bunRuntime.test("cli refuses to reinitialize an existing stack", async () => {
   await withStack(async (stack) => {
-    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init", "--name", "original"]), 0);
     const statePath = join(stack, "state.json");
     const envPath = join(stack, ".env");
-    const originalState = await Deno.readTextFile(statePath);
-    const originalEnv = await Deno.readTextFile(envPath);
+    const originalState = await bunRuntime.readTextFile(statePath);
+    const originalEnv = await bunRuntime.readTextFile(envPath);
 
     assertEquals((await runCli([...base, "init", "--name", "replacement"])) !== 0, true);
     assertEquals((await runCli([...base, "init", "--force"])) !== 0, true);
-    assertEquals(await Deno.readTextFile(statePath), originalState);
-    assertEquals(await Deno.readTextFile(envPath), originalEnv);
+    assertEquals(await bunRuntime.readTextFile(statePath), originalState);
+    assertEquals(await bunRuntime.readTextFile(envPath), originalEnv);
   });
 });
 
-Deno.test("cli backup keeps legacy flags and exposes schedule help/run without crontab", async () => {
+bunRuntime.test(
+  "cli backup keeps legacy flags and exposes schedule help/run without crontab",
+  async () => {
+    await withStack(async (stack) => {
+      const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
+      assertEquals(await runCli([...base, "init"]), 0);
+
+      // The existing top-level option remains routed to the default backup command.
+      assertEquals(await runCli([...base, "backup", "--all", "--none"]), 0);
+      assertEquals(await runCli([...base, "backup", "--all", "--engine", "mysql", "--none"]), 0);
+
+      // Help and an empty all-database run do not use schedule status/register paths,
+      // so this smoke coverage never reads or mutates the host user's crontab.
+      assertEquals(await runCli([...base, "backup", "schedule", "--help"]), 0);
+      assertEquals(await runCli([...base, "backup", "schedule", "run"]), 0);
+      assertEquals(await fileExists(join(stack, "backups/.schedule/last-run.json")), true);
+
+      // Manual backups preserve the typed conflict exit code when a scheduled/manual
+      // batch already owns the shared stack backup lock.
+      const release = await createFileLock().tryExclusive(
+        join(stack, "locks/database-backup.lock"),
+      );
+      try {
+        assertEquals(await runCli([...base, "backup", "--all", "--none"]), 4);
+      } finally {
+        await release?.();
+      }
+    });
+  },
+);
+
+bunRuntime.test("invalid state is not overwritten on read", async () => {
   await withStack(async (stack) => {
-    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
-    assertEquals(await runCli([...base, "init"]), 0);
-
-    // The existing top-level option remains routed to the default backup command.
-    assertEquals(await runCli([...base, "backup", "--all", "--none"]), 0);
-    assertEquals(await runCli([...base, "backup", "--all", "--engine", "mysql", "--none"]), 0);
-
-    // Help and an empty all-database run do not use schedule status/register paths,
-    // so this smoke coverage never reads or mutates the host user's crontab.
-    assertEquals(await runCli([...base, "backup", "schedule", "--help"]), 0);
-    assertEquals(await runCli([...base, "backup", "schedule", "run"]), 0);
-    assertEquals(
-      await fileExists(join(stack, "backups/.schedule/last-run.json")),
-      true,
-    );
-
-    // Manual backups preserve the typed conflict exit code when a scheduled/manual
-    // batch already owns the shared stack backup lock.
-    const release = await createFileLock().tryExclusive(
-      join(stack, "locks/database-backup.lock"),
-    );
-    try {
-      assertEquals(await runCli([...base, "backup", "--all", "--none"]), 4);
-    } finally {
-      await release?.();
-    }
-  });
-});
-
-Deno.test("invalid state is not overwritten on read", async () => {
-  await withStack(async (stack) => {
-    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     await runCli([...base, "init"]);
     const path = join(stack, "state.json");
     const original = "this is not json {{{";
-    await Deno.writeTextFile(path, original);
+    await bunRuntime.writeTextFile(path, original);
     assertEquals((await runCli([...base, "status"])) !== 0, true);
-    const after = await Deno.readTextFile(path);
+    const after = await bunRuntime.readTextFile(path);
     assertEquals(after, original);
   });
 });
 
-Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
+bunRuntime.test("cli tls set + permissions + backup/restore dry paths", async () => {
   await withStack(async (stack) => {
-    const base = ["--stack", stack, "--repo-root", Deno.cwd()];
+    const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init"]), 0);
     assertEquals(
-      await runCli([
-        ...base,
-        "app",
-        "create",
-        "demo",
-        "--domain",
-        "demo.test",
-        "--no-apply",
-      ]),
+      await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]),
       0,
     );
 
     // Private CA mode creates a per-site SAN leaf and permits public-CA export.
-    assertEquals(
-      await runCli([
-        ...base,
-        "tls",
-        "set",
-        "--app",
-        "demo",
-        "--mode",
-        "self-ca",
-      ]),
-      0,
-    );
+    assertEquals(await runCli([...base, "tls", "set", "--app", "demo", "--mode", "self-ca"]), 0);
     assertEquals(await fileExists(join(stack, "certs/private-ca/sites/demo.crt")), true);
     const caExport = join(stack, "exported-ca.crt");
-    assertEquals(
-      await runCli([...base, "tls", "ca", "export", "--output", caExport]),
-      0,
-    );
+    assertEquals(await runCli([...base, "tls", "ca", "export", "--output", caExport]), 0);
     assertEquals(await fileExists(caExport), true);
-    const caVhost = await Deno.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
+    const caVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
     assertEquals(
-      caVhost.includes(
-        "ssl_certificate     /etc/nginx/certs/private-ca/sites/demo.crt;",
-      ),
+      caVhost.includes("ssl_certificate     /etc/nginx/certs/private-ca/sites/demo.crt;"),
       true,
     );
     assertEquals(
-      caVhost.includes(
-        "ssl_certificate_key /etc/nginx/certs/private-ca/sites/demo.key;",
-      ),
+      caVhost.includes("ssl_certificate_key /etc/nginx/certs/private-ca/sites/demo.key;"),
       true,
     );
     assertEquals(caVhost.includes("ssl-common.conf"), true);
@@ -584,22 +504,15 @@ Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
 
     // Private CA -> ACME (no cert files needed for ACME mode recording)
     assertEquals(
-      await runCli([
-        ...base,
-        "tls",
-        "set",
-        "--app",
-        "demo",
-        "--mode",
-        "acme",
-        "--no-apply",
-      ]),
+      await runCli([...base, "tls", "set", "--app", "demo", "--mode", "acme", "--no-apply"]),
       0,
     );
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
-    const acmeVhost = await Deno.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
-    const acmeMain = await Deno.readTextFile(join(stack, "generated/nginx/nginx.conf"));
-    const acmeSsl = await Deno.readTextFile(join(stack, "generated/nginx/snippets/acme-ssl.conf"));
+    const acmeVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
+    const acmeMain = await bunRuntime.readTextFile(join(stack, "generated/nginx/nginx.conf"));
+    const acmeSsl = await bunRuntime.readTextFile(
+      join(stack, "generated/nginx/snippets/acme-ssl.conf"),
+    );
     assertEquals(acmeVhost.includes("acme-challenge"), false);
     assertEquals(acmeVhost.includes("return 301 https://"), true);
     assertEquals(acmeMain.includes("acme_issuer bento_acme"), true);
@@ -626,12 +539,12 @@ Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
 
     // External with valid restricted key
     const certs = join(stack, "certs");
-    await Deno.mkdir(certs, { recursive: true });
+    await bunRuntime.mkdir(certs, { recursive: true });
     const cert = join(certs, "demo.crt");
     const key = join(certs, "demo.key");
-    await Deno.writeTextFile(cert, "CERT\n");
-    await Deno.writeTextFile(key, "KEY\n");
-    await Deno.chmod(key, 0o600);
+    await bunRuntime.writeTextFile(cert, "CERT\n");
+    await bunRuntime.writeTextFile(key, "KEY\n");
+    await bunRuntime.chmod(key, 0o600);
     assertEquals(
       await runCli([
         ...base,
@@ -650,24 +563,18 @@ Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
       0,
     );
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
-    const extVhost = await Deno.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
+    const extVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
     assertEquals(extVhost.includes("return 301 https://"), true);
     assertEquals(extVhost.includes("boot-ssl.conf"), false);
 
     // Permissions check / dry-run repair (no root required)
     assertEquals(await runCli([...base, "permissions", "check", "demo"]), 0);
-    assertEquals(
-      await runCli([...base, "permissions", "repair", "demo", "--dry-run"]),
-      0,
-    );
-    assertEquals(
-      await runCli([...base, "permissions", "repair", "demo", "--shallow"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "permissions", "repair", "demo", "--dry-run"]), 0);
+    assertEquals(await runCli([...base, "permissions", "repair", "demo", "--shallow"]), 0);
 
     // Backup uses the generated in-container root option file; no shell export is required.
-    const prev = Deno.env.get("MYSQL_ROOT_PASSWORD");
-    Deno.env.delete("MYSQL_ROOT_PASSWORD");
+    const prev = bunRuntime.env.get("MYSQL_ROOT_PASSWORD");
+    bunRuntime.env.delete("MYSQL_ROOT_PASSWORD");
     try {
       // demo has no databases recorded, so this completes without invoking Docker.
       assertEquals(await runCli([...base, "backup", "--app", "demo", "--none"]), 0);
@@ -688,7 +595,7 @@ Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
       );
       // Replace confirmation mismatch fails closed.
       const dump = join(stack, "empty.sql");
-      await Deno.writeTextFile(dump, "-- empty\n");
+      await bunRuntime.writeTextFile(dump, "-- empty\n");
       assertEquals(
         (await runCli([
           ...base,
@@ -705,7 +612,7 @@ Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
         true,
       );
     } finally {
-      if (prev !== undefined) Deno.env.set("MYSQL_ROOT_PASSWORD", prev);
+      if (prev !== undefined) bunRuntime.env.set("MYSQL_ROOT_PASSWORD", prev);
     }
 
     // Legacy routing via CLI
@@ -725,7 +632,7 @@ Deno.test("cli tls set + permissions + backup/restore dry paths", async () => {
       0,
     );
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
-    const legacyVhost = await Deno.readTextFile(
+    const legacyVhost = await bunRuntime.readTextFile(
       join(stack, "generated/nginx/sites/legacy.conf"),
     );
     assertEquals(legacyVhost.includes("if ($uri !~ ^/index\\.php$)"), false);

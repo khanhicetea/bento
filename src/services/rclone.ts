@@ -1,6 +1,6 @@
 /** rclone sidecar configuration and logical-backup upload support. */
 
-import { join, relative, resolve } from "@std/path";
+import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { platformError, stateError, validationError } from "../domain/errors.ts";
 import type { DesiredState } from "../domain/state.ts";
@@ -18,11 +18,13 @@ export type RcloneBackupTarget = {
   prefix: string;
 };
 
-const backupTargetSchema = z.object({
-  version: z.literal(BACKUP_TARGET_VERSION),
-  remote: z.string().min(1).max(128),
-  prefix: z.string().max(1024),
-}).strict();
+const backupTargetSchema = z
+  .object({
+    version: z.literal(BACKUP_TARGET_VERSION),
+    remote: z.string().min(1).max(128),
+    prefix: z.string().max(1024),
+  })
+  .strict();
 
 /** Create the operator-owned rclone config once, without ever replacing credentials. */
 export async function initializeRcloneConfig(platform: Platform): Promise<void> {
@@ -67,7 +69,11 @@ export function validateRcloneBackupTarget(remote: string, prefix: string): Rclo
     );
   }
   const normalizedPrefix = normalizeRclonePrefix(prefix);
-  return { version: BACKUP_TARGET_VERSION, remote: normalizedRemote, prefix: normalizedPrefix };
+  return {
+    version: BACKUP_TARGET_VERSION,
+    remote: normalizedRemote,
+    prefix: normalizedPrefix,
+  };
 }
 
 export async function saveRcloneBackupTarget(
@@ -107,9 +113,9 @@ export async function readRcloneBackupTarget(
   const parsed = backupTargetSchema.safeParse(raw);
   if (!parsed.success) {
     throw stateError(
-      `rclone backup target is invalid: ${
-        parsed.error.issues.map((issue) => issue.message).join("; ")
-      }`,
+      `rclone backup target is invalid: ${parsed.error.issues
+        .map((issue) => issue.message)
+        .join("; ")}`,
     );
   }
   return validateRcloneBackupTarget(parsed.data.remote, parsed.data.prefix);
@@ -169,13 +175,17 @@ export async function uploadBackupArtifacts(
 }
 
 function normalizeRclonePrefix(prefix: string): string {
-  const value = prefix.trim().replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
+  const value = prefix
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\/+|\/+$/g, "");
   if (value === "") return "";
   if (
     [...value].some((char) => {
       const code = char.charCodeAt(0);
       return code <= 0x1f || code === 0x7f;
-    }) || value.split("/").some((part) => part === ".." || part === ".")
+    }) ||
+    value.split("/").some((part) => part === ".." || part === ".")
   ) {
     throw validationError("rclone prefix must be a relative path without . or .. segments");
   }

@@ -1,45 +1,49 @@
 /** PostgreSQL Phase 9 — public surface, release harness, and documentation contract. */
 
-import { assertMatch } from "@std/assert";
+import { runtime as bunRuntime, assertMatch } from "../runtime.ts";
 
 const root = new URL("../../", import.meta.url);
 
 async function read(path: string): Promise<string> {
-  return await Deno.readTextFile(new URL(path, root));
+  return await bunRuntime.readTextFile(new URL(path, root));
 }
 
-Deno.test("PostgreSQL is registered in the wizard with app and operator workflows", async () => {
-  const [wizard, postgres, apps] = await Promise.all([
-    read("src/commands/wizard.ts"),
-    read("src/commands/wizard/postgres.ts"),
-    read("src/commands/wizard/apps.ts"),
-  ]);
-  assertMatch(wizard, /Manage PostgreSQL/);
-  assertMatch(postgres, /Open shell/);
-  assertMatch(postgres, /Logical backup/);
-  assertMatch(postgres, /Logical restore/);
-  assertMatch(apps, /databaseEngine === "postgres"/);
-  assertMatch(apps, /createPostgresAppDatabaseLive/);
-  assertMatch(apps, /Open PostgreSQL shell/);
-});
+bunRuntime.test(
+  "PostgreSQL is registered in the wizard with app and operator workflows",
+  async () => {
+    const [wizard, postgres, apps] = await Promise.all([
+      read("src/commands/wizard.ts"),
+      read("src/commands/wizard/postgres.ts"),
+      read("src/commands/wizard/apps.ts"),
+    ]);
+    assertMatch(wizard, /Manage PostgreSQL/);
+    assertMatch(postgres, /Open shell/);
+    assertMatch(postgres, /Logical backup/);
+    assertMatch(postgres, /Logical restore/);
+    assertMatch(apps, /databaseEngine === "postgres"/);
+    assertMatch(apps, /createPostgresAppDatabaseLive/);
+    assertMatch(apps, /Open PostgreSQL shell/);
+  },
+);
 
-Deno.test("test-stack carries PostgreSQL connectivity, isolation, recovery, and transfer proof", async () => {
-  const harness = await read("src/services/test_stack.ts");
-  for (
-    const evidence of [
+bunRuntime.test(
+  "test-stack carries PostgreSQL connectivity, isolation, recovery, and transfer proof",
+  async () => {
+    const harness = await read("src/services/test_stack.ts");
+    for (const evidence of [
       /pg-pdo-connect/,
       /pg-isolation/,
       /pg-backup-restore/,
       /Mixed-engine status/,
       /stack-export-mixed/,
       /postgres17-data\.tar\.gz/,
-    ]
-  ) {
-    assertMatch(harness, evidence);
-  }
-});
+    ]) {
+      assertMatch(harness, evidence);
+    }
+  },
+);
 
-Deno.test("release documentation describes shipped PostgreSQL behavior", async () => {
+bunRuntime.test("release documentation describes shipped PostgreSQL behavior", async () => {
   const [readme, product, architecture, parity] = await Promise.all([
     read("README.md"),
     read("specs/01-product-spec.md"),
@@ -48,8 +52,8 @@ Deno.test("release documentation describes shipped PostgreSQL behavior", async (
   ]);
   assertMatch(readme, /PostgreSQL is a first-class database kind alongside MySQL/);
   assertMatch(readme, /postgres add 17/);
-  assertMatch(product, /multiple relational engines\/services/);
-  assertMatch(architecture, /PostgreSQL raw-volume transfer requires a compatible major version/);
+  assertMatch(product, /does not convert or move data between engines\/services/);
+  assertMatch(architecture, /versioned MySQL\/PostgreSQL volumes, Redis volume/);
   assertMatch(parity, /postgres17/);
   assertMatch(parity, /database-engine/);
 });

@@ -116,19 +116,14 @@ async function cmdIngressShow(_argv: CliArgs, ctx: CliContext): Promise<number> 
   return 0;
 }
 
-async function cmdIngressSet(
-  argv: ArgsWith<"ingressMode">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdIngressSet(argv: ArgsWith<"ingressMode">, ctx: CliContext): Promise<number> {
   const updates: Record<string, string> = {
     NGINX_HOST_NETWORK: argv.ingressMode === "host" ? "1" : "0",
   };
-  for (
-    const [key, value] of [
-      ["NGINX_HTTP_PORT", argv.httpPort],
-      ["NGINX_HTTPS_PORT", argv.httpsPort],
-    ] as const
-  ) {
+  for (const [key, value] of [
+    ["NGINX_HTTP_PORT", argv.httpPort],
+    ["NGINX_HTTPS_PORT", argv.httpsPort],
+  ] as const) {
     if (value === undefined) continue;
     if (!Number.isInteger(value) || value < 0 || value > 65535) {
       throw new Error(`${key} must be 0 or a port between 1 and 65535`);
@@ -157,21 +152,22 @@ async function cmdIngressSet(
   }
 
   const environment = await loadStackComposeEnvironment(ctx.platform);
-  ctx.log.info(
-    `Nginx ingress set to ${environment.nginx.hostNetwork ? "host" : "bridge"} mode`,
-  );
+  ctx.log.info(`Nginx ingress set to ${environment.nginx.hostNetwork ? "host" : "bridge"} mode`);
   if (
-    environment.nginx.hostNetwork && (environment.nginx.httpPort || environment.nginx.httpsPort)
+    environment.nginx.hostNetwork &&
+    (environment.nginx.httpPort || environment.nginx.httpsPort)
   ) {
     ctx.log.warn(
       "bridge-mode port settings are retained but ignored while host networking is active",
     );
   }
 
-  const composeVersion = await ctx.platform.process.run(
-    ["docker", "compose", "version"],
-    { cwd: ctx.stackRoot, timeoutMs: 5_000 },
-  ).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+  const composeVersion = await ctx.platform.process
+    .run(["docker", "compose", "version"], {
+      cwd: ctx.stackRoot,
+      timeoutMs: 5_000,
+    })
+    .catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (composeVersion.code !== 0) {
     ctx.log.warn("Docker Compose unavailable; ingress was rendered but Nginx was not recreated");
     return 0;
@@ -225,12 +221,10 @@ async function cmdStackExport(argv: ArgsWith<"directory">, ctx: CliContext): Pro
 
 async function cmdStackImport(argv: ArgsWith<"directory">, ctx: CliContext): Promise<number> {
   ctx.log.warn("import restores trusted archives and starts the destination stack");
-  for (
-    const [name, port] of [["--http-port", argv.httpPort], [
-      "--https-port",
-      argv.httpsPort,
-    ]] as const
-  ) {
+  for (const [name, port] of [
+    ["--http-port", argv.httpPort],
+    ["--https-port", argv.httpsPort],
+  ] as const) {
     if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) {
       throw new Error(`${name} must be 0 or a port between 1 and 65535`);
     }

@@ -75,10 +75,7 @@ export function isBentoError(err: unknown): err is BentoError {
   return err instanceof BentoError;
 }
 
-export function validationError(
-  message: string,
-  details?: Record<string, unknown>,
-): BentoError {
+export function validationError(message: string, details?: Record<string, unknown>): BentoError {
   return new BentoError("VALIDATION", message, {
     details,
     recovery: "Correct the invalid input and retry.",
@@ -99,8 +96,8 @@ export function conflictError(message: string, recovery?: string): BentoError {
 
 export function safetyError(message: string, recovery?: string): BentoError {
   return new BentoError("SAFETY", message, {
-    recovery: recovery ??
-      "This operation is intentionally blocked. Use an explicit safe alternative.",
+    recovery:
+      recovery ?? "This operation is intentionally blocked. Use an explicit safe alternative.",
   });
 }
 
@@ -110,8 +107,7 @@ export function stateError(
 ): BentoError {
   const recovery = typeof recoveryOrOpts === "string" ? recoveryOrOpts : recoveryOrOpts?.recovery;
   return new BentoError("STATE", message, {
-    recovery: recovery ??
-      "Inspect state.json and restore from a known-good backup if needed.",
+    recovery: recovery ?? "Inspect state.json and restore from a known-good backup if needed.",
   });
 }
 
@@ -125,25 +121,19 @@ export function renderError(message: string, cause?: unknown): BentoError {
 export function platformError(message: string, cause?: unknown): BentoError {
   return new BentoError("PLATFORM", message, {
     cause,
-    recovery: "Check Docker, filesystem permissions, and Deno capability grants.",
+    recovery: "Check Docker, filesystem permissions, and Bun runtime access.",
   });
 }
 
-export function serviceError(
-  message: string,
-  recovery?: string,
-  cause?: unknown,
-): BentoError {
+export function serviceError(message: string, recovery?: string, cause?: unknown): BentoError {
   return new BentoError("SERVICE", message, {
-    recovery: recovery ??
-      "Ensure the target service is running and reachable, then retry.",
+    recovery: recovery ?? "Ensure the target service is running and reachable, then retry.",
     cause,
   });
 }
 
 export function secretError(message: string, recovery?: string): BentoError {
   return new BentoError("SECRET", message, {
-    recovery: recovery ??
-      "Set the required secret in the stack .env (mode 0600) and retry.",
+    recovery: recovery ?? "Set the required secret in the stack .env (mode 0600) and retry.",
   });
 }

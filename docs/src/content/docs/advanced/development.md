@@ -5,17 +5,17 @@ description: Set up Bento for development, run its checks, and build matching Li
 
 # Development and release
 
-Use Deno 2.9.3 and the committed lockfile when you develop Bento. On production hosts, use a compiled Linux release.
+Use Bun 1.4.0 and the committed lockfile when you develop Bento. On production hosts, use a compiled Linux release.
 
 ## Set up and verify
 
 ```sh
-deno --version
-deno task fmt
-deno task lint
-deno task check
-deno task test
-deno task test:integration
+bun --version
+bun run fmt
+bun run lint
+bun run check
+bun run test
+bun run test:integration
 ```
 
 When Docker is unavailable, integration tests skip Docker-only checks. Read the test output so you do not mistake a skip for live proof.
@@ -36,27 +36,27 @@ Keep dependencies moving in one direction: command adapters → services/domain 
 ## Compile and parity
 
 ```sh
-deno task compile
-deno task test:parity
-deno task compile:amd64
-deno task compile:arm64
+bun run compile
+bun run test:parity
+bun run compile:amd64
+bun run compile:arm64
 ```
 
-The compiled executable includes immutable templates and writes the required assets under the selected stack root. It must work from any current directory without Deno, Node.js, Python, `npm install`, or a source checkout.
+The compiled executable includes immutable templates and writes the required assets under the selected stack root. It must work from any current directory without Bun, Node.js, Python, `npm install`, or a source checkout.
 
 Source mode and compiled mode must produce the same generated files, state changes, diagnostics, exit behavior, and safety checks for the same input.
 
 ## Permissions and dependencies
 
-Tasks declare the exact read, write, environment, process, network, and system permissions they need. Do not use or document unrestricted `-A` as the normal path.
+Install with `bun install --frozen-lockfile`; source commands use normal host filesystem and process access.
 
-Keep imports in `deno.json` and keep dependency resolution locked. Every dependency must also work with `deno compile`.
+Keep imports in `package.json` and keep dependency resolution locked. Every dependency must also work with `bun build --compile`.
 
 ## Release checks
 
 The repository provides tasks for formatting, linting, type checking, locked dependency checks, tests, compile smoke tests, parity tests, and Linux builds for AMD64 and ARM64.
 
-The current GitHub workflow runs for tags and releases and builds the two Linux binaries. It does not run every local quality gate. Docker tests for a specific CPU architecture still need a matching runner when emulation is unavailable.
+The GitHub workflow runs frozen install, formatting, linting, type checking, unit/contract tests, integration tests, and both Linux builds for tags and releases. Parity and smoke remain additional local gates. Docker tests for a specific CPU architecture still need a matching runner when emulation is unavailable.
 
 ## Contributor safety
 

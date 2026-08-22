@@ -27,16 +27,13 @@ export function addPhpVersion(
   return {
     ...state,
     phpVersions: [...state.phpVersions, managed].sort((a, b) =>
-      compareMajorMinor(a.version, b.version)
+      compareMajorMinor(a.version, b.version),
     ),
     updatedAt: new Date().toISOString(),
   };
 }
 
-export function removePhpVersion(
-  state: DesiredState,
-  versionInput: string,
-): DesiredState {
+export function removePhpVersion(state: DesiredState, versionInput: string): DesiredState {
   const version = asPhpVersion(unwrap(parsePhpVersion(versionInput), "phpVersion"));
   const found = state.phpVersions.find((v) => v.version === version);
   if (!found) throw notFoundError(`PHP version ${version} is not managed`);
@@ -97,9 +94,7 @@ export function buildCliExec(
 
   let phpVersion = app.phpVersion;
   if (opts?.phpVersionOverride) {
-    const ov = asPhpVersion(
-      unwrap(parsePhpVersion(opts.phpVersionOverride), "phpVersion"),
-    );
+    const ov = asPhpVersion(unwrap(parsePhpVersion(opts.phpVersionOverride), "phpVersion"));
     if (ov !== app.phpVersion) {
       // Spec: mismatched override fails before side effects when not intentional —
       // we allow explicit override only if the version is managed, but warn via throw if not managed.
@@ -112,10 +107,7 @@ export function buildCliExec(
   const managed = state.phpVersions.find((v) => v.version === phpVersion);
   if (!managed) throw validationError(`PHP version ${phpVersion} is not managed`);
 
-  const workdir = platform.paths.assertInsideHome(
-    app.home,
-    opts?.workdir ?? app.home,
-  );
+  const workdir = platform.paths.assertInsideHome(app.home, opts?.workdir ?? app.home);
 
   return {
     // Ephemeral CLI is a profile service: `${phpService}-cli` (see compose fragment).
@@ -144,10 +136,7 @@ export function buildCliExec(
  * Use `-it` for interactive shells and `-T` for scripted non-TTY invocations.
  * Never pass docker `-u` here — that yields "I have no name!" with no passwd entry.
  */
-export function cliRunComposeCommand(
-  plan: CliExecPlan,
-  opts?: { tty?: boolean },
-): string[] {
+export function cliRunComposeCommand(plan: CliExecPlan, opts?: { tty?: boolean }): string[] {
   const tty = opts?.tty ?? true;
   return [
     "--profile",

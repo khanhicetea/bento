@@ -214,7 +214,7 @@ bento upgrade verify
 
 Upgrade preflight MUST report:
 
-- current/target Bento, Deno target, state schema, and asset versions;
+- current/target Bento, Bun target, state schema, and asset versions;
 - supported source schema range and migration chain;
 - changed images/assets and required container rebuild/recreation;
 - custom-template drift and overlay validation warnings;
