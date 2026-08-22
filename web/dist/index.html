@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" data-theme="bento">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#173d32" />
+    <title>Bento Control Plane</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@5/daisyui.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <link href="/app.css" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#overview" aria-label="Bento overview"
+          ><span class="brand-mark">B</span
+          ><span><strong>Bento</strong><small>Control plane</small></span></a
+        >
+        <nav id="nav" aria-label="Main navigation"></nav>
+        <div class="sidebar-foot">
+          <span id="connection" class="status status-warning"></span
+          ><span id="connection-label">Connecting</span>
+        </div>
+      </aside>
+      <main>
+        <header class="topbar">
+          <div>
+            <button id="menu-button" class="btn btn-ghost btn-sm" aria-label="Toggle navigation">
+              ☰
+            </button>
+            <p class="eyebrow">SINGLE-HOST OPERATIONS</p>
+            <h1 id="page-title">Overview</h1>
+          </div>
+          <div class="top-actions">
+            <span id="stack-name" class="badge badge-outline">Loading…</span
+            ><button id="theme" class="btn btn-ghost btn-sm" aria-label="Toggle theme">◐</button
+            ><button id="refresh" class="btn btn-primary btn-sm">Refresh</button>
+          </div>
+        </header>
+        <div id="notice" role="status" aria-live="polite"></div>
+        <section id="content" class="content" aria-live="polite">
+          <div class="loading loading-spinner loading-lg"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="runner" class="modal">
+      <div class="modal-box runner-box">
+        <form method="dialog">
+          <button class="btn btn-sm btn-circle btn-ghost modal-close" aria-label="Close">✕</button>
+        </form>
+        <p class="eyebrow">BENTO COMMAND</p>
+        <h2 id="runner-title" class="text-xl font-bold">Run operation</h2>
+        <label class="form-control"
+          ><span class="label-text">Arguments (quotes are supported; no shell expansion)</span
+          ><textarea
+            id="command"
+            class="textarea textarea-bordered code"
+            rows="4"
+            spellcheck="false"
+          ></textarea>
+        </label>
+        <div class="modal-action">
+          <button id="run-command" class="btn btn-primary">Run</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="output-modal" class="modal">
+      <div class="modal-box output-box">
+        <form method="dialog">
+          <button class="btn btn-sm btn-circle btn-ghost modal-close" aria-label="Close">✕</button>
+        </form>
+        <div class="output-head">
+          <div>
+            <p class="eyebrow">OPERATION RESULT</p>
+            <h2 id="output-title" class="text-xl font-bold">Command output</h2>
+          </div>
+          <span id="exit-code" class="badge"></span>
+        </div>
+        <pre id="output" tabindex="0"></pre>
+        <div class="modal-action">
+          <button id="copy-output" class="btn btn-ghost">Copy</button>
+          <form method="dialog"><button class="btn">Close</button></form>
+        </div>
+      </div>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

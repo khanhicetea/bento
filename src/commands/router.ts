@@ -27,6 +27,7 @@ import { registerPermissionsCommands } from "./subcommands/permissions.ts";
 import { registerPhpCommands } from "./subcommands/php.ts";
 import { registerProxyCommands } from "./subcommands/proxy.ts";
 import { registerRcloneCommand } from "./subcommands/rclone.ts";
+import { registerServeCommand } from "./subcommands/serve.ts";
 import { registerStackCommands } from "./subcommands/stack.ts";
 import { registerSqliteCommands } from "./subcommands/sqlite.ts";
 import { registerTemplateCommands } from "./subcommands/template.ts";
@@ -89,6 +90,7 @@ function buildParser(state: RunState) {
 
   parser = withGlobals(parser) as YargsBuilder;
   parser = registerCoreCommands(parser, state);
+  parser = registerServeCommand(parser, state);
   parser = registerAppCommands(parser, state);
   parser = registerPhpCommands(parser, state);
   parser = registerMysqlCommands(parser, state);

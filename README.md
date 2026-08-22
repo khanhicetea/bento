@@ -142,7 +142,7 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 
 | Area         | Commands                                                                                                                                                                                                                                                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops)                                                                                                                                                                       |
+| Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops); `serve [--host 127.0.0.1 --port 8080 --open]` (oRPC API + DaisyUI 5 web control plane)                                                                                                                                                                       |
 | Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                             |
 | Diagnostics  | `doctor`, `support-bundle [output]` — validates runtime versions, network/storage/TLS/service health, permissions, volumes, overlays, and secret modes; bundles contain redacted diagnostics only                                                              |
 | Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — Docker harness covering MySQL and PostgreSQL PHP connectivity, PostgreSQL two-app isolation and backup/restore, mixed-engine status/raw export, app operations, and deploy; ACME skipped |
@@ -161,6 +161,15 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                             |
 
 PostgreSQL is a first-class database kind alongside MySQL, SQLite, and Litestream. Managed private services can be added and listed with `postgres add <major>` / `postgres list`; calling `app update` with a new database kind links another binding without replacing existing data. Routine administration is available through `mysql db|shell|size|processlist`, `postgres db|shell|size|processlist`, and `sqlite`. Top-level backup enumerates all linked bindings; restore accepts `--engine mysql|postgres` when a mixed relational app would otherwise be ambiguous. Fresh state uses schema v1: apps persist `databases[]`, while authoritative domain records link domains to apps or proxies and mark one link primary. All other schema versions are rejected and no migration command is provided. PostgreSQL uses official major tags such as `17` (`postgres17`).
+
+### Web control plane
+
+```bash
+bento --stack /var/lib/bento serve                 # http://127.0.0.1:8080
+bento --stack /var/lib/bento serve --port 9090 --open
+```
+
+`serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. A non-loopback `--host` is temporarily available for testing and has no authentication, so do not expose it to an untrusted network. The UI covers the TUI workflows plus the remaining browser-safe command catalog. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
 
 ### Logical database backup and restore
 

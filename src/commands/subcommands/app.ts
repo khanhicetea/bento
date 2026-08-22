@@ -151,7 +151,11 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
       .command(
         "prune <slug>",
         "Permanently delete data retained after app removal",
-        (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
+        (y2: YargsBuilder) =>
+          y2.positional("slug", { type: "string", demandOption: true }).option("confirm", {
+            type: "string",
+            describe: "Non-interactive exact confirmation text: delete",
+          }),
         bind(state, cmdAppPrune),
       )
       .command(
@@ -422,7 +426,8 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   ctx.log.out(`  - App home: ${plan.home}`);
   ctx.log.out("");
 
-  const confirmation = globalThis.prompt("Type 'delete' to permanently clean these parts:");
+  const confirmation =
+    argv.confirm ?? globalThis.prompt("Type 'delete' to permanently clean these parts:");
   const result = await ctx.store.withExclusive(async (current) => {
     const checked = await planAppPrune(ctx.platform, current, argv.slug);
     if (JSON.stringify(checked) !== JSON.stringify(plan)) {

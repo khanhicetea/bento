@@ -13,8 +13,8 @@
     "bento": "./src/main.ts"
   },
   "scripts": {
-    "fmt": "bunx prettier --write src tests package.json docs/package.json tsconfig.json eslint.config.js .prettierrc.json",
-    "fmt:check": "bunx prettier --check src tests package.json docs/package.json tsconfig.json eslint.config.js .prettierrc.json",
+    "fmt": "bunx prettier --write src tests web/src web/index.html package.json docs/package.json tsconfig.json eslint.config.js .prettierrc.json",
+    "fmt:check": "bunx prettier --check src tests web/src web/index.html package.json docs/package.json tsconfig.json eslint.config.js .prettierrc.json",
     "lint": "bunx eslint src tests",
     "check": "bunx tsc --noEmit",
     "test": "bun test tests/unit tests/contract",
@@ -25,13 +25,17 @@
     "smoke:compiled": "bun run compile && dist/bento version && dist/bento --stack ${BENTO_SMOKE_STACK:-/tmp/bento-smoke-$$} init && dist/bento --stack ${BENTO_SMOKE_STACK:-/tmp/bento-smoke-$$} render && dist/bento --stack ${BENTO_SMOKE_STACK:-/tmp/bento-smoke-$$} status",
     "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run test && bun run test:integration",
     "run": "bun run src/main.ts",
-    "compile": "mkdir -p dist && bun build --compile --asset=templates --outfile=dist/bento src/main.ts",
-    "compile:amd64": "mkdir -p dist && bun build --compile --target=bun-linux-x64 --asset=templates --outfile=dist/bento-linux-amd64 src/main.ts",
-    "compile:arm64": "mkdir -p dist && bun build --compile --target=bun-linux-arm64 --asset=templates --outfile=dist/bento-linux-arm64 src/main.ts",
+    "serve": "bun run web:build && bun run src/main.ts serve",
+    "web:build": "rm -rf web/dist && mkdir -p web/dist && bun build web/src/app.ts --target=browser --outfile=web/dist/app.js && cp web/index.html web/dist/index.html && cp web/src/app.css web/dist/app.css",
+    "compile": "bun run web:build && mkdir -p dist && bun build --compile --asset=templates --asset=web/dist --outfile=dist/bento src/main.ts",
+    "compile:amd64": "bun run web:build && mkdir -p dist && bun build --compile --target=bun-linux-x64 --asset=templates --asset=web/dist --outfile=dist/bento-linux-amd64 src/main.ts",
+    "compile:arm64": "bun run web:build && mkdir -p dist && bun build --compile --target=bun-linux-arm64 --asset=templates --asset=web/dist --outfile=dist/bento-linux-arm64 src/main.ts",
     "docs:dev": "bun run --cwd=docs dev",
     "docs:build": "bun run --cwd=docs build"
   },
   "dependencies": {
+    "@orpc/client": "1.15.0",
+    "@orpc/server": "1.15.0",
     "cliui": "9.0.1",
     "cron-parser": "5.6.2",
     "js-yaml": "4.1.0",

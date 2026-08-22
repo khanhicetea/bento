@@ -17,6 +17,7 @@ type StringArgName =
   | "engine"
   | "file"
   | "fpm"
+  | "host"
   | "key"
   | "lock"
   | "mysql"
@@ -56,6 +57,7 @@ type BooleanArgName =
   | "noApply"
   | "noCopy"
   | "none"
+  | "open"
   | "preview"
   | "print"
   | "recursive"
@@ -68,6 +70,7 @@ type BooleanArgName =
 
 type NumberArgName =
   | "httpPort"
+  | "port"
   | "httpsPort"
   | "retainDays"
   | "scheduleWaitSec"
