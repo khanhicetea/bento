@@ -1,6 +1,11 @@
 import { basename, relative, resolve } from "node:path";
 import { implement } from "@orpc/server";
-import { dataContract, type DatabaseRuntime, type DataOverview } from "@bento/shared";
+import {
+  dataContract,
+  type DatabaseActivity,
+  type DatabaseRuntime,
+  type DataOverview,
+} from "@bento/shared";
 import type { CliContext } from "../../../commands/context.ts";
 import type { AppDatabaseBinding } from "../../../domain/state.ts";
 import { runDatabaseBackup, runDatabaseRestore } from "../../../services/database_backup.ts";
@@ -18,6 +23,7 @@ export function createDataRouter(ctx: CliContext) {
   return os.router({
     overview: os.overview.handler(async () => await dataOverview(ctx)),
     runtime: os.runtime.handler(async ({ input }) => await databaseRuntime(ctx, input)),
+    activity: os.activity.handler(async ({ input }) => await databaseActivity(ctx, input)),
     backup: os.backup.handler(async ({ input }) => {
       const state = await ctx.store.load();
       const database =
@@ -167,59 +173,65 @@ async function databaseRuntime(
   }
 }
 
+async function databaseActivity(
+  ctx: CliContext,
+  input: { service: string; engine: "mysql" | "postgres" },
+): Promise<DatabaseActivity> {
+  const state = await ctx.store.load();
+  const managed = state.databaseServices.find(
+    (item) => item.service === input.service && item.engine === input.engine,
+  );
+  if (!managed) {
+    return {
+      service: input.service,
+      engine: input.engine,
+      processes: [],
+      error: "This database service is not managed by Bento.",
+    };
+  }
+  try {
+    const password =
+      input.engine === "mysql"
+        ? await requireMysqlRootPassword(ctx.platform)
+        : await requirePostgresRootPassword(ctx.platform);
+    return {
+      service: input.service,
+      engine: input.engine,
+      processes: await queryDatabaseActivity(ctx, input, password),
+    };
+  } catch (error) {
+    return {
+      service: input.service,
+      engine: input.engine,
+      processes: [],
+      error: redact(error instanceof Error ? error.message : String(error)).slice(0, 2_000),
+    };
+  }
+}
+
 async function liveDatabaseRuntime(
   ctx: CliContext,
   input: { service: string; engine: "mysql" | "postgres" },
   configuredVersion: string,
 ): Promise<DatabaseRuntime> {
-  if (input.engine === "mysql") {
-    const password = await requireMysqlRootPassword(ctx.platform);
-    const sizes = await queryDatabaseSizes(ctx.platform, input.service, password);
-    let processes: DatabaseRuntime["processes"] = [];
-    let error: string | undefined;
-    try {
-      const activity = await queryProcesslist(ctx.platform, input.service, password);
-      processes = activity.stdout
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => {
-          const fields = line.split("\t");
-          return {
-            id: fields[0] ?? "",
-            user: fields[1] ?? "",
-            database: fields[3] ?? "",
-            state: fields[6] || fields[4] || "unknown",
-            query: fields[4] || "—",
-          };
-        });
-    } catch (cause) {
-      error = `Database sizes loaded, but process activity is unavailable: ${redact(messageOf(cause)).slice(0, 1_000)}`;
-    }
-    return {
-      service: input.service,
-      engine: input.engine,
-      serverVersion: configuredVersion,
-      databases: sizes.rows.map((row) => ({
-        name: row.database,
-        bytes: Math.round(Number(row.totalSize) * 1024 * 1024) || 0,
-      })),
-      processes,
-      ...(error ? { error } : {}),
-    };
-  }
-
-  const password = await requirePostgresRootPassword(ctx.platform);
-  const sizes = await queryPostgresDatabaseSizes(ctx.platform, input.service, password);
+  const password =
+    input.engine === "mysql"
+      ? await requireMysqlRootPassword(ctx.platform)
+      : await requirePostgresRootPassword(ctx.platform);
+  const databases =
+    input.engine === "mysql"
+      ? (await queryDatabaseSizes(ctx.platform, input.service, password)).rows.map((row) => ({
+          name: row.database,
+          bytes: Math.round(Number(row.totalSize) * 1024 * 1024) || 0,
+        }))
+      : (await queryPostgresDatabaseSizes(ctx.platform, input.service, password)).map((row) => ({
+          name: row.database,
+          bytes: Number(row.bytes) || 0,
+        }));
   let processes: DatabaseRuntime["processes"] = [];
   let error: string | undefined;
   try {
-    processes = (await queryPostgresActivity(ctx.platform, input.service, password)).map((row) => ({
-      id: row.pid,
-      user: row.user,
-      database: row.database,
-      state: row.state,
-      query: row.queryStart ? `Active since ${row.queryStart}` : "—",
-    }));
+    processes = await queryDatabaseActivity(ctx, input, password);
   } catch (cause) {
     error = `Database sizes loaded, but process activity is unavailable: ${redact(messageOf(cause)).slice(0, 1_000)}`;
   }
@@ -227,10 +239,41 @@ async function liveDatabaseRuntime(
     service: input.service,
     engine: input.engine,
     serverVersion: configuredVersion,
-    databases: sizes.map((row) => ({ name: row.database, bytes: Number(row.bytes) || 0 })),
+    databases,
     processes,
     ...(error ? { error } : {}),
   };
+}
+
+async function queryDatabaseActivity(
+  ctx: CliContext,
+  input: { service: string; engine: "mysql" | "postgres" },
+  password: string,
+): Promise<DatabaseRuntime["processes"]> {
+  if (input.engine === "mysql") {
+    const activity = await queryProcesslist(ctx.platform, input.service, password);
+    return activity.stdout
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => {
+        const fields = line.split("\t");
+        return {
+          id: fields[0] ?? "",
+          user: fields[1] ?? "",
+          database: fields[3] ?? "",
+          state: fields[6] || fields[4] || "unknown",
+          query: fields[4] || "—",
+        };
+      });
+  }
+
+  return (await queryPostgresActivity(ctx.platform, input.service, password)).map((row) => ({
+    id: row.pid,
+    user: row.user,
+    database: row.database,
+    state: row.state,
+    query: row.queryStart ? `Active since ${row.queryStart}` : "—",
+  }));
 }
 
 async function listBackups(ctx: CliContext): Promise<DataOverview["backups"]> {

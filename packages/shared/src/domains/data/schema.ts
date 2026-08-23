@@ -45,22 +45,27 @@ export const dataOverviewSchema = z.object({
     .optional(),
 });
 
-export const databaseRuntimeSchema = z.object({
+const databaseProcessSchema = z.object({
+  id: z.string(),
+  user: z.string(),
+  database: z.string(),
+  state: z.string(),
+  query: z.string(),
+});
+
+const databaseActivityBaseSchema = z.object({
   service: z.string(),
   engine: z.enum(["mysql", "postgres"]),
-  serverVersion: z.string(),
   error: z.string().optional(),
-  databases: z.array(z.object({ name: z.string(), bytes: z.number().int().nonnegative() })),
-  processes: z.array(
-    z.object({
-      id: z.string(),
-      user: z.string(),
-      database: z.string(),
-      state: z.string(),
-      query: z.string(),
-    }),
-  ),
+  processes: z.array(databaseProcessSchema),
 });
+
+export const databaseRuntimeSchema = databaseActivityBaseSchema.extend({
+  serverVersion: z.string(),
+  databases: z.array(z.object({ name: z.string(), bytes: z.number().int().nonnegative() })),
+});
+
+export const databaseActivitySchema = databaseActivityBaseSchema;
 
 export const databaseBackupResultSchema = z.object({
   artifacts: z.array(
@@ -72,3 +77,4 @@ export const databaseRestoreResultSchema = z.object({ message: z.string() });
 
 export type DataOverview = z.infer<typeof dataOverviewSchema>;
 export type DatabaseRuntime = z.infer<typeof databaseRuntimeSchema>;
+export type DatabaseActivity = z.infer<typeof databaseActivitySchema>;

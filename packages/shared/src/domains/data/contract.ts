@@ -1,6 +1,7 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  databaseActivitySchema,
   databaseBackupResultSchema,
   databaseRestoreResultSchema,
   databaseRuntimeSchema,
@@ -15,6 +16,9 @@ export const dataContract = oc.router({
   runtime: oc
     .input(z.object({ service: z.string().min(1), engine: relationalEngine }))
     .output(databaseRuntimeSchema),
+  activity: oc
+    .input(z.object({ service: z.string().min(1), engine: relationalEngine }))
+    .output(databaseActivitySchema),
   backup: oc
     .input(z.object({ app: z.string().min(1), database: z.string().min(1), engine: backupEngine }))
     .output(databaseBackupResultSchema),

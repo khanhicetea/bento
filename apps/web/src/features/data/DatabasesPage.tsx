@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import type { ReactNode } from "react";
+import { Archive, Database, HardDrive, Server } from "lucide-react";
 import {
   DomainError,
   DomainLoading,
@@ -26,23 +28,20 @@ export function DatabasesPage() {
 
   if (!data && query.isPending) {
     return (
-      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
+      <section className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainLoading label="databases" />
       </section>
     );
   }
   if (!data && query.error) {
     return (
-      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
+      <section className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
       </section>
     );
   }
   if (!data) return null;
 
-  const relationalBindings = data.bindings.filter(
-    (binding) => binding.engine === "mysql" || binding.engine === "postgres",
-  );
   const fileBindings = data.bindings.filter(
     (binding) => binding.engine === "sqlite" || binding.engine === "litestream",
   );
@@ -50,52 +49,83 @@ export function DatabasesPage() {
     (total, binding) => total + binding.resources.length,
     0,
   );
+  const fileDatabaseCount = fileBindings.reduce(
+    (total, binding) => total + binding.resources.length,
+    0,
+  );
 
   return (
-    <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
-      <div className="mb-4 flex items-end justify-between gap-4 max-[760px]:items-stretch max-[760px]:flex-col">
+    <section
+      className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4"
+      aria-live="polite"
+    >
+      <div className="flex items-end justify-between gap-6 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
-          <h2>Databases</h2>
-          <p className="m-0 my-1 opacity-60">
-            See database usage, create backups, inspect runtimes, and manage recovery in one place.
+          <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Control plane / Data
+          </p>
+          <h2 className="m-0 text-[clamp(1.7rem,3vw,2.35rem)] tracking-tight">Databases</h2>
+          <p className="m-0 mt-2 max-w-[680px] text-sm text-muted-foreground">
+            Monitor database services, create backups, and recover application data from one place.
           </p>
         </div>
-        <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
+        <Button
+          className="max-[760px]:w-full"
+          variant="outline"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
           {query.isFetching && <Spinner />}
           Refresh inventory
         </Button>
       </div>
+
       {!data.initialized ? (
-        <StackNotReady stackRoot={data.stackRoot} error={data.error} />
+        <div className="mt-8">
+          <StackNotReady stackRoot={data.stackRoot} error={data.error} />
+        </div>
       ) : (
         <>
-          <div className="my-[1.2rem] grid grid-cols-4 gap-4 max-[1050px]:grid-cols-2 max-[760px]:grid-cols-1">
-            <Metric label="Databases" value={databaseCount} />
-            <Metric label="Managed services" value={data.services.length} />
-            <Metric
-              label="Applications"
-              value={new Set(data.bindings.map((item) => item.app)).size}
+          <div className="mt-8 grid grid-cols-4 gap-3 max-[1050px]:grid-cols-2 max-[560px]:grid-cols-1">
+            <Summary
+              value={databaseCount}
+              label="Attached databases"
+              icon={<Database className="size-4" />}
             />
-            <Metric label="Backup artifacts" value={data.backups.length} />
+            <Summary
+              value={data.services.length}
+              label="Managed services"
+              icon={<Server className="size-4" />}
+              tone="success"
+            />
+            <Summary
+              value={new Set(data.bindings.map((item) => item.app)).size}
+              label="Applications using data"
+              icon={<HardDrive className="size-4" />}
+            />
+            <Summary
+              value={data.backups.length}
+              label="Backup artifacts"
+              icon={<Archive className="size-4" />}
+            />
           </div>
 
-          <div className="my-8 mb-3.5 [&_h2]:m-0 [&_p]:m-0 [&_p]:mt-1 [&_p]:opacity-65">
-            <div>
-              <h2>MySQL &amp; PostgreSQL</h2>
-              <p>
-                Live sizes are loaded from each managed service. Backups are compressed logical
-                dumps.
-              </p>
-            </div>
-          </div>
+          <SectionHeading
+            eyebrow="Managed services"
+            title="MySQL & PostgreSQL"
+            description="Live sizes are loaded from each service. Backups are compressed logical dumps."
+            count={data.services.length}
+            itemLabel="service"
+            icon={<Server className="size-4" />}
+          />
           {data.services.length ? (
-            <div className="mt-5 grid gap-5">
+            <div className="mt-4 grid gap-5">
               {data.services.map((service) => (
                 <DatabaseManager key={service.service} service={service} data={data} />
               ))}
             </div>
           ) : (
-            <article className="col-span-full flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5 text-card-foreground max-[760px]:items-stretch max-[760px]:flex-col">
+            <article className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-dashed border-border bg-card px-6 py-8 text-card-foreground shadow-sm max-[760px]:items-stretch max-[760px]:flex-col">
               <EmptyPanel>No managed MySQL or PostgreSQL services.</EmptyPanel>
               <Button asChild>
                 <Link href="/applications">Add from an application</Link>
@@ -103,16 +133,18 @@ export function DatabasesPage() {
             </article>
           )}
 
-          <div className="my-8 mb-3.5 [&_h2]:m-0 [&_p]:m-0 [&_p]:mt-1 [&_p]:opacity-65">
-            <div>
-              <h2>SQLite &amp; Litestream</h2>
-              <p>Application-local files and their continuous replication status.</p>
-            </div>
-          </div>
-          <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2">
-            {fileBindings.length ? (
-              <div className="overflow-auto rounded-[0.8rem] border border-border">
-                <Table className="min-w-[650px] bg-card">
+          <SectionHeading
+            eyebrow="Application-local storage"
+            title="SQLite & Litestream"
+            description="Application-local files and their continuous replication status."
+            count={fileDatabaseCount}
+            itemLabel="database"
+            icon={<HardDrive className="size-4" />}
+          />
+          <article className="mt-4 overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-sm">
+            {fileDatabaseCount ? (
+              <div className="overflow-auto">
+                <Table className="min-w-[720px] bg-card">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Application</TableHead>
@@ -126,7 +158,12 @@ export function DatabasesPage() {
                       binding.resources.map((resource) => (
                         <TableRow key={`${binding.app}:${binding.engine}:${resource}`}>
                           <TableCell>
-                            <strong>{binding.app}</strong>
+                            <div className="flex items-center gap-2">
+                              <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                                <Database className="size-3.5" aria-hidden="true" />
+                              </span>
+                              <strong>{binding.app}</strong>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">
@@ -134,14 +171,24 @@ export function DatabasesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <code>{resource}</code>
+                            <code className="text-xs">{resource}</code>
                           </TableCell>
                           <TableCell>
-                            {binding.engine === "litestream"
-                              ? binding.backupVerifiedAt
-                                ? `Verified ${formatDate(binding.backupVerifiedAt)}`
-                                : "Replication not verified"
-                              : "Logical backup available from the CLI"}
+                            {binding.engine === "litestream" ? (
+                              binding.backupVerifiedAt ? (
+                                <span className="text-sm text-emerald-700 dark:text-emerald-300">
+                                  Verified {formatDate(binding.backupVerifiedAt)}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-amber-700 dark:text-amber-300">
+                                  Replication not verified
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                Logical backup available from the CLI
+                              </span>
+                            )}
                           </TableCell>
                         </TableRow>
                       )),
@@ -150,19 +197,24 @@ export function DatabasesPage() {
                 </Table>
               </div>
             ) : (
-              <EmptyPanel>No SQLite or Litestream databases.</EmptyPanel>
+              <div className="p-6">
+                <EmptyPanel>No SQLite or Litestream databases.</EmptyPanel>
+              </div>
             )}
           </article>
 
           {data.sqliteBackup && (
-            <article className="grid grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)] gap-8 rounded-xl border border-border bg-card p-5 text-card-foreground max-[900px]:grid-cols-1">
+            <article className="mt-5 grid grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)] gap-8 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm max-[900px]:grid-cols-1">
               <div>
-                <h2>Litestream policy</h2>
-                <p className="text-sm opacity-60">
+                <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                  <Archive className="size-5" aria-hidden="true" />
+                </div>
+                <h3 className="m-0 text-base font-semibold">Litestream policy</h3>
+                <p className="m-0 mt-2 text-sm text-muted-foreground">
                   Continuous replication settings shared by Litestream databases.
                 </p>
               </div>
-              <div className="grid">
+              <div className="grid rounded-xl border border-border bg-muted/30 px-4">
                 <Detail label="Status" value={data.sqliteBackup.enabled ? "Enabled" : "Disabled"} />
                 <Detail label="Destination" value={data.sqliteBackup.destination} />
                 <Detail label="Sync interval" value={data.sqliteBackup.syncInterval} />
@@ -173,23 +225,70 @@ export function DatabasesPage() {
               </div>
             </article>
           )}
-
-          {!relationalBindings.length && !fileBindings.length && (
-            <p className="text-center text-sm opacity-60">
-              No databases are currently bound to applications.
-            </p>
-          )}
         </>
       )}
     </section>
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+  count,
+  itemLabel,
+  icon,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  count: number;
+  itemLabel: string;
+  icon: ReactNode;
+}) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 text-card-foreground">
-      <div className="text-xs uppercase tracking-[0.06em] opacity-60">{label}</div>
-      <div className="mt-1 text-3xl font-bold">{value}</div>
+    <div className="mt-10 flex items-end justify-between gap-4 max-[760px]:items-start">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="mt-1 grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="m-0 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {eyebrow}
+          </p>
+          <h3 className="m-0 mt-1 text-lg font-semibold tracking-tight">{title}</h3>
+          <p className="m-0 mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <Badge variant="secondary" className="shrink-0">
+        {count} {count === 1 ? itemLabel : `${itemLabel}s`}
+      </Badge>
+    </div>
+  );
+}
+
+function Summary({
+  value,
+  label,
+  icon,
+  tone = "default",
+}: {
+  value: number;
+  label: string;
+  icon: ReactNode;
+  tone?: "default" | "success";
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground shadow-sm">
+      <span
+        className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone === "success" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <strong className="block text-xl leading-none tracking-tight">{value}</strong>
+        <span className="mt-1 block truncate text-xs text-muted-foreground">{label}</span>
+      </span>
     </div>
   );
 }
@@ -197,7 +296,7 @@ function Metric({ label, value }: { label: string; value: number }) {
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border py-2.5 text-[0.84rem] last:border-b-0">
-      <span className="opacity-70">{label}</span>
+      <span className="text-muted-foreground">{label}</span>
       <strong className="[overflow-wrap:anywhere] text-right">{value}</strong>
     </div>
   );
