@@ -98,7 +98,8 @@ export interface AssetResolver {
 export type StackPaths = {
   /** Operator-selected stack root (mutable/desired/durable). */
   root: string;
-  stateFile: string;
+  /** Private SQLite desired-state database. */
+  stateDb: string;
   envFile: string;
   generatedDir: string;
   lockDir: string;

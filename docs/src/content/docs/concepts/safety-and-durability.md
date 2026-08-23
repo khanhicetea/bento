@@ -17,7 +17,7 @@ Show: Five horizontal layers with example paths. Add badges for sensitive, rebui
 
 | Layer | Examples | Treatment |
 | --- | --- | --- |
-| Desired state | `.env`, `state.json` | Sensitive source of truth; change through the CLI |
+| Desired state | `.env`, `state.db` | Sensitive source of truth; change through the CLI |
 | Generated | `generated/`, materialized `docker/` and `helpers/` | Rebuildable; never edit |
 | Custom | `custom/`, `overlays/` | Operator-owned; review after upgrades |
 | Durable | `homes/`, `sqlite/`, `certs/`, `backups/`, `logs/`, database and Redis volumes | Back up and protect |
@@ -36,7 +36,7 @@ For that reason, copying the stack root does not create a complete recovery copy
 - MySQL/PostgreSQL dumps are created on-host. Scheduled runs may upload new artifacts through configured rclone, but you must verify remote retention and recovery separately.
 - SQLite uses optional S3 continuous backup; its verification command restores a temporary copy but does not replace production data.
 
-Treat `.env`, `state.json`, app credentials, deploy secrets, certificate private keys, and export archives as secrets. Bento redacts known credentials from support bundles, but you must still inspect every archive before sharing it.
+Treat `.env`, `state.db`, app credentials, deploy secrets, certificate private keys, and export archives as secrets. Bento redacts known credentials from support bundles, but you must still inspect every archive before sharing it.
 
 ## Trust boundary
 

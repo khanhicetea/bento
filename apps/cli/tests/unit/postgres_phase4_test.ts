@@ -189,7 +189,7 @@ bunRuntime.test(
       await store.init();
       const original = addPostgresVersion(await store.load(), "17");
       await store.save(original);
-      const bytes = await platform.fs.readText(platform.paths.paths.stateFile);
+      const before = await store.load();
       const provisioned = provisionApp(platform, original, {
         slug: "demo",
         domain: "demo.test",
@@ -204,7 +204,7 @@ bunRuntime.test(
         Error,
         "unavailable",
       );
-      assertEquals(await platform.fs.readText(platform.paths.paths.stateFile), bytes);
+      assertEquals(await store.load(), before);
       for (const call of platform.process.calls) {
         assertEquals(call.command.join(" ").includes(provisioned.app.database.password), false);
       }

@@ -1,7 +1,14 @@
+import { Database } from "bun:sqlite";
 import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import { join } from "node:path";
 import { runCli } from "../../src/main.ts";
+import { createPlatform } from "../../src/platform/mod.ts";
 import { createFileLock } from "../../src/platform/lock.ts";
+import { StateStore } from "../../src/services/state_store.ts";
+
+async function loadState(stack: string) {
+  return await new StateStore(createPlatform(stack, bunRuntime.cwd())).load();
+}
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -25,6 +32,8 @@ bunRuntime.test("cli init render status app create", async () => {
   await withStack(async (stack) => {
     const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init"]), 0);
+    assertEquals(await runCli([...base, "migrate"]), 0);
+    assertEquals((await bunRuntime.stat(join(stack, "state.db"))).mode & 0o777, 0o600);
     assertEquals(await runCli([...base, "render"]), 0);
     assertEquals(await runCli([...base, "status"]), 0);
     // Without --db: best-effort MySQL may defer when the service is down.
@@ -122,9 +131,9 @@ bunRuntime.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const pgState = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
-    assertEquals(pgState.apps.pgdemo.databases[0].engine, "postgres");
-    assertEquals(pgState.apps.pgdemo.databases[0].service, "postgres17");
+    const pgState = await loadState(stack);
+    assertEquals(pgState.apps.pgdemo!.databases[0]!.engine, "postgres");
+    assertEquals(pgState.apps.pgdemo!.databases[0]!.service, "postgres17");
     const pgCred = await bunRuntime.readTextFile(join(stack, "homes/pgdemo/credentials/app.env"));
     assertEquals(pgCred.includes("DB_CONNECTION=pgsql"), true);
     assertEquals(pgCred.includes("MYSQL_"), false);
@@ -158,10 +167,10 @@ bunRuntime.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const afterRefusals = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
+    const afterRefusals = await loadState(stack);
     assertEquals(afterRefusals.apps.badflags, undefined);
     assertEquals(
-      afterRefusals.apps.pgdemo.databases.map((database: { engine: string }) => database.engine),
+      afterRefusals.apps.pgdemo!.databases.map((database) => database.engine),
       ["postgres", "mysql"],
     );
 
@@ -201,7 +210,7 @@ bunRuntime.test("cli init render status app create", async () => {
       await runCli([...base, "proxy", "delete", "api", "--confirm", "delete api", "--no-apply"]),
       0,
     );
-    const afterProxyDelete = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
+    const afterProxyDelete = await loadState(stack);
     assertEquals(afterProxyDelete.proxies.api, undefined);
 
     // cron + worker
@@ -238,10 +247,10 @@ bunRuntime.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const cronState = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
-    assertEquals(cronState.cronJobs[0].schedule, "0 * * * *");
-    assertEquals(cronState.cronJobs[0].timezone, "UTC");
-    assertEquals(cronState.cronJobs[0].commandMode, "shell");
+    const cronState = await loadState(stack);
+    assertEquals(cronState.cronJobs[0]!.schedule, "0 * * * *");
+    assertEquals(cronState.cronJobs[0]!.timezone, "UTC");
+    assertEquals(cronState.cronJobs[0]!.commandMode, "shell");
 
     assertEquals(
       await runCli([
@@ -402,15 +411,21 @@ bunRuntime.test("cli init render status app create", async () => {
       await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]),
       0,
     );
-    const afterDelete = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
+    const afterDelete = await loadState(stack);
     assertEquals(afterDelete.apps.demo, undefined);
     assertEquals(await fileExists(join(stack, "homes/demo/code/public/index.php")), true);
 
-    // future state rejection
-    const badState = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
-    badState.schemaVersion = 999;
-    await bunRuntime.writeTextFile(join(stack, "state.json"), JSON.stringify(badState));
+    // Future desired-state versions are rejected and not rewritten.
+    using database = new Database(join(stack, "state.db"));
+    database.run("UPDATE stack_config SET state_schema_version = 999 WHERE id = 1");
     assertEquals((await runCli([...base, "status"])) !== 0, true);
+    const version = database
+      .query<
+        { state_schema_version: number },
+        []
+      >("SELECT state_schema_version FROM stack_config WHERE id = 1")
+      .get();
+    assertEquals(version?.state_schema_version, 999);
   });
 });
 
@@ -418,14 +433,13 @@ bunRuntime.test("cli refuses to reinitialize an existing stack", async () => {
   await withStack(async (stack) => {
     const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init", "--name", "original"]), 0);
-    const statePath = join(stack, "state.json");
     const envPath = join(stack, ".env");
-    const originalState = await bunRuntime.readTextFile(statePath);
+    const originalState = await loadState(stack);
     const originalEnv = await bunRuntime.readTextFile(envPath);
 
     assertEquals((await runCli([...base, "init", "--name", "replacement"])) !== 0, true);
     assertEquals((await runCli([...base, "init", "--force"])) !== 0, true);
-    assertEquals(await bunRuntime.readTextFile(statePath), originalState);
+    assertEquals(await loadState(stack), originalState);
     assertEquals(await bunRuntime.readTextFile(envPath), originalEnv);
   });
 });
@@ -461,16 +475,15 @@ bunRuntime.test(
   },
 );
 
-bunRuntime.test("invalid state is not overwritten on read", async () => {
+bunRuntime.test("invalid state database is not overwritten on read", async () => {
   await withStack(async (stack) => {
     const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     await runCli([...base, "init"]);
-    const path = join(stack, "state.json");
-    const original = "this is not json {{{";
-    await bunRuntime.writeTextFile(path, original);
+    const path = join(stack, "state.db");
+    const original = new TextEncoder().encode("not a sqlite database");
+    await bunRuntime.writeFile(path, original);
     assertEquals((await runCli([...base, "status"])) !== 0, true);
-    const after = await bunRuntime.readTextFile(path);
-    assertEquals(after, original);
+    assertEquals(await bunRuntime.readFile(path), original);
   });
 });
 

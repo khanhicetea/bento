@@ -42,7 +42,7 @@ Do not rotate database passwords by editing `.env`. Existing volumes keep their 
 
 Treat `.env` as secret. Do not commit, paste, or attach it. `COMPOSE_PROJECT_NAME` must remain stable and unique; changing it retargets Compose resources and can make existing named volumes appear missing.
 
-Stack defaults for PHP, database service, FPM profile, and Redis mode live in validated `state.json`, not `.env`, and should normally change through supported CLI operations. Per-app credentials are generated into protected app-owned files.
+Stack defaults for PHP, database service, FPM profile, and Redis mode live in validated `state.db`, not `.env`, and should change through supported CLI operations. Per-app credentials are generated into protected app-owned files.
 
 ## Verify changes
 

@@ -646,7 +646,7 @@ async function addSecretModeChecks(platform: Platform, state: DesiredState, add:
   const paths = platform.paths.paths;
   const candidates = [
     paths.envFile,
-    paths.stateFile,
+    paths.stateDb,
     paths.rcloneConfigFile,
     join(paths.certsDir, "boot.key"),
   ];

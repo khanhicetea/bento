@@ -177,7 +177,7 @@ Choose the permanent Compose project name before initialization. The example use
 docker exec bento bento init --name production
 ```
 
-Initialization creates `/var/lib/bento/state.json`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. Bento refuses to overwrite an initialized stack.
+Initialization creates the private SQLite database `/var/lib/bento/state.db`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. Bento refuses to overwrite an initialized stack. Run `bento migrate` to apply pending database schema migrations; `bento serve` and `bento tui` do this automatically before startup.
 
 #### Step 2: Review and change `.env`
 
@@ -247,7 +247,7 @@ docker restart bento
 docker rm -f bento
 ```
 
-To upgrade, pull a specific newer image, remove the old `bento` control-plane container, and repeat the `docker run` command with the new image. Keep `/var/lib/bento` mounted at the same absolute path.
+To upgrade, pull a specific newer image, remove the old `bento` control-plane container, and repeat the `docker run` command with the new image. Keep `/var/lib/bento` mounted at the same absolute path. The `serve` startup applies pending `state.db` schema migrations; for CLI-only installations, run `bento migrate` before other post-upgrade commands.
 
 Mounting `/var/run/docker.sock` grants the Bento container effective root control of the Docker host. Only trusted administrators may access it. Host-crontab registration (`backup schedule register`) is not supported from this container; configure a host-managed scheduler to invoke `docker exec bento bento backup schedule run` instead.
 
@@ -255,7 +255,7 @@ Mounting `/var/run/docker.sock` grants the Bento container effective root contro
 
 ```text
 Operator CLI (Bun/TS)
-   -> desired state (state.json)
+   -> desired state (normalized tables in state.db)
    -> complete candidate generation
    -> lock / stage / promote / validate / reload
 
@@ -368,7 +368,7 @@ export BENTO_STACK_ROOT=/var/lib/bento
 bento stack import /srv/exports/bento-2026-07-21
 ```
 
-Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and Redis data services needed for a consistent raw copy, and restarts exactly those services afterward. The root archive mechanically includes `sqlite/`, but does not stop SQLite writers or guarantee that a live SQLite/WAL copy is consistent; use logical `.backup` or Litestream for recovery assurance. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.json`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects missing, corrupt, unsafe, or unexpected archives and all existing destination data volumes, restores only newly created volumes, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. In particular, raw PostgreSQL transfer requires a compatible PostgreSQL major/image version; use logical `backup`/`restore` for major upgrades. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
+Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and Redis data services needed for a consistent raw copy, and restarts exactly those services afterward. The root archive mechanically includes `sqlite/`, but does not stop SQLite writers or guarantee that a live SQLite/WAL copy is consistent; use logical `.backup` or Litestream for recovery assurance. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.db`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects missing, corrupt, unsafe, or unexpected archives and all existing destination data volumes, restores only newly created volumes, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. In particular, raw PostgreSQL transfer requires a compatible PostgreSQL major/image version; use logical `backup`/`restore` for major upgrades. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
 
 ### Runner service supervision
 

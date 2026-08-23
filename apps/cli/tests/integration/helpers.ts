@@ -9,6 +9,9 @@
 import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import { join, resolve } from "node:path";
 import { runCli } from "../../src/main.ts";
+import { createPlatform } from "../../src/platform/mod.ts";
+import { stateToJson } from "../../src/schemas/state.ts";
+import { StateStore } from "../../src/services/state_store.ts";
 
 export type StackHarness = {
   stack: string;
@@ -73,6 +76,14 @@ export async function bootstrapStack(h: StackHarness): Promise<void> {
 
 export async function readText(path: string): Promise<string> {
   return await bunRuntime.readTextFile(path);
+}
+
+export async function loadState(stack: string) {
+  return await new StateStore(createPlatform(stack, bunRuntime.cwd())).load();
+}
+
+export async function loadStateJson(stack: string) {
+  return JSON.parse(stateToJson(await loadState(stack)));
 }
 
 export async function exists(path: string): Promise<boolean> {

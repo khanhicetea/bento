@@ -1,31 +1,46 @@
 ---
-title: Desired-state schema
-description: Learn what state.json stores, how Bento validates it, and how to recover it.
+title: Desired-state database
+description: Learn what state.db stores, how Bento validates and migrates it, and how to recover it.
 ---
 
-# Desired-state schema
+# Desired-state database
 
-`state.json` is Bento's sensitive, versioned record of your intent. Change it through Bento commands. Do not use it as a hand-edited configuration file.
+`state.db` is Bento's sensitive, versioned record of your intent. It is a private Bun SQLite database, not a hand-edited configuration file. Change it through Bento commands.
 
 ## What it records
 
-The schema records stack defaults, managed PHP and database services, apps, proxies, domains, cron jobs, workers, deploy settings, TLS choices, Redis identities, and template history.
+Normalized relational tables record stack defaults, managed PHP and database services, apps, app database bindings, logical databases, proxies, authoritative domains, cron jobs, workers, deploy settings, TLS choices, Redis identities, template history, and ordered command arguments.
 
-Each app has a `databases[]` list whose bindings can use MySQL, PostgreSQL, SQLite, or Litestream. Domain records point to an app or proxy instead of being copied into those records. Cron jobs and workers also point back to their app.
+Each app can have MySQL, PostgreSQL, SQLite, or Litestream bindings. Domain rows point to an app or proxy. Cron jobs and workers point back to their app. Checks, unique indexes, and foreign keys enforce local relationships.
 
-Bento treats JSON as untrusted input. It requires the exact current schema version, validates links and domain ownership, and then writes the state atomically. It rejects unknown or malformed fields instead of ignoring them.
+Bento still treats database contents as untrusted. On every load it reconstructs the complete desired-state model and applies the strict domain validator. This catches cross-record rules such as managed-service compatibility, exactly one primary domain per owner, unique binding identities, and valid app links. A save validates first and replaces desired state in one SQLite transaction.
 
 :::caution
-`state.json` contains app database passwords and deploy HMAC secrets. Keep mode `0600`, never commit it, and redact it before sharing.
+`state.db` contains app database passwords and deploy HMAC secrets. Keep it mode `0600`, never commit it, and never share a raw copy without protecting it as a secret.
 :::
 
-## Schema versions
+## Schema versions and migrations
 
-This project starts directly at the current schema. Unsupported older or newer versions are rejected without modifying the file, and there is no schema migration command. Reinitialize a development stack or restore state produced by the matching binary rather than copying fields between schema versions.
+Bento tracks two separate versions:
+
+- the **database schema version** is recorded in `schema_migrations` and controls tables, indexes, and constraints;
+- the **domain schema version** is stored with desired state and controls the validated in-memory model.
+
+Apply pending database migrations after installing a new Bento binary:
+
+```sh
+bento migrate
+```
+
+Migrations are numbered and transactional. Their DDL and applied marker commit together. Bento refuses unknown future migration versions. `bento init` establishes the current schema before writing initial state, while `bento serve` and `bento tui` automatically run the migration gate before entering the server or wizard.
+
+Routine state reads do not migrate the database. Bento does not import or fall back to `state.json`.
 
 ## Recovery
 
-Before a risky operation, copy the private state and `.env` through a secure channel. If state is corrupt, preserve the failing bytes for private analysis, restore a known-good state backup, render, and verify durable resources before applying. Restoring state alone does not restore homes or databases.
+Protect `state.db` and `.env` together. Prefer a Bento stack export or another quiesced, SQLite-consistent backup rather than copying the database while a mutation may be active. If the database is corrupt, preserve the failing bytes for private analysis, restore a known-good `state.db`, run `bento migrate`, render, and verify durable resources before applying.
+
+Restoring desired state alone does not restore homes, SQLite application files, MySQL/PostgreSQL data, Redis data, certificates, or other durable assets.
 
 ## Related pages
 

@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { runtime as bunRuntime, assert, assertEquals, assertRejects } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
@@ -64,16 +65,22 @@ bunRuntime.test("schema v1 rejects app-owned ingress and singular database field
   assertEquals(parseDesiredState(raw).ok, false);
 });
 
-bunRuntime.test("state store rejects another schema without rewriting it", async () => {
+bunRuntime.test("state store rejects another domain schema without rewriting it", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-v1-state-" });
   try {
     const platform = createPlatform(root, bunRuntime.cwd());
     const store = new StateStore(platform);
-    await platform.fs.mkdirp(root);
-    const original = `${JSON.stringify({ ...createEmptyState(), schemaVersion: 2 }, null, 2)}\n`;
-    await platform.fs.atomicWriteText(platform.paths.paths.stateFile, original, 0o600);
+    await store.init();
+    using database = new Database(platform.paths.paths.stateDb);
+    database.run("UPDATE stack_config SET state_schema_version = 2 WHERE id = 1");
     await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 2");
-    assertEquals(await platform.fs.readText(platform.paths.paths.stateFile), original);
+    const row = database
+      .query<
+        { state_schema_version: number },
+        []
+      >("SELECT state_schema_version FROM stack_config WHERE id = 1")
+      .get();
+    assertEquals(row?.state_schema_version, 2);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

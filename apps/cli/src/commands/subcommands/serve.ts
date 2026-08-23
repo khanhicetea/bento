@@ -32,6 +32,7 @@ export function registerServeCommand(parser: YargsBuilder, state: RunState): Yar
           `web management is exposed on ${argv.host} without authentication; use only for temporary testing`,
         );
       }
+      await ctx.store.migrate();
       return await runWebServer(ctx, { hostname: argv.host, port: argv.port, open: argv.open });
     }),
   );

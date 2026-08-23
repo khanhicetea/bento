@@ -42,24 +42,24 @@ Technical choices are evaluated in this order:
 
 ### D-03 — Bun, strict TypeScript, and one entrypoint
 
-**Context:** The code handles hostile JSON/env/process boundaries but releases should not require a runtime install.  
+**Context:** The code handles hostile database/env/process boundaries but releases should not require a runtime install.
 **Decision:** Bun 1.4.0, strict TypeScript, runtime validation, `apps/cli/src/main.ts` for source and compiled modes.
 **Benefits:** One toolchain, typed domain, testable adapters, standalone binaries.  
 **Trade-offs:** Runtime and dependencies are pinned; compiled asset resolution requires care.  
 **Rejected:** Python compatibility layer, unlocked dependency installation as the documented default, separate source/binary implementations.
 
-### D-04 — Versioned strict desired state
+### D-04 — Versioned strict SQLite desired state
 
 **Context:** Silent compatibility and hand-edited fragments cause ambiguous behavior.  
-**Decision:** Keep one strict schema-v1 JSON document and reject unsupported versions/unknown fields.
-**Benefits:** Explicit model and deterministic generation.  
-**Trade-offs:** No implicit migration; incompatible state requires a matching binary or deliberate conversion.  
-**Invariant:** Invalid state is never overwritten during routine load.
+**Decision:** Persist desired state in relational tables in private `state.db` using Bun SQLite, with command argument arrays stored as JSON fields on their parent rows. Keep the strict domain schema version distinct from numbered database schema migrations. Reject unsupported domain versions, unknown future database migrations, and invalid reconstructed state. `bento migrate` is the scripted migration entrypoint; `serve` and `tui` run it before startup.
+**Benefits:** Relational integrity for entities and relationships, compact storage for atomic argument arrays, transactional whole-state updates, deterministic generation, and an auditable upgrade path.
+**Trade-offs:** Desired state is no longer hand-editable; incompatible domain changes still require a deliberate product migration.
+**Invariant:** Routine loads never rewrite invalid state; failed migrations leave no applied marker; Bento never falls back to `state.json`.
 
 ### D-05 — Desired state is separate from generated and durable data
 
 **Context:** Operators need to know what can be regenerated and what requires backup.  
-**Decision:** Separate source (`state.json`, `.env`), custom input, generated output, durable data, and ephemeral coordination.  
+**Decision:** Separate source (`state.db`, `.env`), custom input, generated output, durable data, and ephemeral coordination.
 **Benefits:** Safe regeneration, reviewable backup boundary, fewer upgrade forks.  
 **Trade-offs:** More explicit paths and operator responsibility.  
 **Invariant:** Direct generated-file edits are unsupported and replaceable.
@@ -189,7 +189,7 @@ Technical choices are evaluated in this order:
 A conforming reimplementation MAY change libraries, file internals, or container build mechanics only if it preserves:
 
 - CLI intent and documented safety behavior;
-- strict schema-v1 parsing/serialization, or provides an explicit product-approved migration;
+- strict domain-schema-v1 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
 - stack/project identity and durable resource naming;
 - domain uniqueness and app identity allocation/preservation;
 - component cardinality and private/public topology;
@@ -206,7 +206,7 @@ The following require an explicit product/architecture revision rather than an i
 - one container per app or hostile tenancy claims;
 - publishing backend service ports by default;
 - destructive automatic database/version removal;
-- implicit state migration or unknown-field acceptance;
+- unversioned state migration, unknown future database migrations, or unknown domain-field acceptance;
 - replacing the add-only binding model with destructive rebinding;
 - scaling the runner beyond one replica.
 

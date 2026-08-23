@@ -30,7 +30,7 @@ Choose the stack name before initialization. The name becomes the stable Docker 
 bento init --name production
 ```
 
-Bento creates private `state.json` and `.env` files along with the initial stack directories. The `.env` file includes generated database and Redis administrator secrets.
+Bento creates private `state.db` and `.env` files along with the initial stack directories. `state.db` is a Bun SQLite database and `.env` includes generated database and Redis administrator secrets.
 
 :::caution
 Treat the stack name as permanent. Changing `COMPOSE_PROJECT_NAME` later would point Compose at differently named resources, including durable volumes. Bento refuses to initialize a stack more than once and provides no force-overwrite mode. Back up or export the existing stack before creating a replacement in a different empty stack root.

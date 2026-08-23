@@ -773,7 +773,10 @@ bunRuntime.test("restore picker finds only the latest 20 finalized backup files"
     }
     await platform.fs.writeText(join(dir, "notes.txt"), "not a dump");
     await platform.fs.writeText(join(dir, "unfinished.sql.partial"), "partial");
-    await platform.fs.writeText(join(platform.paths.paths.backupsDir, "state", "state.json"), "{}");
+    await platform.fs.writeText(
+      join(platform.paths.paths.backupsDir, "state", "state.db"),
+      "fixture",
+    );
 
     const files = await listRecentBackupFiles(platform);
     assertEquals(files.length, 20);

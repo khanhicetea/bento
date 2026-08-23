@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { runtime as bunRuntime } from "../runtime.ts";
 /**
  * Phase F2 — integration suite.
@@ -20,6 +21,7 @@ import {
   isComposeAvailable,
   isDockerAvailable,
   join,
+  loadStateJson,
   readText,
   skipIf,
   withStack,
@@ -33,7 +35,7 @@ import { runCli } from "../../src/main.ts";
 bunRuntime.test("F2 bootstrap empty stack + compose config validation", async () => {
   await withStack(async (h) => {
     await bootstrapStack(h);
-    assertEquals(await exists(join(h.stack, "state.json")), true);
+    assertEquals(await exists(join(h.stack, "state.db")), true);
     assertEquals(await exists(join(h.stack, ".env")), true);
     assertEquals(await exists(gen(h, "compose", "docker-compose.base.yml")), true);
     assertEquals(await exists(gen(h, "nginx", "nginx.conf")), true);
@@ -87,7 +89,7 @@ bunRuntime.test("F2 create two apps; homes/pools/sockets/domains separate", asyn
     assertEquals(await exists(gen(h, "nginx", "sites", "alpha.conf")), true);
     assertEquals(await exists(gen(h, "nginx", "sites", "beta.conf")), true);
 
-    const state = JSON.parse(await readText(join(h.stack, "state.json")));
+    const state = await loadStateJson(h.stack);
     assertEquals(state.apps.alpha.uid !== state.apps.beta.uid, true);
     assertEquals(state.apps.alpha.home, "/home/alpha");
     assertEquals(state.apps.beta.home, "/home/beta");
@@ -141,7 +143,7 @@ bunRuntime.test("F2 PHP add second version; move one app; exec uses new version"
     );
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
 
-    const state = JSON.parse(await readText(join(h.stack, "state.json")));
+    const state = await loadStateJson(h.stack);
     assertEquals(state.apps.alpha.phpVersion, "8.3");
     assertEquals(
       state.phpVersions.some((v: { version: string }) => v.version === "8.3"),
@@ -278,7 +280,7 @@ bunRuntime.test("F2 TLS mode switch shared → external (files) nginx-only plan"
     assertEquals(vhost.includes("return 301 https://"), true);
     assertEquals(vhost.includes("boot-ssl.conf"), false);
 
-    const state = JSON.parse(await readText(join(h.stack, "state.json")));
+    const state = await loadStateJson(h.stack);
     assertEquals(state.apps.alpha.tls.kind, "external");
   });
 });
@@ -298,7 +300,7 @@ bunRuntime.test("F2 MySQL namespace refuse + stable app passwords (control plane
     const dbCode = await h.run("mysql", "db", "alpha", "alpha_extra");
     // Either fails (service down) or succeeds (live) — both OK for integration
     if (dbCode !== 0) {
-      const state = JSON.parse(await readText(join(h.stack, "state.json")));
+      const state = await loadStateJson(h.stack);
       // Must not record database when fail-closed
       assertEquals(
         state.apps.alpha.databases[0].databases.some(
@@ -309,26 +311,25 @@ bunRuntime.test("F2 MySQL namespace refuse + stable app passwords (control plane
     }
 
     // App passwords are distinct and remain stable during reconciliation.
-    const statePath = join(h.stack, "state.json");
-    const state = JSON.parse(await readText(statePath));
+    const state = await loadStateJson(h.stack);
     const pwAlpha = state.apps.alpha.databases[0].password;
     const pwBeta = state.apps.beta.databases[0].password;
     assertEquals(pwAlpha !== pwBeta, true);
 
     assertEquals(await h.run("app", "create", "alpha", "--domain", "a.test", "--no-apply"), 0);
-    const after = JSON.parse(await readText(statePath));
+    const after = await loadStateJson(h.stack);
     assertEquals(after.apps.alpha.databases[0].password, pwAlpha);
     assertEquals(after.apps.beta.databases[0].password, pwBeta);
 
     // Password rotation is deliberately not a Bento command.
     assertEquals((await h.run("mysql", "password", "alpha")) !== 0, true);
-    const afterUnsupportedCommand = JSON.parse(await readText(statePath));
+    const afterUnsupportedCommand = await loadStateJson(h.stack);
     assertEquals(afterUnsupportedCommand.apps.alpha.databases[0].password, pwAlpha);
 
     // Cross-service: app is locked to its mysqlService; adding another MySQL version
     // must not reassign existing apps.
     assertEquals(await h.run("mysql", "add", "8.0"), 0);
-    const multi = JSON.parse(await readText(statePath));
+    const multi = await loadStateJson(h.stack);
     assertEquals(multi.apps.alpha.databases[0].service, state.apps.alpha.databases[0].service);
     // MySQL version removal blocked
     assertEquals((await h.run("mysql", "remove", "8.4")) !== 0, true);
@@ -381,7 +382,7 @@ bunRuntime.test("F2 Redis shared prefix + ACL credential materialize", async () 
     // Also check generated secrets
     await walk(gen(h, "secrets"));
     // State records redis identity
-    const state = JSON.parse(await readText(join(h.stack, "state.json")));
+    const state = await loadStateJson(h.stack);
     assertEquals(!!state.apps.alpha.redis.prefix, true);
     assertEquals(
       state.apps.alpha.redis.mode === "shared" || state.apps.alpha.redis.mode === "acl",
@@ -438,7 +439,7 @@ bunRuntime.test("F2 cron/worker config generation + scoped reload plan", async (
     assertEquals(await h.run("apply", "--preview"), 0);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
 
-    const state = JSON.parse(await readText(join(h.stack, "state.json")));
+    const state = await loadStateJson(h.stack);
     assertEquals(
       state.apps.alpha.cronJobs?.length >= 1 ||
         state.cronJobs?.length >= 1 ||
@@ -489,7 +490,7 @@ bunRuntime.test("F2 deploy enable + queue surface + drain status", async () => {
     const vhost = await readText(gen(h, "nginx", "sites", "alpha.conf"));
     assertEquals(vhost.includes("location ^~ /_bento/"), true);
     assertEquals(vhost.includes("/opt/bento/helpers/bento.php"), true);
-    const state = JSON.parse(await readText(join(h.stack, "state.json")));
+    const state = await loadStateJson(h.stack);
     const service = state.apps.alpha.phpService;
     const crontab = await readText(gen(h, "runner", service, "cron", "alpha.crontab"));
     assertEquals(crontab.includes("deploy-drain.sh alpha"), true);
@@ -540,13 +541,14 @@ bunRuntime.test("F2 inject validation failure; confirm rollback of live generati
     // Byte length restored to a full vhost
     assertEquals(after.length > before.length / 2, true);
 
-    // Invalid state rejected without rewrite
-    const statePath = join(h.stack, "state.json");
-    const original = await readText(statePath);
-    await bunRuntime.writeTextFile(statePath, "{not-json");
+    // Invalid state database rejected without rewrite.
+    const statePath = join(h.stack, "state.db");
+    const original = await bunRuntime.readFile(statePath);
+    const corrupt = new TextEncoder().encode("not a sqlite database");
+    await bunRuntime.writeFile(statePath, corrupt);
     assertEquals((await h.run("status")) !== 0, true);
-    assertEquals(await readText(statePath), "{not-json");
-    await bunRuntime.writeTextFile(statePath, original);
+    assertEquals(await bunRuntime.readFile(statePath), corrupt);
+    await bunRuntime.writeFile(statePath, original);
   });
 });
 
@@ -628,23 +630,28 @@ bunRuntime.test("F2 custom template select / drift / return preserves source", a
 bunRuntime.test("F2 corrupt state/env/CLI boundaries reject before side effects", async () => {
   await withStack(async (h) => {
     await bootstrapStack(h);
-    const statePath = join(h.stack, "state.json");
+    const statePath = join(h.stack, "state.db");
     const envPath = join(h.stack, ".env");
-    const goodState = await readText(statePath);
+    const goodState = await bunRuntime.readFile(statePath);
     const goodEnv = await readText(envPath);
 
-    // Future schema
-    const future = JSON.parse(goodState);
-    future.schemaVersion = 999;
-    await bunRuntime.writeTextFile(statePath, JSON.stringify(future));
+    // Future domain schema
+    {
+      using database = new Database(statePath);
+      database.run("UPDATE stack_config SET state_schema_version = 999 WHERE id = 1");
+    }
     assertEquals((await h.run("app", "list")) !== 0, true);
-    await bunRuntime.writeTextFile(statePath, goodState);
+    {
+      using database = new Database(statePath);
+      database.run("UPDATE stack_config SET state_schema_version = 1 WHERE id = 1");
+    }
 
-    // Corrupt JSON
-    await bunRuntime.writeTextFile(statePath, "{{{");
+    // Corrupt SQLite
+    const corrupt = new TextEncoder().encode("not a sqlite database");
+    await bunRuntime.writeFile(statePath, corrupt);
     assertEquals((await h.run("render")) !== 0, true);
-    assertEquals(await readText(statePath), "{{{");
-    await bunRuntime.writeTextFile(statePath, goodState);
+    assertEquals(await bunRuntime.readFile(statePath), corrupt);
+    await bunRuntime.writeFile(statePath, goodState);
 
     // Invalid CLI token
     assertEquals(

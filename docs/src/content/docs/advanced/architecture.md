@@ -10,7 +10,7 @@ Bento runs only when you call the `bento` command. The CLI reads your desired st
 ![Bento architecture: the CLI turns desired state into a Compose stack, with public Nginx routing to private PHP and data services.](/diagrams/bento-architecture.png)
 
 ```text
-Operator -> bento CLI -> state.json -> staged render -> validate -> targeted reload
+Operator -> bento CLI -> state.db -> staged render -> validate -> targeted reload
 Internet -> Nginx -> app PHP-FPM socket -> private MySQL/PostgreSQL/Redis
                     -> reverse-proxy upstream
 PHP runner -> per-app Supercronic, deploy drain, and s6 workers

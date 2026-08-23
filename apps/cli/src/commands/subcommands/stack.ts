@@ -211,9 +211,11 @@ async function cmdIngressSet(argv: ArgsWith<"ingressMode">, ctx: CliContext): Pr
 }
 
 async function cmdStackExport(argv: ArgsWith<"directory">, ctx: CliContext): Promise<number> {
-  const state = await ctx.store.load();
   ctx.log.warn("export contains application data, passwords, and private keys; store it securely");
-  const result = await exportStack(ctx.platform, state, argv.directory);
+  // Keep state.db quiescent while tar captures the stack root.
+  const result = await ctx.store.withShared((state) =>
+    exportStack(ctx.platform, state, argv.directory),
+  );
   ctx.log.info(`stack exported to ${result.directory}`);
   for (const file of result.files) ctx.log.out(`  ${file}`);
   return 0;

@@ -331,7 +331,7 @@ The adapter MUST:
 
 ### Finding
 
-Schema-v1 `state.json` contains structural intent together with database passwords and deploy HMAC secrets. This makes every state copy, diff, diagnostic path, and migration highly sensitive and complicates safe planning/version control of non-secret intent.
+Domain-schema-v1 `state.db` contains structural intent together with database passwords and deploy HMAC secrets. This makes every state backup, diagnostic path, and migration highly sensitive and complicates safe inspection of non-secret intent.
 
 ### Decision
 
@@ -340,7 +340,7 @@ For a future schema, store secret references in desired state and values in a se
 ### Proposed model
 
 ```text
-state.json                 structural desired state + secret IDs
+state.db                   normalized structural desired state + secret IDs
 secrets/index.json         strict metadata, mode 0600
 secrets/values/<id>        opaque bytes, mode 0600, atomic writes
 ```
@@ -358,7 +358,7 @@ secrets/values/<id>        opaque bytes, mode 0600, atomic writes
 
 ### Acceptance criteria
 
-- `state.json` contains no app database password, Redis ACL password, deploy HMAC, or administrator secret value.
+- `state.db` contains no app database password, Redis ACL password, deploy HMAC, or administrator secret value.
 - Interrupted migration leaves either valid v1 or complete new schema/store.
 - Secret garbage collection cannot remove a referenced or recently tombstoned value.
 - Source/compiled parity includes reference behavior while excluding secret bytes from diagnostics.

@@ -69,7 +69,7 @@ Use these terms consistently:
 | **stack name** | Stable `COMPOSE_PROJECT_NAME` identity that prefixes Compose resources. It is not inferred from the stack-root directory. |
 | **app** | Bento's logical application identity: slug, UID/GID, home, PHP pool/socket, domains, data binding, jobs, and deploy settings. |
 | **app slug** | Stable stack-wide identity reused across system resources. Do not describe changing it as a rename. |
-| **desired state** | Operator intent stored in `state.json`. It is authoritative but sensitive and should normally be changed through the CLI. |
+| **desired state** | Operator intent stored in the private SQLite database `state.db`. It is authoritative and sensitive; change it through the CLI rather than with a database editor. |
 | **generated configuration** | Disposable files derived from desired state and templates. Never instruct readers to edit these files. |
 | **render** | Generate configuration without signaling services. |
 | **apply** | Render, validate, and reload the affected running services. |

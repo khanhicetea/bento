@@ -107,7 +107,15 @@ export function stateError(
 ): BentoError {
   const recovery = typeof recoveryOrOpts === "string" ? recoveryOrOpts : recoveryOrOpts?.recovery;
   return new BentoError("STATE", message, {
-    recovery: recovery ?? "Inspect state.json and restore from a known-good backup if needed.",
+    recovery: recovery ?? "Inspect state.db and restore from a known-good backup if needed.",
+  });
+}
+
+export function migrationError(message: string, cause?: unknown): BentoError {
+  return new BentoError("MIGRATION", message, {
+    cause,
+    recovery:
+      "Keep the existing state.db, fix the reported migration problem, and rerun `bento migrate`.",
   });
 }
 

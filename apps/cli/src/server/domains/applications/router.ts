@@ -32,6 +32,7 @@ export function createApplicationsRouter(ctx: CliContext) {
       try {
         return await saveApplication(ctx, input);
       } catch (error) {
+        logApplicationError(ctx, "save", error);
         throw asORPCError(error);
       }
     }),
@@ -39,6 +40,7 @@ export function createApplicationsRouter(ctx: CliContext) {
       try {
         return await addApplicationDatabase(ctx, input);
       } catch (error) {
+        logApplicationError(ctx, "add database", error);
         throw asORPCError(error);
       }
     }),
@@ -61,6 +63,7 @@ export function createApplicationsRouter(ctx: CliContext) {
         });
         return toApplication(changed);
       } catch (error) {
+        logApplicationError(ctx, "set enabled", error);
         throw asORPCError(error);
       }
     }),
@@ -84,6 +87,7 @@ export function createApplicationsRouter(ctx: CliContext) {
         });
         return toApplication(removed);
       } catch (error) {
+        logApplicationError(ctx, "remove", error);
         throw asORPCError(error);
       }
     }),
@@ -309,6 +313,11 @@ export function toApplication(app: AppState): Application {
           : undefined,
     })),
   };
+}
+
+function logApplicationError(ctx: CliContext, operation: string, error: unknown): void {
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  ctx.log.error(`application ${operation} failed: ${redact(detail)}`);
 }
 
 function asORPCError(error: unknown): ORPCError<string, unknown> {

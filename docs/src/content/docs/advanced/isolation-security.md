@@ -28,7 +28,7 @@ FPM, runners, databases, Redis, s6 controls, and Bento management stay private o
 
 ## Secrets
 
-Protect `.env`, `state.json`, app credentials, SSH keys, deploy secrets, database client files, certificate keys, ACME state, backups, logs, and stack exports.
+Protect `.env`, `state.db`, app credentials, SSH keys, deploy secrets, database client files, certificate keys, ACME state, backups, logs, and stack exports.
 
 Bento passes database passwords through protected files instead of host command arguments. It also redacts known secrets from routine output and support bundles. Always inspect an artifact before you share it.
 

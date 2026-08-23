@@ -686,15 +686,14 @@ bunRuntime.test("E6 only current schemaVersion is accepted; load does not rewrit
     const platform = testPlatform(root);
     const store = new StateStore(platform);
     await store.init();
-    const path = platform.paths.paths.stateFile;
-    const original = await platform.fs.readText(path);
+    const original = await store.load();
 
-    // no-op load must not change bytes
+    // no-op load must not change desired state
     await store.load();
-    assertEquals(await platform.fs.readText(path), original);
+    assertEquals(await store.load(), original);
 
     for (const unsupportedVersion of [0, 2, 999]) {
-      const unsupported = JSON.parse(original);
+      const unsupported = JSON.parse(stateToJson(original));
       unsupported.schemaVersion = unsupportedVersion;
       assertEquals(parseDesiredState(unsupported).ok, false);
     }

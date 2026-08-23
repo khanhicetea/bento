@@ -70,13 +70,13 @@ bunRuntime.test(
       assertStringIncludes(env, "COMPOSE_PROJECT_NAME=customer-a");
       assertStringIncludes(env, "NGINX_HOST_NETWORK=1");
       assertStringIncludes(env, "NGINX_HTTP_PORT=");
-      const originalState = await platform.fs.readText(platform.paths.paths.stateFile);
+      const originalState = await store.load();
       await assertRejects(
         () => store.init({ projectName: "customer-b" }),
         Error,
         "already initialized",
       );
-      assertEquals(await platform.fs.readText(platform.paths.paths.stateFile), originalState);
+      assertEquals(await store.load(), originalState);
       assertEquals(await platform.fs.readText(platform.paths.paths.envFile), env);
     } finally {
       await bunRuntime.remove(root, { recursive: true });

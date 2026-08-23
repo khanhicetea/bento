@@ -1,16 +1,16 @@
-/**
- * Load/save desired state with exclusive locking and atomic writes.
- *
- * Loads are read-only and never rewrite state.json (key order and defaults stay as the
- * operator left them). Only the current state schema is accepted.
- */
+/** Load and save validated desired state in the private stack SQLite database. */
 
 import type { DesiredState } from "../domain/state.ts";
 import { createEmptyState } from "../domain/state.ts";
-import { loadStateFromJson, stateToJson } from "../schemas/state.ts";
 import type { Platform } from "../platform/mod.ts";
-import { safetyError, stateError } from "../domain/errors.ts";
-import { STATE_SCHEMA_VERSION } from "../version.ts";
+import { safetyError } from "../domain/errors.ts";
+import {
+  loadStateDatabase,
+  migrateStateDatabase,
+  saveStateDatabase,
+  stateDatabaseInitialized,
+  type MigrationResult,
+} from "./state_database.ts";
 import {
   DEFAULT_COMPOSE_PROJECT_NAME,
   parseDotEnv,
@@ -27,42 +27,43 @@ export class StateStore {
   constructor(private readonly platform: Platform) {}
 
   async exists(): Promise<boolean> {
-    return await this.platform.fs.exists(this.platform.paths.paths.stateFile);
+    return await stateDatabaseInitialized(this.platform);
   }
 
-  /** Read and validate the current state document without rewriting it. */
-  async load(): Promise<DesiredState> {
-    const path = this.platform.paths.paths.stateFile;
-    if (!(await this.platform.fs.exists(path))) {
-      throw stateError(`no desired state at ${path}`, {
-        recovery: "Run `bento init` to create an empty state document.",
-      });
+  /** Apply all pending numbered database schema migrations under the stack lock. */
+  async migrate(): Promise<MigrationResult> {
+    await this.platform.fs.mkdirp(this.platform.paths.paths.root, 0o700);
+    await this.platform.fs.mkdirp(this.platform.paths.paths.lockDir, 0o700);
+    const release = await this.platform.lock.exclusive(this.platform.paths.paths.renderLock);
+    try {
+      return await migrateStateDatabase(this.platform);
+    } finally {
+      await release();
     }
-    const text = await this.platform.fs.readText(path);
-    return loadStateFromJson(text);
+  }
+
+  /** Read and validate desired state without mutating the database. */
+  async load(): Promise<DesiredState> {
+    return await loadStateDatabase(this.platform);
   }
 
   async save(state: DesiredState): Promise<void> {
-    const path = this.platform.paths.paths.stateFile;
     const next = {
       ...state,
-      schemaVersion: STATE_SCHEMA_VERSION,
       updatedAt: this.platform.clock.nowIso(),
     };
-    // Validate by round-tripping through schema before write
-    const json = stateToJson(next);
-    loadStateFromJson(json);
-    await this.platform.fs.atomicWriteText(path, json, 0o600);
+    await saveStateDatabase(this.platform, next);
   }
 
   /** Initialize a new stack exactly once; existing desired state is never overwritten. */
   async init(options: StackInitOptions = {}): Promise<DesiredState> {
-    const path = this.platform.paths.paths.stateFile;
-    await this.platform.fs.mkdirp(this.platform.paths.paths.root);
-    await this.platform.fs.mkdirp(this.platform.paths.paths.lockDir);
+    const path = this.platform.paths.paths.stateDb;
+    await this.platform.fs.mkdirp(this.platform.paths.paths.root, 0o700);
+    await this.platform.fs.mkdirp(this.platform.paths.paths.lockDir, 0o700);
     const release = await this.platform.lock.exclusive(this.platform.paths.paths.renderLock);
     try {
-      if (await this.platform.fs.exists(path)) {
+      await migrateStateDatabase(this.platform);
+      if (await stateDatabaseInitialized(this.platform)) {
         throw safetyError(
           `stack is already initialized at ${path}`,
           "Continue using the existing stack. To create a replacement, export or back up its data first, then initialize a different empty stack root.",

@@ -21,7 +21,7 @@ Show: Desired state and stack environment as protected source inputs. Show custo
 Bento commands
      |
      v
-state.json + stack .env       custom/ + overlays/
+state.db + stack .env         custom/ + overlays/
 (operator intent and secrets) (operator-owned additions)
      |                              |
      +---------- render ------------+
@@ -39,19 +39,19 @@ Bento is an on-demand control plane, not a resident daemon. It reconciles the st
 
 | Layer | Examples | Who changes it? | Can Bento recreate it? |
 | --- | --- | --- | --- |
-| Desired state | `state.json` | Normally Bento commands | No; protect and back it up |
+| Desired state | `state.db` | Bento commands | No; protect and back it up |
 | Stack environment | `.env` | Bento initialization and deliberate operator configuration | Secrets are not safely derivable from generated files |
 | Customization | `custom/`, `overlays/` | Operator or supported customization commands | No; preserve it |
 | Generated configuration | `generated/nginx/`, `generated/php/`, `generated/compose/`, generated client files | Bento | Yes, from current intent and assets |
 | Durable runtime data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, logs, Docker named volumes | Applications, services, and Bento operations | No; use an appropriate backup method |
 
-`state.json` records apps, runtimes, domains, database bindings, SQLite backup policy, jobs, proxies, and related settings. It can also contain deploy secrets, so Bento restricts its permissions.
+`state.db` is a mode-`0600` Bun SQLite database. Normalized tables record apps, runtimes, domains, database bindings, SQLite backup policy, jobs, proxies, ordered command arguments, and related settings. It can also contain deploy and database secrets.
 
 The stack `.env` stores the Compose identity, topology settings, and administrator secrets. Treat both files as sensitive source material.
 
 ## Change desired state through Bento
 
-Use Bento commands instead of editing `state.json`. Before Bento saves the file atomically, it validates identities, domains, runtime references, database relationships, and other links.
+Use Bento commands instead of opening `state.db` in a database editor. Before Bento saves, it validates identities, domains, runtime references, database relationships, and other links, then replaces desired state in one SQLite transaction.
 
 For example, an app command changes the app model and normally applies the resulting configuration in the same operation:
 
@@ -68,7 +68,7 @@ bento apply
 Do not use `--no-apply` when you require the change to take effect immediately. Until a successful apply, status on disk, generated configuration, and runtime behavior may describe different points in the change.
 
 :::caution
-Do not casually hand-edit `state.json`. A syntactically valid edit can still violate stack-wide identities or relationships. Invalid JSON, an unsupported schema version, or invalid state prevents normal commands from loading the stack; Bento does not rewrite an invalid document during a routine read.
+Do not hand-edit `state.db`. SQLite checks and foreign keys protect part of the model, while Bento's strict whole-state validator enforces cross-record rules such as authoritative domain ownership. A corrupt database, unsupported domain schema, unknown future database migration, or invalid reconstructed state prevents normal commands from loading the stack. Routine reads do not rewrite invalid state.
 :::
 
 ## Choose render or apply
@@ -150,7 +150,7 @@ For a configuration error, read the validator diagnostic first. Check custom fil
 - Render does not continuously converge runtime state. External container or file changes remain until an operator action detects or replaces them.
 - Validation checks service configuration, not every application-level behavior. Verify HTTP, jobs, and data access after relevant changes.
 - Operator-owned templates and overlays are trusted input. Bento preserves them but cannot guarantee that they remain compatible with every upgrade.
-- State schema migration is an explicit, confirmed operation; routine reads do not silently migrate old state.
+- Routine reads do not migrate database schemas. After an upgrade, run `bento migrate`; `bento serve` and `bento tui` run the same migration gate automatically before startup. Unknown future migrations are refused.
 
 ## Advanced
 
@@ -166,7 +166,7 @@ Bento scopes reloads to the kind of change:
 
 A standalone `apply` takes a safer, broader approach and plans Nginx plus all relevant FPM and runner roles. Preview shows this plan but does not stage, validate, or publish files.
 
-Generation metadata in `generated/.generation.json` records the asset identity, render time, and managed manifest. It supports reconciliation; it does not replace `state.json` or serve as recovery data.
+Generation metadata in `generated/.generation.json` records the asset identity, render time, and managed manifest. It supports reconciliation; it does not replace `state.db` or serve as recovery data.
 
 ## Next steps
 

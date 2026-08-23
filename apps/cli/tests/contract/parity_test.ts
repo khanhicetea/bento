@@ -12,12 +12,18 @@ import { runtime as bunRuntime, assertEquals, assertNotEquals } from "../runtime
 import { join, resolve } from "node:path";
 import { runCli } from "../../src/main.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
+import { stateToJson } from "../../src/schemas/state.ts";
 import {
   isParityManagedPath,
   materializeDockerAssets,
   normalizeParityText,
 } from "../../src/services/assets_materialize.ts";
+import { StateStore } from "../../src/services/state_store.ts";
 import { BENTO_VERSION, BUN_TARGET_VERSION, versionBanner } from "../../src/version.ts";
+
+async function loadState(stack: string) {
+  return await new StateStore(createPlatform(stack, bunRuntime.cwd())).load();
+}
 
 async function withStack(fn: (stack: string) => Promise<void>) {
   const stack = await bunRuntime.makeTempDir({ prefix: "bento-parity-" });
@@ -274,11 +280,16 @@ bunRuntime.test({
         );
         assertEquals(shellPlan.code, 0, shellPlan.stderr);
         assertEquals(shellPlan.stdout.includes("psql"), true);
-        const state = JSON.parse(await bunRuntime.readTextFile(join(stack, "state.json")));
-        const postgresBinding = state.apps.pgparity.databases.find(
-          (binding: { engine: string }) => binding.engine === "postgres",
+        const state = await loadState(stack);
+        const postgresBinding = state.apps.pgparity!.databases.find(
+          (binding) => binding.engine === "postgres",
         );
-        assertEquals(shellPlan.stdout.includes(postgresBinding.password), false);
+        assertEquals(
+          shellPlan.stdout.includes(
+            postgresBinding?.engine === "postgres" ? postgresBinding.password : "",
+          ),
+          false,
+        );
         assertEquals(
           (
             await runBin(bin, ["--stack", stack, "postgres", "remove", "17"], {
@@ -366,8 +377,8 @@ bunRuntime.test({
         assertEquals(binStatus.code, 0, binStatus.stderr);
 
         // State transitions equal
-        const srcState = await bunRuntime.readTextFile(join(srcStack, "state.json"));
-        const binState = await bunRuntime.readTextFile(join(binStack, "state.json"));
+        const srcState = stateToJson(await loadState(srcStack));
+        const binState = stateToJson(await loadState(binStack));
         assertEquals(normalizeParityText(srcState), normalizeParityText(binState));
 
         // Asset digests equal

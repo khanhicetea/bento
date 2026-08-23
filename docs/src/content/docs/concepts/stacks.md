@@ -54,7 +54,7 @@ A stack root contains several ownership classes:
 
 | Class | Examples | Treatment |
 | --- | --- | --- |
-| Operator intent and secrets | `state.json`, `.env` | Sensitive source of truth; normally change through Bento commands |
+| Operator intent and secrets | `state.db`, `.env` | Sensitive source of truth; normally change through Bento commands |
 | Operator customization | `custom/`, `overlays/` | Preserve and review across upgrades |
 | Durable runtime data | `homes/`, `sqlite/`, `certs/`, `backups/`, `logs/` | Back up according to recovery requirements |
 | Generated output | `generated/`, `docker/`, `helpers/`, `.asset-cache/` | Reconstructible; do not customize generated copies |

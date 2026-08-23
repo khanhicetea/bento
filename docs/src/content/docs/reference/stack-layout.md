@@ -10,7 +10,7 @@ Use this table before you edit, delete, copy, or back up a stack path. Every pat
 | Path | Ownership/lifecycle | Sensitive or durable |
 | --- | --- | --- |
 | `.env` | Operator stack config/secrets | Sensitive, source-of-truth |
-| `state.json` | Validated desired state | Sensitive, source-of-truth |
+| `state.db` | Validated Bun SQLite desired state | Sensitive, mode `0600`, source-of-truth |
 | `generated/` | Bento-managed complete render | Disposable; may contain generated client credentials |
 | `custom/` | Operator drop-ins/templates | Durable custom input |
 | `overlays/` | Ordered operator Compose input | Durable custom input |
@@ -38,7 +38,7 @@ Host `homes/demo/` maps to `/home/demo`. Nginx sees homes read-only; PHP FPM, ru
 
 ## Backup boundary
 
-Protect `.env`, `state.json`, `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, custom input, and verified logical dumps off-host. For SQLite, use [Litestream continuous backup](/guides/data/sqlite/); do not copy a live database and its WAL/SHM files as an assumed-consistent backup. Use [stack export](/guides/stacks/export-import/) when you need compatible raw MySQL, PostgreSQL, and Redis volumes too.
+Protect `.env`, `state.db`, `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, custom input, and verified logical dumps off-host. For SQLite, use [Litestream continuous backup](/guides/data/sqlite/); do not copy a live database and its WAL/SHM files as an assumed-consistent backup. Use [stack export](/guides/stacks/export-import/) when you need compatible raw MySQL, PostgreSQL, and Redis volumes too.
 
 ## Related pages
 

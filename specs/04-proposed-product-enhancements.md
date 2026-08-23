@@ -235,7 +235,7 @@ Migration MUST:
 
 - Routine state load still never migrates silently.
 - Every migration has golden input/output fixtures and downgrade/rollback documentation.
-- An interrupted migration preserves either old valid state or new valid state, never partial JSON.
+- An interrupted migration preserves either the old valid database schema/state or the new valid schema/state, never a partially committed transaction.
 - Source and compiled target binaries produce equivalent migration output.
 
 ### Non-goals

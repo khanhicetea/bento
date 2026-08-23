@@ -5,6 +5,7 @@ import { isBentoError } from "../../src/domain/errors.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
 import { createRecordingProcessRunner } from "../../src/platform/process.ts";
 import { addPostgresVersion } from "../../src/services/postgres.ts";
+import { migrateStateDatabase, saveStateDatabase } from "../../src/services/state_database.ts";
 import {
   composeProjectName,
   exportStack,
@@ -179,10 +180,8 @@ async function prepareImport(
       command.some((part) => part.endsWith(`/${STACK_ARCHIVE}`))
     ) {
       await bunRuntime.mkdir(root, { recursive: true });
-      await bunRuntime.writeTextFile(
-        join(root, "state.json"),
-        `${JSON.stringify(state, null, 2)}\n`,
-      );
+      await migrateStateDatabase(platform);
+      await saveStateDatabase(platform, state);
       await bunRuntime.writeTextFile(join(root, ".env"), "COMPOSE_PROJECT_NAME=transferimport\n");
     }
     return { code: 0, stdout: "", stderr: "" };
@@ -263,10 +262,8 @@ bunRuntime.test(
         command.some((part) => part.endsWith(`/${STACK_ARCHIVE}`))
       ) {
         await bunRuntime.mkdir(fixture.root, { recursive: true });
-        await bunRuntime.writeTextFile(
-          join(fixture.root, "state.json"),
-          `${JSON.stringify(mixedState(), null, 2)}\n`,
-        );
+        await migrateStateDatabase(fixture.platform);
+        await saveStateDatabase(fixture.platform, mixedState());
         await bunRuntime.writeTextFile(
           join(fixture.root, ".env"),
           "COMPOSE_PROJECT_NAME=transferimport\n",

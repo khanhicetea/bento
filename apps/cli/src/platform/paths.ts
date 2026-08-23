@@ -8,7 +8,7 @@ export function resolveStackPaths(stackRoot: string): StackPaths {
   const generatedDir = join(root, "generated");
   return {
     root,
-    stateFile: join(root, "state.json"),
+    stateDb: join(root, "state.db"),
     envFile: join(root, ".env"),
     generatedDir,
     lockDir: join(root, "locks"),

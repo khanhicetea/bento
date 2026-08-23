@@ -75,7 +75,7 @@ Bento creates the durable host directory `<stack-root>/homes/<app>/`. PHP roles 
 
 The credential file provides connection values, but Bento does not load it into your framework automatically. Never commit the file or print its secrets.
 
-`state.json` also contains app database passwords and may contain a deploy secret. Protect the [stack's desired state](/concepts/desired-state/).
+`state.db` also contains app database passwords and may contain a deploy secret. Protect the [stack's desired state](/concepts/desired-state/).
 
 ## Data binding
 

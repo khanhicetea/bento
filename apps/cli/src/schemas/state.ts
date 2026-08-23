@@ -653,14 +653,14 @@ export function loadStateFromJson(text: string): DesiredState {
   try {
     raw = JSON.parse(text);
   } catch (cause) {
-    throw validationError("state.json is not valid JSON", {
+    throw validationError("desired state JSON is not valid", {
       cause: String(cause),
     });
   }
   const result = parseDesiredState(raw);
   if (!result.ok) {
     throw stateError(`invalid desired state: ${result.errors.join("; ")}`, {
-      recovery: "Fix state.json or restore from backup. Bento will not overwrite invalid state.",
+      recovery: "Correct the desired-state input or restore a known-good state.db.",
     });
   }
   return result.value;

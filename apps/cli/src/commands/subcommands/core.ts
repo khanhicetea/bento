@@ -43,6 +43,12 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
         }),
       bind(state, cmdInit),
     )
+    .command(
+      "migrate",
+      "Apply pending desired-state database schema migrations",
+      () => {},
+      bind(state, cmdMigrate),
+    )
     .command("render", "Render generated config (no reload)", () => {}, bind(state, cmdRender))
     .command(
       "apply",
@@ -123,14 +129,26 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
 }
 
 async function cmdTui(_argv: CliArgs, ctx: CliContext): Promise<number> {
+  await ctx.store.migrate();
   return await runWizard(ctx);
+}
+
+async function cmdMigrate(_argv: CliArgs, ctx: CliContext): Promise<number> {
+  const result = await ctx.store.migrate();
+  const detail =
+    result.applied.length === 0
+      ? `schema is current at version ${result.toVersion}`
+      : `applied ${result.applied.join(", ")}; schema is now version ${result.toVersion}`;
+  ctx.log.info(`desired-state database migration: ${detail}`);
+  if (ctx.json) ctx.log.out(JSON.stringify(result, null, 2));
+  return 0;
 }
 
 async function cmdInit(argv: CliArgs, ctx: CliContext): Promise<number> {
   const state = await ctx.store.init({ projectName: argv.name });
   const environment = await loadStackComposeEnvironment(ctx.platform);
   ctx.log.info(
-    `initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateFile}`,
+    `initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateDb}`,
   );
   ctx.log.info(
     `defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,

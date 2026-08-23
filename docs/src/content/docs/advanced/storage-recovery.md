@@ -5,7 +5,7 @@ description: Learn what to back up, which recovery method to use, and what can f
 
 # Storage and recovery
 
-`state.json` alone cannot recover a Bento host. You must also protect app files, certificates, customization, and database or cache data with the correct backup method.
+`state.db` alone cannot recover a Bento host. You must also protect app files, certificates, customization, and database or cache data with the correct backup method.
 
 <!-- DIAGRAM PLACEHOLDER
 Asset: /diagrams/backup-coverage.svg
@@ -17,7 +17,7 @@ Show: Rows for each durable data type and columns for filesystem backup, logical
 
 | Layer | Recovery value |
 | --- | --- |
-| `.env` + `state.json` | Reconstruct desired topology and credentials |
+| `.env` + `state.db` | Reconstruct desired topology and credentials |
 | `custom/` + `overlays/` | Reconstruct operator changes |
 | `generated/`, assets, runtime | Rebuild or recover transactionally |
 | `homes/`, `sqlite/`, `certs/`, logs/backups | Durable bind-mounted data |
