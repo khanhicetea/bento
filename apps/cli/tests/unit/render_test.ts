@@ -99,6 +99,7 @@ bunRuntime.test("init + render produces startable topology files", async () => {
     assertEquals(await platform.fs.exists(join(root, "rclone/rclone.conf")), true);
     const tunnelEnv = join(root, "generated/secrets/cloudflare/tunnel.env");
     assertEquals(await platform.fs.exists(tunnelEnv), true);
+    assertEquals((await platform.fs.stat(join(root, "generated/secrets"))).mode & 0o777, 0o700);
     assertEquals((await platform.fs.stat(tunnelEnv)).mode & 0o777, 0o600);
     const defaultVhost = await platform.fs.readText(
       join(root, "generated/nginx/sites/00-default.conf"),

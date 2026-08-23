@@ -172,7 +172,7 @@ export class RenderService {
       // Stage into same-filesystem staging directory
       const staging = this.platform.paths.paths.stagingDir;
       await this.platform.fs.remove(staging, { recursive: true });
-      await this.platform.fs.mkdirp(staging);
+      await this.platform.fs.mkdirp(staging, 0o700);
 
       for (const file of candidate.files) {
         const dest = join(staging, file.relPath);
@@ -185,7 +185,10 @@ export class RenderService {
       const liveRoot = this.platform.paths.paths.generatedDir;
       const backupRoot = join(liveRoot, ".transaction-backup");
       await this.platform.fs.remove(backupRoot, { recursive: true });
-      await this.platform.fs.mkdirp(backupRoot);
+      await this.platform.fs.mkdirp(backupRoot, 0o700);
+      // Secret files are private, so their live parent must not expose names or contents.
+      // Supplying the mode also repairs stacks created before this was enforced.
+      await this.platform.fs.mkdirp(this.platform.paths.paths.secretsDir, 0o700);
 
       const existingManaged = await this.listManagedFiles(liveRoot);
       const desiredSet = new Set(candidate.managedManifest);
