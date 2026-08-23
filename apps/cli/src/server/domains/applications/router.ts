@@ -8,7 +8,7 @@ import {
 } from "@bento/shared";
 import type { CliContext } from "../../../commands/context.ts";
 import { isBentoError, type BentoError } from "../../../domain/errors.ts";
-import type { AppState, TlsMode } from "../../../domain/state.ts";
+import type { AppDatabaseBinding, AppState, TlsMode } from "../../../domain/state.ts";
 import { FPM_PROFILES } from "../../../domain/types.ts";
 import {
   applyAppDataPlane,
@@ -28,6 +28,26 @@ const os = implement(applicationsContract);
 export function createApplicationsRouter(ctx: CliContext) {
   return os.router({
     list: os.list.handler(async () => await listApplications(ctx)),
+    databaseCredentials: os.databaseCredentials.handler(async ({ input }) => {
+      const state = await ctx.store.load();
+      const app = state.apps[input.slug];
+      if (!app) throw new ORPCError("NOT_FOUND", { message: "application was not found" });
+      const binding = app.databases.find(
+        (database): database is Extract<AppDatabaseBinding, { engine: "mysql" | "postgres" }> =>
+          database.engine === input.engine && String(database.service) === input.service,
+      );
+      if (!binding) {
+        throw new ORPCError("NOT_FOUND", { message: "managed database binding was not found" });
+      }
+      return {
+        engine: binding.engine,
+        host: String(binding.service),
+        port: binding.engine === "mysql" ? 3306 : 5432,
+        user: binding.user,
+        password: binding.password,
+        databases: binding.databases.map((database) => String(database.name)),
+      };
+    }),
     save: os.save.handler(async ({ input }) => {
       try {
         return await saveApplication(ctx, input);

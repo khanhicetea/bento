@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import type { AddApplicationDatabaseInput, Application, ApplicationList } from "@bento/shared";
-import { Database, Plus, Server } from "lucide-react";
+import { Database, Eye, EyeOff, Plus, Server } from "lucide-react";
 import { orpc } from "../../api/client.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,11 @@ type DatabaseGroup = {
   engine: DatabaseBinding["engine"];
   bindings: Array<{ binding: DatabaseBinding; primary: boolean }>;
 };
+type CredentialsTarget = {
+  key: string;
+  engine: "mysql" | "postgres";
+  service: string;
+};
 
 export function ApplicationDatabasesDialog({
   application,
@@ -59,6 +64,25 @@ export function ApplicationDatabasesDialog({
   const [selection, setSelection] = useState(defaultSelection);
   const relational = selection.startsWith("mysql:") || selection.startsWith("postgres:");
   const groups = groupDatabases(application, settings);
+  const [credentialsTarget, setCredentialsTarget] = useState<CredentialsTarget | null>(null);
+  const credentials = useMutation(orpc.applications.databaseCredentials.mutationOptions());
+
+  function toggleCredentials(group: DatabaseGroup) {
+    if (!isManagedEngine(group.engine) || !group.service) return;
+    if (credentialsTarget?.key === group.key) {
+      setCredentialsTarget(null);
+      credentials.reset();
+      return;
+    }
+    const target = { key: group.key, engine: group.engine, service: group.service };
+    setCredentialsTarget(target);
+    credentials.reset();
+    credentials.mutate({
+      slug: application.slug,
+      engine: target.engine,
+      service: target.service,
+    });
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -210,9 +234,29 @@ export function ApplicationDatabasesDialog({
                         )}
                       </div>
                     </div>
-                    {group.bindings.some((item) => item.primary) && (
-                      <Badge className="shrink-0 px-1.5 py-0 text-[0.68rem]">Primary</Badge>
-                    )}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {isManagedEngine(group.engine) && group.service && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={credentialsTarget?.key === group.key ? "secondary" : "outline"}
+                          onClick={() => toggleCredentials(group)}
+                          aria-expanded={credentialsTarget?.key === group.key}
+                        >
+                          {credentialsTarget?.key === group.key ? (
+                            <EyeOff className="size-3.5" aria-hidden="true" />
+                          ) : (
+                            <Eye className="size-3.5" aria-hidden="true" />
+                          )}
+                          {credentialsTarget?.key === group.key
+                            ? "Hide credentials"
+                            : "Show credentials"}
+                        </Button>
+                      )}
+                      {group.bindings.some((item) => item.primary) && (
+                        <Badge className="shrink-0 px-1.5 py-0 text-[0.68rem]">Primary</Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="overflow-auto">
                     <Table className="min-w-[460px]">
@@ -296,6 +340,45 @@ export function ApplicationDatabasesDialog({
                       </TableBody>
                     </Table>
                   </div>
+                  {credentialsTarget?.key === group.key && (
+                    <div
+                      className="border-t border-border bg-muted/20 px-4 py-3"
+                      aria-live="polite"
+                    >
+                      {credentials.isPending && !credentials.data && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Spinner /> Loading credentials…
+                        </div>
+                      )}
+                      {credentials.error && (
+                        <Alert variant="destructive">{messageOf(credentials.error)}</Alert>
+                      )}
+                      {credentials.data && (
+                        <div>
+                          <p className="m-0 text-xs text-muted-foreground">
+                            App-scoped credentials. Keep the password secret.
+                          </p>
+                          <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <CredentialField label="DB host" value={credentials.data.host} />
+                            <CredentialField
+                              label="DB port"
+                              value={String(credentials.data.port)}
+                            />
+                            <CredentialField label="DB user" value={credentials.data.user} />
+                            <CredentialField
+                              label="DB password"
+                              value={credentials.data.password}
+                              secret
+                            />
+                            <CredentialField
+                              label="DB name(s)"
+                              value={credentials.data.databases.join(", ") || "None"}
+                            />
+                          </dl>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </section>
               ))}
               {!groups.length && (
@@ -360,6 +443,58 @@ function databaseLabel(engine: string): string {
   if (engine === "postgres") return "PostgreSQL";
   if (engine === "litestream") return "SQLite + Litestream";
   return "SQLite";
+}
+
+function CredentialField({
+  label,
+  value,
+  secret = false,
+}: {
+  label: string;
+  value: string;
+  secret?: boolean;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const displayedValue = value;
+
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="m-0 mt-1 flex min-w-0 items-center gap-1">
+        {secret ? (
+          <input
+            type={revealed ? "text" : "password"}
+            value={value}
+            readOnly
+            aria-label={label}
+            className="h-8 min-w-0 flex-1 rounded-md border border-input bg-muted px-2 py-1 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+          />
+        ) : (
+          <code className="min-w-0 flex-1 break-all rounded-md bg-muted px-2 py-1.5 text-xs">
+            {displayedValue}
+          </code>
+        )}
+        {secret && (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={revealed ? `Hide ${label}` : `Show ${label}`}
+              title={revealed ? `Hide ${label}` : `Show ${label}`}
+              onClick={() => setRevealed((current) => !current)}
+            >
+              {revealed ? (
+                <EyeOff className="size-3.5" aria-hidden="true" />
+              ) : (
+                <Eye className="size-3.5" aria-hidden="true" />
+              )}
+            </Button>
+          </>
+        )}
+      </dd>
+    </div>
+  );
 }
 
 function messageOf(error: unknown): string {

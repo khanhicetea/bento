@@ -53,6 +53,21 @@ export const applicationListSchema = z.object({
     .optional(),
 });
 
+export const applicationDatabaseCredentialsInputSchema = z.object({
+  slug: z.string().min(1).max(128),
+  engine: z.enum(["mysql", "postgres"]),
+  service: z.string().trim().min(1).max(128),
+});
+
+export const applicationDatabaseCredentialsSchema = z.object({
+  engine: z.enum(["mysql", "postgres"]),
+  host: z.string(),
+  port: z.number().int().positive(),
+  user: z.string(),
+  password: z.string(),
+  databases: z.array(z.string()),
+});
+
 export const setApplicationEnabledInputSchema = z.object({
   slug: z.string().min(1).max(128),
   enabled: z.boolean(),
@@ -137,6 +152,7 @@ export const removeApplicationInputSchema = z.object({
 });
 
 export type AddApplicationDatabaseInput = z.infer<typeof addApplicationDatabaseInputSchema>;
+export type ApplicationDatabaseCredentials = z.infer<typeof applicationDatabaseCredentialsSchema>;
 export type Application = z.infer<typeof applicationSchema>;
 export type ApplicationList = z.infer<typeof applicationListSchema>;
 export type SaveApplicationInput = z.infer<typeof saveApplicationInputSchema>;

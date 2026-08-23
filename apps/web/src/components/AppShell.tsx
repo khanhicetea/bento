@@ -41,9 +41,12 @@ export function AppShell({ children }: PropsWithChildren) {
             href="/applications"
             onClick={() => setMenuOpen(false)}
           >
-            <span className="grid size-[38px] place-items-center rounded-[11px] bg-secondary text-lg font-extrabold text-secondary-foreground">
-              B
-            </span>
+            <img
+              src="/bento-logo-3d.png"
+              alt=""
+              aria-hidden="true"
+              className="size-[38px] rounded-[11px] object-cover"
+            />
             <span>
               <strong className="block text-[1.05rem]">Bento</strong>
               <small className="block text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground max-[480px]:hidden">
