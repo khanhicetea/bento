@@ -16,7 +16,7 @@ This repository is a **Bun 1.4 / TypeScript** reimplementation of the Bento host
 
 ## Requirements
 
-- Bun **1.4.0** (pinned 1.4.x line — see `src/version.ts` `BUN_TARGET_VERSION` and release notes)
+- Bun **1.4.0** (pinned 1.4.x line — see `apps/cli/src/version.ts` `BUN_TARGET_VERSION` and release notes)
 - Linux with Docker Engine + Docker Compose v2 (data plane)
 - Source development uses `bun install --frozen-lockfile`; compiled releases need no runtime or package installation
 
@@ -43,12 +43,12 @@ bun run test:stack         # real Docker stack harness (default name: testbento)
 
 # select a stack root once for this shell, then initialize and render
 export BENTO_STACK_ROOT="$PWD/my-stack"
-bun run src/main.ts init --name my-stack
-bun run src/main.ts render
-bun run src/main.ts status
+bun run apps/cli/src/main.ts init --name my-stack
+bun run apps/cli/src/main.ts render
+bun run apps/cli/src/main.ts status
 
 # create a default MySQL application
-bun run src/main.ts app create demo \
+bun run apps/cli/src/main.ts app create demo \
   --domain demo.example.test \
   --docroot public \
   --db
@@ -57,15 +57,15 @@ bun run src/main.ts app create demo \
 # Register id_ed25519.pub with the Git host before cloning a private repository.
 
 # add PostgreSQL as another database kind on the same application
-bun run src/main.ts postgres add 17
-bun run src/main.ts app update demo \
+bun run apps/cli/src/main.ts postgres add 17
+bun run apps/cli/src/main.ts app update demo \
   --domain demo.example.test \
   --database-engine postgres \
   --postgres 17 \
   --db
 
 # apply (validate + scoped reload when services are up)
-bun run src/main.ts apply
+bun run apps/cli/src/main.ts apply
 ```
 
 Stack roots are **external** mutable state (desired state, homes, certs, backups, generated output). Immutable templates ship with the repository or compiled binary. The stable stack name is explicit and is not derived from the stack directory; it becomes `COMPOSE_PROJECT_NAME` and prefixes Compose containers, networks, and named volumes. `bento` remains the compatible default when `--name` is omitted.
@@ -317,24 +317,20 @@ Bento intentionally does **not** provide:
 - a Python runtime dependency
 - per-app CPU/memory quotas inside shared PHP containers
 
-See [`specs/01-product-spec.md`](specs/01-product-spec.md) §8 and `tests/unit/phase_g_test.ts`.
+See [`specs/01-product-spec.md`](specs/01-product-spec.md) §8 and `apps/cli/tests/unit/phase_g_test.ts`.
 
 ## Project layout
 
 ```text
-src/
-  main.ts                 # entrypoint
-  domain/                 # branded types, state model, errors, reload plans
-  schemas/                # current-state runtime validation boundary
-  platform/               # Bun adapters (fs, lock, process, assets, paths)
-  services/               # app, php, mysql, render, deploy, …
-  commands/               # CLI router
-  ui/                     # operator output + interactive TUI helpers
-templates/                # immutable nginx/php/helpers assets
-tests/
-  unit/                   # domain + render + deploy unit suites
-  contract/               # CLI smoke + source/binary parity
-  integration/            # stack bootstrap / multi-app / boundary suite
+apps/
+  cli/
+    src/                  # CLI, server, domain, and services
+    templates/            # immutable nginx/php/helpers assets
+    tests/                # unit, contract, and integration suites
+  web/
+    src/                  # browser control plane
+packages/
+  shared/                 # typed oRPC contract shared by CLI and web
 specs/                    # product specifications
 .github/workflows/ci.yml  # tag/release binary builds
 ```

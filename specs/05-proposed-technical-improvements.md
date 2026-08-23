@@ -84,7 +84,7 @@ The generated inventory MUST NOT become a second runtime source of truth. Code/s
 ### Acceptance criteria
 
 - A command added without CLI-reference update fails verification.
-- Bun/Bento/schema/asset version references are checked against `src/version.ts`.
+- Bun/Bento/schema/asset version references are checked against `apps/cli/src/version.ts`.
 - The docs consistently describe multiple bindings, rclone, actual Litestream backup behavior, and transfer SQLite semantics.
 - Historical tests are renamed/reworded without weakening safety assertions.
 

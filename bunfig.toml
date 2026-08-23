@@ -3,4 +3,4 @@ exact = true
 
 [test]
 timeout = 30000
-root = "tests"
+root = "apps/cli/tests"

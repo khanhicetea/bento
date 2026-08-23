@@ -1,18 +1,21 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { InferRouterOutputs } from "@orpc/server";
-import type { AppRouter } from "../../src/server/router.ts";
+import type { ContractRouterClient, InferContractRouterOutputs } from "@orpc/contract";
+import type { WebContract } from "@bento/shared";
 
-type Snapshot = InferRouterOutputs<AppRouter>["snapshot"];
-type Catalog = InferRouterOutputs<AppRouter>["catalog"];
+type Snapshot = InferContractRouterOutputs<WebContract>["snapshot"];
+type Catalog = InferContractRouterOutputs<WebContract>["catalog"];
 
 const link = new RPCLink({ url: `${location.origin}/rpc` });
-const client = createORPCClient<AppRouter>(link);
-const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
+const client = createORPCClient<ContractRouterClient<WebContract>>(link);
+const $ = <T extends HTMLElement = HTMLInputElement>(selector: string) =>
+  document.querySelector<T>(selector)!;
 const content = $("#content");
 const notice = $("#notice");
 const runner = $("#runner") as HTMLDialogElement;
 const outputModal = $("#output-modal") as HTMLDialogElement;
+const appEditor = $("#app-editor") as HTMLDialogElement;
+const appDetails = $("#app-details") as HTMLDialogElement;
 let snapshot: Snapshot | null = null;
 let catalog: Catalog = [];
 let activeView = location.hash.slice(1) || "overview";
@@ -80,6 +83,9 @@ function render(): void {
     content.innerHTML = `<div class="alert alert-error"><div><strong>The selected stack cannot be loaded.</strong><p>${escapeHtml(snapshot.error)}</p><p><code>${escapeHtml(snapshot.stackRoot)}</code></p></div></div><section class="panel full"><h2>Choose a compatible stack</h2><p>Stop the server and restart it with <code>--stack &lt;schema-v1-stack-root&gt;</code>. Bento will not overwrite or migrate an incompatible state file.</p></section>`;
   } else if (!snapshot.initialized && activeView !== "operations" && activeView !== "advanced") {
     content.innerHTML = `<div class="hero"><div><p class="eyebrow">WELCOME TO BENTO</p><h2>Initialize this stack to begin.</h2><p>The web control plane uses the same desired state, validation, and locking as the CLI.</p></div><button class="btn btn-secondary run-preset" data-command="init --name bento">Initialize</button></div>`;
+  } else if (!snapshot.initialized) {
+    if (activeView === "operations") renderOperations();
+    else renderAdvanced();
   } else if (activeView === "overview") renderOverview(snapshot);
   else if (activeView === "apps") renderApps(snapshot);
   else if (activeView === "data") renderData(snapshot);
@@ -98,14 +104,119 @@ function renderOverview(data: Snapshot & { initialized: true }): void {
 }
 
 function renderApps(data: Snapshot & { initialized: true }): void {
-  const rows = data.apps
+  const enabled = data.apps.filter((app) => app.enabled).length;
+  const appCards = data.apps
     .map(
-      (app) =>
-        `<tr><td><strong>${escapeHtml(app.slug)}</strong><br><small>${escapeHtml(app.domain)}</small></td><td>${badge(app.enabled ? "enabled" : "disabled", app.enabled ? "success" : "warning")}</td><td>PHP ${escapeHtml(app.phpVersion)} · ${escapeHtml(app.fpmProfile)}</td><td><div class="pill-row">${app.databases.map((db) => badge(db.engine)).join("")}</div></td><td>${badge(app.tls)}</td><td><button class="btn btn-xs btn-outline run-preset" data-command="app show ${escapeHtml(app.slug)}">Manage</button></td></tr>`,
+      (
+        app,
+      ) => `<article class="app-card" data-app-card data-search="${escapeHtml(`${app.slug} ${app.domain} ${app.aliases.join(" ")}`)}">
+        <div class="app-card-head"><div class="app-identity"><span class="app-avatar">${escapeHtml(app.slug.slice(0, 1).toUpperCase())}</span><div><h3>${escapeHtml(app.slug)}</h3><a href="https://${escapeHtml(app.domain)}" target="_blank" rel="noreferrer">${escapeHtml(app.domain)} ↗</a></div></div>${badge(app.enabled ? "Running" : "Disabled", app.enabled ? "success" : "warning")}</div>
+        <div class="app-facts"><span><small>Runtime</small><strong>PHP ${escapeHtml(app.phpVersion)}</strong></span><span><small>Capacity</small><strong>${escapeHtml(app.fpmProfile)}</strong></span><span><small>TLS</small><strong>${escapeHtml(app.tls)}</strong></span><span><small>Data</small><strong>${app.databases.length ? app.databases.map((db) => escapeHtml(db.engine)).join(", ") : "None"}</strong></span></div>
+        <div class="app-tags">${app.deployEnabled ? badge("Deploys", "success") : ""}${app.accessLog ? badge("Access logs") : ""}${app.aliases
+          .slice(0, 2)
+          .map((alias) => badge(alias))
+          .join("")}</div>
+        <div class="app-actions"><button class="btn btn-sm btn-primary" data-app-action="details" data-slug="${escapeHtml(app.slug)}">Manage</button><button class="btn btn-sm btn-outline" data-app-action="edit" data-slug="${escapeHtml(app.slug)}">Edit</button><button class="btn btn-sm btn-ghost" data-app-action="toggle" data-slug="${escapeHtml(app.slug)}">${app.enabled ? "Disable" : "Enable"}</button></div>
+      </article>`,
     )
     .join("");
-  content.innerHTML = `<div class="section-head"><div><h2>Applications</h2><p>Domains, runtimes, databases, access logs and deployment.</p></div><button class="btn btn-primary run-preset" data-command="app create <slug> --domain <domain> --docroot public --db">Create app</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>State</th><th>Runtime</th><th>Data</th><th>TLS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="6" class="empty">No applications yet.</td></tr>`}</tbody></table></div>
-  <div class="card-grid"><section class="panel"><h3>Lifecycle & domains</h3>${commands(["app update <slug> --domain <domain>", "app enable <slug>", "app disable <slug>", "app delete <slug> --confirm 'delete <slug>'", "app prune <slug> --confirm delete", "tls set --app <slug> --mode self-ca"])}</section><section class="panel"><h3>App features</h3>${commands(["deploy status <slug>", "deploy enable <slug>", "deploy disable <slug>", "deploy rotate <slug>", "deploy drain <slug>", "deploy instructions <slug>", "logs access enable --app <slug>", "logs access rotate --app <slug>", "logs access report --app <slug>", "template drift --app <slug>", "template select --app <slug> --kind vhost --source <path>", "template return --app <slug> --kind vhost", "app shell <slug> --print", "exec <slug> -- <command>"])}</section></div>`;
+  content.innerHTML = `<div class="section-head"><div><h2>Your applications</h2><p>Manage domains, runtimes and app services without writing commands.</p></div><button class="btn btn-primary" data-app-action="create">＋ New application</button></div>
+    <div class="app-summary"><div><strong>${data.apps.length}</strong><span>Total apps</span></div><div><strong>${enabled}</strong><span>Running</span></div><div><strong>${data.apps.reduce((sum, app) => sum + app.databases.length, 0)}</strong><span>Databases</span></div><label class="app-search"><span aria-hidden="true">⌕</span><input id="app-search" class="input" type="search" placeholder="Search apps or domains…" aria-label="Search applications" /></label></div>
+    <div id="app-grid" class="app-grid">${appCards || `<div class="empty-state"><div class="empty-icon">◫</div><h3>Create your first application</h3><p>Add a domain, choose a PHP runtime, and Bento will prepare the app.</p><button class="btn btn-primary" data-app-action="create">Create application</button></div>`}</div>
+    <p id="app-no-results" class="empty" hidden>No applications match your search.</p>`;
+  bindAppManagement(data);
+}
+
+function bindAppManagement(data: Snapshot & { initialized: true }): void {
+  const handleAction = (button: HTMLButtonElement): void => {
+    const action = button.dataset.appAction;
+    const app = data.apps.find((item) => item.slug === button.dataset.slug);
+    if (action === "create") openAppEditor(data);
+    else if (action === "edit" && app) openAppEditor(data, app);
+    else if (action === "details" && app) openAppDetails(app);
+    else if (action === "toggle" && app)
+      void executeArgv(["app", app.enabled ? "disable" : "enable", app.slug], button);
+    else if (action === "delete" && app)
+      void executeArgv(["app", "delete", app.slug, "--confirm", `delete ${app.slug}`], button);
+    else if (action === "deploy" && app)
+      void executeArgv(["deploy", app.deployEnabled ? "disable" : "enable", app.slug], button);
+    else if (action === "logs" && app)
+      void executeArgv(
+        ["logs", "access", app.accessLog ? "disable" : "enable", "--app", app.slug],
+        button,
+      );
+    else if (action === "tls" && app) openRunner(`tls set --app ${app.slug} --mode self-ca`);
+  };
+  content
+    .querySelectorAll<HTMLButtonElement>("[data-app-action]")
+    .forEach((button) => button.addEventListener("click", () => handleAction(button)));
+  appDetails.onclick = (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-app-action]");
+    if (button) handleAction(button);
+  };
+  $("#app-search").addEventListener("input", (event) => {
+    const query = (event.target as HTMLInputElement).value.trim().toLowerCase();
+    let matches = 0;
+    content.querySelectorAll<HTMLElement>("[data-app-card]").forEach((card) => {
+      const visible = (card.dataset.search || "").toLowerCase().includes(query);
+      card.hidden = !visible;
+      if (visible) matches++;
+    });
+    $("#app-no-results").hidden = matches > 0 || !data.apps.length;
+  });
+}
+
+function openAppEditor(
+  data: Snapshot & { initialized: true },
+  app?: (Snapshot & { initialized: true })["apps"][number],
+): void {
+  const editing = Boolean(app);
+  appDetails.close();
+  $("#app-form-mode").value = editing ? "update" : "create";
+  $("#app-editor-title").textContent = editing ? `Edit ${app!.slug}` : "Create application";
+  $("#app-editor-help").textContent = editing
+    ? "Update the app configuration. Bento will validate and apply your changes."
+    : "Set the public domain and runtime. Bento validates and applies the change.";
+  const slug = $("#app-slug") as HTMLInputElement;
+  slug.value = app?.slug || "";
+  slug.readOnly = editing;
+  $("#app-domain").value = app?.domain || "";
+  $("#app-aliases").value = app?.aliases.join(", ") || "";
+  $("#app-docroot").value = "";
+  $("#app-routing").value = "";
+  const php = $("#app-php") as HTMLSelectElement;
+  const versions = [
+    ...new Set([...data.phpVersions.map((item) => item.version), ...(app ? [app.phpVersion] : [])]),
+  ];
+  php.innerHTML = `<option value="">Stack default</option>${versions.map((version) => `<option value="${escapeHtml(version)}">PHP ${escapeHtml(version)}</option>`).join("")}`;
+  php.value = app?.phpVersion || "";
+  $("#app-fpm").value = app?.fpmProfile || "";
+  const db = $("#app-db") as HTMLInputElement;
+  db.checked = false;
+  $("#database-options").hidden = true;
+  $("#app-db-engine").value = "mysql";
+  $("#app-db-name").value = "";
+  ($("#app-access-log") as HTMLInputElement).checked = app?.accessLog || false;
+  $("#save-app").textContent = editing ? "Save changes" : "Create application";
+  appEditor.showModal();
+  setTimeout(() => (editing ? $("#app-domain") : slug).focus(), 0);
+}
+
+function openAppDetails(app: (Snapshot & { initialized: true })["apps"][number]): void {
+  const databaseRows = app.databases.length
+    ? app.databases
+        .map(
+          (db) =>
+            `<div class="detail-row"><span>${badge(db.engine)}</span><strong>${escapeHtml(db.names.join(", ") || db.file || db.service || "Attached")}</strong></div>`,
+        )
+        .join("")
+    : `<p class="muted">No databases attached.</p>`;
+  $("#app-details-content").innerHTML =
+    `<p class="eyebrow">APPLICATION</p><div class="details-title"><div><h2>${escapeHtml(app.slug)}</h2><a href="https://${escapeHtml(app.domain)}" target="_blank" rel="noreferrer">${escapeHtml(app.domain)} ↗</a></div>${badge(app.enabled ? "Running" : "Disabled", app.enabled ? "success" : "warning")}</div>
+    <div class="details-grid"><section><h3>Configuration</h3><div class="detail-row"><span>PHP runtime</span><strong>${escapeHtml(app.phpVersion)}</strong></div><div class="detail-row"><span>FPM profile</span><strong>${escapeHtml(app.fpmProfile)}</strong></div><div class="detail-row"><span>TLS mode</span><strong>${escapeHtml(app.tls)}</strong></div><div class="detail-row"><span>Aliases</span><strong>${escapeHtml(app.aliases.join(", ") || "None")}</strong></div></section><section><h3>Data</h3>${databaseRows}</section></div>
+    <section class="feature-list"><h3>Features</h3><div class="feature-row"><div><strong>Deploy endpoint</strong><small>${app.deployEnabled ? "Accepting deployments" : "Not configured"}</small></div><button class="btn btn-sm btn-outline" data-app-action="deploy" data-slug="${escapeHtml(app.slug)}">${app.deployEnabled ? "Disable" : "Enable"}</button></div><div class="feature-row"><div><strong>Access logs</strong><small>${app.accessLog ? "Per-app request logging is on" : "Use shared server logs"}</small></div><button class="btn btn-sm btn-outline" data-app-action="logs" data-slug="${escapeHtml(app.slug)}">${app.accessLog ? "Disable" : "Enable"}</button></div><div class="feature-row"><div><strong>TLS certificate</strong><small>Configure a locally trusted certificate</small></div><button class="btn btn-sm btn-outline" data-app-action="tls" data-slug="${escapeHtml(app.slug)}">Configure</button></div></section>
+    <div class="details-actions"><button class="btn btn-error btn-outline" data-app-action="delete" data-slug="${escapeHtml(app.slug)}">Delete app</button><div><button class="btn btn-ghost" data-app-action="toggle" data-slug="${escapeHtml(app.slug)}">${app.enabled ? "Disable app" : "Enable app"}</button><button class="btn btn-primary" data-app-action="edit" data-slug="${escapeHtml(app.slug)}">Edit configuration</button></div></div>`;
+  appDetails.showModal();
 }
 
 function renderData(data: Snapshot & { initialized: true }): void {
@@ -152,6 +263,7 @@ function bindPresets(): void {
     );
 }
 function openRunner(command: string): void {
+  appDetails.close();
   $("#command").value = command;
   $("#runner-title").textContent = command.split(" ").slice(0, 2).join(" ");
   runner.showModal();
@@ -195,22 +307,25 @@ function parseArgv(value: string): string[] {
   return args[0] === "bento" ? args.slice(1) : args;
 }
 
-async function execute(): Promise<void> {
-  const button = $("#run-command") as HTMLButtonElement;
+async function executeArgv(argv: string[], button?: HTMLButtonElement): Promise<boolean> {
   try {
-    const argv = parseArgv($("#command").value);
+    notice.textContent = "";
     if (!argv.length) throw new Error("Enter a Bento command");
     if (argv.some((arg) => /^<.*>$/.test(arg)))
       throw new Error("Replace all <placeholders> with real values");
     if (
       /\b(delete|remove|prune|repair|restore|import)\b/.test(argv.join(" ")) &&
-      !confirm(`Run destructive operation?\n\nbento ${argv.join(" ")}`)
+      !confirm(`This operation can remove or replace data. Continue?\n\nbento ${argv.join(" ")}`)
     )
-      return;
-    button.disabled = true;
-    button.classList.add("loading");
+      return false;
+    if (button) {
+      button.disabled = true;
+      button.classList.add("loading");
+    }
     const result = await client.execute({ argv });
     runner.close();
+    appEditor.close();
+    appDetails.close();
     $("#output-title").textContent = `bento ${argv.join(" ")}`;
     $("#exit-code").textContent = result.timedOut ? "timed out" : `exit ${result.code}`;
     $("#exit-code").className = `badge ${result.code === 0 ? "badge-success" : "badge-error"}`;
@@ -219,11 +334,24 @@ async function execute(): Promise<void> {
       "Command completed without output.";
     outputModal.showModal();
     await load();
+    return result.code === 0;
   } catch (error) {
     notice.textContent = error instanceof Error ? error.message : String(error);
+    return false;
   } finally {
-    button.disabled = false;
-    button.classList.remove("loading");
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("loading");
+    }
+  }
+}
+
+async function execute(): Promise<void> {
+  try {
+    const argv = parseArgv($("#command").value);
+    await executeArgv(argv, $("#run-command") as HTMLButtonElement);
+  } catch (error) {
+    notice.textContent = error instanceof Error ? error.message : String(error);
   }
 }
 
@@ -234,6 +362,40 @@ window.addEventListener("hashchange", () => {
 $("#refresh").addEventListener("click", load);
 $("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
 $("#run-command").addEventListener("click", execute);
+$("#cancel-app-form").addEventListener("click", () => appEditor.close());
+$("#app-db").addEventListener("change", (event) => {
+  $("#database-options").hidden = !(event.target as HTMLInputElement).checked;
+});
+$("#app-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = (selector: string): string =>
+    (document.querySelector<HTMLInputElement | HTMLSelectElement>(selector)?.value || "").trim();
+  const slug = value("#app-slug");
+  const argv = ["app", value("#app-form-mode"), slug, "--domain", value("#app-domain")];
+  argv.push(
+    "--alias",
+    value("#app-aliases")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(","),
+  );
+  const optional = [
+    ["--php", value("#app-php")],
+    ["--fpm", value("#app-fpm")],
+    ["--docroot", value("#app-docroot")],
+  ] as const;
+  for (const [flag, fieldValue] of optional) if (fieldValue) argv.push(flag, fieldValue);
+  const routing = value("#app-routing");
+  if (routing) argv.push(`--${routing}`);
+  if (($("#app-db") as HTMLInputElement).checked) {
+    argv.push("--db", "--database-engine", value("#app-db-engine"));
+    const databaseName = value("#app-db-name");
+    if (databaseName) argv.push("--database", databaseName);
+  }
+  if (($("#app-access-log") as HTMLInputElement).checked) argv.push("--access-log");
+  void executeArgv(argv, $("#save-app") as HTMLButtonElement);
+});
 $("#copy-output").addEventListener("click", async () => {
   await navigator.clipboard.writeText($("#output").textContent || "");
 });

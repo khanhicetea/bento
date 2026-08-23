@@ -82,7 +82,7 @@ Source mode is for development or for a reviewed checkout when no compiled relea
 
 ```sh
 bun --version
-bun run src/main.ts version
+bun run apps/cli/src/main.ts version
 ```
 
 Use `bun install --frozen-lockfile` so dependency resolution matches the committed lockfile. Source mode and the compiled binary are tested to produce equivalent state transitions and generated files. Mutable data still belongs in the external stack root, not beside the source or binary.
@@ -104,7 +104,7 @@ These tasks write `dist/bento-linux-amd64` and `dist/bento-linux-arm64`. Install
 
 **The stack root is not writable:** correct its owner and mode for the Bento operator. Do not work around the problem by moving production state into a temporary directory.
 
-**Source mode cannot find `package.json` or a task:** change to the repository root before running `bun run src/main.ts`, and confirm that the checkout contains `package.json` and `templates/`.
+**Source mode cannot find `package.json` or a task:** change to the repository root before running `bun run apps/cli/src/main.ts`, and confirm that the checkout contains `package.json` and `apps/cli/templates/`.
 
 ## Next steps
 

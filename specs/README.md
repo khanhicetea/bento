@@ -27,7 +27,7 @@ In baseline documents, `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative. In
 
 When sources conflict, use this precedence for product behavior:
 
-1. validated behavior in `src/` and safety/contract tests;
+1. validated behavior in `apps/cli/src/` and safety/contract tests;
 2. these specifications;
 3. operator documentation in `docs/` and `README.md`;
 4. comments and historical Git content.
@@ -39,9 +39,9 @@ A specification change does not by itself change runtime behavior. Product chang
 The baseline was derived from:
 
 - `README.md`, `package.json`, `bun.lock`, and `.github/workflows/ci.yml`;
-- `src/domain/`, `src/schemas/`, `src/platform/`, `src/services/`, `src/commands/`, and `src/ui/`;
-- immutable assets in `templates/`;
-- unit, contract, parity, and integration tests in `tests/`;
+- `apps/cli/src/domain/`, `apps/cli/src/schemas/`, `apps/cli/src/platform/`, `apps/cli/src/services/`, `apps/cli/src/commands/`, and `apps/cli/src/ui/`;
+- immutable assets in `apps/cli/templates/`;
+- unit, contract, parity, and integration tests in `apps/cli/tests/`;
 - architecture, concepts, guides, and reference material in `docs/src/content/docs/`;
 - the current CLI help surface.
 

@@ -43,7 +43,7 @@ Technical choices are evaluated in this order:
 ### D-03 — Bun, strict TypeScript, and one entrypoint
 
 **Context:** The code handles hostile JSON/env/process boundaries but releases should not require a runtime install.  
-**Decision:** Bun 1.4.0, strict TypeScript, runtime validation, `src/main.ts` for source and compiled modes.  
+**Decision:** Bun 1.4.0, strict TypeScript, runtime validation, `apps/cli/src/main.ts` for source and compiled modes.
 **Benefits:** One toolchain, typed domain, testable adapters, standalone binaries.  
 **Trade-offs:** Runtime and dependencies are pinned; compiled asset resolution requires care.  
 **Rejected:** Python compatibility layer, unlocked dependency installation as the documented default, separate source/binary implementations.

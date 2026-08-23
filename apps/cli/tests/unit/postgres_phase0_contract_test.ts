@@ -2,7 +2,7 @@
 
 import { runtime as bunRuntime, assertMatch } from "../runtime.ts";
 
-const root = new URL("../../", import.meta.url);
+const root = new URL("../../../../", import.meta.url);
 
 async function read(relativePath: string): Promise<string> {
   return await bunRuntime.readTextFile(new URL(relativePath, root));

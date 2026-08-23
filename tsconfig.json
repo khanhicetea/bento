@@ -15,6 +15,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "docs", "bento", "specs"]
+  "exclude": ["dist", "docs", "bento", "specs", "**/dist", "**/node_modules"]
 }

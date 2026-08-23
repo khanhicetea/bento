@@ -49,21 +49,21 @@ The product is organized into these operator-facing areas:
 
 ### 3.1 Entrypoint and command adapters
 
-`src/main.ts` is the source and compiled entrypoint. `src/commands/router.ts` owns global yargs parsing, help, error mapping, and command registration. `src/commands/subcommands/` groups scriptable command handlers; `src/commands/wizard/` provides interactive convenience flows; `src/ui/` handles redacted presentation.
+`apps/cli/src/main.ts` is the source and compiled entrypoint. `apps/cli/src/commands/router.ts` owns global yargs parsing, help, error mapping, and command registration. `apps/cli/src/commands/subcommands/` groups scriptable command handlers; `apps/cli/src/commands/wizard/` provides interactive convenience flows; `apps/cli/src/ui/` handles redacted presentation.
 
 Command adapters SHOULD parse/present and coordinate use cases. They SHOULD NOT own domain invariants or direct filesystem/process details.
 
 ### 3.2 Domain and schemas
 
-`src/domain/` defines branded identifiers, desired-state types, errors, and reload plans. Key discriminated unions include database engine, TLS mode, domain owner, database service, and reload target.
+`apps/cli/src/domain/` defines branded identifiers, desired-state types, errors, and reload plans. Key discriminated unions include database engine, TLS mode, domain owner, database service, and reload target.
 
-`src/schemas/` treats JSON and CLI-derived values as untrusted. Zod schemas reject unknown fields, malformed identities, unsupported state versions, broken references, duplicate bindings, and invalid domain ownership. Persisted state is schema version 1.
+`apps/cli/src/schemas/` treats JSON and CLI-derived values as untrusted. Zod schemas reject unknown fields, malformed identities, unsupported state versions, broken references, duplicate bindings, and invalid domain ownership. Persisted state is schema version 1.
 
 Branded TypeScript values reduce accidental mixing after runtime validation; they are not a substitute for boundary checks.
 
 ### 3.3 Services
 
-`src/services/` owns use cases and state transitions:
+`apps/cli/src/services/` owns use cases and state transitions:
 
 - app/proxy/PHP/database lifecycle;
 - generation, staged render/apply, and asset materialization;
@@ -75,7 +75,7 @@ Services receive a `Platform` and SHOULD remain independent from terminal format
 
 ### 3.4 Platform adapters
 
-`src/platform/` isolates Bun and host effects behind narrow interfaces:
+`apps/cli/src/platform/` isolates Bun and host effects behind narrow interfaces:
 
 - `FileSystem` with atomic writes and non-following `lstat`;
 - exclusive/shared `FileLock`;
@@ -88,7 +88,7 @@ Domain code MUST NOT import Bun/Node runtime globals directly. Test adapters pro
 
 ### 3.5 Immutable assets
 
-`templates/` contains base Compose, Dockerfiles, Nginx/PHP templates, and in-container helpers. Source mode reads these assets from the checkout. Compiled mode embeds them and publishes them through a digest-addressed `.asset-cache/<sha256>/` under the selected stack root before exposing stable `docker/` and `helpers/` paths.
+`apps/cli/templates/` contains base Compose, Dockerfiles, Nginx/PHP templates, and in-container helpers. Source mode reads these assets from the checkout. Compiled mode embeds them and publishes them through a digest-addressed `.asset-cache/<sha256>/` under the selected stack root before exposing stable `docker/` and `helpers/` paths.
 
 Mutable stack data MUST never be inferred from or stored beside the executable.
 

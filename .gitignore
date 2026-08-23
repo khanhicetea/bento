@@ -2,6 +2,7 @@
 bento/
 testbento/
 /dist/
+**/dist/
 *.partial
 .DS_Store
 node_modules/

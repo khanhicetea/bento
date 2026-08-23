@@ -210,7 +210,9 @@ bunRuntime.test(
 bunRuntime.test(
   "Phase 2 PHP image builds PostgreSQL extensions with runtime libpq only",
   async () => {
-    const dockerfile = await bunRuntime.readTextFile("templates/docker/php/Dockerfile");
+    const dockerfile = await bunRuntime.readTextFile(
+      new URL("../../templates/docker/php/Dockerfile", import.meta.url),
+    );
     assertEquals(dockerfile.includes("libpq-dev"), true);
     assertEquals(dockerfile.includes("pdo_pgsql"), true);
     assertEquals(dockerfile.includes("pgsql"), true);

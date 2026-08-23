@@ -19,7 +19,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { RuntimeCommand } from "../src/platform/runtime.ts";
 export { encodeHex } from "../src/platform/hex.ts";
 
@@ -60,10 +61,12 @@ function info(value: Stats) {
   };
 }
 
+const cliRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 export const runtime = {
   test,
   Command: RuntimeCommand,
-  cwd: () => process.cwd(),
+  cwd: () => cliRoot,
   uid: () => process.getuid?.() ?? null,
   env: {
     get: (name: string) => Bun.env[name],

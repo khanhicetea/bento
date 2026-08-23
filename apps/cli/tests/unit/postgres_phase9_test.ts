@@ -5,7 +5,8 @@ import { runtime as bunRuntime, assertMatch } from "../runtime.ts";
 const root = new URL("../../", import.meta.url);
 
 async function read(path: string): Promise<string> {
-  return await bunRuntime.readTextFile(new URL(path, root));
+  const base = path === "README.md" || path.startsWith("specs/") ? "../../" : "";
+  return await bunRuntime.readTextFile(new URL(`${base}${path}`, root));
 }
 
 bunRuntime.test(

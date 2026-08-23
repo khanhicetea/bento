@@ -4,11 +4,11 @@ import type { CliContext } from "../commands/context.ts";
 import { resolveAssetRoot } from "../platform/assets.ts";
 import { createWebRouter } from "./router.ts";
 // Bun's file loader embeds these assets in standalone builds.
-import webIndex from "../../web/dist/index.html" with { type: "file" };
+import webIndex from "../../../web/dist/index.html" with { type: "file" };
 // @ts-expect-error generated browser asset
-import webScript from "../../web/dist/app.js" with { type: "file" };
+import webScript from "../../../web/dist/app.js" with { type: "file" };
 // @ts-expect-error generated browser asset
-import webStyle from "../../web/dist/app.css" with { type: "file" };
+import webStyle from "../../../web/dist/app.css" with { type: "file" };
 
 export type ServeOptions = { hostname: string; port: number; open: boolean };
 
@@ -23,7 +23,7 @@ const SECURITY_HEADERS = {
 export async function runWebServer(ctx: CliContext, options: ServeOptions): Promise<number> {
   const router = createWebRouter(ctx);
   const rpc = new RPCHandler(router);
-  const assetRoot = join(resolveAssetRoot(), "web", "dist");
+  const assetRoot = join(resolveAssetRoot(), "..", "web", "dist");
   // Static URL references let Bun preserve the exact paths in compiled executables.
   const embeddedAssets: Record<string, string> = {
     "index.html": webIndex as unknown as string,
