@@ -61,20 +61,20 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
   databases.sort((left, right) => left.name.localeCompare(right.name));
 
   return (
-    <Card className="database-service-card shadow-sm">
+    <Card className="shadow-sm">
       <CardContent>
-        <div className="database-service-heading">
+        <div className="flex items-center justify-between gap-4 max-[760px]:items-stretch max-[760px]:flex-col">
           <div>
-            <div className="database-service-title">
+            <div className="flex items-center gap-2.5">
               <CardTitle>{service.service}</CardTitle>
               <Badge variant="outline">{engineLabel(service.engine)}</Badge>
             </div>
-            <p className="muted">
+            <p className="text-sm opacity-60">
               Version {runtime.data?.serverVersion ?? service.version} · {service.appCount}{" "}
               application{service.appCount === 1 ? "" : "s"}
             </p>
           </div>
-          <div className="database-service-actions">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Button
               variant="ghost"
               size="sm"
@@ -100,14 +100,14 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
           <Alert className="border-amber-500/40 bg-amber-500/10">{runtime.data.error}</Alert>
         )}
 
-        <div className="table-wrap database-listing">
+        <div className="overflow-auto rounded-md border border-border">
           <Table className="min-w-[650px] bg-card">
             <TableHeader>
               <TableRow>
                 <TableHead>Database</TableHead>
                 <TableHead>Application</TableHead>
                 <TableHead className="text-right">Size</TableHead>
-                <TableHead className="database-action-column">
+                <TableHead className="w-px whitespace-nowrap text-right">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -115,7 +115,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
             <TableBody>
               {runtime.isPending && databases.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="database-table-state">
+                  <TableCell colSpan={4} className="h-20 text-center opacity-65">
                     <Spinner /> Loading databases and sizes…
                   </TableCell>
                 </TableRow>
@@ -131,11 +131,13 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                       <TableCell>
                         <strong>{database.name}</strong>
                       </TableCell>
-                      <TableCell>{owner?.app ?? <span className="muted">System</span>}</TableCell>
-                      <TableCell className="text-right database-size">
+                      <TableCell>
+                        {owner?.app ?? <span className="text-sm opacity-60">System</span>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
                         {database.bytes < 0 ? "Unavailable" : formatBytes(database.bytes)}
                       </TableCell>
-                      <TableCell className="database-action-column">
+                      <TableCell className="w-px whitespace-nowrap text-right">
                         <Button
                           size="sm"
                           disabled={!owner || backup.isPending}
@@ -181,11 +183,11 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
         )}
 
         {expanded && (
-          <div className="database-manager-body">
+          <div className="grid gap-5 border-t border-border pt-4">
             <Card className="bg-muted">
               <CardContent>
                 <CardTitle>Active processes</CardTitle>
-                <div className="table-wrap">
+                <div className="overflow-auto rounded-[0.8rem] border border-border">
                   <Table className="min-w-[650px] bg-card">
                     <TableHeader>
                       <TableRow>
@@ -200,7 +202,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                           <TableRow key={process.id}>
                             <TableCell>
                               <strong>{process.user}</strong>
-                              <small className="database-process-meta">
+                              <small className="mt-0.5 block opacity-60">
                                 {process.database || `Process ${process.id}`}
                               </small>
                             </TableCell>
@@ -229,12 +231,12 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
               <CardContent>
                 <div>
                   <CardTitle>Restore a backup</CardTitle>
-                  <p className="form-help">
+                  <p className="text-sm opacity-60">
                     Restore an artifact to a new or existing application database.
                   </p>
                 </div>
                 <label className="w-full">
-                  <span className="label-text">Backup artifact</span>
+                  <span className="mt-3 mb-1.5 block font-semibold">Backup artifact</span>
                   <NativeSelect
                     className="w-full"
                     value={artifact}
@@ -248,9 +250,9 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                     ))}
                   </NativeSelect>
                 </label>
-                <div className="database-restore-fields">
+                <div className="grid grid-cols-2 gap-4 max-[900px]:grid-cols-1">
                   <label className="w-full">
-                    <span className="label-text">Application</span>
+                    <span className="mt-3 mb-1.5 block font-semibold">Application</span>
                     <NativeSelect
                       className="w-full"
                       value={app}
@@ -268,7 +270,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                     </NativeSelect>
                   </label>
                   <label className="w-full">
-                    <span className="label-text">Target database</span>
+                    <span className="mt-3 mb-1.5 block font-semibold">Target database</span>
                     <Input
                       className="w-full"
                       value={target}

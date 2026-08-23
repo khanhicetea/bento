@@ -43,7 +43,7 @@ export function RemoveApplicationDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && !removing && onClose()}>
       <DialogContent
-        className="remove-app-box max-h-[calc(100vh-2rem)] overflow-y-auto"
+        className="max-w-[560px] max-h-[calc(100vh-2rem)] overflow-y-auto"
         showCloseButton={!removing}
       >
         <DialogHeader>
@@ -56,7 +56,7 @@ export function RemoveApplicationDialog({
         {error && <Alert variant="destructive">{error}</Alert>}
         <form onSubmit={(event) => void submit(event)}>
           <label>
-            <span className="label-text">
+            <span className="mt-3 mb-1.5 block font-semibold">
               Type <code>{expected}</code> to confirm
             </span>
             <Input

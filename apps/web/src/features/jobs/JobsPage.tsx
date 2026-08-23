@@ -22,23 +22,23 @@ export function JobsPage() {
   const data = query.data;
   if (!data && query.isPending)
     return (
-      <section className="content">
+      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainLoading label="jobs and workers" />
       </section>
     );
   if (!data && query.error)
     return (
-      <section className="content">
+      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
       </section>
     );
   if (!data) return null;
   return (
-    <section className="content">
-      <div className="section-head">
+    <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
+      <div className="mb-4 flex items-end justify-between gap-4 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <h2>Jobs and workers</h2>
-          <p>
+          <p className="m-0 my-1 opacity-60">
             Desired scheduler, worker, and deployment orchestration state. Command arguments are
             hidden.
           </p>
@@ -51,7 +51,7 @@ export function JobsPage() {
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
       ) : (
         <>
-          <div className="stats-grid">
+          <div className="my-[1.2rem] grid grid-cols-4 gap-4 max-[1050px]:grid-cols-2 max-[760px]:grid-cols-1">
             <Metric label="Cron jobs" value={data.cronJobs.length} />
             <Metric
               label="Enabled jobs"
@@ -60,11 +60,11 @@ export function JobsPage() {
             <Metric label="Workers" value={data.workers.length} />
             <Metric label="Deploy hooks" value={data.deploys.length} />
           </div>
-          <div className="card-grid">
-            <article className="panel full">
+          <div className="my-[1.2rem] grid grid-cols-4 gap-4 max-[1050px]:grid-cols-2 max-[760px]:grid-cols-1">
+            <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>Scheduled jobs</h2>
               {data.cronJobs.length ? (
-                <div className="table-wrap">
+                <div className="overflow-auto rounded-[0.8rem] border border-border">
                   <Table className="min-w-[650px] bg-card">
                     <TableHeader>
                       <TableRow>
@@ -100,10 +100,10 @@ export function JobsPage() {
                 <EmptyPanel>No scheduled jobs configured.</EmptyPanel>
               )}
             </article>
-            <article className="panel full">
+            <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>Workers</h2>
               {data.workers.length ? (
-                <div className="table-wrap">
+                <div className="overflow-auto rounded-[0.8rem] border border-border">
                   <Table className="min-w-[650px] bg-card">
                     <TableHeader>
                       <TableRow>
@@ -139,10 +139,10 @@ export function JobsPage() {
                 <EmptyPanel>No workers configured.</EmptyPanel>
               )}
             </article>
-            <article className="panel full">
+            <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>Deploy orchestration</h2>
               {data.deploys.length ? (
-                <div className="table-wrap">
+                <div className="overflow-auto rounded-[0.8rem] border border-border">
                   <Table className="min-w-[650px] bg-card">
                     <TableHeader>
                       <TableRow>
@@ -178,9 +178,9 @@ export function JobsPage() {
 }
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="metric">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
+    <div className="rounded-xl border border-border bg-card p-5 text-card-foreground">
+      <div className="text-xs uppercase tracking-[0.06em] opacity-60">{label}</div>
+      <div className="mt-1 text-3xl font-bold">{value}</div>
     </div>
   );
 }

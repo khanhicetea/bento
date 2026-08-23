@@ -26,14 +26,14 @@ export function DatabasesPage() {
 
   if (!data && query.isPending) {
     return (
-      <section className="content">
+      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainLoading label="databases" />
       </section>
     );
   }
   if (!data && query.error) {
     return (
-      <section className="content">
+      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
       </section>
     );
@@ -52,11 +52,11 @@ export function DatabasesPage() {
   );
 
   return (
-    <section className="content">
-      <div className="section-head">
+    <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
+      <div className="mb-4 flex items-end justify-between gap-4 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <h2>Databases</h2>
-          <p>
+          <p className="m-0 my-1 opacity-60">
             See database usage, create backups, inspect runtimes, and manage recovery in one place.
           </p>
         </div>
@@ -69,7 +69,7 @@ export function DatabasesPage() {
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
       ) : (
         <>
-          <div className="stats-grid">
+          <div className="my-[1.2rem] grid grid-cols-4 gap-4 max-[1050px]:grid-cols-2 max-[760px]:grid-cols-1">
             <Metric label="Databases" value={databaseCount} />
             <Metric label="Managed services" value={data.services.length} />
             <Metric
@@ -79,7 +79,7 @@ export function DatabasesPage() {
             <Metric label="Backup artifacts" value={data.backups.length} />
           </div>
 
-          <div className="database-section-head">
+          <div className="my-8 mb-3.5 [&_h2]:m-0 [&_p]:m-0 [&_p]:mt-1 [&_p]:opacity-65">
             <div>
               <h2>MySQL &amp; PostgreSQL</h2>
               <p>
@@ -89,13 +89,13 @@ export function DatabasesPage() {
             </div>
           </div>
           {data.services.length ? (
-            <div className="database-service-list">
+            <div className="mt-5 grid gap-5">
               {data.services.map((service) => (
                 <DatabaseManager key={service.service} service={service} data={data} />
               ))}
             </div>
           ) : (
-            <article className="panel full database-empty-panel">
+            <article className="col-span-full flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5 text-card-foreground max-[760px]:items-stretch max-[760px]:flex-col">
               <EmptyPanel>No managed MySQL or PostgreSQL services.</EmptyPanel>
               <Button asChild>
                 <Link href="/applications">Add from an application</Link>
@@ -103,15 +103,15 @@ export function DatabasesPage() {
             </article>
           )}
 
-          <div className="database-section-head">
+          <div className="my-8 mb-3.5 [&_h2]:m-0 [&_p]:m-0 [&_p]:mt-1 [&_p]:opacity-65">
             <div>
               <h2>SQLite &amp; Litestream</h2>
               <p>Application-local files and their continuous replication status.</p>
             </div>
           </div>
-          <article className="panel full">
+          <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2">
             {fileBindings.length ? (
-              <div className="table-wrap">
+              <div className="overflow-auto rounded-[0.8rem] border border-border">
                 <Table className="min-w-[650px] bg-card">
                   <TableHeader>
                     <TableRow>
@@ -155,14 +155,14 @@ export function DatabasesPage() {
           </article>
 
           {data.sqliteBackup && (
-            <article className="panel full database-policy-panel">
+            <article className="grid grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)] gap-8 rounded-xl border border-border bg-card p-5 text-card-foreground max-[900px]:grid-cols-1">
               <div>
                 <h2>Litestream policy</h2>
-                <p className="muted">
+                <p className="text-sm opacity-60">
                   Continuous replication settings shared by Litestream databases.
                 </p>
               </div>
-              <div className="detail-list database-policy-details">
+              <div className="grid">
                 <Detail label="Status" value={data.sqliteBackup.enabled ? "Enabled" : "Disabled"} />
                 <Detail label="Destination" value={data.sqliteBackup.destination} />
                 <Detail label="Sync interval" value={data.sqliteBackup.syncInterval} />
@@ -175,7 +175,7 @@ export function DatabasesPage() {
           )}
 
           {!relationalBindings.length && !fileBindings.length && (
-            <p className="muted database-no-bindings">
+            <p className="text-center text-sm opacity-60">
               No databases are currently bound to applications.
             </p>
           )}
@@ -187,18 +187,18 @@ export function DatabasesPage() {
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="metric">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
+    <div className="rounded-xl border border-border bg-card p-5 text-card-foreground">
+      <div className="text-xs uppercase tracking-[0.06em] opacity-60">{label}</div>
+      <div className="mt-1 text-3xl font-bold">{value}</div>
     </div>
   );
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="detail-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="flex items-center justify-between gap-4 border-b border-border py-2.5 text-[0.84rem] last:border-b-0">
+      <span className="opacity-70">{label}</span>
+      <strong className="[overflow-wrap:anywhere] text-right">{value}</strong>
     </div>
   );
 }

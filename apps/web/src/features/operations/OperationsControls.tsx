@@ -58,16 +58,16 @@ export function OperationsControls({ stackName }: { stackName: string }) {
   }
 
   return (
-    <article className="panel full">
+    <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
       <h2>Controls</h2>
-      <p className="muted">Mutating actions run directly against this local stack.</p>
+      <p className="text-sm opacity-60">Mutating actions run directly against this local stack.</p>
       {error && <Alert variant="destructive">{messageOf(error)}</Alert>}
       {notice && (
         <Alert className="border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
           {notice}
         </Alert>
       )}
-      <div className="operations-actions">
+      <div className="mt-4 flex flex-wrap gap-3">
         <Button
           className="bg-emerald-600 text-white hover:bg-emerald-600/90"
           disabled={busy}
@@ -107,7 +107,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
           Load recent logs
         </Button>
       </div>
-      <div className="operations-deploy">
+      <div className="mt-4 flex flex-wrap gap-3">
         <Input
           className="min-w-64"
           aria-label="Application slug"
@@ -127,7 +127,10 @@ export function OperationsControls({ stackName }: { stackName: string }) {
         </Alert>
       ) : null}
       {logs.data && (
-        <pre className="operations-logs" aria-label="Recent service logs">
+        <pre
+          className="mt-4 max-h-96 overflow-auto rounded-lg bg-muted p-4 text-xs whitespace-pre-wrap break-words text-muted-foreground"
+          aria-label="Recent service logs"
+        >
           {logs.data.lines.join("\n") || "No log lines returned."}
         </pre>
       )}
@@ -180,8 +183,8 @@ export function ServiceRestartButton({ service }: { service: string }) {
       >
         {restart.isPending ? "Restarting…" : "Restart"}
       </Button>
-      {restart.error && <small className="text-error">{messageOf(restart.error)}</small>}
-      {restart.data && <small className="text-success">Restarted</small>}
+      {restart.error && <small className="text-destructive">{messageOf(restart.error)}</small>}
+      {restart.data && <small className="text-emerald-600 dark:text-emerald-400">Restarted</small>}
       {confirming && (
         <ConfirmOperationDialog
           title={`Restart ${service}`}

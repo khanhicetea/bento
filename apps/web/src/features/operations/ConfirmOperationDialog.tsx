@@ -36,7 +36,7 @@ export function ConfirmOperationDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <label>
-          <span className="label-text">
+          <span className="mt-3 mb-1.5 block font-semibold">
             Type <strong>{confirmation}</strong> to confirm
           </span>
           <Input

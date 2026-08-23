@@ -22,23 +22,25 @@ export function RoutingPage() {
   const data = query.data;
   if (!data && query.isPending)
     return (
-      <section className="content">
+      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainLoading label="routing" />
       </section>
     );
   if (!data && query.error)
     return (
-      <section className="content">
+      <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
         <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
       </section>
     );
   if (!data) return null;
   return (
-    <section className="content">
-      <div className="section-head">
+    <section className="w-full max-w-[1800px] mx-auto p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4">
+      <div className="mb-4 flex items-end justify-between gap-4 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <h2>Routing and TLS</h2>
-          <p>Ingress publications, domain ownership, certificates, and reverse proxies.</p>
+          <p className="m-0 my-1 opacity-60">
+            Ingress publications, domain ownership, certificates, and reverse proxies.
+          </p>
         </div>
         <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
           Refresh
@@ -48,7 +50,7 @@ export function RoutingPage() {
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
       ) : (
         <>
-          <div className="stats-grid">
+          <div className="my-[1.2rem] grid grid-cols-4 gap-4 max-[1050px]:grid-cols-2 max-[760px]:grid-cols-1">
             <Metric label="Ingress mode" value={data.ingress?.mode ?? "unknown"} />
             <Metric label="Domains" value={String(data.domains.length)} />
             <Metric
@@ -57,10 +59,10 @@ export function RoutingPage() {
             />
             <Metric label="Reverse proxies" value={String(data.proxies.length)} />
           </div>
-          <div className="card-grid">
-            <article className="panel">
+          <div className="my-[1.2rem] grid grid-cols-4 gap-4 max-[1050px]:grid-cols-2 max-[760px]:grid-cols-1">
+            <article className="col-span-2 rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>Ingress</h2>
-              <div className="detail-list">
+              <div className="grid">
                 <Detail label="Network" value={data.ingress?.mode ?? "Unknown"} />
                 <Detail label="HTTP" value={port(data.ingress?.mode, data.ingress?.httpPort, 80)} />
                 <Detail
@@ -70,9 +72,9 @@ export function RoutingPage() {
                 <Detail label="HTTP/3" value={data.ingress?.http3 ? "Enabled" : "Disabled"} />
               </div>
             </article>
-            <article className="panel">
+            <article className="col-span-2 rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>TLS modes</h2>
-              <div className="pill-row">
+              <div className="flex flex-wrap gap-1.5">
                 {(["acme", "external", "self-ca", "shared"] as const).map((mode) => (
                   <Badge variant="outline" key={mode}>
                     {mode} · {data.domains.filter((item) => item.tls === mode).length}
@@ -80,10 +82,10 @@ export function RoutingPage() {
                 ))}
               </div>
             </article>
-            <article className="panel full">
+            <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>Domains</h2>
               {data.domains.length ? (
-                <div className="table-wrap">
+                <div className="overflow-auto rounded-[0.8rem] border border-border">
                   <Table className="min-w-[650px] bg-card">
                     <TableHeader>
                       <TableRow>
@@ -115,10 +117,10 @@ export function RoutingPage() {
                 <EmptyPanel>No domains configured.</EmptyPanel>
               )}
             </article>
-            <article className="panel full">
+            <article className="col-span-full rounded-xl border border-border bg-card p-5 text-card-foreground [&_h2]:mt-0 [&_h2]:mb-3.5 [&_h3]:mt-0 [&_h3]:mb-2 max-[760px]:col-span-1">
               <h2>Reverse proxies</h2>
               {data.proxies.length ? (
-                <div className="table-wrap">
+                <div className="overflow-auto rounded-[0.8rem] border border-border">
                   <Table className="min-w-[650px] bg-card">
                     <TableHeader>
                       <TableRow>
@@ -157,17 +159,17 @@ export function RoutingPage() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="metric">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value metric-text">{value}</div>
+    <div className="rounded-xl border border-border bg-card p-5 text-card-foreground">
+      <div className="text-xs uppercase tracking-[0.06em] opacity-60">{label}</div>
+      <div className="mt-1 text-[1.35rem] capitalize font-bold">{value}</div>
     </div>
   );
 }
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="detail-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="flex items-center justify-between gap-4 border-b border-border py-2.5 text-[0.84rem] last:border-b-0">
+      <span className="opacity-70">{label}</span>
+      <strong className="[overflow-wrap:anywhere] text-right">{value}</strong>
     </div>
   );
 }
