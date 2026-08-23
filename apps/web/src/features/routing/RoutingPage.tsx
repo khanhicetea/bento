@@ -159,34 +159,6 @@ export function RoutingPage() {
             />
           </div>
 
-          <details className="group mt-8 rounded-2xl border border-border bg-card shadow-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-5 py-4 outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-primary">
-                  <Network className="size-4" aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <h3 className="m-0 text-base font-semibold tracking-tight">
-                    Ingress &amp; TLS configuration
-                  </h3>
-                  <p className="m-0 mt-1 truncate text-sm text-muted-foreground">
-                    Network entry points and certificate strategies
-                  </p>
-                </div>
-              </div>
-              <ChevronDown
-                className="size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-                aria-hidden="true"
-              />
-            </summary>
-            <div className="border-t border-border p-5 max-[760px]:p-4">
-              <div className="grid grid-cols-2 gap-5 max-[900px]:grid-cols-1">
-                <IngressCard ingress={data.ingress} />
-                <TlsCard domains={data.domains} />
-              </div>
-            </div>
-          </details>
-
           <div className="mt-10 flex flex-wrap items-center justify-between gap-3">
             <div
               className="flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
@@ -297,6 +269,34 @@ export function RoutingPage() {
                   )}
                 </InventorySection>
               )}
+
+              <details className="group mt-10 rounded-2xl border border-border bg-card shadow-sm">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-5 py-4 outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-primary">
+                      <Network className="size-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="m-0 text-base font-semibold tracking-tight">
+                        Ingress &amp; TLS configuration
+                      </h3>
+                      <p className="m-0 mt-1 truncate text-sm text-muted-foreground">
+                        Network entry points and certificate strategies
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronDown
+                    className="size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <div className="border-t border-border p-5 max-[760px]:p-4">
+                  <div className="grid grid-cols-2 gap-5 max-[900px]:grid-cols-1">
+                    <IngressCard ingress={data.ingress} />
+                    <TlsCard domains={data.domains} />
+                  </div>
+                </div>
+              </details>
             </div>
           )}
         </>
