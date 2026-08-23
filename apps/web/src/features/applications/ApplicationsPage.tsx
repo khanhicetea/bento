@@ -14,12 +14,14 @@ import {
   ScrollText,
   Search,
   Server,
+  SquareTerminal,
   Trash2,
   X,
 } from "lucide-react";
 import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
 import { ApplicationJobsDialog } from "./ApplicationJobsDialog.tsx";
+import { ApplicationTerminalDialog } from "./ApplicationTerminalDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
@@ -51,6 +53,7 @@ export function ApplicationsPage() {
   const [editorTarget, setEditorTarget] = useState<Application | "create" | null>(null);
   const [databaseTarget, setDatabaseTarget] = useState<Application | null>(null);
   const [jobsTarget, setJobsTarget] = useState<Application | null>(null);
+  const [terminalTarget, setTerminalTarget] = useState<Application | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Application | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const allApplications = data?.applications ?? [];
@@ -104,6 +107,7 @@ export function ApplicationsPage() {
         editorTarget === null &&
         databaseTarget === null &&
         jobsTarget === null &&
+        terminalTarget === null &&
         removeTarget === null && (
           <Alert className="mt-6" variant="destructive">
             <span>{error}</span>
@@ -244,6 +248,7 @@ export function ApplicationsPage() {
                   resetErrors();
                   setJobsTarget(app);
                 }}
+                onTerminal={() => setTerminalTarget(app)}
                 onRemove={() => {
                   resetErrors();
                   setRemoveTarget(app);
@@ -304,6 +309,13 @@ export function ApplicationsPage() {
           onClose={() => setJobsTarget(null)}
         />
       )}
+      {terminalTarget && (
+        <ApplicationTerminalDialog
+          key={terminalTarget.slug}
+          application={terminalTarget}
+          onClose={() => setTerminalTarget(null)}
+        />
+      )}
       {removeTarget && (
         <RemoveApplicationDialog
           key={removeTarget.slug}
@@ -351,6 +363,7 @@ function ApplicationCard({
   onEdit,
   onDatabases,
   onJobs,
+  onTerminal,
   onRemove,
 }: {
   app: Application;
@@ -359,6 +372,7 @@ function ApplicationCard({
   onEdit: () => void;
   onDatabases: () => void;
   onJobs: () => void;
+  onTerminal: () => void;
   onRemove: () => void;
 }) {
   const visibleAliases = app.aliases.slice(0, 2);
@@ -532,6 +546,19 @@ function ApplicationCard({
                   role="menu"
                   aria-label={`More actions for ${app.slug}`}
                 >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      onTerminal();
+                    }}
+                  >
+                    <SquareTerminal className="size-3.5" aria-hidden="true" />
+                    Open shell
+                  </button>
                   <button
                     type="button"
                     role="menuitem"

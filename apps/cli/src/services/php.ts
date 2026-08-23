@@ -136,7 +136,10 @@ export function buildCliExec(
  * Use `-it` for interactive shells and `-T` for scripted non-TTY invocations.
  * Never pass docker `-u` here — that yields "I have no name!" with no passwd entry.
  */
-export function cliRunComposeCommand(plan: CliExecPlan, opts?: { tty?: boolean }): string[] {
+export function cliRunComposeCommand(
+  plan: CliExecPlan,
+  opts?: { tty?: boolean; containerName?: string },
+): string[] {
   const tty = opts?.tty ?? true;
   return [
     "--profile",
@@ -144,6 +147,7 @@ export function cliRunComposeCommand(plan: CliExecPlan, opts?: { tty?: boolean }
     "run",
     "--rm",
     ...(tty ? ["-it"] : ["-T"]),
+    ...(opts?.containerName ? ["--name", opts.containerName] : []),
     "-w",
     plan.workdir,
     ...Object.entries(plan.env).flatMap(([k, v]) => ["-e", `${k}=${v}`]),

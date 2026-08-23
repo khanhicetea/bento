@@ -344,9 +344,14 @@ bunRuntime.test("buildCliExec targets profile-gated -cli service with app identi
     assertEquals(shell.env.BENTO_GID, String(app.gid));
     assertEquals(shell.env.USER, "alpha");
 
-    const runArgs = cliRunComposeCommand(shell, { tty: true });
+    const runArgs = cliRunComposeCommand(shell, {
+      tty: true,
+      containerName: "bento-web-shell-test",
+    });
     assertEquals(runArgs.slice(0, 5), ["--profile", "cli", "run", "--rm", "-it"]);
     assertEquals(runArgs.includes(shell.service), true);
+    assertEquals(runArgs.includes("--name"), true);
+    assertEquals(runArgs.includes("bento-web-shell-test"), true);
     // Must NOT use docker -u (that yields "I have no name!"); entrypoint setpriv-drops.
     assertEquals(runArgs.includes("-u"), false);
     assertEquals(runArgs.includes(`BENTO_UID=${app.uid}`), true);
