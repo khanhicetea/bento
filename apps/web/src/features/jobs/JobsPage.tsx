@@ -19,6 +19,7 @@ import {
   StackNotReady,
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
+import { JobLogsButton } from "./JobLogsButton.tsx";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -391,12 +392,13 @@ function ScheduledJobsTable({ jobs }: { jobs: JobItem<"cronJobs">[] }) {
             <TableHead>Schedule</TableHead>
             <TableHead>Command</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         {groupByApplication(jobs).map(([application, applicationJobs]) => (
           <TableBody key={application}>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableCell colSpan={4} className="px-4 py-3">
+              <TableCell colSpan={5} className="px-4 py-3">
                 <div className="flex items-center gap-2">
                   <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-primary">
                     <Server className="size-3.5" aria-hidden="true" />
@@ -438,6 +440,9 @@ function ScheduledJobsTable({ jobs }: { jobs: JobItem<"cronJobs">[] }) {
                 <TableCell>
                   <State enabled={job.enabled} />
                 </TableCell>
+                <TableCell className="text-right">
+                  <JobLogsButton app={job.app} name={job.name} kind="cron" />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -475,6 +480,9 @@ function WorkerCard({ worker }: { worker: JobItem<"workers"> }) {
         <Badge variant="outline">
           Stop {worker.stopsignal} · {worker.stopwaitsecs}s
         </Badge>
+      </div>
+      <div className="mt-4 flex justify-end border-t border-border pt-4">
+        <JobLogsButton app={worker.app} name={worker.name} kind="worker" />
       </div>
     </article>
   );

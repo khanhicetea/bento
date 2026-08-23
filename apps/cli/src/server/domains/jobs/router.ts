@@ -1,8 +1,8 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { implement, ORPCError } from "@orpc/server";
 import { jobsContract, type JobsOverview } from "@bento/shared";
 import type { CliContext } from "../../../commands/context.ts";
-import { isBentoError, type BentoError } from "../../../domain/errors.ts";
+import { isBentoError, notFoundError, type BentoError } from "../../../domain/errors.ts";
 import type { ReloadPlan } from "../../../domain/reload.ts";
 import type { DesiredState } from "../../../domain/state.ts";
 import { addCronJob, removeCronJob } from "../../../services/cron.ts";
@@ -14,6 +14,54 @@ const os = implement(jobsContract);
 export function createJobsRouter(ctx: CliContext) {
   return os.router({
     overview: os.overview.handler(async () => await jobsOverview(ctx)),
+    logs: os.logs.handler(async ({ input }) => {
+      try {
+        const state = await ctx.store.load();
+        if (!state.apps[input.app]) throw notFoundError(`app not found: ${input.app}`);
+
+        const job =
+          input.kind === "cron"
+            ? state.cronJobs.find(
+                (candidate) => candidate.app === input.app && candidate.name === input.name,
+              )
+            : state.workers.find(
+                (candidate) => candidate.app === input.app && candidate.name === input.name,
+              );
+        if (!job) {
+          throw notFoundError(`${input.kind} job ${input.name} not found for app ${input.app}`);
+        }
+
+        const jobName = String(job.name);
+        if (!/^[a-zA-Z0-9_-]+$/.test(jobName)) {
+          throw notFoundError(`logs unavailable for ${input.kind} job ${input.name}`);
+        }
+        const appHome = ctx.platform.paths.appHome(input.app);
+        const logFiles =
+          input.kind === "cron"
+            ? [{ label: "output", path: join(appHome, "logs", "cron", `${jobName}.log`) }]
+            : [
+                { label: "output", path: join(appHome, "logs", "worker", `${jobName}.log`) },
+                { label: "error", path: join(appHome, "logs", "worker", `${jobName}.err`) },
+              ];
+        const allLines: string[] = [];
+        for (const logFile of logFiles) {
+          const content = await readJobLog(ctx, logFile.path);
+          if (content === null) continue;
+          const lines = logLines(content);
+          if (input.kind === "worker" && lines.length > 0) {
+            allLines.push(`[${logFile.label}]`, ...lines);
+          } else {
+            allLines.push(...lines);
+          }
+        }
+        return {
+          lines: allLines.slice(-1000),
+          truncated: allLines.length > 1000,
+        };
+      } catch (error) {
+        throw asORPCError(error);
+      }
+    }),
     addCron: os.addCron.handler(async ({ input }) => {
       try {
         await ctx.store.withExclusive(async (state) => {
@@ -106,6 +154,19 @@ async function jobsOverview(ctx: CliContext): Promise<JobsOverview> {
   } catch (error) {
     return empty(ctx.stackRoot, redact(error instanceof Error ? error.message : String(error)));
   }
+}
+
+async function readJobLog(ctx: CliContext, path: string): Promise<string | null> {
+  const stat = await ctx.platform.fs.lstat(path).catch(() => null);
+  if (!stat?.isFile || stat.isSymlink) return null;
+  return await ctx.platform.fs.readText(path).catch(() => null);
+}
+
+function logLines(content: string): string[] {
+  return redact(content)
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.slice(0, 2_000));
 }
 
 function commandSummary(command: string[]): string {

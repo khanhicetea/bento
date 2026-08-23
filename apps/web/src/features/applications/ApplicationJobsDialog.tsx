@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AddCronJobInput, Application, JobsOverview } from "@bento/shared";
 import { Clock, Plus, RefreshCw, Terminal, Trash2, Wrench } from "lucide-react";
 import { orpc } from "../../api/client.ts";
+import { JobLogsButton } from "../jobs/JobLogsButton.tsx";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -164,24 +165,32 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                             {job.timezone}
                           </p>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          aria-label={`Remove cron ${job.name}`}
-                          title={`Remove ${job.name}`}
-                          disabled={busy}
-                          onClick={() => {
-                            if (
-                              window.confirm(`Remove cron ${job.name} from ${application.slug}?`)
-                            ) {
-                              removeCron.mutate({ app: application.slug, name: job.name });
-                            }
-                          }}
-                        >
-                          <Trash2 />
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <JobLogsButton
+                            app={application.slug}
+                            name={job.name}
+                            kind="cron"
+                            disabled={busy}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={`Remove cron ${job.name}`}
+                            title={`Remove ${job.name}`}
+                            disabled={busy}
+                            onClick={() => {
+                              if (
+                                window.confirm(`Remove cron ${job.name} from ${application.slug}?`)
+                              ) {
+                                removeCron.mutate({ app: application.slug, name: job.name });
+                              }
+                            }}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
                       </div>
                       <code className="my-3 block max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 text-xs leading-relaxed">
                         {job.command}
@@ -307,26 +316,34 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                         <strong className="min-w-0 truncate text-sm font-semibold">
                           {worker.name}
                         </strong>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          aria-label={`Remove worker ${worker.name}`}
-                          title={`Remove ${worker.name}`}
-                          disabled={busy}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Remove worker ${worker.name} from ${application.slug}?`,
-                              )
-                            ) {
-                              removeWorker.mutate({ app: application.slug, name: worker.name });
-                            }
-                          }}
-                        >
-                          <Trash2 />
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <JobLogsButton
+                            app={application.slug}
+                            name={worker.name}
+                            kind="worker"
+                            disabled={busy}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={`Remove worker ${worker.name}`}
+                            title={`Remove ${worker.name}`}
+                            disabled={busy}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Remove worker ${worker.name} from ${application.slug}?`,
+                                )
+                              ) {
+                                removeWorker.mutate({ app: application.slug, name: worker.name });
+                              }
+                            }}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
                       </div>
                       <code className="my-3 block max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 text-xs leading-relaxed">
                         {worker.command}

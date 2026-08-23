@@ -39,6 +39,22 @@ export const jobsOverviewSchema = z.object({
   ),
 });
 
+export const jobLogsInputSchema = z.object({
+  app: z.string().trim().min(1).max(63),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(128)
+    .regex(/^[a-zA-Z0-9_-]+$/, "must be alphanumeric/underscore/hyphen"),
+  kind: z.enum(["cron", "worker"]),
+});
+
+export const jobLogsSchema = z.object({
+  lines: z.array(z.string()),
+  truncated: z.boolean(),
+});
+
 export const addCronJobInputSchema = z
   .object({
     app: z.string().trim().min(1).max(63),
