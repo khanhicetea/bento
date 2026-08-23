@@ -6,6 +6,16 @@ import {
   StackNotReady,
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function RoutingPage() {
   const query = useQuery(orpc.routing.overview.queryOptions({ input: {} }));
@@ -30,13 +40,9 @@ export function RoutingPage() {
           <h2>Routing and TLS</h2>
           <p>Ingress publications, domain ownership, certificates, and reverse proxies.</p>
         </div>
-        <button
-          className="btn btn-outline"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
+        <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
           Refresh
-        </button>
+        </Button>
       </div>
       {!data.initialized ? (
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
@@ -68,9 +74,9 @@ export function RoutingPage() {
               <h2>TLS modes</h2>
               <div className="pill-row">
                 {(["acme", "external", "self-ca", "shared"] as const).map((mode) => (
-                  <span className="badge badge-outline" key={mode}>
+                  <Badge variant="outline" key={mode}>
                     {mode} · {data.domains.filter((item) => item.tls === mode).length}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             </article>
@@ -78,32 +84,32 @@ export function RoutingPage() {
               <h2>Domains</h2>
               {data.domains.length ? (
                 <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Domain</th>
-                        <th>Owner</th>
-                        <th>Type</th>
-                        <th>TLS</th>
-                        <th>Role</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Domain</TableHead>
+                        <TableHead>Owner</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>TLS</TableHead>
+                        <TableHead>Role</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {data.domains.map((domain) => (
-                        <tr key={domain.domain}>
-                          <td>
+                        <TableRow key={domain.domain}>
+                          <TableCell>
                             <strong>{domain.domain}</strong>
-                          </td>
-                          <td>{domain.owner}</td>
-                          <td>{domain.ownerKind}</td>
-                          <td>
-                            <span className="badge badge-outline">{domain.tls}</span>
-                          </td>
-                          <td>{domain.primary ? "Primary" : "Alias"}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell>{domain.owner}</TableCell>
+                          <TableCell>{domain.ownerKind}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{domain.tls}</Badge>
+                          </TableCell>
+                          <TableCell>{domain.primary ? "Primary" : "Alias"}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <EmptyPanel>No domains configured.</EmptyPanel>
@@ -113,30 +119,30 @@ export function RoutingPage() {
               <h2>Reverse proxies</h2>
               {data.proxies.length ? (
                 <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Domain</th>
-                        <th>Upstreams</th>
-                        <th>TLS</th>
-                        <th>Access log</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Domain</TableHead>
+                        <TableHead>Upstreams</TableHead>
+                        <TableHead>TLS</TableHead>
+                        <TableHead>Access log</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {data.proxies.map((proxy) => (
-                        <tr key={proxy.name}>
-                          <td>
+                        <TableRow key={proxy.name}>
+                          <TableCell>
                             <strong>{proxy.name}</strong>
-                          </td>
-                          <td>{proxy.domain}</td>
-                          <td>{proxy.upstreams.join(", ")}</td>
-                          <td>{proxy.tls}</td>
-                          <td>{proxy.accessLog ? "Enabled" : "Disabled"}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell>{proxy.domain}</TableCell>
+                          <TableCell>{proxy.upstreams.join(", ")}</TableCell>
+                          <TableCell>{proxy.tls}</TableCell>
+                          <TableCell>{proxy.accessLog ? "Enabled" : "Disabled"}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <EmptyPanel>No reverse proxies configured.</EmptyPanel>

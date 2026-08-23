@@ -1,5 +1,19 @@
 import { useState, type FormEvent } from "react";
 import type { AddApplicationDatabaseInput, Application, ApplicationList } from "@bento/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 type ApplicationDatabasesDialogProps = {
   application: Application;
@@ -46,23 +60,19 @@ export function ApplicationDatabasesDialog({
   }
 
   return (
-    <dialog className="modal" open onCancel={(event) => event.preventDefault()}>
-      <div className="modal-box app-databases-box">
-        <button
-          type="button"
-          className="btn btn-sm btn-circle btn-ghost modal-close"
-          aria-label="Close database manager"
-          disabled={adding}
-          onClick={onClose}
-        >
-          ✕
-        </button>
-        <h2>{application.slug} databases</h2>
-        <p className="form-help">
-          An application can own multiple engine bindings and multiple names on each relational
-          binding.
-        </p>
-        {error && <div className="alert alert-error">{error}</div>}
+    <Dialog open onOpenChange={(open) => !open && !adding && onClose()}>
+      <DialogContent
+        className="app-databases-box max-h-[calc(100vh-2rem)] overflow-y-auto"
+        showCloseButton={!adding}
+      >
+        <DialogHeader>
+          <DialogTitle>{application.slug} databases</DialogTitle>
+          <DialogDescription>
+            An application can own multiple engine bindings and multiple names on each relational
+            binding.
+          </DialogDescription>
+        </DialogHeader>
+        {error && <Alert variant="destructive">{error}</Alert>}
 
         <div className="database-binding-list">
           {application.databases.map((binding, index) => (
@@ -76,14 +86,14 @@ export function ApplicationDatabasesDialog({
               </div>
               <div className="database-names">
                 {binding.names.map((name) => (
-                  <span className="badge badge-outline" key={name}>
+                  <Badge variant="outline" key={name}>
                     {name}
-                  </span>
+                  </Badge>
                 ))}
                 {!binding.names.length && binding.file && (
-                  <span className="badge badge-outline">SQLite file</span>
+                  <Badge variant="outline">SQLite file</Badge>
                 )}
-                {index === 0 && <span className="badge badge-primary">primary</span>}
+                {index === 0 && <Badge>primary</Badge>}
               </div>
             </section>
           ))}
@@ -95,22 +105,24 @@ export function ApplicationDatabasesDialog({
               <h3>Add a database</h3>
               <label>
                 <span className="label-text">Engine or managed service</span>
-                <select
-                  className="select select-bordered w-full"
+                <NativeSelect
+                  className="w-full"
                   value={selection}
                   onChange={(event) => setSelection(event.target.value)}
                 >
                   {settings.databaseServices.map((service) => (
-                    <option
+                    <NativeSelectOption
                       key={`${service.engine}:${service.service}`}
                       value={`${service.engine}:${service.service}`}
                     >
                       {databaseLabel(service.engine)} {service.version} ({service.service})
-                    </option>
+                    </NativeSelectOption>
                   ))}
-                  <option value="sqlite">SQLite file</option>
-                  <option value="litestream">SQLite file with Litestream</option>
-                </select>
+                  <NativeSelectOption value="sqlite">SQLite file</NativeSelectOption>
+                  <NativeSelectOption value="litestream">
+                    SQLite file with Litestream
+                  </NativeSelectOption>
+                </NativeSelect>
               </label>
               {relational && (
                 <label>
@@ -120,8 +132,8 @@ export function ApplicationDatabasesDialog({
                       {application.slug} or {application.slug}_*
                     </small>
                   </span>
-                  <input
-                    className="input input-bordered w-full"
+                  <Input
+                    className="w-full"
                     name="databaseName"
                     required
                     pattern={`${application.slug}(_[A-Za-z0-9_]+)?`}
@@ -136,23 +148,22 @@ export function ApplicationDatabasesDialog({
               </p>
             </div>
           </fieldset>
-          <div className="modal-action">
-            <button type="button" className="btn btn-ghost" disabled={adding} onClick={onClose}>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
               Close
-            </button>
-            <button className="btn btn-primary" type="submit" disabled={adding}>
-              {adding && <span className="loading loading-spinner loading-xs" />}
+            </Button>
+            <Button type="submit" disabled={adding}>
+              {adding && <Spinner />}
               Add database
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
         <p className="form-help">
           Database removal and permanent data deletion remain intentionally unavailable in the web
           control plane.
         </p>
-      </div>
-      <button className="modal-backdrop" aria-label="Close" disabled={adding} onClick={onClose} />
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 

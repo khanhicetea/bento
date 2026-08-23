@@ -2,6 +2,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { DataOverview } from "@bento/shared";
 import { orpc } from "../../api/client.ts";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 
 type Service = DataOverview["services"][number];
 
@@ -46,13 +61,13 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
   databases.sort((left, right) => left.name.localeCompare(right.name));
 
   return (
-    <article className="card database-service-card bg-base-100 shadow-sm">
-      <div className="card-body">
+    <Card className="database-service-card shadow-sm">
+      <CardContent>
         <div className="database-service-heading">
           <div>
             <div className="database-service-title">
-              <h2 className="card-title">{service.service}</h2>
-              <span className="badge badge-outline">{engineLabel(service.engine)}</span>
+              <CardTitle>{service.service}</CardTitle>
+              <Badge variant="outline">{engineLabel(service.engine)}</Badge>
             </div>
             <p className="muted">
               Version {runtime.data?.serverVersion ?? service.version} · {service.appCount}{" "}
@@ -60,47 +75,50 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
             </p>
           </div>
           <div className="database-service-actions">
-            <button
-              className="btn btn-sm btn-ghost"
+            <Button
+              variant="ghost"
+              size="sm"
               disabled={runtime.isFetching}
               onClick={() => void runtime.refetch()}
             >
-              {runtime.isFetching && <span className="loading loading-spinner loading-xs" />}
+              {runtime.isFetching && <Spinner />}
               Refresh sizes
-            </button>
-            <button
-              className={`btn btn-sm ${expanded ? "btn-ghost" : "btn-outline"}`}
+            </Button>
+            <Button
+              variant={expanded ? "ghost" : "outline"}
+              size="sm"
               onClick={() => setExpanded((value) => !value)}
               aria-expanded={expanded}
             >
               {expanded ? "Hide details" : "Details & restore"}
-            </button>
+            </Button>
           </div>
         </div>
 
-        {runtime.error && <div className="alert alert-error">{messageOf(runtime.error)}</div>}
-        {runtime.data?.error && <div className="alert alert-warning">{runtime.data.error}</div>}
+        {runtime.error && <Alert variant="destructive">{messageOf(runtime.error)}</Alert>}
+        {runtime.data?.error && (
+          <Alert className="border-amber-500/40 bg-amber-500/10">{runtime.data.error}</Alert>
+        )}
 
         <div className="table-wrap database-listing">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Database</th>
-                <th>Application</th>
-                <th className="text-right">Size</th>
-                <th className="database-action-column">
+          <Table className="min-w-[650px] bg-card">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Database</TableHead>
+                <TableHead>Application</TableHead>
+                <TableHead className="text-right">Size</TableHead>
+                <TableHead className="database-action-column">
                   <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {runtime.isPending && databases.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="database-table-state">
-                    <span className="loading loading-spinner loading-sm" /> Loading databases and
-                    sizes…
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={4} className="database-table-state">
+                    <Spinner /> Loading databases and sizes…
+                  </TableCell>
+                </TableRow>
               ) : databases.length ? (
                 databases.map((database) => {
                   const owner = bindings.find((binding) =>
@@ -109,17 +127,17 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                   const backingUp =
                     backup.isPending && backup.variables?.database === database.name;
                   return (
-                    <tr key={database.name}>
-                      <td>
+                    <TableRow key={database.name}>
+                      <TableCell>
                         <strong>{database.name}</strong>
-                      </td>
-                      <td>{owner?.app ?? <span className="muted">System</span>}</td>
-                      <td className="text-right database-size">
+                      </TableCell>
+                      <TableCell>{owner?.app ?? <span className="muted">System</span>}</TableCell>
+                      <TableCell className="text-right database-size">
                         {database.bytes < 0 ? "Unavailable" : formatBytes(database.bytes)}
-                      </td>
-                      <td className="database-action-column">
-                        <button
-                          className="btn btn-sm btn-primary"
+                      </TableCell>
+                      <TableCell className="database-action-column">
+                        <Button
+                          size="sm"
                           disabled={!owner || backup.isPending}
                           title={
                             owner
@@ -135,137 +153,139 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                             })
                           }
                         >
-                          {backingUp && <span className="loading loading-spinner loading-xs" />}
+                          {backingUp && <Spinner />}
                           {backingUp ? "Backing up" : "Backup"}
-                        </button>
-                      </td>
-                    </tr>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               ) : (
-                <tr>
-                  <td colSpan={4}>No databases reported by this service.</td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={4}>No databases reported by this service.</TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {backup.data && (
-          <div className="alert alert-success">
+          <Alert className="border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
             <span>Backup created: {backup.data.artifacts.map((item) => item.name).join(", ")}</span>
-          </div>
+          </Alert>
         )}
         {backup.error && (
-          <div className="alert alert-error">
+          <Alert variant="destructive">
             <span>{messageOf(backup.error)}</span>
-          </div>
+          </Alert>
         )}
 
         {expanded && (
           <div className="database-manager-body">
-            <section className="card bg-base-200">
-              <div className="card-body">
-                <h3 className="card-title">Active processes</h3>
+            <Card className="bg-muted">
+              <CardContent>
+                <CardTitle>Active processes</CardTitle>
                 <div className="table-wrap">
-                  <table className="table table-sm">
-                    <thead>
-                      <tr>
-                        <th>User / database</th>
-                        <th>State</th>
-                        <th>Query</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User / database</TableHead>
+                        <TableHead>State</TableHead>
+                        <TableHead>Query</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {runtime.data?.processes.length ? (
                         runtime.data.processes.map((process) => (
-                          <tr key={process.id}>
-                            <td>
+                          <TableRow key={process.id}>
+                            <TableCell>
                               <strong>{process.user}</strong>
                               <small className="database-process-meta">
                                 {process.database || `Process ${process.id}`}
                               </small>
-                            </td>
-                            <td>
-                              <span className="badge badge-ghost badge-sm">{process.state}</span>
-                            </td>
-                            <td>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="text-[0.67rem]">
+                                {process.state}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
                               <code>{process.query}</code>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))
                       ) : (
-                        <tr>
-                          <td colSpan={3}>No other active processes.</td>
-                        </tr>
+                        <TableRow>
+                          <TableCell colSpan={3}>No other active processes.</TableCell>
+                        </TableRow>
                       )}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
-              </div>
-            </section>
+              </CardContent>
+            </Card>
 
-            <section className="card border border-base-300">
-              <div className="card-body">
+            <Card>
+              <CardContent>
                 <div>
-                  <h3 className="card-title">Restore a backup</h3>
+                  <CardTitle>Restore a backup</CardTitle>
                   <p className="form-help">
                     Restore an artifact to a new or existing application database.
                   </p>
                 </div>
-                <label className="form-control w-full">
+                <label className="w-full">
                   <span className="label-text">Backup artifact</span>
-                  <select
-                    className="select select-bordered w-full"
+                  <NativeSelect
+                    className="w-full"
                     value={artifact}
                     onChange={(event) => setArtifact(event.target.value)}
                   >
-                    <option value="">Select an artifact</option>
+                    <NativeSelectOption value="">Select an artifact</NativeSelectOption>
                     {backups.map((item) => (
-                      <option key={item.name} value={item.name}>
+                      <NativeSelectOption key={item.name} value={item.name}>
                         {item.name} · {formatBytes(item.bytes)}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
                 <div className="database-restore-fields">
-                  <label className="form-control w-full">
+                  <label className="w-full">
                     <span className="label-text">Application</span>
-                    <select
-                      className="select select-bordered w-full"
+                    <NativeSelect
+                      className="w-full"
                       value={app}
                       onChange={(event) => {
                         setApp(event.target.value);
                         setTarget("");
                       }}
                     >
-                      <option value="">Select an application</option>
+                      <NativeSelectOption value="">Select an application</NativeSelectOption>
                       {bindings.map((item) => (
-                        <option key={item.app} value={item.app}>
+                        <NativeSelectOption key={item.app} value={item.app}>
                           {item.app}
-                        </option>
+                        </NativeSelectOption>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </label>
-                  <label className="form-control w-full">
+                  <label className="w-full">
                     <span className="label-text">Target database</span>
-                    <input
-                      className="input input-bordered w-full"
+                    <Input
+                      className="w-full"
                       value={target}
                       onChange={(event) => setTarget(event.target.value)}
                       placeholder={selectedBinding?.resources[0] ?? "database_name"}
                     />
                   </label>
                 </div>
-                <div className="alert alert-warning">
+                <Alert className="border-amber-500/40 bg-amber-500/10">
                   <span>
                     Restoring to an existing name overwrites that database. The target name is used
                     as confirmation.
                   </span>
-                </div>
-                <div className="card-actions justify-end">
-                  <button
-                    className="btn btn-warning"
+                </Alert>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    className="bg-amber-500 text-amber-950 hover:bg-amber-500/90"
                     disabled={!artifact || !app || !target || restore.isPending}
                     onClick={() =>
                       restore.mutate({
@@ -277,26 +297,26 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                       })
                     }
                   >
-                    {restore.isPending && <span className="loading loading-spinner loading-xs" />}
+                    {restore.isPending && <Spinner />}
                     Restore backup
-                  </button>
+                  </Button>
                 </div>
                 {restore.data && (
-                  <div className="alert alert-success">
+                  <Alert className="border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
                     <span>{restore.data.message}</span>
-                  </div>
+                  </Alert>
                 )}
                 {restore.error && (
-                  <div className="alert alert-error">
+                  <Alert variant="destructive">
                     <span>{messageOf(restore.error)}</span>
-                  </div>
+                  </Alert>
                 )}
-              </div>
-            </section>
+              </CardContent>
+            </Card>
           </div>
         )}
-      </div>
-    </article>
+      </CardContent>
+    </Card>
   );
 }
 

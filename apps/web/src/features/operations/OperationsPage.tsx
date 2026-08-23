@@ -7,6 +7,17 @@ import {
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
 import { OperationsControls, ServiceRestartButton } from "./OperationsControls.tsx";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function OperationsPage() {
   const query = useQuery(orpc.operations.overview.queryOptions({ input: {} }));
@@ -31,13 +42,9 @@ export function OperationsPage() {
           <h2>Operations</h2>
           <p>Live best-effort service observations, runtime capacity, and render state.</p>
         </div>
-        <button
-          className="btn btn-outline"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
+        <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
           Refresh status
-        </button>
+        </Button>
       </div>
       {!data.initialized ? (
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
@@ -55,14 +62,12 @@ export function OperationsPage() {
           {(data.warnings.length > 0 || data.notes.length > 0) && (
             <div className="operations-messages">
               {data.warnings.map((warning) => (
-                <div className="alert alert-warning" key={warning}>
+                <Alert className="border-amber-500/40 bg-amber-500/10" key={warning}>
                   {warning}
-                </div>
+                </Alert>
               ))}
               {data.notes.map((note) => (
-                <div className="alert" key={note}>
-                  {note}
-                </div>
+                <Alert key={note}>{note}</Alert>
               ))}
             </div>
           )}
@@ -103,11 +108,18 @@ export function OperationsPage() {
                         <strong>{role.name}</strong>
                         <small>{role.kind}</small>
                       </div>
-                      <span
-                        className={`badge ${role.state === "running" ? "badge-success" : role.state === "unknown" ? "badge-outline" : "badge-warning"}`}
+                      <Badge
+                        variant={role.state === "unknown" ? "outline" : "default"}
+                        className={
+                          role.state === "running"
+                            ? "bg-emerald-600 text-white"
+                            : role.state === "unknown"
+                              ? undefined
+                              : "bg-amber-500 text-amber-950"
+                        }
                       >
                         {role.state}
-                      </span>
+                      </Badge>
                       {role.detail && <p>{role.detail}</p>}
                       <div className="role-actions">
                         <ServiceRestartButton service={role.name} />
@@ -123,40 +135,41 @@ export function OperationsPage() {
               <h2>PHP runtime capacity</h2>
               {data.runtimes.length ? (
                 <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>PHP</th>
-                        <th>FPM service</th>
-                        <th>Runner</th>
-                        <th>Applications</th>
-                        <th>Pool capacity</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>PHP</TableHead>
+                        <TableHead>FPM service</TableHead>
+                        <TableHead>Runner</TableHead>
+                        <TableHead>Applications</TableHead>
+                        <TableHead>Pool capacity</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {data.runtimes.map((runtime) => (
-                        <tr key={runtime.version}>
-                          <td>
+                        <TableRow key={runtime.version}>
+                          <TableCell>
                             <strong>{runtime.version}</strong>
-                          </td>
-                          <td>{runtime.service}</td>
-                          <td>{runtime.runner}</td>
-                          <td>{runtime.appCount}</td>
-                          <td>
+                          </TableCell>
+                          <TableCell>{runtime.service}</TableCell>
+                          <TableCell>{runtime.runner}</TableCell>
+                          <TableCell>{runtime.appCount}</TableCell>
+                          <TableCell>
                             {runtime.poolMaxSum} / {runtime.processCap}
-                          </td>
-                          <td>
-                            <span
-                              className={`badge ${runtime.overCap ? "badge-error" : "badge-success"}`}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={runtime.overCap ? "destructive" : "default"}
+                              className={runtime.overCap ? undefined : "bg-emerald-600 text-white"}
                             >
                               {runtime.overCap ? "Over cap" : "Within cap"}
-                            </span>
-                          </td>
-                        </tr>
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <EmptyPanel>No PHP runtimes configured.</EmptyPanel>

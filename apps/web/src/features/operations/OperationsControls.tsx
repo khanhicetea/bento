@@ -2,6 +2,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { orpc } from "../../api/client.ts";
 import { ConfirmOperationDialog } from "./ConfirmOperationDialog.tsx";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 
 export function OperationsControls({ stackName }: { stackName: string }) {
   const queryClient = useQueryClient();
@@ -58,61 +61,70 @@ export function OperationsControls({ stackName }: { stackName: string }) {
     <article className="panel full">
       <h2>Controls</h2>
       <p className="muted">Mutating actions run directly against this local stack.</p>
-      {error && <div className="alert alert-error">{messageOf(error)}</div>}
-      {notice && <div className="alert alert-success">{notice}</div>}
+      {error && <Alert variant="destructive">{messageOf(error)}</Alert>}
+      {notice && (
+        <Alert className="border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
+          {notice}
+        </Alert>
+      )}
       <div className="operations-actions">
-        <button className="btn btn-success" disabled={busy} onClick={() => lifecycle("start")}>
+        <Button
+          className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+          disabled={busy}
+          onClick={() => lifecycle("start")}
+        >
           Start
-        </button>
-        <button className="btn btn-outline" disabled={busy} onClick={() => lifecycle("restart")}>
+        </Button>
+        <Button variant="outline" disabled={busy} onClick={() => lifecycle("restart")}>
           Restart
-        </button>
-        <button
-          className="btn btn-error btn-outline"
+        </Button>
+        <Button
+          variant="outline"
+          className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
           disabled={busy}
           onClick={() => lifecycle("stop")}
         >
           Stop
-        </button>
-        <button className="btn btn-primary" disabled={busy} onClick={() => apply.mutate({})}>
+        </Button>
+        <Button disabled={busy} onClick={() => apply.mutate({})}>
           Render &amp; apply
-        </button>
-        <button className="btn btn-outline" disabled={busy} onClick={() => backup.mutate({})}>
+        </Button>
+        <Button variant="outline" disabled={busy} onClick={() => backup.mutate({})}>
           Back up all databases
-        </button>
-        <button
-          className="btn btn-outline"
+        </Button>
+        <Button
+          variant="outline"
           disabled={busy}
           onClick={() => maintenance.mutate({ retainDays: 14 })}
         >
           Run maintenance
-        </button>
-        <button
-          className="btn btn-outline"
+        </Button>
+        <Button
+          variant="outline"
           disabled={logs.isPending}
           onClick={() => logs.mutate({ tail: 100 })}
         >
           Load recent logs
-        </button>
+        </Button>
       </div>
       <div className="operations-deploy">
-        <input
-          className="input input-bordered"
+        <Input
+          className="min-w-64"
           aria-label="Application slug"
           placeholder="Application slug"
           value={deployApp}
           onChange={(event) => setDeployApp(event.target.value)}
         />
-        <button className="btn btn-outline" disabled={busy || !deployApp.trim()} onClick={drain}>
+        <Button variant="outline" disabled={busy || !deployApp.trim()} onClick={drain}>
           Run queued deploy
-        </button>
+        </Button>
       </div>
       {backup.data?.artifacts.length ? (
-        <div className="alert">
+        <Alert>
           {backup.data.artifacts
             .map((artifact) => `${artifact.engine}:${artifact.database} (${artifact.bytes} bytes)`)
             .join(" · ")}
-        </div>
+        </Alert>
       ) : null}
       {logs.data && (
         <pre className="operations-logs" aria-label="Recent service logs">
@@ -160,13 +172,14 @@ export function ServiceRestartButton({ service }: { service: string }) {
 
   return (
     <>
-      <button
-        className="btn btn-sm btn-outline"
+      <Button
+        variant="outline"
+        size="sm"
         disabled={restart.isPending}
         onClick={() => setConfirming(true)}
       >
         {restart.isPending ? "Restarting…" : "Restart"}
-      </button>
+      </Button>
       {restart.error && <small className="text-error">{messageOf(restart.error)}</small>}
       {restart.data && <small className="text-success">Restarted</small>}
       {confirming && (

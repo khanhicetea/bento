@@ -1,19 +1,23 @@
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+
 export function DomainLoading({ label }: { label: string }) {
   return (
     <div className="loading-state">
-      <span className="loading loading-spinner loading-lg" /> Loading {label}…
+      <Spinner className="size-8" aria-label={`Loading ${label}`} /> Loading {label}…
     </div>
   );
 }
 
 export function DomainError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="alert alert-error domain-alert">
+    <Alert variant="destructive" className="domain-alert">
       <span>{message}</span>
-      <button className="btn btn-sm btn-outline" onClick={onRetry}>
+      <Button size="sm" variant="outline" onClick={onRetry}>
         Retry
-      </button>
-    </div>
+      </Button>
+    </Alert>
   );
 }
 

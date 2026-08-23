@@ -6,6 +6,16 @@ import {
   StackNotReady,
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function JobsPage() {
   const query = useQuery(orpc.jobs.overview.queryOptions({ input: {} }));
@@ -33,13 +43,9 @@ export function JobsPage() {
             hidden.
           </p>
         </div>
-        <button
-          className="btn btn-outline"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
+        <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
           Refresh
-        </button>
+        </Button>
       </div>
       {!data.initialized ? (
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
@@ -59,36 +65,36 @@ export function JobsPage() {
               <h2>Scheduled jobs</h2>
               {data.cronJobs.length ? (
                 <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Job</th>
-                        <th>Application</th>
-                        <th>Schedule</th>
-                        <th>Timezone</th>
-                        <th>Command</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Job</TableHead>
+                        <TableHead>Application</TableHead>
+                        <TableHead>Schedule</TableHead>
+                        <TableHead>Timezone</TableHead>
+                        <TableHead>Command</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {data.cronJobs.map((job) => (
-                        <tr key={`${job.app}:${job.name}`}>
-                          <td>
+                        <TableRow key={`${job.app}:${job.name}`}>
+                          <TableCell>
                             <strong>{job.name}</strong>
-                          </td>
-                          <td>{job.app}</td>
-                          <td>
+                          </TableCell>
+                          <TableCell>{job.app}</TableCell>
+                          <TableCell>
                             <code>{job.schedule}</code>
-                          </td>
-                          <td>{job.timezone}</td>
-                          <td>{job.command}</td>
-                          <td>
+                          </TableCell>
+                          <TableCell>{job.timezone}</TableCell>
+                          <TableCell>{job.command}</TableCell>
+                          <TableCell>
                             <State enabled={job.enabled} />
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <EmptyPanel>No scheduled jobs configured.</EmptyPanel>
@@ -98,36 +104,36 @@ export function JobsPage() {
               <h2>Workers</h2>
               {data.workers.length ? (
                 <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Worker</th>
-                        <th>Application</th>
-                        <th>Command</th>
-                        <th>Restart</th>
-                        <th>Stop policy</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Worker</TableHead>
+                        <TableHead>Application</TableHead>
+                        <TableHead>Command</TableHead>
+                        <TableHead>Restart</TableHead>
+                        <TableHead>Stop policy</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {data.workers.map((worker) => (
-                        <tr key={`${worker.app}:${worker.name}`}>
-                          <td>
+                        <TableRow key={`${worker.app}:${worker.name}`}>
+                          <TableCell>
                             <strong>{worker.name}</strong>
-                          </td>
-                          <td>{worker.app}</td>
-                          <td>{worker.command}</td>
-                          <td>{worker.autorestart ? "Automatic" : "Manual"}</td>
-                          <td>
+                          </TableCell>
+                          <TableCell>{worker.app}</TableCell>
+                          <TableCell>{worker.command}</TableCell>
+                          <TableCell>{worker.autorestart ? "Automatic" : "Manual"}</TableCell>
+                          <TableCell>
                             {worker.stopsignal} / {worker.stopwaitsecs}s
-                          </td>
-                          <td>
+                          </TableCell>
+                          <TableCell>
                             <State enabled={worker.enabled} />
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <EmptyPanel>No workers configured.</EmptyPanel>
@@ -137,28 +143,28 @@ export function JobsPage() {
               <h2>Deploy orchestration</h2>
               {data.deploys.length ? (
                 <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Application</th>
-                        <th>Queue</th>
-                        <th>Timeout</th>
-                        <th>Hook</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[650px] bg-card">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Application</TableHead>
+                        <TableHead>Queue</TableHead>
+                        <TableHead>Timeout</TableHead>
+                        <TableHead>Hook</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {data.deploys.map((deploy) => (
-                        <tr key={deploy.app}>
-                          <td>
+                        <TableRow key={deploy.app}>
+                          <TableCell>
                             <strong>{deploy.app}</strong>
-                          </td>
-                          <td>{deploy.queuePolicy}</td>
-                          <td>{deploy.timeoutSec}s</td>
-                          <td>{deploy.command}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell>{deploy.queuePolicy}</TableCell>
+                          <TableCell>{deploy.timeoutSec}s</TableCell>
+                          <TableCell>{deploy.command}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <EmptyPanel>No deploy hooks enabled.</EmptyPanel>
@@ -180,9 +186,9 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 function State({ enabled }: { enabled: boolean }) {
   return (
-    <span className={`badge ${enabled ? "badge-success" : "badge-warning"}`}>
+    <Badge className={enabled ? "bg-emerald-600 text-white" : "bg-amber-500 text-amber-950"}>
       {enabled ? "Enabled" : "Disabled"}
-    </span>
+    </Badge>
   );
 }
 function messageOf(error: unknown) {

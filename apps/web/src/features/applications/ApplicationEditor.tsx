@@ -1,5 +1,19 @@
 import { useState, type FormEvent } from "react";
 import type { Application, ApplicationList, SaveApplicationInput } from "@bento/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Alert } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 type ApplicationEditorProps = {
   application: Application | null;
@@ -72,30 +86,26 @@ export function ApplicationEditor({
   }
 
   return (
-    <dialog className="modal" open onCancel={(event) => event.preventDefault()}>
-      <div className="modal-box app-editor-box">
-        <button
-          type="button"
-          className="btn btn-sm btn-circle btn-ghost modal-close"
-          aria-label="Close application editor"
-          disabled={saving}
-          onClick={onClose}
-        >
-          ✕
-        </button>
-        <h2>{creating ? "Create application" : `Edit ${application.slug}`}</h2>
-        <p className="form-help">
-          Changes are saved to desired state, rendered, validated, and applied immediately.
-        </p>
-        {error && <div className="alert alert-error">{error}</div>}
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent
+        className="app-editor-box max-h-[calc(100vh-2rem)] overflow-y-auto"
+        showCloseButton={!saving}
+      >
+        <DialogHeader>
+          <DialogTitle>{creating ? "Create application" : `Edit ${application.slug}`}</DialogTitle>
+          <DialogDescription>
+            Changes are saved to desired state, rendered, validated, and applied immediately.
+          </DialogDescription>
+        </DialogHeader>
+        {error && <Alert variant="destructive">{error}</Alert>}
 
         <form onSubmit={(event) => void submit(event)}>
           <fieldset disabled={saving}>
             <div className="form-grid">
               <label>
                 <span className="label-text">Slug</span>
-                <input
-                  className="input input-bordered w-full"
+                <Input
+                  className="w-full"
                   name="slug"
                   required
                   maxLength={63}
@@ -106,8 +116,8 @@ export function ApplicationEditor({
               </label>
               <label>
                 <span className="label-text">Primary domain</span>
-                <input
-                  className="input input-bordered w-full"
+                <Input
+                  className="w-full"
                   name="domain"
                   required
                   defaultValue={application?.domain ?? ""}
@@ -118,8 +128,8 @@ export function ApplicationEditor({
                 <span className="label-text">
                   Aliases <small>comma-separated</small>
                 </span>
-                <input
-                  className="input input-bordered w-full"
+                <Input
+                  className="w-full"
                   name="aliases"
                   defaultValue={application?.aliases.join(", ") ?? ""}
                   placeholder="www.example.com, alternate.example.com"
@@ -132,38 +142,38 @@ export function ApplicationEditor({
               <div className="form-grid">
                 <label>
                   <span className="label-text">PHP version</span>
-                  <select
-                    className="select select-bordered w-full"
+                  <NativeSelect
+                    className="w-full"
                     name="phpVersion"
                     required
                     defaultValue={application?.phpVersion ?? settings.defaults?.phpVersion}
                   >
                     {settings.phpVersions.map((version) => (
-                      <option key={version} value={version}>
+                      <NativeSelectOption key={version} value={version}>
                         PHP {version}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
                 <label>
                   <span className="label-text">FPM capacity</span>
-                  <select
-                    className="select select-bordered w-full"
+                  <NativeSelect
+                    className="w-full"
                     name="fpmProfile"
                     required
                     defaultValue={application?.fpmProfile ?? settings.defaults?.fpmProfile}
                   >
                     {settings.fpmProfiles.map((profile) => (
-                      <option key={profile} value={profile}>
+                      <NativeSelectOption key={profile} value={profile}>
                         {profile}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
                 <label>
                   <span className="label-text">Document root</span>
-                  <input
-                    className="input input-bordered w-full"
+                  <Input
+                    className="w-full"
                     name="documentRoot"
                     required
                     defaultValue={application?.documentRoot ?? "public"}
@@ -171,14 +181,18 @@ export function ApplicationEditor({
                 </label>
                 <label>
                   <span className="label-text">Routing mode</span>
-                  <select
-                    className="select select-bordered w-full"
+                  <NativeSelect
+                    className="w-full"
                     name="entrypointMode"
                     defaultValue={application?.entrypointMode ?? "front-controller"}
                   >
-                    <option value="front-controller">Front controller</option>
-                    <option value="legacy">Direct PHP files (legacy)</option>
-                  </select>
+                    <NativeSelectOption value="front-controller">
+                      Front controller
+                    </NativeSelectOption>
+                    <NativeSelectOption value="legacy">
+                      Direct PHP files (legacy)
+                    </NativeSelectOption>
+                  </NativeSelect>
                 </label>
               </div>
             </div>
@@ -188,33 +202,28 @@ export function ApplicationEditor({
                 <h3>Initial database binding</h3>
                 <label>
                   <span className="label-text">Engine or managed service</span>
-                  <select
-                    className="select select-bordered w-full"
+                  <NativeSelect
+                    className="w-full"
                     value={database}
                     onChange={(event) => setDatabase(event.target.value)}
                   >
                     {settings.databaseServices.map((service) => (
-                      <option
+                      <NativeSelectOption
                         key={`${service.engine}:${service.service}`}
                         value={databaseSelection(service.engine, service.service)}
                       >
                         {service.engine === "mysql" ? "MySQL" : "PostgreSQL"} {service.version} (
                         {service.service})
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                    <option value="sqlite">SQLite</option>
-                    <option value="litestream">SQLite + Litestream</option>
-                  </select>
+                    <NativeSelectOption value="sqlite">SQLite</NativeSelectOption>
+                    <NativeSelectOption value="litestream">SQLite + Litestream</NativeSelectOption>
+                  </NativeSelect>
                 </label>
                 {relationalDatabase && (
                   <div className="conditional-fields">
                     <label className="check-row">
-                      <input
-                        className="checkbox"
-                        type="checkbox"
-                        name="createDatabase"
-                        defaultChecked={creating}
-                      />
+                      <Checkbox name="createDatabase" defaultChecked={creating} />
                       <span>
                         Create database
                         <small>
@@ -224,8 +233,8 @@ export function ApplicationEditor({
                     </label>
                     <label>
                       <span className="label-text">Database name</span>
-                      <input
-                        className="input input-bordered w-full"
+                      <Input
+                        className="w-full"
                         name="databaseName"
                         defaultValue={creating ? "" : primaryDatabase?.names[0]}
                         placeholder="Defaults to the application slug"
@@ -241,32 +250,29 @@ export function ApplicationEditor({
               <div className="form-grid">
                 <label>
                   <span className="label-text">TLS mode</span>
-                  <select
-                    className="select select-bordered w-full"
+                  <NativeSelect
+                    className="w-full"
                     value={tls}
                     onChange={(event) => setTls(event.target.value as Application["tls"])}
                   >
-                    <option value="shared">Shared starter certificate</option>
-                    <option value="self-ca">Stack private CA</option>
-                    <option value="acme">ACME</option>
-                    <option value="external">External certificate</option>
-                  </select>
+                    <NativeSelectOption value="shared">
+                      Shared starter certificate
+                    </NativeSelectOption>
+                    <NativeSelectOption value="self-ca">Stack private CA</NativeSelectOption>
+                    <NativeSelectOption value="acme">ACME</NativeSelectOption>
+                    <NativeSelectOption value="external">External certificate</NativeSelectOption>
+                  </NativeSelect>
                 </label>
                 <label className="check-row">
-                  <input
-                    className="checkbox"
-                    type="checkbox"
-                    name="accessLog"
-                    defaultChecked={application?.accessLog ?? false}
-                  />
+                  <Checkbox name="accessLog" defaultChecked={application?.accessLog ?? false} />
                   <span>Enable access logs</span>
                 </label>
                 {tls === "external" && (
                   <>
                     <label>
                       <span className="label-text">Certificate path</span>
-                      <input
-                        className="input input-bordered w-full"
+                      <Input
+                        className="w-full"
                         name="tlsCertificatePath"
                         required
                         defaultValue={application?.tlsCertificatePath ?? ""}
@@ -274,8 +280,8 @@ export function ApplicationEditor({
                     </label>
                     <label>
                       <span className="label-text">Private key path</span>
-                      <input
-                        className="input input-bordered w-full"
+                      <Input
+                        className="w-full"
                         name="tlsKeyPath"
                         required
                         defaultValue={application?.tlsKeyPath ?? ""}
@@ -287,19 +293,18 @@ export function ApplicationEditor({
             </div>
           </fieldset>
 
-          <div className="modal-action">
-            <button type="button" className="btn btn-ghost" disabled={saving} onClick={onClose}>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
               Cancel
-            </button>
-            <button className="btn btn-primary" disabled={saving} type="submit">
-              {saving && <span className="loading loading-spinner loading-xs" />}
+            </Button>
+            <Button disabled={saving} type="submit">
+              {saving && <Spinner />}
               {creating ? "Create and apply" : "Save and apply"}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-      <button className="modal-backdrop" aria-label="Close" disabled={saving} onClick={onClose} />
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 

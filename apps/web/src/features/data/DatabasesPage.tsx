@@ -8,6 +8,17 @@ import {
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
 import { DatabaseManager } from "./DatabaseManager.tsx";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Spinner } from "@/components/ui/spinner";
 
 export function DatabasesPage() {
   const query = useQuery(orpc.data.overview.queryOptions({ input: {} }));
@@ -49,14 +60,10 @@ export function DatabasesPage() {
             See database usage, create backups, inspect runtimes, and manage recovery in one place.
           </p>
         </div>
-        <button
-          className="btn btn-outline"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
-          {query.isFetching && <span className="loading loading-spinner loading-xs" />}
+        <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
+          {query.isFetching && <Spinner />}
           Refresh inventory
-        </button>
+        </Button>
       </div>
       {!data.initialized ? (
         <StackNotReady stackRoot={data.stackRoot} error={data.error} />
@@ -90,9 +97,9 @@ export function DatabasesPage() {
           ) : (
             <article className="panel full database-empty-panel">
               <EmptyPanel>No managed MySQL or PostgreSQL services.</EmptyPanel>
-              <Link className="btn btn-primary" href="/applications">
-                Add from an application
-              </Link>
+              <Button asChild>
+                <Link href="/applications">Add from an application</Link>
+              </Button>
             </article>
           )}
 
@@ -105,42 +112,42 @@ export function DatabasesPage() {
           <article className="panel full">
             {fileBindings.length ? (
               <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Application</th>
-                      <th>Engine</th>
-                      <th>File</th>
-                      <th>Recovery</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table className="min-w-[650px] bg-card">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Application</TableHead>
+                      <TableHead>Engine</TableHead>
+                      <TableHead>File</TableHead>
+                      <TableHead>Recovery</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {fileBindings.flatMap((binding) =>
                       binding.resources.map((resource) => (
-                        <tr key={`${binding.app}:${binding.engine}:${resource}`}>
-                          <td>
+                        <TableRow key={`${binding.app}:${binding.engine}:${resource}`}>
+                          <TableCell>
                             <strong>{binding.app}</strong>
-                          </td>
-                          <td>
-                            <span className="badge badge-outline">
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
                               {binding.engine === "litestream" ? "Litestream" : "SQLite"}
-                            </span>
-                          </td>
-                          <td>
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
                             <code>{resource}</code>
-                          </td>
-                          <td>
+                          </TableCell>
+                          <TableCell>
                             {binding.engine === "litestream"
                               ? binding.backupVerifiedAt
                                 ? `Verified ${formatDate(binding.backupVerifiedAt)}`
                                 : "Replication not verified"
                               : "Logical backup available from the CLI"}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       )),
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             ) : (
               <EmptyPanel>No SQLite or Litestream databases.</EmptyPanel>

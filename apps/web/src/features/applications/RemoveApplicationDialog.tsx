@@ -1,5 +1,16 @@
 import { useState, type FormEvent } from "react";
 import type { Application } from "@bento/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 type RemoveApplicationDialogProps = {
   application: Application;
@@ -30,43 +41,47 @@ export function RemoveApplicationDialog({
   }
 
   return (
-    <dialog className="modal" open onCancel={(event) => event.preventDefault()}>
-      <div className="modal-box remove-app-box">
-        <h2>Remove {application.slug}?</h2>
-        <div className="alert alert-warning">
+    <Dialog open onOpenChange={(open) => !open && !removing && onClose()}>
+      <DialogContent
+        className="remove-app-box max-h-[calc(100vh-2rem)] overflow-y-auto"
+        showCloseButton={!removing}
+      >
+        <DialogHeader>
+          <DialogTitle>Remove {application.slug}?</DialogTitle>
+        </DialogHeader>
+        <Alert className="border-amber-500/40 bg-amber-500/10">
           Runtime configuration will be removed. The application home and database data will be
           retained for operator-controlled cleanup.
-        </div>
-        {error && <div className="alert alert-error">{error}</div>}
+        </Alert>
+        {error && <Alert variant="destructive">{error}</Alert>}
         <form onSubmit={(event) => void submit(event)}>
           <label>
             <span className="label-text">
               Type <code>{expected}</code> to confirm
             </span>
-            <input
-              className="input input-bordered w-full"
+            <Input
+              className="w-full"
               autoFocus
               value={confirmation}
               disabled={removing}
               onChange={(event) => setConfirmation(event.target.value)}
             />
           </label>
-          <div className="modal-action">
-            <button type="button" className="btn btn-ghost" disabled={removing} onClick={onClose}>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={removing} onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="btn btn-error"
+              variant="destructive"
               disabled={removing || confirmation !== expected}
             >
-              {removing && <span className="loading loading-spinner loading-xs" />}
+              {removing && <Spinner />}
               Remove application
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-      <button className="modal-backdrop" aria-label="Close" disabled={removing} onClick={onClose} />
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -2,6 +2,22 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AddCronJobInput, Application, JobsOverview } from "@bento/shared";
 import { orpc } from "../../api/client.ts";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 type ApplicationJobsDialogProps = {
   application: Application;
@@ -85,26 +101,22 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
   }
 
   return (
-    <dialog className="modal" open onCancel={(event) => event.preventDefault()}>
-      <div className="modal-box app-jobs-box">
-        <button
-          type="button"
-          className="btn btn-sm btn-circle btn-ghost modal-close"
-          aria-label="Close cron and worker manager"
-          disabled={busy}
-          onClick={onClose}
-        >
-          ✕
-        </button>
-        <h2>{application.slug} crons and workers</h2>
-        <p className="form-help">
-          Commands run under this application identity in its PHP runner. Full commands are shown
-          below with secret-like values redacted.
-        </p>
-        {error && <div className="alert alert-error">{messageOf(error)}</div>}
+    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+      <DialogContent
+        className="app-jobs-box max-h-[calc(100vh-2rem)] overflow-y-auto"
+        showCloseButton={!busy}
+      >
+        <DialogHeader>
+          <DialogTitle>{application.slug} crons and workers</DialogTitle>
+          <DialogDescription>
+            Commands run under this application identity in its PHP runner. Full commands are shown
+            below with secret-like values redacted.
+          </DialogDescription>
+        </DialogHeader>
+        {error && <Alert variant="destructive">{messageOf(error)}</Alert>}
         {overview.isPending && (
           <div className="loading-state">
-            <span className="loading loading-spinner" /> Loading jobs…
+            <Spinner /> Loading jobs…
           </div>
         )}
 
@@ -113,7 +125,7 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
             <section>
               <div className="app-job-heading">
                 <h3>Scheduled jobs</h3>
-                <span className="badge badge-outline">{cronJobs.length}</span>
+                <Badge variant="outline">{cronJobs.length}</Badge>
               </div>
               <div className="app-job-list">
                 {cronJobs.map((job) => (
@@ -125,16 +137,18 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                       </small>
                       <code className="app-job-command">{job.command}</code>
                       <div className="app-job-meta">
-                        <span className="badge badge-outline">{job.commandMode}</span>
-                        <span className="badge badge-outline">output: {job.output}</span>
+                        <Badge variant="outline">{job.commandMode}</Badge>
+                        <Badge variant="outline">output: {job.output}</Badge>
                         {job.timeoutSec && (
-                          <span className="badge badge-outline">timeout: {job.timeoutSec}s</span>
+                          <Badge variant="outline">timeout: {job.timeoutSec}s</Badge>
                         )}
                       </div>
                     </div>
-                    <button
+                    <Button
                       type="button"
-                      className="btn btn-xs btn-ghost app-remove"
+                      variant="ghost"
+                      size="xs"
+                      className="app-remove"
                       disabled={busy}
                       onClick={() => {
                         if (window.confirm(`Remove cron ${job.name} from ${application.slug}?`)) {
@@ -143,24 +157,26 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                       }}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </article>
                 ))}
                 {!cronJobs.length && <p className="muted">No scheduled jobs.</p>}
               </div>
               <details className="app-job-form">
-                <summary className="btn btn-sm btn-outline">+ Add scheduled job</summary>
+                <summary className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  + Add scheduled job
+                </summary>
                 <form onSubmit={(event) => void submitCron(event)}>
                   <fieldset disabled={busy}>
                     <label>
                       <span className="label-text">Name</span>
-                      <input className="input input-bordered w-full" name="name" required />
+                      <Input className="w-full" name="name" required />
                     </label>
                     <div className="form-grid">
                       <label>
                         <span className="label-text">Cron schedule</span>
-                        <input
-                          className="input input-bordered w-full"
+                        <Input
+                          className="w-full"
                           name="schedule"
                           required
                           placeholder="*/5 * * * *"
@@ -168,12 +184,7 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                       </label>
                       <label>
                         <span className="label-text">Timezone</span>
-                        <input
-                          className="input input-bordered w-full"
-                          name="timezone"
-                          required
-                          defaultValue="UTC"
-                        />
+                        <Input className="w-full" name="timezone" required defaultValue="UTC" />
                       </label>
                     </div>
                     <label>
@@ -181,52 +192,39 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                         Command{" "}
                         <small>{commandMode === "argv" ? "one argument per line" : "shell"}</small>
                       </span>
-                      <textarea
-                        className="textarea textarea-bordered w-full"
-                        name="command"
-                        required
-                      />
+                      <Textarea className="w-full" name="command" required />
                     </label>
                     <div className="form-grid">
                       <label>
                         <span className="label-text">Command mode</span>
-                        <select
-                          className="select select-bordered w-full"
+                        <NativeSelect
+                          className="w-full"
                           value={commandMode}
                           onChange={(event) =>
                             setCommandMode(event.target.value as AddCronJobInput["commandMode"])
                           }
                         >
-                          <option value="argv">Argument list</option>
-                          <option value="shell">Explicit shell</option>
-                        </select>
+                          <NativeSelectOption value="argv">Argument list</NativeSelectOption>
+                          <NativeSelectOption value="shell">Explicit shell</NativeSelectOption>
+                        </NativeSelect>
                       </label>
                       <label>
                         <span className="label-text">Output</span>
-                        <select
-                          className="select select-bordered w-full"
-                          name="output"
-                          defaultValue="log"
-                        >
-                          <option value="log">Log</option>
-                          <option value="null">Discard</option>
-                          <option value="inherit">Inherit</option>
-                        </select>
+                        <NativeSelect className="w-full" name="output" defaultValue="log">
+                          <NativeSelectOption value="log">Log</NativeSelectOption>
+                          <NativeSelectOption value="null">Discard</NativeSelectOption>
+                          <NativeSelectOption value="inherit">Inherit</NativeSelectOption>
+                        </NativeSelect>
                       </label>
                       <label>
                         <span className="label-text">Timeout seconds (optional)</span>
-                        <input
-                          className="input input-bordered w-full"
-                          name="timeoutSec"
-                          type="number"
-                          min="1"
-                        />
+                        <Input className="w-full" name="timeoutSec" type="number" min="1" />
                       </label>
                     </div>
                   </fieldset>
-                  <button className="btn btn-sm btn-primary" disabled={busy} type="submit">
+                  <Button size="sm" disabled={busy} type="submit">
                     Add cron
-                  </button>
+                  </Button>
                 </form>
               </details>
             </section>
@@ -234,7 +232,7 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
             <section>
               <div className="app-job-heading">
                 <h3>Workers</h3>
-                <span className="badge badge-outline">{workers.length}</span>
+                <Badge variant="outline">{workers.length}</Badge>
               </div>
               <div className="app-job-list">
                 {workers.map((worker) => (
@@ -243,18 +241,20 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                       <strong>{worker.name}</strong>
                       <code className="app-job-command">{worker.command}</code>
                       <div className="app-job-meta">
-                        <span className="badge badge-outline">argv</span>
-                        <span className="badge badge-outline">
+                        <Badge variant="outline">argv</Badge>
+                        <Badge variant="outline">
                           {worker.autorestart ? "auto restart" : "manual restart"}
-                        </span>
-                        <span className="badge badge-outline">
+                        </Badge>
+                        <Badge variant="outline">
                           stop: {worker.stopsignal} / {worker.stopwaitsecs}s
-                        </span>
+                        </Badge>
                       </div>
                     </div>
-                    <button
+                    <Button
                       type="button"
-                      className="btn btn-xs btn-ghost app-remove"
+                      variant="ghost"
+                      size="xs"
+                      className="app-remove"
                       disabled={busy}
                       onClick={() => {
                         if (
@@ -265,43 +265,36 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                       }}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </article>
                 ))}
                 {!workers.length && <p className="muted">No workers.</p>}
               </div>
               <details className="app-job-form">
-                <summary className="btn btn-sm btn-outline">+ Add worker</summary>
+                <summary className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  + Add worker
+                </summary>
                 <form onSubmit={(event) => void submitWorker(event)}>
                   <fieldset disabled={busy}>
                     <label>
                       <span className="label-text">Name</span>
-                      <input className="input input-bordered w-full" name="name" required />
+                      <Input className="w-full" name="name" required />
                     </label>
                     <label>
                       <span className="label-text">
                         Command <small>one argument per line</small>
                       </span>
-                      <textarea
-                        className="textarea textarea-bordered w-full"
-                        name="command"
-                        required
-                      />
+                      <Textarea className="w-full" name="command" required />
                     </label>
                     <div className="form-grid">
                       <label>
                         <span className="label-text">Stop signal</span>
-                        <input
-                          className="input input-bordered w-full"
-                          name="stopsignal"
-                          defaultValue="TERM"
-                          required
-                        />
+                        <Input className="w-full" name="stopsignal" defaultValue="TERM" required />
                       </label>
                       <label>
                         <span className="label-text">Stop wait seconds</span>
-                        <input
-                          className="input input-bordered w-full"
+                        <Input
+                          className="w-full"
                           name="stopwaitsecs"
                           type="number"
                           min="1"
@@ -311,32 +304,26 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                       </label>
                     </div>
                     <label className="checkbox-row">
-                      <input
-                        className="checkbox"
-                        name="autorestart"
-                        type="checkbox"
-                        defaultChecked
-                      />
+                      <Checkbox name="autorestart" defaultChecked />
                       <span>Restart automatically</span>
                     </label>
                   </fieldset>
-                  <button className="btn btn-sm btn-primary" disabled={busy} type="submit">
+                  <Button size="sm" disabled={busy} type="submit">
                     Add worker
-                  </button>
+                  </Button>
                 </form>
               </details>
             </section>
           </div>
         )}
 
-        <div className="modal-action">
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
+        <DialogFooter>
+          <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
             Close
-          </button>
-        </div>
-      </div>
-      <button className="modal-backdrop" aria-label="Close" disabled={busy} onClick={onClose} />
-    </dialog>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

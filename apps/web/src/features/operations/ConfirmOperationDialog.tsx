@@ -1,4 +1,14 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 export function ConfirmOperationDialog({
   title,
@@ -19,16 +29,18 @@ export function ConfirmOperationDialog({
   const matches = value === confirmation;
 
   return (
-    <dialog className="modal" open onCancel={(event) => event.preventDefault()}>
-      <div className="modal-box">
-        <h3 className="text-lg font-bold">{title}</h3>
-        <p className="py-3">{description}</p>
-        <label className="form-control">
+    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+      <DialogContent showCloseButton={!busy}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <label>
           <span className="label-text">
             Type <strong>{confirmation}</strong> to confirm
           </span>
-          <input
-            className="input input-bordered mt-2"
+          <Input
+            className="mt-2"
             autoFocus
             autoComplete="off"
             value={value}
@@ -38,16 +50,15 @@ export function ConfirmOperationDialog({
             }}
           />
         </label>
-        <div className="modal-action">
-          <button className="btn btn-ghost" disabled={busy} onClick={onClose}>
+        <DialogFooter>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
-          </button>
-          <button className="btn btn-error" disabled={!matches || busy} onClick={onConfirm}>
+          </Button>
+          <Button variant="destructive" disabled={!matches || busy} onClick={onConfirm}>
             {busy ? "Working…" : "Confirm"}
-          </button>
-        </div>
-      </div>
-      <button className="modal-backdrop" aria-label="Close" disabled={busy} onClick={onClose} />
-    </dialog>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

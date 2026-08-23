@@ -5,6 +5,11 @@ import { ApplicationEditor } from "./ApplicationEditor.tsx";
 import { ApplicationJobsDialog } from "./ApplicationJobsDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
+import { Spinner } from "@/components/ui/spinner";
 
 export function ApplicationsPage() {
   const {
@@ -40,11 +45,10 @@ export function ApplicationsPage() {
           <p>The first domain feature uses dedicated, schema-validated oRPC procedures.</p>
         </div>
         <div className="section-actions">
-          <button className="btn btn-outline" disabled={loading} onClick={() => void reload()}>
+          <Button variant="outline" disabled={loading} onClick={() => void reload()}>
             Refresh
-          </button>
-          <button
-            className="btn btn-primary"
+          </Button>
+          <Button
             disabled={!data?.initialized || !data.phpVersions.length}
             onClick={() => {
               resetErrors();
@@ -52,7 +56,7 @@ export function ApplicationsPage() {
             }}
           >
             + New application
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -61,13 +65,13 @@ export function ApplicationsPage() {
         databaseTarget === null &&
         jobsTarget === null &&
         removeTarget === null && (
-          <div className="alert alert-error">
+          <Alert variant="destructive">
             <span>{error}</span>
-          </div>
+          </Alert>
         )}
       {loading && !data && (
         <div className="loading-state">
-          <span className="loading loading-spinner loading-lg" /> Loading applications…
+          <Spinner className="size-8" /> Loading applications…
         </div>
       )}
       {data && !data.initialized && (
@@ -99,8 +103,8 @@ export function ApplicationsPage() {
             />
             <label className="app-search">
               <span aria-hidden="true">⌕</span>
-              <input
-                className="input"
+              <Input
+                className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0"
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -229,9 +233,11 @@ function ApplicationCard({
             </a>
           </div>
         </div>
-        <span className={`badge ${app.enabled ? "badge-success" : "badge-warning"}`}>
+        <Badge
+          className={app.enabled ? "bg-emerald-600 text-white" : "bg-amber-500 text-amber-950"}
+        >
           {app.enabled ? "Running" : "Disabled"}
-        </span>
+        </Badge>
       </div>
       <div className="app-facts">
         <Fact label="Runtime" value={`PHP ${app.phpVersion}`} />
@@ -241,40 +247,46 @@ function ApplicationCard({
       </div>
       <div className="app-tags">
         {app.databases.map((database, index) => (
-          <span
-            className={`badge ${index === 0 ? "badge-primary" : "badge-outline"}`}
+          <Badge
+            variant={index === 0 ? "default" : "outline"}
             key={`${database.engine}:${database.service ?? database.file ?? index}`}
           >
             {database.engine}
             {database.names.length > 0 ? ` · ${database.names.length}` : ""}
-          </span>
+          </Badge>
         ))}
-        {app.deployEnabled && <span className="badge badge-success">Deploys</span>}
-        {app.accessLog && <span className="badge badge-outline">Access logs</span>}
+        {app.deployEnabled && <Badge className="bg-emerald-600 text-white">Deploys</Badge>}
+        {app.accessLog && <Badge variant="outline">Access logs</Badge>}
         {app.aliases.slice(0, 2).map((alias) => (
-          <span className="badge badge-outline" key={alias}>
+          <Badge variant="outline" key={alias}>
             {alias}
-          </span>
+          </Badge>
         ))}
       </div>
       <div className="app-actions">
-        <button className="btn btn-sm btn-primary" disabled={busy} onClick={onToggle}>
-          {busy && <span className="loading loading-spinner loading-xs" />}
+        <Button size="sm" disabled={busy} onClick={onToggle}>
+          {busy && <Spinner />}
           {app.enabled ? "Disable" : "Enable"}
-        </button>
+        </Button>
         <div className="app-management-actions">
-          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onDatabases}>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onDatabases}>
             Databases
-          </button>
-          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onJobs}>
+          </Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onJobs}>
             Crons &amp; workers
-          </button>
-          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onEdit}>
+          </Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onEdit}>
             Edit
-          </button>
-          <button className="btn btn-sm btn-ghost app-remove" disabled={busy} onClick={onRemove}>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="app-remove"
+            disabled={busy}
+            onClick={onRemove}
+          >
             Remove
-          </button>
+          </Button>
         </div>
       </div>
     </article>
