@@ -4,6 +4,7 @@ const roleSchema = z.object({
   name: z.string(),
   kind: z.enum(["nginx", "redis", "php-fpm", "php-runner", "mysql", "postgres", "litestream"]),
   state: z.enum(["running", "stopped", "unknown", "config-ready"]),
+  uptimeSeconds: z.number().int().nonnegative().optional(),
   detail: z.string().optional(),
 });
 

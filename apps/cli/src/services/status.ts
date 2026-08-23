@@ -7,7 +7,7 @@ import type { DesiredState, ManagedDatabaseService } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { capacityWarnings } from "./app.ts";
 import { FPM_PROFILES } from "../domain/types.ts";
-import { resolveComposeFiles } from "./compose.ts";
+import { composeArgs, resolveComposeFiles } from "./compose.ts";
 import { loadStackComposeEnvironment } from "./stack_env.ts";
 import { sqliteContainerPath } from "./sqlite_paths.ts";
 
@@ -16,6 +16,8 @@ export type RoleStatus = {
   kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql" | "postgres" | "litestream";
   /** observed | expected-only */
   state: "running" | "stopped" | "unknown" | "config-ready";
+  /** Best-effort elapsed seconds since the running container started. */
+  uptimeSeconds?: number;
   detail?: string;
 };
 
@@ -163,7 +165,11 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
 
   // Role observation via docker compose ps (best-effort; soft when Docker down)
   const runningNames = await observeRunningServices(platform);
-  const roles = buildExpectedRoles(state, runningNames, notes);
+  const uptimes =
+    runningNames === null
+      ? new Map<string, number>()
+      : await observeServiceUptimes(platform, state, runningNames);
+  const roles = buildExpectedRoles(state, runningNames, notes, uptimes);
 
   // Database health is probed only for observed running containers. Stopped services
   // remain down/config-ready rather than being reported as healthy.
@@ -317,6 +323,7 @@ function buildExpectedRoles(
   state: DesiredState,
   running: Set<string> | null,
   notes: string[],
+  uptimes: Map<string, number>,
 ): RoleStatus[] {
   const roles: RoleStatus[] = [];
   const push = (name: string, kind: RoleStatus["kind"]) => {
@@ -330,7 +337,13 @@ function buildExpectedRoles(
       return;
     }
     if (running.has(name)) {
-      roles.push({ name, kind, state: "running" });
+      const uptimeSeconds = uptimes.get(name);
+      roles.push({
+        name,
+        kind,
+        state: "running",
+        ...(uptimeSeconds !== undefined ? { uptimeSeconds } : {}),
+      });
     } else {
       roles.push({
         name,
@@ -366,6 +379,49 @@ function buildExpectedRoles(
   }
 
   return roles;
+}
+
+async function observeServiceUptimes(
+  platform: Platform,
+  state: DesiredState,
+  runningNames: Set<string>,
+): Promise<Map<string, number>> {
+  const entries = await Promise.all(
+    Array.from(runningNames, async (service) => {
+      let composeCommand: string[];
+      try {
+        composeCommand = await composeArgs(platform, state, ["ps", "-q", service]);
+      } catch {
+        return null;
+      }
+      const containerResult = await platform.process
+        .run(composeCommand, {
+          cwd: platform.paths.paths.root,
+          timeoutMs: 4_000,
+        })
+        .catch(() => ({ code: 1, stdout: "", stderr: "unavailable" }));
+      if (containerResult.code !== 0) return null;
+      const containerId = containerResult.stdout.trim().split(/\s+/)[0];
+      if (!containerId) return null;
+
+      const inspect = await platform.process
+        .run(["docker", "inspect", "--format={{.State.StartedAt}}", containerId], {
+          cwd: platform.paths.paths.root,
+          timeoutMs: 4_000,
+        })
+        .catch(() => ({ code: 1, stdout: "", stderr: "unavailable" }));
+      if (inspect.code !== 0) return null;
+      const startedAt = Date.parse(inspect.stdout.trim());
+      if (!Number.isFinite(startedAt)) return null;
+      const uptimeSeconds = Math.max(
+        0,
+        Math.floor((platform.clock.now().getTime() - startedAt) / 1_000),
+      );
+      return [service, uptimeSeconds] as const;
+    }),
+  );
+
+  return new Map(entries.filter((entry): entry is readonly [string, number] => entry !== null));
 }
 
 /**

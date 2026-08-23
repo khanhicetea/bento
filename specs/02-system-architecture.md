@@ -124,8 +124,9 @@ Apps are not Compose services. Apps assigned to a PHP version share that version
 | Version ordering | semver 7 |
 | Standard helpers | Node-compatible built-ins and focused npm packages |
 | Dependency resolution | centralized `package.json`, committed `bun.lock` |
-| Distribution | `bun build --compile`, embedded `templates`, Linux amd64/arm64 |
-| Host orchestration | Docker Engine + Docker Compose v2 |
+| Distribution | `bun build --compile`, embedded `templates`, Linux amd64/arm64; optional control-plane container |
+| Host orchestration | Docker Engine + Docker Compose v2 CLI |
+| Containerized control plane | Compiled Bento plus pinned Docker CLI/Compose; host daemon socket and same-path stack-root bind |
 
 The docs site is a separate Bun workspace using Astro 7/Starlight. It is not a control-plane runtime requirement.
 

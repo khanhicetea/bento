@@ -16,6 +16,14 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function OperationsControls({ stackName }: { stackName: string }) {
   const queryClient = useQueryClient();
@@ -279,6 +287,64 @@ export function OperationsControls({ stackName }: { stackName: string }) {
         />
       )}
     </article>
+  );
+}
+
+export function ServiceLogsButton({ service }: { service: string }) {
+  const [open, setOpen] = useState(false);
+  const logs = useMutation(orpc.operations.logs.mutationOptions());
+
+  function loadLogs() {
+    setOpen(true);
+    logs.mutate({ service, tail: 200 });
+  }
+
+  return (
+    <>
+      <Button variant="outline" size="sm" disabled={logs.isPending} onClick={loadLogs}>
+        {logs.isPending ? <Spinner /> : <FileText className="size-3.5" aria-hidden="true" />}
+        Logs
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[1200px] gap-4 overflow-y-auto p-6 max-[640px]:p-4 sm:!max-w-[1200px]">
+          <DialogHeader>
+            <DialogTitle>{service} logs</DialogTitle>
+            <DialogDescription>
+              Showing the most recent 200 lines from this service.
+            </DialogDescription>
+          </DialogHeader>
+          {logs.error && <Alert variant="destructive">{messageOf(logs.error)}</Alert>}
+          {logs.isPending && (
+            <div className="flex min-h-48 items-center justify-center gap-3 text-sm text-muted-foreground">
+              <Spinner className="size-5" /> Loading logs…
+            </div>
+          )}
+          {!logs.isPending && logs.data && (
+            <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-xs text-muted-foreground">
+                <span>{logs.data.lines.length} lines returned</span>
+                {logs.data.truncated && <span>Output truncated</span>}
+              </div>
+              <pre
+                className="max-h-[60vh] min-h-48 overflow-auto p-4 text-xs whitespace-pre-wrap break-words text-muted-foreground"
+                aria-label={`Recent logs for ${service}`}
+              >
+                {logs.data.lines.join("\n") || "No log lines returned."}
+              </pre>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={logs.isPending} onClick={loadLogs}>
+              <RotateCw className="size-4" aria-hidden="true" />
+              Refresh logs
+            </Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

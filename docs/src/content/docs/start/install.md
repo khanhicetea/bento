@@ -76,6 +76,31 @@ Add the export to the operator's shell profile or service environment if it shou
 
 Use `--stack PATH` when you deliberately need to target another stack for one command.
 
+## Run the control plane as a container
+
+Tagged releases also publish an optional `ghcr.io/khanhicetea/bento:<release-tag>` image containing the compiled Bento command, embedded web UI, Docker CLI, and Compose v2 plugin. This uses the host Docker daemon rather than Docker-in-Docker. Select a specific release tag rather than an unpinned moving tag.
+
+```sh
+sudo install -d -m 0750 /var/lib/bento
+export BENTO_STACK_ROOT=/var/lib/bento
+export BENTO_IMAGE=ghcr.io/khanhicetea/bento:<release-tag>
+docker compose -f deploy/container/compose.yml pull
+docker compose -f deploy/container/compose.yml run --rm bento init --name bento
+docker compose -f deploy/container/compose.yml up -d
+```
+
+For a reviewed source checkout, build `bento:local` with `bun run container:build` and leave `BENTO_IMAGE` unset.
+
+Open `http://127.0.0.1:8080`. The example deliberately publishes only on loopback because the management UI has no authentication.
+
+:::danger
+Mounting `/var/run/docker.sock` grants effective root control of the host. Anyone who can operate this Bento instance or access its management UI must be trusted as a host administrator.
+:::
+
+Use an absolute stack-root path and mount it at exactly the same path inside the control-plane container. For example, host `/var/lib/bento` must remain container `/var/lib/bento`. Compose resolves bind sources in the client container, while Docker Engine applies them on the host; changing the path can make sibling stack containers mount the wrong host directories.
+
+The container does not manage the host crontab. Do not use `backup schedule register` inside it; configure a host scheduler to invoke a one-off Bento container or `docker compose exec` instead. Export/import destinations and other paths outside the stack root also need same-path bind mounts when those operations are used.
+
 ## Run from source instead
 
 Source mode is for development or for a reviewed checkout when no compiled release is suitable. It requires Bun 1.4.0 and must be run from the repository checkout:

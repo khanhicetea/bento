@@ -18,7 +18,12 @@ export const operationsContract = oc.router({
   apply: oc.input(z.object({})).output(operationResultSchema),
   backup: oc.input(z.object({})).output(operationsBackupResultSchema),
   logs: oc
-    .input(z.object({ tail: z.number().int().min(1).max(500).default(100) }))
+    .input(
+      z.object({
+        tail: z.number().int().min(1).max(500).default(100),
+        service: z.string().min(1).max(100).optional(),
+      }),
+    )
     .output(operationsLogsSchema),
   maintenance: oc
     .input(z.object({ retainDays: z.number().int().min(1).max(365).default(14) }))

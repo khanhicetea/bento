@@ -20,7 +20,11 @@ import {
   StackNotReady,
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
-import { OperationsControls, ServiceRestartButton } from "./OperationsControls.tsx";
+import {
+  OperationsControls,
+  ServiceLogsButton,
+  ServiceRestartButton,
+} from "./OperationsControls.tsx";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -338,7 +342,10 @@ function RoleCard({ role }: { role: OperationsRole }) {
       </p>
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
         <span className="text-xs text-muted-foreground">Service action</span>
-        <ServiceRestartButton service={role.name} />
+        <div className="flex items-center gap-2">
+          <ServiceLogsButton service={role.name} />
+          <ServiceRestartButton service={role.name} />
+        </div>
       </div>
     </article>
   );

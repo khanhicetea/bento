@@ -76,13 +76,21 @@ export function createOperationsRouter(ctx: CliContext) {
     }),
     logs: os.logs.handler(async ({ input }) => {
       const state = await ctx.store.load();
+      const logArgs = ["logs", "--no-color", "--tail", String(input.tail)];
+      if (input.service) {
+        const servicesResult = await ctx.platform.process.run(
+          await composeArgs(ctx.platform, state, ["config", "--services"]),
+          { cwd: ctx.stackRoot, timeoutMs: 15_000 },
+        );
+        if (servicesResult.code !== 0) {
+          throw new Error(safeDiagnostic(servicesResult.stderr || servicesResult.stdout));
+        }
+        const services = servicesResult.stdout.split("\n").map((service) => service.trim());
+        if (!services.includes(input.service)) throw new Error(`unknown service: ${input.service}`);
+        logArgs.push(input.service);
+      }
       const result = await ctx.platform.process.run(
-        await composeArgs(ctx.platform, state, [
-          "logs",
-          "--no-color",
-          "--tail",
-          String(input.tail),
-        ]),
+        await composeArgs(ctx.platform, state, logArgs),
         { cwd: ctx.stackRoot, timeoutMs: 15_000 },
       );
       if (result.code !== 0)

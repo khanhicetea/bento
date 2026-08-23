@@ -29,6 +29,7 @@
     "compile": "bun run --cwd apps/cli compile",
     "compile:amd64": "bun run --cwd apps/cli compile:amd64",
     "compile:arm64": "bun run --cwd apps/cli compile:arm64",
+    "container:build": "docker build --tag bento:local .",
     "docs:dev": "bun run --cwd docs dev",
     "docs:build": "bun run --cwd docs build"
   },

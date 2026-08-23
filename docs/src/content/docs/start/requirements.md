@@ -46,6 +46,8 @@ docker info >/dev/null
 
 All three commands must succeed. If they fail with a permission error, fix Docker access for the operator account. If they report that the daemon is unavailable, start Docker before continuing.
 
+When using Bento's optional control-plane image, the Docker CLI and Compose plugin are included in that image. The host still needs a running Docker Engine. The image reaches it through a mounted Unix socket, which grants the container effective root control of the host; the stack root must also be mounted at the same absolute host/container path.
+
 ### Host utilities
 
 Install these standard host tools before the first stack:

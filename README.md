@@ -120,6 +120,137 @@ The checked-in release workflow (`.github/workflows/ci.yml`) runs for tags and p
 
 Pin Bun **1.4.0** for source and compile. Dependencies are resolved exactly through the committed `bun.lock`; use `bun install --frozen-lockfile` in CI and release builds.
 
+## Run Bento as a Docker container
+
+This path is for an operator who already installed Docker Engine and wants both the Bento CLI and web control plane in one container. The image includes the compiled Bento binary, embedded web UI, Docker CLI, Compose v2, and Buildx. It controls the host Docker daemon through `/var/run/docker.sock`; it does not run Docker-in-Docker.
+
+### 1. Check the host
+
+Docker must be running, and ports 80 and 443 must be available for Bento's default host-mode Nginx stack. Docker access grants effective root control of the host.
+
+```bash
+docker version
+docker info >/dev/null
+```
+
+Choose a specific release image. The example uses `0.1.0`; replace it if you are installing another published release. Developers testing an image built from this checkout can use `bento:local` instead.
+
+```bash
+export BENTO_IMAGE=ghcr.io/khanhicetea/bento:0.1.0
+# For a local test image instead: export BENTO_IMAGE=bento:local
+```
+
+### 2. Create durable stack storage
+
+Everything under the stack root is mutable operator state and must survive replacement of the control-plane container:
+
+```bash
+sudo install -d -m 0750 /var/lib/bento
+```
+
+The host path and container path must be identical (`/var/lib/bento` in this example). Generated Compose bind mounts are evaluated by the host Docker daemon, so mounting the stack at a different container path will break sibling stack containers.
+
+### 3. Start the Bento control plane
+
+Run this as one command:
+
+```bash
+docker run -d --name bento --restart unless-stopped -e BENTO_STACK_ROOT=/var/lib/bento -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/bento:/var/lib/bento -p 127.0.0.1:8080:8080 "$BENTO_IMAGE"
+```
+
+Check startup:
+
+```bash
+docker logs bento
+docker exec bento bento version
+```
+
+A new stack initially shows **Stack not ready** in the browser. That is expected: initialization and service startup are explicit safety steps.
+
+### 4. Bootstrap the stack in three steps
+
+#### Step 1: Initialize
+
+Choose the permanent Compose project name before initialization. The example uses `production`:
+
+```bash
+docker exec bento bento init --name production
+```
+
+Initialization creates `/var/lib/bento/state.json`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. Bento refuses to overwrite an initialized stack.
+
+#### Step 2: Review and change `.env`
+
+Edit the file directly on the Docker host:
+
+```bash
+sudoedit /var/lib/bento/.env
+```
+
+Set the ingress, ACME, HTTP/3, or other environment options required for this host. Keep generated passwords secret. Do not change `COMPOSE_PROJECT_NAME` after initialization because it identifies the stack's containers, networks, and durable volumes.
+
+#### Step 3: Render, validate, start, and apply
+
+Run the rest of the first-stack bootstrap as one host command:
+
+```bash
+docker exec bento sh -lc 'bento render && bento compose -- config --quiet && bento compose -- up -d --build && bento apply'
+```
+
+This stops at the first failed operation. On success it renders configuration, validates the Compose model, builds images, creates durable volumes, starts Nginx/PHP/MySQL/Redis, validates the running configuration, and applies scoped reloads. Default host-mode Nginx binds host ports 80 and 443. The first build can take several minutes.
+
+Do not use `docker compose down -v`; that can destroy durable database volumes, and Bento blocks it through its supported Compose wrapper.
+
+### 5. Verify the stack
+
+```bash
+docker exec bento bento status
+docker exec bento bento compose -- ps
+docker exec bento bento doctor
+```
+
+If a service fails, inspect its logs. This example selects `nginx`; replace it with a reported name such as `php85`, `mysql84`, or `redis`:
+
+```bash
+docker exec bento bento compose -- logs --tail 100 nginx
+```
+
+### 6. Open the web UI
+
+On the Docker host, open:
+
+```text
+http://127.0.0.1:8080
+```
+
+The UI has no authentication. The command intentionally publishes it only on host loopback. For access from your workstation, use an SSH tunnel rather than publishing port 8080 on every interface:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 user@docker-host
+```
+
+Then open `http://127.0.0.1:8080` on the workstation.
+
+### Routine container operations
+
+Run any Bento CLI command with `docker exec bento bento ...`, for example:
+
+```bash
+docker exec bento bento status
+docker exec -it bento bento tui
+```
+
+Restart or remove only the control-plane container without deleting stack state or sibling services:
+
+```bash
+docker restart bento
+docker rm -f bento
+```
+
+To upgrade, pull a specific newer image, remove the old `bento` control-plane container, and repeat the `docker run` command with the new image. Keep `/var/lib/bento` mounted at the same absolute path.
+
+Mounting `/var/run/docker.sock` grants the Bento container effective root control of the Docker host. Only trusted administrators may access it. Host-crontab registration (`backup schedule register`) is not supported from this container; configure a host-managed scheduler to invoke `docker exec bento bento backup schedule run` instead.
+
 ## Architecture (short)
 
 ```text
