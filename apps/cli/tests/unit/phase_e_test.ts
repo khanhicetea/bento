@@ -5,7 +5,7 @@ import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts
 import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
-import { createProxy } from "../../src/services/proxy.ts";
+import { createProxy, setProxyEnabled } from "../../src/services/proxy.ts";
 import { materializeAppHome } from "../../src/services/app.ts";
 import {
   type DeployJob,
@@ -210,6 +210,33 @@ bunRuntime.test("E1 proxy renders named multi-server upstream with keepalive", a
     assertEquals(vhost.match(/expires 30d;/g)?.length, 2);
     assertEquals(vhost.includes("custom/proxies/edge/upstream.d/*.conf"), true);
     assertEquals(vhost.match(/custom\/proxies\/edge\/server\.d\/\*\.conf/g)?.length, 2);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("E1 disabled proxy retains state but omits its vhost", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-e1-disabled-proxy-" });
+  try {
+    const platform = testPlatform(root);
+    const created = createProxy(
+      createEmptyState(),
+      {
+        name: "edge",
+        domain: "edge.test",
+        upstreams: ["http://127.0.0.1:3000"],
+      },
+      platform.clock.nowIso(),
+    );
+    const disabled = setProxyEnabled(created.state, "edge", false, platform.clock.nowIso()).state;
+
+    const files = await generateAll(platform, disabled, "digest");
+    assertEquals(
+      files.some((file) => file.relPath === "nginx/sites/proxy-edge.conf"),
+      false,
+    );
+    assertEquals(disabled.proxies.edge?.mainDomain, "edge.test");
+    assertEquals(disabled.domains["edge.test"]?.kind, "proxy");
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

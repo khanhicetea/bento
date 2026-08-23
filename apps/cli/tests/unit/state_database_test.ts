@@ -8,7 +8,7 @@ import { createPlatform } from "../../src/platform/mod.ts";
 import { stateToJson } from "../../src/schemas/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { addCronJob } from "../../src/services/cron.ts";
-import { createProxy } from "../../src/services/proxy.ts";
+import { createProxy, setProxyEnabled } from "../../src/services/proxy.ts";
 import {
   STATE_DATABASE_SCHEMA_VERSION,
   migrateStateDatabase,
@@ -24,7 +24,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
     assertEquals(first, {
       fromVersion: 0,
       toVersion: STATE_DATABASE_SCHEMA_VERSION,
-      applied: [1],
+      applied: [1, 2],
     });
     assertEquals((await bunRuntime.stat(platform.paths.paths.stateDb)).mode & 0o777, 0o600);
 
@@ -42,7 +42,10 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
         []
       >("SELECT version, name FROM schema_migrations ORDER BY version")
       .all();
-    assertEquals(migration, [{ version: 1, name: "normalized-desired-state" }]);
+    assertEquals(migration, [
+      { version: 1, name: "normalized-desired-state" },
+      { version: 2, name: "proxy-site-enablement" },
+    ]);
     const tables = database
       .query<{ name: string }, []>(
         "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -147,6 +150,7 @@ bunRuntime.test("state database round-trips nested state and JSON argument field
       },
       now,
     ).state;
+    state = setProxyEnabled(state, "api", false, now).state;
     state = addCronJob(
       state,
       {

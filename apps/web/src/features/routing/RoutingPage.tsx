@@ -1,16 +1,18 @@
 import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { RoutingOverview } from "@bento/shared";
+import type { RoutingOverview, RoutingProxy } from "@bento/shared";
 import {
   ArrowUpRight,
   ChevronDown,
   Globe2,
   LockKeyhole,
   Network,
+  Pencil,
+  Power,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
+  Trash2,
   Waypoints,
   X,
 } from "lucide-react";
@@ -20,11 +22,14 @@ import {
   EmptyPanel,
   StackNotReady,
 } from "../../components/DomainState.tsx";
-import { orpc } from "../../api/client.ts";
+import { ProxyEditor } from "./ProxyEditor.tsx";
+import { RemoveProxyDialog } from "./RemoveProxyDialog.tsx";
+import { useRouting } from "./useRouting.ts";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
   TableBody,
@@ -42,10 +47,27 @@ type TlsMode = Domain["tls"];
 const tlsModes: TlsMode[] = ["acme", "external", "self-ca", "shared"];
 
 export function RoutingPage() {
-  const query = useQuery(orpc.routing.overview.queryOptions({ input: {} }));
+  const {
+    query,
+    error,
+    saving,
+    removing,
+    changing,
+    saveProxy,
+    setProxyEnabled,
+    removeProxy,
+    resetErrors,
+  } = useRouting();
   const [search, setSearch] = useState("");
   const [view, setView] = useState<RoutingView>("all");
+  const [editorTarget, setEditorTarget] = useState<RoutingProxy | "create" | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<RoutingProxy | null>(null);
   const data = query.data;
+
+  function startCreating() {
+    resetErrors();
+    setEditorTarget("create");
+  }
 
   if (!data && query.isPending) {
     return (
@@ -112,20 +134,29 @@ export function RoutingPage() {
             configured.
           </p>
         </div>
-        <Button
-          className="max-[760px]:w-full"
-          variant="outline"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
-          {query.isFetching ? <RefreshCw className="animate-spin" /> : <RefreshCw />}
-          Refresh inventory
-        </Button>
+        <div className="flex gap-2 max-[760px]:w-full">
+          <Button
+            className="max-[760px]:flex-1"
+            variant="outline"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {query.isFetching ? <RefreshCw className="animate-spin" /> : <RefreshCw />}
+            Refresh inventory
+          </Button>
+          <Button
+            className="max-[760px]:flex-1"
+            disabled={!data.initialized}
+            onClick={startCreating}
+          >
+            <span aria-hidden="true">+</span> Add proxy
+          </Button>
+        </div>
       </div>
 
-      {query.error && (
+      {error && editorTarget === null && removeTarget === null && (
         <Alert className="mt-6" variant="destructive">
-          <span>Unable to refresh the routing inventory: {messageOf(query.error)}</span>
+          <span>{error}</span>
         </Alert>
       )}
 
@@ -138,7 +169,7 @@ export function RoutingPage() {
           <div className="mt-8 grid grid-cols-4 gap-3 max-[1050px]:grid-cols-2 max-[560px]:grid-cols-1">
             <Summary
               value={data.domains.length}
-              label="Published domains"
+              label="Claimed domains"
               icon={<Globe2 className="size-4" />}
             />
             <Summary
@@ -257,7 +288,20 @@ export function RoutingPage() {
                   {proxies.length ? (
                     <div className="grid grid-cols-2 items-stretch gap-5 max-[900px]:grid-cols-1">
                       {proxies.map((proxy) => (
-                        <ProxyCard key={proxy.name} proxy={proxy} />
+                        <ProxyCard
+                          key={proxy.name}
+                          proxy={proxy}
+                          busy={changing === proxy.name}
+                          onEdit={() => {
+                            resetErrors();
+                            setEditorTarget(proxy);
+                          }}
+                          onToggle={() => setProxyEnabled(proxy)}
+                          onRemove={() => {
+                            resetErrors();
+                            setRemoveTarget(proxy);
+                          }}
+                        />
                       ))}
                     </div>
                   ) : (
@@ -300,6 +344,26 @@ export function RoutingPage() {
             </div>
           )}
         </>
+      )}
+      {data.initialized && editorTarget !== null && (
+        <ProxyEditor
+          key={editorTarget === "create" ? "create" : editorTarget.name}
+          proxy={editorTarget === "create" ? null : editorTarget}
+          error={error}
+          saving={saving}
+          onClose={() => setEditorTarget(null)}
+          onSave={saveProxy}
+        />
+      )}
+      {removeTarget && (
+        <RemoveProxyDialog
+          key={removeTarget.name}
+          proxy={removeTarget}
+          error={error}
+          removing={removing}
+          onClose={() => setRemoveTarget(null)}
+          onRemove={removeProxy}
+        />
       )}
     </section>
   );
@@ -523,18 +587,38 @@ function DomainsTable({ domains }: { domains: Domain[] }) {
   );
 }
 
-function ProxyCard({ proxy }: { proxy: Proxy }) {
+function ProxyCard({
+  proxy,
+  busy,
+  onEdit,
+  onToggle,
+  onRemove,
+}: {
+  proxy: Proxy;
+  busy: boolean;
+  onEdit: () => void;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
   return (
-    <article className="flex min-w-0 flex-col rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm">
+    <article
+      className={`flex min-w-0 flex-col rounded-2xl border bg-card p-5 text-card-foreground shadow-sm ${proxy.enabled ? "border-emerald-500/25" : "border-border opacity-80"}`}
+      aria-busy={busy}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
             <Network className="size-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <strong className="block truncate text-sm font-semibold" title={proxy.name}>
-              {proxy.name}
-            </strong>
+            <div className="flex items-center gap-2">
+              <strong className="truncate text-sm font-semibold" title={proxy.name}>
+                {proxy.name}
+              </strong>
+              <Badge variant={proxy.enabled ? "secondary" : "outline"}>
+                {proxy.enabled ? "Enabled" : "Disabled"}
+              </Badge>
+            </div>
             <a
               className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground no-underline hover:text-primary hover:underline hover:underline-offset-2"
               href={`https://${proxy.domain}`}
@@ -557,18 +641,14 @@ function ProxyCard({ proxy }: { proxy: Proxy }) {
           Upstreams
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {proxy.upstreams.length ? (
-            proxy.upstreams.map((upstream) => (
-              <code
-                className="max-w-full break-all rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs"
-                key={upstream}
-              >
-                {upstream}
-              </code>
-            ))
-          ) : (
-            <span className="text-sm text-muted-foreground">No upstreams configured</span>
-          )}
+          {proxy.upstreams.map((upstream) => (
+            <code
+              className="max-w-full break-all rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs"
+              key={upstream}
+            >
+              {upstream}
+            </code>
+          ))}
         </div>
       </div>
 
@@ -587,13 +667,29 @@ function ProxyCard({ proxy }: { proxy: Proxy }) {
         </div>
       )}
 
-      <div className="mt-5 flex min-h-7 flex-wrap gap-1.5 border-t border-border pt-4">
-        <Badge variant="outline">
-          {proxy.aliases.length} {proxy.aliases.length === 1 ? "alias" : "aliases"}
-        </Badge>
+      <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
         <Badge variant={proxy.accessLog ? "secondary" : "outline"}>
           {proxy.accessLog ? "Access logs enabled" : "Access logs disabled"}
         </Badge>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="outline" disabled={busy} onClick={onEdit}>
+            <Pencil className="size-3.5" /> Edit
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={onToggle}>
+            {busy ? <Spinner /> : <Power className="size-3.5" />}{" "}
+            {proxy.enabled ? "Disable" : "Enable"}
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            disabled={busy}
+            aria-label={`Delete ${proxy.name}`}
+            onClick={onRemove}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       </div>
     </article>
   );

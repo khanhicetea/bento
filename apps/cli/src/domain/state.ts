@@ -151,6 +151,7 @@ export type AppState = {
 };
 export type ProxySite = {
   name: ProxySiteName;
+  enabled: boolean;
   mainDomain: DomainName;
   aliases: DomainName[];
   upstreams: string[];

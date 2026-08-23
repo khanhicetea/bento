@@ -175,9 +175,11 @@ async function generateNginx(platform: Platform, state: DesiredState): Promise<G
     }
   }
   for (const proxy of Object.values(state.proxies)) {
-    files.push(
-      ...(await generateProxyVhost(platform, proxy, http3, httpsPortSuffix, publishedHttpsPort)),
-    );
+    if (proxy.enabled) {
+      files.push(
+        ...(await generateProxyVhost(platform, proxy, http3, httpsPortSuffix, publishedHttpsPort)),
+      );
+    }
   }
 
   return files;

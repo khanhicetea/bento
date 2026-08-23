@@ -28,6 +28,7 @@ export function createProxy(
   }
   const domain = unwrap(parseDomainName(input.domain), "domain");
   const aliases = (input.aliases ?? []).map((a, i) => unwrap(parseDomainName(a), `aliases[${i}]`));
+  validateProxyDomains(domain, aliases);
   validateUpstreams(input.upstreams);
 
   for (const d of [domain, ...aliases]) {
@@ -43,6 +44,7 @@ export function createProxy(
 
   const proxy: ProxySite = {
     name: asProxySiteName(name),
+    enabled: true,
     mainDomain: asDomainName(domain),
     aliases: aliases.map(asDomainName),
     upstreams: [...input.upstreams],
@@ -125,10 +127,90 @@ export function validateUpstreams(upstreams: string[]): NginxUpstreamConfig {
   };
 }
 
+export function updateProxy(
+  state: DesiredState,
+  input: CreateProxyInput,
+  now: string,
+): { state: DesiredState; proxy: ProxySite; reloadPlan: ReloadPlan } {
+  const name = unwrap(parseAppSlug(input.name), "name");
+  const current = getProxyOrThrow(state, name);
+
+  const domain = unwrap(parseDomainName(input.domain), "domain");
+  const aliases = (input.aliases ?? []).map((alias, index) =>
+    unwrap(parseDomainName(alias), `aliases[${index}]`),
+  );
+  validateProxyDomains(domain, aliases);
+  validateUpstreams(input.upstreams);
+
+  for (const candidate of [domain, ...aliases]) {
+    const owner = state.domains[candidate];
+    if (owner && !(owner.kind === "proxy" && owner.name === name)) {
+      throw conflictError(
+        `domain ${candidate} is already owned by ${
+          owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`
+        }`,
+      );
+    }
+  }
+
+  const proxy: ProxySite = {
+    ...current,
+    mainDomain: asDomainName(domain),
+    aliases: aliases.map(asDomainName),
+    upstreams: [...input.upstreams],
+    tls: input.tls ?? current.tls,
+    accessLog: input.accessLog ?? current.accessLog,
+    updatedAt: now,
+  };
+  const domains = { ...state.domains };
+  for (const [linkedDomain, owner] of Object.entries(domains)) {
+    if (owner.kind === "proxy" && owner.name === name) delete domains[linkedDomain];
+  }
+  for (const [index, candidate] of [domain, ...aliases].entries()) {
+    domains[candidate] = { kind: "proxy", name: asProxySiteName(name), primary: index === 0 };
+  }
+  return {
+    state: {
+      ...state,
+      proxies: { ...state.proxies, [name]: proxy },
+      domains,
+      updatedAt: now,
+    },
+    proxy,
+    reloadPlan: reloadPlanForDomainChange(),
+  };
+}
+
+function validateProxyDomains(domain: string, aliases: string[]): void {
+  const domains = [domain, ...aliases];
+  if (new Set(domains).size !== domains.length) {
+    throw validationError("primary domain and aliases must be unique");
+  }
+}
+
 export function getProxyOrThrow(state: DesiredState, name: string): ProxySite {
   const p = state.proxies[name];
   if (!p) throw notFoundError(`proxy site not found: ${name}`);
   return p;
+}
+
+export function setProxyEnabled(
+  state: DesiredState,
+  name: string,
+  enabled: boolean,
+  now: string,
+): { state: DesiredState; proxy: ProxySite; reloadPlan: ReloadPlan } {
+  const current = getProxyOrThrow(state, name);
+  const proxy = { ...current, enabled, updatedAt: now };
+  return {
+    state: {
+      ...state,
+      proxies: { ...state.proxies, [name]: proxy },
+      updatedAt: now,
+    },
+    proxy,
+    reloadPlan: reloadPlanForDomainChange(),
+  };
 }
 
 /** Remove a reverse proxy after an exact typed confirmation. */

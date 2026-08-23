@@ -14,7 +14,7 @@ import {
   planAppPrune,
   writeAppPruneManifest,
 } from "../../src/services/app_prune.ts";
-import { createProxy, deleteProxy } from "../../src/services/proxy.ts";
+import { createProxy, deleteProxy, updateProxy } from "../../src/services/proxy.ts";
 import { removeMysqlVersion } from "../../src/services/mysql.ts";
 import { assembleComposeDocuments, assertSafeComposeArgs } from "../../src/services/compose.ts";
 import { deployWebhookInstructions, enableDeploy } from "../../src/services/deploy.ts";
@@ -109,6 +109,46 @@ bunRuntime.test("proxy delete requires exact typed confirmation", () => {
   const removed = deleteProxy(state, "api", "delete api", "2026-07-17T12:00:00.000Z");
   assertEquals(!!removed.state.proxies.api, false);
   assertEquals(!!removed.state.domains["api.test"], false);
+});
+
+bunRuntime.test("proxy update replaces domain links and preserves identity", () => {
+  const now = "2026-07-17T12:00:00.000Z";
+  const created = createProxy(
+    createEmptyState(),
+    {
+      name: "api",
+      domain: "api.test",
+      aliases: ["old.api.test"],
+      upstreams: ["http://127.0.0.1:3000"],
+    },
+    now,
+  );
+  const updated = updateProxy(
+    created.state,
+    {
+      name: "api",
+      domain: "new.api.test",
+      aliases: ["www.new.api.test"],
+      upstreams: ["http://127.0.0.1:4000"],
+      accessLog: true,
+    },
+    now,
+  );
+  assertEquals(updated.proxy.createdAt, created.proxy.createdAt);
+  assertEquals(updated.proxy.upstreams, ["http://127.0.0.1:4000"]);
+  assertEquals(updated.state.domains["api.test"], undefined);
+  assertEquals(updated.state.domains["new.api.test"]?.primary, true);
+  assertEquals(updated.state.domains["www.new.api.test"]?.primary, false);
+  assertThrows(
+    () =>
+      updateProxy(
+        created.state,
+        { name: "missing", domain: "missing.test", upstreams: ["http://127.0.0.1"] },
+        now,
+      ),
+    Error,
+    "not found",
+  );
 });
 
 bunRuntime.test("G MySQL version/volume removal is safety-blocked", () => {

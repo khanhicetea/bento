@@ -12,7 +12,7 @@ import { isBentoError, migrationError, stateError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { parseDesiredState, stateToJson } from "../schemas/state.ts";
 
-export const STATE_DATABASE_SCHEMA_VERSION = 1;
+export const STATE_DATABASE_SCHEMA_VERSION = 2;
 
 type Migration = {
   version: number;
@@ -133,6 +133,7 @@ type DomainRow = {
 
 type ProxyRow = {
   name: string;
+  enabled: number;
   tls_kind: TlsMode["kind"];
   tls_cert_path: string | null;
   tls_key_path: string | null;
@@ -382,6 +383,14 @@ CREATE TABLE workers (
   PRIMARY KEY (app_slug, name),
   UNIQUE (position)
 );
+`,
+  },
+  {
+    version: 2,
+    name: "proxy-site-enablement",
+    sql: `
+ALTER TABLE proxy_sites
+  ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1));
 `,
   },
 ];
@@ -685,6 +694,7 @@ function readState(database: Database, path: string): DesiredState {
           row.name,
           {
             name: row.name,
+            enabled: asBoolean(row.enabled),
             mainDomain: primary?.domain ?? "unlinked.invalid",
             aliases: linked
               .filter((domain) => !asBoolean(domain.primary_domain))
@@ -1027,9 +1037,9 @@ function insertProxy(database: Database, proxy: ProxySite): void {
   run(
     database,
     `INSERT INTO proxy_sites (
-      name, tls_kind, tls_cert_path, tls_key_path, access_log, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [proxy.name, ...tls, proxy.accessLog, proxy.createdAt, proxy.updatedAt],
+      name, enabled, tls_kind, tls_cert_path, tls_key_path, access_log, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [proxy.name, proxy.enabled, ...tls, proxy.accessLog, proxy.createdAt, proxy.updatedAt],
   );
   insertValues(database, "proxy_upstreams", ["proxy_name"], [proxy.name], proxy.upstreams);
 }

@@ -226,6 +226,7 @@ const appSchema = strict({
 });
 const proxySchema = strict({
   name: appSlugSchema,
+  enabled: z.boolean().default(true),
   mainDomain: domainNameSchema,
   aliases: z.array(domainNameSchema).default([]),
   upstreams: z.array(nonEmptyStringSchema).min(1),
@@ -520,6 +521,7 @@ function brandApp(app: z.infer<typeof appSchema>): AppState {
 function brandProxy(p: z.infer<typeof proxySchema>): ProxySite {
   return {
     name: asProxySiteName(p.name),
+    enabled: p.enabled,
     mainDomain: asDomainName(p.mainDomain),
     aliases: p.aliases.map(asDomainName),
     upstreams: p.upstreams,
