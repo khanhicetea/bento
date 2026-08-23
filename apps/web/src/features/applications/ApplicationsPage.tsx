@@ -1,10 +1,30 @@
 import { useState } from "react";
 import type { Application } from "@bento/shared";
+import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
+import { ApplicationEditor } from "./ApplicationEditor.tsx";
+import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
 
 export function ApplicationsPage() {
-  const { data, error, loading, changing, reload, setEnabled } = useApplications();
+  const {
+    data,
+    error,
+    loading,
+    changing,
+    saving,
+    addingDatabase,
+    removing,
+    reload,
+    setEnabled,
+    saveApplication,
+    addDatabase,
+    removeApplication,
+    resetErrors,
+  } = useApplications();
   const [query, setQuery] = useState("");
+  const [editorTarget, setEditorTarget] = useState<Application | "create" | null>(null);
+  const [databaseTarget, setDatabaseTarget] = useState<Application | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Application | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const applications = (data?.applications ?? []).filter((app) =>
     `${app.slug} ${app.domain} ${app.aliases.join(" ")}`.toLowerCase().includes(normalizedQuery),
@@ -17,12 +37,24 @@ export function ApplicationsPage() {
           <h2>Your applications</h2>
           <p>The first domain feature uses dedicated, schema-validated oRPC procedures.</p>
         </div>
-        <button className="btn btn-outline" disabled={loading} onClick={() => void reload()}>
-          Refresh
-        </button>
+        <div className="section-actions">
+          <button className="btn btn-outline" disabled={loading} onClick={() => void reload()}>
+            Refresh
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={!data?.initialized || !data.phpVersions.length}
+            onClick={() => {
+              resetErrors();
+              setEditorTarget("create");
+            }}
+          >
+            + New application
+          </button>
+        </div>
       </div>
 
-      {error && (
+      {error && editorTarget === null && databaseTarget === null && removeTarget === null && (
         <div className="alert alert-error">
           <span>{error}</span>
         </div>
@@ -78,6 +110,18 @@ export function ApplicationsPage() {
                 app={app}
                 busy={changing === app.slug}
                 onToggle={() => setEnabled(app)}
+                onEdit={() => {
+                  resetErrors();
+                  setEditorTarget(app);
+                }}
+                onDatabases={() => {
+                  resetErrors();
+                  setDatabaseTarget(app);
+                }}
+                onRemove={() => {
+                  resetErrors();
+                  setRemoveTarget(app);
+                }}
               />
             ))}
             {!applications.length && (
@@ -87,12 +131,44 @@ export function ApplicationsPage() {
                 <p>
                   {query
                     ? "Try another app name or domain."
-                    : "Create one with the CLI; create forms will move here in the next application increment."}
+                    : "Create an application here to provision its runtime, domains, TLS, and database binding."}
                 </p>
               </div>
             )}
           </div>
         </>
+      )}
+      {data?.initialized && editorTarget !== null && (
+        <ApplicationEditor
+          key={editorTarget === "create" ? "create" : editorTarget.slug}
+          application={editorTarget === "create" ? null : editorTarget}
+          settings={data}
+          error={error}
+          saving={saving}
+          onClose={() => setEditorTarget(null)}
+          onSave={saveApplication}
+        />
+      )}
+      {data?.initialized && databaseTarget && (
+        <ApplicationDatabasesDialog
+          key={databaseTarget.slug}
+          application={databaseTarget}
+          settings={data}
+          error={error}
+          adding={addingDatabase}
+          onClose={() => setDatabaseTarget(null)}
+          onAdd={addDatabase}
+        />
+      )}
+      {removeTarget && (
+        <RemoveApplicationDialog
+          key={removeTarget.slug}
+          application={removeTarget}
+          error={error}
+          removing={removing}
+          onClose={() => setRemoveTarget(null)}
+          onRemove={removeApplication}
+        />
       )}
     </section>
   );
@@ -111,10 +187,16 @@ function ApplicationCard({
   app,
   busy,
   onToggle,
+  onEdit,
+  onDatabases,
+  onRemove,
 }: {
   app: Application;
   busy: boolean;
   onToggle: () => void;
+  onEdit: () => void;
+  onDatabases: () => void;
+  onRemove: () => void;
 }) {
   return (
     <article className="app-card">
@@ -135,10 +217,19 @@ function ApplicationCard({
       <div className="app-facts">
         <Fact label="Runtime" value={`PHP ${app.phpVersion}`} />
         <Fact label="Capacity" value={app.fpmProfile} />
+        <Fact label="Document root" value={app.documentRoot} />
         <Fact label="TLS" value={app.tls} />
-        <Fact label="Data" value={app.databases.map((db) => db.engine).join(", ") || "None"} />
       </div>
       <div className="app-tags">
+        {app.databases.map((database, index) => (
+          <span
+            className={`badge ${index === 0 ? "badge-primary" : "badge-outline"}`}
+            key={`${database.engine}:${database.service ?? database.file ?? index}`}
+          >
+            {database.engine}
+            {database.names.length > 0 ? ` · ${database.names.length}` : ""}
+          </span>
+        ))}
         {app.deployEnabled && <span className="badge badge-success">Deploys</span>}
         {app.accessLog && <span className="badge badge-outline">Access logs</span>}
         {app.aliases.slice(0, 2).map((alias) => (
@@ -152,6 +243,17 @@ function ApplicationCard({
           {busy && <span className="loading loading-spinner loading-xs" />}
           {app.enabled ? "Disable" : "Enable"}
         </button>
+        <div className="app-management-actions">
+          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onDatabases}>
+            Databases
+          </button>
+          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onEdit}>
+            Edit
+          </button>
+          <button className="btn btn-sm btn-ghost app-remove" disabled={busy} onClick={onRemove}>
+            Remove
+          </button>
+        </div>
       </div>
     </article>
   );
