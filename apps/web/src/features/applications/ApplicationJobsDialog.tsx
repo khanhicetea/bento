@@ -1,9 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AddCronJobInput, Application, JobsOverview } from "@bento/shared";
-import { Clock, Plus, RefreshCw, Terminal, Trash2, Wrench } from "lucide-react";
+import { Clock, FileUp, Plus, RefreshCw, Terminal, Trash2, Wrench } from "lucide-react";
 import { orpc } from "../../api/client.ts";
 import { JobLogsButton } from "../jobs/JobLogsButton.tsx";
+import { parseCronJobsYaml, parseWorkersYaml } from "./jobsYaml.ts";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -21,6 +22,36 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 
+const CRON_YAML_SAMPLE = `cleanup:
+  schedule: "0 2 * * *"
+  command:
+    - php
+    - artisan
+    - app:cleanup
+  # Optional defaults: timezone UTC, mode argv, output log
+  # timezone: Europe/London
+  # mode: argv
+  # output: log
+  # timeout: 300
+
+heartbeat:
+  schedule: "*/5 * * * *"
+  mode: shell
+  command: "php artisan heartbeat"`;
+
+const WORKERS_YAML_SAMPLE = `queue:
+  command:
+    - php
+    - artisan
+    - queue:work
+  # Optional defaults: autorestart true, stopsignal TERM, stopwaitsecs 10
+  # autorestart: true
+  # stopsignal: TERM
+  # stopwaitsecs: 10
+
+notifications:
+  command: [php, artisan, queue:work, "--queue=notifications"]`;
+
 type ApplicationJobsDialogProps = {
   application: Application;
   onClose: () => void;
@@ -31,6 +62,8 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
   const overviewKey = orpc.jobs.overview.queryKey({ input: {} });
   const overview = useQuery(orpc.jobs.overview.queryOptions({ input: {} }));
   const [commandMode, setCommandMode] = useState<AddCronJobInput["commandMode"]>("argv");
+  const [importing, setImporting] = useState<"cron" | "worker" | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const updateOverview = (updated: JobsOverview) => queryClient.setQueryData(overviewKey, updated);
   const addCron = useMutation(orpc.jobs.addCron.mutationOptions({ onSuccess: updateOverview }));
   const removeCron = useMutation(
@@ -44,12 +77,17 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
   const cronJobs = (data?.cronJobs ?? []).filter((job) => job.app === application.slug);
   const workers = (data?.workers ?? []).filter((worker) => worker.app === application.slug);
   const mutationError = addCron.error ?? removeCron.error ?? addWorker.error ?? removeWorker.error;
-  const error = overview.error ?? mutationError ?? data?.error;
+  const error = importError ?? overview.error ?? mutationError ?? data?.error;
   const busy =
-    addCron.isPending || removeCron.isPending || addWorker.isPending || removeWorker.isPending;
+    importing !== null ||
+    addCron.isPending ||
+    removeCron.isPending ||
+    addWorker.isPending ||
+    removeWorker.isPending;
 
   async function submitCron(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setImportError(null);
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const rawCommand = String(form.get("command") ?? "").trim();
@@ -81,6 +119,7 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
 
   async function submitWorker(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setImportError(null);
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const command = String(form.get("command") ?? "")
@@ -99,6 +138,54 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
       formElement.reset();
     } catch {
       // The mutation error is rendered in this dialog.
+    }
+  }
+
+  async function importCronJobs(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setImportError(null);
+    try {
+      const jobs = parseCronJobsYaml(
+        String(new FormData(formElement).get("yaml") ?? ""),
+        application.slug,
+      );
+      assertNamesAvailable(
+        jobs.map((job) => job.name),
+        cronJobs.map((job) => job.name),
+        "cron job",
+      );
+      setImporting("cron");
+      for (const job of jobs) await addCron.mutateAsync(job);
+      formElement.reset();
+    } catch (error) {
+      setImportError(messageOf(error));
+    } finally {
+      setImporting(null);
+    }
+  }
+
+  async function importWorkers(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setImportError(null);
+    try {
+      const importedWorkers = parseWorkersYaml(
+        String(new FormData(formElement).get("yaml") ?? ""),
+        application.slug,
+      );
+      assertNamesAvailable(
+        importedWorkers.map((worker) => worker.name),
+        workers.map((worker) => worker.name),
+        "worker",
+      );
+      setImporting("worker");
+      for (const worker of importedWorkers) await addWorker.mutateAsync(worker);
+      formElement.reset();
+    } catch (error) {
+      setImportError(messageOf(error));
+    } finally {
+      setImporting(null);
     }
   }
 
@@ -297,6 +384,13 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                     </Button>
                   </form>
                 </details>
+                <ImportYamlForm
+                  kind="cron jobs"
+                  pending={importing === "cron"}
+                  busy={busy}
+                  placeholder={CRON_YAML_SAMPLE}
+                  onSubmit={importCronJobs}
+                />
               </section>
 
               <section className="min-w-0 rounded-2xl border border-border bg-card p-5 shadow-sm max-[700px]:p-4">
@@ -425,6 +519,13 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                     </Button>
                   </form>
                 </details>
+                <ImportYamlForm
+                  kind="workers"
+                  pending={importing === "worker"}
+                  busy={busy}
+                  placeholder={WORKERS_YAML_SAMPLE}
+                  onSubmit={importWorkers}
+                />
               </section>
             </div>
           )}
@@ -437,6 +538,52 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ImportYamlForm({
+  kind,
+  pending,
+  busy,
+  placeholder,
+  onSubmit,
+}: {
+  kind: string;
+  pending: boolean;
+  busy: boolean;
+  placeholder: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}) {
+  return (
+    <details className="group mt-3 [&[open]>summary]:mb-4 [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+      <summary className={buttonVariants({ variant: "outline", size: "sm" })}>
+        <FileUp className="size-3.5" aria-hidden="true" /> Import {kind} from YAML
+      </summary>
+      <form
+        className="rounded-xl border border-border bg-muted/30 p-4"
+        onSubmit={(event) => void onSubmit(event)}
+      >
+        <fieldset disabled={busy}>
+          <label>
+            <FieldLabel>YAML definition</FieldLabel>
+            <Textarea
+              className="min-h-64 w-full bg-card font-mono text-xs"
+              name="yaml"
+              required
+              placeholder={placeholder}
+              aria-label={`YAML ${kind} definition`}
+            />
+            <FieldHint>
+              Add multiple entries in one mapping. Each top-level key is used as the name.
+            </FieldHint>
+          </label>
+        </fieldset>
+        <Button className="mt-4" size="sm" disabled={busy} type="submit">
+          {pending ? <Spinner /> : <FileUp className="size-3.5" aria-hidden="true" />}
+          Import {kind}
+        </Button>
+      </form>
+    </details>
   );
 }
 
@@ -481,6 +628,12 @@ function FieldLabel({ children }: { children: ReactNode }) {
 
 function FieldHint({ children }: { children: ReactNode }) {
   return <small className="mt-1.5 block text-xs text-muted-foreground">{children}</small>;
+}
+
+function assertNamesAvailable(names: string[], existingNames: string[], kind: string) {
+  const existing = new Set(existingNames);
+  const conflict = names.find((name) => existing.has(name));
+  if (conflict) throw new Error(`${kind} ${conflict} already exists for this application.`);
 }
 
 function messageOf(error: unknown): string {
