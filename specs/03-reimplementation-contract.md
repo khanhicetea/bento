@@ -184,6 +184,14 @@ Technical choices are evaluated in this order:
 **Trade-offs:** Compile/parity tests are slower and exclude intentionally nondeterministic certificates/metadata from byte comparison.  
 **Invariant:** Compiled mode works from an arbitrary current directory with an external stack root.
 
+### D-21 — Optional outbound Cloudflare tunnel beside Nginx
+
+**Context:** Operators may need Cloudflare-hosted ingress for Bento applications without publishing another stack listener or manually maintaining an overlay.
+**Decision:** Configure one `cloudflared:latest` service with an always-pull policy from `/operations`; share Nginx's network namespace, inject only a dedicated private token file, and force-recreate that service when the token changes.
+**Benefits:** No tunnel host port, consistent Nginx-origin addressing, browser-managed token replacement, and visible service health.
+**Trade-offs:** Cloudflare ingress rules are trusted remote configuration with all reachability available to Nginx; exposing the unauthenticated Bento web server requires Cloudflare Access and remains unsafe through an untrusted direct listener.
+**Invariant:** The token is absent from shared `.env`, API output, routine diagnostics, and host argv; unconfigured stacks do not start the tunnel service.
+
 ## 4. Reimplementation boundaries
 
 A conforming reimplementation MAY change libraries, file internals, or container build mechanics only if it preserves:
@@ -296,7 +304,8 @@ Tests/review MUST verify:
 - recursive permission walks use `lstat` and do not follow symlinks;
 - state/env/credentials/rclone/backup-result files use private modes;
 - database/admin/rclone/deploy/TLS secrets are absent from routine status, support bundles, and host argv;
-- generated diagnostics are redacted and bounded before persistence/sharing.
+- generated diagnostics are redacted and bounded before persistence/sharing;
+- Cloudflare tunnel tokens use a private operator source file and a dedicated generated environment, reject line injection, never enter shared service environments/host argv/API output, and token replacement force-recreates only `cloudflared`.
 
 ### A-07 — Data safety
 

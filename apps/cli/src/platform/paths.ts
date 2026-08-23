@@ -22,6 +22,8 @@ export function resolveStackPaths(stackRoot: string): StackPaths {
     postgresDir: join(generatedDir, "postgres"),
     runnerDir: join(generatedDir, "runner"),
     secretsDir: join(generatedDir, "secrets"),
+    operatorSecretsDir: join(root, "secrets"),
+    cloudflareTunnelTokenFile: join(root, "secrets", "cloudflare-tunnel-token"),
     backupsDir: join(root, "backups"),
     rcloneDir: join(root, "rclone"),
     rcloneConfigFile: join(root, "rclone", "rclone.conf"),

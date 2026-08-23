@@ -27,13 +27,19 @@ export function registerServeCommand(parser: YargsBuilder, state: RunState): Yar
     bind(state, async (argv: ArgsWith<"host" | "port" | "open">, ctx: CliContext) => {
       if (!Number.isInteger(argv.port) || argv.port < 0 || argv.port > 65535)
         throw new Error("--port must be an integer between 0 and 65535");
-      if (!["127.0.0.1", "localhost", "::1"].includes(argv.host)) {
+      const basicAuth = Bun.env.WEB_BASIC_AUTH;
+      if (!["127.0.0.1", "localhost", "::1"].includes(argv.host) && basicAuth === undefined) {
         ctx.log.warn(
           `web management is exposed on ${argv.host} without authentication; use only for temporary testing`,
         );
       }
       await ctx.store.migrate();
-      return await runWebServer(ctx, { hostname: argv.host, port: argv.port, open: argv.open });
+      return await runWebServer(ctx, {
+        hostname: argv.host,
+        port: argv.port,
+        open: argv.open,
+        ...(basicAuth !== undefined ? { basicAuth } : {}),
+      });
     }),
   );
 }

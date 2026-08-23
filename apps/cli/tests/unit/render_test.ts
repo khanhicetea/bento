@@ -91,10 +91,15 @@ bunRuntime.test("init + render produces startable topology files", async () => {
     assertEquals(composeBase.includes("driver: local"), true);
     assertEquals(composeBase.includes("max-size: 10m"), true);
     assertEquals(composeBase.includes("max-file: '3'"), true);
-    assertEquals(composeBase.match(/logging: \*/g)?.length, 3);
+    assertEquals(composeBase.match(/logging: \*/g)?.length, 4);
+    assertEquals(composeBase.includes("cloudflare/cloudflared:latest"), true);
+    assertEquals(composeBase.includes("network_mode: service:nginx"), true);
     assertEquals(composeBase.includes("rclone/rclone:1.68.2"), true);
     assertEquals(composeBase.includes("./backups:/backups:ro"), true);
     assertEquals(await platform.fs.exists(join(root, "rclone/rclone.conf")), true);
+    const tunnelEnv = join(root, "generated/secrets/cloudflare/tunnel.env");
+    assertEquals(await platform.fs.exists(tunnelEnv), true);
+    assertEquals((await platform.fs.stat(tunnelEnv)).mode & 0o777, 0o600);
     const defaultVhost = await platform.fs.readText(
       join(root, "generated/nginx/sites/00-default.conf"),
     );

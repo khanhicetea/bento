@@ -20,6 +20,7 @@ import type { StackComposeEnvironment } from "./stack_env.ts";
 const DEFAULT_COMPOSE_ENVIRONMENT: StackComposeEnvironment = {
   projectName: "bento",
   litestreamEnabled: false,
+  cloudflareTunnelEnabled: false,
   nginx: { hostNetwork: true, http3: false },
 };
 
@@ -262,6 +263,24 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
     if (ports.length > 0) nginx.ports = ports;
   }
 
+  const cloudflared: Record<string, unknown> = {
+    image: "cloudflare/cloudflared:latest",
+    pull_policy: "always",
+    restart: "unless-stopped",
+    logging,
+    depends_on: ["nginx"],
+    // Share Nginx's exact network namespace in both host and bridge ingress modes.
+    // Cloudflare origins should therefore target the same addresses Nginx can reach.
+    network_mode: "service:nginx",
+    command: ["tunnel", "--no-autoupdate", "run"],
+    env_file: ["./generated/secrets/cloudflare/tunnel.env"],
+    read_only: true,
+    cap_drop: ["ALL"],
+    security_opt: ["no-new-privileges:true"],
+    tmpfs: ["/tmp"],
+    ...(!environment.cloudflareTunnelEnabled ? { profiles: ["cloudflare-tunnel-disabled"] } : {}),
+  };
+
   const doc = {
     "x-log-common": logging,
     name: environment.projectName,
@@ -278,6 +297,7 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
     },
     services: {
       nginx,
+      cloudflared,
       redis: {
         image: "redis:7-alpine",
         restart: "unless-stopped",

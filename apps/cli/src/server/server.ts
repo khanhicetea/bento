@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { extname, join } from "node:path";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { CliContext } from "../commands/context.ts";
@@ -18,7 +19,12 @@ import webScript from "../../../web/dist/app.js" with { type: "file" };
 // @ts-expect-error generated browser asset
 import webStyle from "../../../web/dist/app.css" with { type: "file" };
 
-export type ServeOptions = { hostname: string; port: number; open: boolean };
+export type ServeOptions = {
+  hostname: string;
+  port: number;
+  open: boolean;
+  basicAuth?: string;
+};
 
 type ActiveTerminal = {
   session: TerminalSession;
@@ -46,6 +52,11 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
     "app.css": webStyle,
   };
 
+  const expectedAuthorization =
+    options.basicAuth === undefined
+      ? undefined
+      : `Basic ${Buffer.from(options.basicAuth, "utf8").toString("base64")}`;
+
   const maxTerminals = 4;
   let pendingTerminalCount = 0;
   const activeTerminals = new Map<string, ActiveTerminal>();
@@ -65,6 +76,21 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
     port: options.port,
     idleTimeout: 255,
     async fetch(request) {
+      if (
+        expectedAuthorization !== undefined &&
+        !matchesBasicAuthorization(request.headers.get("authorization"), expectedAuthorization)
+      ) {
+        return withSecurity(
+          new Response("Authentication required", {
+            status: 401,
+            headers: {
+              "cache-control": "no-store",
+              "www-authenticate": 'Basic realm="Bento", charset="UTF-8"',
+            },
+          }),
+        );
+      }
+
       const url = new URL(request.url);
       if (url.pathname === "/healthz") return withSecurity(Response.json({ ok: true }));
       if (url.pathname === "/api/terminal" && request.method === "POST") {
@@ -281,6 +307,16 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
   await Promise.all([...activeTerminals.keys()].map(removeTerminal));
   await server.stop();
   return 0;
+}
+
+export function matchesBasicAuthorization(
+  authorization: string | null,
+  expectedAuthorization: string,
+): boolean {
+  if (authorization === null) return false;
+  const actual = Buffer.from(authorization, "utf8");
+  const expected = Buffer.from(expectedAuthorization, "utf8");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 async function readBoundedRequestText(request: Request, maxBytes: number): Promise<string | null> {

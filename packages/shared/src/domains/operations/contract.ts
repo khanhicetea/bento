@@ -1,6 +1,7 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  cloudflareTunnelInputSchema,
   operationResultSchema,
   operationsBackupResultSchema,
   operationsDoctorSchema,
@@ -17,6 +18,7 @@ export const operationsContract = oc.router({
     .input(z.object({ service: z.string().min(1).max(100), confirmation: z.string() }))
     .output(operationResultSchema),
   apply: oc.input(z.object({})).output(operationResultSchema),
+  setupCloudflareTunnel: oc.input(cloudflareTunnelInputSchema).output(operationResultSchema),
   backup: oc.input(z.object({})).output(operationsBackupResultSchema),
   logs: oc
     .input(

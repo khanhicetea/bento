@@ -11,6 +11,28 @@ import {
   webContract,
 } from "@bento/shared";
 import { commandDisplay } from "../../src/server/domains/jobs/router.ts";
+import { matchesBasicAuthorization } from "../../src/server/server.ts";
+
+describe("web server authentication", () => {
+  test("accepts only the exact Basic authorization value", () => {
+    const expected = `Basic ${Buffer.from("operator:secret").toString("base64")}`;
+
+    expect(matchesBasicAuthorization(expected, expected)).toBe(true);
+    expect(matchesBasicAuthorization(null, expected)).toBe(false);
+    expect(
+      matchesBasicAuthorization(
+        `Basic ${Buffer.from("operator:wrong").toString("base64")}`,
+        expected,
+      ),
+    ).toBe(false);
+    expect(
+      matchesBasicAuthorization(
+        `basic ${Buffer.from("operator:secret").toString("base64")}`,
+        expected,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("web API contract", () => {
   test("is composed from explicit domain routers", () => {

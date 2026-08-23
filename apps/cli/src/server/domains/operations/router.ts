@@ -9,6 +9,11 @@ import { runDoctor } from "../../../services/doctor.ts";
 import { runStackMaintenance } from "../../../services/maintenance.ts";
 import { buildStatus } from "../../../services/status.ts";
 import { redact } from "../../../ui/output.ts";
+import {
+  validateCloudflareTunnelToken,
+  writeCloudflareTunnelToken,
+} from "../../../services/cloudflare_tunnel.ts";
+import { emptyReloadPlan } from "../../../domain/reload.ts";
 
 const os = implement(operationsContract);
 
@@ -58,6 +63,37 @@ export function createOperationsRouter(ctx: CliContext) {
       const state = await ctx.store.load();
       await ctx.render.apply(state);
       return completed("Configuration rendered, validated, and applied", ctx);
+    }),
+    setupCloudflareTunnel: os.setupCloudflareTunnel.handler(async ({ input }) => {
+      const token = validateCloudflareTunnelToken(input.token);
+      const state = await ctx.store.load();
+      const tokenPath = ctx.platform.paths.paths.cloudflareTunnelTokenFile;
+      const release = await ctx.platform.lock.exclusive(ctx.platform.paths.paths.renderLock);
+      try {
+        const previousToken = (await ctx.platform.fs.exists(tokenPath))
+          ? await ctx.platform.fs.readText(tokenPath)
+          : undefined;
+        await writeCloudflareTunnelToken(ctx.platform, token);
+        try {
+          await ctx.render.apply(state, {
+            alreadyLocked: true,
+            renderOnly: true,
+            reloadPlan: emptyReloadPlan(),
+          });
+        } catch (error) {
+          if (previousToken === undefined) await ctx.platform.fs.remove(tokenPath);
+          else await ctx.platform.fs.atomicWriteText(tokenPath, previousToken, 0o600);
+          throw error;
+        }
+        const result = await ctx.platform.process.run(
+          await composeArgs(ctx.platform, state, ["up", "-d", "--force-recreate", "cloudflared"]),
+          { cwd: ctx.stackRoot, timeoutMs: 120_000 },
+        );
+        if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || result.stdout));
+      } finally {
+        await release();
+      }
+      return completed("Cloudflare tunnel configured and started", ctx);
     }),
     backup: os.backup.handler(async () => {
       const state = await ctx.store.load();
@@ -147,6 +183,7 @@ async function operationsOverview(ctx: CliContext): Promise<OperationsOverview> 
       initialized: true,
       stackRoot: ctx.stackRoot,
       stackName: status.stackName,
+      cloudflareTunnel: status.cloudflareTunnel,
       roles: status.roles,
       runtimes: status.phpVersions,
       ...(status.generation ? { generation: status.generation } : {}),
@@ -168,6 +205,7 @@ function empty(stackRoot: string, error?: string): OperationsOverview {
   return {
     initialized: false,
     stackRoot,
+    cloudflareTunnel: { configured: false },
     roles: [],
     runtimes: [],
     counts: { applications: 0, cronJobs: 0, workers: 0, proxies: 0 },

@@ -23,6 +23,37 @@ describe("web terminal boundary", () => {
         }),
       ),
     ).toBe(false);
+    expect(
+      isSameOriginRequest(
+        new Request("http://control.example/api/terminal", {
+          headers: {
+            origin: "https://control.example",
+            "x-forwarded-proto": "https",
+          },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isSameOriginRequest(
+        new Request("http://control.example/api/terminal", {
+          headers: {
+            origin: "https://attacker.example",
+            "x-forwarded-host": "attacker.example",
+            "x-forwarded-proto": "https",
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSameOriginRequest(
+        new Request("http://control.example/api/terminal", {
+          headers: {
+            origin: "https://control.example",
+            "x-forwarded-proto": "https, http",
+          },
+        }),
+      ),
+    ).toBe(false);
     expect(isSameOriginRequest(new Request("http://127.0.0.1:8080/api/terminal"))).toBe(false);
   });
 

@@ -25,6 +25,10 @@ import {
 import { StateStore } from "../../src/services/state_store.ts";
 import { generateAll } from "../../src/services/generate.ts";
 import { deployWebhookInstructions } from "../../src/services/deploy.ts";
+import {
+  validateCloudflareTunnelToken,
+  writeCloudflareTunnelToken,
+} from "../../src/services/cloudflare_tunnel.ts";
 
 function testPlatform(root: string): Platform {
   const fs = createFileSystem();
@@ -186,6 +190,54 @@ bunRuntime.test(
       assertStringIncludes(
         deployWebhookInstructions(provisioned.app, "secret", 18443),
         "URL: https://alpha.test:18443/_bento/deploy",
+      );
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
+
+bunRuntime.test("Cloudflare tunnel shares only Nginx's network namespace", () => {
+  const platform = testPlatform("/tmp/cloudflare-compose");
+  const doc = baseCompose(platform, {
+    projectName: "tunnel-stack",
+    cloudflareTunnelEnabled: true,
+    nginx: { hostNetwork: false, http3: false },
+  });
+  const cloudflared = (doc.services as Record<string, Record<string, unknown>>).cloudflared!;
+  assertEquals(cloudflared.image, "cloudflare/cloudflared:latest");
+  assertEquals(cloudflared.pull_policy, "always");
+  assertEquals(cloudflared.network_mode, "service:nginx");
+  assertEquals(cloudflared.depends_on, ["nginx"]);
+  assertEquals(cloudflared.env_file, ["./generated/secrets/cloudflare/tunnel.env"]);
+  assertEquals("networks" in cloudflared, false);
+  assertEquals("profiles" in cloudflared, false);
+});
+
+bunRuntime.test(
+  "Cloudflare token uses a private source file instead of shared stack env",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-cloudflare-token-" });
+    try {
+      const platform = testPlatform(root);
+      await new StateStore(platform).init({ projectName: "tunnel-stack" });
+      const token = validateCloudflareTunnelToken("eyJhbGciOiJIUzI1NiJ9.valid-signature");
+      await writeCloudflareTunnelToken(platform, token);
+      const environment = await loadStackComposeEnvironment(platform);
+      assertEquals(environment.cloudflareTunnelEnabled, true);
+      assertEquals(
+        await platform.fs.readText(platform.paths.paths.cloudflareTunnelTokenFile),
+        `${token}\n`,
+      );
+      const env = await platform.fs.readText(platform.paths.paths.envFile);
+      assertEquals(env.includes(token), false);
+      const mode =
+        (await platform.fs.stat(platform.paths.paths.cloudflareTunnelTokenFile)).mode & 0o777;
+      assertEquals(mode, 0o600);
+      await assertRejects(
+        () => writeCloudflareTunnelToken(platform, "valid-token-value-that-injects\nOTHER=value"),
+        Error,
+        "invalid Cloudflare tunnel token",
       );
     } finally {
       await bunRuntime.remove(root, { recursive: true });

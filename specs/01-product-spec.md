@@ -162,6 +162,8 @@ Nginx MUST:
 
 TLS changes SHOULD reload only Nginx. ACME requires operator-controlled public DNS and reachable challenge traffic. External certificate renewal remains operator-owned.
 
+The local web control plane MAY configure one outbound-only Cloudflare Tunnel sidecar. The sidecar MUST share Nginx's network namespace, publish no host ports, receive only its dedicated tunnel token, and appear as an operations service role when configured. Setting or replacing the token MUST validate and store it in a private stack file, regenerate its restricted runtime environment, and force-recreate only the tunnel service. The token MUST never be returned by the API or included in host argv or routine diagnostics. Cloudflare hostname/origin policy remains operator-owned; exposing the unauthenticated Bento web server requires a trusted Cloudflare Access policy and does not make direct non-loopback binding safe.
+
 ### 7.4 PHP runtime and capacity
 
 Each managed PHP version MUST produce:
@@ -298,11 +300,15 @@ Add a managed PostgreSQL version, update the app with a PostgreSQL binding, and 
 
 Enable webhook deploy, register the secret with the source-control provider, replace the skipped hook, submit a valid signed payload, observe immediate enqueue, drain under app identity, inspect result/log, and verify OPcache reset behavior.
 
-### 8.6 Prove recovery
+### 8.6 Add private tunnel ingress
+
+From `/operations`, paste a remotely managed Cloudflare Tunnel token, observe the `cloudflared` role start, and configure Cloudflare public hostnames to target Nginx origins. Replace the token and verify only the tunnel container is recreated. If publishing the Bento web control plane, keep its direct listener loopback-safe and require Cloudflare Access before untrusted clients can reach it.
+
+### 8.7 Prove recovery
 
 Run a complete logical batch, upload artifacts off-host, inspect schedule status, restore one relational dump to a new verification database, validate application invariants, and only then consider an exact-confirmed replacement. Verify Litestream through temporary restore/export separately.
 
-### 8.7 Clone or recover a stack
+### 8.8 Clone or recover a stack
 
 Export to an external empty directory, protect all archives, import into an empty destination with compatible images/architecture, override project identity and ingress when cloning on one host, then verify state, routes, jobs, volumes, and applications.
 
@@ -311,7 +317,7 @@ Export to an external empty directory, protect all archives, import into an empt
 Bento intentionally does not provide:
 
 - multi-host orchestration, HA, clustering, autoscaling, or Kubernetes;
-- a browser admin UI, public API, remote control plane, or resident daemon;
+- an authenticated public management API, remotely hosted control plane, or resident daemon; the optional local web UI remains loopback-safe by default;
 - one container per app, hostile-tenant isolation, or per-app CPU/memory quotas in shared PHP roles;
 - managed arbitrary-language application runtimes beyond reverse proxying;
 - zero-downtime guarantees for deploy, apply, restore, export, or transfer;

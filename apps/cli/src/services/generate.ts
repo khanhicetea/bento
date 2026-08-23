@@ -26,6 +26,7 @@ import {
   resolveSslForSite,
 } from "./tls.ts";
 import { validateUpstreams } from "./proxy.ts";
+import { loadCloudflareTunnelToken } from "./cloudflare_tunnel.ts";
 import {
   formatSqliteVacuumSchedule,
   resolveSqliteVacuumSchedules,
@@ -43,6 +44,13 @@ export async function generateAll(
   const composeEnvironment = await loadStackComposeEnvironment(platform);
   const composeFiles = assembleComposeDocuments(platform, state, composeEnvironment);
   for (const f of composeFiles) files.push(f);
+  const cloudflareToken = (await loadCloudflareTunnelToken(platform)) ?? "";
+  files.push({
+    relPath: "secrets/cloudflare/tunnel.env",
+    content: withManagedMarker(`TUNNEL_TOKEN=${cloudflareToken}\n`),
+    mode: 0o600,
+    managed: true,
+  });
 
   // Nginx core + sites
   files.push(...(await generateNginx(platform, state)));

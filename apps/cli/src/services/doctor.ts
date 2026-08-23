@@ -672,10 +672,12 @@ async function addSecretModeChecks(platform: Platform, state: DesiredState, add:
     paths.envFile,
     paths.stateDb,
     paths.rcloneConfigFile,
+    paths.cloudflareTunnelTokenFile,
     join(paths.certsDir, "boot.key"),
   ];
   const privateDirectories = [
     paths.secretsDir,
+    paths.operatorSecretsDir,
     paths.rcloneDir,
     join(paths.certsDir, "private-ca"),
     join(paths.certsDir, "private-ca", "sites"),

@@ -24,6 +24,7 @@ Docker Compose data plane
 
 Internet -> Nginx -> per-app PHP-FPM Unix socket -> private DB/Redis
                  \-> reverse-proxy upstream
+Cloudflare edge -> outbound cloudflared tunnel -> Nginx network namespace
 PHP runner -> app Supercronic + deploy drain + app workers
 ```
 
@@ -106,6 +107,7 @@ Mutable stack data MUST never be inferred from or stored beside the executable.
 | Redis      |                  One per stack | Persistent              | Shared/ACL cache + named volume                    |
 | Litestream |          Zero or one per stack | Persistent when enabled | Watches explicit replicated SQLite files           |
 | rclone     | Per invocation/artifact upload | Ephemeral profile       | Backup-only egress; config + read-only backups     |
+| cloudflared |          Zero or one per stack | Persistent when enabled | Outbound tunnel sharing Nginx's network namespace  |
 
 Apps are not Compose services. Apps assigned to a PHP version share that version's FPM and runner containers.
 
@@ -194,6 +196,8 @@ Nginx has two modes:
 
 Normally one host-mode stack owns 80/443. Additional stacks require bridge mode, distinct publications, or internal-only ingress.
 
+An optional `cloudflared` service uses `network_mode: service:nginx`, publishes no ports, and receives only a generated environment file containing its tunnel token. It therefore resolves loopback and reachable origins exactly as Nginx does: host loopback in host mode and the Nginx container/private network in bridge mode. Remote tunnel ingress rules are trusted operator configuration and can target anything reachable from that namespace; Bento does not claim per-origin network isolation. Application hostnames SHOULD target Nginx on local port 80 or 443. A loopback-bound `bento serve` origin is directly reachable only when Nginx uses host mode; any control-plane hostname MUST be protected by Cloudflare Access because Bento's web server has no application authentication.
+
 ### 7.2 PHP request path
 
 ```text
@@ -240,7 +244,7 @@ Every load reconstructs the complete in-memory model and applies the strict doma
 
 | Class             | Paths                                                                             | Treatment                                             |
 | ----------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Desired/source    | `.env`, `state.db`                                                                | Sensitive; SQLite-transactional; mode `0600`; back up |
+| Desired/source    | `.env`, `state.db`, `secrets/cloudflare-tunnel-token`                              | Sensitive; private modes; back up                      |
 | Operator custom   | `custom/`, `overlays/`                                                            | Durable/trusted input; preserve/review                |
 | Generated         | `generated/`, `docker/`, `helpers/`                                               | Rebuildable; never edit                               |
 | Durable bind data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, `rclone/`, `logs/` | Sensitive; protect and back up                        |
@@ -357,7 +361,7 @@ Compose overlays and custom templates are trusted operator input and can expose 
 
 ### 10.2 Secrets
 
-Sensitive assets include `.env`, `state.db`, app credentials/SSH keys, deploy HMAC, database client files, TLS/CA keys, rclone config, dumps, logs, exports, and ACME state.
+Sensitive assets include `.env`, `state.db`, the Cloudflare tunnel token, app credentials/SSH keys, deploy HMAC, database client files, TLS/CA keys, rclone config, dumps, logs, exports, and ACME state.
 
 Secrets SHOULD flow through mode-restricted files or subprocess stdin, not host argv. Routine output and support bundles MUST redact known secret values. Archive sharing always requires operator review.
 
@@ -400,5 +404,6 @@ No behavior may imply distributed atomicity or zero downtime where the architect
 12. Destructive volume/service removal is not automated.
 13. Runner replicas remain one.
 14. Source and compiled distributions use one entrypoint and equivalent embedded assets/behavior.
+15. The optional Cloudflare tunnel publishes no host ports, shares Nginx's network namespace, and receives no stack secret other than its dedicated token.
 
 See [the technical decisions and acceptance contract](03-reimplementation-contract.md) for rationale and verification.

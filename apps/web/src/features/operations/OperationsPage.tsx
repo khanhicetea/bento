@@ -29,6 +29,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { CloudflareTunnelCard } from "./CloudflareTunnelCard.tsx";
 
 export function OperationsPage() {
   const query = useQuery(orpc.operations.overview.queryOptions({ input: {} }));
@@ -198,6 +199,8 @@ export function OperationsPage() {
             <OperationsControls stackName={data.stackName ?? "bento"} />
           </div>
 
+          <CloudflareTunnelCard configured={data.cloudflareTunnel.configured} />
+
           <SectionHeading
             eyebrow="Service health"
             title="Service roles"
@@ -363,7 +366,15 @@ type Runtime = {
 
 type OperationsRole = {
   name: string;
-  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql" | "postgres" | "litestream";
+  kind:
+    | "nginx"
+    | "redis"
+    | "php-fpm"
+    | "php-runner"
+    | "mysql"
+    | "postgres"
+    | "litestream"
+    | "cloudflare-tunnel";
   state: "running" | "stopped" | "unknown" | "config-ready";
   uptimeSeconds?: number;
   detail?: string;

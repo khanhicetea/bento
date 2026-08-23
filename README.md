@@ -302,6 +302,8 @@ bento --stack /var/lib/bento serve --port 9090 --open
 
 `serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. A non-loopback `--host` is temporarily available for testing and has no authentication, so do not expose it to an untrusted network. The UI covers the TUI workflows plus the remaining browser-safe command catalog. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
 
+The `/operations` page can set or replace a remotely managed Cloudflare Tunnel token. Bento stores it privately under `secrets/`, generates a token-only container environment, and force-recreates the `cloudflared` service in Nginx's network namespace; the service then appears under **Service roles**. Configure application public hostnames in Cloudflare with an origin such as `http://localhost:80`. A loopback `bento serve` origin is reachable this way in host ingress mode, but the control plane has no built-in authentication: require a trusted Cloudflare Access policy and never expose its direct listener to an untrusted network.
+
 ### Logical database backup and restore
 
 ```bash
@@ -438,7 +440,7 @@ Unit, contract, and integration tests cover state validation, domain uniqueness,
 
 Bento intentionally does **not** provide:
 
-- multi-host / Kubernetes / remote control plane / browser admin UI
+- multi-host / Kubernetes / hosted remote control plane / authenticated public management API
 - one container per app (apps share PHP version containers; isolation is identity-based)
 - unconfirmed destructive deletion of app homes or databases (`app prune` is CLI-only, lists every known part, and requires typing the literal `delete`)
 - automated MySQL or PostgreSQL version/volume deletion (`mysql remove`, `postgres remove`, and `compose down -v` are blocked)

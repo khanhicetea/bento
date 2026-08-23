@@ -59,7 +59,16 @@ export function isSameOriginRequest(request: Request): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const requestUrl = new URL(request.url);
+    const requestOrigin = new URL(origin).origin;
+    if (requestOrigin === requestUrl.origin) return true;
+
+    // TLS-terminating proxies such as Cloudflare Tunnel preserve the public Host but
+    // forward to Bento over HTTP. Accept that public scheme without trusting a
+    // forwarded host, which would weaken the host part of the origin check.
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    if (forwardedProto !== "http" && forwardedProto !== "https") return false;
+    return requestOrigin === new URL(`${forwardedProto}://${requestUrl.host}`).origin;
   } catch {
     return false;
   }

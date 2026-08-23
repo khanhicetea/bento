@@ -73,6 +73,14 @@ The host service must listen on an address reachable from Docker's host gateway,
 
 Blank HTTP and HTTPS publication settings mean Nginx has no directly published host endpoint. They do not configure an external load balancer or connect separate stacks automatically; those require an operator-owned Compose overlay or other network setup.
 
+## Cloudflare Tunnel
+
+The `/operations` page can configure one remotely managed Cloudflare Tunnel token. Bento stores the source token in a mode-`0600` stack file, gives `cloudflared` a generated environment containing only that token, and force-recreates the sidecar whenever the token changes. The sidecar publishes no host ports and appears in the operations **Service roles** list when configured.
+
+`cloudflared` shares Nginx's exact network namespace. Configure Cloudflare application hostnames with an Nginx origin such as `http://localhost:80`; the same address reaches Nginx in both ingress modes. Remote tunnel rules are trusted operator configuration and can reach anything Nginx can reach.
+
+In host mode, the shared namespace can also reach a loopback-bound `bento serve` at `http://localhost:8080`. In bridge mode, loopback is the Nginx container instead, so a host control-plane origin needs a separately reachable and carefully firewalled address. Bento's web control plane has no built-in authentication. Put every control-plane hostname behind a trusted Cloudflare Access policy, and do not make the direct listener available to an untrusted network.
+
 ## Choose a reverse-proxy upstream
 
 Choose the address from Nginx's network namespace, not from the browser's or operator shell's perspective:

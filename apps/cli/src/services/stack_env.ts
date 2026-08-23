@@ -5,6 +5,7 @@
 import type { Platform } from "../platform/mod.ts";
 import { secretError, validationError } from "../domain/errors.ts";
 import { DEFAULT_ACME_URL } from "./tls.ts";
+import { loadCloudflareTunnelToken } from "./cloudflare_tunnel.ts";
 
 export const DEFAULT_COMPOSE_PROJECT_NAME = "bento";
 
@@ -19,6 +20,7 @@ export type StackComposeEnvironment = {
   projectName: string;
   nginx: NginxComposeEnvironment;
   litestreamEnabled?: boolean;
+  cloudflareTunnelEnabled?: boolean;
 };
 
 /** Validate the stable, explicit Compose identity used to prefix stack resources. */
@@ -104,6 +106,7 @@ export async function loadStackComposeEnvironment(
   }
   return {
     projectName,
+    cloudflareTunnelEnabled: (await loadCloudflareTunnelToken(platform)) !== undefined,
     litestreamEnabled: parseEnvBoolean(
       env.BENTO_LITESTREAM_ENABLED,
       false,

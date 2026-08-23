@@ -50,7 +50,7 @@ Press `Ctrl+C` to stop following; this does not stop any service. Limit the outp
 bento compose -- logs --tail 100 nginx
 ```
 
-Use the service name shown by `status` or `compose -- ps`, such as `nginx`, `php85`, `php85-runner`, `mysql84`, or `redis`. Application files also have logs under `/var/lib/bento/homes/<app>/logs/`; Nginx files are under `/var/lib/bento/logs/nginx/`.
+Use the service name shown by `status` or `compose -- ps`, such as `nginx`, `cloudflared`, `php85`, `php85-runner`, `mysql84`, or `redis`. `cloudflared` appears only after a tunnel token is configured from the web control plane's `/operations` page. Application files also have logs under `/var/lib/bento/homes/<app>/logs/`; Nginx files are under `/var/lib/bento/logs/nginx/`.
 
 ## Run an application command
 

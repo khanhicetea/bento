@@ -2,7 +2,16 @@ import { z } from "zod";
 
 const roleSchema = z.object({
   name: z.string(),
-  kind: z.enum(["nginx", "redis", "php-fpm", "php-runner", "mysql", "postgres", "litestream"]),
+  kind: z.enum([
+    "nginx",
+    "redis",
+    "php-fpm",
+    "php-runner",
+    "mysql",
+    "postgres",
+    "litestream",
+    "cloudflare-tunnel",
+  ]),
   state: z.enum(["running", "stopped", "unknown", "config-ready"]),
   uptimeSeconds: z.number().int().nonnegative().optional(),
   detail: z.string().optional(),
@@ -13,6 +22,7 @@ export const operationsOverviewSchema = z.object({
   stackRoot: z.string(),
   error: z.string().optional(),
   stackName: z.string().optional(),
+  cloudflareTunnel: z.object({ configured: z.boolean() }),
   roles: z.array(roleSchema),
   runtimes: z.array(
     z.object({
@@ -39,6 +49,15 @@ export const operationsOverviewSchema = z.object({
   }),
   warnings: z.array(z.string()),
   notes: z.array(z.string()),
+});
+
+export const cloudflareTunnelInputSchema = z.object({
+  token: z
+    .string()
+    .trim()
+    .min(20)
+    .max(4096)
+    .regex(/^[A-Za-z0-9._~+/=-]+$/, "invalid Cloudflare tunnel token"),
 });
 
 export const operationResultSchema = z.object({

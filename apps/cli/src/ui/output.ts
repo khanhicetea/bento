@@ -85,7 +85,7 @@ export function redact(text: string): string {
     text
       .replace(/(password["']?\s*[:=]\s*["']?)([^"'\s]+)/gi, "$1***")
       .replace(/(secret["']?\s*[:=]\s*["']?)([^"'\s]+)/gi, "$1***")
-      .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD)=)(\S+)/g, "$1***")
+      .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD|TUNNEL_TOKEN)=)(\S+)/g, "$1***")
       .replace(/((?:CREATE|ALTER)\s+ROLE[\s\S]{0,200}?\sPASSWORD\s+(?:E)?["'])([^"']+)/gi, "$1***")
       .replace(/((?:postgres(?:ql)?):\/\/[^:\s/]+:)([^@\s/]+)(@)/gi, "$1***$3")
       // PostgreSQL's .pgpass records are `host:port:database:user:password`.

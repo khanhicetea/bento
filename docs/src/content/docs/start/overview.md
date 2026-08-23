@@ -16,7 +16,7 @@ Bento is designed for a technically capable developer or small team that:
 - owns and administers one Linux VPS or dedicated server;
 - runs several PHP applications, such as Laravel, Symfony, WordPress, or legacy PHP;
 - wants Nginx, PHP, relational databases, Redis, jobs, workers, TLS, and backups managed as one stack;
-- accepts a command-line workflow rather than a browser control panel;
+- accepts a local CLI and optional loopback browser control plane rather than a hosted platform;
 - wants reproducible configuration without adopting Kubernetes or a cloud platform.
 
 Bento can also place Nginx and TLS in front of non-PHP HTTP services that are reachable from the host. It does not run arbitrary application runtimes for those services; it acts as their reverse proxy.
@@ -52,7 +52,7 @@ Internet -> Nginx -> app PHP-FPM socket or reverse-proxy upstream
 Bento deliberately optimizes for a comprehensible single-server platform. It does **not** provide:
 
 - multi-host scheduling, clustering, high availability, or horizontal autoscaling;
-- Kubernetes integration, a remote control plane, a browser administration UI, or a public management API;
+- Kubernetes integration, a hosted remote control plane, or an authenticated public management API;
 - one container per app or hard isolation between mutually untrusted tenants;
 - general-purpose hosting for non-PHP runtimes beyond reverse proxying to an existing service;
 - an application-specific Git checkout, release, or rollback strategy;

@@ -13,7 +13,15 @@ import { sqliteContainerPath } from "./sqlite_paths.ts";
 
 export type RoleStatus = {
   name: string;
-  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "mysql" | "postgres" | "litestream";
+  kind:
+    | "nginx"
+    | "redis"
+    | "php-fpm"
+    | "php-runner"
+    | "mysql"
+    | "postgres"
+    | "litestream"
+    | "cloudflare-tunnel";
   /** observed | expected-only */
   state: "running" | "stopped" | "unknown" | "config-ready";
   /** Best-effort elapsed seconds since the running container started. */
@@ -24,6 +32,7 @@ export type RoleStatus = {
 export type StatusReport = {
   stackRoot: string;
   stackName: string;
+  cloudflareTunnel: { configured: boolean };
   ingress: {
     mode: "host" | "bridge";
     httpPort?: number;
@@ -169,7 +178,13 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
     runningNames === null
       ? new Map<string, number>()
       : await observeServiceUptimes(platform, state, runningNames);
-  const roles = buildExpectedRoles(state, runningNames, notes, uptimes);
+  const roles = buildExpectedRoles(
+    state,
+    runningNames,
+    notes,
+    uptimes,
+    composeEnvironment.cloudflareTunnelEnabled === true,
+  );
 
   // Database health is probed only for observed running containers. Stopped services
   // remain down/config-ready rather than being reported as healthy.
@@ -188,6 +203,7 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
   return {
     stackRoot: platform.paths.paths.root,
     stackName: composeEnvironment.projectName,
+    cloudflareTunnel: { configured: composeEnvironment.cloudflareTunnelEnabled === true },
     ingress: {
       mode: nginxEnvironment.hostNetwork ? "host" : "bridge",
       ...(nginxEnvironment.httpPort !== undefined ? { httpPort: nginxEnvironment.httpPort } : {}),
@@ -324,6 +340,7 @@ function buildExpectedRoles(
   running: Set<string> | null,
   notes: string[],
   uptimes: Map<string, number>,
+  cloudflareTunnelEnabled: boolean,
 ): RoleStatus[] {
   const roles: RoleStatus[] = [];
   const push = (name: string, kind: RoleStatus["kind"]) => {
@@ -355,6 +372,7 @@ function buildExpectedRoles(
   };
 
   push("nginx", "nginx");
+  if (cloudflareTunnelEnabled) push("cloudflared", "cloudflare-tunnel");
   push("redis", "redis");
   for (const v of state.phpVersions) {
     push(v.service, "php-fpm");
@@ -568,7 +586,7 @@ function redactStatusText(text: string): string {
     .replace(/(password["']?\s*[:=]\s*["']?)([^"'\s,}\]]+)/gi, "$1***")
     .replace(/(secret["']?\s*[:=]\s*["']?)([^"'\s,}\]]+)/gi, "$1***")
     .replace(/(hmacSecret["']?\s*:\s*["'])([^"']+)/g, "$1***")
-    .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD)=)(\S+)/g, "$1***")
+    .replace(/((?:MYSQL_PWD|PGPASSWORD|POSTGRES_PASSWORD|TUNNEL_TOKEN)=)(\S+)/g, "$1***")
     .replace(/((?:CREATE|ALTER)\s+ROLE[\s\S]{0,200}?\sPASSWORD\s+(?:E)?["'])([^"']+)/gi, "$1***")
     .replace(/((?:postgres(?:ql)?):\/\/[^:\s/]+:)([^@\s/]+)(@)/gi, "$1***$3")
     .replace(/(^|\n)([^:\n]*:[^:\n]*:[^:\n]*:[^:\n]*:)([^\n]+)/g, "$1$2***");

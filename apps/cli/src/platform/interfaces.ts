@@ -113,6 +113,9 @@ export type StackPaths = {
   postgresDir: string;
   runnerDir: string;
   secretsDir: string;
+  /** Private operator-owned credentials that are sources for generated runtime secrets. */
+  operatorSecretsDir: string;
+  cloudflareTunnelTokenFile: string;
   backupsDir: string;
   /** Private rclone configuration directory, bind-mounted only into the rclone sidecar. */
   rcloneDir: string;

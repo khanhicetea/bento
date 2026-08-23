@@ -10,7 +10,7 @@ Bento runs several PHP apps on one operator-owned Linux host. It deliberately le
 ## Platform and availability
 
 - No multi-host scheduling, clustering, high availability, autoscaling, or Kubernetes.
-- No browser administration UI, public management API, remote control plane, or resident Bento daemon.
+- The local browser UI is unauthenticated and loopback-safe by default; there is no authenticated public management API, hosted remote control plane, or resident Bento daemon.
 - Nginx is the only supported public service; arbitrary languages are reverse-proxy targets, not managed app runtimes.
 - Bento does not promise zero-downtime application deploys, database transfer, restore, or stack export.
 
