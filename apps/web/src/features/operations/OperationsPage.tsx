@@ -6,6 +6,7 @@ import {
   StackNotReady,
 } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
+import { OperationsControls, ServiceRestartButton } from "./OperationsControls.tsx";
 
 export function OperationsPage() {
   const query = useQuery(orpc.operations.overview.queryOptions({ input: {} }));
@@ -66,6 +67,7 @@ export function OperationsPage() {
             </div>
           )}
           <div className="card-grid">
+            <OperationsControls stackName={data.stackName ?? "bento"} />
             <article className="panel">
               <h2>Stack</h2>
               <div className="detail-list">
@@ -107,6 +109,9 @@ export function OperationsPage() {
                         {role.state}
                       </span>
                       {role.detail && <p>{role.detail}</p>}
+                      <div className="role-actions">
+                        <ServiceRestartButton service={role.name} />
+                      </div>
                     </div>
                   ))}
                 </div>

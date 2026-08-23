@@ -40,4 +40,35 @@ export const operationsOverviewSchema = z.object({
   notes: z.array(z.string()),
 });
 
+export const operationResultSchema = z.object({
+  message: z.string(),
+  completedAt: z.string(),
+});
+
+export const stackActionInputSchema = z.object({
+  action: z.enum(["start", "stop", "restart"]),
+  confirmation: z.string().optional(),
+});
+
+export const operationsLogsSchema = z.object({
+  lines: z.array(z.string()),
+  truncated: z.boolean(),
+});
+
+export const operationsBackupResultSchema = operationResultSchema.extend({
+  artifacts: z.array(
+    z.object({
+      engine: z.enum(["mysql", "postgres", "sqlite"]),
+      database: z.string(),
+      bytes: z.number().int().nonnegative(),
+      path: z.string(),
+    }),
+  ),
+});
+
+export const operationsMaintenanceResultSchema = operationResultSchema.extend({
+  removed: z.number().int().nonnegative(),
+  notes: z.array(z.string()),
+});
+
 export type OperationsOverview = z.infer<typeof operationsOverviewSchema>;

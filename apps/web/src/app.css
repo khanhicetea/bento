@@ -900,3 +900,33 @@ pre {
     transition: none !important;
   }
 }
+
+.operations-actions,
+.operations-deploy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.operations-deploy .input {
+  min-width: 16rem;
+}
+.operations-logs {
+  max-height: 24rem;
+  overflow: auto;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: #111827;
+  color: #e5e7eb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.75rem;
+}
+.role-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
