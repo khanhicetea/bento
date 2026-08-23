@@ -213,6 +213,8 @@ bunRuntime.test(
     const dockerfile = await bunRuntime.readTextFile(
       new URL("../../templates/docker/php/Dockerfile", import.meta.url),
     );
+    assertEquals(dockerfile.includes("php:${PHP_VERSION}-fpm-bookworm"), true);
+    assertEquals(dockerfile.includes("php:${PHP_VERSION}-fpm AS"), false);
     assertEquals(dockerfile.includes("libpq-dev"), true);
     assertEquals(dockerfile.includes("pdo_pgsql"), true);
     assertEquals(dockerfile.includes("pgsql"), true);

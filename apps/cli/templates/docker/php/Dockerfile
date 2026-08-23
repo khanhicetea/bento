@@ -11,7 +11,10 @@ FROM node:${NODE_VERSION}-bookworm-slim AS node-artifact
 
 # Compile PHP extensions away from the runtime image. Development headers,
 # compilers, PEAR sources, and apt metadata remain in this stage.
-FROM php:${PHP_VERSION}-fpm AS php-extension-builder
+# Keep the PHP build stage on the same Debian release as the runtime stage.
+# Unqualified PHP tags can advance to a newer Debian/glibc release independently,
+# producing binaries that cannot start in the Bookworm runtime image.
+FROM php:${PHP_VERSION}-fpm-bookworm AS php-extension-builder
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
