@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   addApplicationDatabaseInputSchema,
   applicationListSchema,
+  jobsOverviewSchema,
   removeApplicationInputSchema,
   saveApplicationInputSchema,
   setApplicationEnabledInputSchema,
@@ -10,8 +11,43 @@ import {
 
 describe("web API contract", () => {
   test("is composed from explicit domain routers", () => {
-    expect(Object.keys(webContract)).toEqual(["system", "applications"]);
+    expect(Object.keys(webContract)).toEqual([
+      "system",
+      "applications",
+      "data",
+      "routing",
+      "jobs",
+      "operations",
+    ]);
     expect("execute" in webContract).toBe(false);
+  });
+
+  test("keeps configured command arguments out of the jobs response", () => {
+    const overview = {
+      initialized: true,
+      stackRoot: "/srv/bento",
+      cronJobs: [
+        {
+          name: "tick",
+          app: "demo",
+          schedule: "* * * * *",
+          timezone: "UTC",
+          command: "php (+2 args)",
+          commandMode: "argv" as const,
+          output: "log" as const,
+          enabled: true,
+        },
+      ],
+      workers: [],
+      deploys: [],
+    };
+    expect(jobsOverviewSchema.parse(overview)).toEqual(overview);
+    expect(() =>
+      jobsOverviewSchema.parse({
+        ...overview,
+        cronJobs: [{ ...overview.cronJobs[0], command: ["php", "secret"] }],
+      }),
+    ).toThrow();
   });
 
   test("validates the applications feature boundary", () => {

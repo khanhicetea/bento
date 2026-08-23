@@ -2,11 +2,11 @@ import { useEffect, useState, type PropsWithChildren } from "react";
 import { Link, useLocation } from "wouter";
 
 const navigation = [
-  { href: "/applications", icon: "◫", label: "Applications", available: true },
-  { href: "/data", icon: "◆", label: "Data & runtimes", available: false },
-  { href: "/routing", icon: "↗", label: "Routing & TLS", available: false },
-  { href: "/jobs", icon: "↻", label: "Jobs & workers", available: false },
-  { href: "/operations", icon: "✓", label: "Operations", available: false },
+  { href: "/applications", icon: "◫", label: "Applications" },
+  { href: "/data", icon: "◆", label: "Data & runtimes" },
+  { href: "/routing", icon: "↗", label: "Routing & TLS" },
+  { href: "/jobs", icon: "↻", label: "Jobs & workers" },
+  { href: "/operations", icon: "✓", label: "Operations" },
 ] as const;
 
 export function AppShell({ children }: PropsWithChildren) {
@@ -49,7 +49,6 @@ export function AppShell({ children }: PropsWithChildren) {
             >
               <span className="nav-icon">{item.icon}</span>
               <span>{item.label}</span>
-              {!item.available && <small className="nav-soon">soon</small>}
             </Link>
           ))}
         </nav>
