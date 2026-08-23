@@ -1,6 +1,8 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import type { AddApplicationDatabaseInput, Application, ApplicationList } from "@bento/shared";
 import { Database, Plus, Server } from "lucide-react";
+import { orpc } from "../../api/client.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -14,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
 
 type ApplicationDatabasesDialogProps = {
@@ -25,6 +28,15 @@ type ApplicationDatabasesDialogProps = {
   onAdd: (input: AddApplicationDatabaseInput) => Promise<Application>;
 };
 
+type DatabaseBinding = Application["databases"][number];
+type DatabaseGroup = {
+  key: string;
+  label: string;
+  service?: string;
+  engine: DatabaseBinding["engine"];
+  bindings: Array<{ binding: DatabaseBinding; primary: boolean }>;
+};
+
 export function ApplicationDatabasesDialog({
   application,
   settings,
@@ -33,11 +45,20 @@ export function ApplicationDatabasesDialog({
   onClose,
   onAdd,
 }: ApplicationDatabasesDialogProps) {
+  const client = useQueryClient();
+  const backup = useMutation(
+    orpc.data.backup.mutationOptions({
+      onSuccess: async () => {
+        await client.invalidateQueries({ queryKey: orpc.data.overview.key() });
+      },
+    }),
+  );
   const defaultSelection = settings.defaults
     ? `${settings.defaults.databaseEngine}:${settings.defaults.databaseService}`
     : "sqlite";
   const [selection, setSelection] = useState(defaultSelection);
   const relational = selection.startsWith("mysql:") || selection.startsWith("postgres:");
+  const groups = groupDatabases(application, settings);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,13 +67,19 @@ export function ApplicationDatabasesDialog({
       AddApplicationDatabaseInput["engine"],
       string | undefined,
     ];
-    const databaseName = String(form.get("databaseName") ?? "").trim();
+    const databasePart = String(form.get("databaseName") ?? "").trim();
+    const databaseName =
+      relational && databasePart
+        ? `${application.slug}_${databasePart}`
+        : relational
+          ? application.slug
+          : undefined;
     try {
       await onAdd({
         slug: application.slug,
         engine,
         service,
-        databaseName: databaseName || undefined,
+        databaseName,
       });
       onClose();
     } catch {
@@ -63,18 +90,18 @@ export function ApplicationDatabasesDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && !adding && onClose()}>
       <DialogContent
-        className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[960px] gap-0 overflow-y-auto p-0 sm:!max-w-[960px]"
+        className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[860px] gap-0 overflow-y-auto p-0 sm:!max-w-[860px]"
         showCloseButton={!adding}
       >
-        <div className="border-b border-border bg-muted/30 px-7 py-6 pr-16 max-[600px]:px-4 max-[600px]:py-5">
-          <DialogHeader className="gap-3">
+        <div className="border-b border-border bg-muted/30 px-7 py-5 pr-16 max-[600px]:px-4 max-[600px]:py-4">
+          <DialogHeader className="gap-2">
             <div className="flex items-center gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
                 <Database className="size-5" aria-hidden="true" />
               </span>
               <div className="min-w-0">
                 <DialogTitle className="text-xl">Application databases</DialogTitle>
-                <DialogDescription className="mt-1 flex flex-wrap items-center gap-1.5">
+                <DialogDescription className="mt-1">
                   Manage data bindings for{" "}
                   <strong className="font-medium text-foreground">{application.slug}</strong>
                 </DialogDescription>
@@ -83,87 +110,36 @@ export function ApplicationDatabasesDialog({
           </DialogHeader>
         </div>
 
-        <div className="space-y-7 px-7 py-6 max-[600px]:space-y-6 max-[600px]:px-4 max-[600px]:py-5">
+        <div className="space-y-5 px-7 py-5 max-[600px]:space-y-4 max-[600px]:px-4 max-[600px]:py-4">
           {error && <Alert variant="destructive">{error}</Alert>}
-
-          <section aria-labelledby="current-databases-heading">
-            <div className="mb-3 flex items-end justify-between gap-4">
-              <div>
-                <h3 id="current-databases-heading" className="m-0 text-base font-semibold">
-                  Current bindings
-                </h3>
-                <p className="m-0 mt-1 text-sm text-muted-foreground">
-                  Services and files currently available to this application.
-                </p>
-              </div>
-              <Badge variant="secondary">
-                {application.databases.length}{" "}
-                {application.databases.length === 1 ? "binding" : "bindings"}
-              </Badge>
-            </div>
-            <div className="grid gap-3">
-              {application.databases.map((binding, index) => (
-                <section
-                  className="flex items-start justify-between gap-5 rounded-xl border border-border bg-card p-4 shadow-sm max-[600px]:flex-col"
-                  key={`${binding.engine}:${binding.service ?? binding.file ?? index}`}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                      <Server className="size-4" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <strong className="text-sm">{databaseLabel(binding.engine)}</strong>
-                        {index === 0 && (
-                          <Badge className="px-1.5 py-0 text-[0.68rem]">Primary</Badge>
-                        )}
-                      </div>
-                      <p className="m-0 mt-1 break-words text-sm text-muted-foreground">
-                        {binding.service ?? binding.file ?? "Local application database"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-1.5 max-[600px]:justify-start">
-                    {binding.names.map((name) => (
-                      <Badge variant="outline" key={name}>
-                        {name}
-                      </Badge>
-                    ))}
-                    {!binding.names.length && binding.file && (
-                      <Badge variant="outline">SQLite file</Badge>
-                    )}
-                  </div>
-                </section>
-              ))}
-              {!application.databases.length && (
-                <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
-                  No database bindings yet. Add one below to connect storage to this application.
-                </div>
-              )}
-            </div>
-          </section>
+          {backup.error && <Alert variant="destructive">{messageOf(backup.error)}</Alert>}
+          {backup.data && (
+            <Alert className="border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
+              Backup created: {backup.data.artifacts.map((item) => item.name).join(", ")}
+            </Alert>
+          )}
 
           <form onSubmit={(event) => void submit(event)}>
             <fieldset
               disabled={adding}
-              className="rounded-2xl border border-border bg-muted/30 p-5 max-[600px]:p-4"
+              className="rounded-xl border border-border bg-muted/30 p-3.5 max-[600px]:p-3"
             >
-              <div className="mb-5 flex items-start gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-card text-primary shadow-sm">
+              <div className="mb-3 flex items-center gap-2.5">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-card text-primary shadow-sm">
                   <Plus className="size-4" aria-hidden="true" />
                 </span>
                 <div>
-                  <h3 className="m-0 text-base font-semibold">Attach a database</h3>
-                  <p className="m-0 mt-1 text-sm text-muted-foreground">
-                    Add a managed service, SQLite file, or Litestream-backed file.
+                  <h3 className="m-0 text-sm font-semibold">Add a database</h3>
+                  <p className="m-0 mt-0.5 text-xs text-muted-foreground">
+                    Choose a managed service or local file.
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 max-[600px]:grid-cols-1">
+              <div
+                className={`grid gap-3 ${relational ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "sm:grid-cols-[minmax(0,1fr)_auto]"}`}
+              >
                 <label>
-                  <span className="mb-1.5 block text-sm font-medium">
-                    Engine or managed service
-                  </span>
+                  <span className="sr-only">Database service</span>
                   <NativeSelect
                     className="w-full bg-card"
                     value={selection}
@@ -178,53 +154,167 @@ export function ApplicationDatabasesDialog({
                       </NativeSelectOption>
                     ))}
                     <NativeSelectOption value="sqlite">SQLite file</NativeSelectOption>
-                    <NativeSelectOption value="litestream">
-                      SQLite file with Litestream
-                    </NativeSelectOption>
+                    <NativeSelectOption value="litestream">SQLite + Litestream</NativeSelectOption>
                   </NativeSelect>
                 </label>
                 {relational ? (
                   <label>
-                    <span className="mb-1.5 block text-sm font-medium">
-                      Database name{" "}
-                      <small className="font-normal text-muted-foreground">(required)</small>
-                    </span>
-                    <Input
-                      className="w-full bg-card"
-                      name="databaseName"
-                      required
-                      pattern={`${application.slug}(_[A-Za-z0-9_]+)?`}
-                      defaultValue={`${application.slug}_`}
-                    />
-                    <small className="mt-1.5 block text-xs text-muted-foreground">
-                      Use {application.slug} or a name beginning with {application.slug}_
-                    </small>
+                    <span className="sr-only">Database name</span>
+                    <div className="flex min-w-0">
+                      <span className="flex shrink-0 items-center rounded-l-md border border-r-0 border-border bg-muted px-2 text-sm text-muted-foreground">
+                        {application.slug}_
+                      </span>
+                      <Input
+                        className="min-w-0 rounded-l-none bg-card"
+                        name="databaseName"
+                        pattern="[A-Za-z0-9_]*"
+                        placeholder="database_name"
+                        aria-label="Database name suffix"
+                      />
+                    </div>
                   </label>
                 ) : (
-                  <div className="flex items-center rounded-lg border border-dashed border-border bg-card/50 px-3 text-sm text-muted-foreground">
-                    SQLite creates an independent file for this application.
-                  </div>
+                  <p className="m-0 self-center text-xs text-muted-foreground sm:hidden">
+                    Creates an independent file for this application.
+                  </p>
                 )}
+                <Button type="submit" className="sm:self-start">
+                  {adding && <Spinner />}
+                  Add database
+                </Button>
               </div>
-              <p className="m-0 mt-4 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-                Selecting an existing service adds a database name to that binding. Selecting a new
-                engine or service creates another binding. Existing data is never removed here.
-              </p>
             </fieldset>
-            <DialogFooter className="mt-5">
-              <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
-                Close
-              </Button>
-              <Button type="submit" disabled={adding}>
-                {adding && <Spinner />}
-                Add database
-              </Button>
-            </DialogFooter>
           </form>
 
+          <section aria-labelledby="databases-heading">
+            <h3 id="databases-heading" className="mb-3 text-base font-semibold">
+              Databases
+            </h3>
+            <div className="grid gap-3">
+              {groups.map((group) => (
+                <section
+                  className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+                  key={group.key}
+                >
+                  <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                        <Server className="size-4" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <h4 className="m-0 truncate text-sm font-semibold">{group.label}</h4>
+                        {group.service && (
+                          <p className="m-0 mt-0.5 truncate text-xs text-muted-foreground">
+                            {group.service}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {group.bindings.some((item) => item.primary) && (
+                      <Badge className="shrink-0 px-1.5 py-0 text-[0.68rem]">Primary</Badge>
+                    )}
+                  </div>
+                  <div className="overflow-auto">
+                    <Table className="min-w-[460px]">
+                      <TableBody>
+                        {group.bindings.flatMap(({ binding }) => {
+                          if (isManagedEngine(binding.engine)) {
+                            const engine = binding.engine;
+                            return binding.names.map((name) => {
+                              const backingUp =
+                                backup.isPending && backup.variables?.database === name;
+                              return (
+                                <TableRow key={`${binding.engine}:${binding.service}:${name}`}>
+                                  <TableCell>
+                                    <strong>{name}</strong>
+                                  </TableCell>
+                                  <TableCell className="w-px whitespace-nowrap text-right">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={backup.isPending}
+                                      onClick={() =>
+                                        backup.mutate({
+                                          app: application.slug,
+                                          database: name,
+                                          engine,
+                                        })
+                                      }
+                                    >
+                                      {backingUp && <Spinner />}
+                                      {backingUp ? "Backing up" : "Backup"}
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            });
+                          }
+
+                          if (binding.engine === "sqlite") {
+                            const database = binding.file ?? "Local application database";
+                            const backingUp =
+                              backup.isPending && backup.variables?.database === database;
+                            return (
+                              <TableRow key={`${binding.engine}:${database}`}>
+                                <TableCell>
+                                  <code>{database}</code>
+                                </TableCell>
+                                <TableCell className="w-px whitespace-nowrap text-right">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={backup.isPending || !binding.file}
+                                    onClick={() =>
+                                      binding.file &&
+                                      backup.mutate({
+                                        app: application.slug,
+                                        database: binding.file,
+                                        engine: "sqlite",
+                                      })
+                                    }
+                                  >
+                                    {backingUp && <Spinner />}
+                                    {backingUp ? "Backing up" : "Backup"}
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
+
+                          return (
+                            <TableRow
+                              key={`${binding.engine}:${binding.service ?? binding.file ?? "local"}`}
+                            >
+                              <TableCell>
+                                <code>{binding.file ?? "Local application database"}</code>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+              ))}
+              {!groups.length && (
+                <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+                  No databases attached yet.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <DialogFooter className="mt-1">
+            <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
+              Close
+            </Button>
+          </DialogFooter>
+
           <p className="m-0 text-xs leading-relaxed text-muted-foreground">
-            Database removal and permanent data deletion remain intentionally unavailable in the web
-            control plane.
+            Database removal and permanent data deletion remain unavailable in the web control
+            plane.
           </p>
         </div>
       </DialogContent>
@@ -232,9 +322,46 @@ export function ApplicationDatabasesDialog({
   );
 }
 
+function groupDatabases(application: Application, settings: ApplicationList): DatabaseGroup[] {
+  const groups = new Map<string, DatabaseGroup>();
+
+  application.databases.forEach((binding, index) => {
+    const managed =
+      binding.engine === "mysql" || binding.engine === "postgres"
+        ? settings.databaseServices.find(
+            (service) => service.engine === binding.engine && service.service === binding.service,
+          )
+        : undefined;
+    const key = managed ? `${binding.engine}:${binding.service}` : binding.engine;
+    const label = managed
+      ? `${databaseLabel(binding.engine)} ${managed.version}`
+      : databaseLabel(binding.engine);
+    const service = managed?.service;
+    const group = groups.get(key) ?? {
+      key,
+      label,
+      service,
+      engine: binding.engine,
+      bindings: [],
+    };
+    group.bindings.push({ binding, primary: index === 0 });
+    groups.set(key, group);
+  });
+
+  return [...groups.values()];
+}
+
+function isManagedEngine(engine: DatabaseBinding["engine"]): engine is "mysql" | "postgres" {
+  return engine === "mysql" || engine === "postgres";
+}
+
 function databaseLabel(engine: string): string {
   if (engine === "mysql") return "MySQL";
   if (engine === "postgres") return "PostgreSQL";
   if (engine === "litestream") return "SQLite + Litestream";
   return "SQLite";
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

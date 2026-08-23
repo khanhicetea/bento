@@ -2,6 +2,7 @@ import { basename, relative, resolve } from "node:path";
 import { implement } from "@orpc/server";
 import { dataContract, type DatabaseRuntime, type DataOverview } from "@bento/shared";
 import type { CliContext } from "../../../commands/context.ts";
+import type { AppDatabaseBinding } from "../../../domain/state.ts";
 import { runDatabaseBackup, runDatabaseRestore } from "../../../services/database_backup.ts";
 import { queryDatabaseSizes, queryProcesslist } from "../../../services/mysql.ts";
 import { queryPostgresActivity, queryPostgresDatabaseSizes } from "../../../services/postgres.ts";
@@ -19,10 +20,18 @@ export function createDataRouter(ctx: CliContext) {
     runtime: os.runtime.handler(async ({ input }) => await databaseRuntime(ctx, input)),
     backup: os.backup.handler(async ({ input }) => {
       const state = await ctx.store.load();
+      const database =
+        input.engine === "sqlite"
+          ? state.apps[input.app]?.databases.find(
+              (binding): binding is Extract<AppDatabaseBinding, { engine: "sqlite" }> =>
+                binding.engine === "sqlite" && binding.file.path === input.database,
+            )?.file.id
+          : input.database;
+      if (!database) throw new Error("database binding was not found");
       const artifacts = await runDatabaseBackup(ctx.platform, state, {
         scope: "database",
         slug: input.app,
-        database: input.database,
+        database,
         engine: input.engine,
         compress: "zstd",
       });
@@ -237,7 +246,7 @@ async function listBackups(ctx: CliContext): Promise<DataOverview["backups"]> {
       if (!rel || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) continue;
       const stat = await ctx.platform.fs.stat(path);
       if (stat.isDirectory) pending.push(path);
-      if (stat.isFile && /\.sql(?:\.gz|\.zst|\.zstd)$/i.test(name))
+      if (stat.isFile && /\.(?:sql|sqlite)(?:\.gz|\.zst|\.zstd)?$/i.test(name))
         found.push({
           name: rel,
           bytes: stat.size,
