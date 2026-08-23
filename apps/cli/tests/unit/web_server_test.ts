@@ -45,6 +45,7 @@ describe("web API contract", () => {
       "operations",
     ]);
     expect("execute" in webContract).toBe(false);
+    expect("restartWorker" in webContract.jobs).toBe(true);
   });
 
   test("returns complete job commands as redacted display strings", () => {

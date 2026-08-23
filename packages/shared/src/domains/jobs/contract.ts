@@ -7,6 +7,7 @@ import {
   jobLogsSchema,
   jobsOverviewSchema,
   removeAppJobInputSchema,
+  workerRestartResultSchema,
 } from "./schema.ts";
 
 export const jobsContract = oc.router({
@@ -16,6 +17,7 @@ export const jobsContract = oc.router({
   removeCron: oc.input(removeAppJobInputSchema).output(jobsOverviewSchema),
   addWorker: oc.input(addWorkerInputSchema).output(jobsOverviewSchema),
   removeWorker: oc.input(removeAppJobInputSchema).output(jobsOverviewSchema),
+  restartWorker: oc.input(removeAppJobInputSchema).output(workerRestartResultSchema),
 });
 
 export type JobsContract = typeof jobsContract;

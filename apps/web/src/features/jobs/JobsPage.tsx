@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { JobsOverview } from "@bento/shared";
 import {
   CalendarClock,
@@ -39,6 +39,7 @@ type JobsView = "all" | "cron" | "workers" | "deploys";
 
 export function JobsPage() {
   const query = useQuery(orpc.jobs.overview.queryOptions({ input: {} }));
+  const restartWorker = useMutation(orpc.jobs.restartWorker.mutationOptions());
   const [search, setSearch] = useState("");
   const [view, setView] = useState<JobsView>("all");
   const [applicationFilter, setApplicationFilter] = useState("all");
@@ -133,9 +134,13 @@ export function JobsPage() {
         </Button>
       </div>
 
-      {query.error && (
+      {(query.error || restartWorker.error) && (
         <Alert className="mt-6" variant="destructive">
-          <span>Unable to refresh the workload inventory: {messageOf(query.error)}</span>
+          <span>
+            {restartWorker.error
+              ? `Unable to restart worker: ${messageOf(restartWorker.error)}`
+              : `Unable to refresh the workload inventory: ${messageOf(query.error)}`}
+          </span>
         </Alert>
       )}
 
@@ -268,7 +273,19 @@ export function JobsPage() {
                 >
                   {workers.length ? (
                     workers.map((worker) => (
-                      <WorkerCard key={`${worker.app}:${worker.name}`} worker={worker} />
+                      <WorkerCard
+                        key={`${worker.app}:${worker.name}`}
+                        worker={worker}
+                        restarting={
+                          restartWorker.isPending &&
+                          restartWorker.variables?.app === worker.app &&
+                          restartWorker.variables.name === worker.name
+                        }
+                        restartDisabled={restartWorker.isPending}
+                        onRestart={() =>
+                          restartWorker.mutate({ app: worker.app, name: worker.name })
+                        }
+                      />
                     ))
                   ) : (
                     <CollectionEmpty>
@@ -462,7 +479,17 @@ function groupByApplication(jobs: JobItem<"cronJobs">[]) {
   return Array.from(groups.entries());
 }
 
-function WorkerCard({ worker }: { worker: JobItem<"workers"> }) {
+function WorkerCard({
+  worker,
+  restarting,
+  restartDisabled,
+  onRestart,
+}: {
+  worker: JobItem<"workers">;
+  restarting: boolean;
+  restartDisabled: boolean;
+  onRestart: () => void;
+}) {
   return (
     <article className="flex min-w-0 flex-col rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm">
       <ItemHeader
@@ -481,8 +508,23 @@ function WorkerCard({ worker }: { worker: JobItem<"workers"> }) {
           Stop {worker.stopsignal} · {worker.stopwaitsecs}s
         </Badge>
       </div>
-      <div className="mt-4 flex justify-end border-t border-border pt-4">
-        <JobLogsButton app={worker.app} name={worker.name} kind="worker" />
+      <div className="mt-4 flex justify-end gap-2 border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={restartDisabled}
+          onClick={onRestart}
+        >
+          {restarting ? <Spinner /> : <RefreshCw className="size-3.5" aria-hidden="true" />}
+          Restart
+        </Button>
+        <JobLogsButton
+          app={worker.app}
+          name={worker.name}
+          kind="worker"
+          disabled={restartDisabled}
+        />
       </div>
     </article>
   );

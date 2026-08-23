@@ -73,17 +73,24 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
   const removeWorker = useMutation(
     orpc.jobs.removeWorker.mutationOptions({ onSuccess: updateOverview }),
   );
+  const restartWorker = useMutation(orpc.jobs.restartWorker.mutationOptions());
   const data = overview.data;
   const cronJobs = (data?.cronJobs ?? []).filter((job) => job.app === application.slug);
   const workers = (data?.workers ?? []).filter((worker) => worker.app === application.slug);
-  const mutationError = addCron.error ?? removeCron.error ?? addWorker.error ?? removeWorker.error;
+  const mutationError =
+    addCron.error ??
+    removeCron.error ??
+    addWorker.error ??
+    removeWorker.error ??
+    restartWorker.error;
   const error = importError ?? overview.error ?? mutationError ?? data?.error;
   const busy =
     importing !== null ||
     addCron.isPending ||
     removeCron.isPending ||
     addWorker.isPending ||
-    removeWorker.isPending;
+    removeWorker.isPending ||
+    restartWorker.isPending;
 
   async function submitCron(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -411,6 +418,23 @@ export function ApplicationJobsDialog({ application, onClose }: ApplicationJobsD
                           {worker.name}
                         </strong>
                         <div className="flex shrink-0 items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() =>
+                              restartWorker.mutate({ app: application.slug, name: worker.name })
+                            }
+                          >
+                            {restartWorker.isPending &&
+                            restartWorker.variables?.name === worker.name ? (
+                              <Spinner />
+                            ) : (
+                              <RefreshCw className="size-3.5" aria-hidden="true" />
+                            )}
+                            Restart
+                          </Button>
                           <JobLogsButton
                             app={application.slug}
                             name={worker.name}

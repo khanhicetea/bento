@@ -55,6 +55,11 @@ export const jobLogsSchema = z.object({
   truncated: z.boolean(),
 });
 
+export const workerRestartResultSchema = z.object({
+  message: z.string(),
+  completedAt: z.string(),
+});
+
 export const addCronJobInputSchema = z
   .object({
     app: z.string().trim().min(1).max(63),
@@ -94,3 +99,4 @@ export type AddCronJobInput = z.infer<typeof addCronJobInputSchema>;
 export type AddWorkerInput = z.infer<typeof addWorkerInputSchema>;
 export type JobsOverview = z.infer<typeof jobsOverviewSchema>;
 export type RemoveAppJobInput = z.infer<typeof removeAppJobInputSchema>;
+export type WorkerRestartResult = z.infer<typeof workerRestartResultSchema>;

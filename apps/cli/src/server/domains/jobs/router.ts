@@ -6,7 +6,12 @@ import { isBentoError, notFoundError, type BentoError } from "../../../domain/er
 import type { ReloadPlan } from "../../../domain/reload.ts";
 import type { DesiredState } from "../../../domain/state.ts";
 import { addCronJob, removeCronJob } from "../../../services/cron.ts";
-import { addWorker, removeWorker } from "../../../services/worker.ts";
+import {
+  addWorker,
+  buildWorkerControlPlan,
+  controlWorker,
+  removeWorker,
+} from "../../../services/worker.ts";
 import { redact } from "../../../ui/output.ts";
 
 const os = implement(jobsContract);
@@ -102,6 +107,20 @@ export function createJobsRouter(ctx: CliContext) {
           await saveAndApply(ctx, result.state, result.reloadPlan);
         });
         return await jobsOverview(ctx);
+      } catch (error) {
+        throw asORPCError(error);
+      }
+    }),
+    restartWorker: os.restartWorker.handler(async ({ input }) => {
+      try {
+        const state = await ctx.store.load();
+        const plan = buildWorkerControlPlan(state, input.app, input.name, "restart");
+        const result = await controlWorker(ctx.platform, plan);
+        if (result.code !== 0) throw new Error("Worker restart failed");
+        return {
+          message: `Worker ${input.app}/${input.name} restarted`,
+          completedAt: ctx.platform.clock.nowIso(),
+        };
       } catch (error) {
         throw asORPCError(error);
       }
