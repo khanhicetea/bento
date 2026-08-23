@@ -118,6 +118,12 @@ body {
   width: 1.3rem;
   text-align: center;
 }
+.nav-soon {
+  margin-left: auto;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
 .sidebar-foot {
   margin-top: auto;
   display: flex;
@@ -160,6 +166,14 @@ body {
   padding: clamp(1rem, 3vw, 2.5rem);
   max-width: 1500px;
   margin: auto;
+}
+.loading-state {
+  display: flex;
+  min-height: 45vh;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  opacity: 0.7;
 }
 .hero {
   background: linear-gradient(
