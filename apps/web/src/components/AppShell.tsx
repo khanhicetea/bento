@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 
 const navigation = [
   { href: "/applications", icon: "◫", label: "Applications" },
-  { href: "/data", icon: "◆", label: "Data & runtimes" },
+  { href: "/databases", icon: "▤", label: "Databases" },
   { href: "/routing", icon: "↗", label: "Routing & TLS" },
   { href: "/jobs", icon: "↻", label: "Jobs & workers" },
   { href: "/operations", icon: "✓", label: "Operations" },

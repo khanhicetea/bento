@@ -519,6 +519,130 @@ pre {
 .remove-app-box {
   max-width: 560px;
 }
+.database-service-list {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+.database-service-card {
+  border: 1px solid var(--color-base-300);
+}
+.database-service-heading,
+.database-service-title,
+.database-service-actions {
+  display: flex;
+  align-items: center;
+}
+.database-service-heading {
+  justify-content: space-between;
+  gap: 1rem;
+}
+.database-service-title,
+.database-service-actions {
+  gap: 0.65rem;
+}
+.database-service-heading p,
+.database-service-title h2 {
+  margin: 0;
+}
+.database-section-head {
+  margin: 2rem 0 0.85rem;
+}
+.database-section-head h2,
+.database-section-head p {
+  margin: 0;
+}
+.database-section-head p {
+  margin-top: 0.25rem;
+  opacity: 0.65;
+}
+.database-listing {
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+}
+.database-listing .table :where(th, td) {
+  padding-block: 0.75rem;
+}
+.database-size {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.database-action-column {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+.database-table-state {
+  height: 5rem;
+  text-align: center;
+  opacity: 0.65;
+}
+.database-manager-body {
+  display: grid;
+  gap: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-base-300);
+}
+.database-observation-grid,
+.database-recovery-grid,
+.database-restore-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.database-observation-grid > section,
+.database-recovery-grid > section {
+  min-width: 0;
+}
+.database-observation-grid .card-body,
+.database-recovery-grid .card-body {
+  gap: 0.85rem;
+}
+.database-manager-body code {
+  display: block;
+  max-width: 24rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.database-process-meta {
+  display: block;
+  margin-top: 0.15rem;
+  opacity: 0.6;
+}
+.database-runtime-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 9rem;
+}
+.text-right {
+  text-align: right;
+}
+.database-empty-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.database-policy-panel {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 2rem;
+  margin-top: 1rem;
+}
+.database-policy-panel h2,
+.database-policy-panel p {
+  margin: 0;
+}
+.database-policy-details .detail-row:first-child {
+  border-top: 0;
+}
+.database-no-bindings {
+  text-align: center;
+}
+
 .app-databases-box {
   max-width: 760px;
 }
@@ -773,7 +897,24 @@ pre {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+@media (max-width: 900px) {
+  .database-observation-grid,
+  .database-recovery-grid,
+  .database-restore-fields,
+  .database-policy-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 760px) {
+  .database-service-heading,
+  .database-empty-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .database-service-actions {
+    flex-wrap: wrap;
+  }
   .app-shell {
     display: block;
   }

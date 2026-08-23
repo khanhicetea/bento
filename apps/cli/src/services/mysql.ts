@@ -154,7 +154,7 @@ export async function execMysqlSql(
     "  esac",
     "done",
     'cat > "$SQL"',
-    'mysql --defaults-extra-file="$OPT" < "$SQL"',
+    'mysql --defaults-extra-file="$OPT" --batch --skip-column-names < "$SQL"',
   ].join("\n");
 
   const stdin = [
@@ -747,17 +747,18 @@ export function assertShellPlanSecretsOffArgv(plan: MysqlShellPlan, secrets: str
 /** SQL to report managed database sizes (no secrets). */
 export function databaseSizeSql(databases: string[]): string {
   const where = databases.length
-    ? `WHERE table_schema IN (${databases.map((d) => mysqlStringLiteral(d)).join(", ")})`
-    : "WHERE table_schema NOT IN ('mysql','information_schema','performance_schema','sys')";
+    ? `WHERE s.schema_name IN (${databases.map((d) => mysqlStringLiteral(d)).join(", ")})`
+    : "WHERE s.schema_name NOT IN ('mysql','information_schema','performance_schema','sys')";
   return [
-    "SELECT table_schema AS db_name,",
-    "  COUNT(*) AS tables,",
-    "  IFNULL(ROUND(SUM(data_length) / 1024 / 1024, 2), 0) AS data_size,",
-    "  IFNULL(ROUND(SUM(index_length) / 1024 / 1024, 2), 0) AS index_size,",
-    "  IFNULL(ROUND(SUM(data_length + index_length) / 1024 / 1024, 2), 0) AS total_size",
-    "FROM information_schema.tables",
+    "SELECT s.schema_name AS db_name,",
+    "  COUNT(t.table_name) AS tables,",
+    "  IFNULL(ROUND(SUM(t.data_length) / 1024 / 1024, 2), 0) AS data_size,",
+    "  IFNULL(ROUND(SUM(t.index_length) / 1024 / 1024, 2), 0) AS index_size,",
+    "  IFNULL(ROUND(SUM(t.data_length + t.index_length) / 1024 / 1024, 2), 0) AS total_size",
+    "FROM information_schema.schemata s",
+    "LEFT JOIN information_schema.tables t ON t.table_schema = s.schema_name",
     where,
-    "GROUP BY table_schema",
+    "GROUP BY s.schema_name",
     "ORDER BY total_size DESC;",
   ].join("\n");
 }

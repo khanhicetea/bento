@@ -24,6 +24,15 @@ export const dataOverviewSchema = z.object({
   error: z.string().optional(),
   services: z.array(databaseServiceSchema),
   bindings: z.array(databaseBindingSchema),
+  backups: z
+    .array(
+      z.object({
+        name: z.string(),
+        bytes: z.number().int().nonnegative(),
+        modifiedAt: z.string().optional(),
+      }),
+    )
+    .default([]),
   sqliteBackup: z
     .object({
       enabled: z.boolean(),
@@ -36,4 +45,30 @@ export const dataOverviewSchema = z.object({
     .optional(),
 });
 
+export const databaseRuntimeSchema = z.object({
+  service: z.string(),
+  engine: z.enum(["mysql", "postgres"]),
+  serverVersion: z.string(),
+  error: z.string().optional(),
+  databases: z.array(z.object({ name: z.string(), bytes: z.number().int().nonnegative() })),
+  processes: z.array(
+    z.object({
+      id: z.string(),
+      user: z.string(),
+      database: z.string(),
+      state: z.string(),
+      query: z.string(),
+    }),
+  ),
+});
+
+export const databaseBackupResultSchema = z.object({
+  artifacts: z.array(
+    z.object({ name: z.string(), database: z.string(), bytes: z.number().int().nonnegative() }),
+  ),
+});
+
+export const databaseRestoreResultSchema = z.object({ message: z.string() });
+
 export type DataOverview = z.infer<typeof dataOverviewSchema>;
+export type DatabaseRuntime = z.infer<typeof databaseRuntimeSchema>;
