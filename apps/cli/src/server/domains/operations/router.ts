@@ -5,6 +5,7 @@ import type { CliContext } from "../../../commands/context.ts";
 import { composeArgs } from "../../../services/compose.ts";
 import { runDatabaseBackup } from "../../../services/database_backup.ts";
 import { drainDeploy } from "../../../services/deploy.ts";
+import { runDoctor } from "../../../services/doctor.ts";
 import { runStackMaintenance } from "../../../services/maintenance.ts";
 import { buildStatus } from "../../../services/status.ts";
 import { redact } from "../../../ui/output.ts";
@@ -100,6 +101,10 @@ export function createOperationsRouter(ctx: CliContext) {
         .filter(Boolean)
         .map((line) => line.slice(0, 2_000));
       return { lines: allLines.slice(-input.tail), truncated: allLines.length > input.tail };
+    }),
+    doctor: os.doctor.handler(async () => {
+      const state = await ctx.store.load();
+      return await runDoctor(ctx.platform, state);
     }),
     maintenance: os.maintenance.handler(async ({ input }) => {
       const result = await runStackMaintenance(ctx.platform, { retainDays: input.retainDays });

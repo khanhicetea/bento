@@ -300,7 +300,7 @@ async function ensureBootCert(platform: Platform): Promise<void> {
         "-out",
         crt,
         "-days",
-        "825",
+        "10950",
         "-subj",
         "/CN=bento-boot/O=Bento/C=US",
       ],

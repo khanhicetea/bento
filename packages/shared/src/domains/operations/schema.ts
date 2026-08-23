@@ -56,6 +56,25 @@ export const operationsLogsSchema = z.object({
   truncated: z.boolean(),
 });
 
+export const operationsDoctorSchema = z.object({
+  generatedAt: z.string(),
+  stackRoot: z.string(),
+  ok: z.boolean(),
+  checks: z.array(
+    z.object({
+      id: z.string(),
+      category: z.string(),
+      status: z.enum(["pass", "warn", "fail"]),
+      detail: z.string(),
+    }),
+  ),
+  summary: z.object({
+    pass: z.number().int().nonnegative(),
+    warn: z.number().int().nonnegative(),
+    fail: z.number().int().nonnegative(),
+  }),
+});
+
 export const operationsBackupResultSchema = operationResultSchema.extend({
   artifacts: z.array(
     z.object({
@@ -73,3 +92,4 @@ export const operationsMaintenanceResultSchema = operationResultSchema.extend({
 });
 
 export type OperationsOverview = z.infer<typeof operationsOverviewSchema>;
+export type OperationsDoctor = z.infer<typeof operationsDoctorSchema>;

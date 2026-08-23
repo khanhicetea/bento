@@ -3,12 +3,16 @@
 import { basename, dirname, join, resolve } from "node:path";
 import pc from "picocolors";
 import type { DesiredState, TlsMode } from "../domain/state.ts";
-import type { Platform, RunResult } from "../platform/mod.ts";
+import type { Platform, RunOptions, RunResult } from "../platform/mod.ts";
 import { checkPermissions } from "./permissions.ts";
 import { composeArgs } from "./compose.ts";
 import { buildStatus, statusToJson } from "./status.ts";
 import { redact } from "../ui/output.ts";
-import { DEFAULT_COMPOSE_PROJECT_NAME, loadStackComposeEnvironment } from "./stack_env.ts";
+import {
+  DEFAULT_COMPOSE_PROJECT_NAME,
+  loadRedisPassword,
+  loadStackComposeEnvironment,
+} from "./stack_env.ts";
 import { sqliteContainerPath, sqliteHostPath } from "./sqlite_paths.ts";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
@@ -26,12 +30,19 @@ export type DoctorReport = {
   summary: Record<DoctorStatus, number>;
 };
 
-const run = async (platform: Platform, command: string[], timeoutMs = 5_000) =>
-  await platform.process.run(command, { cwd: platform.paths.paths.root, timeoutMs }).catch((e) => ({
-    code: 1,
-    stdout: "",
-    stderr: e instanceof Error ? e.message : String(e),
-  }));
+const run = async (
+  platform: Platform,
+  command: string[],
+  timeoutMs = 5_000,
+  options: Pick<RunOptions, "env" | "stdin"> = {},
+) =>
+  await platform.process
+    .run(command, { cwd: platform.paths.paths.root, timeoutMs, ...options })
+    .catch((e) => ({
+      code: 1,
+      stdout: "",
+      stderr: e instanceof Error ? e.message : String(e),
+    }));
 
 export async function runDoctor(platform: Platform, state: DesiredState): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
@@ -494,8 +505,21 @@ async function addServiceChecks(
   for (const [id, service, command] of probes) {
     let result: RunResult;
     try {
-      const args = await composeArgs(platform, state, ["exec", "-T", service, ...command]);
-      result = await run(platform, args, 5_000);
+      const isRedis = id === "redis";
+      const probeCommand = isRedis
+        ? [
+            "sh",
+            "-c",
+            'IFS= read -r AUTH\nif [ -n "$AUTH" ]; then export REDISCLI_AUTH="$AUTH"; fi\nexec redis-cli --no-auth-warning PING',
+          ]
+        : command;
+      const args = await composeArgs(platform, state, ["exec", "-T", service, ...probeCommand]);
+      result = await run(
+        platform,
+        args,
+        5_000,
+        isRedis ? { stdin: `${await loadRedisPassword(platform)}\n` } : {},
+      );
     } catch (e) {
       result = {
         code: 1,

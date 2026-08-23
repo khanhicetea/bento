@@ -92,6 +92,34 @@ bunRuntime.test(
   },
 );
 
+bunRuntime.test("doctor authenticates the Redis health probe with the stack password", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-doctor-redis-" });
+  try {
+    const platform = testPlatform(root, (command) => {
+      if (command.some((part) => part.includes("redis-cli"))) {
+        return { code: 0, stdout: "PONG\n", stderr: "" };
+      }
+      return healthyCommand(command);
+    });
+    await platform.fs.writeText(
+      platform.paths.paths.envFile,
+      "REDIS_PASSWORD=doctor-secret\n",
+      0o600,
+    );
+
+    const report = await runDoctor(platform, createEmptyState(platform.clock.nowIso()));
+    const check = report.checks.find((candidate) => candidate.id === "redis");
+    assertEquals(check?.status, "pass");
+    const call = platform.process.calls.find((candidate) =>
+      candidate.command.some((part) => part.includes("redis-cli")),
+    );
+    assertEquals(call?.command.includes("doctor-secret"), false);
+    assertEquals(call?.options?.stdin, "doctor-secret\n");
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
 bunRuntime.test("doctor runs a read-only quick_check for SQLite bindings", async () => {
   const root = await bunRuntime.makeTempDir({
     prefix: "bento-doctor-sqlite-",

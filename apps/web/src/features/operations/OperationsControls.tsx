@@ -7,12 +7,14 @@ import {
   Rocket,
   RotateCw,
   Square,
+  Stethoscope,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
 import { orpc } from "../../api/client.ts";
 import { ConfirmOperationDialog } from "./ConfirmOperationDialog.tsx";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
@@ -32,6 +34,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
   const [deployApp, setDeployApp] = useState("");
   const [pendingLifecycle, setPendingLifecycle] = useState<"stop" | "restart" | null>(null);
   const [confirmDeploy, setConfirmDeploy] = useState(false);
+  const [doctorOpen, setDoctorOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: orpc.operations.overview.key() });
   const completed = (result: { message: string }) => {
@@ -41,7 +44,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
   const stack = useMutation(orpc.operations.stackAction.mutationOptions({ onSuccess: completed }));
   const apply = useMutation(orpc.operations.apply.mutationOptions({ onSuccess: completed }));
   const backup = useMutation(orpc.operations.backup.mutationOptions({ onSuccess: completed }));
-  const logs = useMutation(orpc.operations.logs.mutationOptions());
+  const doctor = useMutation(orpc.operations.doctor.mutationOptions());
   const maintenance = useMutation(
     orpc.operations.maintenance.mutationOptions({ onSuccess: completed }),
   );
@@ -50,6 +53,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
     stack.isPending ||
     apply.isPending ||
     backup.isPending ||
+    doctor.isPending ||
     maintenance.isPending ||
     deploy.isPending;
   const error =
@@ -57,7 +61,6 @@ export function OperationsControls({ stackName }: { stackName: string }) {
     stack.error ??
     apply.error ??
     backup.error ??
-    logs.error ??
     maintenance.error ??
     deploy.error;
 
@@ -83,6 +86,11 @@ export function OperationsControls({ stackName }: { stackName: string }) {
     const app = deployApp.trim();
     if (!app) return;
     deploy.mutate({ app, confirmation: app }, { onSuccess: () => setConfirmDeploy(false) });
+  }
+
+  function runDoctor() {
+    setDoctorOpen(true);
+    doctor.mutate({});
   }
 
   return (
@@ -149,7 +157,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
         <div>
           <p className="m-0 text-sm font-semibold">Maintenance</p>
           <p className="m-0 mt-1 text-xs text-muted-foreground">
-            Apply configuration, protect data, clean up old artifacts, or inspect logs.
+            Apply configuration, protect data, clean up old artifacts, or run diagnostics.
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2 max-[520px]:grid-cols-1">
             <Button disabled={busy} onClick={() => apply.mutate({})}>
@@ -172,13 +180,13 @@ export function OperationsControls({ stackName }: { stackName: string }) {
               )}
               {maintenance.isPending ? "Running…" : "Run maintenance"}
             </Button>
-            <Button
-              variant="outline"
-              disabled={logs.isPending}
-              onClick={() => logs.mutate({ tail: 100 })}
-            >
-              {logs.isPending ? <Spinner /> : <FileText className="size-4" aria-hidden="true" />}
-              {logs.isPending ? "Loading…" : "Load recent logs"}
+            <Button variant="outline" disabled={busy} onClick={runDoctor}>
+              {doctor.isPending ? (
+                <Spinner />
+              ) : (
+                <Stethoscope className="size-4" aria-hidden="true" />
+              )}
+              {doctor.isPending ? "Running…" : "Doctor"}
             </Button>
           </div>
         </div>
@@ -247,25 +255,99 @@ export function OperationsControls({ stackName }: { stackName: string }) {
           </div>
         </Alert>
       ) : null}
-      {logs.data && (
-        <div className="mt-5 overflow-hidden rounded-xl border border-border bg-muted/30">
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
-              Recent service logs
+      <Dialog open={doctorOpen} onOpenChange={setDoctorOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[1000px] gap-4 overflow-y-auto p-6 max-[640px]:p-4 sm:!max-w-[1000px]">
+          <DialogHeader>
+            <DialogTitle>Bento doctor</DialogTitle>
+            <DialogDescription>
+              Read-only checks for the host, stack configuration, services, and storage.
+            </DialogDescription>
+          </DialogHeader>
+          {doctor.error && <Alert variant="destructive">{messageOf(doctor.error)}</Alert>}
+          {doctor.isPending && (
+            <div className="flex min-h-48 items-center justify-center gap-3 text-sm text-muted-foreground">
+              <Spinner className="size-5" /> Running doctor checks…
             </div>
-            <span className="text-xs text-muted-foreground">
-              Last {logs.data.lines.length} lines{logs.data.truncated ? " · truncated" : ""}
-            </span>
-          </div>
-          <pre
-            className="max-h-96 overflow-auto p-4 text-xs whitespace-pre-wrap break-words text-muted-foreground"
-            aria-label="Recent service logs"
-          >
-            {logs.data.lines.join("\n") || "No log lines returned."}
-          </pre>
-        </div>
-      )}
+          )}
+          {!doctor.isPending && doctor.data && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-4">
+                <div className="flex items-center gap-3">
+                  <Badge
+                    className={
+                      doctor.data.ok ? "bg-emerald-600 text-white" : "bg-destructive text-white"
+                    }
+                  >
+                    {doctor.data.ok ? "Healthy" : "Problems found"}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Generated {formatDate(doctor.data.generatedAt)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  {doctor.data.stackRoot}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 max-[560px]:grid-cols-1">
+                <DoctorSummary
+                  label="Passed"
+                  value={doctor.data.summary.pass}
+                  className="text-emerald-600 dark:text-emerald-400"
+                />
+                <DoctorSummary
+                  label="Warnings"
+                  value={doctor.data.summary.warn}
+                  className="text-amber-600 dark:text-amber-400"
+                />
+                <DoctorSummary
+                  label="Failed"
+                  value={doctor.data.summary.fail}
+                  className="text-destructive"
+                />
+              </div>
+              <div
+                className="max-h-[50vh] space-y-2 overflow-y-auto pr-1"
+                aria-label="Doctor checks"
+              >
+                {[...doctor.data.checks]
+                  .sort((a, b) => doctorStatusRank(a.status) - doctorStatusRank(b.status))
+                  .map((check) => {
+                    const status = doctorStatus(check.status);
+                    return (
+                      <div
+                        key={`${check.category}/${check.id}`}
+                        className="flex items-start gap-3 rounded-xl border border-border p-3"
+                      >
+                        <Badge className={status.className}>{status.label}</Badge>
+                        <div className="min-w-0">
+                          <p className="m-0 text-sm font-medium">
+                            {check.category} / {check.id}
+                          </p>
+                          <p className="m-0 mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                            {check.detail}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={doctor.isPending} onClick={runDoctor}>
+              {doctor.isPending ? (
+                <Spinner />
+              ) : (
+                <Stethoscope className="size-4" aria-hidden="true" />
+              )}
+              Run again
+            </Button>
+            <Button variant="ghost" onClick={() => setDoctorOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {pendingLifecycle && (
         <ConfirmOperationDialog
           title={`${pendingLifecycle === "stop" ? "Stop" : "Restart"} stack`}
@@ -288,6 +370,35 @@ export function OperationsControls({ stackName }: { stackName: string }) {
       )}
     </article>
   );
+}
+
+function DoctorSummary({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: number;
+  className: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/30 p-3">
+      <strong className={`block text-xl leading-none ${className}`}>{value}</strong>
+      <span className="mt-1 block text-xs text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function doctorStatus(status: "pass" | "warn" | "fail") {
+  if (status === "pass") return { label: "PASS", className: "bg-emerald-600 text-white" };
+  if (status === "warn") return { label: "WARN", className: "bg-amber-500 text-amber-950" };
+  return { label: "FAIL", className: "bg-destructive text-white" };
+}
+
+function doctorStatusRank(status: "pass" | "warn" | "fail") {
+  if (status === "fail") return 0;
+  if (status === "warn") return 1;
+  return 2;
 }
 
 export function ServiceLogsButton({ service }: { service: string }) {
@@ -394,6 +505,10 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(value: string | number) {
+  return new Date(value).toLocaleString();
 }
 
 function messageOf(error: unknown) {

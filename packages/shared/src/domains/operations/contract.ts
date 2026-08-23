@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   operationResultSchema,
   operationsBackupResultSchema,
+  operationsDoctorSchema,
   operationsLogsSchema,
   operationsMaintenanceResultSchema,
   operationsOverviewSchema,
@@ -25,6 +26,7 @@ export const operationsContract = oc.router({
       }),
     )
     .output(operationsLogsSchema),
+  doctor: oc.input(z.object({})).output(operationsDoctorSchema),
   maintenance: oc
     .input(z.object({ retainDays: z.number().int().min(1).max(365).default(14) }))
     .output(operationsMaintenanceResultSchema),
