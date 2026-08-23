@@ -11,6 +11,8 @@
     "@bento/shared": "workspace:*",
     "@orpc/client": "1.15.0",
     "@orpc/contract": "1.15.0",
+    "@orpc/tanstack-query": "1.15.0",
+    "@tanstack/react-query": "5.102.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "wouter": "3.7.1"

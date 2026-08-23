@@ -1,16 +1,14 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { Application } from "@bento/shared";
 import { useApplications } from "./useApplications.ts";
 
 export function ApplicationsPage() {
   const { data, error, loading, changing, reload, setEnabled } = useApplications();
   const [query, setQuery] = useState("");
-  const applications = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return (data?.applications ?? []).filter((app) =>
-      `${app.slug} ${app.domain} ${app.aliases.join(" ")}`.toLowerCase().includes(normalized),
-    );
-  }, [data, query]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const applications = (data?.applications ?? []).filter((app) =>
+    `${app.slug} ${app.domain} ${app.aliases.join(" ")}`.toLowerCase().includes(normalizedQuery),
+  );
 
   return (
     <section className="content" aria-live="polite">
@@ -79,7 +77,7 @@ export function ApplicationsPage() {
                 key={app.slug}
                 app={app}
                 busy={changing === app.slug}
-                onToggle={() => void setEnabled(app)}
+                onToggle={() => setEnabled(app)}
               />
             ))}
             {!applications.length && (
