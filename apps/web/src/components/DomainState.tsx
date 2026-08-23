@@ -12,7 +12,7 @@ export function DomainLoading({ label }: { label: string }) {
 
 export function DomainError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <Alert variant="destructive" className="justify-between">
+    <Alert variant="destructive" className="grid-cols-[minmax(0,1fr)_auto] justify-between gap-x-3">
       <span>{message}</span>
       <Button size="sm" variant="outline" onClick={onRetry}>
         Retry
