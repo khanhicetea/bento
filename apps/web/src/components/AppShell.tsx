@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type PropsWithChildren } from "react";
 import { Link, useLocation } from "wouter";
+import { orpc } from "../api/client.ts";
 import { Button } from "@/components/ui/button";
 
 const navigation = [
@@ -13,14 +15,13 @@ const navigation = [
 export function AppShell({ children }: PropsWithChildren) {
   const [location] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const health = useQuery(orpc.system.health.queryOptions({ input: {} }));
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("bento-theme");
     if (stored === "dark" || stored === "night") return "dark";
     if (stored === "light" || stored === "bento") return "light";
     return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
-  const current = navigation.find((item) => item.href === location);
-
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
     localStorage.setItem("bento-theme", next);
@@ -72,17 +73,19 @@ export function AppShell({ children }: PropsWithChildren) {
           </nav>
           <div className="header-actions">
             <div className="header-status">
-              <span className="size-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
-              <span>Typed oRPC API</span>
+              <span
+                className={`size-2.5 rounded-full ${
+                  health.isSuccess
+                    ? "bg-emerald-500 ring-4 ring-emerald-500/20"
+                    : "bg-red-500 ring-4 ring-red-500/20"
+                }`}
+              />
+              <span>{health.isSuccess ? "Connected" : "Disconnected"}</span>
             </div>
             <Button variant="ghost" size="icon-sm" aria-label="Toggle theme" onClick={toggleTheme}>
               ◐
             </Button>
           </div>
-        </div>
-        <div className="page-heading">
-          <p className="eyebrow">SINGLE-HOST OPERATIONS</p>
-          <h1>{current?.label ?? "Bento"}</h1>
         </div>
       </header>
       <main>{children}</main>

@@ -222,15 +222,6 @@ textarea {
   font-size: 0.75rem;
   white-space: nowrap;
 }
-.page-heading {
-  min-height: 58px;
-  padding: 0.65rem clamp(1rem, 2.5vw, 2.5rem) 0.8rem;
-  border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
-}
-.page-heading h1 {
-  margin: 0.1rem 0 0;
-  font-size: 1.3rem;
-}
 .eyebrow {
   margin: 0;
   color: var(--muted-foreground);
@@ -1055,9 +1046,6 @@ pre {
   }
   .header-nav.open {
     grid-template-columns: 1fr;
-  }
-  .page-heading {
-    min-height: 52px;
   }
   .app-summary {
     grid-template-columns: 1fr;
