@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   addApplicationDatabaseInputSchema,
+  addCronJobInputSchema,
+  addWorkerInputSchema,
   applicationListSchema,
   jobsOverviewSchema,
   removeApplicationInputSchema,
@@ -8,6 +10,7 @@ import {
   setApplicationEnabledInputSchema,
   webContract,
 } from "@bento/shared";
+import { commandDisplay } from "../../src/server/domains/jobs/router.ts";
 
 describe("web API contract", () => {
   test("is composed from explicit domain routers", () => {
@@ -22,7 +25,7 @@ describe("web API contract", () => {
     expect("execute" in webContract).toBe(false);
   });
 
-  test("keeps configured command arguments out of the jobs response", () => {
+  test("returns complete job commands as redacted display strings", () => {
     const overview = {
       initialized: true,
       stackRoot: "/srv/bento",
@@ -32,7 +35,7 @@ describe("web API contract", () => {
           app: "demo",
           schedule: "* * * * *",
           timezone: "UTC",
-          command: "php (+2 args)",
+          command: "php artisan schedule:run",
           commandMode: "argv" as const,
           output: "log" as const,
           enabled: true,
@@ -46,6 +49,59 @@ describe("web API contract", () => {
       jobsOverviewSchema.parse({
         ...overview,
         cronJobs: [{ ...overview.cronJobs[0], command: ["php", "secret"] }],
+      }),
+    ).toThrow();
+    expect(commandDisplay(["php", "artisan", "queue:work"], "argv")).toBe("php artisan queue:work");
+    expect(
+      commandDisplay(["curl", "--token", "do-not-expose", "https://example.test"], "argv"),
+    ).toBe("curl --token *** https://example.test");
+    expect(commandDisplay(["curl --api-key='do-not-expose' example.test"], "shell")).toBe(
+      "curl --api-key=*** example.test",
+    );
+  });
+
+  test("validates app-scoped cron and worker mutations", () => {
+    expect(
+      addCronJobInputSchema.parse({
+        app: "demo",
+        name: "tick",
+        schedule: "*/5 * * * *",
+        timezone: "UTC",
+        command: ["php", "artisan", "schedule:run"],
+        commandMode: "argv",
+        output: "log",
+        timeoutSec: 60,
+      }),
+    ).toBeTruthy();
+    expect(() =>
+      addCronJobInputSchema.parse({
+        app: "demo",
+        name: "tick",
+        schedule: "* * * * *",
+        timezone: "UTC",
+        command: ["echo one", "echo two"],
+        commandMode: "shell",
+        output: "log",
+      }),
+    ).toThrow();
+    expect(
+      addWorkerInputSchema.parse({
+        app: "demo",
+        name: "queue",
+        command: ["php", "artisan", "queue:work"],
+        autorestart: true,
+        stopsignal: "TERM",
+        stopwaitsecs: 10,
+      }),
+    ).toBeTruthy();
+    expect(() =>
+      addWorkerInputSchema.parse({
+        app: "demo",
+        name: "queue",
+        command: [],
+        autorestart: true,
+        stopsignal: "TERM",
+        stopwaitsecs: 0,
       }),
     ).toThrow();
   });

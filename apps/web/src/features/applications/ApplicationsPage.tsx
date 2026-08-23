@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Application } from "@bento/shared";
 import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
+import { ApplicationJobsDialog } from "./ApplicationJobsDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
 
@@ -24,6 +25,7 @@ export function ApplicationsPage() {
   const [query, setQuery] = useState("");
   const [editorTarget, setEditorTarget] = useState<Application | "create" | null>(null);
   const [databaseTarget, setDatabaseTarget] = useState<Application | null>(null);
+  const [jobsTarget, setJobsTarget] = useState<Application | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Application | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const applications = (data?.applications ?? []).filter((app) =>
@@ -54,11 +56,15 @@ export function ApplicationsPage() {
         </div>
       </div>
 
-      {error && editorTarget === null && databaseTarget === null && removeTarget === null && (
-        <div className="alert alert-error">
-          <span>{error}</span>
-        </div>
-      )}
+      {error &&
+        editorTarget === null &&
+        databaseTarget === null &&
+        jobsTarget === null &&
+        removeTarget === null && (
+          <div className="alert alert-error">
+            <span>{error}</span>
+          </div>
+        )}
       {loading && !data && (
         <div className="loading-state">
           <span className="loading loading-spinner loading-lg" /> Loading applications…
@@ -118,6 +124,10 @@ export function ApplicationsPage() {
                   resetErrors();
                   setDatabaseTarget(app);
                 }}
+                onJobs={() => {
+                  resetErrors();
+                  setJobsTarget(app);
+                }}
                 onRemove={() => {
                   resetErrors();
                   setRemoveTarget(app);
@@ -160,6 +170,13 @@ export function ApplicationsPage() {
           onAdd={addDatabase}
         />
       )}
+      {jobsTarget && (
+        <ApplicationJobsDialog
+          key={jobsTarget.slug}
+          application={jobsTarget}
+          onClose={() => setJobsTarget(null)}
+        />
+      )}
       {removeTarget && (
         <RemoveApplicationDialog
           key={removeTarget.slug}
@@ -189,6 +206,7 @@ function ApplicationCard({
   onToggle,
   onEdit,
   onDatabases,
+  onJobs,
   onRemove,
 }: {
   app: Application;
@@ -196,6 +214,7 @@ function ApplicationCard({
   onToggle: () => void;
   onEdit: () => void;
   onDatabases: () => void;
+  onJobs: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -246,6 +265,9 @@ function ApplicationCard({
         <div className="app-management-actions">
           <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onDatabases}>
             Databases
+          </button>
+          <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onJobs}>
+            Crons &amp; workers
           </button>
           <button className="btn btn-sm btn-ghost" disabled={busy} onClick={onEdit}>
             Edit

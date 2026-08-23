@@ -1,13 +1,64 @@
 import { basename } from "node:path";
-import { implement } from "@orpc/server";
+import { implement, ORPCError } from "@orpc/server";
 import { jobsContract, type JobsOverview } from "@bento/shared";
 import type { CliContext } from "../../../commands/context.ts";
+import { isBentoError, type BentoError } from "../../../domain/errors.ts";
+import type { ReloadPlan } from "../../../domain/reload.ts";
+import type { DesiredState } from "../../../domain/state.ts";
+import { addCronJob, removeCronJob } from "../../../services/cron.ts";
+import { addWorker, removeWorker } from "../../../services/worker.ts";
 import { redact } from "../../../ui/output.ts";
 
 const os = implement(jobsContract);
 
 export function createJobsRouter(ctx: CliContext) {
-  return os.router({ overview: os.overview.handler(async () => await jobsOverview(ctx)) });
+  return os.router({
+    overview: os.overview.handler(async () => await jobsOverview(ctx)),
+    addCron: os.addCron.handler(async ({ input }) => {
+      try {
+        await ctx.store.withExclusive(async (state) => {
+          const result = addCronJob(state, input, ctx.platform);
+          await saveAndApply(ctx, result.state, result.reloadPlan);
+        });
+        return await jobsOverview(ctx);
+      } catch (error) {
+        throw asORPCError(error);
+      }
+    }),
+    removeCron: os.removeCron.handler(async ({ input }) => {
+      try {
+        await ctx.store.withExclusive(async (state) => {
+          const result = removeCronJob(state, input.app, input.name, ctx.platform.clock.nowIso());
+          await saveAndApply(ctx, result.state, result.reloadPlan);
+        });
+        return await jobsOverview(ctx);
+      } catch (error) {
+        throw asORPCError(error);
+      }
+    }),
+    addWorker: os.addWorker.handler(async ({ input }) => {
+      try {
+        await ctx.store.withExclusive(async (state) => {
+          const result = addWorker(state, input, ctx.platform);
+          await saveAndApply(ctx, result.state, result.reloadPlan);
+        });
+        return await jobsOverview(ctx);
+      } catch (error) {
+        throw asORPCError(error);
+      }
+    }),
+    removeWorker: os.removeWorker.handler(async ({ input }) => {
+      try {
+        await ctx.store.withExclusive(async (state) => {
+          const result = removeWorker(state, input.app, input.name, ctx.platform.clock.nowIso());
+          await saveAndApply(ctx, result.state, result.reloadPlan);
+        });
+        return await jobsOverview(ctx);
+      } catch (error) {
+        throw asORPCError(error);
+      }
+    }),
+  });
 }
 
 async function jobsOverview(ctx: CliContext): Promise<JobsOverview> {
@@ -24,7 +75,7 @@ async function jobsOverview(ctx: CliContext): Promise<JobsOverview> {
           app: String(job.app),
           schedule: job.schedule,
           timezone: job.timezone,
-          command: commandSummary(job.command, job.commandMode),
+          command: commandDisplay(job.command, job.commandMode),
           commandMode: job.commandMode,
           output: job.output,
           enabled: job.enabled,
@@ -35,7 +86,7 @@ async function jobsOverview(ctx: CliContext): Promise<JobsOverview> {
         .map((worker) => ({
           name: String(worker.name),
           app: String(worker.app),
-          command: commandSummary(worker.command, "argv"),
+          command: commandDisplay(worker.command, "argv"),
           enabled: worker.enabled,
           autorestart: worker.autorestart,
           stopsignal: worker.stopsignal,
@@ -49,7 +100,7 @@ async function jobsOverview(ctx: CliContext): Promise<JobsOverview> {
           enabled: app.deploy.enabled,
           queuePolicy: app.deploy.queuePolicy,
           timeoutSec: app.deploy.timeoutSec,
-          command: commandSummary(app.deploy.argv, "argv"),
+          command: commandSummary(app.deploy.argv),
         })),
     };
   } catch (error) {
@@ -57,11 +108,82 @@ async function jobsOverview(ctx: CliContext): Promise<JobsOverview> {
   }
 }
 
-function commandSummary(command: string[], mode: "argv" | "shell"): string {
-  if (mode === "shell") return "Shell command (content hidden)";
+function commandSummary(command: string[]): string {
   const executable = command[0] ? basename(command[0]) : "command";
   const argumentCount = Math.max(0, command.length - 1);
   return `${executable}${argumentCount ? ` (+${argumentCount} args)` : ""}`;
+}
+
+export function commandDisplay(command: string[], mode: "argv" | "shell"): string {
+  if (mode === "shell") return redactCommand(command[0] ?? "");
+  let redactNext = false;
+  return command
+    .map((argument) => {
+      if (redactNext) {
+        redactNext = false;
+        return "***";
+      }
+      if (
+        /^--?(?:password|passwd|secret|token|api[-_]?key|private[-_]?key|credential)$/i.test(
+          argument,
+        )
+      ) {
+        redactNext = true;
+        return argument;
+      }
+      return redactCommand(argument);
+    })
+    .map(quoteArgument)
+    .join(" ");
+}
+
+function quoteArgument(argument: string): string {
+  if (argument === "***") return argument;
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(argument)
+    ? argument
+    : `'${argument.replaceAll("'", `'\\''`)}'`;
+}
+
+function redactCommand(command: string): string {
+  return redact(command)
+    .replace(
+      /((?:--?|\/)(?:password|passwd|secret|token|api[-_]?key|private[-_]?key|credential)(?:=|\s+))("[^"]*"|'[^']*'|[^\s]+)/gi,
+      "$1***",
+    )
+    .replace(
+      /((?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|CREDENTIAL)=)([^\s]+)/gi,
+      "$1***",
+    );
+}
+
+async function saveAndApply(ctx: CliContext, state: DesiredState, reloadPlan: ReloadPlan) {
+  await ctx.store.save(state);
+  await ctx.render.apply(state, {
+    reloadPlan,
+    skipValidate: false,
+    alreadyLocked: true,
+  });
+}
+
+function asORPCError(error: unknown): ORPCError<string, unknown> {
+  if (!isBentoError(error)) {
+    return new ORPCError("INTERNAL_SERVER_ERROR", { message: "Job operation failed" });
+  }
+  const code =
+    error.code === "NOT_FOUND"
+      ? "NOT_FOUND"
+      : error.code === "CONFLICT"
+        ? "CONFLICT"
+        : error.code === "VALIDATION" || error.code === "SAFETY"
+          ? "BAD_REQUEST"
+          : "INTERNAL_SERVER_ERROR";
+  return new ORPCError(code, {
+    message: code === "INTERNAL_SERVER_ERROR" ? "Job operation failed" : errorMessage(error),
+  });
+}
+
+function errorMessage(error: BentoError): string {
+  return error.recovery ? `${error.message} ${error.recovery}` : error.message;
 }
 
 function empty(stackRoot: string, error?: string): JobsOverview {
