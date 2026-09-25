@@ -159,7 +159,6 @@ RUN --mount=type=bind,source=.,target=/tmp/bento-build,ro \
   install -D -m 0755 /tmp/bento-build/runner-entrypoint.sh /usr/local/bin/bento-runner-entrypoint; \
   install -D -m 0755 /tmp/bento-build/s6-reconcile.sh /usr/local/bin/bento-s6-reconcile; \
   install -D -m 0755 /tmp/bento-build/minicrond-start.sh /usr/local/bin/bento-minicrond-start; \
-  install -D -m 0644 /tmp/bento-build/minicrond-reconcile.php /usr/local/bin/bento-minicrond-reconcile; \
   cp -a /tmp/bento-build/helpers/. /opt/bento/helpers/; \
   find /opt/bento/helpers -type f -name '*.sh' -exec chmod 0755 {} +
 

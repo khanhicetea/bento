@@ -29,10 +29,8 @@ import { validateUpstreams } from "./proxy.ts";
 import { loadCloudflareTunnelToken } from "./cloudflare_tunnel.ts";
 import {
   appInternalJobs,
-  appInternalNames,
   minicrondBootstrapConfig,
   rootInternalJobs,
-  rootInternalNames,
 } from "./minicrond_internal.ts";
 
 export async function generateAll(
@@ -488,25 +486,18 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
     );
     // User definitions belong exclusively to each app's minicrond registry.
     for (const app of appsOnVersion) {
-      const seed = appInternalJobs(state, app);
+      const internalJobs = appInternalJobs(state, app);
       const config = `runner/${v.service}/minicrond/${app.slug}`;
       files.push(
         {
           relPath: `${config}/config.toml`,
-          content: minicrondBootstrapConfig(),
-          mode: 0o644,
-          managed: true,
-        },
-        { relPath: `${config}/seed.toml`, content: seed, mode: 0o644, managed: true },
-        {
-          relPath: `${config}/expected.json`,
-          content: JSON.stringify(appInternalNames(app)),
+          content: minicrondBootstrapConfig(internalJobs),
           mode: 0o644,
           managed: true,
         },
         {
           relPath: `runner/${v.service}/services/minicrond-${app.slug}/run`,
-          content: `#!/bin/sh\n# bento-managed: true\n# seed-sha256: ${Bun.hash(seed)}\nexport BASE_PATH=/scheduler/apps/${app.slug}/\nexec /usr/local/bin/bento-minicrond-start ${app.uid} ${app.gid} ${shellQuote(app.home)} ${app.slug} /etc/bento/minicrond/${app.slug}/seed.toml ${shellQuote(`${app.home}/.local/share/minicron`)} /etc/bento/minicrond/${app.slug}/config.toml /etc/bento/minicrond/${app.slug}/expected.json\n`,
+          content: `#!/bin/sh\n# bento-managed: true\n# config-sha256: ${Bun.hash(internalJobs)}\nexport BASE_PATH=/scheduler/apps/${app.slug}/\nexec /usr/local/bin/bento-minicrond-start ${app.uid} ${app.gid} ${shellQuote(app.home)} ${app.slug} ${shellQuote(`${app.home}/.local/share/minicron`)} /etc/bento/minicrond/${app.slug}/config.toml\n`,
           mode: 0o755,
           managed: true,
         },
@@ -545,28 +536,16 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
     }
 
     if (appsOnVersion.length > 0) {
+      const internalJobs = rootInternalJobs(appsOnVersion);
       files.push({
         relPath: `runner/${v.service}/minicrond/root-config.toml`,
-        content: minicrondBootstrapConfig(),
-        mode: 0o644,
-        managed: true,
-      });
-      const seed = rootInternalJobs(appsOnVersion);
-      files.push({
-        relPath: `runner/${v.service}/minicrond/root-seed.toml`,
-        content: seed,
-        mode: 0o644,
-        managed: true,
-      });
-      files.push({
-        relPath: `runner/${v.service}/minicrond/root-expected.json`,
-        content: JSON.stringify(rootInternalNames(appsOnVersion)),
+        content: minicrondBootstrapConfig(internalJobs),
         mode: 0o644,
         managed: true,
       });
       files.push({
         relPath: `runner/${v.service}/services/minicrond-root/run`,
-        content: `#!/bin/sh\n# bento-managed: true\n# seed-sha256: ${Bun.hash(seed)}\nexec /usr/local/bin/bento-minicrond-start 0 0 /root root /etc/bento/minicrond/root-seed.toml /var/lib/bento/minicron /etc/bento/minicrond/root-config.toml /etc/bento/minicrond/root-expected.json\n`,
+        content: `#!/bin/sh\n# bento-managed: true\n# config-sha256: ${Bun.hash(internalJobs)}\nexec /usr/local/bin/bento-minicrond-start 0 0 /root root /var/lib/bento/minicron /etc/bento/minicrond/root-config.toml\n`,
         mode: 0o755,
         managed: true,
       });

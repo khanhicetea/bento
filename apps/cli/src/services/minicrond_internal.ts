@@ -6,37 +6,20 @@ import {
   sqliteVacuumScheduleKey,
 } from "./sqlite_schedule.ts";
 
-/** Only Bento-owned maintenance tasks belong in these bundles. Never import user jobs. */
+/** Only Bento-owned maintenance tasks belong in the bootstrap config. Never copy user jobs. */
 export const INTERNAL_JOB_PREFIX = "bento-internal-";
 
 const toml = (value: string): string => JSON.stringify(value);
 const argv = (values: string[]): string => `[${values.map(toml).join(", ")}]`;
 
-export function minicrondBootstrapConfig(): string {
+export function minicrondBootstrapConfig(internalJobs = ""): string {
   return `[server]
 tcp_enabled = false
 unix_socket = true
 
 [scheduler]
 timezone = "UTC"
-`;
-}
-
-export function appInternalNames(app: AppState): string[] {
-  if (!isPhpApp(app)) return [];
-  return [
-    ...(app.deploy.enabled ? [`${INTERNAL_JOB_PREFIX}deploy-drain`] : []),
-    ...app.databases
-      .filter((binding) => binding.engine === "sqlite")
-      .map((binding) => `${INTERNAL_JOB_PREFIX}vacuum-${binding.file.id}`),
-  ].sort();
-}
-
-export function rootInternalNames(apps: AppState[]): string[] {
-  return apps
-    .filter(isPhpApp)
-    .map((app) => `${INTERNAL_JOB_PREFIX}logrotate-${app.slug}`)
-    .sort();
+${internalJobs ? `\n${internalJobs}` : ""}`;
 }
 
 export function appInternalJobs(state: DesiredState, app: AppState): string {

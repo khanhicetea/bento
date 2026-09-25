@@ -70,6 +70,23 @@ bunRuntime.test("provisionApp creates distinct identities and domain ownership",
   }
 });
 
+bunRuntime.test("PHP app provisioning reconciles its live scheduler service", () => {
+  const platform = testPlatform("/tmp/bento-scheduler-reload-plan");
+  const created = provisionApp(platform, createEmptyState(), {
+    slug: "alpha",
+    domain: "alpha.example",
+  });
+  assertEquals([...created.reloadPlan.phpRunner], ["php85-runner"]);
+  assertEquals([...created.reloadPlan.phpFpm], ["php85"]);
+
+  const updated = provisionApp(platform, created.state, {
+    slug: "alpha",
+    domain: "new.alpha.example",
+    databaseEngine: "sqlite",
+  });
+  assertEquals([...updated.reloadPlan.phpRunner], ["php85-runner"]);
+});
+
 bunRuntime.test("provisionApp rejects duplicate domain links before state is built", () => {
   const platform = testPlatform("/tmp/bento-domain-duplicates");
   assertThrows(

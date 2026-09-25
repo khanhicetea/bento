@@ -462,7 +462,7 @@ bunRuntime.test("E3 disabled deploy omits /_bento routes; enabled matches helper
     assertEquals(app.deploy.argv[0], "sh");
     assertEquals(app.deploy.argv[1], "/home/alpha/.bento/deploy.sh");
     const seed = textContent(
-      files.find((f) => f.relPath === "runner/php85/minicrond/alpha/seed.toml")!.content,
+      files.find((f) => f.relPath === "runner/php85/minicrond/alpha/config.toml")!.content,
     );
     assertEquals(seed.includes("/opt/bento/helpers/deploy-drain.sh"), true);
     assertEquals(seed.includes("/run/php-fpm/php85/alpha.sock"), true);

@@ -324,14 +324,28 @@ bunRuntime.test("F1 runner generates only app and root minicrond services", asyn
     );
     assertEquals(names.includes("runner/php85/services/minicrond-alpha/run"), true);
     assertEquals(names.includes("runner/php85/services/minicrond-root/run"), true);
+    assertEquals(
+      names.some((path) => path.endsWith("seed.toml") || path.endsWith("expected.json")),
+      false,
+    );
+    const appConfig = textContent(
+      files.find((file) => file.relPath === "runner/php85/minicrond/alpha/config.toml")!.content,
+    );
+    const appRun = textContent(
+      files.find((file) => file.relPath === "runner/php85/services/minicrond-alpha/run")!.content,
+    );
+    assertEquals(appConfig.includes("tcp_enabled = false"), true);
+    assertEquals(appRun.includes("/etc/bento/minicrond/alpha/config.toml"), true);
+    assertEquals(appRun.includes("seed.toml"), false);
     const logrotate = textContent(
       files.find((file) => file.relPath === "runner/php85/minicrond/logrotate/alpha.conf")!.content,
     );
     const rootSeed = textContent(
-      files.find((file) => file.relPath === "runner/php85/minicrond/root-seed.toml")!.content,
+      files.find((file) => file.relPath === "runner/php85/minicrond/root-config.toml")!.content,
     );
     assertEquals(logrotate.includes("copytruncate"), true);
     assertEquals(rootSeed.includes("/etc/bento/minicrond/logrotate/alpha.conf"), true);
+    assertEquals(rootSeed.includes("[[job]]"), true);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

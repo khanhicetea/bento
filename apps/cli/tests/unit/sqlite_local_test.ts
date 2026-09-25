@@ -106,7 +106,7 @@ bunRuntime.test(
       assert(parseDesiredState(JSON.parse(stateToJson(result.state))).ok);
 
       const files = await generateAll(platform, result.state, "digest");
-      const seed = files.find((file) => file.relPath.endsWith("minicrond/local/seed.toml"));
+      const seed = files.find((file) => file.relPath.endsWith("minicrond/local/config.toml"));
       const scheduler = files.find((file) => file.relPath.endsWith("services/minicrond-local/run"));
       assert(seed && typeof seed.content === "string");
       const schedule = seed.content.match(/schedule = "(\d+) (\d+) \* \* (\d+)"/);
@@ -123,7 +123,7 @@ bunRuntime.test(
 
       const rerendered = await generateAll(platform, result.state, "digest");
       const rerenderedSeed = rerendered.find((file) =>
-        file.relPath.endsWith("minicrond/local/seed.toml"),
+        file.relPath.endsWith("minicrond/local/config.toml"),
       );
       assert(rerenderedSeed && typeof rerenderedSeed.content === "string");
       assertEquals(rerenderedSeed.content, seed.content);
@@ -157,7 +157,9 @@ bunRuntime.test("local SQLite VACUUM slots do not overlap when files are added",
     });
     const files = await generateAll(platform, second.state, "digest");
     const schedules = files
-      .filter((file) => file.relPath.endsWith("/seed.toml"))
+      .filter(
+        (file) => file.relPath.endsWith("/config.toml") && file.relPath.includes("/minicrond/"),
+      )
       .flatMap((file) => {
         if (typeof file.content !== "string") return [];
         return file.content

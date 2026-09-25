@@ -428,7 +428,7 @@ bunRuntime.test("F2 deploy enable + queue surface + drain status", async () => {
     assertEquals(vhost.includes("/opt/bento/helpers/bento.php"), true);
     const state = await loadStateJson(h.stack);
     const service = state.apps.alpha.phpService;
-    const seed = await readText(gen(h, "runner", service, "minicrond", "alpha", "seed.toml"));
+    const seed = await readText(gen(h, "runner", service, "minicrond", "alpha", "config.toml"));
     assertEquals(seed.includes("/opt/bento/helpers/deploy-drain.sh"), true);
     assertEquals(seed.includes(`/run/php-fpm/${service}/alpha.sock`), true);
     const helper = await readText(join(h.stack, "helpers", "deploy-drain.sh"));

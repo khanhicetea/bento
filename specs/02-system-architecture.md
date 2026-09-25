@@ -341,7 +341,7 @@ Stopped services consume generated configuration when next started. Apply does n
 
 ### 9.5 Schedules and workers
 
-The singleton PHP runner uses s6-overlay as PID 1. It supervises one socket-only, app-UID minicrond for each enabled PHP app and a separate root maintenance minicrond. Bento seeds only reserved internal tasks (deploy drain and SQLite VACUUM for apps, logrotate for root); user jobs and workers belong in minicrond's private per-app registry. Changes to user definitions do not trigger a Bento render. The reconcile helper adds/removes app daemon services in the dynamic s6 scan tree. Legacy Bento job/worker rows and API contracts remain pending removal as specified in `06-minicrond-migration-plan.md`; their mutating service operations fail closed.
+The singleton PHP runner uses s6-overlay as PID 1. It supervises one socket-only, app-UID minicrond for each enabled PHP app and a separate root maintenance minicrond. Bento renders only reserved config-owned `[[job]]` tasks (deploy drain and SQLite VACUUM for apps, logrotate for root) into each daemon's main config; minicrond 0.2.2 syncs them before scheduling and rejects registry name collisions. User jobs and workers belong in minicrond's private per-app registry. Changes to user definitions do not trigger a Bento render. The reconcile helper adds/removes app daemon services in the dynamic s6 scan tree. Legacy Bento job/worker rows and API contracts remain pending removal as specified in `06-minicrond-migration-plan.md`; their mutating service operations fail closed.
 
 ### 9.6 Webhook deploy
 

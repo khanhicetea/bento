@@ -315,7 +315,19 @@ export function provisionApp(
   return {
     state: next,
     app,
-    reloadPlan: reloadPlanForPoolChange(app.phpService),
+    // The generated scheduler service can be new or its internal jobs can have
+    // changed (e.g. a SQLite binding). Reconcile s6 even when FPM is the only
+    // other affected runtime; s6 restarts only changed service definitions.
+    reloadPlan: mergeReloadPlans(
+      reloadPlanForPoolChange(app.phpService),
+      reloadPlanForRunnerChange(`${app.phpService}-runner`),
+      ...(existing && existing.phpService !== app.phpService
+        ? [
+            reloadPlanForPoolChange(existing.phpService),
+            reloadPlanForRunnerChange(`${existing.phpService}-runner`),
+          ]
+        : []),
+    ),
     created,
   };
 }
