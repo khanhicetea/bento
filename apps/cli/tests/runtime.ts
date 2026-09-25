@@ -78,7 +78,7 @@ export const runtime = {
     },
     toObject: () => ({ ...process.env }) as Record<string, string>,
   },
-  makeTempDir: async ({ prefix = "" }: { prefix?: string } = {}) =>
+  makeTempDir: async ({ prefix = "bento-test-" }: { prefix?: string } = {}) =>
     await mkdtemp(join(tmpdir(), prefix)),
   mkdir,
   remove: async (path: string | URL, options?: { recursive?: boolean }) => {

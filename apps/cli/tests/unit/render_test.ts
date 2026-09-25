@@ -4,6 +4,7 @@ import { describeReloadPlan, reloadPlanForPoolChange } from "../../src/domain/re
 import { createEmptyState } from "../../src/domain/state.ts";
 import { materializeAppHome, provisionApp, setAppEnabled } from "../../src/services/app.ts";
 import { RenderService } from "../../src/services/render.ts";
+import { materializeDockerAssets } from "../../src/services/assets_materialize.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 import { createFixedClock } from "../../src/platform/clock.ts";
 import { createSeededRandom } from "../../src/platform/random.ts";
@@ -29,6 +30,28 @@ function testPlatform(root: string): Platform {
     paths: createPathPolicy(root),
   };
 }
+
+bunRuntime.test(
+  "materialization accepts an existing Docker-owned ACME state directory",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-acme-state-" });
+    try {
+      const platform = testPlatform(root);
+      await materializeDockerAssets(platform, ["8.5"]);
+      const acmeState = join(platform.paths.paths.certsDir, "acme-state");
+      const chmod = platform.fs.chmod.bind(platform.fs);
+      platform.fs.chmod = async (path, mode) => {
+        if (path === acmeState) throw new Error("host user cannot chmod Docker-owned ACME state");
+        await chmod(path, mode);
+      };
+
+      await materializeDockerAssets(platform, ["8.5"]);
+      assertEquals((await platform.fs.lstat(acmeState)).isDirectory, true);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 bunRuntime.test("init + render produces startable topology files", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });

@@ -7,3 +7,4 @@ testbento/
 .DS_Store
 node_modules/
 coverage/
+mise.local.toml

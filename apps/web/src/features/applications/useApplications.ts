@@ -18,6 +18,13 @@ export function useApplications() {
           (current) => upsertApplication(current, updated),
         );
       },
+      onError() {
+        // Applying the configuration can fail after the app has been persisted.
+        // Refresh the list so the operator sees the saved app without a page reload.
+        void queryClient.invalidateQueries({
+          queryKey: orpc.applications.list.queryKey({ input: {} }),
+        });
+      },
     }),
   );
   const addDatabaseMutation = useMutation(

@@ -7,6 +7,7 @@
  */
 
 import { dirname, join } from "node:path";
+import { platformError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { encodeHex } from "../platform/hex.ts";
 
@@ -127,7 +128,16 @@ export async function materializeDockerAssets(
 
   await ensureBootCert(platform);
   // Persistent state for Nginx's native ACME module (permissions fixed by entrypoint).
-  await platform.fs.mkdirp(join(platform.paths.paths.certsDir, "acme-state"), 0o700);
+  // Docker may have created this bind mount as root. Repeated mkdirp(path, mode)
+  // attempts a host-side chmod and fails for an unprivileged Bento process.
+  const acmeState = join(platform.paths.paths.certsDir, "acme-state");
+  if (await platform.fs.exists(acmeState)) {
+    if (!(await platform.fs.lstat(acmeState)).isDirectory) {
+      throw platformError(`ACME state path is not a directory: ${acmeState}`);
+    }
+  } else {
+    await platform.fs.mkdirp(acmeState, 0o700);
+  }
 
   return {
     dockerRoot,

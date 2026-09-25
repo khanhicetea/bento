@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createRouterClient } from "@orpc/server";
 import {
   addApplicationDatabaseInputSchema,
   addCronJobInputSchema,
@@ -12,7 +13,12 @@ import {
   webContract,
 } from "@bento/shared";
 import { commandDisplay } from "../../src/server/domains/jobs/router.ts";
+import { createApplicationsRouter } from "../../src/server/domains/applications/router.ts";
 import { matchesBasicAuthorization } from "../../src/server/server.ts";
+import { createContext } from "../../src/commands/context.ts";
+import { RenderService } from "../../src/services/render.ts";
+import { createRecordingProcessRunner } from "../../src/platform/mod.ts";
+import { runtime } from "../runtime.ts";
 
 describe("web server authentication", () => {
   test("accepts only the exact Basic authorization value", () => {
@@ -215,4 +221,44 @@ describe("web API contract", () => {
       }),
     ).toBeTruthy();
   });
+});
+
+test("application save reports an apply failure after persisting the app", async () => {
+  const root = await runtime.makeTempDir();
+  try {
+    const ctx = createContext({ stackRoot: root, repoRoot: runtime.cwd() });
+    ctx.platform.process = createRecordingProcessRunner();
+    await ctx.store.init();
+    const initialState = await ctx.store.load();
+    ctx.render = new (class extends RenderService {
+      override async apply(): Promise<never> {
+        throw new Error("private validator detail");
+      }
+    })(ctx.platform);
+
+    const client = createRouterClient(createApplicationsRouter(ctx));
+    await expect(
+      client.save({
+        slug: "demo",
+        kind: "php",
+        domain: "demo.example.test",
+        aliases: [],
+        documentRoot: "public",
+        entrypointMode: "front-controller",
+        phpVersion: initialState.defaults.phpVersion,
+        fpmProfile: initialState.defaults.fpmProfile,
+        tls: "shared",
+        accessLog: false,
+        databaseEngine: "sqlite",
+        createDatabase: false,
+      }),
+    ).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: expect.stringContaining("settings were saved, but applying them failed"),
+    });
+    expect((await ctx.store.load()).apps.demo).toBeDefined();
+    expect((await client.list({})).applications.map((app) => app.slug)).toContain("demo");
+  } finally {
+    await runtime.remove(root, { recursive: true });
+  }
 });

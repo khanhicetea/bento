@@ -229,11 +229,15 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
     }
 
     await ctx.store.save(nextState);
-    await ctx.render.apply(nextState, {
-      reloadPlan: provisioned.reloadPlan,
-      skipValidate: false,
-      alreadyLocked: true,
-    });
+    try {
+      await ctx.render.apply(nextState, {
+        reloadPlan: provisioned.reloadPlan,
+        skipValidate: false,
+        alreadyLocked: true,
+      });
+    } catch (cause) {
+      throw new SavedApplicationApplyError(cause);
+    }
     return {
       app: provisioned.app,
       state: nextState,
@@ -242,18 +246,22 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
     };
   });
 
-  if (result.startLitestream) {
-    const up = await sqliteCompose(ctx.platform, result.state, [
-      "up",
-      "-d",
-      "--force-recreate",
-      "litestream",
-    ]);
-    if (up.code !== 0) {
-      throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
+  try {
+    if (result.startLitestream) {
+      const up = await sqliteCompose(ctx.platform, result.state, [
+        "up",
+        "-d",
+        "--force-recreate",
+        "litestream",
+      ]);
+      if (up.code !== 0) {
+        throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
+      }
     }
+    if (!result.created) await recreateRunningProcessApp(ctx, result.state, result.app);
+  } catch (cause) {
+    throw new SavedApplicationApplyError(cause);
   }
-  if (!result.created) await recreateRunningProcessApp(ctx, result.state, result.app);
 
   return toApplication(result.app);
 }
@@ -442,11 +450,18 @@ export function toApplication(app: AppState): Application {
 }
 
 function logApplicationError(ctx: CliContext, operation: string, error: unknown): void {
-  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  const failure = error instanceof SavedApplicationApplyError ? error.cause : error;
+  const detail = failure instanceof Error ? (failure.stack ?? failure.message) : String(failure);
   ctx.log.error(`application ${operation} failed: ${redact(detail)}`);
 }
 
 function asORPCError(error: unknown): ORPCError<string, unknown> {
+  if (error instanceof SavedApplicationApplyError) {
+    return new ORPCError("INTERNAL_SERVER_ERROR", {
+      message:
+        "Application settings were saved, but applying them failed. Check the server log, fix the cause, then run bento apply.",
+    });
+  }
   if (!isBentoError(error)) {
     return new ORPCError("INTERNAL_SERVER_ERROR", {
       message: "Application operation failed",
@@ -465,6 +480,12 @@ function asORPCError(error: unknown): ORPCError<string, unknown> {
     message:
       code === "INTERNAL_SERVER_ERROR" ? "Application operation failed" : errorMessage(error),
   });
+}
+
+class SavedApplicationApplyError extends Error {
+  constructor(cause: unknown) {
+    super("Application settings were saved, but applying them failed", { cause });
+  }
 }
 
 function errorMessage(error: BentoError): string {

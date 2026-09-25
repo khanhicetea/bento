@@ -20,6 +20,15 @@ This repository is a **Bun 1.4 / TypeScript** reimplementation of the Bento host
 - Linux with Docker Engine + Docker Compose v2 (data plane)
 - Source development uses `bun install --frozen-lockfile`; compiled releases need no runtime or package installation
 
+With mise, run `mise install` from the repository root to select the pinned Bun version in `mise.toml`. For a personal stack root, create an ignored `mise.local.toml`:
+
+```toml
+[env]
+BENTO_STACK_ROOT = "{{ env.HOME }}/.local/share/bento/dev"
+```
+
+Mise shell activation exports the variable while you are in this checkout. `mise exec -- bun --version` also loads the project tool and environment for a single command. Keep the stack root outside the repository.
+
 Install or switch the runtime with the official installer / package pin, for example:
 
 ```bash
@@ -41,8 +50,8 @@ bun run test
 bun run test:integration   # soft-skips Docker-only steps when daemon is down
 bun run test:stack         # real Docker stack harness (default name: testbento)
 
-# select a stack root once for this shell, then initialize and render
-export BENTO_STACK_ROOT="$PWD/my-stack"
+# select an external stack root (mise.local.toml can supply it), then initialize and render
+export BENTO_STACK_ROOT="${BENTO_STACK_ROOT:-$HOME/.local/share/bento/dev}"
 bun run apps/cli/src/main.ts init --name my-stack
 bun run apps/cli/src/main.ts render
 bun run apps/cli/src/main.ts status
