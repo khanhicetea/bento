@@ -1,6 +1,8 @@
 import { basename, join } from "node:path";
 import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
-import { isComposeAvailable, withStack } from "./helpers.ts";
+import { chownDockerFixture, isComposeAvailable, loadState, withStack } from "./helpers.ts";
+import { composeArgs } from "../../src/services/compose.ts";
+import { createPlatform } from "../../src/platform/mod.ts";
 
 bunRuntime.test(
   "managed Node.js process app starts privately and serves through its Unix socket",
@@ -50,11 +52,25 @@ http.createServer((request, response) => {
 `,
       );
 
+      const app = (await loadState(h.stack)).apps.nodeapi!;
+      const appHome = join(h.stack, "homes", "nodeapi");
+      await chownDockerFixture(appHome, app.uid, app.gid);
       try {
         assertEquals(await h.run("app", "start", "nodeapi"), 0);
-        const socket = join(h.stack, "runtime", "apps", "nodeapi", "http.sock");
-        const curl = await new bunRuntime.Command("curl", {
-          args: ["--fail", "--silent", "--unix-socket", socket, "http://localhost/health"],
+        const state = await loadState(h.stack);
+        const command = await composeArgs(createPlatform(h.stack, bunRuntime.cwd()), state, [
+          "exec",
+          "-T",
+          "app-nodeapi",
+          "curl",
+          "--fail",
+          "--silent",
+          "--unix-socket",
+          "/run/bento-http/http.sock",
+          "http://localhost/health",
+        ]);
+        const curl = await new bunRuntime.Command(command[0]!, {
+          args: command.slice(1),
           stdout: "piped",
           stderr: "piped",
         }).output();
@@ -72,6 +88,7 @@ http.createServer((request, response) => {
       } finally {
         await h.run("app", "disable", "nodeapi").catch(() => 1);
         await h.run("compose", "--", "down", "--remove-orphans").catch(() => 1);
+        await chownDockerFixture(appHome, process.getuid?.() ?? 0, process.getgid?.() ?? 0);
       }
     });
   },

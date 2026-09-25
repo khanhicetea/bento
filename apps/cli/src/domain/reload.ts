@@ -10,8 +10,6 @@ export type ReloadPlan = {
   nginx: boolean;
   phpFpm: Set<string>;
   phpRunner: Set<string>;
-  /** Per-runner Supercronic programs whose mounted crontabs must be reloaded. */
-  cronSchedulers?: Map<string, Set<string>>;
 };
 
 export function emptyReloadPlan(): ReloadPlan {
@@ -24,11 +22,6 @@ export function mergeReloadPlans(...plans: ReloadPlan[]): ReloadPlan {
     if (plan.nginx) result.nginx = true;
     for (const s of plan.phpFpm) result.phpFpm.add(s);
     for (const s of plan.phpRunner) result.phpRunner.add(s);
-    for (const [runner, apps] of plan.cronSchedulers ?? []) {
-      const merged = result.cronSchedulers?.get(runner) ?? new Set<string>();
-      for (const app of apps) merged.add(app);
-      (result.cronSchedulers ??= new Map()).set(runner, merged);
-    }
   }
   return result;
 }
@@ -53,16 +46,6 @@ export function reloadPlanForRunnerChange(phpService: string): ReloadPlan {
   };
 }
 
-/** Reload runner config and signal one app's Supercronic process to reread its crontab. */
-export function reloadPlanForCronChange(runnerService: string, appSlug: string): ReloadPlan {
-  return {
-    nginx: false,
-    phpFpm: new Set(),
-    phpRunner: new Set([runnerService]),
-    cronSchedulers: new Map([[runnerService, new Set([appSlug])]]),
-  };
-}
-
 export function reloadPlanForFullApply(
   phpServices: string[],
   runnerServices: string[],
@@ -75,12 +58,7 @@ export function reloadPlanForFullApply(
 }
 
 export function reloadPlanIsEmpty(plan: ReloadPlan): boolean {
-  return (
-    !plan.nginx &&
-    plan.phpFpm.size === 0 &&
-    plan.phpRunner.size === 0 &&
-    (plan.cronSchedulers?.size ?? 0) === 0
-  );
+  return !plan.nginx && plan.phpFpm.size === 0 && plan.phpRunner.size === 0;
 }
 
 export function describeReloadPlan(plan: ReloadPlan): string[] {

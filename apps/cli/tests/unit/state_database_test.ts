@@ -7,14 +7,12 @@ import { createFixedClock } from "../../src/platform/clock.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
 import { stateToJson } from "../../src/schemas/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
-import { addCronJob } from "../../src/services/cron.ts";
 import { createProxy, setProxyEnabled } from "../../src/services/proxy.ts";
 import {
   STATE_DATABASE_SCHEMA_VERSION,
   migrateStateDatabase,
 } from "../../src/services/state_database.ts";
 import { StateStore } from "../../src/services/state_store.ts";
-import { addWorker } from "../../src/services/worker.ts";
 
 bunRuntime.test("state database migrations are numbered, private, and idempotent", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-state-db-" });
@@ -152,33 +150,6 @@ bunRuntime.test("state database round-trips nested state and JSON argument field
       now,
     ).state;
     state = setProxyEnabled(state, "api", false, now).state;
-    state = addCronJob(
-      state,
-      {
-        app: "files",
-        name: "tick",
-        schedule: "0 * * * *",
-        command: ["php artisan schedule:run >> logs/schedule.log"],
-        commandMode: "shell",
-        output: "inherit",
-        timeoutSec: 60,
-        lock: "schedule",
-      },
-      platform,
-    ).state;
-    state = addWorker(
-      state,
-      {
-        app: "files",
-        name: "queue",
-        command: ["php", "artisan", "queue:work"],
-        autorestart: false,
-        stopsignal: "QUIT",
-        stopwaitsecs: 45,
-      },
-      platform,
-    ).state;
-
     await store.save(state);
     using database = new Database(platform.paths.paths.stateDb, { readonly: true });
     assertEquals(
@@ -189,24 +160,6 @@ bunRuntime.test("state database round-trips nested state and JSON argument field
         >("SELECT deploy_argv_json FROM applications WHERE slug = 'files'")
         .get()?.deploy_argv_json,
       JSON.stringify(state.apps.files!.deploy.argv),
-    );
-    assertEquals(
-      database
-        .query<
-          { command_json: string },
-          []
-        >("SELECT command_json FROM cron_jobs WHERE name = 'tick'")
-        .get()?.command_json,
-      JSON.stringify(state.cronJobs[0]!.command),
-    );
-    assertEquals(
-      database
-        .query<
-          { command_json: string },
-          []
-        >("SELECT command_json FROM workers WHERE name = 'queue'")
-        .get()?.command_json,
-      JSON.stringify(state.workers[0]!.command),
     );
     assertEquals(
       JSON.parse(stateToJson(await store.load())),

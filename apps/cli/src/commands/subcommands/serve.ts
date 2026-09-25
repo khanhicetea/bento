@@ -28,6 +28,12 @@ export function registerServeCommand(parser: YargsBuilder, state: RunState): Yar
       if (!Number.isInteger(argv.port) || argv.port < 0 || argv.port > 65535)
         throw new Error("--port must be an integer between 0 and 65535");
       const basicAuth = Bun.env.WEB_BASIC_AUTH;
+      if (
+        basicAuth !== undefined &&
+        (!/^[^:\r\n]+:[^\r\n]+$/.test(basicAuth) || basicAuth.length > 1024)
+      ) {
+        throw new Error("WEB_BASIC_AUTH must be a non-empty user:password value");
+      }
       if (!["127.0.0.1", "localhost", "::1"].includes(argv.host) && basicAuth === undefined) {
         ctx.log.warn(
           `web management is exposed on ${argv.host} without authentication; use only for temporary testing`,

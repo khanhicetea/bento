@@ -53,6 +53,11 @@ bunRuntime.test("cli init render status app create", async () => {
       "--no-apply",
     ]);
     assertEquals(dbFail !== 0, true);
+    // A missing app must never reach Docker, even with forwarded CLI flags.
+    assertEquals(
+      (await runCli([...base, "app", "minicrond", "missing", "--", "logs", "--follow"])) !== 0,
+      true,
+    );
     assertEquals(await runCli([...base, "app", "list"]), 0);
     assertEquals(await runCli([...base, "render"]), 0);
 
@@ -213,7 +218,7 @@ bunRuntime.test("cli init render status app create", async () => {
     const afterProxyDelete = await loadState(stack);
     assertEquals(afterProxyDelete.proxies.api, undefined);
 
-    // cron + worker
+    // Retired Bento job/worker commands must not create ghost scheduler state.
     assertEquals(
       await runCli([
         ...base,
@@ -230,7 +235,7 @@ bunRuntime.test("cli init render status app create", async () => {
         "artisan",
         "schedule:run",
       ]),
-      0,
+      2,
     );
     assertEquals(
       await runCli([
@@ -245,12 +250,10 @@ bunRuntime.test("cli init render status app create", async () => {
         "php artisan schedule:run >> logs/scheduler.log",
         "--no-apply",
       ]),
-      0,
+      2,
     );
     const cronState = await loadState(stack);
-    assertEquals(cronState.cronJobs[0]!.schedule, "0 * * * *");
-    assertEquals(cronState.cronJobs[0]!.timezone, "UTC");
-    assertEquals(cronState.cronJobs[0]!.commandMode, "shell");
+    assertEquals(cronState.cronJobs.length, 0);
 
     assertEquals(
       await runCli([
@@ -266,8 +269,9 @@ bunRuntime.test("cli init render status app create", async () => {
         "artisan",
         "queue:work",
       ]),
-      0,
+      2,
     );
+    assertEquals((await loadState(stack)).workers.length, 0);
 
     // deploy enable
     assertEquals(await runCli([...base, "deploy", "enable", "demo"]), 0);
@@ -385,7 +389,7 @@ bunRuntime.test("cli init render status app create", async () => {
         "sleep",
         "60",
       ]),
-      0,
+      2,
     );
     assertEquals(
       await runCli([
@@ -402,7 +406,7 @@ bunRuntime.test("cli init render status app create", async () => {
         "--",
         "true",
       ]),
-      0,
+      2,
     );
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
 

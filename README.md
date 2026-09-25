@@ -176,7 +176,12 @@ The host path and container path must be identical (`/var/lib/bento` in this exa
 Run this as one command:
 
 ```bash
-docker run -d --name bento --restart unless-stopped -e BENTO_STACK_ROOT=/var/lib/bento -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/bento:/var/lib/bento -p 127.0.0.1:8080:8080 "$BENTO_IMAGE"
+docker run -d --name bento --restart unless-stopped \
+  -e BENTO_STACK_ROOT=/var/lib/bento \
+  -e WEB_BASIC_AUTH='operator:replace-with-a-strong-password' \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /var/lib/bento:/var/lib/bento \
+  -p 127.0.0.1:8080:8080 "$BENTO_IMAGE"
 ```
 
 Check startup:
@@ -241,16 +246,16 @@ docker exec bento bento compose -- logs --tail 100 nginx
 On the Docker host, open:
 
 ```text
-http://127.0.0.1:8080
+http://bento.localhost:8080
 ```
 
-The UI has no authentication. The command intentionally publishes it only on host loopback. For access from your workstation, use an SSH tunnel rather than publishing port 8080 on every interface:
+`WEB_BASIC_AUTH` protects the control plane and enables authenticated app scheduler paths. The listener is still intentionally published only on host loopback. For access from your workstation, use an SSH tunnel rather than publishing port 8080 on every interface:
 
 ```bash
 ssh -L 8080:127.0.0.1:8080 user@docker-host
 ```
 
-Then open `http://127.0.0.1:8080` on the workstation.
+Then open `http://bento.localhost:8080` on the workstation. Browsers resolve `*.localhost` to loopback, allowing each scheduler to use a separate origin while sharing the tunnel.
 
 ### Routine container operations
 
@@ -284,7 +289,7 @@ Internet -> Nginx (host default / bridge opt-in) -> per-app PHP-FPM sockets
                                                    -> private MySQL / PostgreSQL services
                                                    -> private Redis
 
-PHP runner (one per version) -> s6-overlay PID 1 -> per-app Supercronic + flat s6 workers
+PHP runner (one per version) -> s6-overlay PID 1 -> per-app minicrond + root maintenance minicrond
                              -> local deploy drain -> hook -> app FPM OPcache reset
 ```
 
@@ -321,9 +326,9 @@ bento --stack /var/lib/bento serve                 # http://127.0.0.1:8080
 bento --stack /var/lib/bento serve --port 9090 --open
 ```
 
-`serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. A non-loopback `--host` is temporarily available for testing and has no authentication, so do not expose it to an untrusted network. The UI covers the TUI workflows plus the remaining browser-safe command catalog. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
+`serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. Set `WEB_BASIC_AUTH='user:strong-password'` before startup to require HTTP Basic authentication. On a fixed local port in Bento’s root control-plane container, this also establishes an expiring HttpOnly Bento session and enables each app scheduler at `/scheduler/apps/<slug>/` on the same origin; the browser never receives a minicrond token or socket. These paths are not browser security boundaries: scheduler content with an XSS vulnerability could access Bento and other apps on this origin. Use only with trusted operators and scheduler content. Direct non-root source-mode servers leave browser scheduler access disabled because they cannot satisfy minicrond’s Unix peer authentication. Open the Bento listener URL (for example `http://127.0.0.1:<port>`). Without `WEB_BASIC_AUTH`, scheduler browser access remains disabled. Do not expose a non-loopback HTTP listener to an untrusted network; remote ingress still requires trusted TLS and authentication. The UI covers the TUI workflows plus the remaining browser-safe command catalog. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
 
-The `/operations` page can set or replace a remotely managed Cloudflare Tunnel token. Bento stores it privately under `secrets/`, generates a token-only container environment, and force-recreates the `cloudflared` service in Nginx's network namespace; the service then appears under **Service roles**. Configure application public hostnames in Cloudflare with an origin such as `http://localhost:80`. A loopback `bento serve` origin is reachable this way in host ingress mode, but the control plane has no built-in authentication: require a trusted Cloudflare Access policy and never expose its direct listener to an untrusted network.
+The `/operations` page can set or replace a remotely managed Cloudflare Tunnel token. Bento stores it privately under `secrets/`, generates a token-only container environment, and force-recreates the `cloudflared` service in Nginx's network namespace; the service then appears under **Service roles**. Configure application public hostnames in Cloudflare with an origin such as `http://localhost:80`. A loopback `bento serve` origin is reachable this way in host ingress mode, but `WEB_BASIC_AUTH` does not provide transport encryption or trusted-proxy policy: require a trusted Cloudflare Access policy and TLS, and never expose its direct listener to an untrusted network. The local `*.localhost` scheduler gateway is not enabled for non-local listeners.
 
 ### Logical database backup and restore
 
@@ -395,20 +400,18 @@ Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and
 
 ### Runner service supervision
 
-Runner containers use **s6-overlay 3.2.3.2** as PID 1. Applying cron or worker changes reconciles generated service directories into the live s6 scan tree; adding/removing a scheduler or worker does not restart the runner container or sibling services. Crontab-only changes send USR2 only to `scheduler-<app>`.
+Runner containers use **s6-overlay 3.2.3.2** as PID 1. One private socket-only minicrond runs under each enabled PHP app's numeric UID/GID; a separate root instance handles log rotation. Bento reconciles its own internal tasks at daemon startup. Manage user jobs and workers with `bento app minicrond <slug> -- <args>`, not the retired `bento cron`/`bento worker` commands. Existing Bento job/worker rows are not migrated. When authenticated scheduler access is enabled, the web page proxies each app’s minicrond UI through `/scheduler/apps/<slug>/` on the Bento origin and that app’s private socket.
 
-Every Compose service uses Docker's `local` logging driver with a shared 10 MiB / 3-file rotation policy. Each PHP runner also has an s6-supervised root maintenance scheduler. Supercronic runs per-app logrotate entries hourly, rotates app and captured worker logs at 10 MiB, and keeps two rotations. This is separate from each app's unprivileged crontab because PHP-FPM slow logs and captured worker logs can be root-owned. Rotation uses `copytruncate`, so Supercronic, PHP-FPM, workers, and application processes do not need reopen signals or restarts (with the usual small copy/truncate race window).
+Every Compose service uses Docker's `local` logging driver with a shared 10 MiB / 3-file rotation policy. Each PHP runner also has a separate s6-supervised root minicrond daemon. Its internal logrotate entries run hourly, rotate app and captured worker logs at 10 MiB, and keep two rotations. Root rotation is separate from unprivileged app daemons because PHP-FPM slow logs can be root-owned. Rotation uses `copytruncate`, so minicrond, PHP-FPM, workers, and application processes do not need reopen signals or restarts (with the usual small copy/truncate race window). The scheduler registry and log buffers live under each app's private `homes/<slug>/.local/share/minicron`; root maintenance uses `maintenance/minicrond/<runner>`. A live `stack.tar.gz` is not a consistent snapshot of these SQLite databases and WAL files: stop the runners for stack transfer or take a SQLite-consistent backup.
 
-Scoped controls are available through `worker start|stop|restart|signal|inspect`. For diagnostics, the same service can be addressed inside its runner, for example:
+The app-scoped scheduler CLI runs inside its PHP runner as the app UID:
 
 ```sh
-bento compose -- exec -T php85-runner /command/s6-svstat \
-  /run/bento-s6/services/worker-demo-queue
-bento compose -- exec -T php85-runner /command/s6-svc -2 \
-  /run/bento-s6/services/scheduler-demo
+bento app minicrond demo -- status
+bento app minicrond demo -- list
 ```
 
-Migrating an existing stack requires one planned runner recreation. First run `bento render` to materialize the new image assets, then rebuild each PHP image and recreate its runner (for example, `bento compose -- build php85` followed by `bento compose -- up -d --force-recreate php85-runner`). Run `bento apply` afterward. Later cron/worker additions are live-reconciled without container restarts.
+Rebuild the PHP image and recreate its runner once after upgrading (`bento render`, `bento compose -- build php85`, `bento compose -- up -d --force-recreate php85-runner`, then `bento apply`). Subsequent user job and worker changes go straight to minicrond's registry without a Bento apply.
 
 ### TLS modes (F-12)
 

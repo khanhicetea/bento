@@ -8,13 +8,20 @@ import {
   jobsOverviewSchema,
   removeApplicationInputSchema,
   saveApplicationInputSchema,
+  schedulerAccessSchema,
   setApplicationEnabledInputSchema,
   setApplicationRunningInputSchema,
   webContract,
 } from "@bento/shared";
 import { commandDisplay } from "../../src/server/domains/jobs/router.ts";
 import { createApplicationsRouter } from "../../src/server/domains/applications/router.ts";
-import { matchesBasicAuthorization } from "../../src/server/server.ts";
+import {
+  acceptsWebAuthorization,
+  matchesBasicAuthorization,
+  SchedulerSessions,
+  schedulerAppFromPath,
+  schedulerSessionCookie,
+} from "../../src/server/server.ts";
 import { createContext } from "../../src/commands/context.ts";
 import { RenderService } from "../../src/services/render.ts";
 import { createRecordingProcessRunner } from "../../src/platform/mod.ts";
@@ -39,6 +46,51 @@ describe("web server authentication", () => {
       ),
     ).toBe(false);
   });
+
+  test("issues, scopes, and revokes scheduler sessions", () => {
+    const sessions = new SchedulerSessions(() => "ab".repeat(32));
+    const setCookie = sessions.issue();
+    const cookie = setCookie.split(";", 1)[0]!;
+
+    expect(setCookie).not.toContain("Domain=");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Strict");
+    expect(sessions.authorizes(cookie, "demo")).toBe(true);
+    expect(sessions.authorizes(cookie, "../other")).toBe(false);
+    expect(sessions.authorizes("bento_scheduler_session=wrong", "demo")).toBe(false);
+
+    sessions.revoke(cookie);
+    expect(sessions.authorizes(cookie, "demo")).toBe(false);
+  });
+
+  test("establishes sessions on normal pages and direct scheduler navigations", () => {
+    const sessions = new SchedulerSessions(() => "ab".repeat(32));
+    const setCookie = schedulerSessionCookie(sessions, null, "/");
+    expect(setCookie).toStartWith("bento_scheduler_session=");
+    const cookie = setCookie!.split(";", 1)[0]!;
+    expect(schedulerSessionCookie(sessions, cookie, "/")).toBeUndefined();
+    expect(sessions.authorizes(cookie, "demo")).toBe(true);
+    expect(schedulerSessionCookie(sessions, null, "/scheduler/apps/demo/")).toBeDefined();
+    expect(schedulerSessionCookie(sessions, null, "/scheduler/apps")).toBeUndefined();
+    expect(sessions.authorizes(null, "demo")).toBe(false);
+  });
+
+  test("a scheduler session authenticates only app-scoped routes", () => {
+    const expected = `Basic ${Buffer.from("operator:secret").toString("base64")}`;
+    expect(acceptsWebAuthorization(null, expected, "demo", true)).toBe(true);
+    expect(acceptsWebAuthorization(null, expected, "demo", false)).toBe(false);
+    expect(acceptsWebAuthorization(null, expected, undefined, true)).toBe(false);
+    expect(acceptsWebAuthorization("Basic wrong", expected, undefined, true)).toBe(false);
+    expect(acceptsWebAuthorization(expected, expected, "demo", false)).toBe(true);
+  });
+
+  test("recognizes only app scheduler path segments", () => {
+    expect(schedulerAppFromPath("/scheduler/apps/demo/api/v1/jobs")).toBe("demo");
+    expect(schedulerAppFromPath("/scheduler/apps/demo/")).toBe("demo");
+    expect(schedulerAppFromPath("/scheduler/apps/demo%2fother/")).toBeUndefined();
+    expect(schedulerAppFromPath("/scheduler/apps/demo.evil/")).toBeUndefined();
+    expect(schedulerAppFromPath("/apps/demo/")).toBeUndefined();
+  });
 });
 
 describe("web API contract", () => {
@@ -53,6 +105,22 @@ describe("web API contract", () => {
     ]);
     expect("execute" in webContract).toBe(false);
     expect("restartWorker" in webContract.jobs).toBe(true);
+    expect("schedulerAccess" in webContract.jobs).toBe(true);
+    expect(
+      schedulerAccessSchema.parse({
+        enabled: true,
+        schedulers: [{ app: "demo", path: "/scheduler/apps/demo/" }],
+      }),
+    ).toEqual({
+      enabled: true,
+      schedulers: [{ app: "demo", path: "/scheduler/apps/demo/" }],
+    });
+    expect(() =>
+      schedulerAccessSchema.parse({
+        enabled: true,
+        schedulers: [{ app: "demo", path: "/apps/demo/" }],
+      }),
+    ).toThrow();
   });
 
   test("returns complete job commands as redacted display strings", () => {

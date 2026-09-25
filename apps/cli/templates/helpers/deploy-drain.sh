@@ -1,5 +1,5 @@
 #!/bin/sh
-# Container-local deploy drain entrypoint for supercronic.
+# Container-local deploy drain entrypoint for minicrond.
 set -eu
 umask 077
 APP="${1:-}"

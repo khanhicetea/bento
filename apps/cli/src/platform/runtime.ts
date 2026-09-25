@@ -61,6 +61,14 @@ export class RuntimeChild {
     this.#process = process;
   }
 
+  get stdout(): ReadableStream<Uint8Array> | number | undefined {
+    return this.#process.stdout;
+  }
+
+  get stderr(): ReadableStream<Uint8Array> | number | undefined {
+    return this.#process.stderr;
+  }
+
   get stdin(): {
     getWriter(): {
       write(data: Uint8Array): Promise<void>;

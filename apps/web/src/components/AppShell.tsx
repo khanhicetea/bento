@@ -8,7 +8,7 @@ const navigation = [
   { href: "/applications", icon: "◫", label: "Applications" },
   { href: "/databases", icon: "▤", label: "Databases" },
   { href: "/routing", icon: "↗", label: "Routing & TLS" },
-  { href: "/jobs", icon: "↻", label: "Jobs & workers" },
+  { href: "/jobs", icon: "↻", label: "Schedulers" },
   { href: "/operations", icon: "✓", label: "Operations" },
 ] as const;
 

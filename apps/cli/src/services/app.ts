@@ -586,6 +586,22 @@ export async function materializeAppHome(
   for (const d of dirs) {
     await platform.fs.mkdirp(d, 0o750);
   }
+  if (isPhpApp(app)) {
+    // Registry, socket and log buffers are operator stack data, owned by the
+    // app rather than by Bento's generated configuration tree.
+    for (const part of [".local", ".local/share", ".local/share/minicron"]) {
+      const path = join(home, part);
+      if (await platform.fs.exists(path)) {
+        const existing = await platform.fs.lstat(path);
+        if (!existing.isDirectory || existing.isSymlink) {
+          throw safetyError(`refusing non-directory minicrond data path for ${app.slug}`);
+        }
+      } else {
+        await platform.fs.mkdirp(path, 0o700);
+      }
+      await platform.fs.chmod(path, 0o700);
+    }
+  }
   if (!isPhpApp(app)) {
     const processRuntimeRoot = join(platform.paths.paths.root, "runtime", "apps");
     await platform.fs.mkdirp(processRuntimeRoot, 0o755);

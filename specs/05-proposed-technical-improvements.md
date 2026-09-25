@@ -275,7 +275,7 @@ Make every release input traceable and every published output verifiable.
 ### Requirements
 
 - Pin production base images and fixed tool artifacts by digest/checksum through a reviewed lock manifest.
-- Record human-readable version plus immutable digest for Nginx, PHP bases, Composer, Node, MySQL, PostgreSQL, Redis, Litestream, rclone, s6, and Supercronic where applicable.
+- Record human-readable version plus immutable digest for Nginx, PHP bases, Composer, Node, MySQL, PostgreSQL, Redis, Litestream, rclone, s6, and minicrond where applicable.
 - Add an explicit dependency/image update workflow that regenerates locks and runs full integration/parity.
 - Generate SBOMs for the Bento binary and built images.
 - Generate release checksums and keyless or project-key signatures with provenance tied to the Git commit/workflow identity.

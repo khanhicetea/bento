@@ -801,7 +801,7 @@ function appCreateSummaryRows(
     [
       ["Database", database],
       ...(details.useLitestream ? [["SQLite backup", "Litestream · enabled"]] : []),
-      ...(details.useSqlite ? [["Maintenance", "weekly VACUUM · runner Supercronic"]] : []),
+      ...(details.useSqlite ? [["Maintenance", "weekly VACUUM · app minicrond"]] : []),
     ],
     [
       ["Access logs", yesNo(draft.accessLog)],

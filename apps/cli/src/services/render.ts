@@ -6,11 +6,10 @@
 
 import { join, relative } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
 import { describeReloadPlan, emptyReloadPlan, reloadPlanIsEmpty } from "../domain/reload.ts";
 import type { Platform } from "../platform/mod.ts";
-import { platformError, renderError } from "../domain/errors.ts";
+import { platformError, renderError, safetyError } from "../domain/errors.ts";
 import { ASSET_VERSION } from "../version.ts";
 import { generateAll } from "./generate.ts";
 import { materializeDockerAssets } from "./assets_materialize.ts";
@@ -154,6 +153,37 @@ export class RenderService {
       // Custom Nginx directories belong to the operator. Reconciliation creates
       // missing directories but never replaces or removes their contents.
       await ensureNginxCustomizationDirs(this.platform, state);
+      // Compose bind mounts create absent source directories as root, leaving
+      // subsequent non-root render/apply transactions unable to promote files.
+      // Prepare even an empty runner's config before the first `compose up`.
+      for (const version of state.phpVersions) {
+        for (const name of ["services", "minicrond"]) {
+          const dir = join(this.platform.paths.paths.runnerDir, version.service, name);
+          if (await this.platform.fs.exists(dir)) {
+            const entry = await this.platform.fs.lstat(dir);
+            if (!entry.isDirectory || entry.isSymlink) {
+              throw safetyError(`refusing unsafe runner bind path: ${dir}`);
+            }
+          } else {
+            await this.platform.fs.mkdirp(dir, 0o755);
+          }
+        }
+      }
+      // Docker would create a missing PostgreSQL backup bind as root. Prepare
+      // host-owned service directories before Compose starts so the CLI can
+      // create per-database backup artifacts without widening permissions.
+      for (const database of state.databaseServices) {
+        if (database.engine !== "postgres") continue;
+        const dir = join(this.platform.paths.paths.backupsDir, database.service);
+        if (await this.platform.fs.exists(dir)) {
+          const entry = await this.platform.fs.lstat(dir);
+          if (!entry.isDirectory || entry.isSymlink) {
+            throw safetyError(`refusing unsafe PostgreSQL backup path: ${dir}`);
+          }
+        } else {
+          await this.platform.fs.mkdirp(dir, 0o700);
+        }
+      }
 
       // Materialize docker build contexts + helpers for Compose (outside generated/)
       await materializeDockerAssets(
@@ -513,25 +543,8 @@ function generatedReloadPlan(state: DesiredState): ReloadPlan {
   const plan = emptyReloadPlan();
   plan.nginx = true;
   for (const v of state.phpVersions) {
-    const runnerService = `${v.service}-runner`;
     plan.phpFpm.add(v.service);
-    plan.phpRunner.add(runnerService);
-
-    // A full apply may follow one or more --no-apply cron mutations. s6 service
-    // reconciliation notices service-directory changes, not changes to the
-    // separately mounted crontabs, so every live scheduler must also reload.
-    const scheduledApps = Object.values(state.apps)
-      .filter(
-        (app) =>
-          isPhpApp(app) &&
-          app.enabled &&
-          app.phpVersion === v.version &&
-          (app.deploy.enabled || state.cronJobs.some((job) => job.app === app.slug && job.enabled)),
-      )
-      .map((app) => String(app.slug));
-    if (scheduledApps.length > 0) {
-      (plan.cronSchedulers ??= new Map()).set(runnerService, new Set(scheduledApps));
-    }
+    plan.phpRunner.add(`${v.service}-runner`);
   }
   return plan;
 }
@@ -693,21 +706,6 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
               reconciled.stderr || reconciled.stdout
             }`,
           );
-        }
-
-        // A crontab-only update leaves the scheduler service definition
-        // unchanged. Supercronic handles USR2 as an in-place crontab reload.
-        for (const app of plan.cronSchedulers?.get(svc) ?? []) {
-          await soft([
-            "docker",
-            "compose",
-            "exec",
-            "-T",
-            svc,
-            "/command/s6-svc",
-            "-2",
-            `/run/bento-s6/services/scheduler-${app}`,
-          ]);
         }
       }
     },

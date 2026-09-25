@@ -39,6 +39,29 @@ export async function isDockerAvailable(): Promise<boolean> {
 }
 
 /** True when `docker compose version` works. */
+/** Give a disposable app fixture the numeric owner used by its container.
+ * Docker performs chown so non-root CI can exercise the real private modes.
+ */
+export async function chownDockerFixture(path: string, uid: number, gid: number): Promise<void> {
+  const result = await new bunRuntime.Command("docker", {
+    args: [
+      "run",
+      "--rm",
+      "-v",
+      `${path}:/fixture`,
+      "--entrypoint",
+      "chown",
+      "debian:bookworm-slim",
+      "-R",
+      `${uid}:${gid}`,
+      "/fixture",
+    ],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+}
+
 export async function isComposeAvailable(): Promise<boolean> {
   if (!(await isDockerAvailable())) return false;
   try {

@@ -40,6 +40,8 @@ const DOCKER_PHP_FILES = [
   "docker/php/entrypoint.sh",
   "docker/php/runner-entrypoint.sh",
   "docker/php/s6-reconcile.sh",
+  "docker/php/minicrond-start.sh",
+  "docker/php/minicrond-reconcile.php",
   "docker/php/helpers/deploy-drain.sh",
 ] as const;
 

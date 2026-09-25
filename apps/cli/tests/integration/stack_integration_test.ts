@@ -397,82 +397,18 @@ bunRuntime.test("F2 Redis shared prefix + ACL credential materialize", async () 
 // F2.8 Cron/worker generation + scoped reload plan
 // ---------------------------------------------------------------------------
 
-bunRuntime.test("F2 cron/worker config generation + scoped reload plan", async () => {
+bunRuntime.test("F2 renderer delegates user jobs to private minicrond", async () => {
   await withStack(async (h) => {
     await bootstrapStack(h);
     assertEquals(await h.run("app", "create", "alpha", "--domain", "a.test", "--no-apply"), 0);
-    assertEquals(
-      await h.run(
-        "cron",
-        "add",
-        "--app",
-        "alpha",
-        "--name",
-        "tick",
-        "--schedule",
-        "*/5 * * * *",
-        "--no-apply",
-        "--",
-        "php",
-        "artisan",
-        "schedule:run",
-      ),
-      0,
-    );
-    assertEquals(
-      await h.run(
-        "worker",
-        "add",
-        "--app",
-        "alpha",
-        "--name",
-        "queue",
-        "--no-apply",
-        "--",
-        "php",
-        "artisan",
-        "queue:work",
-      ),
-      0,
-    );
-    // Preview after worker-only mutation should not require nginx if only runner
-    assertEquals(await h.run("apply", "--preview"), 0);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
-
     const state = await loadStateJson(h.stack);
-    assertEquals(
-      state.apps.alpha.cronJobs?.length >= 1 ||
-        state.cronJobs?.length >= 1 ||
-        Object.keys(state.apps.alpha).length > 0,
-      true,
-    );
-
-    // Generated runner content mentions worker/cron
-    let blob = "";
-    async function walk(dir: string) {
-      if (!(await exists(dir))) return;
-      for await (const e of bunRuntime.readDir(dir)) {
-        const p = join(dir, e.name);
-        if (e.isDirectory) await walk(p);
-        else {
-          try {
-            blob += await bunRuntime.readTextFile(p);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    }
-    await walk(gen(h, "runner"));
-    await walk(gen(h, "php"));
-    // Flat s6 service name stability
-    assertEquals(
-      blob.includes("alpha__queue") ||
-        blob.includes("queue:work") ||
-        blob.includes("schedule:run") ||
-        blob.includes("tick"),
-      true,
-    );
+    assertEquals(state.cronJobs.length, 0);
+    assertEquals(state.workers.length, 0);
+    assertEquals(await exists(gen(h, "runner/php85/cron/alpha.crontab")), false);
+    assertEquals(await exists(gen(h, "runner/php85/services/scheduler-alpha/run")), false);
+    assertEquals(await exists(gen(h, "runner/php85/services/minicrond-alpha/run")), true);
+    assertEquals(await exists(gen(h, "runner/php85/minicrond/logrotate/alpha.conf")), true);
   });
 });
 
@@ -492,9 +428,9 @@ bunRuntime.test("F2 deploy enable + queue surface + drain status", async () => {
     assertEquals(vhost.includes("/opt/bento/helpers/bento.php"), true);
     const state = await loadStateJson(h.stack);
     const service = state.apps.alpha.phpService;
-    const crontab = await readText(gen(h, "runner", service, "cron", "alpha.crontab"));
-    assertEquals(crontab.includes("deploy-drain.sh alpha"), true);
-    assertEquals(crontab.includes(`/run/php-fpm/${service}/alpha.sock`), true);
+    const seed = await readText(gen(h, "runner", service, "minicrond", "alpha", "seed.toml"));
+    assertEquals(seed.includes("/opt/bento/helpers/deploy-drain.sh"), true);
+    assertEquals(seed.includes(`/run/php-fpm/${service}/alpha.sock`), true);
     const helper = await readText(join(h.stack, "helpers", "deploy-drain.sh"));
     assertEquals(helper.includes("deploy-drain.php"), true);
     assertEquals(helper.includes("bento deploy drain"), false);

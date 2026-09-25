@@ -106,12 +106,10 @@ bunRuntime.test(
       assert(parseDesiredState(JSON.parse(stateToJson(result.state))).ok);
 
       const files = await generateAll(platform, result.state, "digest");
-      const crontab = files.find((file) => file.relPath.endsWith("cron/local.crontab"));
-      const scheduler = files.find((file) => file.relPath.endsWith("services/scheduler-local/run"));
-      assert(crontab && typeof crontab.content === "string");
-      const vacuumLine = crontab.content.split("\n").find((line) => line.includes("VACUUM;"));
-      assert(vacuumLine);
-      const schedule = vacuumLine.match(/^(\d+) (\d+) \* \* (\d+) /);
+      const seed = files.find((file) => file.relPath.endsWith("minicrond/local/seed.toml"));
+      const scheduler = files.find((file) => file.relPath.endsWith("services/minicrond-local/run"));
+      assert(seed && typeof seed.content === "string");
+      const schedule = seed.content.match(/schedule = "(\d+) (\d+) \* \* (\d+)"/);
       assert(schedule);
       assertEquals(Number(schedule[1]), result.app.database.vacuumSchedule?.minute);
       assertEquals(Number(schedule[2]), result.app.database.vacuumSchedule?.hour);
@@ -119,16 +117,16 @@ bunRuntime.test(
       assert(Number(schedule[1]) >= 0 && Number(schedule[1]) <= 59);
       assert(Number(schedule[2]) >= 0 && Number(schedule[2]) <= 4);
       assert(Number(schedule[3]) >= 0 && Number(schedule[3]) <= 6);
-      assertStringIncludes(crontab.content, "sqlite3");
-      assertStringIncludes(crontab.content, "VACUUM;");
-      assert(scheduler, "plain SQLite must start a Supercronic scheduler");
+      assertStringIncludes(seed.content, "/usr/bin/sqlite3");
+      assertStringIncludes(seed.content, "VACUUM;");
+      assert(scheduler, "plain SQLite must start its own minicrond daemon");
 
       const rerendered = await generateAll(platform, result.state, "digest");
-      const rerenderedCrontab = rerendered.find((file) =>
-        file.relPath.endsWith("cron/local.crontab"),
+      const rerenderedSeed = rerendered.find((file) =>
+        file.relPath.endsWith("minicrond/local/seed.toml"),
       );
-      assert(rerenderedCrontab && typeof rerenderedCrontab.content === "string");
-      assertEquals(rerenderedCrontab.content, crontab.content);
+      assert(rerenderedSeed && typeof rerenderedSeed.content === "string");
+      assertEquals(rerenderedSeed.content, seed.content);
 
       const compose = assembleComposeDocuments(platform, result.state).find((file) =>
         file.relPath.includes("php-php85"),
@@ -159,13 +157,13 @@ bunRuntime.test("local SQLite VACUUM slots do not overlap when files are added",
     });
     const files = await generateAll(platform, second.state, "digest");
     const schedules = files
-      .filter((file) => file.relPath.endsWith(".crontab"))
+      .filter((file) => file.relPath.endsWith("/seed.toml"))
       .flatMap((file) => {
         if (typeof file.content !== "string") return [];
         return file.content
           .split("\n")
-          .filter((line) => line.includes("VACUUM;"))
-          .map((line) => line.match(/^(\d+ \d+ \* \* \d+) /)?.[1])
+          .filter((line) => line.startsWith("schedule = "))
+          .map((line) => line.match(/^schedule = "(\d+ \d+ \* \* \d+)"/)?.[1])
           .filter((schedule): schedule is string => schedule !== undefined);
       });
     assertEquals(schedules.length, 2);

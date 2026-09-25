@@ -2,14 +2,7 @@
  * Generate complete candidate configuration from desired state.
  */
 
-import {
-  isPhpApp,
-  type AppState,
-  type CronJob,
-  type DesiredState,
-  type ProxySite,
-  type Worker,
-} from "../domain/state.ts";
+import { isPhpApp, type AppState, type DesiredState, type ProxySite } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { FPM_PROFILES, SHARED_SOCKET_GID } from "../domain/types.ts";
 import { validationError } from "../domain/errors.ts";
@@ -35,10 +28,12 @@ import {
 import { validateUpstreams } from "./proxy.ts";
 import { loadCloudflareTunnelToken } from "./cloudflare_tunnel.ts";
 import {
-  formatSqliteVacuumSchedule,
-  resolveSqliteVacuumSchedules,
-  sqliteVacuumScheduleKey,
-} from "./sqlite_schedule.ts";
+  appInternalJobs,
+  appInternalNames,
+  minicrondBootstrapConfig,
+  rootInternalJobs,
+  rootInternalNames,
+} from "./minicrond_internal.ts";
 
 export async function generateAll(
   platform: Platform,
@@ -65,7 +60,7 @@ export async function generateAll(
   // PHP pools per app
   files.push(...(await generatePhpPools(platform, state)));
 
-  // Runner: Supercronic and worker service directories supervised by s6
+  // Runner: per-app and root minicrond services supervised by s6
   files.push(...generateRunnerConfig(state));
 
   // One dedicated Litestream daemon discovers every managed SQLite database.
@@ -487,62 +482,35 @@ export function generateLitestreamEnvironment(
 
 function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
   const files: GeneratedFile[] = [];
-  const vacuumSchedules = resolveSqliteVacuumSchedules(state);
   for (const v of state.phpVersions) {
     const appsOnVersion = Object.values(state.apps).filter(
       (a) => isPhpApp(a) && a.enabled && a.phpVersion === v.version,
     );
-    const jobs = state.cronJobs.filter(
-      (j) => appsOnVersion.some((a) => a.slug === j.app) && j.enabled,
-    );
-    const workers = state.workers.filter(
-      (w) => appsOnVersion.some((a) => a.slug === w.app) && w.enabled,
-    );
-
-    // Per-app crontab files
+    // User definitions belong exclusively to each app's minicrond registry.
     for (const app of appsOnVersion) {
-      const appJobs = jobs.filter((j) => j.app === app.slug);
-      // Always include deploy drain when deploy enabled
-      const lines: string[] = [];
-      if (app.deploy.enabled) {
-        // The per-app Supercronic process already runs as the app UID/GID.
-        lines.push(
-          `* * * * * /opt/bento/helpers/deploy-drain.sh ${app.slug} /run/php-fpm/${app.phpService}/${app.slug}.sock`,
-        );
-      }
-      for (const databaseBinding of app.databases) {
-        if (databaseBinding.engine !== "sqlite") continue;
-        // Each file gets a stable weekly slot in the runner's local timezone,
-        // spread across 00:00-04:59. VACUUM takes SQLite's normal exclusive
-        // write lock; busy_timeout lets short application transactions finish first.
-        const database = `/sqlite/${databaseBinding.file.id}/${app.slug}.db`;
-        const schedule = vacuumSchedules.get(
-          sqliteVacuumScheduleKey(String(app.slug), databaseBinding.file.id),
-        );
-        if (!schedule) throw validationError("missing SQLite VACUUM schedule");
-        lines.push(
-          `${formatSqliteVacuumSchedule(schedule)} /usr/bin/sqlite3 ${shellQuote(database)} ${shellQuote(
-            "PRAGMA busy_timeout=30000; VACUUM;",
-          )}`,
-        );
-      }
-      for (const job of appJobs) {
-        lines.push(formatCronLine(job, app));
-        files.push({
-          relPath: `runner/${v.service}/cron/jobs/${app.slug}/${job.name}.sh`,
-          content: formatCronScript(job),
-          // The crontab invokes this through `sh`; it only needs to be readable
-          // by the s6-applyuidgid-dropped app identity.
+      const seed = appInternalJobs(state, app);
+      const config = `runner/${v.service}/minicrond/${app.slug}`;
+      files.push(
+        {
+          relPath: `${config}/config.toml`,
+          content: minicrondBootstrapConfig(),
           mode: 0o644,
           managed: true,
-        });
-      }
-      files.push({
-        relPath: `runner/${v.service}/cron/${app.slug}.crontab`,
-        content: withManagedMarker(lines.length ? lines.join("\n") + "\n" : "# no jobs\n"),
-        mode: 0o644,
-        managed: true,
-      });
+        },
+        { relPath: `${config}/seed.toml`, content: seed, mode: 0o644, managed: true },
+        {
+          relPath: `${config}/expected.json`,
+          content: JSON.stringify(appInternalNames(app)),
+          mode: 0o644,
+          managed: true,
+        },
+        {
+          relPath: `runner/${v.service}/services/minicrond-${app.slug}/run`,
+          content: `#!/bin/sh\n# bento-managed: true\n# seed-sha256: ${Bun.hash(seed)}\nexport BASE_PATH=/scheduler/apps/${app.slug}/\nexec /usr/local/bin/bento-minicrond-start ${app.uid} ${app.gid} ${shellQuote(app.home)} ${app.slug} /etc/bento/minicrond/${app.slug}/seed.toml ${shellQuote(`${app.home}/.local/share/minicron`)} /etc/bento/minicrond/${app.slug}/config.toml /etc/bento/minicrond/${app.slug}/expected.json\n`,
+          mode: 0o755,
+          managed: true,
+        },
+      );
     }
 
     // A mutable /run scan tree is reconciled from these read-only service
@@ -555,15 +523,11 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
       managed: true,
     });
 
-    const logrotateLines: string[] = [];
     for (const app of appsOnVersion) {
-      // Keep rotation out of the app's own crontab: that scheduler intentionally
-      // runs without root, while PHP-FPM slow logs and captured worker logs can
-      // be root-owned. One root maintenance scheduler handles every app on this
-      // runner without an endless shell/sleep process.
-      const logrotateConfig = `/etc/bento/cron/logrotate/${app.slug}.conf`;
+      // FPM and app logs can be root-owned; keep rotation in the root
+      // minicrond instance, never inside an app-owned scheduler.
       files.push({
-        relPath: `runner/${v.service}/cron/logrotate/${app.slug}.conf`,
+        relPath: `runner/${v.service}/minicrond/logrotate/${app.slug}.conf`,
         content: withManagedMarker(
           `"${app.home}/logs/cron/*.log" "${app.home}/logs/php/*.log" "${app.home}/logs/worker/*.log" "${app.home}/logs/worker/*.err" {
   size 10M
@@ -578,94 +542,34 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
         mode: 0o644,
         managed: true,
       });
-      logrotateLines.push(
-        `0 * * * * /usr/sbin/logrotate --state /run/bento-s6/logrotate-${app.slug}.status ${logrotateConfig}`,
-      );
-
-      const appJobs = jobs.filter((j) => j.app === app.slug);
-      if (
-        appJobs.length > 0 ||
-        app.deploy.enabled ||
-        app.databases.some((database) => database.engine === "sqlite")
-      ) {
-        const service = `scheduler-${app.slug}`;
-        const supercronic = `/usr/local/bin/supercronic /etc/bento/cron/${app.slug}.crontab`;
-        // Open the app-owned log only after dropping privileges. Besides giving
-        // the app ownership of a newly created log, this avoids root following
-        // an app-controlled symlink during shell redirection.
-        const scheduler = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c ${shellQuote(
-          `exec ${supercronic} >>${shellQuote(`${app.home}/logs/cron/scheduler.log`)} 2>&1`,
-        )}`;
-        files.push({
-          relPath: `runner/${v.service}/services/${service}/run`,
-          content: `#!/bin/sh\n# bento-managed: true\nexport HOME=${shellQuote(app.home)} USER=${shellQuote(
-            String(app.slug),
-          )} BENTO_APP=${shellQuote(String(app.slug))}\nexec ${scheduler}\n`,
-          mode: 0o755,
-          managed: true,
-        });
-      }
     }
 
-    if (logrotateLines.length > 0) {
+    if (appsOnVersion.length > 0) {
       files.push({
-        relPath: `runner/${v.service}/cron/logrotate.crontab`,
-        content: withManagedMarker(`${logrotateLines.join("\n")}\n`),
+        relPath: `runner/${v.service}/minicrond/root-config.toml`,
+        content: minicrondBootstrapConfig(),
+        mode: 0o644,
+        managed: true,
+      });
+      const seed = rootInternalJobs(appsOnVersion);
+      files.push({
+        relPath: `runner/${v.service}/minicrond/root-seed.toml`,
+        content: seed,
         mode: 0o644,
         managed: true,
       });
       files.push({
-        relPath: `runner/${v.service}/services/logrotate/run`,
-        content:
-          "#!/bin/sh\n# bento-managed: true\n# Root maintenance scheduler; app cron services remain unprivileged.\nexec /usr/local/bin/supercronic /etc/bento/cron/logrotate.crontab\n",
+        relPath: `runner/${v.service}/minicrond/root-expected.json`,
+        content: JSON.stringify(rootInternalNames(appsOnVersion)),
+        mode: 0o644,
+        managed: true,
+      });
+      files.push({
+        relPath: `runner/${v.service}/services/minicrond-root/run`,
+        content: `#!/bin/sh\n# bento-managed: true\n# seed-sha256: ${Bun.hash(seed)}\nexec /usr/local/bin/bento-minicrond-start 0 0 /root root /etc/bento/minicrond/root-seed.toml /var/lib/bento/minicron /etc/bento/minicrond/root-config.toml /etc/bento/minicrond/root-expected.json\n`,
         mode: 0o755,
         managed: true,
       });
-    }
-
-    for (const w of workers) {
-      const app = state.apps[w.app];
-      if (!app) continue;
-      const service = `worker-${app.slug}-${w.name}`;
-      const cmd = w.command.map(shellQuote).join(" ");
-      // Open worker logs after dropping privileges so newly created files are
-      // app-owned and root never follows an app-controlled symlink.
-      const workerLog = `${app.home}/logs/worker/${w.name}.log`;
-      const workerErrorLog = `${app.home}/logs/worker/${w.name}.err`;
-      const dropped = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c ${shellQuote(
-        `cd ${w.workdir} && exec ${cmd} >>${shellQuote(workerLog)} 2>>${shellQuote(
-          workerErrorLog,
-        )}`,
-      )}`;
-      files.push({
-        relPath: `runner/${v.service}/services/${service}/run`,
-        content: `#!/bin/sh\n# bento-managed: true\nexport HOME=${shellQuote(app.home)} USER=${shellQuote(
-          String(app.slug),
-        )} BENTO_APP=${shellQuote(String(app.slug))}\nexec ${dropped}\n`,
-        mode: 0o755,
-        managed: true,
-      });
-      files.push({
-        relPath: `runner/${v.service}/services/${service}/down-signal`,
-        content: `${s6SignalNumber(w.stopsignal)}\n`,
-        mode: 0o644,
-        managed: true,
-      });
-      files.push({
-        relPath: `runner/${v.service}/services/${service}/timeout-kill`,
-        content: `${w.stopwaitsecs * 1000}\n`,
-        mode: 0o644,
-        managed: true,
-      });
-      if (!w.autorestart) {
-        files.push({
-          relPath: `runner/${v.service}/services/${service}/finish`,
-          content:
-            "#!/bin/sh\n# bento-managed: true\n# Keep a one-shot worker down after it exits.\nexec /command/s6-svc -d .\n",
-          mode: 0o755,
-          managed: true,
-        });
-      }
     }
   }
   return files;
@@ -716,58 +620,9 @@ socket=/var/run/mysqld/mysqld.sock
   return files;
 }
 
-function formatCronLine(job: CronJob, app: AppState): string {
-  // Keep user shell source out of the crontab. Besides making the generated
-  // line readable, the child script lets a user's own redirects override the
-  // inherited Bento log redirect in the normal shell manner.
-  const script = `/etc/bento/cron/jobs/${app.slug}/${job.name}.sh`;
-  let cmd = `sh ${shellQuote(script)}`;
-  if (job.timeoutSec) {
-    cmd = `timeout ${job.timeoutSec}s ${cmd}`;
-  }
-  if (job.lock) {
-    cmd = `flock -n /run/bento/${app.slug}/${job.lock}.lock -c ${shellQuote(cmd)}`;
-  }
-  if (job.output === "null") {
-    cmd = `${cmd} >/dev/null 2>&1`;
-  } else if (job.output === "log") {
-    cmd = `${cmd} >> ${containerAppHome(app.slug)}/logs/cron/${job.name}.log 2>&1`;
-  }
-  // Supercronic already executes the crontab command through /bin/sh, and its
-  // process already runs as the app UID/GID. No additional shell is needed.
-  return `${job.schedule} ${cmd}`;
-}
-
-function formatCronScript(job: CronJob): string {
-  const command =
-    job.commandMode === "shell" ? job.command[0]! : `exec ${job.command.map(shellQuote).join(" ")}`;
-  return withManagedMarker(
-    `cd ${shellQuote(
-      job.workdir,
-    )} || exit 1\nprintf '\\n= Run at %s =\\n\\n' "$(date '+%Y-%m-%d %H:%M:%S')"\n${command}\n`,
-  );
-}
-
 function shellQuote(s: string): string {
   if (/^[a-zA-Z0-9_./:@%+=,-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
-/** s6's down-signal file contains a signal number, not a symbolic name. */
-function s6SignalNumber(signal: string): number {
-  const normalized = signal.trim().toUpperCase().replace(/^SIG/, "");
-  const numbers: Record<string, number> = {
-    HUP: 1,
-    INT: 2,
-    QUIT: 3,
-    KILL: 9,
-    USR1: 10,
-    USR2: 12,
-    TERM: 15,
-  };
-  if (numbers[normalized] !== undefined) return numbers[normalized];
-  if (/^[1-9][0-9]*$/.test(normalized)) return Number(normalized);
-  return 15;
 }
 
 async function readOrDefault(
@@ -805,7 +660,3 @@ php_admin_value[session.save_path] = {{home}}/tmp/sessions
 slowlog = {{home}}/logs/php/slow.log
 request_slowlog_timeout = 15s
 `;
-
-// silence unused import lint for Worker if not used directly
-void (null as unknown as Worker);
-void (null as unknown as DesiredState);

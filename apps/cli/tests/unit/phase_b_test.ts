@@ -3,7 +3,7 @@
  * template customization/drift, maintenance crontab merge, batched --no-apply.
  */
 
-import { runtime as bunRuntime, assertEquals, assertRejects } from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertThrows } from "../runtime.ts";
 import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
@@ -15,13 +15,7 @@ import {
   queryDatabaseSizes,
   queryProcesslist,
 } from "../../src/services/mysql.ts";
-import {
-  addWorker,
-  buildWorkerControlPlan,
-  buildWorkerSignalPlan,
-  isScopedWorkerCommand,
-  workerProgramName,
-} from "../../src/services/worker.ts";
+import { addWorker } from "../../src/services/worker.ts";
 import {
   buildAccessLogRotatePlan,
   buildGoAccessReportPlan,
@@ -178,66 +172,23 @@ bunRuntime.test("queryProcesslist fails closed on non-zero", async () => {
 
 // --- B2 Worker lifecycle ----------------------------------------------------
 
-bunRuntime.test("worker program names are stable and flat", async () => {
+bunRuntime.test("Bento worker creation is retired and cannot persist a ghost service", async () => {
   await withRoot(async (_root, platform) => {
-    let state = createEmptyState();
-    const provisioned = provisionApp(platform, state, {
+    const state = provisionApp(platform, createEmptyState(), {
       slug: "demo",
       domain: "demo.test",
-    });
-    state = provisioned.state;
-    const a = addWorker(
-      state,
-      {
-        app: "demo",
-        name: "queue",
-        command: ["php", "artisan", "queue:work"],
-      },
-      platform,
+    }).state;
+    assertThrows(
+      () =>
+        addWorker(
+          state,
+          { app: "demo", name: "queue", command: ["php", "artisan", "queue:work"] },
+          platform,
+        ),
+      Error,
+      "retired",
     );
-    state = a.state;
-    const b = addWorker(
-      state,
-      {
-        app: "demo",
-        name: "mail",
-        command: ["php", "artisan", "queue:work", "--queue=mail"],
-      },
-      platform,
-    );
-    state = b.state;
-
-    assertEquals(workerProgramName("demo", "queue"), "worker-demo-queue");
-    assertEquals(workerProgramName("demo", "mail"), "worker-demo-mail");
-
-    const restart = buildWorkerControlPlan(state, "demo", "queue", "restart");
-    assertEquals(restart.program, "worker-demo-queue");
-    assertEquals(restart.runnerService, "php85-runner");
-    assertEquals(restart.command.includes("/command/s6-svc"), true);
-    assertEquals(restart.command.includes("-r"), true);
-    assertEquals(
-      restart.command.some((arg) => arg.endsWith("/worker-demo-queue")),
-      true,
-    );
-    const hup = buildWorkerSignalPlan(state, "demo", "queue", "HUP");
-    assertEquals(hup.command.includes("-h"), true);
-    assertEquals(
-      hup.command.some((arg) => arg.endsWith("/worker-demo-queue")),
-      true,
-    );
-    // Sibling not targeted
-    assertEquals(restart.command.includes("worker-demo-mail"), false);
-    assertEquals(
-      isScopedWorkerCommand(restart.command, "worker-demo-queue", [
-        "worker-demo-queue",
-        "worker-demo-mail",
-        "scheduler-demo",
-      ]),
-      true,
-    );
-    // Reload plan for add targets runner only (not nginx)
-    assertEquals(a.reloadPlan.nginx, false);
-    assertEquals(a.reloadPlan.phpRunner.has("php85-runner"), true);
+    assertEquals(state.workers.length, 0);
   });
 });
 
@@ -510,24 +461,6 @@ bunRuntime.test("multiple --no-apply mutations then single apply is one transact
         slug: "two",
         domain: "two.test",
       }).state;
-      next = addWorker(
-        next,
-        {
-          app: "one",
-          name: "q",
-          command: ["php", "artisan", "queue:work"],
-        },
-        platform,
-      ).state;
-      next = addWorker(
-        next,
-        {
-          app: "two",
-          name: "q",
-          command: ["sleep", "infinity"],
-        },
-        platform,
-      ).state;
       const access = setAppAccessLog(next, "one", true, platform.clock.nowIso(), platform);
       await store.save(access.state);
       return access.state;
@@ -536,7 +469,7 @@ bunRuntime.test("multiple --no-apply mutations then single apply is one transact
     // Single apply transaction
     const state = await store.load();
     assertEquals(Object.keys(state.apps).sort(), ["one", "two"]);
-    assertEquals(state.workers.length, 2);
+    assertEquals(state.workers.length, 0);
     assertEquals(state.apps["one"]!.accessLog, true);
 
     const result = await render.apply(state, {

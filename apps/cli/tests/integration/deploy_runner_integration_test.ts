@@ -38,6 +38,19 @@ async function runDocker(
   }
 }
 
+async function readContainerFile(container: string, path: string): Promise<string> {
+  const result = await runDocker([
+    "exec",
+    container,
+    "php",
+    "-r",
+    "$data=@file_get_contents($argv[1]); if ($data === false) exit(1); echo $data;",
+    path,
+  ]);
+  assertEquals(result.code, 0, result.stderr);
+  return result.stdout;
+}
+
 async function hmacSha256(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -227,7 +240,9 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       };
       assertEquals(accepted.status, "queued");
 
-      let queue = JSON.parse(await bunRuntime.readTextFile(join(bentoDir, "queue.json"))) as {
+      let queue = JSON.parse(
+        await readContainerFile(container, "/home/alpha/.bento/queue.json"),
+      ) as {
         jobs: Array<{
           id: string;
           status: string;
@@ -263,25 +278,42 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       assertEquals(drained.code, 0, drained.stderr + drained.stdout);
       assertEquals(drained.stdout.includes(`drained ${accepted.id} -> success`), true);
 
-      queue = JSON.parse(await bunRuntime.readTextFile(join(bentoDir, "queue.json")));
+      queue = JSON.parse(await readContainerFile(container, "/home/alpha/.bento/queue.json"));
       const job = queue.jobs.find((candidate) => candidate.id === accepted.id);
       assertEquals(job?.status, "success");
       assertEquals(job?.exitCode, 0);
-      assertEquals((await bunRuntime.readTextFile(join(bentoDir, "hook-ran"))).trim(), accepted.id);
-      const log = await bunRuntime.readTextFile(
-        join(logsDir, job?.logName ?? `deploy-${accepted.id}.log`),
+      assertEquals(
+        (await readContainerFile(container, "/home/alpha/.bento/hook-ran")).trim(),
+        accepted.id,
+      );
+      const log = await readContainerFile(
+        container,
+        `/home/alpha/logs/${job?.logName ?? `deploy-${accepted.id}.log`}`,
       );
       assertEquals(log.includes("live hook executed"), true);
       assertEquals(log.includes("opcache reset: reset"), true);
-      let payloadExists = true;
-      try {
-        await bunRuntime.stat(join(bentoDir, `payload-${accepted.id}.json`));
-      } catch {
-        payloadExists = false;
-      }
-      assertEquals(payloadExists, false);
+      const payload = await runDocker([
+        "exec",
+        container,
+        "php",
+        "-r",
+        "exit(file_exists($argv[1]) ? 0 : 1);",
+        `/home/alpha/.bento/payload-${accepted.id}.json`,
+      ]);
+      assertEquals(payload.code, 1);
     } finally {
       if (container !== "") {
+        await runDocker(
+          [
+            "exec",
+            container,
+            "chown",
+            "-R",
+            `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+            "/home/alpha",
+          ],
+          { timeoutMs: 30_000 },
+        );
         await runDocker(["rm", "-f", container], { timeoutMs: 30_000 });
       }
       await bunRuntime.remove(root, { recursive: true }).catch(() => {});

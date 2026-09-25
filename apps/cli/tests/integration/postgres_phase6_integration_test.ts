@@ -102,7 +102,7 @@ bunRuntime.test(
     } finally {
       if (state) {
         await platform.process
-          .run(await composeArgs(platform, state, ["rm", "-f", "-s", "postgres17"]), {
+          .run(await composeArgs(platform, state, ["down", "--remove-orphans"]), {
             cwd: root,
             timeoutMs: 30_000,
           })

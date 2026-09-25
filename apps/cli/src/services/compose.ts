@@ -436,7 +436,7 @@ function renderPhpFragment(service: string, image: string, version: string): str
         networks: ["private"],
         user: "root",
         // s6-overlay's /init is PID 1; its supervised CMD owns the dynamic app
-        // scheduler/worker scan tree.
+        // minicrond scan tree.
         entrypoint: ["/init"],
         command: ["/usr/local/bin/bento-runner-entrypoint"],
         volumes: [
@@ -444,7 +444,8 @@ function renderPhpFragment(service: string, image: string, version: string): str
           "./sqlite:/sqlite",
           "./backups/sqlite:/var/backups/bento/sqlite",
           `./generated/runner/${service}/services:/etc/bento/services:ro`,
-          `./generated/runner/${service}/cron:/etc/bento/cron:ro`,
+          `./generated/runner/${service}/minicrond:/etc/bento/minicrond:ro`,
+          `./maintenance/minicrond/${service}:/var/lib/bento/minicron`,
           "./docker/php/runner-entrypoint.sh:/usr/local/bin/bento-runner-entrypoint:ro",
           "./docker/php/s6-reconcile.sh:/usr/local/bin/bento-s6-reconcile:ro",
           "./helpers:/opt/bento/helpers:ro",

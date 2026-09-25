@@ -219,6 +219,25 @@ bunRuntime.test(
     assertEquals(dockerfile.includes("pdo_pgsql"), true);
     assertEquals(dockerfile.includes("pgsql"), true);
     assertEquals(dockerfile.includes("libpq5"), true);
+    assertEquals(dockerfile.includes("ARG MINICROND_VERSION=0.2.2"), true);
+    assertEquals(
+      dockerfile.includes(
+        "ARG MINICROND_AMD64_SHA256=ff3e0011efabebd110a9e65277a13f595fe8216457c004b07e2958188c6a8652",
+      ),
+      true,
+    );
+    assertEquals(
+      dockerfile.includes(
+        "ARG MINICROND_ARM64_SHA256=1e4e9ff7e4be7a319e378731df8963510400414be28b00ca7b6a554311edeb13",
+      ),
+      true,
+    );
+    assertEquals(
+      dockerfile.includes(
+        "github.com/khanhicetea/minicrond/releases/download/${MINICROND_VERSION}/minicrond-linux-${mc_arch}",
+      ),
+      true,
+    );
     const runtime = dockerfile.slice(dockerfile.lastIndexOf("FROM debian:bookworm-slim"));
     assertEquals(runtime.includes("libpq-dev"), false);
     assertEquals(runtime.includes("build-essential"), false);

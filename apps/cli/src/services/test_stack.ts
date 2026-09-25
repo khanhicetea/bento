@@ -9,7 +9,7 @@ import { chmod, chown, readFile, stat } from "node:fs/promises";
  *   3. db-add          MySQL db provision + PHP connectivity
  *   4. postgres        PDO connectivity, two-app isolation, backup/restore
  *   5. domain          add/remove aliases + nginx vhost proof
- *   6. cron-worker     * * * * * print cron + file worker, wait 61s
+ *   6. minicrond       app-owned scheduled job + supervised worker, wait 61s
  *   7. permissions     break modes → repair → re-check
  *   8. http/tls/status shared TLS HTTP + mixed-engine status (ACME skipped)
  *   9. stack-transfer  mixed-engine raw-volume export
@@ -35,8 +35,7 @@ import { runDatabaseBackup, runDatabaseRestore } from "./database_backup.ts";
 import { buildStatus } from "./status.ts";
 import { exportStack } from "./stack_transfer.ts";
 import { parseDotEnv } from "./stack_env.ts";
-import { addCronJob, removeCronJob } from "./cron.ts";
-import { addWorker, removeWorker, workerProgramName } from "./worker.ts";
+import { minicrondComposeCommand } from "./minicrond.ts";
 import { checkPermissions, repairPermissions } from "./permissions.ts";
 import { enableDeploy } from "./deploy.ts";
 
@@ -1233,174 +1232,80 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   });
 
   // =========================================================================
-  // CHAIN 5 — cron + worker (wait 61s)
+  // CHAIN 5 — app-owned minicrond job and worker (wait for a scheduled tick)
   // =========================================================================
-  chain("cron-worker");
+  chain("minicrond");
+  const schedulerCli = (current: DesiredState, args: string[]) =>
+    composeCmd(platform, current, minicrondComposeCommand(current, appSlug, args), 30_000);
 
-  await record("cron-add", "Add cron print job (* * * * *)", async () => {
-    state = await store.load();
-    // Idempotent: drop prior job so this run owns a fresh log window
-    if (state.cronJobs.some((j) => j.app === appSlug && j.name === "print")) {
-      const removed = removeCronJob(state, appSlug, "print", platform.clock.nowIso());
-      state = removed.state;
-      await store.save(state);
-    }
-    const added = addCronJob(
-      state,
-      {
-        app: appSlug,
-        name: "print",
-        schedule: "* * * * *",
-        command: ["sh", "-c", "echo cron-ok $(date -Iseconds)"],
-        output: "log",
-      },
+  await record("scheduler-import", "Import app-owned job and worker into minicrond", async () => {
+    const current = await store.load();
+    state = current;
+    const app = current.apps[appSlug]!;
+    const runner = `${app.phpService}-runner`;
+    const up = await composeCmd(platform, current, ["up", "-d", runner], 120_000);
+    if (up.code !== 0) return { ok: false, detail: (up.stderr || up.stdout).trim().slice(0, 300) };
+    // The runner was started before apps existed. Reconcile its mutable s6
+    // scan tree after rendering the new app service definitions.
+    const reconciled = await composeCmd(
       platform,
+      current,
+      ["exec", "-T", runner, "/usr/local/bin/bento-s6-reconcile"],
+      30_000,
     );
-    await store.save(added.state);
-    state = added.state;
-    // Clear prior log so we only count new ticks
-    const cronLog = join(platform.paths.paths.homesDir, appSlug, "logs", "cron", "print.log");
-    await platform.fs.mkdirp(join(cronLog, ".."));
-    await platform.fs.atomicWriteText(cronLog, "", 0o644);
-    // Ensure app uid can write
-    try {
-      await chown(cronLog, state.apps[appSlug]!.uid, state.apps[appSlug]!.gid);
-    } catch {
-      // best-effort on platforms without chown
+    if (reconciled.code !== 0)
+      return { ok: false, detail: (reconciled.stderr || reconciled.stdout).trim().slice(0, 300) };
+    const ready = await waitFor(
+      "minicrond",
+      60_000,
+      async () => (await schedulerCli(current, ["status"])).code === 0,
+      log,
+    );
+    if (!ready) return { ok: false, detail: "app minicrond did not become ready" };
+    const hostHome = join(platform.paths.paths.homesDir, appSlug);
+    for (const category of ["cron", "worker"]) {
+      const path = join(hostHome, "logs", category, "print.log");
+      await platform.fs.atomicWriteText(path, "", 0o644);
+      await chown(path, app.uid, app.gid);
     }
-    await render.apply(state, {
-      reloadPlan: added.reloadPlan,
-      skipValidate: true,
-    });
-    // Confirm crontab generated
-    const service = state.apps[appSlug]!.phpService;
-    const ct = await platform.fs.readText(
-      join(opts.stackRoot, "generated", "runner", service, "cron", `${appSlug}.crontab`),
+    const bundle = join(hostHome, ".bento", "test-stack-minicrond.toml");
+    await platform.fs.atomicWriteText(
+      bundle,
+      `[[job]]\nname = "test-stack-print-job"\nschedule = "* * * * *"\ncommand = "echo cron-ok $(date -Iseconds) >> /home/${appSlug}/logs/cron/print.log"\nworking_dir = "/home/${appSlug}"\n\n[[worker]]\nname = "test-stack-print-worker"\ncommand = "while true; do echo worker-ok $(date -Iseconds) >> /home/${appSlug}/logs/worker/print.log; sleep 5; done"\nworking_dir = "/home/${appSlug}"\n`,
+      0o600,
     );
-    const jobScript = await platform.fs.readText(
-      join(opts.stackRoot, "generated", "runner", service, "cron", "jobs", appSlug, "print.sh"),
-    );
-    if (!ct.includes("* * * * *") || !ct.includes("/jobs/") || !jobScript.includes("cron-ok")) {
-      return {
-        ok: false,
-        detail: `crontab or job script missing job: ${ct.slice(0, 200)}`,
-      };
-    }
-    return { ok: true, detail: "schedule=* * * * * → logs/cron/print.log" };
+    await chown(bundle, app.uid, app.gid);
+    const imported = await schedulerCli(current, [
+      "import",
+      `${app.home}/.bento/test-stack-minicrond.toml`,
+    ]);
+    if (imported.code !== 0)
+      return { ok: false, detail: (imported.stderr || imported.stdout).trim().slice(0, 300) };
+    const listed = await schedulerCli(current, ["list"]);
+    return {
+      ok:
+        listed.code === 0 &&
+        listed.stdout.includes("test-stack-print-job") &&
+        listed.stdout.includes("test-stack-print-worker"),
+      detail:
+        listed.code === 0 ? "app registry owns both definitions" : listed.stderr.slice(0, 300),
+    };
   });
 
-  await record("worker-add", "Add worker that prints to logs/worker/print.log", async () => {
+  await record("scheduler-status", "Minicrond app daemon and worker remain healthy", async () => {
     state = await store.load();
-    if (state.workers.some((w) => w.app === appSlug && w.name === "print")) {
-      const removed = removeWorker(state, appSlug, "print", platform.clock.nowIso());
-      state = removed.state;
-      await store.save(state);
-    }
-    const workerLog = join(platform.paths.paths.homesDir, appSlug, "logs", "worker", "print.log");
-    await platform.fs.mkdirp(join(workerLog, ".."));
-    await platform.fs.atomicWriteText(workerLog, "", 0o644);
-    try {
-      await chown(workerLog, state.apps[appSlug]!.uid, state.apps[appSlug]!.gid);
-    } catch {
-      // best-effort
-    }
-    const added = addWorker(
-      state,
-      {
-        app: appSlug,
-        name: "print",
-        command: ["sh", "-c", "while true; do echo worker-ok $(date -Iseconds); sleep 5; done"],
-        workdir: state.apps[appSlug]!.home,
-      },
-      platform,
-    );
-    await store.save(added.state);
-    state = added.state;
-    await render.apply(state, {
-      reloadPlan: added.reloadPlan,
-      skipValidate: true,
-    });
-    const service = state.apps[appSlug]!.phpService;
-    const prog = workerProgramName(appSlug, "print");
-    const run = await platform.fs.readText(
-      join(opts.stackRoot, "generated", "runner", service, "services", prog, "run"),
-    );
-    if (!run.includes("/command/s6-applyuidgid") || run.includes("setpriv")) {
-      return {
-        ok: false,
-        detail: `s6 service privilege drop missing ${prog}`,
-      };
-    }
-    return { ok: true, detail: `service=${prog}` };
+    const status = await schedulerCli(state, ["status"]);
+    const listed = await schedulerCli(state, ["list"]);
+    return {
+      ok:
+        status.code === 0 && listed.code === 0 && listed.stdout.includes("test-stack-print-worker"),
+      detail: status.code === 0 ? "app minicrond reachable" : status.stderr.slice(0, 300),
+    };
   });
-
-  await record(
-    "runner-reconcile",
-    "Reconcile s6 cron/worker services without restart",
-    async () => {
-      const runnerState = await store.load();
-      state = runnerState;
-      const runner = `${runnerState.apps[appSlug]!.phpService}-runner`;
-      // Ensure the singleton exists, but do not restart it to load new definitions.
-      const up = await composeCmd(platform, runnerState, ["up", "-d", runner], 120_000);
-      if (up.code !== 0) {
-        return {
-          ok: false,
-          detail: (up.stderr || up.stdout).trim().slice(0, 300),
-        };
-      }
-      await composeCmd(platform, runnerState, ["exec", "-T", runner, "bento-s6-reconcile"], 10_000);
-      const workerProg = workerProgramName(appSlug, "print");
-      const schedProg = `scheduler-${appSlug}`;
-      const serviceStatus = async (program: string) =>
-        await composeCmd(
-          platform,
-          runnerState,
-          ["exec", "-T", runner, "/command/s6-svstat", `/run/bento-s6/services/${program}`],
-          10_000,
-        );
-      const ok = await waitFor(
-        "s6 services",
-        60_000,
-        async () => {
-          const [worker, scheduler] = await Promise.all([
-            serviceStatus(workerProg),
-            serviceStatus(schedProg),
-          ]);
-          return (
-            worker.code === 0 &&
-            scheduler.code === 0 &&
-            (worker.stdout + worker.stderr).startsWith("up") &&
-            (scheduler.stdout + scheduler.stderr).startsWith("up")
-          );
-        },
-        log,
-      );
-      if (!ok) {
-        const [worker, scheduler] = await Promise.all([
-          serviceStatus(workerProg),
-          serviceStatus(schedProg),
-        ]);
-        return {
-          ok: false,
-          detail: `services not running: worker=${(worker.stdout + worker.stderr)
-            .trim()
-            .slice(
-              0,
-              180,
-            )}; scheduler=${(scheduler.stdout + scheduler.stderr).trim().slice(0, 180)}`,
-        };
-      }
-      return {
-        ok: true,
-        detail: `runner=${runner}; ${schedProg}+${workerProg} up`,
-      };
-    },
-  );
 
   await record(
     "schedule-wait",
-    `Wait ${opts.scheduleWaitSec}s for cron tick + worker output`,
+    `Wait ${opts.scheduleWaitSec}s for minicrond job + worker output`,
     async () => {
       if (opts.scheduleWaitSec <= 0) {
         return { ok: true, skipped: true, detail: "scheduleWaitSec=0" };
@@ -1429,27 +1334,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     }
     const text = await platform.fs.readText(cronLog);
     if (!/cron-ok/.test(text)) {
-      // Also check Supercronic's combined app-owned log for clues.
-      const current = await store.load();
-      const runner = `${current.apps[appSlug]!.phpService}-runner`;
-      const slog = await composeCmd(
-        platform,
-        current,
-        [
-          "exec",
-          "-T",
-          runner,
-          "sh",
-          "-c",
-          `tail -n 30 /home/${appSlug}/logs/cron/scheduler.log 2>/dev/null || true`,
-        ],
-        10_000,
-      );
+      const status = await schedulerCli(await store.load(), ["status"]);
       return {
         ok: false,
-        detail: `no cron-ok in log (bytes=${text.length}); s6: ${(slog.stdout + slog.stderr)
-          .trim()
-          .slice(0, 300)}`,
+        detail: `no cron-ok in log (bytes=${text.length}); minicrond: ${(status.stdout + status.stderr).trim().slice(0, 300)}`,
       };
     }
     const lines = text.split("\n").filter((l) => l.includes("cron-ok")).length;
@@ -1463,20 +1351,10 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     }
     const text = await platform.fs.readText(workerLog);
     if (!/worker-ok/.test(text)) {
-      const current = await store.load();
-      const runner = `${current.apps[appSlug]!.phpService}-runner`;
-      const prog = workerProgramName(appSlug, "print");
-      const st = await composeCmd(
-        platform,
-        current,
-        ["exec", "-T", runner, "/command/s6-svstat", `/run/bento-s6/services/${prog}`],
-        10_000,
-      );
+      const status = await schedulerCli(await store.load(), ["status"]);
       return {
         ok: false,
-        detail: `no worker-ok in log (bytes=${text.length}); status: ${(st.stdout + st.stderr)
-          .trim()
-          .slice(0, 200)}`,
+        detail: `no worker-ok in log (bytes=${text.length}); minicrond: ${(status.stdout + status.stderr).trim().slice(0, 200)}`,
       };
     }
     const lines = text.split("\n").filter((l) => l.includes("worker-ok")).length;
@@ -2050,7 +1928,7 @@ export function formatTestStackReport(report: TestStackReport): string {
   lines.push(report.ok ? "RESULT: PASS" : "RESULT: FAIL");
   lines.push("");
   lines.push(
-    "Chains: bootstrap → apps-create → db-add → postgres → domain → cron-worker → permissions → http/tls → stack-transfer → deploy",
+    "Chains: bootstrap → apps-create → db-add → postgres → domain → minicrond → permissions → http/tls → stack-transfer → deploy",
   );
   lines.push("Note: TLS ACME issuance is not exercised (requires public DNS).");
   return lines.join("\n");

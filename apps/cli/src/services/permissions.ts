@@ -95,8 +95,8 @@ export async function checkPermissions(
 
   await checkPath(home, { worldTraverse: isPhpApp(app) });
   await checkPath(join(home, "code"), { worldTraverse: isPhpApp(app) });
-  for (const d of PRIVATE_DIRS) {
-    // logs/tmp may be 750; credentials/ssh/composer/bento should be 700
+  for (const d of [...PRIVATE_DIRS, ...(isPhpApp(app) ? [".local"] : [])]) {
+    // logs/tmp may be 750; private app state should be 700
     const strict = d !== "logs" && d !== "tmp";
     await checkPath(join(home, d), { private: strict });
   }
@@ -198,6 +198,20 @@ export async function applyAppPermissionPolicy(
   await ensureDir(join(home, ".bento"), 0o700);
   await ensureDir(join(home, ".ssh"), 0o700);
   await ensureDir(join(home, ".composer"), 0o700);
+  if (phpApp) {
+    for (const part of [".local", ".local/share", ".local/share/minicron"]) {
+      const path = join(home, part);
+      if (await platform.fs.exists(path)) {
+        const entry = await platform.fs.lstat(path);
+        if (!entry.isDirectory || entry.isSymlink) {
+          throw new Error(`refusing non-directory scheduler path: ${path}`);
+        }
+      } else {
+        await ensureDir(path, 0o700);
+      }
+      await platform.fs.chmod(path, 0o700);
+    }
+  }
   await ensureDir(join(home, "credentials"), 0o700);
   if (phpApp) await ensureDir(docRoot, 0o750);
 
@@ -220,7 +234,7 @@ export async function applyAppPermissionPolicy(
   }
 
   // Private dirs
-  for (const d of PRIVATE_DIRS) {
+  for (const d of [...PRIVATE_DIRS, ...(phpApp ? [".local"] : [])]) {
     const p = join(home, d);
     if (!(await platform.fs.exists(p))) continue;
     const mode = d === "logs" || d === "tmp" ? 0o750 : 0o700;
@@ -277,6 +291,13 @@ export async function applyAppPermissionPolicy(
       join(home, ".ssh", "id_ed25519"),
       join(home, ".ssh", "id_ed25519.pub"),
       join(home, ".composer"),
+      ...(phpApp
+        ? [
+            join(home, ".local"),
+            join(home, ".local", "share"),
+            join(home, ".local", "share", "minicron"),
+          ]
+        : []),
       join(home, "credentials"),
       ...(phpApp ? [docRoot] : []),
     ]) {

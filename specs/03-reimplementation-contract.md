@@ -126,8 +126,8 @@ Technical choices are evaluated in this order:
 ### D-13 — s6 singleton runner with per-app schedulers
 
 **Context:** Jobs need app identity and live reconciliation without container recycling.  
-**Decision:** s6-overlay PID 1, one Supercronic process per scheduled app, flat worker services, one runner per PHP version.  
-**Benefits:** Scoped controls and no sibling restarts.  
+**Decision:** s6-overlay PID 1, one socket-only minicrond daemon per enabled PHP app (jobs and workers), one root maintenance daemon, and one runner per PHP version. Bento seeds only reserved internal tasks; user definitions live in minicrond. See `06-minicrond-migration-plan.md` for the remaining state/UI migration.
+**Benefits:** Scoped app-UID control without sibling restarts.
 **Trade-offs:** Dynamic service-tree reconciliation and strict singleton assumption.  
 **Invariant:** Scaling runners above one is unsupported because it duplicates work.
 

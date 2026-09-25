@@ -7,11 +7,13 @@ import {
   jobLogsSchema,
   jobsOverviewSchema,
   removeAppJobInputSchema,
+  schedulerAccessSchema,
   workerRestartResultSchema,
 } from "./schema.ts";
 
 export const jobsContract = oc.router({
   overview: oc.input(z.object({}).optional()).output(jobsOverviewSchema),
+  schedulerAccess: oc.input(z.object({}).optional()).output(schedulerAccessSchema),
   logs: oc.input(jobLogsInputSchema).output(jobLogsSchema),
   addCron: oc.input(addCronJobInputSchema).output(jobsOverviewSchema),
   removeCron: oc.input(removeAppJobInputSchema).output(jobsOverviewSchema),

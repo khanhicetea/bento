@@ -10,14 +10,22 @@ import { createSystemRouter } from "./domains/system/router.ts";
 
 const os = implement(webContract);
 
+type WebRouterOptions = {
+  schedulerWebAccess?: {
+    enabled: boolean;
+    reason?: string;
+    pathFor(app: string): string;
+  };
+};
+
 /** Compose independently contracted domain routers into the public web API. */
-export function createWebRouter(ctx: CliContext) {
+export function createWebRouter(ctx: CliContext, options: WebRouterOptions = {}) {
   return os.router({
     system: createSystemRouter(),
     applications: createApplicationsRouter(ctx),
     data: createDataRouter(ctx),
     routing: createRoutingRouter(ctx),
-    jobs: createJobsRouter(ctx),
+    jobs: createJobsRouter(ctx, options.schedulerWebAccess),
     operations: createOperationsRouter(ctx),
   });
 }

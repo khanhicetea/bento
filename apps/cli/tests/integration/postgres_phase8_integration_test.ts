@@ -136,6 +136,10 @@ bunRuntime.test(
       for (const volume of volumeNames) {
         await destination.process.run(["docker", "volume", "rm", volume]).catch(() => undefined);
       }
+      // Compose rm leaves its network; reclaim only this randomized test project.
+      await destination.process
+        .run(["docker", "network", "rm", `${project}_private`])
+        .catch(() => undefined);
       await bunRuntime.remove(parent, { recursive: true }).catch(() => undefined);
     }
   },

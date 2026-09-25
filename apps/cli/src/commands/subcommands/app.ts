@@ -1,4 +1,7 @@
 import { safetyError, validationError } from "../../domain/errors.ts";
+import { RuntimeCommand } from "../../platform/runtime.ts";
+import { minicrondComposeCommand } from "../../services/minicrond.ts";
+import { redact } from "../../ui/output.ts";
 import type { AppState, ProcessLanguage } from "../../domain/state.ts";
 import { isPhpApp, isProcessApp } from "../../domain/state.ts";
 import {
@@ -24,7 +27,14 @@ import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "../../serv
 import { printTable } from "../../ui/output.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+import {
+  bind,
+  noApplyOption,
+  trailing,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "../shared.ts";
 import { runCliExec } from "./exec.ts";
 
 export function registerAppCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
@@ -217,6 +227,12 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
         bind(state, cmdAppPrune),
       )
       .command(
+        "minicrond <slug>",
+        "Run minicrond against this enabled PHP app's private scheduler (-- <args>)",
+        (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
+        bind(state, cmdAppMinicrond),
+      )
+      .command(
         "shell <slug>",
         "Attach an interactive shell using the app runtime",
         (y2: YargsBuilder) =>
@@ -239,7 +255,7 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
       )
       .demandCommand(
         1,
-        "Specify an app subcommand: create|list|show|update|start|stop|enable|disable|delete|prune|shell",
+        "Specify an app subcommand: create|list|show|update|start|stop|enable|disable|delete|prune|shell|minicrond",
       )
       .recommendCommands(),
   );
@@ -637,6 +653,47 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   });
   for (const part of result.cleaned) ctx.log.info(`cleaned ${part}`);
   return 0;
+}
+
+async function cmdAppMinicrond(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
+  const desired = await ctx.store.load();
+  const command = await composeArgs(
+    ctx.platform,
+    desired,
+    minicrondComposeCommand(desired, argv.slug, trailing(argv, 2)),
+  );
+  const [binary, ...args] = command;
+  const child = new RuntimeCommand(binary!, {
+    args,
+    cwd: ctx.stackRoot,
+    stdin: "null",
+  }).spawn();
+  const limit = 1024 * 1024;
+  async function collect(stream: ReadableStream<Uint8Array> | number | undefined): Promise<string> {
+    if (!(stream instanceof ReadableStream)) return "";
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        child.kill();
+        throw safetyError("minicrond output exceeded 1 MiB per stream");
+      }
+      chunks.push(value);
+    }
+    return new TextDecoder().decode(Buffer.concat(chunks));
+  }
+  const [stdout, stderr, result] = await Promise.all([
+    collect(child.stdout),
+    collect(child.stderr),
+    child.status,
+  ]);
+  if (stdout) ctx.log.out(stdout.trimEnd());
+  if (stderr) ctx.log.error(redact(stderr.trimEnd()));
+  return result.code;
 }
 
 async function cmdAppShell(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {

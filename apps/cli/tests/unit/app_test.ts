@@ -7,6 +7,7 @@ import {
   provisionApp,
 } from "../../src/services/app.ts";
 import { addPhpVersion, buildCliExec, cliRunComposeCommand } from "../../src/services/php.ts";
+import { minicrondComposeCommand } from "../../src/services/minicrond.ts";
 import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
 import { addCronJob } from "../../src/services/cron.ts";
@@ -109,6 +110,12 @@ bunRuntime.test(
       await materializeAppHome(platform, app, false);
 
       const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
+      const schedulerDir = join(platform.paths.appHome(app.slug), ".local/share/minicron");
+      assertEquals((await platform.fs.stat(schedulerDir)).mode & 0o777, 0o700);
+      assertEquals(
+        (await platform.fs.stat(join(platform.paths.appHome(app.slug), ".local"))).mode & 0o777,
+        0o700,
+      );
       assertEquals((await platform.fs.stat(sshDir)).mode & 0o777, 0o700);
       assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519"))).mode & 0o777, 0o600);
       assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519.pub"))).mode & 0o777, 0o644);
@@ -118,6 +125,30 @@ bunRuntime.test(
     }
   },
 );
+
+bunRuntime.test("app home refuses a symlinked scheduler data directory", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
+  try {
+    const platform = testPlatform(root);
+    const app = provisionApp(platform, createEmptyState(), {
+      slug: "alpha",
+      domain: "alpha.example",
+    }).app;
+    const home = platform.paths.appHome(app.slug);
+    await bunRuntime.mkdir(join(home, ".local", "share"), { recursive: true });
+    await bunRuntime.symlink(root, join(home, ".local", "share", "minicron"));
+    let refused = false;
+    try {
+      await materializeAppHome(platform, app);
+    } catch (error) {
+      refused =
+        error instanceof Error && error.message.includes("non-directory minicrond data path");
+    }
+    assertEquals(refused, true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("domain collision is refused", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
@@ -424,7 +455,7 @@ bunRuntime.test("process apps reject PHP-only jobs and webhook deploy", () => {
         platform,
       ),
     Error,
-    "not supported",
+    "retired",
   );
   assertThrows(
     () => addWorker(state, { app: "api", name: "queue", command: ["bun", "worker.ts"] }, platform),
@@ -432,6 +463,42 @@ bunRuntime.test("process apps reject PHP-only jobs and webhook deploy", () => {
     "not supported",
   );
   assertThrows(() => enableDeploy(state, { slug: "api" }, platform), Error, "not supported");
+});
+
+bunRuntime.test("minicrond CLI targets only the enabled app's runner and numeric identity", () => {
+  const state = createEmptyState("2026-07-16T12:00:00.000Z");
+  const { state: withApp, app } = provisionApp(testPlatform("/tmp/bento-minicron-test"), state, {
+    slug: "alpha",
+    domain: "alpha.example",
+  });
+  const args = ["logs", "a job", "--follow"];
+  const command = minicrondComposeCommand(withApp, "alpha", args);
+  assertEquals(command.slice(0, 6), [
+    "exec",
+    "-T",
+    "--user",
+    `${app.uid}:${app.gid}`,
+    "-w",
+    app.home,
+  ]);
+  assertEquals(command.includes(`MINICRON_DATA=${app.home}/.local/share/minicron`), true);
+  assertEquals(command.includes(`BASE_PATH=/scheduler/apps/${app.slug}/`), true);
+  assertEquals(command.includes(`HOME=${app.home}`), true);
+  assertEquals(command.includes(`USER=${app.slug}`), true);
+  assertEquals(command.includes("PATH=/usr/local/bin:/usr/bin:/bin"), true);
+  assertEquals(command.includes("TZ=UTC"), true);
+  assertEquals(command.slice(-5), [`${app.phpService}-runner`, "minicrond", ...args]);
+  assertThrows(() => minicrondComposeCommand(withApp, "missing", args));
+  assertThrows(() => minicrondComposeCommand(withApp, "__proto__", args));
+  assertThrows(() => minicrondComposeCommand(withApp, "alpha", []));
+  assertThrows(() => minicrondComposeCommand(withApp, "alpha", ["bad\0arg"]));
+  assertThrows(() =>
+    minicrondComposeCommand(
+      { ...withApp, apps: { alpha: { ...app, enabled: false } } },
+      "alpha",
+      args,
+    ),
+  );
 });
 
 bunRuntime.test("buildCliExec targets profile-gated -cli service with app identity", async () => {

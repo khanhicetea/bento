@@ -26,7 +26,7 @@ Internet -> Nginx -> per-app PHP-FPM Unix socket -> private DB/Redis
                  \-> per-app process Unix socket -> Node/Bun/Python loopback HTTP
                  \-> reverse-proxy upstream
 Cloudflare edge -> outbound cloudflared tunnel -> Nginx network namespace
-PHP runner -> app Supercronic + deploy drain + app workers
+PHP runner -> app-UID minicrond (jobs/workers/deploy drain) + root maintenance minicrond
 ```
 
 There is no Bento daemon, remote API, or controller loop. Runtime converges only when the operator invokes a mutating command, `render`, or `apply`.
@@ -144,7 +144,7 @@ The docs site is a separate Bun workspace using Astro 7/Starlight. It is not a c
 | PHP extensions     | PDO MySQL/PostgreSQL/SQLite, mysqli/pgsql, Redis, OPcache, and common extensions |
 | App tools          | Composer 2, Node 24/npm, Git, OpenSSH client, SQLite, gzip/zstd                  |
 | Supervision        | s6-overlay 3.2.3.2                                                               |
-| Scheduling         | Supercronic 0.2.33                                                               |
+| Scheduling         | Minicrond 0.2.2, one socket-only daemon per enabled PHP app plus root maintenance |
 | Relational data    | official MySQL/PostgreSQL images per managed version                             |
 | Cache              | Redis 7 Alpine                                                                   |
 | SQLite replication | Litestream, S3-compatible object storage                                         |
@@ -332,8 +332,8 @@ Validators consume live mounted paths, so validation occurs after promotion. Rel
 | Pool/identity/PHP assignment      | Selected FPM; Nginx when route/socket changes |
 | Process command/image/mount       | Recreate only a running app service           |
 | Process domain/TLS/access log     | Nginx only; stable process socket path        |
-| Cron/deploy scheduler             | Matching PHP runner and app scheduler         |
-| Worker definition/control         | Matching runner/worker service                |
+| Internal deploy/SQLite schedule   | Matching PHP runner and app minicrond service |
+| User job/worker edit              | App minicrond registry; no Bento apply        |
 | Database backup/restore           | No web/runtime reload                         |
 | Full apply                        | Nginx + all relevant FPM/runners              |
 
@@ -341,13 +341,7 @@ Stopped services consume generated configuration when next started. Apply does n
 
 ### 9.5 Schedules and workers
 
-The singleton PHP runner uses s6-overlay as PID 1. Generated services include:
-
-- one Supercronic process per app that has schedules/deploy draining;
-- one flat s6 service per enabled worker;
-- a root maintenance scheduler for bounded app/runtime logs.
-
-The reconcile helper adds/removes service directories in the dynamic scan tree. Crontab-only changes send USR2 to one app scheduler. Worker controls address one app/name service.
+The singleton PHP runner uses s6-overlay as PID 1. It supervises one socket-only, app-UID minicrond for each enabled PHP app and a separate root maintenance minicrond. Bento seeds only reserved internal tasks (deploy drain and SQLite VACUUM for apps, logrotate for root); user jobs and workers belong in minicrond's private per-app registry. Changes to user definitions do not trigger a Bento render. The reconcile helper adds/removes app daemon services in the dynamic s6 scan tree. Legacy Bento job/worker rows and API contracts remain pending removal as specified in `06-minicrond-migration-plan.md`; their mutating service operations fail closed.
 
 ### 9.6 Webhook deploy
 

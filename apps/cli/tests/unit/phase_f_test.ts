@@ -23,8 +23,6 @@ import {
   removeCronJob,
 } from "../../src/services/cron.ts";
 import { RenderService } from "../../src/services/render.ts";
-import { addWorker, workerProgramName } from "../../src/services/worker.ts";
-import { describeReloadPlan } from "../../src/domain/reload.ts";
 import { parseDotEnv } from "../../src/services/stack_env.ts";
 import {
   appSlugSchema,
@@ -304,335 +302,81 @@ bunRuntime.test("F1 Redis shared prefix vs ACL rules", async () => {
 
 // --- F-14 / F-15 cron + worker scoped plans --------------------------------
 
-bunRuntime.test("F1 cron/worker config generation + scoped runner reload", async () => {
+bunRuntime.test("F1 runner generates only app and root minicrond services", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const platform = testPlatform(root);
-    let state = createEmptyState();
-    const p = provisionApp(platform, state, {
-      slug: "alpha",
-      domain: "a.test",
-    });
-    state = p.state;
-    const cron = addCronJob(
-      state,
-      {
-        app: "alpha",
-        name: "tick",
-        schedule: "*/5 * * * *",
-        command: ["php", "artisan", "schedule:run"],
-      },
-      platform,
-    );
-    state = cron.state;
-    assertEquals(cron.job.workdir, "/home/alpha/code");
-    assertEquals(
-      describeReloadPlan(cron.reloadPlan).includes("php-runner:php85-runner") ||
-        describeReloadPlan(cron.reloadPlan).some((x) => x.startsWith("php-runner:")),
-      true,
-    );
-    assertEquals(cron.reloadPlan.nginx, false);
-    assertEquals(cron.reloadPlan.phpFpm.size, 0);
-    assertEquals(cron.reloadPlan.cronSchedulers?.get("php85-runner")?.has("alpha"), true);
-    const cronReload = buildCronReloadCommand(state, "alpha");
-    assertEquals(cronReload.includes("-2"), true);
-    assertEquals(
-      cronReload.some((arg) => arg.endsWith("/scheduler-alpha")),
-      true,
-    );
-
-    const worker = addWorker(
-      state,
-      {
-        app: "alpha",
-        name: "queue",
-        command: ["php", "artisan", "queue:work"],
-      },
-      platform,
-    );
-    state = worker.state;
-    assertEquals(worker.worker.workdir, "/home/alpha/code");
-    assertEquals(worker.reloadPlan.nginx, false);
-    assertEquals(workerProgramName("alpha", "queue"), "worker-alpha-queue");
-
-    const files = await generateAll(platform, state, "digest");
-    const runnerFiles = files.filter(
-      (f) =>
-        f.relPath.includes("runner") ||
-        f.relPath.includes("services") ||
-        f.relPath.includes("cron") ||
-        f.relPath.includes("supercronic"),
-    );
-    const blob = runnerFiles.map((f) => textContent(f.content)).join("\n");
-    const allBlob = files.map((f) => textContent(f.content)).join("\n");
-    assertEquals(
-      allBlob.includes("schedule:run") ||
-        blob.includes("schedule:run") ||
-        allBlob.includes("tick") ||
-        allBlob.includes("queue:work") ||
-        allBlob.includes("worker-alpha-queue"),
-      true,
-    );
-
-    const scheduler = textContent(
-      files.find((f) => f.relPath === "runner/php85/services/scheduler-alpha/run")!.content,
-    );
-    const workerRun = textContent(
-      files.find((f) => f.relPath === "runner/php85/services/worker-alpha-queue/run")!.content,
-    );
-    const crontab = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/alpha.crontab")!.content,
-    );
-    const cronScript = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/jobs/alpha/tick.sh")!.content,
-    );
-    const logrotate = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/logrotate/alpha.conf")!.content,
-    );
-    const logrotateCrontab = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/logrotate.crontab")!.content,
-    );
-    const logrotateRun = textContent(
-      files.find((f) => f.relPath === "runner/php85/services/logrotate/run")!.content,
-    );
-    const app = state.apps.alpha!;
-    const applyUidGid = `/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G ''`;
-    assertEquals(scheduler.includes(`${applyUidGid} sh -c`), true);
-    assertEquals(scheduler.includes("/usr/local/bin/supercronic"), true);
-    assertEquals(scheduler.includes(">>/home/alpha/logs/cron/scheduler.log 2>&1"), true);
-    assertEquals(scheduler.includes("/var/log/bento"), false);
-    assertEquals(workerRun.includes(`${applyUidGid} sh -c`), true);
-    assertEquals(workerRun.includes("cd /home/alpha/code"), true);
-    assertEquals(workerRun.includes(">>/home/alpha/logs/worker/queue.log"), true);
-    assertEquals(workerRun.includes("2>>/home/alpha/logs/worker/queue.err"), true);
-    assertEquals(scheduler.includes("setpriv"), false);
-    assertEquals(workerRun.includes("setpriv"), false);
-    assertEquals(crontab.includes("setpriv"), false);
-    assertEquals(crontab.includes("sh -c"), false);
-    assertEquals(crontab.includes("sh /etc/bento/cron/jobs/alpha/tick.sh"), true);
-    assertEquals(cronScript.includes("cd /home/alpha/code"), true);
-    assertEquals(cronScript.includes("= Run at %s ="), true);
-    assertEquals(cronScript.includes("date '+%Y-%m-%d %H:%M:%S'"), true);
-    assertEquals(logrotate.includes('"/home/alpha/logs/cron/*.log"'), true);
-    assertEquals(logrotate.includes('"/home/alpha/logs/php/*.log"'), true);
-    assertEquals(logrotate.includes('"/home/alpha/logs/worker/*.log"'), true);
-    assertEquals(logrotate.includes('"/home/alpha/logs/worker/*.err"'), true);
-    assertEquals(logrotate.includes("size 10M"), true);
-    assertEquals(logrotate.includes("rotate 2"), true);
-    assertEquals(logrotate.includes("copytruncate"), true);
-    assertEquals(crontab.includes("logrotate"), false);
-    assertEquals(logrotateCrontab.includes("0 * * * * /usr/sbin/logrotate"), true);
-    assertEquals(logrotateCrontab.includes("logrotate-alpha.status"), true);
-    assertEquals(logrotateRun.includes("/usr/local/bin/supercronic"), true);
-    assertEquals(logrotateRun.includes("sleep"), false);
-  } finally {
-    await bunRuntime.remove(root, { recursive: true });
-  }
-});
-
-bunRuntime.test("cron edit changes supplied fields and preserves omitted fields", async () => {
-  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-edit-" });
-  try {
-    const platform = testPlatform(root);
-    const provisioned = provisionApp(platform, createEmptyState(), {
-      slug: "alpha",
-      domain: "a.test",
-    });
-    const added = addCronJob(
-      provisioned.state,
-      {
-        app: "alpha",
-        name: "tick",
-        schedule: "*/5 * * * *",
-        command: ["php", "artisan", "schedule:run"],
-        timezone: "UTC",
-        lock: "scheduler",
-        timeoutSec: 60,
-      },
-      platform,
-    );
-
-    const edited = editCronJob(
-      added.state,
-      {
-        app: "alpha",
-        name: "tick",
-        schedule: "0 * * * *",
-      },
-      platform,
-    );
-
-    assertEquals(edited.job.schedule, "0 * * * *");
-    assertEquals(edited.job.command, ["php", "artisan", "schedule:run"]);
-    assertEquals(edited.job.commandMode, "argv");
-    assertEquals(edited.job.timezone, "UTC");
-    assertEquals(edited.job.lock, "scheduler");
-    assertEquals(edited.job.timeoutSec, 60);
-    assertEquals(edited.reloadPlan.cronSchedulers?.get("php85-runner")?.has("alpha"), true);
-
-    const commandEdited = editCronJob(
-      edited.state,
-      {
-        app: "alpha",
-        name: "tick",
-        command: ["php artisan schedule:run >> logs/scheduler.log"],
-        commandMode: "shell",
-        timezone: "Europe/London",
-      },
-      platform,
-    );
-    assertEquals(commandEdited.job.commandMode, "shell");
-    assertEquals(commandEdited.job.timezone, "Europe/London");
-  } finally {
-    await bunRuntime.remove(root, { recursive: true });
-  }
-});
-
-bunRuntime.test("cron shell scripts preserve user redirects outside Bento's job log", async () => {
-  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-script-" });
-  try {
-    const platform = testPlatform(root);
-    const provisioned = provisionApp(platform, createEmptyState(), {
-      slug: "alpha",
-      domain: "a.test",
-    });
-    const added = addCronJob(
-      provisioned.state,
-      {
-        app: "alpha",
-        name: "redirect",
-        schedule: "* * * * *",
-        command: ["echo 'Hello' >> public/abc.txt"],
-        commandMode: "shell",
-      },
-      platform,
-    );
-
-    const files = await generateAll(platform, added.state, "digest");
-    const script = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/jobs/alpha/redirect.sh")!.content,
-    );
-    const crontab = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/alpha.crontab")!.content,
-    );
-    assertEquals(script.includes("echo 'Hello' >> public/abc.txt"), true);
-    assertEquals(script.includes("= Run at %s ="), true);
-    assertEquals(crontab.includes("/etc/bento/cron/jobs/alpha/redirect.sh"), true);
-    assertEquals(crontab.includes("public/abc.txt"), false);
-    assertEquals(crontab.includes("logs/cron/redirect.log 2>&1"), true);
-
-    // Exercise the same parent-log/child-script redirect hierarchy locally.
-    const workdir = join(root, "home", "code");
-    await bunRuntime.mkdir(join(workdir, "public"), { recursive: true });
-    const runnable = script.replace("cd /home/alpha/code", `cd ${workdir}`);
-    const scriptPath = join(root, "redirect.sh");
-    const bentoLog = join(root, "cron-redirect.log");
-    await bunRuntime.writeTextFile(scriptPath, runnable);
-    const result = await new bunRuntime.Command("sh", {
-      args: ["-c", 'sh "$1" >> "$2" 2>&1', "cron-test", scriptPath, bentoLog],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-    assertEquals(result.success, true);
-    assertEquals(await bunRuntime.readTextFile(join(workdir, "public/abc.txt")), "Hello\n");
-    assertEquals(
-      /^\n= Run at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} =\n\n$/.test(
-        await bunRuntime.readTextFile(bentoLog),
-      ),
-      true,
-    );
-  } finally {
-    await bunRuntime.remove(root, { recursive: true });
-  }
-});
-
-bunRuntime.test("cron add/remove renders crontab and reloads existing Supercronic", async () => {
-  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-reload-" });
-  try {
-    const process = createRecordingProcessRunner();
-    const platform: Platform = { ...testPlatform(root), process };
-    const render = new RenderService(platform);
-    let state = provisionApp(platform, createEmptyState(), {
+    const state = provisionApp(platform, createEmptyState(), {
       slug: "alpha",
       domain: "a.test",
     }).state;
-
-    const first = addCronJob(
-      state,
-      {
-        app: "alpha",
-        name: "first",
-        schedule: "*/5 * * * *",
-        command: ["echo", "first-job"],
-      },
-      platform,
-    );
-    state = first.state;
-    await render.apply(state, { renderOnly: true, skipValidate: true });
-
-    // Adding another job leaves the s6 service definition unchanged, so
-    // reconciliation alone is insufficient; Supercronic still needs USR2.
-    const second = addCronJob(
-      state,
-      {
-        app: "alpha",
-        name: "second",
-        schedule: "*/10 * * * *",
-        command: ["echo", "second-job"],
-      },
-      platform,
-    );
-    state = second.state;
-    await render.apply(state, {
-      reloadPlan: second.reloadPlan,
-      skipValidate: true,
-    });
-    let crontab = await platform.fs.readText(
-      join(root, "generated/runner/php85/cron/alpha.crontab"),
-    );
-    assertEquals(crontab.includes("/jobs/alpha/first.sh"), true);
-    assertEquals(crontab.includes("/jobs/alpha/second.sh"), true);
-    const firstScript = await platform.fs.readText(
-      join(root, "generated/runner/php85/cron/jobs/alpha/first.sh"),
-    );
-    const secondScript = await platform.fs.readText(
-      join(root, "generated/runner/php85/cron/jobs/alpha/second.sh"),
-    );
-    assertEquals(firstScript.includes("exec echo first-job"), true);
-    assertEquals(secondScript.includes("exec echo second-job"), true);
+    const files = await generateAll(platform, state, "digest");
+    const names = files.map((file) => file.relPath);
     assertEquals(
-      process.calls.some(
-        ({ command }) =>
-          command.includes("/command/s6-svc") &&
-          command.includes("-2") &&
-          command.some((arg) => arg.endsWith("/scheduler-alpha")),
-      ),
-      true,
-    );
-    assertEquals(
-      process.calls.some(({ command }) => command.includes("restart")),
+      names.some((path) => /runner\/php85\/cron\//.test(path)),
       false,
     );
-
-    process.calls.length = 0;
-    const removed = removeCronJob(state, "alpha", "second", platform.clock.nowIso());
-    state = removed.state;
-    await render.apply(state, {
-      reloadPlan: removed.reloadPlan,
-      skipValidate: true,
-    });
-    crontab = await platform.fs.readText(join(root, "generated/runner/php85/cron/alpha.crontab"));
-    assertEquals(crontab.includes("/jobs/alpha/first.sh"), true);
-    assertEquals(crontab.includes("/jobs/alpha/second.sh"), false);
     assertEquals(
-      process.calls.some(
-        ({ command }) =>
-          command.includes("/command/s6-svc") &&
-          command.includes("-2") &&
-          command.some((arg) => arg.endsWith("/scheduler-alpha")),
+      names.some(
+        (path) => path.includes("services/scheduler-") || path.includes("services/worker-"),
       ),
-      true,
+      false,
     );
+    assertEquals(names.includes("runner/php85/services/minicrond-alpha/run"), true);
+    assertEquals(names.includes("runner/php85/services/minicrond-root/run"), true);
+    const logrotate = textContent(
+      files.find((file) => file.relPath === "runner/php85/minicrond/logrotate/alpha.conf")!.content,
+    );
+    const rootSeed = textContent(
+      files.find((file) => file.relPath === "runner/php85/minicrond/root-seed.toml")!.content,
+    );
+    assertEquals(logrotate.includes("copytruncate"), true);
+    assertEquals(rootSeed.includes("/etc/bento/minicrond/logrotate/alpha.conf"), true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("retired Bento cron mutations fail closed", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-retired-" });
+  try {
+    const platform = testPlatform(root);
+    const state = provisionApp(platform, createEmptyState(), {
+      slug: "alpha",
+      domain: "a.test",
+    }).state;
+    assertThrows(() =>
+      addCronJob(
+        state,
+        { app: "alpha", name: "tick", schedule: "* * * * *", command: ["true"] },
+        platform,
+      ),
+    );
+    assertThrows(() =>
+      editCronJob(state, { app: "alpha", name: "tick", schedule: "0 * * * *" }, platform),
+    );
+    assertThrows(() => removeCronJob(state, "alpha", "tick", platform.clock.nowIso()));
+    assertThrows(() => buildCronReloadCommand(state, "alpha"));
+    assertEquals(state.cronJobs.length, 0);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("empty runner binds are operator-owned before Docker creates them", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-runner-binds-" });
+  try {
+    const platform = testPlatform(root);
+    const state = createEmptyState();
+    await new RenderService(platform).apply(state, { renderOnly: true, skipValidate: true });
+    for (const dir of ["services", "minicrond"]) {
+      const path = join(root, "generated", "runner", "php85", dir);
+      assertEquals((await platform.fs.lstat(path)).isDirectory, true);
+      assertEquals(
+        await platform.fs.exists(join(root, "generated", "runner", "php85", "cron")),
+        false,
+      );
+    }
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

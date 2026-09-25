@@ -60,6 +60,17 @@ export const workerRestartResultSchema = z.object({
   completedAt: z.string(),
 });
 
+export const schedulerAccessSchema = z.object({
+  enabled: z.boolean(),
+  reason: z.string().optional(),
+  schedulers: z.array(
+    z.object({
+      app: z.string(),
+      path: z.string().regex(/^\/scheduler\/apps\/[a-z0-9][a-z0-9-]{0,62}\/$/),
+    }),
+  ),
+});
+
 export const addCronJobInputSchema = z
   .object({
     app: z.string().trim().min(1).max(63),
@@ -100,3 +111,4 @@ export type AddWorkerInput = z.infer<typeof addWorkerInputSchema>;
 export type JobsOverview = z.infer<typeof jobsOverviewSchema>;
 export type RemoveAppJobInput = z.infer<typeof removeAppJobInputSchema>;
 export type WorkerRestartResult = z.infer<typeof workerRestartResultSchema>;
+export type SchedulerAccessInfo = z.infer<typeof schedulerAccessSchema>;

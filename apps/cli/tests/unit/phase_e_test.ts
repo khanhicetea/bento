@@ -461,23 +461,17 @@ bunRuntime.test("E3 disabled deploy omits /_bento routes; enabled matches helper
     const app = state.apps["alpha"]!;
     assertEquals(app.deploy.argv[0], "sh");
     assertEquals(app.deploy.argv[1], "/home/alpha/.bento/deploy.sh");
-    const crontab = textContent(
-      files.find((f) => f.relPath === "runner/php85/cron/alpha.crontab")!.content,
+    const seed = textContent(
+      files.find((f) => f.relPath === "runner/php85/minicrond/alpha/seed.toml")!.content,
     );
-    assertEquals(crontab.includes("/opt/bento/helpers/deploy-drain.sh alpha"), true);
-    assertEquals(crontab.includes("/run/php-fpm/php85/alpha.sock"), true);
-    assertEquals(crontab.includes("setpriv"), false);
+    assertEquals(seed.includes("/opt/bento/helpers/deploy-drain.sh"), true);
+    assertEquals(seed.includes("/run/php-fpm/php85/alpha.sock"), true);
     const scheduler = textContent(
-      files.find((f) => f.relPath === "runner/php85/services/scheduler-alpha/run")!.content,
+      files.find((f) => f.relPath === "runner/php85/services/minicrond-alpha/run")!.content,
     );
-    assertEquals(
-      scheduler.includes(`/command/s6-applyuidgid -u ${app.uid} -g ${app.gid} -G '' sh -c`),
-      true,
-    );
-    assertEquals(scheduler.includes("/usr/local/bin/supercronic"), true);
-    assertEquals(scheduler.includes(">>/home/alpha/logs/cron/scheduler.log 2>&1"), true);
-    assertEquals(scheduler.includes("/var/log/bento"), false);
-    assertEquals(scheduler.includes("setpriv"), false);
+    assertEquals(scheduler.includes(`bento-minicrond-start ${app.uid} ${app.gid}`), true);
+    assertEquals(scheduler.includes("export BASE_PATH=/scheduler/apps/alpha/"), true);
+    assertEquals(scheduler.includes("/home/alpha/.local/share/minicron"), true);
     const compose = textContent(
       files.find((f) => f.relPath === "compose/docker-compose.php-php85.yml")!.content,
     );

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Bento PHP runtime: FPM + CLI + runner (s6-overlay/supercronic) from one image.
+# Bento PHP runtime: FPM + CLI + runner (s6-overlay) from one image.
 ARG PHP_VERSION=8.4
 ARG COMPOSER_VERSION=2
 ARG NODE_VERSION=24
@@ -57,9 +57,9 @@ ARG S6_OVERLAY_VERSION=3.2.3.2
 ARG S6_OVERLAY_NOARCH_SHA256=5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12
 ARG S6_OVERLAY_AMD64_SHA256=e6befcc96a437a3831386ecfc51808c5d3e939dc5fe3c02ae9284599e8aa2408
 ARG S6_OVERLAY_ARM64_SHA256=b17f17a82e7a515c682a91edaf2ffdabb73f891981b6c1fd712115693a2f8b4c
-ARG SUPERCRONIC_VERSION=0.2.33
-ARG SUPERCRONIC_AMD64_SHA256=feefa310da569c81b99e1027b86b27b51e6ee9ab647747b49099645120cfc671
-ARG SUPERCRONIC_ARM64_SHA256=f1f8585c66de020fef494dd636058f99949d108f569fef00016a1c8b9eb145b3
+ARG MINICROND_VERSION=0.2.2
+ARG MINICROND_AMD64_SHA256=ff3e0011efabebd110a9e65277a13f595fe8216457c004b07e2958188c6a8652
+ARG MINICROND_ARM64_SHA256=1e4e9ff7e4be7a319e378731df8963510400414be28b00ca7b6a554311edeb13
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends ca-certificates curl xz-utils; \
@@ -67,13 +67,13 @@ RUN set -eux; \
     amd64|x86_64) \
       s6_arch=x86_64; \
       s6_sha="${S6_OVERLAY_AMD64_SHA256}"; \
-      sc_arch=amd64; \
-      sc_sha="${SUPERCRONIC_AMD64_SHA256}" ;; \
+      mc_arch=amd64; \
+      mc_sha="${MINICROND_AMD64_SHA256}" ;; \
     arm64|aarch64) \
       s6_arch=aarch64; \
       s6_sha="${S6_OVERLAY_ARM64_SHA256}"; \
-      sc_arch=arm64; \
-      sc_sha="${SUPERCRONIC_ARM64_SHA256}" ;; \
+      mc_arch=arm64; \
+      mc_sha="${MINICROND_ARM64_SHA256}" ;; \
     *) echo "unsupported architecture: ${TARGETARCH:-unknown}" >&2; exit 1 ;; \
   esac; \
   s6_base="https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}"; \
@@ -85,10 +85,10 @@ RUN set -eux; \
   tar -C /rootfs -Jxpf /tmp/s6-noarch.tar.xz; \
   tar -C /rootfs -Jxpf /tmp/s6-arch.tar.xz; \
   install -d /rootfs/usr/local/bin; \
-  curl -fsSLo /rootfs/usr/local/bin/supercronic \
-    "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${sc_arch}"; \
-  echo "${sc_sha}  /rootfs/usr/local/bin/supercronic" | sha256sum -c -; \
-  chmod 0755 /rootfs/usr/local/bin/supercronic
+  curl -fsSLo /rootfs/usr/local/bin/minicrond \
+    "https://github.com/khanhicetea/minicrond/releases/download/${MINICROND_VERSION}/minicrond-linux-${mc_arch}"; \
+  echo "${mc_sha}  /rootfs/usr/local/bin/minicrond" | sha256sum -c -; \
+  chmod 0755 /rootfs/usr/local/bin/minicrond
 
 FROM debian:bookworm-slim
 ARG PHP_VERSION
@@ -151,13 +151,15 @@ RUN --mount=type=bind,source=.,target=/tmp/bento-build,ro \
   set -eux; \
   getent group bento-web >/dev/null || groupadd -g 5000 bento-web; \
   install -d -m 0755 -o www-data -g bento-web /run/php-fpm; \
-  install -d -m 0755 /etc/bento/cron /etc/bento/services /opt/bento/helpers /var/log/bento; \
+  install -d -m 0755 /etc/bento/minicrond /etc/bento/services /opt/bento/helpers /var/log/bento; \
   install -D -m 0644 /tmp/bento-build/conf/php-bento.ini /usr/local/etc/php/conf.d/zz-bento.ini; \
   install -D -m 0644 /tmp/bento-build/conf/opcache.ini /usr/local/etc/php/conf.d/zz-opcache.ini; \
   install -D -m 0644 /tmp/bento-build/conf/www-docker.conf /usr/local/etc/php-fpm.d/zz-docker.conf; \
   install -D -m 0755 /tmp/bento-build/entrypoint.sh /usr/local/bin/bento-php-entrypoint; \
   install -D -m 0755 /tmp/bento-build/runner-entrypoint.sh /usr/local/bin/bento-runner-entrypoint; \
   install -D -m 0755 /tmp/bento-build/s6-reconcile.sh /usr/local/bin/bento-s6-reconcile; \
+  install -D -m 0755 /tmp/bento-build/minicrond-start.sh /usr/local/bin/bento-minicrond-start; \
+  install -D -m 0644 /tmp/bento-build/minicrond-reconcile.php /usr/local/bin/bento-minicrond-reconcile; \
   cp -a /tmp/bento-build/helpers/. /opt/bento/helpers/; \
   find /opt/bento/helpers -type f -name '*.sh' -exec chmod 0755 {} +
 

@@ -2,7 +2,7 @@ import { Redirect, Route, Switch } from "wouter";
 import { AppShell } from "./components/AppShell.tsx";
 import { ApplicationsPage } from "./features/applications/ApplicationsPage.tsx";
 import { DatabasesPage } from "./features/data/DatabasesPage.tsx";
-import { JobsPage } from "./features/jobs/JobsPage.tsx";
+import { SchedulerPage } from "./features/jobs/SchedulerPage.tsx";
 import { OperationsPage } from "./features/operations/OperationsPage.tsx";
 import { RoutingPage } from "./features/routing/RoutingPage.tsx";
 
@@ -16,7 +16,7 @@ export function App() {
         </Route>
         <Route path="/databases" component={DatabasesPage} />
         <Route path="/routing" component={RoutingPage} />
-        <Route path="/jobs" component={JobsPage} />
+        <Route path="/jobs" component={SchedulerPage} />
         <Route path="/operations" component={OperationsPage} />
         <Route path="/">
           <Redirect to="/applications" />

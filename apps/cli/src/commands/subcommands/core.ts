@@ -91,7 +91,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
     )
     .command(
       "test-stack [name]",
-      "Real Docker multi-chain harness (apps, db, domains, cron/worker, permissions; ACME skipped)",
+      "Real Docker multi-chain harness (apps, db, domains, minicrond, permissions; ACME skipped)",
       (y: YargsBuilder) =>
         y
           .positional("name", {
@@ -122,7 +122,7 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           .option("schedule-wait-sec", {
             type: "number",
             default: DEFAULT_SCHEDULE_WAIT_SEC,
-            describe: `Seconds to wait for * * * * * cron + worker output (default: ${DEFAULT_SCHEDULE_WAIT_SEC})`,
+            describe: `Seconds to wait for minicrond job + worker output (default: ${DEFAULT_SCHEDULE_WAIT_SEC})`,
           }),
       bind(state, cmdTestStack),
     );

@@ -1,15 +1,14 @@
 /**
- * Long-running workers supervised as flat s6 services.
+ * Legacy Bento worker control. New workers belong to each app's minicrond registry.
  */
 
 import type { DesiredState, Worker } from "../domain/state.ts";
 import { isPhpApp } from "../domain/state.ts";
-import { asAppSlug, asWorkerName } from "../domain/types.ts";
-import { conflictError, notFoundError, validationError } from "../domain/errors.ts";
-import { parseAppSlug, parseStringArray, unwrap } from "../schemas/validators.ts";
+import { notFoundError, validationError } from "../domain/errors.ts";
+import { parseAppSlug, unwrap } from "../schemas/validators.ts";
 import type { Platform } from "../platform/mod.ts";
 import { composeArgs } from "./compose.ts";
-import { type ReloadPlan, reloadPlanForRunnerChange } from "../domain/reload.ts";
+import type { ReloadPlan } from "../domain/reload.ts";
 
 export type AddWorkerInput = {
   name: string;
@@ -24,66 +23,25 @@ export type AddWorkerInput = {
 export function addWorker(
   state: DesiredState,
   input: AddWorkerInput,
-  platform: Platform,
+  _platform: Platform,
 ): { state: DesiredState; worker: Worker; reloadPlan: ReloadPlan } {
   const appSlug = unwrap(parseAppSlug(input.app), "app");
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
   if (!isPhpApp(app)) throw validationError("workers for process apps are not supported yet");
-
-  const name = input.name.trim();
-  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-    throw validationError("worker name must be alphanumeric/underscore/hyphen");
-  }
-  if (state.workers.some((w) => w.app === appSlug && w.name === name)) {
-    throw conflictError(`worker ${name} already exists for app ${appSlug}`);
-  }
-
-  const command = unwrap(parseStringArray(input.command, "command"), "command");
-  if (command.length === 0) throw validationError("command must not be empty");
-
-  const workdir = platform.paths.assertInsideHome(app.home, input.workdir ?? `${app.home}/code`);
-
-  const worker: Worker = {
-    name: asWorkerName(name),
-    app: asAppSlug(appSlug),
-    command,
-    workdir,
-    enabled: true,
-    autorestart: input.autorestart ?? true,
-    stopsignal: input.stopsignal ?? "TERM",
-    stopwaitsecs: input.stopwaitsecs ?? 10,
-  };
-
-  return {
-    state: {
-      ...state,
-      workers: [...state.workers, worker],
-      updatedAt: platform.clock.nowIso(),
-    },
-    worker,
-    reloadPlan: reloadPlanForRunnerChange(`${app.phpService}-runner`),
-  };
+  throw validationError("Bento workers are retired; use bento app minicrond <app> -- <args>");
 }
 
 export function removeWorker(
   state: DesiredState,
   appSlug: string,
-  name: string,
-  now: string,
+  _name: string,
+  _now: string,
 ): { state: DesiredState; reloadPlan: ReloadPlan } {
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
   if (!isPhpApp(app)) throw validationError("workers for process apps are not supported yet");
-  const before = state.workers.length;
-  const workers = state.workers.filter((w) => !(w.app === appSlug && w.name === name));
-  if (workers.length === before) {
-    throw notFoundError(`worker ${name} not found for app ${appSlug}`);
-  }
-  return {
-    state: { ...state, workers, updatedAt: now },
-    reloadPlan: reloadPlanForRunnerChange(`${app.phpService}-runner`),
-  };
+  throw validationError("Bento workers are retired; use bento app minicrond <app> -- <args>");
 }
 
 export function listWorkers(state: DesiredState, appSlug?: string): Worker[] {

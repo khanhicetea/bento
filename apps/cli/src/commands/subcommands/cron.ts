@@ -79,7 +79,7 @@ export function registerCronCommands(parser: YargsBuilder, state: RunState): Yar
       )
       .command(
         "reload <app>",
-        "Signal one app's Supercronic service to reread its crontab",
+        "Retired; manage schedules with bento app minicrond",
         (y2: YargsBuilder) => y2.positional("app", { type: "string", demandOption: true }),
         bind(state, cmdCronReload),
       )

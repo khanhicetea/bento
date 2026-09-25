@@ -6,7 +6,8 @@ import { composeArgs } from "../../src/services/compose.ts";
 import { RenderService } from "../../src/services/render.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 import { buildCliExec, cliRunComposeCommand } from "../../src/services/php.ts";
-import { isComposeAvailable } from "./helpers.ts";
+import { chownDockerFixture, isComposeAvailable } from "./helpers.ts";
+import { join } from "node:path";
 
 bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation", async () => {
   if (!(await isComposeAvailable())) {
@@ -86,6 +87,12 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
       });
     }
     await store.save(state);
+    // Match production's app-owned private credential files even when the
+    // Docker-enabled test host itself cannot chown to numeric app identities.
+    for (const slug of ["alpha", "beta"] as const) {
+      const app = state.apps[slug]!;
+      await chownDockerFixture(join(root, "homes", slug), app.uid, app.gid);
+    }
 
     const alpha = state.apps.alpha!;
     const own = await execPostgresAppSql(
@@ -136,7 +143,7 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
   } finally {
     if (state) {
       await platform.process
-        .run(await composeArgs(platform, state, ["rm", "-f", "-s", "postgres17"]), {
+        .run(await composeArgs(platform, state, ["down", "--remove-orphans"]), {
           cwd: root,
           timeoutMs: 30_000,
         })
@@ -145,6 +152,12 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
     await platform.process
       .run(["docker", "volume", "rm", `${project}_postgres17-data`])
       .catch(() => undefined);
+    for (const slug of ["alpha", "beta"]) {
+      const home = join(root, "homes", slug);
+      if (await platform.fs.exists(home)) {
+        await chownDockerFixture(home, process.getuid?.() ?? 0, process.getgid?.() ?? 0);
+      }
+    }
     await bunRuntime.remove(root, { recursive: true }).catch(() => undefined);
   }
 });

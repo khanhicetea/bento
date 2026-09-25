@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
-import { ApplicationJobsDialog } from "./ApplicationJobsDialog.tsx";
+import { SchedulerInfoDialog } from "./SchedulerInfoDialog.tsx";
 import { ApplicationTerminalDialog } from "./ApplicationTerminalDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
@@ -306,7 +306,7 @@ export function ApplicationsPage() {
         />
       )}
       {jobsTarget && (
-        <ApplicationJobsDialog
+        <SchedulerInfoDialog
           key={jobsTarget.slug}
           application={jobsTarget}
           onClose={() => setJobsTarget(null)}
@@ -539,11 +539,11 @@ function ApplicationCard({
               title={
                 app.kind === "process"
                   ? "Process app jobs are not supported yet"
-                  : "Manage cron jobs and workers"
+                  : "Manage user jobs and workers with minicrond"
               }
             >
               <ScrollText className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">Jobs</span>
+              <span className="truncate">Scheduler</span>
             </Button>
             <Button
               variant="outline"
