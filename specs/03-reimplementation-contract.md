@@ -1,7 +1,7 @@
 # Bento technical decisions and reimplementation contract
 
 Status: normative maintenance/reimplementation contract  
-Baseline: Bento `0.1.0`, schema `4`, Bun `1.4.0`
+Baseline: Bento `0.1.0`, desired-state schema `2`, database schema `3`, Bun `1.4.0`
 
 ## 1. Purpose
 
@@ -72,13 +72,16 @@ Technical choices are evaluated in this order:
 **Trade-offs:** Rename becomes a coordinated migration and is not supported.  
 **Invariant:** App update preserves UID/GID and generated-once credentials.
 
-### D-07 — Shared PHP containers by version
+### D-07 — Shared PHP containers by version; dedicated process containers
 
 **Context:** One container/image per app duplicates toolchains and service overhead.  
-**Decision:** One FPM and singleton runner per PHP version, app-specific pools/services within them, ephemeral CLI per invocation.  
-**Benefits:** Multiple runtimes with efficient sharing and consistent tools.  
-**Trade-offs:** Shared namespace/network/capacity; no hostile isolation or hard app quotas.  
-**Rejected:** One complete container stack per app.
+**Decision:** One FPM and singleton runner per PHP version, app-specific pools/services within them, and ephemeral PHP CLI per invocation. A managed Node.js, Bun, or Python HTTP app instead receives one dedicated process service and ephemeral CLI role while continuing to share Nginx, databases, and Redis.
+
+**Benefits:** PHP retains efficient FPM pooling; independent HTTP runtimes gain app-scoped mounts, health, process lifecycle, and restart blast radius.
+
+**Trade-offs:** Process apps increase Compose service count and image/runtime lifecycle work; neither model is hostile isolation or a hard quota boundary.
+
+**Rejected:** One complete Nginx/data stack per app and a shared generic process namespace that requires cross-app TCP port allocation.
 
 ### D-08 — Nginx-only ingress and per-app Unix sockets
 
@@ -86,7 +89,7 @@ Technical choices are evaluated in this order:
 **Decision:** One Nginx; FPM reached through app-specific Unix sockets; databases/cache remain private.  
 **Benefits:** No FPM/database public ports, straightforward app socket ownership, direct host HTTP/3.  
 **Trade-offs:** Host/bridge namespace differences and typically one host-mode stack.  
-**Boundary:** Non-PHP apps are reverse-proxy upstreams, not managed runtimes.
+**Boundary:** External services remain reverse-proxy upstreams. Managed Node.js/Bun/Python process apps use private app-specific Unix sockets; no managed app publishes a host port.
 
 ### D-09 — Host mode by default, bridge mode explicitly
 
@@ -192,12 +195,24 @@ Technical choices are evaluated in this order:
 **Trade-offs:** Cloudflare ingress rules are trusted remote configuration with all reachability available to Nginx; exposing the unauthenticated Bento web server requires Cloudflare Access and remains unsafe through an untrusted direct listener.
 **Invariant:** The token is absent from shared `.env`, API output, routine diagnostics, and host argv; unconfigured stacks do not start the tunnel service.
 
+### D-22 — Explicit managed HTTP process applications
+
+**Context:** Trusted Node.js, Bun, and Python projects need the same stable identity, shared ingress, and data grants as PHP apps without turning Bento into an automatic buildpack platform.
+
+**Decision:** Add a strict process runtime variant with exact toolchain version, explicit argv/workdir/private port/health metadata, one curated per-app service, a Unix-socket-to-loopback adapter, and a same-image ephemeral CLI role. New process apps are staged disabled and must be privately started before public enablement.
+
+**Benefits:** Reuses domains, TLS, UID/GID, homes, databases, Redis, backups, render/apply, and diagnostics while keeping Nginx as the only public base service.
+
+**Trade-offs:** Runtime updates may recreate one running app container with downtime; mutable Git workspaces are not immutable releases; arbitrary native dependencies may require a future custom-image provider.
+
+**Invariant:** No process app receives a Docker socket, sibling home mount, public port, implicit shell command, or automatic repository/build detection. Unsupported jobs and webhook deploy fail closed.
+
 ## 4. Reimplementation boundaries
 
 A conforming reimplementation MAY change libraries, file internals, or container build mechanics only if it preserves:
 
 - CLI intent and documented safety behavior;
-- strict domain-schema-v1 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
+- strict domain-schema-v2 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
 - stack/project identity and durable resource naming;
 - domain uniqueness and app identity allocation/preservation;
 - component cardinality and private/public topology;
@@ -211,7 +226,8 @@ The following require an explicit product/architecture revision rather than an i
 
 - introducing a daemon/API/browser control plane;
 - changing to multi-host/Kubernetes orchestration;
-- one container per app or hostile tenancy claims;
+- one container per PHP app, one complete stack per app, or hostile tenancy claims;
+- changing the dedicated process-app model into an automatic arbitrary-repository/buildpack platform;
 - publishing backend service ports by default;
 - destructive automatic database/version removal;
 - unversioned state migration, unknown future database migrations, or unknown domain-field acceptance;
@@ -284,7 +300,7 @@ Tests MUST demonstrate:
 
 Round-trip tests MUST prove that:
 
-- persisted state is strict schema v1;
+- persisted state is strict schema v2;
 - derived `database`, `mainDomain`, and `aliases` views are omitted from JSON;
 - app and proxy map keys match their identities;
 - domain records point to existing owners and exactly one primary exists per owner;
@@ -292,7 +308,9 @@ Round-trip tests MUST prove that:
 - every app has one or more unique binding identities;
 - relational bindings reference managed services of the same engine;
 - adding a binding preserves all existing bindings and credentials;
-- unsupported old/new versions fail without state modification.
+- unsupported old/new versions fail without state modification;
+- every app has exactly one runtime variant, existing apps migrate to PHP, and process runtime service/workdir/argv/port fields are strict;
+- process services are stable by slug and cannot collide.
 
 ### A-06 — Identity and secret safety
 
@@ -305,7 +323,8 @@ Tests/review MUST verify:
 - state/env/credentials/rclone/backup-result files use private modes;
 - database/admin/rclone/deploy/TLS secrets are absent from routine status, support bundles, and host argv;
 - generated diagnostics are redacted and bounded before persistence/sharing;
-- Cloudflare tunnel tokens use a private operator source file and a dedicated generated environment, reject line injection, never enter shared service environments/host argv/API output, and token replacement force-recreates only `cloudflared`.
+- Cloudflare tunnel tokens use a private operator source file and a dedicated generated environment, reject line injection, never enter shared service environments/host argv/API output, and token replacement force-recreates only `cloudflared`;
+- process apps publish no ports, mount only their own home/file bindings/socket directory, keep credential values out of Compose/host argv, and receive no Docker socket.
 
 ### A-07 — Data safety
 

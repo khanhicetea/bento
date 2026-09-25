@@ -6,6 +6,7 @@
 import { dirname, join } from "node:path";
 import { encodeHex } from "../platform/hex.ts";
 import type { DesiredState, TemplateProvenance } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import { notFoundError, validationError } from "../domain/errors.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
 import { reloadPlanForDomainChange, reloadPlanForPoolChange } from "../domain/reload.ts";
@@ -35,6 +36,9 @@ export async function prepareCustomTemplate(
 ): Promise<PreparedCustomTemplate> {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
+  if (kind === "pool" && !isPhpApp(app)) {
+    throw validationError("process apps do not have PHP-FPM pool templates");
+  }
 
   const current = kind === "vhost" ? app.vhostTemplate : app.poolTemplate;
   if (current.kind === "custom") {
@@ -48,7 +52,9 @@ export async function prepareCustomTemplate(
   const path = join(destDir, kind === "vhost" ? "vhost.conf.tpl" : "pool.conf.tpl");
   if (await platform.fs.exists(path)) return { path, created: false };
 
-  const content = await platform.assets.readText(UPSTREAM_ASSET[kind]);
+  const asset =
+    kind === "vhost" && !isPhpApp(app) ? "nginx/process-app-vhost.conf.tpl" : UPSTREAM_ASSET[kind];
+  const content = await platform.assets.readText(asset);
   await platform.fs.mkdirp(destDir, 0o755);
   await platform.fs.writeText(path, content, 0o644);
   return { path, created: true };
@@ -95,6 +101,16 @@ export async function upstreamTemplateDigest(
   return { content, digest: await digestText(content) };
 }
 
+async function appUpstreamTemplateDigest(
+  platform: Platform,
+  kind: TemplateKind,
+  processApp: boolean,
+): Promise<{ content: string; digest: string }> {
+  if (kind !== "vhost" || !processApp) return await upstreamTemplateDigest(platform, kind);
+  const content = await platform.assets.readText("nginx/process-app-vhost.conf.tpl");
+  return { content, digest: await digestText(content) };
+}
+
 /**
  * Activate a custom vhost or pool template for an app.
  * Records provenance (source path + upstream digest at activation).
@@ -106,6 +122,9 @@ export async function selectCustomTemplate(
 ): Promise<SelectTemplateResult> {
   const app = state.apps[input.slug];
   if (!app) throw notFoundError(`app not found: ${input.slug}`);
+  if (input.kind === "pool" && !isPhpApp(app)) {
+    throw validationError("process apps do not have PHP-FPM pool templates");
+  }
   if (!(await platform.fs.exists(input.sourcePath))) {
     throw validationError(`template source not found: ${input.sourcePath}`);
   }
@@ -117,7 +136,11 @@ export async function selectCustomTemplate(
     throw validationError("template source is empty");
   }
 
-  const { digest: upstreamDigest } = await upstreamTemplateDigest(platform, input.kind);
+  const { digest: upstreamDigest } = await appUpstreamTemplateDigest(
+    platform,
+    input.kind,
+    !isPhpApp(app),
+  );
   const now = platform.clock.nowIso();
   const copy = input.copy !== false;
 
@@ -177,6 +200,9 @@ export function returnToUpstreamTemplate(
 ): ReturnToUpstreamResult {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
+  if (kind === "pool" && !isPhpApp(app)) {
+    throw validationError("process apps do not have PHP-FPM pool templates");
+  }
 
   const current = kind === "vhost" ? app.vhostTemplate : app.poolTemplate;
   const preservedPath = current.kind === "custom" ? current.sourcePath : undefined;
@@ -222,11 +248,11 @@ export async function detectTemplateDrift(
   const out: TemplateDrift[] = [];
   for (const app of apps) {
     if (!app) continue;
-    for (const kind of ["vhost", "pool"] as TemplateKind[]) {
+    for (const kind of (isPhpApp(app) ? ["vhost", "pool"] : ["vhost"]) as TemplateKind[]) {
       const prov = kind === "vhost" ? app.vhostTemplate : app.poolTemplate;
       if (prov.kind !== "custom") continue;
       const recorded = prov.copiedFromVersion ?? "";
-      const { digest: current } = await upstreamTemplateDigest(platform, kind);
+      const { digest: current } = await appUpstreamTemplateDigest(platform, kind, !isPhpApp(app));
       out.push({
         slug: app.slug,
         kind,

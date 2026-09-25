@@ -11,10 +11,18 @@ import type {
   DesiredState,
   EntrypointMode,
   ManagedDatabaseService,
+  ProcessAppState,
+  ProcessLanguage,
   TlsMode,
 } from "../domain/state.ts";
-import { defaultDeployConfig, defaultRedisIdentity } from "../domain/state.ts";
-import { primaryDatabase } from "../domain/state.ts";
+import {
+  defaultDeployConfig,
+  defaultRedisIdentity,
+  isPhpApp,
+  primaryDatabase,
+  processImage,
+  processServiceName,
+} from "../domain/state.ts";
 import {
   asAbsoluteAppPath,
   asAppSlug,
@@ -43,6 +51,7 @@ import { containerAppHome } from "../platform/paths.ts";
 import {
   mergeReloadPlans,
   type ReloadPlan,
+  reloadPlanForDomainChange,
   reloadPlanForPoolChange,
   reloadPlanForRunnerChange,
 } from "../domain/reload.ts";
@@ -77,6 +86,13 @@ import { serviceError } from "../domain/errors.ts";
 export type ProvisionAppInput = {
   slug: string;
   domain: string;
+  kind?: "php" | "process";
+  processLanguage?: ProcessLanguage;
+  processVersion?: string;
+  processCommand?: string[];
+  processWorkdir?: string;
+  processPort?: number;
+  processHealthPath?: string;
   aliases?: string[];
   documentRoot?: string;
   entrypointMode?: EntrypointMode;
@@ -105,11 +121,15 @@ export function provisionApp(
   state: DesiredState,
   input: ProvisionAppInput,
 ): ProvisionAppResult {
+  if (input.kind === "process") return provisionProcessApp(platform, state, input);
   const slug = unwrap(parseAppSlug(input.slug), "slug");
   const domain = unwrap(parseDomainName(input.domain), "domain");
   const aliases = (input.aliases ?? []).map((a, i) => unwrap(parseDomainName(a), `aliases[${i}]`));
 
   const existing = state.apps[slug];
+  if (existing && !isPhpApp(existing)) {
+    throw validationError(`app ${slug} is a process app; update it with --kind process`);
+  }
   const created = !existing;
 
   // Domain uniqueness
@@ -250,6 +270,7 @@ export function provisionApp(
   else appDatabases.push(selectedBinding);
 
   const app: AppState = {
+    kind: "php",
     slug: asAppSlug(slug),
     enabled: existing?.enabled ?? true,
     uid,
@@ -296,6 +317,98 @@ export function provisionApp(
     app,
     reloadPlan: reloadPlanForPoolChange(app.phpService),
     created,
+  };
+}
+
+function provisionProcessApp(
+  platform: Platform,
+  state: DesiredState,
+  input: ProvisionAppInput,
+): ProvisionAppResult {
+  const slug = unwrap(parseAppSlug(input.slug), "slug");
+  const existing = state.apps[slug];
+  if (existing && isPhpApp(existing)) {
+    throw validationError(`app ${slug} is a PHP app; runtime kind cannot be changed in place`);
+  }
+
+  const language = input.processLanguage ?? existing?.runtime.language;
+  const version = input.processVersion ?? existing?.runtime.version;
+  const command = input.processCommand ?? existing?.runtime.command;
+  if (!language || !["node", "bun", "python"].includes(language)) {
+    throw validationError("processLanguage must be node, bun, or python");
+  }
+  if (!version || !/^[0-9]+(?:\.[0-9]+){0,2}$/.test(version)) {
+    throw validationError("processVersion must be an exact numeric version");
+  }
+  if (!command?.length || command.some((part) => part.length === 0 || /[\r\n\0]/.test(part))) {
+    throw validationError("processCommand must contain safe, non-empty argv values");
+  }
+  const port = input.processPort ?? existing?.runtime.internalPort ?? 8080;
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw validationError("processPort must be an integer between 1024 and 65535");
+  }
+  const healthPath = input.processHealthPath ?? existing?.runtime.healthPath;
+  if (healthPath !== undefined && !/^\/[^\r\n]*$/.test(healthPath)) {
+    throw validationError("processHealthPath must be an absolute HTTP path");
+  }
+
+  // Reuse the established identity/domain/data transition through a temporary
+  // PHP-shaped view. The persisted result remains a strict process app and never
+  // receives an FPM pool or PHP route.
+  const defaultPhp = state.phpVersions.find(
+    (entry) => entry.version === state.defaults.phpVersion,
+  )!;
+  const shadowExisting = existing
+    ? {
+        ...existing,
+        kind: "php" as const,
+        documentRoot: "public",
+        entrypointMode: "front-controller" as const,
+        phpVersion: state.defaults.phpVersion,
+        phpService: defaultPhp.service,
+        fpmProfile: state.defaults.fpmProfile,
+        poolTemplate: { kind: "upstream" as const },
+      }
+    : undefined;
+  const shadowState = shadowExisting
+    ? { ...state, apps: { ...state.apps, [slug]: shadowExisting } }
+    : state;
+  const base = provisionApp(platform, shadowState, {
+    ...input,
+    kind: "php",
+    phpVersion: state.defaults.phpVersion,
+    fpmProfile: state.defaults.fpmProfile,
+    documentRoot: "public",
+    entrypointMode: "front-controller",
+  });
+  const { kind: _kind, ...common } = base.app;
+  const home = containerAppHome(slug);
+  const workdir = platform.paths.assertInsideHome(
+    home,
+    input.processWorkdir ?? existing?.runtime.workdir ?? `${home}/code`,
+  );
+  const app: ProcessAppState = {
+    ...common,
+    kind: "process",
+    // A new process app is staged privately until the operator starts and enables it.
+    enabled: existing?.enabled ?? false,
+    deploy: { ...common.deploy, enabled: false, hmacSecret: undefined },
+    runtime: {
+      language,
+      version,
+      image: processImage(language, version),
+      service: processServiceName(slug),
+      internalPort: port,
+      command: [...command],
+      workdir,
+      ...(healthPath !== undefined ? { healthPath } : {}),
+    },
+  };
+  return {
+    state: { ...base.state, apps: { ...base.state.apps, [slug]: app } },
+    app,
+    created: !existing,
+    reloadPlan: reloadPlanForDomainChange(),
   };
 }
 
@@ -459,7 +572,9 @@ export async function materializeAppHome(
   const dirs = [
     home,
     join(home, "code"),
-    join(home, app.documentRoot ? join("code", app.documentRoot) : "code"),
+    ...(isPhpApp(app)
+      ? [join(home, app.documentRoot ? join("code", app.documentRoot) : "code")]
+      : []),
     join(home, "logs"),
     join(home, "tmp"),
     join(home, "tmp", "sessions"),
@@ -470,6 +585,11 @@ export async function materializeAppHome(
   ];
   for (const d of dirs) {
     await platform.fs.mkdirp(d, 0o750);
+  }
+  if (!isPhpApp(app)) {
+    const processRuntimeRoot = join(platform.paths.paths.root, "runtime", "apps");
+    await platform.fs.mkdirp(processRuntimeRoot, 0o755);
+    await platform.fs.mkdirp(join(processRuntimeRoot, app.slug), 0o750);
   }
   for (const database of app.databases.filter(
     (database) => database.engine === "sqlite" || database.engine === "litestream",
@@ -600,12 +720,14 @@ export async function materializeAppHome(
     );
   }
 
-  // Placeholder index
-  const docRoot = join(home, "code", app.documentRoot || ".");
-  await platform.fs.mkdirp(docRoot);
-  const index = join(docRoot, "index.php");
-  if (!(await platform.fs.exists(index))) {
-    await platform.fs.atomicWriteText(index, `<?php\necho "bento app ${app.slug}\\n";\n`, 0o644);
+  // Placeholder entrypoint is PHP-only. Process projects keep their code tree untouched.
+  if (isPhpApp(app)) {
+    const docRoot = join(home, "code", app.documentRoot || ".");
+    await platform.fs.mkdirp(docRoot);
+    const index = join(docRoot, "index.php");
+    if (!(await platform.fs.exists(index))) {
+      await platform.fs.atomicWriteText(index, `<?php\necho "bento app ${app.slug}\\n";\n`, 0o644);
+    }
   }
 
   if (recursivePerms) {
@@ -819,6 +941,7 @@ export type AppLifecycleResult = {
 };
 
 function appLifecycleReloadPlan(app: AppState): ReloadPlan {
+  if (!isPhpApp(app)) return reloadPlanForDomainChange();
   return mergeReloadPlans(
     reloadPlanForPoolChange(app.phpService),
     reloadPlanForRunnerChange(`${app.phpService}-runner`),
@@ -886,7 +1009,9 @@ export function deleteApp(
 export function capacityWarnings(state: DesiredState): string[] {
   const warnings: string[] = [];
   for (const v of state.phpVersions) {
-    const apps = Object.values(state.apps).filter((a) => a.enabled && a.phpVersion === v.version);
+    const apps = Object.values(state.apps).filter(
+      (a) => isPhpApp(a) && a.enabled && a.phpVersion === v.version,
+    );
     let sum = 0;
     for (const a of apps) {
       const p = FPM_PROFILES[a.fpmProfile] ?? FPM_PROFILES[DEFAULT_FPM_PROFILE]!;

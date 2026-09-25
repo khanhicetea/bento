@@ -43,6 +43,7 @@ export function ApplicationsPage() {
     removing,
     reload,
     setEnabled,
+    setRunning,
     saveApplication,
     addDatabase,
     removeApplication,
@@ -236,6 +237,8 @@ export function ApplicationsPage() {
                 app={app}
                 busy={changing === app.slug}
                 onToggle={() => setEnabled(app)}
+                onStart={() => setRunning(app, "start")}
+                onStop={() => setRunning(app, "stop")}
                 onEdit={() => {
                   resetErrors();
                   setEditorTarget(app);
@@ -360,6 +363,8 @@ function ApplicationCard({
   app,
   busy,
   onToggle,
+  onStart,
+  onStop,
   onEdit,
   onDatabases,
   onJobs,
@@ -369,6 +374,8 @@ function ApplicationCard({
   app: Application;
   busy: boolean;
   onToggle: () => void;
+  onStart: () => void;
+  onStop: () => void;
   onEdit: () => void;
   onDatabases: () => void;
   onJobs: () => void;
@@ -446,9 +453,27 @@ function ApplicationCard({
         </div>
 
         <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-xl border border-border bg-muted/30">
-          <Fact label="Runtime" value={`PHP ${app.phpVersion}`} />
-          <Fact label="Capacity" value={app.fpmProfile} icon={<Gauge className="size-3.5" />} />
-          <Fact label="Document root" value={app.documentRoot} />
+          <Fact
+            label="Runtime"
+            value={
+              app.kind === "php"
+                ? `PHP ${app.phpVersion}`
+                : `${formatLabel(app.processRuntime?.language ?? "process")} ${app.processRuntime?.version ?? ""}`
+            }
+          />
+          <Fact
+            label={app.kind === "php" ? "Capacity" : "Service"}
+            value={
+              app.kind === "php" ? (app.fpmProfile ?? "-") : (app.processRuntime?.service ?? "-")
+            }
+            icon={<Gauge className="size-3.5" />}
+          />
+          <Fact
+            label={app.kind === "php" ? "Document root" : "Working directory"}
+            value={
+              app.kind === "php" ? (app.documentRoot ?? "-") : (app.processRuntime?.workdir ?? "-")
+            }
+          />
           <Fact
             label="TLS"
             value={formatLabel(app.tls)}
@@ -509,9 +534,13 @@ function ApplicationCard({
               variant="outline"
               size="sm"
               className="w-full min-w-0 px-2"
-              disabled={busy}
+              disabled={busy || app.kind === "process"}
               onClick={onJobs}
-              title="Manage cron jobs and workers"
+              title={
+                app.kind === "process"
+                  ? "Process app jobs are not supported yet"
+                  : "Manage cron jobs and workers"
+              }
             >
               <ScrollText className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">Jobs</span>
@@ -559,6 +588,36 @@ function ApplicationCard({
                     <SquareTerminal className="size-3.5" aria-hidden="true" />
                     Open shell
                   </button>
+                  {app.kind === "process" && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => {
+                          setMoreOpen(false);
+                          onStart();
+                        }}
+                      >
+                        <Power className="size-3.5" aria-hidden="true" />
+                        Start / rebuild privately
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => {
+                          setMoreOpen(false);
+                          onStop();
+                        }}
+                      >
+                        <Power className="size-3.5" aria-hidden="true" />
+                        Stop private service
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     role="menuitem"

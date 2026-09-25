@@ -8,7 +8,8 @@ import {
 } from "@bento/shared";
 import type { CliContext } from "../../../commands/context.ts";
 import { isBentoError, type BentoError } from "../../../domain/errors.ts";
-import type { AppDatabaseBinding, AppState, TlsMode } from "../../../domain/state.ts";
+import type { AppDatabaseBinding, AppState, DesiredState, TlsMode } from "../../../domain/state.ts";
+import { isProcessApp } from "../../../domain/state.ts";
 import { FPM_PROFILES } from "../../../domain/types.ts";
 import {
   applyAppDataPlane,
@@ -22,6 +23,16 @@ import { writeAppPruneManifest } from "../../../services/app_prune.ts";
 import { enableSqliteBackup, sqliteCompose } from "../../../services/sqlite.ts";
 import { loadRedisPassword } from "../../../services/stack_env.ts";
 import { redact } from "../../../ui/output.ts";
+import { composeArgs } from "../../../services/compose.ts";
+import {
+  isProcessAppHealthy,
+  recreateRunningProcessApp as recreateProcessApp,
+  removeProcessAppContainer,
+  startProcessApp,
+  stopProcessApp,
+} from "../../../services/process_app.ts";
+import { emptyReloadPlan } from "../../../domain/reload.ts";
+import { safetyError } from "../../../domain/errors.ts";
 
 const os = implement(applicationsContract);
 
@@ -67,6 +78,15 @@ export function createApplicationsRouter(ctx: CliContext) {
     setEnabled: os.setEnabled.handler(async ({ input }) => {
       try {
         const changed = await ctx.store.withExclusive(async (state) => {
+          const current = getAppOrThrow(state, input.slug);
+          if (input.enabled && isProcessApp(current)) {
+            if (!(await isProcessAppHealthy(ctx.platform, state, current))) {
+              throw safetyError(
+                `refusing to publish process app ${current.slug} before it is running`,
+                `Run 'bento app start ${current.slug}', verify health, then enable it.`,
+              );
+            }
+          }
           const result = setAppEnabled(
             state,
             input.slug,
@@ -79,11 +99,48 @@ export function createApplicationsRouter(ctx: CliContext) {
             skipValidate: false,
             alreadyLocked: true,
           });
-          return result.app;
+          return result;
         });
-        return toApplication(changed);
+        if (!input.enabled && isProcessApp(changed.app)) {
+          const stopped = await ctx.platform.process.run(
+            await composeArgs(ctx.platform, changed.state, ["stop", changed.app.runtime.service]),
+            { cwd: ctx.platform.paths.paths.root, timeoutMs: 60_000 },
+          );
+          if (stopped.code !== 0) {
+            ctx.log.warn(
+              `process app ${changed.app.slug} route is disabled but its private container did not stop`,
+            );
+          }
+        }
+        return toApplication(changed.app);
       } catch (error) {
         logApplicationError(ctx, "set enabled", error);
+        throw asORPCError(error);
+      }
+    }),
+    setRunning: os.setRunning.handler(async ({ input }) => {
+      try {
+        const state = await ctx.store.load();
+        const app = getAppOrThrow(state, input.slug);
+        if (!isProcessApp(app)) {
+          throw safetyError("start/stop is only available for process applications");
+        }
+        if (input.action === "start") {
+          await ctx.render.apply(state, {
+            reloadPlan: emptyReloadPlan(),
+            skipValidate: false,
+          });
+        }
+        const result =
+          input.action === "start"
+            ? await startProcessApp(ctx.platform, state, app)
+            : await stopProcessApp(ctx.platform, state, app);
+        if (!result || result.code !== 0) {
+          throw new Error(`Process application ${input.action} failed`);
+        }
+        return toApplication(app);
+      } catch (error) {
+        logApplicationError(ctx, "set running", error);
         throw asORPCError(error);
       }
     }),
@@ -96,6 +153,14 @@ export function createApplicationsRouter(ctx: CliContext) {
             input.confirmation,
             ctx.platform.clock.nowIso(),
           );
+          if (isProcessApp(result.app)) {
+            const stopped = await removeProcessAppContainer(ctx.platform, state, result.app);
+            if (stopped && stopped.code !== 0) {
+              throw safetyError(
+                `refusing to remove process app ${result.app.slug} while its container cannot be stopped`,
+              );
+            }
+          }
           await writeAppPruneManifest(ctx.platform, result.app);
           await ctx.store.save(result.state);
           await ctx.render.apply(result.state, {
@@ -120,10 +185,17 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
       slug: input.slug,
       domain: input.domain,
       aliases: input.aliases,
+      kind: input.kind,
       documentRoot: input.documentRoot,
       entrypointMode: input.entrypointMode,
       phpVersion: input.phpVersion,
       fpmProfile: input.fpmProfile,
+      processLanguage: input.processLanguage,
+      processVersion: input.processVersion,
+      processCommand: input.processCommand,
+      processWorkdir: input.processWorkdir,
+      processPort: input.processPort,
+      processHealthPath: input.processHealthPath,
       databaseEngine: input.databaseEngine,
       mysqlVersion: input.databaseEngine === "mysql" ? input.databaseService : undefined,
       postgresVersion: input.databaseEngine === "postgres" ? input.databaseService : undefined,
@@ -162,7 +234,12 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
       skipValidate: false,
       alreadyLocked: true,
     });
-    return { app: provisioned.app, state: nextState, startLitestream };
+    return {
+      app: provisioned.app,
+      state: nextState,
+      startLitestream,
+      created: provisioned.created,
+    };
   });
 
   if (result.startLitestream) {
@@ -176,6 +253,7 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
       throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
     }
   }
+  if (!result.created) await recreateRunningProcessApp(ctx, result.state, result.app);
 
   return toApplication(result.app);
 }
@@ -190,6 +268,17 @@ async function addApplicationDatabase(
       slug: current.slug,
       domain: current.mainDomain,
       aliases: current.aliases,
+      kind: current.kind,
+      ...(current.kind === "process"
+        ? {
+            processLanguage: current.runtime.language,
+            processVersion: current.runtime.version,
+            processCommand: current.runtime.command,
+            processWorkdir: current.runtime.workdir,
+            processPort: current.runtime.internalPort,
+            processHealthPath: current.runtime.healthPath,
+          }
+        : {}),
       databaseEngine: input.engine,
       mysqlVersion: input.engine === "mysql" ? input.service : undefined,
       postgresVersion: input.engine === "postgres" ? input.service : undefined,
@@ -239,7 +328,19 @@ async function addApplicationDatabase(
       throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
     }
   }
+  await recreateRunningProcessApp(ctx, result.state, result.app);
   return toApplication(result.app);
+}
+
+async function recreateRunningProcessApp(
+  ctx: CliContext,
+  state: DesiredState,
+  app: AppState,
+): Promise<void> {
+  const recreated = await recreateProcessApp(ctx.platform, state, app);
+  if (recreated && recreated.code !== 0) {
+    throw new Error("Process app state was saved, but its container could not be recreated");
+  }
 }
 
 function tlsMode(input: SaveApplicationInput): TlsMode {
@@ -305,13 +406,18 @@ export async function listApplications(ctx: CliContext): Promise<ApplicationList
 export function toApplication(app: AppState): Application {
   return {
     slug: app.slug,
+    kind: app.kind,
     enabled: app.enabled,
     domain: app.mainDomain,
     aliases: app.aliases,
-    documentRoot: app.documentRoot,
-    entrypointMode: app.entrypointMode,
-    phpVersion: app.phpVersion,
-    fpmProfile: app.fpmProfile,
+    ...(app.kind === "php"
+      ? {
+          documentRoot: app.documentRoot,
+          entrypointMode: app.entrypointMode,
+          phpVersion: String(app.phpVersion),
+          fpmProfile: String(app.fpmProfile),
+        }
+      : { processRuntime: app.runtime }),
     tls: app.tls.kind,
     tlsCertificatePath: app.tls.kind === "external" ? app.tls.certPath : undefined,
     tlsKeyPath: app.tls.kind === "external" ? app.tls.keyPath : undefined,

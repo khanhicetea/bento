@@ -3,6 +3,7 @@
  */
 
 import type { DesiredState, Worker } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import { asAppSlug, asWorkerName } from "../domain/types.ts";
 import { conflictError, notFoundError, validationError } from "../domain/errors.ts";
 import { parseAppSlug, parseStringArray, unwrap } from "../schemas/validators.ts";
@@ -28,6 +29,7 @@ export function addWorker(
   const appSlug = unwrap(parseAppSlug(input.app), "app");
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) throw validationError("workers for process apps are not supported yet");
 
   const name = input.name.trim();
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
@@ -72,6 +74,7 @@ export function removeWorker(
 ): { state: DesiredState; reloadPlan: ReloadPlan } {
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) throw validationError("workers for process apps are not supported yet");
   const before = state.workers.length;
   const workers = state.workers.filter((w) => !(w.app === appSlug && w.name === name));
   if (workers.length === before) {
@@ -127,6 +130,7 @@ export function buildWorkerControlPlan(
 ): WorkerControlPlan {
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) throw validationError("workers for process apps are not supported yet");
   const worker = state.workers.find((w) => w.app === appSlug && w.name === name);
   if (!worker) throw notFoundError(`worker ${name} not found for app ${appSlug}`);
 

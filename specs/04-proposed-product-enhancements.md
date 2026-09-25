@@ -449,7 +449,7 @@ These proposals MUST NOT quietly expand Bento into:
 - a multi-host scheduler or Kubernetes layer;
 - a resident daemon, public API, or browser admin product;
 - a hostile multi-tenant sandbox;
-- one container per app;
+- one container per PHP app or one complete Nginx/data stack per app;
 - a hard-coded Git/framework deployment system;
 - an automatically destructive database lifecycle;
 - a product that claims local or uploaded backups are recovery proof without verification.

@@ -1,7 +1,7 @@
 # Bento product specifications
 
 Status: current-product baseline  
-Implementation snapshot: `bento 0.1.0`, state schema `4`, Bun target `1.4.0`  
+Implementation snapshot: `bento 0.1.0`, desired-state schema `2`, database schema `3`, Bun target `1.4.0`
 Repository snapshot reviewed: `3b4345b`
 
 These specifications describe the product that exists in this repository: its product model, operator promises, architecture, technology choices, safety boundaries, and acceptance contract. They replace the removed historical specifications and normalize the current implementation where older prose in `docs/` is stale.

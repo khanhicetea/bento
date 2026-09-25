@@ -13,6 +13,7 @@ import {
   resolveMysqlServices,
 } from "../../services/mysql.ts";
 import { loadRedisPassword, requireMysqlRootPassword } from "../../services/stack_env.ts";
+import { recreateRunningProcessApp } from "../../services/process_app.ts";
 import { printTable } from "../../ui/output.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
@@ -139,7 +140,7 @@ async function cmdMysqlRemove(argv: ArgsWith<"version">, ctx: CliContext): Promi
 
 async function cmdMysqlDb(argv: ArgsWith<"app" | "database">, ctx: CliContext): Promise<number> {
   const { app: slug, database: dbName } = argv;
-  await ctx.store.withExclusive(async (state) => {
+  const next = await ctx.store.withExclusive(async (state) => {
     const rootPassword = await requireMysqlRootPassword(ctx.platform);
     // Fail before recording when MySQL is unavailable or grants fail.
     const next = await createAppDatabaseLive(ctx.platform, state, slug, dbName, rootPassword);
@@ -152,6 +153,11 @@ async function cmdMysqlDb(argv: ArgsWith<"app" | "database">, ctx: CliContext): 
     await ctx.store.save(next);
     return next;
   });
+  const recreated = await recreateRunningProcessApp(ctx.platform, next, next.apps[slug]!);
+  if (recreated && recreated.code !== 0) {
+    ctx.log.error("database was created, but the running process app could not be recreated");
+    return 1;
+  }
   ctx.log.info(`created database ${dbName} for app ${slug}`);
   return 0;
 }

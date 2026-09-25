@@ -331,7 +331,7 @@ The adapter MUST:
 
 ### Finding
 
-Domain-schema-v1 `state.db` contains structural intent together with database passwords and deploy HMAC secrets. This makes every state backup, diagnostic path, and migration highly sensitive and complicates safe inspection of non-secret intent.
+Domain-schema-v2 `state.db` contains structural intent together with database passwords and deploy HMAC secrets. This makes every state backup, diagnostic path, and migration highly sensitive and complicates safe inspection of non-secret intent.
 
 ### Decision
 

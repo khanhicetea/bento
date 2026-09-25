@@ -29,6 +29,9 @@ type StringArgName =
   | "replace"
   | "repoRoot"
   | "retention"
+  | "runtime"
+  | "runtimeVersion"
+  | "healthPath"
   | "rclonePrefix"
   | "rcloneRemote"
   | "rpo"
@@ -87,6 +90,7 @@ export type CliArgs = {
   mode?: TlsMode["kind"];
   ingressMode?: "host" | "bridge";
   upstream?: string | string[];
+  start?: string | string[];
 } & Partial<Record<StringArgName, string>> &
   Partial<Record<BooleanArgName, boolean>> &
   Partial<Record<NumberArgName, number>>;

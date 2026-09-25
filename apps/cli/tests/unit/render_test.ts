@@ -490,3 +490,44 @@ bunRuntime.test(
     }
   },
 );
+
+bunRuntime.test(
+  "enabled process app renders private Unix-socket proxy without an FPM pool",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-process-render-" });
+    try {
+      const platform = testPlatform(root);
+      const store = new StateStore(platform);
+      const render = new RenderService(platform);
+      await store.init();
+      let state = await store.load();
+      const provisioned = provisionApp(platform, state, {
+        slug: "api",
+        domain: "api.example",
+        kind: "process",
+        processLanguage: "node",
+        processVersion: "24",
+        processCommand: ["node", "server.js"],
+      });
+      state = setAppEnabled(provisioned.state, "api", true, platform.clock.nowIso()).state;
+      await render.apply(state, { renderOnly: true, skipValidate: true });
+
+      const vhost = await platform.fs.readText(join(root, "generated/nginx/sites/api.conf"));
+      assertEquals(vhost.includes("server unix:/run/bento-apps/api/http.sock;"), true);
+      assertEquals(vhost.includes("proxy_pass http://app_api;"), true);
+      assertEquals(vhost.includes("fastcgi_pass"), false);
+      assertEquals(
+        await platform.fs.exists(join(root, "generated/php/php85/pools/api.conf")),
+        false,
+      );
+      assertEquals(
+        await platform.fs.exists(join(root, "generated/compose/docker-compose.app-api.yml")),
+        true,
+      );
+      assertEquals(await platform.fs.exists(join(root, "docker/process/Dockerfile")), true);
+      assertEquals(await platform.fs.exists(join(root, "docker/process/entrypoint.sh")), true);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);

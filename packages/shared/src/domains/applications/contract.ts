@@ -9,6 +9,7 @@ import {
   removeApplicationInputSchema,
   saveApplicationInputSchema,
   setApplicationEnabledInputSchema,
+  setApplicationRunningInputSchema,
 } from "./schema.ts";
 
 const emptyInputSchema = z.object({}).optional();
@@ -22,6 +23,7 @@ export const applicationsContract = oc.router({
   save: oc.input(saveApplicationInputSchema).output(applicationSchema),
   addDatabase: oc.input(addApplicationDatabaseInputSchema).output(applicationSchema),
   setEnabled: oc.input(setApplicationEnabledInputSchema).output(applicationSchema),
+  setRunning: oc.input(setApplicationRunningInputSchema).output(applicationSchema),
   remove: oc.input(removeApplicationInputSchema).output(applicationSchema),
 });
 

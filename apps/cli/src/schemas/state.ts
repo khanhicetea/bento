@@ -11,6 +11,7 @@ import {
   type DomainOwner,
   type EntrypointMode,
   type ManagedDatabaseService,
+  type ProcessLanguage,
   type ManagedPhpVersion,
   type ProxySite,
   type QueuePolicy,
@@ -174,56 +175,82 @@ const bindingSchema = z.discriminatedUnion("engine", [
     backupVerifiedAt: isoDateSchema.optional(),
   }),
 ]);
-const appBase = {
+const appCommon = {
   slug: appSlugSchema,
   enabled: z.boolean().default(true),
   uid: uidGidSchema,
   gid: uidGidSchema,
   home: absolutePathSchema,
+  tls: tlsModeSchema,
+  accessLog: z.boolean().default(false),
+  databases: z.array(bindingSchema).min(1),
+  redis: redisSchema,
+  deploy: deploySchema,
+  vhostTemplate: templateProvenanceSchema.default({ kind: "upstream" }),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+};
+const phpAppSchema = strict({
+  ...appCommon,
+  kind: z.literal("php"),
   documentRoot: safeRelativePathSchema.default(""),
   entrypointMode: z.enum(["front-controller", "legacy"]),
   phpVersion: phpVersionSchema,
   phpService: nonEmptyStringSchema,
   fpmProfile: fpmProfileSchema,
-  tls: tlsModeSchema,
-  accessLog: z.boolean().default(false),
-  redis: redisSchema,
-  deploy: deploySchema,
-  vhostTemplate: templateProvenanceSchema.default({ kind: "upstream" }),
   poolTemplate: templateProvenanceSchema.default({ kind: "upstream" }),
-  createdAt: isoDateSchema,
-  updatedAt: isoDateSchema,
-};
-const appSchema = strict({
-  ...appBase,
-  databases: z.array(bindingSchema).min(1),
-}).superRefine((app, ctx) => {
-  const identities = new Set<string>();
-  for (const [index, database] of app.databases.entries()) {
-    if (
-      (database.engine === "sqlite" || database.engine === "litestream") &&
-      !database.file.id.startsWith(`${app.slug}_`)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["databases", index, "file", "id"],
-        message: "SQLite file identity must belong to the app slug",
-      });
-    }
-    const identity =
-      database.engine === "sqlite" || database.engine === "litestream"
-        ? database.file.id
-        : `${database.engine}:${database.service}`;
-    if (identities.has(identity)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["databases", index],
-        message: `duplicate database binding ${identity}`,
-      });
-    }
-    identities.add(identity);
-  }
 });
+const processRuntimeSchema = strict({
+  language: z.enum(["node", "bun", "python"]),
+  version: nonEmptyStringSchema.regex(/^[0-9]+(?:\.[0-9]+){0,2}$/),
+  image: nonEmptyStringSchema,
+  service: nonEmptyStringSchema.regex(/^app-[a-z0-9][a-z0-9-]*$/),
+  internalPort: z.number().int().min(1024).max(65535),
+  command: stringArraySchema.min(1),
+  workdir: absolutePathSchema,
+  healthPath: nonEmptyStringSchema.regex(/^\/[^\r\n]*$/).optional(),
+});
+const processAppSchema = strict({
+  ...appCommon,
+  kind: z.literal("process"),
+  runtime: processRuntimeSchema,
+});
+const appSchema = z
+  .discriminatedUnion("kind", [phpAppSchema, processAppSchema])
+  .superRefine((app, ctx) => {
+    if (app.kind === "process" && app.deploy.enabled) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deploy", "enabled"],
+        message: "process app webhook deploy is not supported yet",
+      });
+    }
+    const identities = new Set<string>();
+    for (const [index, database] of app.databases.entries()) {
+      if (
+        (database.engine === "sqlite" || database.engine === "litestream") &&
+        !database.file.id.startsWith(`${app.slug}_`)
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["databases", index, "file", "id"],
+          message: "SQLite file identity must belong to the app slug",
+        });
+      }
+      const identity =
+        database.engine === "sqlite" || database.engine === "litestream"
+          ? database.file.id
+          : `${database.engine}:${database.service}`;
+      if (identities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["databases", index],
+          message: `duplicate database binding ${identity}`,
+        });
+      }
+      identities.add(identity);
+    }
+  });
 const proxySchema = strict({
   name: appSlugSchema,
   enabled: z.boolean().default(true),
@@ -342,7 +369,33 @@ const desiredStateRawSchema = strict({
       message: "engine and version must match the managed service",
     });
   }
+  const processServices = new Set<string>();
   for (const [slug, app] of Object.entries(state.apps)) {
+    if (app.kind === "process") {
+      if (app.runtime.service !== `app-${slug}`) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apps", slug, "runtime", "service"],
+          message: `must equal app-${slug}`,
+        });
+      }
+      if (processServices.has(app.runtime.service)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apps", slug, "runtime", "service"],
+          message: "process service must be stack-unique",
+        });
+      }
+      processServices.add(app.runtime.service);
+      const homePrefix = app.home.endsWith("/") ? app.home : `${app.home}/`;
+      if (app.runtime.workdir !== app.home && !app.runtime.workdir.startsWith(homePrefix)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["apps", slug, "runtime", "workdir"],
+          message: "must stay inside the app home",
+        });
+      }
+    }
     for (const [index, database] of app.databases.entries()) {
       if (database.engine === "sqlite" || database.engine === "litestream") continue;
       if (!services.has(database.service)) {
@@ -445,6 +498,12 @@ const desiredStateRawSchema = strict({
           path: [collection, index, "app"],
           message: `references unknown app ${record.app}`,
         });
+      } else if (state.apps[record.app]?.kind === "process") {
+        ctx.addIssue({
+          code: "custom",
+          path: [collection, index, "app"],
+          message: "process app jobs are not supported yet",
+        });
       }
     }
   }
@@ -493,17 +552,12 @@ function brandApp(app: z.infer<typeof appSchema>): AppState {
           databases: database.databases.map(brandDatabase),
         },
   );
-  return {
+  const common = {
     slug: asAppSlug(app.slug),
     enabled: app.enabled,
     uid: asUid(app.uid),
     gid: asGid(app.gid),
     home: asAbsoluteAppPath(app.home),
-    documentRoot: app.documentRoot,
-    entrypointMode: app.entrypointMode as EntrypointMode,
-    phpVersion: asPhpVersion(app.phpVersion),
-    phpService: app.phpService,
-    fpmProfile: asFpmProfile(app.fpmProfile),
     tls: app.tls,
     accessLog: app.accessLog,
     databases,
@@ -513,10 +567,34 @@ function brandApp(app: z.infer<typeof appSchema>): AppState {
     redis: brandRedis(app.redis),
     deploy: brandDeploy(app.deploy),
     vhostTemplate: app.vhostTemplate,
-    poolTemplate: app.poolTemplate,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
   };
+  return app.kind === "php"
+    ? {
+        ...common,
+        kind: "php",
+        documentRoot: app.documentRoot,
+        entrypointMode: app.entrypointMode as EntrypointMode,
+        phpVersion: asPhpVersion(app.phpVersion),
+        phpService: app.phpService,
+        fpmProfile: asFpmProfile(app.fpmProfile),
+        poolTemplate: app.poolTemplate,
+      }
+    : {
+        ...common,
+        kind: "process",
+        documentRoot: ".",
+        entrypointMode: "front-controller",
+        phpVersion: asPhpVersion("0.0"),
+        phpService: "",
+        fpmProfile: asFpmProfile("small"),
+        poolTemplate: { kind: "upstream" },
+        runtime: {
+          ...app.runtime,
+          language: app.runtime.language as ProcessLanguage,
+        },
+      };
 }
 function brandProxy(p: z.infer<typeof proxySchema>): ProxySite {
   return {
@@ -671,7 +749,17 @@ export function stateToJson(state: DesiredState): string {
   const apps = Object.fromEntries(
     Object.entries(state.apps).map(([slug, app]) => {
       const { database: _database, mainDomain: _mainDomain, aliases: _aliases, ...persisted } = app;
-      return [slug, persisted];
+      if (app.kind === "php") return [slug, persisted];
+      const {
+        documentRoot: _documentRoot,
+        entrypointMode: _entrypointMode,
+        phpVersion: _phpVersion,
+        phpService: _phpService,
+        fpmProfile: _fpmProfile,
+        poolTemplate: _poolTemplate,
+        ...processPersisted
+      } = persisted;
+      return [slug, processPersisted];
     }),
   );
   return `${JSON.stringify({ ...state, apps }, null, 2)}\n`;

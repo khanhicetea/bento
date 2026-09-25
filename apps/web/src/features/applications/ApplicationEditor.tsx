@@ -3,6 +3,7 @@ import type { Application, ApplicationList, SaveApplicationInput } from "@bento/
 import { Database, Globe2, Save, Server, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Alert } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,6 +43,7 @@ export function ApplicationEditor({
       );
   const [database, setDatabase] = useState(initialDatabase);
   const [tls, setTls] = useState(application?.tls ?? "shared");
+  const [kind, setKind] = useState<Application["kind"]>(application?.kind ?? "php");
   const relationalDatabase = database.startsWith("mysql:") || database.startsWith("postgres:");
   const creating = application === null;
 
@@ -55,15 +57,34 @@ export function ApplicationEditor({
     const databaseName = String(form.get("databaseName") ?? "").trim();
     const input: SaveApplicationInput = {
       slug: String(form.get("slug") ?? "").trim(),
+      kind,
       domain: String(form.get("domain") ?? "").trim(),
       aliases: String(form.get("aliases") ?? "")
         .split(",")
         .map((alias) => alias.trim())
         .filter(Boolean),
-      documentRoot: String(form.get("documentRoot") ?? "").trim(),
-      entrypointMode: String(form.get("entrypointMode")) as SaveApplicationInput["entrypointMode"],
-      phpVersion: String(form.get("phpVersion")),
-      fpmProfile: String(form.get("fpmProfile")),
+      ...(kind === "php"
+        ? {
+            documentRoot: String(form.get("documentRoot") ?? "").trim(),
+            entrypointMode: String(
+              form.get("entrypointMode"),
+            ) as SaveApplicationInput["entrypointMode"],
+            phpVersion: String(form.get("phpVersion")),
+            fpmProfile: String(form.get("fpmProfile")),
+          }
+        : {
+            processLanguage: String(
+              form.get("processLanguage"),
+            ) as SaveApplicationInput["processLanguage"],
+            processVersion: String(form.get("processVersion") ?? "").trim(),
+            processCommand: String(form.get("processCommand") ?? "")
+              .split("\n")
+              .map((argument) => argument.trim())
+              .filter(Boolean),
+            processWorkdir: String(form.get("processWorkdir") ?? "").trim() || undefined,
+            processPort: Number(form.get("processPort") ?? 8080),
+            processHealthPath: String(form.get("processHealthPath") ?? "").trim() || undefined,
+          }),
       tls,
       tlsCertificatePath:
         tls === "external" ? String(form.get("tlsCertificatePath") ?? "").trim() : undefined,
@@ -168,64 +189,150 @@ export function ApplicationEditor({
               <SectionHeading
                 icon={<Server className="size-4" />}
                 title="Runtime and routing"
-                description="Choose how the PHP runtime serves this application."
+                description="Choose a PHP pool or a supervised Node.js, Bun, or Python HTTP process."
               />
               <div className="mt-5 grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
-                <label>
-                  <FieldLabel>PHP version</FieldLabel>
+                <label className="col-span-full">
+                  <FieldLabel>Runtime kind</FieldLabel>
                   <NativeSelect
                     className="w-full"
-                    name="phpVersion"
-                    required
-                    defaultValue={application?.phpVersion ?? settings.defaults?.phpVersion}
+                    value={kind}
+                    disabled={!creating}
+                    onChange={(event) => setKind(event.target.value as Application["kind"])}
                   >
-                    {settings.phpVersions.map((version) => (
-                      <NativeSelectOption key={version} value={version}>
-                        PHP {version}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </label>
-                <label>
-                  <FieldLabel>FPM capacity</FieldLabel>
-                  <NativeSelect
-                    className="w-full"
-                    name="fpmProfile"
-                    required
-                    defaultValue={application?.fpmProfile ?? settings.defaults?.fpmProfile}
-                  >
-                    {settings.fpmProfiles.map((profile) => (
-                      <NativeSelectOption key={profile} value={profile}>
-                        {profile}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </label>
-                <label>
-                  <FieldLabel>Document root</FieldLabel>
-                  <Input
-                    className="w-full"
-                    name="documentRoot"
-                    required
-                    defaultValue={application?.documentRoot ?? "public"}
-                  />
-                  <FieldHint>Directory served by the web runtime.</FieldHint>
-                </label>
-                <label>
-                  <FieldLabel>Routing mode</FieldLabel>
-                  <NativeSelect
-                    className="w-full"
-                    name="entrypointMode"
-                    defaultValue={application?.entrypointMode ?? "front-controller"}
-                  >
-                    <NativeSelectOption value="front-controller">
-                      Front controller
-                    </NativeSelectOption>
-                    <NativeSelectOption value="legacy">
-                      Direct PHP files (legacy)
+                    <NativeSelectOption value="php">PHP-FPM application</NativeSelectOption>
+                    <NativeSelectOption value="process">
+                      Node.js, Bun, or Python process
                     </NativeSelectOption>
                   </NativeSelect>
+                  {!creating && <FieldHint>Runtime kind cannot be changed in place.</FieldHint>}
                 </label>
+                {kind === "php" ? (
+                  <>
+                    <label>
+                      <FieldLabel>PHP version</FieldLabel>
+                      <NativeSelect
+                        className="w-full"
+                        name="phpVersion"
+                        required
+                        defaultValue={application?.phpVersion ?? settings.defaults?.phpVersion}
+                      >
+                        {settings.phpVersions.map((version) => (
+                          <NativeSelectOption key={version} value={version}>
+                            PHP {version}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </label>
+                    <label>
+                      <FieldLabel>FPM capacity</FieldLabel>
+                      <NativeSelect
+                        className="w-full"
+                        name="fpmProfile"
+                        required
+                        defaultValue={application?.fpmProfile ?? settings.defaults?.fpmProfile}
+                      >
+                        {settings.fpmProfiles.map((profile) => (
+                          <NativeSelectOption key={profile} value={profile}>
+                            {profile}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </label>
+                    <label>
+                      <FieldLabel>Document root</FieldLabel>
+                      <Input
+                        className="w-full"
+                        name="documentRoot"
+                        required
+                        defaultValue={application?.documentRoot ?? "public"}
+                      />
+                      <FieldHint>Directory served by the web runtime.</FieldHint>
+                    </label>
+                    <label>
+                      <FieldLabel>Routing mode</FieldLabel>
+                      <NativeSelect
+                        className="w-full"
+                        name="entrypointMode"
+                        defaultValue={application?.entrypointMode ?? "front-controller"}
+                      >
+                        <NativeSelectOption value="front-controller">
+                          Front controller
+                        </NativeSelectOption>
+                        <NativeSelectOption value="legacy">
+                          Direct PHP files (legacy)
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      <FieldLabel>Toolchain</FieldLabel>
+                      <NativeSelect
+                        className="w-full"
+                        name="processLanguage"
+                        defaultValue={application?.processRuntime?.language ?? "node"}
+                      >
+                        <NativeSelectOption value="node">Node.js</NativeSelectOption>
+                        <NativeSelectOption value="bun">Bun</NativeSelectOption>
+                        <NativeSelectOption value="python">Python</NativeSelectOption>
+                      </NativeSelect>
+                    </label>
+                    <label>
+                      <FieldLabel>Exact runtime version</FieldLabel>
+                      <Input
+                        className="w-full"
+                        name="processVersion"
+                        required
+                        defaultValue={application?.processRuntime?.version ?? ""}
+                        placeholder="24 or 3.13.1"
+                      />
+                    </label>
+                    <label className="col-span-full">
+                      <FieldLabel>Start argv</FieldLabel>
+                      <Textarea
+                        className="min-h-28 w-full font-mono"
+                        name="processCommand"
+                        required
+                        defaultValue={application?.processRuntime?.command.join("\n") ?? ""}
+                        placeholder={"node\ndist/server.js"}
+                      />
+                      <FieldHint>One literal argument per line; no implicit shell.</FieldHint>
+                    </label>
+                    <label>
+                      <FieldLabel>Working directory</FieldLabel>
+                      <Input
+                        className="w-full"
+                        name="processWorkdir"
+                        defaultValue={application?.processRuntime?.workdir ?? ""}
+                        placeholder="Defaults to /home/&lt;slug&gt;/code"
+                      />
+                    </label>
+                    <label>
+                      <FieldLabel>Private HTTP port</FieldLabel>
+                      <Input
+                        className="w-full"
+                        name="processPort"
+                        type="number"
+                        min={1024}
+                        max={65535}
+                        required
+                        defaultValue={application?.processRuntime?.internalPort ?? 8080}
+                      />
+                    </label>
+                    <label className="col-span-full">
+                      <FieldLabel>HTTP health path</FieldLabel>
+                      <Input
+                        className="w-full"
+                        name="processHealthPath"
+                        defaultValue={application?.processRuntime?.healthPath ?? ""}
+                        placeholder="Optional, for example /health"
+                      />
+                      <FieldHint>Without a path Bento checks TCP readiness.</FieldHint>
+                    </label>
+                  </>
+                )}
               </div>
             </section>
 

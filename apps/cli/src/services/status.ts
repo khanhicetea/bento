@@ -4,6 +4,7 @@
  */
 
 import type { DesiredState, ManagedDatabaseService } from "../domain/state.ts";
+import { isPhpApp, isProcessApp } from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { capacityWarnings } from "./app.ts";
 import { FPM_PROFILES } from "../domain/types.ts";
@@ -18,6 +19,7 @@ export type RoleStatus = {
     | "redis"
     | "php-fpm"
     | "php-runner"
+    | "process-app"
     | "mysql"
     | "postgres"
     | "litestream"
@@ -66,9 +68,11 @@ export type StatusReport = {
     gid: number;
     domain: string;
     aliases: string[];
-    php: string;
-    fpmProfile: string;
-    entrypointMode: string;
+    kind: "php" | "process";
+    runtime: string;
+    runtimeService: string;
+    fpmProfile?: string;
+    entrypointMode?: string;
     tls: string;
     accessLog: boolean;
     databaseEngine: "mysql" | "postgres" | "sqlite" | "litestream";
@@ -129,7 +133,9 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
   }
 
   const phpVersions = state.phpVersions.map((v) => {
-    const apps = Object.values(state.apps).filter((a) => a.enabled && a.phpVersion === v.version);
+    const apps = Object.values(state.apps).filter(
+      (app) => isPhpApp(app) && app.enabled && app.phpVersion === v.version,
+    );
     let poolMaxSum = 0;
     for (const a of apps) {
       poolMaxSum += FPM_PROFILES[a.fpmProfile]?.maxChildren ?? 0;
@@ -233,9 +239,12 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
         gid: a.gid,
         domain: a.mainDomain,
         aliases: a.aliases.map(String),
-        php: a.phpVersion,
-        fpmProfile: a.fpmProfile,
-        entrypointMode: a.entrypointMode,
+        kind: a.kind,
+        runtime: isPhpApp(a) ? `php@${a.phpVersion}` : `${a.runtime.language}@${a.runtime.version}`,
+        runtimeService: isPhpApp(a) ? a.phpService : a.runtime.service,
+        ...(isPhpApp(a)
+          ? { fpmProfile: String(a.fpmProfile), entrypointMode: a.entrypointMode }
+          : {}),
         tls: a.tls.kind,
         accessLog: a.accessLog,
         databaseEngine: a.database.engine,
@@ -377,6 +386,9 @@ function buildExpectedRoles(
   for (const v of state.phpVersions) {
     push(v.service, "php-fpm");
     push(`${v.service}-runner`, "php-runner");
+  }
+  for (const app of Object.values(state.apps).filter(isProcessApp)) {
+    push(app.runtime.service, "process-app");
   }
   for (const database of state.databaseServices) {
     push(database.service, database.engine);
@@ -534,7 +546,7 @@ export function formatStatus(report: StatusReport): string {
     lines.push(
       `  ${a.slug}  ${
         a.enabled ? "enabled" : "disabled"
-      }  uid=${a.uid}  ${a.domain}  php=${a.php}/${a.fpmProfile}  tls=${a.tls}  entry=${a.entrypointMode}  db=${a.databaseEngine}:${a.databaseService}[${
+      }  uid=${a.uid}  ${a.domain}  runtime=${a.runtime}${a.fpmProfile ? `/${a.fpmProfile}` : ""}  tls=${a.tls}${a.entrypointMode ? `  entry=${a.entrypointMode}` : ""}  db=${a.databaseEngine}:${a.databaseService}[${
         a.databases.join(",") || "-"
       }]  redis=${a.redisMode}  deploy=${a.deploy ? "on" : "off"}`,
     );

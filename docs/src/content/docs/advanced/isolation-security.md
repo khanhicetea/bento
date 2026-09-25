@@ -9,14 +9,14 @@ Bento reduces accidental access between apps on one trusted host. It does not is
 
 ## Boundaries
 
-| Area | Mechanism | Limit |
-| --- | --- | --- |
-| Process | Stable app UID/GID for FPM, CLI, cron, worker, deploy | Apps share version containers/kernel |
-| Web | Dedicated FPM pool/socket and `open_basedir` | Shared FPM global capacity/image |
-| Files | Private home; Nginx read-only with group traversal to public files | Host/root and shared container namespace remain privileged |
-| Database | One service binding; MySQL grants or PostgreSQL role/database ownership | Services share a private network |
-| Redis | Required prefix or per-app ACL identity | Shared mode depends on correct prefix use |
-| Jobs | App workdir/identity, scoped s6 service, locks/timeouts | Runner is shared and singleton |
+| Area     | Mechanism                                                                 | Limit                                              |
+| -------- | ------------------------------------------------------------------------- | -------------------------------------------------- |
+| Process  | Stable app UID/GID; shared PHP pools or a dedicated process-app container | All apps still share the host kernel               |
+| Web      | Dedicated FPM socket or process-app Unix socket; no managed app host port | Shared Nginx and backend network remain stack-wide |
+| Files    | PHP public-tree traversal; process apps mount only their own private home | Host/root and Docker remain privileged             |
+| Database | One service binding; MySQL grants or PostgreSQL role/database ownership   | Services share a private network                   |
+| Redis    | Required prefix or per-app ACL identity                                   | Shared mode depends on correct prefix use          |
+| Jobs     | App workdir/identity, scoped s6 service, locks/timeouts                   | Runner is shared and singleton                     |
 
 Use separate apps for codebases/trust boundaries and separate hosts or stronger isolation for untrusted tenants.
 
@@ -24,7 +24,7 @@ Use separate apps for codebases/trust boundaries and separate hosts or stronger 
 
 Only Nginx is public in the base Compose setup. It serves app and proxy domains, ACME challenges, and optional signed deploy endpoints.
 
-FPM, runners, databases, Redis, s6 controls, and Bento management stay private or host-local. An overlay can expose them, so review the merged Compose configuration for unexpected ports.
+FPM, process-app loopback ports, runners, databases, Redis, s6 controls, and Bento management stay private or host-local. An overlay can expose them, so review the merged Compose configuration for unexpected ports.
 
 ## Secrets
 

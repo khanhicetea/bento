@@ -40,6 +40,16 @@ export function useApplications() {
       },
     }),
   );
+  const setRunningMutation = useMutation(
+    orpc.applications.setRunning.mutationOptions({
+      onSuccess(updated) {
+        queryClient.setQueryData<ApplicationList>(
+          orpc.applications.list.queryKey({ input: {} }),
+          (current) => upsertApplication(current, updated),
+        );
+      },
+    }),
+  );
   const removeMutation = useMutation(
     orpc.applications.remove.mutationOptions({
       onSuccess(removed) {
@@ -64,6 +74,7 @@ export function useApplications() {
     saveMutation.error ??
     addDatabaseMutation.error ??
     setEnabledMutation.error ??
+    setRunningMutation.error ??
     removeMutation.error;
 
   function setEnabled(application: Application) {
@@ -71,6 +82,10 @@ export function useApplications() {
       slug: application.slug,
       enabled: !application.enabled,
     });
+  }
+
+  function setRunning(application: Application, action: "start" | "stop") {
+    setRunningMutation.mutate({ slug: application.slug, action });
   }
 
   async function saveApplication(input: SaveApplicationInput) {
@@ -89,6 +104,7 @@ export function useApplications() {
     saveMutation.reset();
     addDatabaseMutation.reset();
     setEnabledMutation.reset();
+    setRunningMutation.reset();
     removeMutation.reset();
   }
 
@@ -96,12 +112,17 @@ export function useApplications() {
     data: applicationsQuery.data ?? null,
     error: error ? messageOf(error) : null,
     loading: applicationsQuery.isFetching,
-    changing: setEnabledMutation.isPending ? (setEnabledMutation.variables?.slug ?? null) : null,
+    changing: setEnabledMutation.isPending
+      ? (setEnabledMutation.variables?.slug ?? null)
+      : setRunningMutation.isPending
+        ? (setRunningMutation.variables?.slug ?? null)
+        : null,
     saving: saveMutation.isPending,
     addingDatabase: addDatabaseMutation.isPending,
     removing: removeMutation.isPending,
     reload: applicationsQuery.refetch,
     setEnabled,
+    setRunning,
     saveApplication,
     addDatabase,
     removeApplication,

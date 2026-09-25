@@ -8,11 +8,12 @@ import type {
   TemplateProvenance,
   TlsMode,
 } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import { isBentoError, migrationError, stateError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { parseDesiredState, stateToJson } from "../schemas/state.ts";
 
-export const STATE_DATABASE_SCHEMA_VERSION = 2;
+export const STATE_DATABASE_SCHEMA_VERSION = 3;
 
 type Migration = {
   version: number;
@@ -62,6 +63,15 @@ type DatabaseServiceRow = {
 
 type AppRow = {
   slug: string;
+  runtime_kind: "php" | "process";
+  process_language: "node" | "bun" | "python" | null;
+  process_version: string | null;
+  process_image: string | null;
+  process_service: string | null;
+  process_internal_port: number | null;
+  process_command_json: string | null;
+  process_workdir: string | null;
+  process_health_path: string | null;
   enabled: number;
   uid: number;
   gid: number;
@@ -393,6 +403,28 @@ ALTER TABLE proxy_sites
   ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1));
 `,
   },
+  {
+    version: 3,
+    name: "process-application-runtime",
+    sql: `
+ALTER TABLE applications
+  ADD COLUMN runtime_kind TEXT NOT NULL DEFAULT 'php' CHECK (runtime_kind IN ('php', 'process'));
+ALTER TABLE applications
+  ADD COLUMN process_language TEXT CHECK (process_language IS NULL OR process_language IN ('node', 'bun', 'python'));
+ALTER TABLE applications ADD COLUMN process_version TEXT;
+ALTER TABLE applications ADD COLUMN process_image TEXT;
+ALTER TABLE applications ADD COLUMN process_service TEXT;
+ALTER TABLE applications ADD COLUMN process_internal_port INTEGER CHECK (
+  process_internal_port IS NULL OR process_internal_port BETWEEN 1024 AND 65535
+);
+ALTER TABLE applications ADD COLUMN process_command_json TEXT CHECK (
+  process_command_json IS NULL OR (json_valid(process_command_json) AND json_type(process_command_json) = 'array')
+);
+ALTER TABLE applications ADD COLUMN process_workdir TEXT;
+ALTER TABLE applications ADD COLUMN process_health_path TEXT;
+UPDATE stack_config SET state_schema_version = 2;
+`,
+  },
 ];
 
 export async function migrateStateDatabase(platform: Platform): Promise<MigrationResult> {
@@ -627,42 +659,66 @@ function readState(database: Database, path: string): DesiredState {
         const appBindings = bindings
           .filter((binding) => binding.app_slug === row.slug)
           .map((binding) => bindingFromRow(binding, databaseEntries));
+        const common = {
+          slug: row.slug,
+          enabled: asBoolean(row.enabled),
+          uid: row.uid,
+          gid: row.gid,
+          home: row.home,
+          tls: tlsFromColumns(row),
+          accessLog: asBoolean(row.access_log),
+          databases: appBindings,
+          redis: {
+            mode: row.redis_mode,
+            prefix: row.redis_prefix,
+            ...(row.redis_password !== null ? { password: row.redis_password } : {}),
+            ...(row.redis_acl_username !== null ? { aclUsername: row.redis_acl_username } : {}),
+            ...(row.redis_acl_password !== null ? { aclPassword: row.redis_acl_password } : {}),
+          },
+          deploy: {
+            enabled: asBoolean(row.deploy_enabled),
+            queuePolicy: row.deploy_queue_policy,
+            timeoutSec: row.deploy_timeout_sec,
+            workdir: row.deploy_workdir,
+            argv: parseJsonArray(row.deploy_argv_json),
+            ...(row.deploy_hmac_secret !== null ? { hmacSecret: row.deploy_hmac_secret } : {}),
+          },
+          vhostTemplate: templateFromColumns(row, "vhost"),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
         return [
           row.slug,
-          {
-            slug: row.slug,
-            enabled: asBoolean(row.enabled),
-            uid: row.uid,
-            gid: row.gid,
-            home: row.home,
-            documentRoot: row.document_root,
-            entrypointMode: row.entrypoint_mode,
-            phpVersion: row.php_version,
-            phpService: row.php_service,
-            fpmProfile: row.fpm_profile,
-            tls: tlsFromColumns(row),
-            accessLog: asBoolean(row.access_log),
-            databases: appBindings,
-            redis: {
-              mode: row.redis_mode,
-              prefix: row.redis_prefix,
-              ...(row.redis_password !== null ? { password: row.redis_password } : {}),
-              ...(row.redis_acl_username !== null ? { aclUsername: row.redis_acl_username } : {}),
-              ...(row.redis_acl_password !== null ? { aclPassword: row.redis_acl_password } : {}),
-            },
-            deploy: {
-              enabled: asBoolean(row.deploy_enabled),
-              queuePolicy: row.deploy_queue_policy,
-              timeoutSec: row.deploy_timeout_sec,
-              workdir: row.deploy_workdir,
-              argv: parseJsonArray(row.deploy_argv_json),
-              ...(row.deploy_hmac_secret !== null ? { hmacSecret: row.deploy_hmac_secret } : {}),
-            },
-            vhostTemplate: templateFromColumns(row, "vhost"),
-            poolTemplate: templateFromColumns(row, "pool"),
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-          },
+          row.runtime_kind === "php"
+            ? {
+                ...common,
+                kind: "php",
+                documentRoot: row.document_root,
+                entrypointMode: row.entrypoint_mode,
+                phpVersion: row.php_version,
+                phpService: row.php_service,
+                fpmProfile: row.fpm_profile,
+                poolTemplate: templateFromColumns(row, "pool"),
+              }
+            : {
+                ...common,
+                kind: "process",
+                runtime: {
+                  language: row.process_language,
+                  version: row.process_version,
+                  image: row.process_image,
+                  service: row.process_service,
+                  internalPort: row.process_internal_port,
+                  command:
+                    row.process_command_json === null
+                      ? []
+                      : parseJsonArray(row.process_command_json),
+                  workdir: row.process_workdir,
+                  ...(row.process_health_path !== null
+                    ? { healthPath: row.process_health_path }
+                    : {}),
+                },
+              },
         ];
       }),
   );
@@ -893,7 +949,7 @@ function replaceState(database: Database, state: DesiredState): void {
   );
 
   for (const app of Object.values(state.apps).sort((a, b) => a.slug.localeCompare(b.slug))) {
-    insertApp(database, app);
+    insertApp(database, app, state);
   }
   for (const proxy of Object.values(state.proxies).sort((a, b) => a.name.localeCompare(b.name))) {
     insertProxy(database, proxy);
@@ -944,14 +1000,19 @@ function replaceState(database: Database, state: DesiredState): void {
   }
 }
 
-function insertApp(database: Database, app: AppState): void {
+function insertApp(database: Database, app: AppState, state: DesiredState): void {
   const tls = tlsColumns(app.tls);
   const vhost = templateColumns(app.vhostTemplate);
-  const pool = templateColumns(app.poolTemplate);
+  const pool = templateColumns(isPhpApp(app) ? app.poolTemplate : { kind: "upstream" });
+  const compatibilityPhp = state.phpVersions.find(
+    (entry) => entry.version === state.defaults.phpVersion,
+  )!;
   run(
     database,
     `INSERT INTO applications (
-      slug, enabled, uid, gid, home, document_root, entrypoint_mode, php_version, php_service,
+      slug, runtime_kind, process_language, process_version, process_image, process_service,
+      process_internal_port, process_command_json, process_workdir, process_health_path,
+      enabled, uid, gid, home, document_root, entrypoint_mode, php_version, php_service,
       fpm_profile, tls_kind, tls_cert_path, tls_key_path, access_log,
       redis_mode, redis_prefix, redis_password, redis_acl_username, redis_acl_password,
       deploy_enabled, deploy_hmac_secret, deploy_queue_policy, deploy_timeout_sec, deploy_workdir,
@@ -959,18 +1020,27 @@ function insertApp(database: Database, app: AppState): void {
       vhost_template_copied_from_version, vhost_template_activated_at, pool_template_kind,
       pool_template_source_path, pool_template_copied_from_version, pool_template_activated_at,
       created_at, updated_at
-    ) VALUES (${placeholders(35)})`,
+    ) VALUES (${placeholders(44)})`,
     [
       app.slug,
+      app.kind,
+      isPhpApp(app) ? null : app.runtime.language,
+      isPhpApp(app) ? null : app.runtime.version,
+      isPhpApp(app) ? null : app.runtime.image,
+      isPhpApp(app) ? null : app.runtime.service,
+      isPhpApp(app) ? null : app.runtime.internalPort,
+      isPhpApp(app) ? null : JSON.stringify(app.runtime.command),
+      isPhpApp(app) ? null : app.runtime.workdir,
+      isPhpApp(app) ? null : (app.runtime.healthPath ?? null),
       app.enabled,
       app.uid,
       app.gid,
       app.home,
-      app.documentRoot,
-      app.entrypointMode,
-      app.phpVersion,
-      app.phpService,
-      app.fpmProfile,
+      isPhpApp(app) ? app.documentRoot : ".",
+      isPhpApp(app) ? app.entrypointMode : "front-controller",
+      isPhpApp(app) ? app.phpVersion : state.defaults.phpVersion,
+      isPhpApp(app) ? app.phpService : compatibilityPhp.service,
+      isPhpApp(app) ? app.fpmProfile : state.defaults.fpmProfile,
       ...tls,
       app.accessLog,
       app.redis.mode,

@@ -3,6 +3,7 @@
  */
 
 import type { CronJob, DesiredState } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import { asAppSlug, asCronJobName } from "../domain/types.ts";
 import { conflictError, notFoundError, validationError } from "../domain/errors.ts";
 import {
@@ -53,6 +54,9 @@ export function addCronJob(
   const appSlug = unwrap(parseAppSlug(input.app), "app");
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) {
+    throw validationError("scheduled jobs for process apps are not supported yet");
+  }
 
   const name = input.name.trim();
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
@@ -105,6 +109,9 @@ export function editCronJob(
   const appSlug = unwrap(parseAppSlug(input.app), "app");
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) {
+    throw validationError("scheduled jobs for process apps are not supported yet");
+  }
 
   const index = state.cronJobs.findIndex((j) => j.app === appSlug && j.name === input.name);
   if (index < 0) {
@@ -167,6 +174,9 @@ export function removeCronJob(
 ): { state: DesiredState; reloadPlan: ReloadPlan } {
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) {
+    throw validationError("scheduled jobs for process apps are not supported yet");
+  }
   const before = state.cronJobs.length;
   const cronJobs = state.cronJobs.filter((j) => !(j.app === appSlug && j.name === name));
   if (cronJobs.length === before) {
@@ -190,6 +200,9 @@ export function removeCronJob(
 export function buildCronReloadCommand(state: DesiredState, appSlug: string): string[] {
   const app = state.apps[appSlug];
   if (!app) throw notFoundError(`app not found: ${appSlug}`);
+  if (!isPhpApp(app)) {
+    throw validationError("scheduled jobs for process apps are not supported yet");
+  }
   const hasScheduler =
     app.deploy.enabled || state.cronJobs.some((job) => job.app === appSlug && job.enabled);
   if (!hasScheduler) throw notFoundError(`no scheduler service for app ${appSlug}`);

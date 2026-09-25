@@ -14,6 +14,7 @@ export type MaterializeResult = {
   dockerRoot: string;
   nginxContext: string;
   phpContext: string;
+  processContext: string;
   helpersDir: string;
   digest: string;
   /** Absolute path to the digest-addressed cache entry used. */
@@ -41,6 +42,8 @@ const DOCKER_PHP_FILES = [
   "docker/php/helpers/deploy-drain.sh",
 ] as const;
 
+const DOCKER_PROCESS_FILES = ["docker/process/Dockerfile", "docker/process/entrypoint.sh"] as const;
+
 const HELPER_FILES = [
   "helpers/bento.php",
   "helpers/deploy-drain.php",
@@ -63,6 +66,7 @@ export async function materializeDockerAssets(
   const helpersDir = join(platform.paths.paths.root, "helpers");
   const nginxContext = join(dockerRoot, "nginx");
   const phpContext = join(dockerRoot, "php");
+  const processContext = join(dockerRoot, "process");
 
   await platform.fs.mkdirp(platform.paths.paths.assetCacheDir);
 
@@ -110,6 +114,7 @@ export async function materializeDockerAssets(
   await platform.fs.mkdirp(join(platform.paths.paths.root, "sqlite"), 0o711);
   await platform.fs.chmod(join(platform.paths.paths.root, "sqlite"), 0o711);
   await platform.fs.mkdirp(join(platform.paths.paths.root, "runtime", "php-fpm"));
+  await platform.fs.mkdirp(join(platform.paths.paths.root, "runtime", "apps"));
   await platform.fs.mkdirp(join(platform.paths.paths.root, "runtime", "litestream"), 0o700);
   await platform.fs.mkdirp(join(platform.paths.paths.root, "litestream-meta"), 0o700);
   await platform.fs.mkdirp(join(platform.paths.paths.root, "logs", "nginx"));
@@ -128,6 +133,7 @@ export async function materializeDockerAssets(
     dockerRoot,
     nginxContext,
     phpContext,
+    processContext,
     helpersDir,
     digest,
     cacheDir,
@@ -151,6 +157,7 @@ async function buildDigestCache(
 
   await materializePaths(platform, [...DOCKER_NGINX_FILES], dockerRoot, "docker/");
   await materializePaths(platform, [...DOCKER_PHP_FILES], dockerRoot, "docker/");
+  await materializePaths(platform, [...DOCKER_PROCESS_FILES], dockerRoot, "docker/");
   // helpers/ listed as helpers/... under templates
   await materializePaths(platform, [...HELPER_FILES], partial, "");
 

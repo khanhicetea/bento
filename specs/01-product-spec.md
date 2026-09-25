@@ -5,7 +5,7 @@ Audience: product owner, operator, maintainer, systems engineer
 
 ## 1. Product definition
 
-Bento is a self-hosted operations layer for running multiple isolated PHP applications and reverse-proxied HTTP services on one operator-owned Linux server. A local CLI converts validated desired state into Docker Compose, Nginx, PHP, database, job, and support configuration. Bento has no resident control-plane daemon.
+Bento is a self-hosted operations layer for running multiple isolated PHP applications, supervised Node.js/Bun/Python HTTP process applications, and reverse-proxied HTTP services on one operator-owned Linux server. A local CLI converts validated desired state into Docker Compose, Nginx, runtime, database, job, and support configuration. Bento has no resident control-plane daemon.
 
 Bento is intentionally smaller than a cloud platform and safer than an unstructured collection of Compose files. It covers the repeated host-level work around ingress, TLS, PHP versions, app identities, data services, schedules, workers, deploy webhooks, backups, diagnostics, permissions, and controlled configuration activation.
 
@@ -31,18 +31,18 @@ Bento turns those coupled concerns into one inspectable, desired-state workflow 
 A technically capable developer or small team that:
 
 - administers one Linux VPS or dedicated host;
-- runs multiple Laravel, Symfony, WordPress, or other PHP applications;
+- runs multiple Laravel, Symfony, WordPress, or other PHP applications, plus trusted Node.js, Bun, or Python HTTP projects;
 - prefers CLI and local files over a browser control panel;
 - needs reproducible operations without Kubernetes or a managed cloud platform;
 - trusts the hosted applications enough to share versioned runtime containers.
 
 ### Secondary use
 
-Bento can terminate HTTP/TLS and reverse proxy to non-PHP services reachable from Nginx. It does not provision or supervise those application runtimes.
+Bento can also terminate HTTP/TLS and reverse proxy to external services reachable from Nginx without provisioning or supervising those external runtimes.
 
 ### Poor fit
 
-Bento is not appropriate when the workload requires multi-host availability, horizontal autoscaling, hard hostile-tenant isolation, per-app container quotas, a public management API, or a managed non-PHP runtime platform.
+Bento is not appropriate when the workload requires multi-host availability, horizontal autoscaling, hard hostile-tenant isolation, guaranteed per-app quotas, a public management API, or an automatic arbitrary-language buildpack platform.
 
 ## 4. Core values
 
@@ -75,8 +75,8 @@ The stack path and stack name are independent. Production environments SHOULD se
 An application is a stable logical identity, not merely a virtual host. Its slug binds:
 
 - stable private UID/GID and `/home/<slug>`;
-- one selected PHP version, one FPM profile, pool, and Unix socket;
-- one primary domain and zero or more aliases;
+- one runtime kind: a selected shared PHP/FPM runtime, or one dedicated supervised Node.js, Bun, or Python process container;
+- one app-specific Unix ingress socket and one primary domain with zero or more aliases;
 - one or more database bindings;
 - Redis namespace/identity;
 - schedules, workers, and optional deploy queue;
@@ -103,7 +103,7 @@ Domains are stack-wide authoritative link records. Every domain MUST be normaliz
 
 Bento MUST:
 
-1. provision and operate several PHP apps on one Linux host;
+1. provision and operate several PHP and trusted Node.js/Bun/Python HTTP apps on one Linux host;
 2. reconstruct generated service configuration from local validated intent;
 3. keep the public surface narrow and credentials out of routine output/argv;
 4. support concurrent PHP and relational database versions without duplicating a whole stack per app;
@@ -120,7 +120,7 @@ Bento MUST provide scriptable CLI commands and MAY provide guided TUI flows for 
 
 Fresh initialization MUST create:
 
-- schema-v1 desired state;
+- schema-v2 desired state;
 - default PHP `8.5` and MySQL `8.4` managed services;
 - Redis and one Nginx ingress topology;
 - stable stack identity and generated-once administrator secrets;
@@ -135,10 +135,12 @@ The operator MUST be able to create/update, list/show, enable/disable, remove, a
 
 Provisioning MUST:
 
-- validate slug, domain uniqueness, safe document root, runtime, profile, and database selection;
+- validate slug, domain uniqueness, runtime kind, runtime-specific configuration, and database selection;
+- validate PHP document root/profile choices or process toolchain, exact version, argv, contained workdir, private port, and optional health path;
 - allocate a stable UID/GID beginning at the product allocation range;
 - create the app home, app credentials, Ed25519 deploy key, default skipped deploy hook, and placeholder entrypoint without replacing existing operator content;
-- render an app-specific FPM pool/socket and Nginx vhost;
+- render either an app-specific FPM pool/socket or a private process service/socket and matching Nginx vhost;
+- create process apps disabled, so source preparation and private health verification happen before public routing;
 - preserve omitted runtime/database selections during updates;
 - apply requested relational grants or fail without recording an explicitly requested database when its service is unavailable.
 
@@ -176,7 +178,23 @@ The three roles MUST share the version image, extensions, app identities, and mo
 
 Supported named FPM profiles are `tiny`, `small`, `medium`, `large`, `xlarge`, and `ondemand`. Bento SHOULD warn when enabled pool maxima exceed a version's global process cap. The runner MUST remain at one replica to avoid duplicate jobs.
 
-### 7.5 Data services
+### 7.5 Managed HTTP process runtimes
+
+A process app MUST run in one dedicated Compose service while sharing stack Nginx, databases, Redis, and private networking. Supported curated toolchains are Node.js, Bun, and Python with an exact numeric runtime version and explicit argv start command.
+
+Process services MUST:
+
+- mount only their own app home and SQLite binding directories;
+- publish no host ports and accept Nginx traffic through an app-specific Unix socket bridged to the app's private loopback HTTP port;
+- run application code under the stable app UID/GID;
+- receive generated database/Redis metadata from the protected app credential file without placing secret values in Compose or host argv;
+- provide a profile-gated ephemeral CLI role using the same image and identity;
+- use a read-only root, bounded logs, dropped capabilities, and no Docker socket;
+- remain disabled until explicitly started and enabled; enabling MUST refuse when the private service is not running.
+
+Bento manages runtime topology, identity, and routing; it does not infer arbitrary repository build commands. Dependency installation and source/build changes remain explicit app-identity operations or operator-owned hooks. Process-app schedules, workers, and signed webhook deploy are not part of the initial managed process runtime and MUST fail closed rather than execute through a PHP runner.
+
+### 7.6 Data services
 
 Bento MUST support add-only managed MySQL and PostgreSQL services, one durable named volume per managed version, and one durable Redis service per stack. Managed relational service removal and automatic volume deletion MUST be blocked.
 
@@ -194,9 +212,9 @@ Redis shared mode requires an app key prefix. ACL mode MUST create an app-specif
 
 Plain SQLite MUST use a private app-owned file, stable randomized weekly `VACUUM` slot, and online `.backup` for logical artifacts. Litestream-backed SQLite MUST use an explicit binding type, one stack-wide watcher, S3-compatible policy, and non-destructive verify/export flows. A Litestream export MUST not replace the production database.
 
-### 7.6 Commands, schedules, workers, and deploys
+### 7.7 Commands, schedules, workers, and deploys
 
-`app shell` and `exec` MUST run in an ephemeral PHP CLI container under the app UID/GID and selected runtime. Working directories MUST remain inside the app home.
+`app shell` and `exec` MUST run in an ephemeral CLI container for the app's selected runtime under the app UID/GID. Working directories MUST remain inside the app home.
 
 Schedules MUST support cron expression, timezone, argv or explicit shell mode, workdir, output policy, timeout, lock, and enablement. Each app scheduler MUST run under that app identity.
 
@@ -214,7 +232,7 @@ Webhook deploy MUST:
 
 Bento supplies orchestration, not a fixed Git checkout/release/rollback strategy.
 
-### 7.7 Render and apply
+### 7.8 Render and apply
 
 Desired state and supported custom input are the source. Managed output under `generated/`, `docker/`, and `helpers/` is disposable and MUST NOT be a customization point.
 
@@ -234,7 +252,7 @@ Required semantics:
 
 State mutation, data-plane side effects, generated-file promotion, and service reload are not one distributed transaction. Failure guidance MUST preserve the requested intent or explain how to reverse it.
 
-### 7.8 Backup, restore, and transfer
+### 7.9 Backup, restore, and transfer
 
 Logical backup MUST support one database, one app, or all apps across MySQL, PostgreSQL, and plain SQLite. Zstandard is default; gzip and uncompressed output are supported. Litestream bindings use their separate continuous-replication workflow rather than local logical dump artifacts.
 
@@ -255,7 +273,7 @@ Stack export/import MUST:
 
 A raw stack archive is sensitive. Its included live SQLite bytes are not a guaranteed consistent SQLite backup.
 
-### 7.9 Safety, diagnostics, and maintenance
+### 7.10 Safety, diagnostics, and maintenance
 
 Bento MUST block `compose down -v`, `--volumes`, and destructive image-removal forms. It MUST not automatically remove managed relational versions/volumes or rotate relational passwords.
 
@@ -265,7 +283,7 @@ Status and doctor SHOULD cover stack identity, service/runtime health, ingress, 
 
 Docker logs and app/worker/FPM logs MUST have bounded retention. Access logs are opt-in and MAY be rotated/reported without an Nginx reload. Host maintenance registration MUST preserve unrelated crontab entries.
 
-### 7.10 Customization and distribution
+### 7.11 Customization and distribution
 
 Supported customization points are:
 
@@ -288,27 +306,31 @@ Initialize an explicit stack root/name, render, build/start Compose services, in
 
 Create an app with `public` document root and front-controller routing, select PHP and one data binding, register its SSH public key, deploy code through app identity, configure the framework from protected credentials, create/migrate data, switch TLS mode, and verify HTTP/data access.
 
-### 8.3 Add asynchronous work
+### 8.3 Launch a process application
+
+Create a disabled process app with an exact Node.js, Bun, or Python version and explicit start argv, provision its home and data binding, check out/build code under app identity, start the private service, verify health, then enable its Nginx/TLS route. Runtime updates recreate only that running app service; stopped services remain stopped.
+
+### 8.4 Add asynchronous work
 
 Add one schedule and one queue worker. Both run under app identity in the selected singleton runner. Updating either does not interrupt unrelated web traffic or sibling apps.
 
-### 8.4 Add another database kind
+### 8.5 Add another database kind
 
 Add a managed PostgreSQL version, update the app with a PostgreSQL binding, and create its app-namespaced database. Existing MySQL/SQLite bindings and credentials remain recorded; data conversion is operator-managed.
 
-### 8.5 Automate deploys
+### 8.6 Automate deploys
 
 Enable webhook deploy, register the secret with the source-control provider, replace the skipped hook, submit a valid signed payload, observe immediate enqueue, drain under app identity, inspect result/log, and verify OPcache reset behavior.
 
-### 8.6 Add private tunnel ingress
+### 8.7 Add private tunnel ingress
 
 From `/operations`, paste a remotely managed Cloudflare Tunnel token, observe the `cloudflared` role start, and configure Cloudflare public hostnames to target Nginx origins. Replace the token and verify only the tunnel container is recreated. If publishing the Bento web control plane, keep its direct listener loopback-safe and require Cloudflare Access before untrusted clients can reach it.
 
-### 8.7 Prove recovery
+### 8.8 Prove recovery
 
 Run a complete logical batch, upload artifacts off-host, inspect schedule status, restore one relational dump to a new verification database, validate application invariants, and only then consider an exact-confirmed replacement. Verify Litestream through temporary restore/export separately.
 
-### 8.8 Clone or recover a stack
+### 8.9 Clone or recover a stack
 
 Export to an external empty directory, protect all archives, import into an empty destination with compatible images/architecture, override project identity and ingress when cloning on one host, then verify state, routes, jobs, volumes, and applications.
 
@@ -318,8 +340,8 @@ Bento intentionally does not provide:
 
 - multi-host orchestration, HA, clustering, autoscaling, or Kubernetes;
 - an authenticated public management API, remotely hosted control plane, or resident daemon; the optional local web UI remains loopback-safe by default;
-- one container per app, hostile-tenant isolation, or per-app CPU/memory quotas in shared PHP roles;
-- managed arbitrary-language application runtimes beyond reverse proxying;
+- one container per PHP app, hostile-tenant isolation, or guaranteed per-app CPU/memory quotas;
+- arbitrary-language auto-detection, buildpacks, a privileged build daemon, or automatic support for every native/system project dependency;
 - zero-downtime guarantees for deploy, apply, restore, export, or transfer;
 - automatic app rename, database-engine migration, relational major upgrade, or password rotation;
 - automatic relational service/volume deletion;
@@ -330,6 +352,6 @@ Bento intentionally does not provide:
 
 ## 10. Success criteria
 
-The product succeeds when an operator can use source or a compiled binary to create an explicit stack, run multiple PHP apps with stable identities and private data access, apply validated changes with scoped disruption, operate jobs/deploys, create and export recovery artifacts, diagnose failures without leaking secrets, and recover from invalid generated configuration without losing the prior valid generation.
+The product succeeds when an operator can use source or a compiled binary to create an explicit stack, run multiple PHP and managed Node.js/Bun/Python HTTP apps with stable identities and private data access, apply validated changes with scoped disruption, operate supported jobs/deploys, create and export recovery artifacts, diagnose failures without leaking secrets, and recover from invalid generated configuration without losing the prior valid generation.
 
 Detailed structural and verification criteria are defined in [the system architecture](02-system-architecture.md) and [the reimplementation contract](03-reimplementation-contract.md).

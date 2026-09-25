@@ -22,7 +22,7 @@ List the apps in desired state:
 bento app list
 ```
 
-The table shows each app's enabled state, numeric identity, primary domain, PHP version, FPM profile, TLS mode, and database binding.
+The table shows each app's enabled state, numeric identity, primary domain, PHP or process runtime, service/profile, TLS mode, and database binding.
 
 Show one app's complete model with database, Redis, and deploy secrets redacted:
 
@@ -52,7 +52,7 @@ bento app update demo \
   --alias www.demo.example.com,admin.demo.example.com
 ```
 
-Bento preserves the app slug, UID/GID, home, credentials, database binding, deploy settings, and template selections. It renders and applies the change unless you add `--no-apply`. A selected PHP version must already be managed by the stack.
+Bento preserves the app slug, UID/GID, home, credentials, database binding, deploy settings, and template selections. It renders and applies the change unless you add `--no-apply`. A selected PHP version must already be managed by the stack. Process-app updates repeat `--runtime node|bun|python` and may recreate only that running app service; stopped process services remain stopped.
 
 Important update behavior:
 
@@ -79,7 +79,7 @@ Until apply succeeds, desired state and the running configuration can differ.
 
 ## Disable and enable an app
 
-Disable an app when you want Bento to stop serving and supervising it without deleting its model or durable data:
+Disable an app when you want Bento to stop serving and supervising it without deleting its model or durable data. A process app is created disabled; prepare and start it privately before enabling it:
 
 :::caution
 Disabling removes the app's generated vhost, PHP pool, scheduler, and worker configuration. Requests stop working and background jobs stop after apply, while the app remains in desired state and retains its home, credentials, database records, and domain ownership.
@@ -96,9 +96,10 @@ bento app list
 bento status
 ```
 
-Enable and reapply its runtime configuration later:
+Enable and reapply its runtime configuration later. For a process app, start it first; enablement refuses to publish a service that is not observed running:
 
 ```sh
+bento app start demo   # process apps only
 bento app enable demo
 ```
 
@@ -106,7 +107,7 @@ Verify the app route after enabling it. Both commands accept `--no-apply`; if yo
 
 ## Open a shell or run a command
 
-Open an ephemeral Bash shell using the app's configured PHP version and numeric identity:
+Open an ephemeral Bash shell using the app's configured PHP or process runtime and numeric identity:
 
 ```sh
 bento app shell demo
@@ -131,7 +132,7 @@ bento exec demo \
   --workdir /home/demo/code -- php artisan migrate --force
 ```
 
-Use `--php <version>` only for a deliberate one-off run under another PHP version already managed by the stack. It does not update the app's configured runtime. `--workdir` must stay inside the app home.
+Use `--php <version>` only for a deliberate one-off PHP run under another managed PHP version. Process apps use their selected Node.js, Bun, or Python image and reject `--php`. `--workdir` must stay inside the app home.
 
 To inspect the Compose invocation without running it:
 
@@ -198,6 +199,8 @@ If cleanup metadata is missing, Bento warns that it cannot identify database dat
 
 **A PHP update says the version is not managed:** add the required runtime first or keep the current `--php` value. Do not hand-edit the app's service identity.
 
+**A process app will not enable:** run `bento app start <slug>`, inspect `bento status` and the service logs, and verify that the configured command listens on the private `PORT`. Bento does not publish a host TCP port.
+
 **Shell or exec cannot create the CLI container:** inspect the matching PHP image and Compose output. Use `--print` to verify the selected profile, service, workdir, and arguments, then check Docker with:
 
 ```sh
@@ -214,7 +217,7 @@ bento compose -- ps
 
 ## Advanced
 
-An enabled app contributes an Nginx vhost, a pool in its shared versioned PHP-FPM service, and any scheduler or worker definitions in that PHP version's singleton runner. Disable and enable therefore target Nginx, the app's PHP-FPM role, and its runner without deleting the durable ownership layer.
+An enabled PHP app contributes an Nginx vhost, a pool in its shared versioned PHP-FPM service, and any scheduler or worker definitions in that PHP version's singleton runner. A process app contributes a dedicated private service, ephemeral CLI role, and app-specific Nginx Unix socket. Disable and enable preserve either runtime's durable ownership layer.
 
 `app shell` and `bento exec` use the profile-gated `<php-service>-cli` Compose role. The container starts with enough privilege to install the app's passwd/group identity, then drops to the app UID/GID before running Bash or the requested argv. The app shares its home and private stack network with this ephemeral role; this is convenient operational identity, not a hostile multi-tenant sandbox.
 
@@ -225,3 +228,4 @@ Removal writes only non-secret cleanup metadata to the retained home before dele
 - [Manage stack status, logs, and service lifecycle](/guides/stacks/manage/).
 - [Understand desired state and generated configuration](/concepts/desired-state/).
 - [Review the app's initial code, database, DNS, and TLS path](/start/first-app/).
+- [Run Node.js, Bun, and Python projects](/guides/apps/process-runtimes/).

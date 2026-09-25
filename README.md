@@ -1,6 +1,6 @@
 # Bento
 
-Bento is a self-hosted operations layer for running multiple isolated PHP applications and reverse-proxied services on one Linux server using Docker Compose.
+Bento is a self-hosted operations layer for running multiple isolated PHP applications, supervised Node.js/Bun/Python HTTP projects, and reverse-proxied services on one Linux server using Docker Compose.
 
 ![Bento logo](./bento-logo-3d.png)
 
@@ -55,6 +55,18 @@ bun run apps/cli/src/main.ts app create demo \
 
 # An Ed25519 deploy key is created once under homes/demo/.ssh/ (mounted as /home/demo/.ssh/).
 # Register id_ed25519.pub with the Git host before cloning a private repository.
+
+# create a staged Node.js HTTP process app (one literal argv value per --start)
+bun run apps/cli/src/main.ts app create api \
+  --domain api.example.test \
+  --runtime node \
+  --runtime-version 24 \
+  --start node --start server.js \
+  --health-path /health
+# Check out/install the project under homes/api/code, then start it privately.
+bun run apps/cli/src/main.ts app start api
+# Publish Nginx/TLS only after the private container is running and healthy.
+bun run apps/cli/src/main.ts app enable api
 
 # add PostgreSQL as another database kind on the same application
 bun run apps/cli/src/main.ts postgres add 17
@@ -267,17 +279,17 @@ PHP runner (one per version) -> s6-overlay PID 1 -> per-app Supercronic + flat s
                              -> local deploy drain -> hook -> app FPM OPcache reset
 ```
 
-Apps share containers by PHP version and isolate through UID/GID, pools, filesystem policy, DB grants, and optional Redis ACL — not one container per app.
+PHP apps share containers by version and isolate through UID/GID, pools, filesystem policy, DB grants, and optional Redis ACL. Managed Node.js, Bun, and Python HTTP process apps use one dedicated private service each while sharing stack Nginx and data services.
 
 ## Command surface
 
 | Area         | Commands                                                                                                                                                                                                                                                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops); `serve [--host 127.0.0.1 --port 8080 --open]` (oRPC API + DaisyUI 5 web control plane)                                                                                                                                                                       |
-| Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                             |
+| Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops); `serve [--host 127.0.0.1 --port 8080 --open]` (oRPC API + DaisyUI 5 web control plane)                                                                               |
+| Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                            |
 | Diagnostics  | `doctor`, `support-bundle [output]` — validates runtime versions, network/storage/TLS/service health, permissions, volumes, overlays, and secret modes; bundles contain redacted diagnostics only                                                              |
 | Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — Docker harness covering MySQL and PostgreSQL PHP connectivity, PostgreSQL two-app isolation and backup/restore, mixed-engine status/raw export, app operations, and deploy; ACME skipped |
-| Apps         | `app create\|list\|show\|update\|enable\|disable\|delete\|remove\|prune\|shell`; removal requires `--confirm "delete <slug>"` and retains durable data; `app prune <slug>` lists and permanently cleans retained home/database data only after typing `delete` |
+| Apps         | `app create\|list\|show\|update\|start\|stop\|enable\|disable\|delete\|remove\|prune\|shell`; `start`/`stop` manage private process-app containers; removal requires `--confirm "delete <slug>"` and retains durable data                                      |
 | PHP          | `php add\|remove\|list`                                                                                                                                                                                                                                        |
 | MySQL        | `mysql add\|list\|db\|shell\|size\|processlist` (version removal blocked; password rotation unsupported)                                                                                                                                                       |
 | PostgreSQL   | `postgres add\|list\|db\|shell\|size\|processlist` (official major tags such as `17`; version/service removal blocked); apps select it with `--database-engine postgres --postgres 17`                                                                         |
@@ -286,7 +298,7 @@ Apps share containers by PHP version and isolate through UID/GID, pools, filesys
 | Background   | `cron …` (`cron reload <app>`), `worker …` (`worker signal <app> <name> --signal HUP`)                                                                                                                                                                         |
 | Deploy       | `deploy enable\|disable\|rotate\|status\|drain\|instructions`                                                                                                                                                                                                  |
 | Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal (TUI: Applications → Access logs)                                                                                                              |
-| Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]`, `rclone -- <args>` — ephemeral PHP CLI or isolated rclone sidecar                                                                                                                                                 |
+| Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]`, `rclone -- <args>` — ephemeral PHP CLI or isolated rclone sidecar                                                                                                                                                  |
 | Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
 | Stack        | `stack ingress show`, `stack ingress set host\|bridge [--http-port N --https-port N]`; `stack export <directory>`, `stack import <directory> [--name NAME --ingress-mode bridge --http-port N --https-port N]`                                                 |
 | Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                             |
@@ -441,7 +453,7 @@ Unit, contract, and integration tests cover state validation, domain uniqueness,
 Bento intentionally does **not** provide:
 
 - multi-host / Kubernetes / hosted remote control plane / authenticated public management API
-- one container per app (apps share PHP version containers; isolation is identity-based)
+- one container per PHP app or one complete stack per app (process apps use a dedicated runtime service, but still share the host and stack data plane)
 - unconfirmed destructive deletion of app homes or databases (`app prune` is CLI-only, lists every known part, and requires typing the literal `delete`)
 - automated MySQL or PostgreSQL version/volume deletion (`mysql remove`, `postgres remove`, and `compose down -v` are blocked)
 - automatic relational-database password rotation (the operator must coordinate the database, Bento state/credentials, and dependent applications)
@@ -474,17 +486,17 @@ Bento ships conservative production defaults for connection reuse, buffered acce
 
 Do not edit `generated/nginx/`; it is replaced on render. Put additive configuration under the operator-owned `custom/nginx/` tree instead. Bento creates the directory structure when needed and preserves everything placed inside it:
 
-| Path | Nginx context and load order |
-|---|---|
-| `main.d/*.conf` | main context |
-| `events.d/*.conf` | end of `events` |
-| `http.d/*.conf` | `http`, before generated sites |
-| `sites.d/*.conf` | `http`, after generated sites |
-| `apps/<slug>/server.d/*.conf` | both app HTTP and HTTPS server blocks |
-| `apps/<slug>/http.d/*.conf`, `https.d/*.conf` | one app protocol only |
-| `proxies/<name>/upstream.d/*.conf` | the named proxy `upstream` block |
-| `proxies/<name>/server.d/*.conf` | both proxy HTTP and HTTPS server blocks |
-| `proxies/<name>/http.d/*.conf`, `https.d/*.conf` | one proxy protocol only |
+| Path                                             | Nginx context and load order            |
+| ------------------------------------------------ | --------------------------------------- |
+| `main.d/*.conf`                                  | main context                            |
+| `events.d/*.conf`                                | end of `events`                         |
+| `http.d/*.conf`                                  | `http`, before generated sites          |
+| `sites.d/*.conf`                                 | `http`, after generated sites           |
+| `apps/<slug>/server.d/*.conf`                    | both app HTTP and HTTPS server blocks   |
+| `apps/<slug>/http.d/*.conf`, `https.d/*.conf`    | one app protocol only                   |
+| `proxies/<name>/upstream.d/*.conf`               | the named proxy `upstream` block        |
+| `proxies/<name>/server.d/*.conf`                 | both proxy HTTP and HTTPS server blocks |
+| `proxies/<name>/http.d/*.conf`, `https.d/*.conf` | one proxy protocol only                 |
 
 Drop-ins are loaded lexically, so prefix files with `10-`, `20-`, and so on when order matters. They are mounted read-only into Nginx. Directives must be valid in the context shown, and redefining a generated singleton directive can make `nginx -t` fail.
 

@@ -14,12 +14,12 @@ Use this page to decide whether that model fits your workload.
 Bento is designed for a technically capable developer or small team that:
 
 - owns and administers one Linux VPS or dedicated server;
-- runs several PHP applications, such as Laravel, Symfony, WordPress, or legacy PHP;
-- wants Nginx, PHP, relational databases, Redis, jobs, workers, TLS, and backups managed as one stack;
+- runs several PHP applications plus trusted Node.js, Bun, or Python HTTP projects;
+- wants Nginx, application runtimes, relational databases, Redis, TLS, and backups managed as one stack;
 - accepts a local CLI and optional loopback browser control plane rather than a hosted platform;
 - wants reproducible configuration without adopting Kubernetes or a cloud platform.
 
-Bento can also place Nginx and TLS in front of non-PHP HTTP services that are reachable from the host. It does not run arbitrary application runtimes for those services; it acts as their reverse proxy.
+Bento can supervise explicit Node.js, Bun, and Python HTTP process apps using curated exact-version runtimes. It can also place Nginx and TLS in front of other HTTP services reachable from the host without supervising those external services.
 
 ## What Bento manages
 
@@ -53,8 +53,8 @@ Bento deliberately optimizes for a comprehensible single-server platform. It doe
 
 - multi-host scheduling, clustering, high availability, or horizontal autoscaling;
 - Kubernetes integration, a hosted remote control plane, or an authenticated public management API;
-- one container per app or hard isolation between mutually untrusted tenants;
-- general-purpose hosting for non-PHP runtimes beyond reverse proxying to an existing service;
+- one container per PHP app, one complete stack per app, or hard isolation between mutually untrusted tenants;
+- arbitrary-language repository auto-detection, buildpacks, or automatic native dependency support;
 - an application-specific Git checkout, release, or rollback strategy;
 - managed off-host storage, retention, or recovery guarantees (scheduled uploads require an operator-configured rclone remote);
 - per-app CPU or memory quotas inside shared PHP containers.

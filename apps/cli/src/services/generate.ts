@@ -2,7 +2,14 @@
  * Generate complete candidate configuration from desired state.
  */
 
-import type { AppState, CronJob, DesiredState, ProxySite, Worker } from "../domain/state.ts";
+import {
+  isPhpApp,
+  type AppState,
+  type CronJob,
+  type DesiredState,
+  type ProxySite,
+  type Worker,
+} from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { FPM_PROFILES, SHARED_SOCKET_GID } from "../domain/types.ts";
 import { validationError } from "../domain/errors.ts";
@@ -202,31 +209,40 @@ async function generateAppVhost(
   httpsAdvertisedPort: number,
 ): Promise<GeneratedFile[]> {
   let tpl: string;
+  const upstreamTemplate = isPhpApp(app)
+    ? "nginx/app-vhost.conf.tpl"
+    : "nginx/process-app-vhost.conf.tpl";
   if (app.vhostTemplate.kind === "custom") {
     try {
       tpl = await platform.fs.readText(app.vhostTemplate.sourcePath);
     } catch {
-      tpl = await platform.assets.readText("nginx/app-vhost.conf.tpl");
+      tpl = await platform.assets.readText(upstreamTemplate);
     }
   } else {
-    tpl = await platform.assets.readText("nginx/app-vhost.conf.tpl");
+    tpl = await platform.assets.readText(upstreamTemplate);
   }
 
   const serverNames = [app.mainDomain, ...app.aliases].join(" ");
-  // App code lives under /home/<slug>/code; documentRoot is relative to that tree.
   const codeRoot = `${containerAppHome(app.slug)}/code`;
-  const docRoot =
-    app.documentRoot && app.documentRoot !== "." ? `${codeRoot}/${app.documentRoot}` : codeRoot;
-  const socketPath = `/run/php-fpm/${app.phpService}/${app.slug}.sock`;
+  const docRoot = isPhpApp(app)
+    ? app.documentRoot && app.documentRoot !== "."
+      ? `${codeRoot}/${app.documentRoot}`
+      : codeRoot
+    : codeRoot;
+  const socketPath = isPhpApp(app)
+    ? `/run/php-fpm/${app.phpService}/${app.slug}.sock`
+    : `/run/bento-apps/${app.slug}/http.sock`;
   const ssl = resolveSslForSite(app.tls, app.slug, String(app.mainDomain));
   const content = renderTemplate(tpl, {
     slug: app.slug,
     serverNames,
     docRoot,
     socketPath,
-    entrypointMode: app.entrypointMode,
-    frontController: app.entrypointMode === "front-controller",
-    legacy: app.entrypointMode === "legacy",
+    entrypointMode: isPhpApp(app) ? app.entrypointMode : "process",
+    frontController: isPhpApp(app) && app.entrypointMode === "front-controller",
+    legacy: isPhpApp(app) && app.entrypointMode === "legacy",
+    processApp: !isPhpApp(app),
+    upstreamName: `app_${String(app.slug).replaceAll("-", "_")}`,
     accessLog: app.accessLog,
     accessLogPath: `/var/log/nginx/${app.slug}.access.log`,
     tlsKind: app.tls.kind,
@@ -316,7 +332,7 @@ async function generateProxyVhost(
 async function generatePhpPools(platform: Platform, state: DesiredState): Promise<GeneratedFile[]> {
   const files: GeneratedFile[] = [];
   for (const app of Object.values(state.apps)) {
-    if (!app.enabled) continue;
+    if (!app.enabled || !isPhpApp(app)) continue;
     let tpl: string;
     if (app.poolTemplate.kind === "custom") {
       try {
@@ -474,7 +490,7 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
   const vacuumSchedules = resolveSqliteVacuumSchedules(state);
   for (const v of state.phpVersions) {
     const appsOnVersion = Object.values(state.apps).filter(
-      (a) => a.enabled && a.phpVersion === v.version,
+      (a) => isPhpApp(a) && a.enabled && a.phpVersion === v.version,
     );
     const jobs = state.cronJobs.filter(
       (j) => appsOnVersion.some((a) => a.slug === j.app) && j.enabled,

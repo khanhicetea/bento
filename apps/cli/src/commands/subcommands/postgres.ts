@@ -14,6 +14,7 @@ import {
 } from "../../services/postgres.ts";
 import { databaseBindings } from "../../domain/state.ts";
 import { loadRedisPassword, requirePostgresRootPassword } from "../../services/stack_env.ts";
+import { recreateRunningProcessApp } from "../../services/process_app.ts";
 import { printTable } from "../../ui/output.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
 import type { CliContext } from "../context.ts";
@@ -124,7 +125,7 @@ async function cmdPostgresRemove(argv: ArgsWith<"version">, ctx: CliContext): Pr
 }
 
 async function cmdPostgresDb(argv: ArgsWith<"app" | "database">, ctx: CliContext): Promise<number> {
-  await ctx.store.withExclusive(async (state) => {
+  const next = await ctx.store.withExclusive(async (state) => {
     const rootPassword = await requirePostgresRootPassword(ctx.platform);
     const next = await createPostgresAppDatabaseLive(
       ctx.platform,
@@ -141,6 +142,11 @@ async function cmdPostgresDb(argv: ArgsWith<"app" | "database">, ctx: CliContext
     await ctx.store.save(next);
     return next;
   });
+  const recreated = await recreateRunningProcessApp(ctx.platform, next, next.apps[argv.app]!);
+  if (recreated && recreated.code !== 0) {
+    ctx.log.error("database was created, but the running process app could not be recreated");
+    return 1;
+  }
   ctx.log.info(`created database ${argv.database} for app ${argv.app}`);
   return 0;
 }

@@ -2,7 +2,7 @@
 
 import { join } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
-import { databaseBindings } from "../domain/state.ts";
+import { databaseBindings, isPhpApp } from "../domain/state.ts";
 import { notFoundError, serviceError, validationError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { composeArgs } from "./compose.ts";
@@ -73,17 +73,25 @@ export async function runSqliteBackup(
     "trap - EXIT",
   ].join("\n");
 
-  const result = await platform.process.run(
-    await composeArgs(platform, state, [
-      "exec",
-      "-T",
-      `${app.phpService}-runner`,
-      "sh",
-      "-c",
-      script,
-    ]),
-    { cwd: platform.paths.paths.root, timeoutMs: 30 * 60_000 },
-  );
+  const composeCommand = isPhpApp(app)
+    ? ["exec", "-T", `${app.phpService}-runner`, "sh", "-c", script]
+    : [
+        "--profile",
+        "cli",
+        "run",
+        "--rm",
+        "-T",
+        "-w",
+        app.home,
+        `${app.runtime.service}-cli`,
+        "sh",
+        "-c",
+        script,
+      ];
+  const result = await platform.process.run(await composeArgs(platform, state, composeCommand), {
+    cwd: platform.paths.paths.root,
+    timeoutMs: 30 * 60_000,
+  });
   if (result.code !== 0) {
     await platform.fs.remove(partialPath).catch(() => {});
     throw serviceError(

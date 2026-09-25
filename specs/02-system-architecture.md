@@ -23,6 +23,7 @@ lock -> stage complete candidate -> promote -> validate -> scoped reload
 Docker Compose data plane
 
 Internet -> Nginx -> per-app PHP-FPM Unix socket -> private DB/Redis
+                 \-> per-app process Unix socket -> Node/Bun/Python loopback HTTP
                  \-> reverse-proxy upstream
 Cloudflare edge -> outbound cloudflared tunnel -> Nginx network namespace
 PHP runner -> app Supercronic + deploy drain + app workers
@@ -39,7 +40,7 @@ The product is organized into these operator-facing areas:
 | Stack         | Identity, root, initialization, ingress mode, render/apply, Compose, export/import |
 | Applications  | Stable identity, home, domain links, runtime, data bindings, lifecycle             |
 | Traffic       | Nginx, app vhosts, reverse proxies, TLS, HTTP/3, access logs                       |
-| Runtime       | Versioned PHP FPM, singleton runners, ephemeral app CLI, capacity profiles         |
+| Runtime       | Versioned PHP roles plus dedicated Node/Bun/Python process services and app CLI    |
 | Data          | MySQL, PostgreSQL, SQLite, Litestream, Redis, credentials, grants                  |
 | Work          | Schedules, s6 workers, signed deploy queue and operator hook                       |
 | Recovery      | Logical backup/restore, scheduled rclone upload, stack transfer                    |
@@ -95,21 +96,23 @@ Mutable stack data MUST never be inferred from or stored beside the executable.
 
 ## 4. Data plane and cardinality
 
-| Component  |                    Cardinality | Lifetime                | Boundary/responsibility                            |
-| ---------- | -----------------------------: | ----------------------- | -------------------------------------------------- |
-| Bento CLI  |                 Per invocation | Ephemeral               | Validates intent; renders and operates stack       |
-| Nginx      |                  One per stack | Persistent              | Only public base service; TLS, app/proxy routing   |
-| PHP FPM    |    One per managed PHP version | Persistent              | One pool/socket per enabled assigned app           |
-| PHP runner |    One per managed PHP version | Persistent singleton    | s6-supervised app schedulers/workers/deploy drains |
-| PHP CLI    |                    Per command | Ephemeral profile       | App UID/GID, home, selected toolchain              |
-| MySQL      |        One per managed version | Persistent              | Private relational service + named volume          |
-| PostgreSQL |          One per managed major | Persistent              | Private relational service + named volume          |
-| Redis      |                  One per stack | Persistent              | Shared/ACL cache + named volume                    |
-| Litestream |          Zero or one per stack | Persistent when enabled | Watches explicit replicated SQLite files           |
-| rclone     | Per invocation/artifact upload | Ephemeral profile       | Backup-only egress; config + read-only backups     |
+| Component   |                    Cardinality | Lifetime                | Boundary/responsibility                            |
+| ----------- | -----------------------------: | ----------------------- | -------------------------------------------------- |
+| Bento CLI   |                 Per invocation | Ephemeral               | Validates intent; renders and operates stack       |
+| Nginx       |                  One per stack | Persistent              | Only public base service; TLS, app/proxy routing   |
+| PHP FPM     |    One per managed PHP version | Persistent              | One pool/socket per enabled assigned app           |
+| PHP runner  |    One per managed PHP version | Persistent singleton    | s6-supervised app schedulers/workers/deploy drains |
+| PHP CLI     |                    Per command | Ephemeral profile       | App UID/GID, home, selected PHP toolchain          |
+| Process app |    One per managed process app | Persistent when started | Node/Bun/Python HTTP process + Unix socket adapter |
+| Process CLI |                    Per command | Ephemeral profile       | Same process image, app UID/GID, own home          |
+| MySQL       |        One per managed version | Persistent              | Private relational service + named volume          |
+| PostgreSQL  |          One per managed major | Persistent              | Private relational service + named volume          |
+| Redis       |                  One per stack | Persistent              | Shared/ACL cache + named volume                    |
+| Litestream  |          Zero or one per stack | Persistent when enabled | Watches explicit replicated SQLite files           |
+| rclone      | Per invocation/artifact upload | Ephemeral profile       | Backup-only egress; config + read-only backups     |
 | cloudflared |          Zero or one per stack | Persistent when enabled | Outbound tunnel sharing Nginx's network namespace  |
 
-Apps are not Compose services. Apps assigned to a PHP version share that version's FPM and runner containers.
+PHP apps are not Compose services: apps assigned to a PHP version share that version's FPM and runner containers. Each Node.js, Bun, or Python process app is one dedicated Compose service because those runtimes do not provide an FPM-style multi-pool master.
 
 ## 5. Technology stack
 
@@ -174,7 +177,13 @@ Every enabled app gets a dedicated FPM pool and socket, with selected capacity p
 
 This boundary reduces accidental crossing; it does not contain malicious code as a VM or dedicated container would.
 
-### 6.3 Data boundary
+### 6.3 Process-app boundary
+
+A process app receives one dedicated container built from a curated exact-version Node.js, Bun, or Python base. It mounts only its own app home, its file-database directories, a private runtime socket directory, and immutable runtime assets. Its application command runs under the stable app UID/GID with a read-only container root and no Docker socket.
+
+A small entrypoint-owned adapter forwards the app's Unix ingress socket to its fixed private loopback HTTP port. The application service publishes no host port. Dedicated containers improve accidental filesystem/process isolation and targeted restart behavior, but still share the Docker host, kernel, and private backend network; they are not hostile-tenant sandboxes.
+
+### 6.4 Data boundary
 
 - MySQL uses app-namespaced users/databases and explicit grants.
 - PostgreSQL uses unprivileged app roles, app-owned databases, and revoked default public access.
@@ -211,7 +220,20 @@ Internet
 
 Socket path translation, mount alignment, and shared group ownership are architecture invariants.
 
-### 7.3 Reverse proxies
+### 7.3 Process request path
+
+```text
+Internet
+  -> Nginx
+  -> /run/bento-apps/<app>/http.sock
+  -> process container socket adapter
+  -> 127.0.0.1:<internal-port>
+  -> explicit app start argv under app UID/GID
+```
+
+The socket bind directory is ephemeral stack runtime state. Nginx mounts the parent read-only, while each process service mounts only its own socket directory read-write. This path is identical in host and bridge ingress modes and requires no public or loopback-published TCP port.
+
+### 7.4 Reverse proxies
 
 A proxy site uses the same domain/TLS ownership model as an app and forwards to URLs interpreted inside Nginx's current network namespace. The operator MUST choose upstream addresses valid from that namespace.
 
@@ -220,14 +242,16 @@ A proxy site uses the same domain/TLS ownership model as an app and forwards to 
 ### 8.1 Conceptual state model
 
 ```text
-DesiredState schema v1
+DesiredState schema v2
   defaults
     phpVersion, database service, FPM profile, Redis mode
   phpVersions[]
   databaseServices[]              MySQL | PostgreSQL
   sqliteBackup?                   stack-wide Litestream policy
   apps{slug -> AppState}
-    identity/runtime/TLS/log/template/deploy/Redis
+    identity/runtimeKind/TLS/log/template/deploy/Redis
+    php runtime                   version/profile/docroot/pool
+      or process runtime          language/version/image/service/argv/workdir/port/health
     databases[]                   MySQL | PostgreSQL | SQLite | Litestream
   proxies{name -> ProxySite}
   domains{domain -> app|proxy}    authoritative ownership
@@ -242,15 +266,15 @@ Every load reconstructs the complete in-memory model and applies the strict doma
 
 ### 8.2 Filesystem/storage classes
 
-| Class             | Paths                                                                             | Treatment                                             |
-| ----------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| Desired/source    | `.env`, `state.db`, `secrets/cloudflare-tunnel-token`                              | Sensitive; private modes; back up                      |
-| Operator custom   | `custom/`, `overlays/`                                                            | Durable/trusted input; preserve/review                |
-| Generated         | `generated/`, `docker/`, `helpers/`                                               | Rebuildable; never edit                               |
-| Durable bind data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, `rclone/`, `logs/` | Sensitive; protect and back up                        |
-| Durable volumes   | versioned MySQL/PostgreSQL volumes, Redis volume                                  | Outside stack root; explicit backup/transfer          |
-| Ephemeral         | `runtime/`, `locks/`                                                              | Recreated/recovered                                   |
-| Rebuildable cache | `.asset-cache/`                                                                   | Digest-addressed immutable assets                     |
+| Class             | Paths                                                                             | Treatment                                    |
+| ----------------- | --------------------------------------------------------------------------------- | -------------------------------------------- |
+| Desired/source    | `.env`, `state.db`, `secrets/cloudflare-tunnel-token`                             | Sensitive; private modes; back up            |
+| Operator custom   | `custom/`, `overlays/`                                                            | Durable/trusted input; preserve/review       |
+| Generated         | `generated/`, `docker/`, `helpers/`                                               | Rebuildable; never edit                      |
+| Durable bind data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, `rclone/`, `logs/` | Sensitive; protect and back up               |
+| Durable volumes   | versioned MySQL/PostgreSQL volumes, Redis volume                                  | Outside stack root; explicit backup/transfer |
+| Ephemeral         | `runtime/`, `locks/`                                                              | Recreated/recovered                          |
+| Rebuildable cache | `.asset-cache/`                                                                   | Digest-addressed immutable assets            |
 
 Generated trees may contain client credentials despite being rebuildable and MUST remain private.
 
@@ -263,7 +287,7 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 3. Refuse to initialize any database that already has desired state.
 4. Create private state/environment and directory structure.
 5. Generate administrator secrets once.
-6. Persist empty domain-schema-v1 state with default PHP/MySQL services in one transaction.
+6. Persist empty domain-schema-v2 state with default PHP/MySQL services in one transaction.
 7. Initialize private rclone config placeholder.
 8. Render/materialize when requested by the command flow.
 
@@ -278,7 +302,7 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 5. For explicit relational database creation, require live service and apply grants before recording success.
 6. Atomically persist desired state.
 7. Materialize app home/credentials/key/permissions without replacing operator files.
-8. Render/apply and execute the pool-focused reload plan unless deferred.
+8. Render/apply and execute the runtime-focused plan unless deferred. New process apps remain disabled until their private service is explicitly built/started and passes operator health verification.
 
 State, files, grants, and reload are not one distributed transaction. Commands MUST provide recoverable failure semantics rather than claim atomicity across all layers.
 
@@ -306,7 +330,9 @@ Validators consume live mounted paths, so validation occurs after promotion. Rel
 | --------------------------------- | --------------------------------------------- |
 | Domain/proxy/TLS/access log/vhost | Nginx                                         |
 | Pool/identity/PHP assignment      | Selected FPM; Nginx when route/socket changes |
-| Cron/deploy scheduler             | Matching runner and selected app scheduler    |
+| Process command/image/mount       | Recreate only a running app service           |
+| Process domain/TLS/access log     | Nginx only; stable process socket path        |
+| Cron/deploy scheduler             | Matching PHP runner and app scheduler         |
 | Worker definition/control         | Matching runner/worker service                |
 | Database backup/restore           | No web/runtime reload                         |
 | Full apply                        | Nginx + all relevant FPM/runners              |
@@ -330,7 +356,9 @@ The reconcile helper adds/removes service directories in the dynamic scan tree. 
 3. The app scheduler invokes the drain once per minute.
 4. Drain obtains app deploy lock and executes one queued operator hook under app UID/GID with timeout/environment/payload snapshot.
 5. Result and log are recorded; retention bounds queue/history.
-6. Drain asks the app's FPM path to reset OPcache; failure is logged but does not rewrite hook status.
+6. Drain asks the PHP app's FPM path to reset OPcache; failure is logged but does not rewrite hook status.
+
+The initial managed process runtime deliberately does not expose this PHP-backed webhook path. Process deploy enablement is refused until a language-neutral, app-scoped queue helper is implemented.
 
 ### 9.7 Logical backup and scheduled upload
 
@@ -392,8 +420,8 @@ No behavior may imply distributed atomicity or zero downtime where the architect
 
 1. One explicit stack root and one stable Compose project identity address a stack.
 2. One Nginx is the only public base service.
-3. One FPM and one singleton runner exist per managed PHP version; CLI is ephemeral.
-4. Apps share version containers but retain stable UID/GID, pool, socket, home, grants, and job identity.
+3. One FPM and one singleton runner exist per managed PHP version; PHP CLI is ephemeral.
+4. PHP apps share version containers. Each process app has one dedicated private service and ephemeral CLI role. Both retain stable UID/GID, socket, home, and data grants.
 5. Domains are globally unique authoritative links with one primary per app/proxy.
 6. Every app has at least one database binding; adding another does not migrate/remove old data.
 7. Database/cache ports are not published by the base model.
@@ -405,5 +433,7 @@ No behavior may imply distributed atomicity or zero downtime where the architect
 13. Runner replicas remain one.
 14. Source and compiled distributions use one entrypoint and equivalent embedded assets/behavior.
 15. The optional Cloudflare tunnel publishes no host ports, shares Nginx's network namespace, and receives no stack secret other than its dedicated token.
+16. Process apps publish no host ports, expose only an app-specific Unix socket to Nginx, mount no sibling home, and receive no Docker socket.
+17. Process apps are created disabled; public enablement requires an observed running private service. Process jobs and webhook deploy fail closed until their dedicated runtime implementations ship.
 
 See [the technical decisions and acceptance contract](03-reimplementation-contract.md) for rationale and verification.

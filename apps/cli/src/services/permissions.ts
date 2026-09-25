@@ -10,6 +10,7 @@
 
 import { join } from "node:path";
 import type { AppState, DesiredState } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import { notFoundError } from "../domain/errors.ts";
 import { SHARED_SOCKET_GID } from "../domain/types.ts";
 import type { Platform } from "../platform/mod.ts";
@@ -92,17 +93,19 @@ export async function checkPermissions(
     }
   };
 
-  await checkPath(home, { worldTraverse: true });
-  await checkPath(join(home, "code"), { worldTraverse: true });
+  await checkPath(home, { worldTraverse: isPhpApp(app) });
+  await checkPath(join(home, "code"), { worldTraverse: isPhpApp(app) });
   for (const d of PRIVATE_DIRS) {
     // logs/tmp may be 750; credentials/ssh/composer/bento should be 700
     const strict = d !== "logs" && d !== "tmp";
     await checkPath(join(home, d), { private: strict });
   }
 
-  // Public document tree should exist
-  const doc = join(home, "code", app.documentRoot || ".");
-  await checkPath(doc, {});
+  // Only PHP exposes a document tree directly to Nginx.
+  if (isPhpApp(app)) {
+    const doc = join(home, "code", app.documentRoot || ".");
+    await checkPath(doc, {});
+  }
 
   if (opts.recursive) {
     await walkLimited(platform, join(home, "code"), 5000, async (p) => {
@@ -175,7 +178,8 @@ export async function applyAppPermissionPolicy(
   const actions: string[] = [];
   const uid = Number(app.uid);
   const gid = Number(app.gid);
-  const docRel = app.documentRoot && app.documentRoot !== "." ? app.documentRoot : "";
+  const phpApp = isPhpApp(app);
+  const docRel = phpApp && app.documentRoot && app.documentRoot !== "." ? app.documentRoot : "";
   const docRoot = docRel ? join(home, "code", docRel) : join(home, "code");
 
   const ensureDir = async (path: string, mode: number) => {
@@ -185,8 +189,8 @@ export async function applyAppPermissionPolicy(
     }
   };
 
-  await ensureDir(home, 0o751);
-  await ensureDir(join(home, "code"), 0o751);
+  await ensureDir(home, phpApp ? 0o751 : 0o750);
+  await ensureDir(join(home, "code"), phpApp ? 0o751 : 0o750);
   await ensureDir(join(home, "logs"), 0o750);
   await ensureAppLogDirs(platform, app);
   await ensureDir(join(home, "tmp"), 0o750);
@@ -195,7 +199,7 @@ export async function applyAppPermissionPolicy(
   await ensureDir(join(home, ".ssh"), 0o700);
   await ensureDir(join(home, ".composer"), 0o700);
   await ensureDir(join(home, "credentials"), 0o700);
-  await ensureDir(docRoot, 0o750);
+  if (phpApp) await ensureDir(docRoot, 0o750);
 
   await platform.fs.atomicWriteText(
     join(home, ".bento", "identity.json"),
@@ -204,11 +208,12 @@ export async function applyAppPermissionPolicy(
   );
   actions.push("wrote identity metadata");
 
-  // Path components nginx must traverse (world +x; still no world read).
+  // PHP path components must be traversable by Nginx; process homes stay private.
   for (const p of [home, join(home, "code")]) {
     try {
-      await platform.fs.chmod(p, 0o751);
-      actions.push(`chmod 751 ${p}`);
+      const mode = phpApp ? 0o751 : 0o750;
+      await platform.fs.chmod(p, mode);
+      actions.push(`chmod ${mode.toString(8)} ${p}`);
     } catch {
       actions.push(`skip chmod ${p}`);
     }
@@ -228,7 +233,7 @@ export async function applyAppPermissionPolicy(
   }
 
   // Public document root: group-readable by bento-web
-  if (await platform.fs.exists(docRoot)) {
+  if (phpApp && (await platform.fs.exists(docRoot))) {
     try {
       await platform.fs.chmod(docRoot, 0o750);
       actions.push(`chmod 750 ${docRoot}`);
@@ -273,7 +278,7 @@ export async function applyAppPermissionPolicy(
       join(home, ".ssh", "id_ed25519.pub"),
       join(home, ".composer"),
       join(home, "credentials"),
-      docRoot,
+      ...(phpApp ? [docRoot] : []),
     ]) {
       if (await platform.fs.exists(p)) await chown(p, `${uid}:${gid}`, false);
     }
@@ -281,7 +286,7 @@ export async function applyAppPermissionPolicy(
 
   // Public tree group = bento-web so nginx can read; path still app-owned.
   // Recursive chown of the public tree is intentional and bounded; walk never follows symlinks.
-  if (await platform.fs.exists(docRoot)) {
+  if (phpApp && (await platform.fs.exists(docRoot))) {
     // Only recursive-chown the public tree when operator requested recursive repair.
     // Initial provision uses recursive=true while the tree is still small.
     await chown(docRoot, `${uid}:${BENTO_WEB_GID}`, opts.recursive === true);
@@ -302,10 +307,10 @@ export async function applyAppPermissionPolicy(
     actions.push(`public tree group ${BENTO_WEB_GID} under ${docRoot}`);
   }
 
-  // Re-apply world-traverse after chown (chown doesn't change mode, but be explicit)
+  // Re-apply final path mode after chown.
   for (const p of [home, join(home, "code")]) {
     try {
-      await platform.fs.chmod(p, 0o751);
+      await platform.fs.chmod(p, phpApp ? 0o751 : 0o750);
     } catch {
       // ignore
     }
@@ -317,7 +322,7 @@ export async function applyAppPermissionPolicy(
       {
         uid,
         gid,
-        publicGroup: BENTO_WEB_GID,
+        publicGroup: phpApp ? BENTO_WEB_GID : null,
         recursive: opts.recursive === true,
         updatedAt: platform.clock.nowIso(),
       },

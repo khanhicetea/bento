@@ -6,6 +6,7 @@
 
 import { join, relative } from "node:path";
 import type { DesiredState } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import type { ReloadPlan } from "../domain/reload.ts";
 import { describeReloadPlan, emptyReloadPlan, reloadPlanIsEmpty } from "../domain/reload.ts";
 import type { Platform } from "../platform/mod.ts";
@@ -522,6 +523,7 @@ function generatedReloadPlan(state: DesiredState): ReloadPlan {
     const scheduledApps = Object.values(state.apps)
       .filter(
         (app) =>
+          isPhpApp(app) &&
           app.enabled &&
           app.phpVersion === v.version &&
           (app.deploy.enabled || state.cronJobs.some((job) => job.app === app.slug && job.enabled)),

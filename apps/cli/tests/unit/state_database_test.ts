@@ -24,7 +24,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
     assertEquals(first, {
       fromVersion: 0,
       toVersion: STATE_DATABASE_SCHEMA_VERSION,
-      applied: [1, 2],
+      applied: [1, 2, 3],
     });
     assertEquals((await bunRuntime.stat(platform.paths.paths.stateDb)).mode & 0o777, 0o600);
 
@@ -45,6 +45,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
     assertEquals(migration, [
       { version: 1, name: "normalized-desired-state" },
       { version: 2, name: "proxy-site-enablement" },
+      { version: 3, name: "process-application-runtime" },
     ]);
     const tables = database
       .query<{ name: string }, []>(
@@ -299,6 +300,45 @@ bunRuntime.test(
         .query<{ version: number }, []>("SELECT version FROM schema_migrations WHERE version = 999")
         .get();
       assertEquals(future?.version, 999);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
+
+bunRuntime.test(
+  "state database persists process runtime fields without PHP runtime output",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-process-db-" });
+    try {
+      const platform = createPlatform(root, bunRuntime.cwd());
+      const store = new StateStore(platform);
+      let state = await store.init();
+      state = provisionApp(platform, state, {
+        slug: "api",
+        domain: "api.example",
+        kind: "process",
+        processLanguage: "bun",
+        processVersion: "1.2.20",
+        processCommand: ["bun", "run", "server.ts"],
+        processHealthPath: "/ready",
+      }).state;
+      await store.save(state);
+
+      const loaded = await store.load();
+      const app = loaded.apps.api;
+      assertEquals(app?.kind, "process");
+      if (!app || app.kind !== "process") throw new Error("expected process app");
+      assertEquals(app.runtime.language, "bun");
+      assertEquals(app.runtime.version, "1.2.20");
+      assertEquals(app.runtime.command, ["bun", "run", "server.ts"]);
+      assertEquals(app.runtime.healthPath, "/ready");
+      const serialized = JSON.parse(stateToJson(loaded)) as {
+        apps: Record<string, Record<string, unknown>>;
+      };
+      assertEquals(typeof serialized.apps.api?.runtime, "object");
+      assertEquals(serialized.apps.api?.phpVersion, undefined);
+      assertEquals(serialized.apps.api?.poolTemplate, undefined);
     } finally {
       await bunRuntime.remove(root, { recursive: true });
     }

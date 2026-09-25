@@ -5,19 +5,19 @@ description: Check what Bento does not support before you design or change a sta
 
 # Limitations
 
-Bento runs several PHP apps on one operator-owned Linux host. It deliberately leaves the following problems and workflows out of scope.
+Bento runs several PHP and trusted Node.js/Bun/Python HTTP apps on one operator-owned Linux host. It deliberately leaves the following problems and workflows out of scope.
 
 ## Platform and availability
 
 - No multi-host scheduling, clustering, high availability, autoscaling, or Kubernetes.
 - The local browser UI is unauthenticated and loopback-safe by default; there is no authenticated public management API, hosted remote control plane, or resident Bento daemon.
-- Nginx is the only supported public service; arbitrary languages are reverse-proxy targets, not managed app runtimes.
+- Nginx is the only supported public service. Managed process apps are limited to explicit Node.js, Bun, and Python HTTP commands; other languages remain reverse-proxy targets.
 - Bento does not promise zero-downtime application deploys, database transfer, restore, or stack export.
 
 ## Isolation and capacity
 
-- Apps share containers by PHP version; this is not hostile multi-tenant isolation.
-- No one-container-per-app model or per-app CPU/memory quotas inside shared PHP roles.
+- PHP apps share containers by version; process apps use dedicated services, but neither model is hostile multi-tenant isolation.
+- No one-container-per-PHP-app model, complete stack per app, or guaranteed per-app CPU/memory quotas.
 - Runner replicas must remain one per PHP version to avoid duplicate jobs.
 
 ## Data and deletion
@@ -33,7 +33,8 @@ Bento runs several PHP apps on one operator-owned Linux host. It deliberately le
 
 ## Deployment and customization
 
-- Bento provides signed queue orchestration and an operator-owned hook, not a fixed Git checkout, release-directory, rollback, or migration strategy.
+- Bento provides signed queue orchestration for PHP apps and an operator-owned hook, not a fixed Git checkout, release-directory, rollback, or migration strategy.
+- Process-app schedules, workers, and signed webhook deploy are initially unsupported; arbitrary repository auto-detection, buildpacks, and custom project images are not managed.
 - App template and Compose overlay input is trusted and can violate Bento invariants.
 - Access-log analytics is ad hoc, not a hosted real-time analytics service.
 

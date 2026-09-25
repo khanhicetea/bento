@@ -3,7 +3,7 @@ title: Bento documentation
 description: Learn how to install, run, and recover Bento on one Linux host.
 template: splash
 hero:
-  title: Operate PHP applications on one Linux host
+  title: Operate PHP, Node.js, Bun, and Python apps on one Linux host
   tagline: Describe the apps you want. Bento turns that intent into a Docker Compose stack that you control.
   actions:
     - text: Install Bento
@@ -18,25 +18,28 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid } from "@astrojs/starlight/components";
 
-Bento helps you run several PHP apps and reverse-proxied services on one Linux server. You operate it with a local CLI. Bento generates a private Docker Compose stack and exposes only Nginx by default.
+Bento helps you run PHP apps, supervised Node.js/Bun/Python HTTP projects, and reverse-proxied services on one Linux server. You operate it with a local CLI. Bento generates a private Docker Compose stack and exposes only Nginx by default.
 
 <CardGrid>
   <Card title="Start with one stack" icon="rocket">
     Prepare a Linux host, install `bento`, and launch your first app with a guided setup.
 
     [Start with the requirements →](/start/requirements/)
+
   </Card>
   <Card title="Run routine operations" icon="setting">
     Apply changes, check service health, manage apps, and create logical database backups.
 
     [Review the current command surface →](https://github.com/khanhicetea/bento#command-surface)
+
   </Card>
   <Card title="Understand what Bento owns" icon="open-book">
     Learn which files you own, which files Bento regenerates, and which data you must back up.
 
     [Learn the stack-root and stack-name model →](/concepts/stacks/)
+
   </Card>
 </CardGrid>
 
@@ -45,7 +48,7 @@ Bento helps you run several PHP apps and reverse-proxied services on one Linux s
 Bento is designed for a technically capable developer or small team that:
 
 - operates one Linux VPS or dedicated server;
-- needs several PHP applications, or HTTP services behind a reverse proxy;
+- needs several PHP applications, managed Node.js/Bun/Python HTTP projects, or external services behind a reverse proxy;
 - wants a local CLI and Docker Compose rather than a resident web control plane;
 - accepts shared, versioned PHP containers with per-app identities, pools, sockets, homes, and database grants.
 
@@ -55,7 +58,7 @@ Bento is not a cluster orchestrator or a hostile multi-tenant sandbox. It does n
 
 {/* DIAGRAM PLACEHOLDER
 Asset: /diagrams/bento-at-a-glance.svg
-Alt: An operator using the Bento CLI to configure Nginx, PHP apps, background jobs, databases, and Redis on one Linux host.
+Alt: An operator using the Bento CLI to configure Nginx, PHP/process apps, background jobs, databases, and Redis on one Linux host.
 Show: A beginner-friendly overview with no implementation class names. Put the Linux host around the whole stack, mark Nginx as the only public entry point, and use arrows from the CLI through desired state to generated Compose services.
 */}
 

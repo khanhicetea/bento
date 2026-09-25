@@ -39,7 +39,14 @@ Each section explains the problem, Bento's choice, its benefit, and its cost.
 - **Choice:** Expose one Nginx service and route PHP through per-app FPM sockets.
 - **Benefit:** FPM, database, and cache ports stay private. Routing follows app identity, and host mode supports direct HTTP/3.
 - **Cost:** Host and bridge modes interpret addresses differently, and normally only one stack can use host mode.
-- **Boundary:** Bento only reverse-proxies non-PHP applications.
+- **Boundary:** External services remain reverse proxies; managed Node.js, Bun, and Python process apps use private app-specific Unix sockets and publish no host ports.
+
+## Shared PHP roles and dedicated process apps
+
+- **Problem:** PHP has a standard multi-pool FPM master; independent Node.js, Bun, and Python servers do not.
+- **Choice:** Keep PHP shared by version, but give each managed process app one private service and same-image ephemeral CLI role.
+- **Benefit:** Process apps mount only their own homes, use a stable Unix ingress socket, and restart without affecting sibling apps.
+- **Cost:** More Compose services and explicit runtime/container lifecycle; this still is not hostile-tenant isolation.
 
 ## Shared versioned PHP roles
 

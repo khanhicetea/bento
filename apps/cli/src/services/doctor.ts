@@ -3,6 +3,7 @@
 import { basename, dirname, join, resolve } from "node:path";
 import pc from "picocolors";
 import type { DesiredState, TlsMode } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import type { Platform, RunOptions, RunResult } from "../platform/mod.ts";
 import { checkPermissions } from "./permissions.ts";
 import { composeArgs } from "./compose.ts";
@@ -588,7 +589,7 @@ async function addSqliteChecks(
         const args = await composeArgs(platform, state, [
           "exec",
           "-T",
-          `${app.phpService}-runner`,
+          isPhpApp(app) ? `${app.phpService}-runner` : app.runtime.service,
           "sqlite3",
           "-readonly",
           sqliteContainerPath(database.file.id, String(app.slug), database.engine),

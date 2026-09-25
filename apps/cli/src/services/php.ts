@@ -3,7 +3,7 @@
  */
 
 import type { DesiredState, ManagedPhpVersion } from "../domain/state.ts";
-import { phpImage, phpServiceName } from "../domain/state.ts";
+import { isPhpApp, phpImage, phpServiceName } from "../domain/state.ts";
 import { asPhpVersion, PHP_GLOBAL_PROCESS_CAP } from "../domain/types.ts";
 import { conflictError, notFoundError, safetyError, validationError } from "../domain/errors.ts";
 import { compareMajorMinor, parsePhpVersion, unwrap } from "../schemas/validators.ts";
@@ -47,7 +47,9 @@ export function removePhpVersion(state: DesiredState, versionInput: string): Des
       "Change the stack default PHP version first.",
     );
   }
-  const inUse = Object.values(state.apps).filter((a) => a.phpVersion === version);
+  const inUse = Object.values(state.apps).filter(
+    (app) => isPhpApp(app) && app.phpVersion === version,
+  );
   if (inUse.length > 0) {
     throw safetyError(
       `refusing to remove PHP ${version}: used by apps ${inUse.map((a) => a.slug).join(", ")}`,
@@ -91,6 +93,30 @@ export function buildCliExec(
 ): CliExecPlan {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
+
+  if (!isPhpApp(app)) {
+    if (opts?.phpVersionOverride) {
+      throw validationError("--php cannot be used with a process app");
+    }
+    const workdir = platform.paths.assertInsideHome(app.home, opts?.workdir ?? app.home);
+    return {
+      service: `${app.runtime.service}-cli`,
+      profile: "cli",
+      user: `${app.uid}:${app.gid}`,
+      workdir,
+      env: {
+        HOME: app.home,
+        BENTO_APP: app.slug,
+        BENTO_UID: String(app.uid),
+        BENTO_GID: String(app.gid),
+        USER: app.slug,
+        LOGNAME: app.slug,
+      },
+      argv: argv.length ? argv : ["bash"],
+      slug: app.slug,
+      phpVersion: `${app.runtime.language}@${app.runtime.version}`,
+    };
+  }
 
   let phpVersion = app.phpVersion;
   if (opts?.phpVersionOverride) {

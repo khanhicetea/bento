@@ -371,6 +371,7 @@ type OperationsRole = {
     | "redis"
     | "php-fpm"
     | "php-runner"
+    | "process-app"
     | "mysql"
     | "postgres"
     | "litestream"

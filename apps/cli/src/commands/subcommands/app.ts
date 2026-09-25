@@ -1,5 +1,6 @@
-import { safetyError } from "../../domain/errors.ts";
-import type { AppState } from "../../domain/state.ts";
+import { safetyError, validationError } from "../../domain/errors.ts";
+import type { AppState, ProcessLanguage } from "../../domain/state.ts";
+import { isPhpApp, isProcessApp } from "../../domain/state.ts";
 import {
   applyAppDataPlane,
   capacityWarnings,
@@ -9,6 +10,15 @@ import {
   setAppEnabled,
 } from "../../services/app.ts";
 import { loadRedisPassword } from "../../services/stack_env.ts";
+import { composeArgs } from "../../services/compose.ts";
+import { emptyReloadPlan } from "../../domain/reload.ts";
+import {
+  isProcessAppHealthy,
+  recreateRunningProcessApp,
+  removeProcessAppContainer,
+  startProcessApp,
+  stopProcessApp,
+} from "../../services/process_app.ts";
 import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
 import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "../../services/app_prune.ts";
 import { printTable } from "../../ui/output.ts";
@@ -45,6 +55,33 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
             .option("docroot", {
               type: "string",
               describe: "Document root relative to app home",
+            })
+            .option("runtime", {
+              type: "string",
+              choices: ["php", "node", "bun", "python"],
+              default: "php",
+              describe: "Application runtime kind",
+            })
+            .option("runtime-version", {
+              type: "string",
+              describe: "Exact Node.js, Bun, or Python runtime version",
+            })
+            .option("start", {
+              type: "string",
+              array: true,
+              describe: "Process app start argv (repeat values after --start)",
+            })
+            .option("port", {
+              type: "number",
+              describe: "Private process HTTP port inside the app container",
+            })
+            .option("health-path", {
+              type: "string",
+              describe: "Optional HTTP health path; TCP readiness is the default",
+            })
+            .option("workdir", {
+              type: "string",
+              describe: "Process command working directory inside the app home",
             })
             .option("php", { type: "string", describe: "PHP version" })
             .option("fpm", {
@@ -110,6 +147,15 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
             .option("domain", { type: "string", demandOption: true })
             .option("alias", { type: "string" })
             .option("docroot", { type: "string" })
+            .option("runtime", {
+              type: "string",
+              choices: ["php", "node", "bun", "python"],
+            })
+            .option("runtime-version", { type: "string" })
+            .option("start", { type: "string", array: true })
+            .option("port", { type: "number" })
+            .option("health-path", { type: "string" })
+            .option("workdir", { type: "string" })
             .option("php", { type: "string" })
             .option("fpm", { type: "string" })
             .option("database-engine", {
@@ -126,6 +172,18 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
             .option("no-apply", { type: "boolean", default: false })
             .option("skip-validate", { type: "boolean", default: false }),
         bind(state, cmdAppCreate),
+      )
+      .command(
+        "start <slug>",
+        "Build and start a process app privately",
+        (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
+        bind(state, cmdAppStart),
+      )
+      .command(
+        "stop <slug>",
+        "Stop a process app container",
+        (y2: YargsBuilder) => y2.positional("slug", { type: "string", demandOption: true }),
+        bind(state, cmdAppStop),
       )
       .command(
         "enable <slug>",
@@ -160,7 +218,7 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
       )
       .command(
         "shell <slug>",
-        "Attach interactive app CLI shell (ephemeral PHP identity)",
+        "Attach an interactive shell using the app runtime",
         (y2: YargsBuilder) =>
           y2
             .positional("slug", { type: "string", demandOption: true })
@@ -181,7 +239,7 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
       )
       .demandCommand(
         1,
-        "Specify an app subcommand: create|list|show|update|enable|disable|delete|prune|shell",
+        "Specify an app subcommand: create|list|show|update|start|stop|enable|disable|delete|prune|shell",
       )
       .recommendCommands(),
   );
@@ -196,8 +254,8 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.enabled ? "enabled" : "disabled",
       String(a.uid),
       a.mainDomain,
-      a.phpVersion,
-      a.fpmProfile,
+      isPhpApp(a) ? `php@${a.phpVersion}` : `${a.runtime.language}@${a.runtime.version}`,
+      isPhpApp(a) ? a.fpmProfile : a.runtime.service,
       a.tls.kind,
       a.databases
         .map((database) =>
@@ -208,7 +266,10 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
         .join(", "),
     ]);
   ctx.log.out(
-    printTable(["slug", "status", "uid", "domain", "php", "fpm", "tls", "database"], rows),
+    printTable(
+      ["slug", "status", "uid", "domain", "runtime", "service/profile", "tls", "database"],
+      rows,
+    ),
   );
   return 0;
 }
@@ -231,7 +292,7 @@ export function redactAppForOutput(app: AppState): AppState {
       ? database
       : { ...database, password: "***" },
   );
-  return {
+  const redacted: AppState = {
     ...app,
     databases,
     database: databases[0]!,
@@ -245,11 +306,39 @@ export function redactAppForOutput(app: AppState): AppState {
       hmacSecret: app.deploy.hmacSecret ? "***" : undefined,
     },
   };
+  if (redacted.kind === "php") return redacted;
+  const {
+    documentRoot: _documentRoot,
+    entrypointMode: _entrypointMode,
+    phpVersion: _phpVersion,
+    phpService: _phpService,
+    fpmProfile: _fpmProfile,
+    poolTemplate: _poolTemplate,
+    ...processOutput
+  } = redacted;
+  return processOutput as AppState;
 }
 
 async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext): Promise<number> {
   const { slug, domain } = argv;
   const aliases = argv.alias?.split(",").filter(Boolean) ?? [];
+  const processSelected = argv.runtime !== undefined && argv.runtime !== "php";
+  if (
+    !processSelected &&
+    (argv.runtimeVersion ||
+      argv.start ||
+      argv.healthPath ||
+      argv.workdir ||
+      argv.port !== undefined)
+  ) {
+    throw validationError("process runtime options require --runtime node, bun, or python");
+  }
+  if (
+    processSelected &&
+    (argv.php || argv.fpm || argv.docroot || argv.front === true || argv.legacy === true)
+  ) {
+    throw validationError("PHP runtime options cannot be combined with a process runtime");
+  }
   const noApply = wantsNoApply(argv);
   const skipValidate = argv.skipValidate === true;
   const explicitDb = argv.db === true;
@@ -267,9 +356,17 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
         : requestedDatabaseEngine === "postgres"
           ? argv.postgres
           : undefined;
+    const processLanguage = processSelected ? (argv.runtime as ProcessLanguage) : undefined;
     const provisioned = provisionApp(ctx.platform, state, {
       slug,
       domain,
+      kind: processLanguage ? "process" : "php",
+      processLanguage,
+      processVersion: argv.runtimeVersion,
+      processCommand: normalizeStartArgv(argv.start),
+      processWorkdir: argv.workdir,
+      processPort: argv.port,
+      processHealthPath: argv.healthPath,
       aliases,
       documentRoot: argv.docroot,
       entrypointMode:
@@ -312,6 +409,23 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
     }
     return { provisioned, plane };
   });
+  if (
+    !noApply &&
+    !result.provisioned.created &&
+    isProcessApp(result.provisioned.app) &&
+    result.provisioned.app.enabled
+  ) {
+    const app = result.provisioned.app;
+    const recreated = await recreateRunningProcessApp(ctx.platform, result.provisioned.state, app);
+    if (recreated && recreated.code !== 0) {
+      ctx.log.error(
+        `process app state was saved, but container recreation failed: ${(
+          recreated.stderr || recreated.stdout
+        ).trim()}`,
+      );
+      return 1;
+    }
+  }
   ctx.log.info(
     `${
       result.provisioned.created ? "created" : "updated"
@@ -319,6 +433,56 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
   );
   for (const note of result.plane.deferredNotes) ctx.log.warn(note);
   for (const w of capacityWarnings(result.provisioned.state)) ctx.log.warn(w);
+  return 0;
+}
+
+function normalizeStartArgv(value: string | string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  return Array.isArray(value) ? value : [value];
+}
+
+async function cmdAppStart(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
+  const state = await ctx.store.load();
+  const app = state.apps[argv.slug];
+  if (!app) {
+    ctx.log.error(`app not found: ${argv.slug}`);
+    return 3;
+  }
+  if (!isProcessApp(app)) {
+    ctx.log.error("app start is only needed for process apps; PHP uses the shared runtime");
+    return 2;
+  }
+  await ctx.render.apply(state, { reloadPlan: emptyReloadPlan(), skipValidate: false });
+  const result = await startProcessApp(ctx.platform, state, app);
+  if (!result || result.code !== 0) {
+    ctx.log.error(
+      `failed to start ${app.slug}: ${(result?.stderr || result?.stdout || "").trim()}`,
+    );
+    return 1;
+  }
+  ctx.log.info(
+    `started process app ${app.slug} privately; run 'bento app enable ${app.slug}' after it is healthy`,
+  );
+  return 0;
+}
+
+async function cmdAppStop(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
+  const state = await ctx.store.load();
+  const app = state.apps[argv.slug];
+  if (!app) {
+    ctx.log.error(`app not found: ${argv.slug}`);
+    return 3;
+  }
+  if (!isProcessApp(app)) {
+    ctx.log.error("app stop is only available for process apps");
+    return 2;
+  }
+  const result = await stopProcessApp(ctx.platform, state, app);
+  if (!result || result.code !== 0) {
+    ctx.log.error(`failed to stop ${app.slug}: ${(result?.stderr || result?.stdout || "").trim()}`);
+    return 1;
+  }
+  ctx.log.info(`stopped process app ${app.slug}`);
   return 0;
 }
 
@@ -338,6 +502,16 @@ async function mutateAppEnabled(
 ): Promise<number> {
   const noApply = wantsNoApply(argv);
   const result = await ctx.store.withExclusive(async (state) => {
+    const current = state.apps[argv.slug];
+    if (!current) throw new Error(`app not found: ${argv.slug}`);
+    if (enabled && !noApply && isProcessApp(current)) {
+      if (!(await isProcessAppHealthy(ctx.platform, state, current))) {
+        throw safetyError(
+          `refusing to publish process app ${current.slug} before its container is running`,
+          `Run 'bento app start ${current.slug}', verify health, then enable it.`,
+        );
+      }
+    }
     const changed = setAppEnabled(state, argv.slug, enabled, ctx.platform.clock.nowIso());
     await ctx.store.save(changed.state);
     if (!noApply) {
@@ -349,6 +523,19 @@ async function mutateAppEnabled(
     }
     return changed;
   });
+  if (!enabled && !noApply && isProcessApp(result.app)) {
+    const stopped = await ctx.platform.process.run(
+      await composeArgs(ctx.platform, result.state, ["stop", result.app.runtime.service]),
+      { cwd: ctx.platform.paths.paths.root, timeoutMs: 60_000 },
+    );
+    if (stopped.code !== 0) {
+      ctx.log.warn(
+        `public route was disabled, but the private process container did not stop: ${(
+          stopped.stderr || stopped.stdout
+        ).trim()}`,
+      );
+    }
+  }
   ctx.log.info(
     `${result.app.enabled ? "enabled" : "disabled"} app ${argv.slug}${
       noApply ? " (state only; run bento apply)" : ""
@@ -368,7 +555,17 @@ async function cmdAppDisable(argv: ArgsWith<"slug">, ctx: CliContext): Promise<n
 async function cmdAppDelete(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
   const noApply = wantsNoApply(argv);
   const result = await ctx.store.withExclusive(async (state) => {
+    const current = state.apps[argv.slug];
     const removed = deleteApp(state, argv.slug, argv.confirm, ctx.platform.clock.nowIso());
+    if (current && isProcessApp(current) && !noApply) {
+      const stopped = await removeProcessAppContainer(ctx.platform, state, current);
+      if (stopped && stopped.code !== 0) {
+        throw safetyError(
+          `refusing to remove process app ${current.slug} while its container cannot be stopped`,
+          "Restore Docker/Compose access and retry; durable data remains unchanged.",
+        );
+      }
+    }
     await writeAppPruneManifest(ctx.platform, removed.app);
     await ctx.store.save(removed.state);
     if (!noApply) {

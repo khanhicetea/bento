@@ -119,17 +119,36 @@ export type AppDatabaseBinding =
       databases: AppDatabase[];
     };
 
-export type AppState = {
+export type ProcessLanguage = "node" | "bun" | "python";
+export type ProcessRuntime = {
+  language: ProcessLanguage;
+  version: string;
+  /** Curated Bento image shared by apps using this exact toolchain. */
+  image: string;
+  /** Stable per-app Compose service name. */
+  service: string;
+  /** Private loopback port inside the app container. No host port is published. */
+  internalPort: number;
+  /** Argv-only web command. Shell interpretation is never implicit. */
+  command: string[];
+  /** Absolute container workdir contained by the app home. */
+  workdir: string;
+  healthPath?: string;
+};
+
+type AppCommonState = {
   slug: AppSlug;
   enabled: boolean;
   uid: Uid;
   gid: Gid;
   home: AbsoluteAppPath;
+  /** PHP compatibility view. Process apps never generate or execute an FPM pool. */
   documentRoot: string;
   entrypointMode: EntrypointMode;
   phpVersion: PhpVersion;
   phpService: string;
   fpmProfile: FpmProfile;
+  poolTemplate: TemplateProvenance;
   tls: TlsMode;
   accessLog: boolean;
   databases: AppDatabaseBinding[];
@@ -145,10 +164,36 @@ export type AppState = {
   redis: AppRedisIdentity;
   deploy: AppDeployConfig;
   vhostTemplate: TemplateProvenance;
-  poolTemplate: TemplateProvenance;
   createdAt: string;
   updatedAt: string;
 };
+
+export type PhpAppState = AppCommonState & {
+  kind: "php";
+};
+
+export type ProcessAppState = AppCommonState & {
+  kind: "process";
+  runtime: ProcessRuntime;
+};
+
+export type AppState = PhpAppState | ProcessAppState;
+
+export function isPhpApp(app: AppState): app is PhpAppState {
+  return app.kind === "php";
+}
+
+export function isProcessApp(app: AppState): app is ProcessAppState {
+  return app.kind === "process";
+}
+
+export function processServiceName(slug: string): string {
+  return `app-${slug}`;
+}
+
+export function processImage(language: ProcessLanguage, version: string): string {
+  return `bento/${language}:${version}`;
+}
 export type ProxySite = {
   name: ProxySiteName;
   enabled: boolean;

@@ -7,6 +7,7 @@ const roleSchema = z.object({
     "redis",
     "php-fpm",
     "php-runner",
+    "process-app",
     "mysql",
     "postgres",
     "litestream",

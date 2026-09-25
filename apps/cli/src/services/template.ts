@@ -22,7 +22,7 @@ export function nginxEscape(value: string): string {
 
 /** Escape MySQL identifier. */
 export function mysqlIdent(value: string): string {
-  if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
     throw validationError(`unsafe MySQL identifier: ${value}`);
   }
   return `\`${value.replace(/`/g, "``")}\``;

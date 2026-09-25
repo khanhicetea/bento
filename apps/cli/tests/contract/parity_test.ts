@@ -324,6 +324,26 @@ bunRuntime.test({
         ]),
         0,
       );
+      assertEquals(
+        await runCli([
+          ...seed,
+          "app",
+          "create",
+          "process-parity",
+          "--domain",
+          "process-parity.test",
+          "--runtime",
+          "node",
+          "--runtime-version",
+          "24",
+          "--start",
+          "node",
+          "--start",
+          "server.js",
+          "--no-apply",
+        ]),
+        0,
+      );
 
       const srcStack = await bunRuntime.makeTempDir({
         prefix: "bento-parity-src-",

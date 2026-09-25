@@ -8,6 +8,7 @@ import {
   removeApplicationInputSchema,
   saveApplicationInputSchema,
   setApplicationEnabledInputSchema,
+  setApplicationRunningInputSchema,
   webContract,
 } from "@bento/shared";
 import { commandDisplay } from "../../src/server/domains/jobs/router.ts";
@@ -135,6 +136,10 @@ describe("web API contract", () => {
       enabled: false,
     });
     expect(() => setApplicationEnabledInputSchema.parse({ slug: "", enabled: true })).toThrow();
+    expect(setApplicationRunningInputSchema.parse({ slug: "api", action: "start" })).toEqual({
+      slug: "api",
+      action: "start",
+    });
     expect(
       saveApplicationInputSchema.parse({
         slug: "demo",
@@ -149,6 +154,23 @@ describe("web API contract", () => {
         databaseEngine: "mysql",
         databaseService: "mysql84",
         createDatabase: true,
+      }),
+    ).toBeTruthy();
+    expect(
+      saveApplicationInputSchema.parse({
+        slug: "api",
+        kind: "process",
+        domain: "api.example.test",
+        aliases: [],
+        processLanguage: "node",
+        processVersion: "24",
+        processCommand: ["node", "server.js"],
+        processPort: 8080,
+        tls: "shared",
+        accessLog: false,
+        databaseEngine: "mysql",
+        databaseService: "mysql84",
+        createDatabase: false,
       }),
     ).toBeTruthy();
     expect(() =>

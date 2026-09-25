@@ -5,6 +5,7 @@
 import { join } from "node:path";
 import { encodeHex } from "../platform/hex.ts";
 import type { AppState, DesiredState, QueuePolicy } from "../domain/state.ts";
+import { isPhpApp } from "../domain/state.ts";
 import {
   asDeployJobId,
   DEPLOY_DEFAULT_TIMEOUT_SEC,
@@ -70,6 +71,7 @@ export function enableDeploy(
 ): { state: DesiredState; secret: string; reloadPlan: ReloadPlan } {
   const app = state.apps[input.slug];
   if (!app) throw notFoundError(`app not found: ${input.slug}`);
+  if (!isPhpApp(app)) throw validationError("webhook deploy for process apps is not supported yet");
 
   const secret = platform.random.hex(32);
   const workdir = platform.paths.assertInsideHome(
@@ -106,6 +108,7 @@ export function disableDeploy(
 ): { state: DesiredState; reloadPlan: ReloadPlan } {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
+  if (!isPhpApp(app)) throw validationError("webhook deploy for process apps is not supported yet");
   const next: AppState = {
     ...app,
     deploy: {
@@ -135,6 +138,7 @@ export function rotateDeploySecret(
 ): { state: DesiredState; secret: string; reloadPlan: ReloadPlan } {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
+  if (!isPhpApp(app)) throw validationError("webhook deploy for process apps is not supported yet");
   if (!app.deploy.enabled) {
     throw validationError(`deploy is not enabled for ${slug}`);
   }

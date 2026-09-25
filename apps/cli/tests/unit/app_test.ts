@@ -7,6 +7,11 @@ import {
   provisionApp,
 } from "../../src/services/app.ts";
 import { addPhpVersion, buildCliExec, cliRunComposeCommand } from "../../src/services/php.ts";
+import { assembleComposeDocuments } from "../../src/services/compose.ts";
+import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
+import { addCronJob } from "../../src/services/cron.ts";
+import { addWorker } from "../../src/services/worker.ts";
+import { enableDeploy } from "../../src/services/deploy.ts";
 import {
   addMysqlVersion,
   buildMysqlShellPlan,
@@ -318,6 +323,115 @@ bunRuntime.test("workdir escape rejected by path policy", async () => {
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }
+});
+
+bunRuntime.test(
+  "process app provisions a staged private runtime and round-trips strict state",
+  () => {
+    const platform = testPlatform("/tmp/bento-process-app");
+    const result = provisionApp(platform, createEmptyState("2026-08-23T00:00:00.000Z"), {
+      slug: "api",
+      domain: "api.example",
+      kind: "process",
+      processLanguage: "node",
+      processVersion: "24",
+      processCommand: ["node", "server.js"],
+      processPort: 8080,
+      processHealthPath: "/health",
+    });
+
+    assertEquals(result.app.kind, "process");
+    if (result.app.kind !== "process") throw new Error("expected process app");
+    assertEquals(result.app.enabled, false);
+    assertEquals(result.app.runtime.service, "app-api");
+    assertEquals(result.app.runtime.image, "bento/node:24");
+    assertEquals(result.app.runtime.workdir, "/home/api/code");
+    assertEquals(result.app.runtime.command, ["node", "server.js"]);
+    assertEquals(result.app.databases.length, 1);
+    const parsed = parseDesiredState(JSON.parse(stateToJson(result.state)));
+    assertEquals(parsed.ok, true);
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+    assertEquals(parsed.value.apps.api?.kind, "process");
+  },
+);
+
+bunRuntime.test("process app home stays private and receives no PHP placeholder", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-process-home-" });
+  try {
+    const platform = testPlatform(root);
+    const app = provisionApp(platform, createEmptyState(), {
+      slug: "api",
+      domain: "api.example",
+      kind: "process",
+      processLanguage: "node",
+      processVersion: "24",
+      processCommand: ["node", "server.js"],
+    }).app;
+    await materializeAppHome(platform, app);
+    const home = platform.paths.appHome(app.slug);
+    assertEquals((await platform.fs.stat(home)).mode & 0o777, 0o750);
+    assertEquals((await platform.fs.stat(join(home, "code"))).mode & 0o777, 0o750);
+    assertEquals(await platform.fs.exists(join(home, "code", "index.php")), false);
+    assertEquals(await platform.fs.exists(join(root, "runtime", "apps", "api")), true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("process app compose is private, app-scoped, and exposes a CLI role", () => {
+  const platform = testPlatform("/tmp/bento-process-compose");
+  const result = provisionApp(platform, createEmptyState(), {
+    slug: "worker-api",
+    domain: "worker.example",
+    kind: "process",
+    processLanguage: "python",
+    processVersion: "3.13",
+    processCommand: ["python", "-m", "http.server", "8080", "--bind", "127.0.0.1"],
+  });
+  const files = assembleComposeDocuments(platform, result.state);
+  const process = String(
+    files.find((file) => file.relPath === "compose/docker-compose.app-worker-api.yml")?.content ??
+      "",
+  );
+  assertEquals(process?.includes("app-worker-api:"), true);
+  assertEquals(process?.includes("app-worker-api-cli:"), true);
+  assertEquals(process?.includes("./homes/worker-api:/home/worker-api"), true);
+  assertEquals(process?.includes("./homes:/home"), false);
+  assertEquals(process?.includes("ports:"), false);
+  assertEquals(process?.includes("disabled-apps"), true);
+  assertEquals(process?.includes("/run/bento-http"), true);
+
+  const cli = buildCliExec(platform, result.state, "worker-api", ["python", "--version"]);
+  assertEquals(cli.service, "app-worker-api-cli");
+  assertEquals(cli.phpVersion, "python@3.13");
+});
+
+bunRuntime.test("process apps reject PHP-only jobs and webhook deploy", () => {
+  const platform = testPlatform("/tmp/bento-process-surfaces");
+  const state = provisionApp(platform, createEmptyState(), {
+    slug: "api",
+    domain: "api.example",
+    kind: "process",
+    processLanguage: "bun",
+    processVersion: "1.2.20",
+    processCommand: ["bun", "run", "start"],
+  }).state;
+  assertThrows(
+    () =>
+      addCronJob(
+        state,
+        { app: "api", name: "tick", schedule: "* * * * *", command: ["bun", "tick.ts"] },
+        platform,
+      ),
+    Error,
+    "not supported",
+  );
+  assertThrows(
+    () => addWorker(state, { app: "api", name: "queue", command: ["bun", "worker.ts"] }, platform),
+    Error,
+    "not supported",
+  );
+  assertThrows(() => enableDeploy(state, { slug: "api" }, platform), Error, "not supported");
 });
 
 bunRuntime.test("buildCliExec targets profile-gated -cli service with app identity", async () => {

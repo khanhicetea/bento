@@ -11,7 +11,12 @@ function stringifyYaml(value: unknown): string {
   // preserve that stable output and prevent YAML from treating punctuation specially.
   return dump(value).replace(/^(\s*[A-Za-z0-9_.-]+:\s)(\$\{[^\n]+\})$/gm, "$1'$2'");
 }
-import { assertNever, type DesiredState } from "../domain/state.ts";
+import {
+  assertNever,
+  isProcessApp,
+  type DesiredState,
+  type ProcessAppState,
+} from "../domain/state.ts";
 import type { Platform } from "../platform/mod.ts";
 import { type GeneratedFile, withManagedMarker } from "./render.ts";
 import { safetyError } from "../domain/errors.ts";
@@ -65,6 +70,17 @@ export function assembleComposeDocuments(
     files.push({
       relPath: `compose/docker-compose.php-${v.service}.yml`,
       content: withManagedMarker(renderPhpFragment(v.service, image, String(v.version))),
+      mode: 0o644,
+      managed: true,
+    });
+  }
+
+  for (const app of Object.values(state.apps)
+    .filter(isProcessApp)
+    .sort((left, right) => left.slug.localeCompare(right.slug))) {
+    files.push({
+      relPath: `compose/docker-compose.app-${app.slug}.yml`,
+      content: withManagedMarker(renderProcessAppFragment(app)),
       mode: 0o644,
       managed: true,
     });
@@ -135,6 +151,11 @@ export function buildComposeFileList(platform: Platform, state: DesiredState): C
   const files: string[] = [`${gen}/docker-compose.base.yml`];
   for (const v of [...state.phpVersions].sort((a, b) => a.service.localeCompare(b.service))) {
     files.push(`${gen}/docker-compose.php-${v.service}.yml`);
+  }
+  for (const app of Object.values(state.apps)
+    .filter(isProcessApp)
+    .sort((left, right) => left.slug.localeCompare(right.slug))) {
+    files.push(`${gen}/docker-compose.app-${app.slug}.yml`);
   }
   for (const database of [...state.databaseServices].sort((a, b) =>
     a.service.localeCompare(b.service),
@@ -240,6 +261,7 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
       "./certs/acme-state:/var/cache/nginx/acme",
       "./homes:/home:ro",
       "./runtime/php-fpm:/run/php-fpm:ro",
+      "./runtime/apps:/run/bento-apps:ro",
       "./logs/nginx:/var/log/nginx",
     ],
   };
@@ -464,6 +486,102 @@ function renderPhpFragment(service: string, image: string, version: string): str
     },
   };
   return stringifyYaml(doc);
+}
+
+function processBaseImage(app: ProcessAppState): string {
+  switch (app.runtime.language) {
+    case "node":
+      return `node:${app.runtime.version}-bookworm-slim`;
+    case "bun":
+      return `oven/bun:${app.runtime.version}-slim`;
+    case "python":
+      return `python:${app.runtime.version}-slim-bookworm`;
+  }
+}
+
+function renderProcessAppFragment(app: ProcessAppState): string {
+  const build = {
+    context: "./docker/process",
+    dockerfile: "Dockerfile",
+    args: { BASE_IMAGE: processBaseImage(app) },
+  };
+  const environment = {
+    HOME: app.home,
+    USER: app.slug,
+    LOGNAME: app.slug,
+    BENTO_APP: app.slug,
+    BENTO_UID: String(app.uid),
+    BENTO_GID: String(app.gid),
+    BENTO_HTTP_PORT: String(app.runtime.internalPort),
+    PORT: String(app.runtime.internalPort),
+    HOST: "127.0.0.1",
+    BENTO_CREDENTIALS_FILE: `${app.home}/credentials/app.env`,
+  };
+  const dataVolumes = [
+    `./homes/${app.slug}:${app.home}`,
+    ...app.databases
+      .filter((binding) => binding.engine === "sqlite" || binding.engine === "litestream")
+      .map((binding) => `./sqlite/${binding.file.id}:/sqlite/${binding.file.id}`),
+    "./backups/sqlite:/var/backups/bento/sqlite",
+    "./docker/process/entrypoint.sh:/usr/local/bin/bento-process-entrypoint:ro",
+  ];
+  const health = app.runtime.healthPath
+    ? [
+        "CMD",
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        `http://127.0.0.1:${app.runtime.internalPort}${app.runtime.healthPath}`,
+      ]
+    : ["CMD", "bash", "-c", `exec 3<>/dev/tcp/127.0.0.1/${app.runtime.internalPort}`];
+  return stringifyYaml({
+    services: {
+      [app.runtime.service]: {
+        image: app.runtime.image,
+        build,
+        ...(!app.enabled ? { profiles: ["disabled-apps"] } : {}),
+        restart: "unless-stopped",
+        logging: composeLogging(),
+        networks: ["private"],
+        user: "root",
+        read_only: true,
+        cap_drop: ["ALL"],
+        cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
+        security_opt: ["no-new-privileges:true"],
+        tmpfs: ["/tmp", "/run"],
+        working_dir: app.runtime.workdir,
+        entrypoint: ["/usr/local/bin/bento-process-entrypoint"],
+        command: app.runtime.command,
+        environment: { ...environment, BENTO_ROLE: "web" },
+        volumes: [...dataVolumes, `./runtime/apps/${app.slug}:/run/bento-http`],
+        healthcheck: {
+          test: health,
+          interval: "10s",
+          timeout: "3s",
+          retries: 6,
+          start_period: "20s",
+        },
+      },
+      [`${app.runtime.service}-cli`]: {
+        image: app.runtime.image,
+        build,
+        profiles: ["cli"],
+        logging: composeLogging(),
+        networks: ["private"],
+        user: "root",
+        read_only: true,
+        cap_drop: ["ALL"],
+        cap_add: ["DAC_OVERRIDE", "SETGID", "SETUID"],
+        security_opt: ["no-new-privileges:true"],
+        tmpfs: ["/tmp", "/run"],
+        working_dir: app.home,
+        entrypoint: ["/usr/local/bin/bento-process-entrypoint"],
+        environment: { ...environment, BENTO_ROLE: "cli" },
+        volumes: dataVolumes,
+      },
+    },
+  });
 }
 
 function renderPostgresFragment(
