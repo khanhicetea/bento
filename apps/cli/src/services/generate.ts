@@ -545,7 +545,7 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
       });
       files.push({
         relPath: `runner/${v.service}/services/minicrond-root/run`,
-        content: `#!/bin/sh\n# bento-managed: true\n# config-sha256: ${Bun.hash(internalJobs)}\nexec /usr/local/bin/bento-minicrond-start 0 0 /root root /var/lib/bento/minicron /etc/bento/minicrond/root-config.toml\n`,
+        content: `#!/bin/sh\n# bento-managed: true\nexec /usr/local/bin/bento-minicrond-start 0 0 /root root /var/lib/bento/minicron /etc/bento/minicrond/root-config.toml\n`,
         mode: 0o755,
         managed: true,
       });

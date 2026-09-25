@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { runtime as bunRuntime, assertEquals } from "../runtime.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
-import { provisionApp, materializeAppHome } from "../../src/services/app.ts";
+import { provisionApp, materializeAppHome, deleteApp } from "../../src/services/app.ts";
 import { composeArgs } from "../../src/services/compose.ts";
 import { RenderService } from "../../src/services/render.ts";
 import { loadStackComposeEnvironment } from "../../src/services/stack_env.ts";
@@ -184,6 +184,20 @@ bunRuntime.test(
       assertEquals(rootJobs.stdout.includes("bento-internal-logrotate-alpha"), true);
       assertEquals(rootJobs.stdout.includes("bento-internal-logrotate-beta"), true);
       assertEquals(rootJobs.stdout.includes("fixture-alpha"), false);
+      async function rootPid() {
+        return await compose([
+          "exec",
+          "-T",
+          "php85-runner",
+          "/command/s6-svstat",
+          "-o",
+          "pid",
+          "/run/bento-s6/services/minicrond-root",
+        ]);
+      }
+      const beforeAdd = await rootPid();
+      assertEquals(beforeAdd.code, 0, beforeAdd.stderr);
+      assertEquals(Number(beforeAdd.stdout.trim()) > 0, true);
 
       // Add an app while the runner is already up: apply must reconcile its new
       // s6 service, not wait for a whole-stack restart before the UI is usable.
@@ -225,6 +239,42 @@ bunRuntime.test(
         alphaAfterAdd = await cli("alpha", ["status"]);
       }
       assertEquals(alphaAfterAdd.code, 0, alphaAfterAdd.stderr);
+      assertEquals(
+        (await rootPid()).stdout,
+        beforeAdd.stdout,
+        (await compose(["logs", "--tail", "100", "php85-runner"])).stdout,
+      );
+      const rootAfterAdd = await compose([
+        "exec",
+        "-T",
+        "-e",
+        "MINICRON_DATA=/var/lib/bento/minicron",
+        "php85-runner",
+        "minicrond",
+        "list",
+      ]);
+      assertEquals(rootAfterAdd.code, 0, rootAfterAdd.stderr);
+      assertEquals(rootAfterAdd.stdout.includes("bento-internal-logrotate-gamma"), true);
+
+      const deleted = deleteApp(state, "gamma", "delete gamma");
+      state = deleted.state;
+      await store.save(state);
+      await new RenderService(platform).apply(state, {
+        reloadPlan: deleted.reloadPlan,
+        skipValidate: true,
+      });
+      assertEquals((await rootPid()).stdout, beforeAdd.stdout);
+      const rootAfterDelete = await compose([
+        "exec",
+        "-T",
+        "-e",
+        "MINICRON_DATA=/var/lib/bento/minicron",
+        "php85-runner",
+        "minicrond",
+        "list",
+      ]);
+      assertEquals(rootAfterDelete.code, 0, rootAfterDelete.stderr);
+      assertEquals(rootAfterDelete.stdout.includes("bento-internal-logrotate-gamma"), false);
     } finally {
       if (ownsProject) {
         await platform.process

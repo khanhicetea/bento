@@ -12,6 +12,10 @@ INITIAL=false
 
 mkdir -p "$SOURCE" "$DEFINITIONS" "$SCAN"
 changed=""
+# An existing root daemon can sync config-owned logrotate jobs in place.
+# A newly discovered service reads its config on startup instead.
+root_was_present=false
+[ -L "$SCAN/minicrond-root" ] && root_was_present=true
 
 # Copy definitions without touching s6's live supervise directory.
 for src in "$SOURCE"/*; do
@@ -30,7 +34,8 @@ for src in "$SOURCE"/*; do
   for old in "$dst"/*; do
     [ -e "$old" ] || continue
     base=${old##*/}
-    [ "$base" = "supervise" ] && continue
+    # s6 creates these runtime directories inside each service definition.
+    case "$base" in supervise|event) continue ;; esac
     if [ ! -e "$src/$base" ]; then
       rm -rf "$old"
       is_changed=true
@@ -76,9 +81,19 @@ if [ "$INITIAL" = false ]; then
   /command/s6-svscanctl -a "$SCAN"
   # Existing services consume a changed run definition only after a scoped
   # restart. New services are started automatically by s6-svscan.
+  root_restarted=false
   for name in $changed; do
     /command/s6-svc -r "$SCAN/$name"
+    [ "$name" = minicrond-root ] && root_restarted=true
   done
+  if [ "$root_was_present" = true ] && [ "$root_restarted" = false ] && [ -L "$SCAN/minicrond-root" ]; then
+    # The root run definition stays stable as apps come and go. Reloading
+    # syncs additions, updates and removals without interrupting the daemon.
+    # Fail the apply if the live daemon cannot accept the new config.
+    MINICRON_DATA=/var/lib/bento/minicron \
+      MINICRON_CONFIG=/etc/bento/minicrond/root-config.toml \
+      /usr/local/bin/minicrond reload
+  fi
 fi
 
 for name in $removed; do

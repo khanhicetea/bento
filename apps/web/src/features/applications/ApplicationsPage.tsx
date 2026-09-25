@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { Application } from "@bento/shared";
 import {
   ArrowUpRight,
@@ -20,7 +21,7 @@ import {
 } from "lucide-react";
 import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
-import { SchedulerInfoDialog } from "./SchedulerInfoDialog.tsx";
+import { orpc } from "../../api/client.ts";
 import { ApplicationTerminalDialog } from "./ApplicationTerminalDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
@@ -53,7 +54,7 @@ export function ApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [editorTarget, setEditorTarget] = useState<Application | "create" | null>(null);
   const [databaseTarget, setDatabaseTarget] = useState<Application | null>(null);
-  const [jobsTarget, setJobsTarget] = useState<Application | null>(null);
+  const schedulerAccess = useQuery(orpc.jobs.schedulerAccess.queryOptions({ input: {} }));
   const [terminalTarget, setTerminalTarget] = useState<Application | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Application | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
@@ -107,7 +108,6 @@ export function ApplicationsPage() {
       {error &&
         editorTarget === null &&
         databaseTarget === null &&
-        jobsTarget === null &&
         terminalTarget === null &&
         removeTarget === null && (
           <Alert className="mt-6" variant="destructive">
@@ -247,10 +247,10 @@ export function ApplicationsPage() {
                   resetErrors();
                   setDatabaseTarget(app);
                 }}
-                onJobs={() => {
-                  resetErrors();
-                  setJobsTarget(app);
-                }}
+                schedulerPath={
+                  schedulerAccess.data?.schedulers.find((item) => item.app === app.slug)?.path
+                }
+                schedulerUnavailableReason={schedulerAccess.data?.reason}
                 onTerminal={() => setTerminalTarget(app)}
                 onRemove={() => {
                   resetErrors();
@@ -303,13 +303,6 @@ export function ApplicationsPage() {
           adding={addingDatabase}
           onClose={() => setDatabaseTarget(null)}
           onAdd={addDatabase}
-        />
-      )}
-      {jobsTarget && (
-        <SchedulerInfoDialog
-          key={jobsTarget.slug}
-          application={jobsTarget}
-          onClose={() => setJobsTarget(null)}
         />
       )}
       {terminalTarget && (
@@ -367,7 +360,8 @@ function ApplicationCard({
   onStop,
   onEdit,
   onDatabases,
-  onJobs,
+  schedulerPath,
+  schedulerUnavailableReason,
   onTerminal,
   onRemove,
 }: {
@@ -378,7 +372,8 @@ function ApplicationCard({
   onStop: () => void;
   onEdit: () => void;
   onDatabases: () => void;
-  onJobs: () => void;
+  schedulerPath?: string;
+  schedulerUnavailableReason?: string;
   onTerminal: () => void;
   onRemove: () => void;
 }) {
@@ -530,21 +525,30 @@ function ApplicationCard({
               <Database className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">Databases</span>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full min-w-0 px-2"
-              disabled={busy || app.kind === "process"}
-              onClick={onJobs}
-              title={
-                app.kind === "process"
-                  ? "Process app jobs are not supported yet"
-                  : "Manage user jobs and workers with minicrond"
-              }
-            >
-              <ScrollText className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">Scheduler</span>
-            </Button>
+            {schedulerPath && !busy ? (
+              <Button asChild variant="outline" size="sm" className="w-full min-w-0 px-2">
+                <a href={schedulerPath} target="_blank" rel="noreferrer">
+                  <ScrollText className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">Scheduler</span>
+                  <span className="sr-only">(opens in a new tab)</span>
+                </a>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full min-w-0 px-2"
+                disabled
+                title={
+                  app.kind === "process"
+                    ? "Process app jobs are not supported yet"
+                    : (schedulerUnavailableReason ?? "Scheduler unavailable for this application")
+                }
+              >
+                <ScrollText className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">Scheduler</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
