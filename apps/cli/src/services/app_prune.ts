@@ -39,7 +39,7 @@ export async function writeAppPruneManifest(platform: Platform, app: AppState): 
     slug: app.slug,
     bindings: app.databases.map(
       (database): AppPruneDatabase =>
-        database.engine === "sqlite" || database.engine === "litestream"
+        database.engine === "sqlite"
           ? {
               engine: database.engine,
               databaseService: "local-file",
@@ -92,7 +92,6 @@ export async function planAppPrune(platform: Platform, state: DesiredState, slug
   for (const binding of manifest.bindings) {
     const managed =
       binding.engine === "sqlite" ||
-      binding.engine === "litestream" ||
       state.databaseServices.some(
         (service) => service.engine === binding.engine && service.service === binding.databaseService,
       );
@@ -116,14 +115,14 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
     }
     const binding = rawBinding as Record<string, unknown>;
     const engine = binding.engine;
-    if (engine !== "mysql" && engine !== "postgres" && engine !== "sqlite" && engine !== "litestream") {
+    if (engine !== "mysql" && engine !== "postgres" && engine !== "sqlite") {
       throw validationError("invalid app prune database engine");
     }
     const databaseService = typeof binding.databaseService === "string" ? binding.databaseService : "";
     const databaseUser = typeof binding.databaseUser === "string" ? binding.databaseUser : "";
     const databases = Array.isArray(binding.databases) ? binding.databases.filter(isString) : [];
     const validNames =
-      engine === "sqlite" || engine === "litestream"
+      engine === "sqlite"
         ? databaseService === "local-file" &&
           databases.length === 1 &&
           databases.every((name) => name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1)))
@@ -166,7 +165,7 @@ export async function executeAppPrune(
         await platform.fs.remove(sqliteDir, { recursive: true });
         cleaned.push(`SQLite directory ${sqliteDir}`);
       }
-      if (binding.engine !== "sqlite" && binding.engine !== "litestream") {
+      if (binding.engine !== "sqlite") {
         for (const database of binding.databases) cleaned.push(`database ${database}`);
         cleaned.push(`${binding.engine === "mysql" ? "MySQL account" : "PostgreSQL role"} ${binding.databaseUser}`);
       }

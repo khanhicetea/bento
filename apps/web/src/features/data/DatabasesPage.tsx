@@ -30,9 +30,7 @@ export function DatabasesPage() {
   }
   if (!data) return null;
 
-  const fileBindings = data.bindings.filter(
-    (binding) => binding.engine === "sqlite" || binding.engine === "litestream",
-  );
+  const fileBindings = data.bindings.filter((binding) => binding.engine === "sqlite");
   const databaseCount = data.bindings.reduce((total, binding) => total + binding.resources.length, 0);
   const fileDatabaseCount = fileBindings.reduce((total, binding) => total + binding.resources.length, 0);
 
@@ -106,8 +104,8 @@ export function DatabasesPage() {
 
           <SectionHeading
             eyebrow="Application-local storage"
-            title="SQLite & Litestream"
-            description="Application-local files and their continuous replication status."
+            title="SQLite"
+            description="Application-local database files."
             count={fileDatabaseCount}
             itemLabel="database"
             icon={<HardDrive className="size-4" />}
@@ -137,27 +135,13 @@ export function DatabasesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{binding.engine === "litestream" ? "Litestream" : "SQLite"}</Badge>
+                            <Badge variant="outline">SQLite</Badge>
                           </TableCell>
                           <TableCell>
                             <code className="text-xs">{resource}</code>
                           </TableCell>
                           <TableCell>
-                            {binding.engine === "litestream" ? (
-                              binding.backupVerifiedAt ? (
-                                <span className="text-sm text-emerald-700 dark:text-emerald-300">
-                                  Verified {formatDate(binding.backupVerifiedAt)}
-                                </span>
-                              ) : (
-                                <span className="text-sm text-amber-700 dark:text-amber-300">
-                                  Replication not verified
-                                </span>
-                              )
-                            ) : (
-                              <span className="text-sm text-muted-foreground">
-                                Logical backup available from the CLI
-                              </span>
-                            )}
+                            <span className="text-sm text-muted-foreground">Logical backup available from the CLI</span>
                           </TableCell>
                         </TableRow>
                       )),
@@ -167,33 +151,10 @@ export function DatabasesPage() {
               </div>
             ) : (
               <div className="p-6">
-                <EmptyPanel>No SQLite or Litestream databases.</EmptyPanel>
+                <EmptyPanel>No SQLite databases.</EmptyPanel>
               </div>
             )}
           </article>
-
-          {data.sqliteBackup && (
-            <article className="mt-5 grid grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)] gap-8 rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-sm max-[900px]:grid-cols-1">
-              <div>
-                <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                  <Archive className="size-5" aria-hidden="true" />
-                </div>
-                <h3 className="m-0 text-base font-semibold">Litestream policy</h3>
-                <p className="m-0 mt-2 text-sm text-muted-foreground">
-                  Continuous replication settings shared by Litestream databases.
-                </p>
-              </div>
-              <div className="grid rounded-xl border border-border bg-muted/30 px-4">
-                <Detail label="Status" value={data.sqliteBackup.enabled ? "Enabled" : "Disabled"} />
-                <Detail label="Destination" value={data.sqliteBackup.destination} />
-                <Detail label="Sync interval" value={data.sqliteBackup.syncInterval} />
-                <Detail
-                  label="Snapshots"
-                  value={`${data.sqliteBackup.snapshotInterval} · retain ${data.sqliteBackup.snapshotRetention}`}
-                />
-              </div>
-            </article>
-          )}
         </>
       )}
     </section>
@@ -260,19 +221,6 @@ function Summary({
       </span>
     </div>
   );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-border py-2.5 text-[0.84rem] last:border-b-0">
-      <span className="text-muted-foreground">{label}</span>
-      <strong className="[overflow-wrap:anywhere] text-right">{value}</strong>
-    </div>
-  );
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
 }
 
 function messageOf(error: unknown) {

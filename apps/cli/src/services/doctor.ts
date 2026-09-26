@@ -92,15 +92,11 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
   if (dockerInfo.code !== 0) {
     add("docker-info", "runtime", "fail", `cannot inspect Docker daemon: ${failureDetail(dockerInfo)}`);
   } else {
-    const securityRestricted = /rootless|userns/i.test(dockerInfo.stdout);
-    const incompatible = !!state.sqliteBackup?.enabled && securityRestricted;
     add(
       "docker-info",
       "runtime",
-      incompatible ? "fail" : "pass",
-      incompatible
-        ? "Litestream requires rootful Docker without user-namespace remapping"
-        : `Docker daemon accessible (${dockerInfo.stdout.trim() || "details unavailable"})`,
+      "pass",
+      `Docker daemon accessible (${dockerInfo.stdout.trim() || "details unavailable"})`,
     );
   }
 
@@ -462,10 +458,10 @@ async function addSqliteChecks(platform: Platform, state: DesiredState, add: Add
   const seen = new Set<string>();
   for (const app of Object.values(state.apps)) {
     for (const database of app.databases) {
-      if (database.engine !== "sqlite" && database.engine !== "litestream") continue;
+      if (database.engine !== "sqlite") continue;
       if (seen.has(database.file.id)) continue;
       seen.add(database.file.id);
-      const hostPath = sqliteHostPath(platform, database.file.id, String(app.slug), database.engine);
+      const hostPath = sqliteHostPath(platform, database.file.id, String(app.slug));
       const id = `sqlite:${app.slug}:${database.file.id}`;
       if (!(await platform.fs.exists(hostPath))) {
         add(id, "storage", "fail", `${database.engine} database file missing: ${hostPath}`);
@@ -495,7 +491,7 @@ async function addSqliteChecks(platform: Platform, state: DesiredState, add: Add
           isPhpApp(app) ? `${app.phpService}-runner` : app.runtime.service,
           "sqlite3",
           "-readonly",
-          sqliteContainerPath(database.file.id, String(app.slug), database.engine),
+          sqliteContainerPath(database.file.id, String(app.slug)),
           "PRAGMA quick_check;",
         ]);
         result = await run(platform, args, 10_000);

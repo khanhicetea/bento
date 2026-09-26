@@ -19,7 +19,6 @@ Use this table before you edit, delete, copy, or back up a stack path. Every pat
 | `backups/<service>/` | MySQL/PostgreSQL logical dumps | Durable and sensitive; scheduled rclone uploads preserve paths below this directory |
 | `rclone/rclone.conf` | Operator rclone remote credentials/configuration | Sensitive; mode `0600`, mounted only into the ephemeral rclone sidecar |
 | `sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite` | Private SQLite database and WAL/SHM sidecars | Durable and sensitive |
-| `litestream-meta/` | Directory-watcher transaction metadata | Durable; required to continue replication efficiently |
 | `logs/` | Nginx logs and reports | Durable operational data; potentially personal/sensitive |
 | `runtime/` | FPM sockets and volatile runner locks | Ephemeral |
 | `locks/` | Host render serialization | Ephemeral/recovery coordination |
@@ -30,7 +29,7 @@ MySQL, PostgreSQL, and Redis contents live in Compose named volumes outside the 
 
 ## Generated subtrees
 
-`generated/compose/`, `nginx/`, `php/`, `runner/`, `mysql/`, `postgres/`, `litestream/`, and `secrets/` are derived from desired state, the stack `.env`, and templates. Render uses same-filesystem staging and a journal. Edits are overwritten and can break recovery assumptions. Generated secrets remain sensitive and use mode `0600`.
+`generated/compose/`, `nginx/`, `php/`, `runner/`, `mysql/`, `postgres/` and `secrets/` are derived from desired state, the stack `.env`, and templates. Render uses same-filesystem staging and a journal. Edits are overwritten and can break recovery assumptions. Generated secrets remain sensitive and use mode `0600`.
 
 ## App home in containers
 
@@ -38,7 +37,7 @@ Host `homes/demo/` maps to `/home/demo`. Nginx sees homes read-only; PHP FPM, ru
 
 ## Backup boundary
 
-Protect `.env`, `state.db`, `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, custom input, and verified logical dumps off-host. For SQLite, use [Litestream continuous backup](/guides/data/sqlite/); do not copy a live database and its WAL/SHM files as an assumed-consistent backup. Use [stack export](/guides/stacks/export-import/) when you need compatible raw MySQL, PostgreSQL, and Redis volumes too.
+Protect `.env`, `state.db`, `homes/`, `sqlite/`, `certs/`, custom input, and verified logical dumps off-host. For SQLite, use [online logical backup](/guides/data/sqlite/); do not copy a live database and its WAL/SHM files as an assumed-consistent backup. Use [stack export](/guides/stacks/export-import/) when you need compatible raw MySQL, PostgreSQL, and Redis volumes too.
 
 ## Related pages
 

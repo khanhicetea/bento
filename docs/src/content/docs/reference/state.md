@@ -11,7 +11,7 @@ description: Learn what state.db stores, how Bento validates and migrates it, an
 
 Normalized relational tables record stack defaults, managed PHP and database services, apps, app database bindings, logical databases, proxies, authoritative domains, deploy settings, TLS choices, Redis identities, template history, and ordered command arguments.
 
-Each app can have MySQL, PostgreSQL, SQLite, or Litestream bindings. Domain rows point to an app or proxy. App-owned jobs and workers live in each app's minicrond registry, not in state.db. Checks, unique indexes, and foreign keys enforce local relationships.
+Each app can have MySQL, PostgreSQL, or SQLite bindings. Domain rows point to an app or proxy. App-owned jobs and workers live in each app's minicrond registry, not in state.db. Checks, unique indexes, and foreign keys enforce local relationships.
 
 Bento still treats database contents as untrusted. On every load it reconstructs the complete desired-state model and applies the strict domain validator. This catches cross-record rules such as managed-service compatibility, exactly one primary domain per owner, unique binding identities, and valid app links. A save validates first and replaces desired state in one SQLite transaction.
 

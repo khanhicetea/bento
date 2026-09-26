@@ -165,7 +165,6 @@ export function ApplicationDatabasesDialog({
                       </NativeSelectOption>
                     ))}
                     <NativeSelectOption value="sqlite">SQLite file</NativeSelectOption>
-                    <NativeSelectOption value="litestream">SQLite + Litestream</NativeSelectOption>
                   </NativeSelect>
                 </label>
                 {relational ? (
@@ -402,7 +401,6 @@ function isManagedEngine(engine: DatabaseBinding["engine"]): engine is "mysql" |
 function databaseLabel(engine: string): string {
   if (engine === "mysql") return "MySQL";
   if (engine === "postgres") return "PostgreSQL";
-  if (engine === "litestream") return "SQLite + Litestream";
   return "SQLite";
 }
 

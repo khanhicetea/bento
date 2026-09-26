@@ -106,32 +106,29 @@ export function createApplicationsRouter(ctx: CliContext) {
 }
 
 async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Promise<Application> {
-  const result = await ctx.applications.provision(
-    {
-      slug: input.slug,
-      domain: input.domain,
-      aliases: input.aliases,
-      kind: input.kind,
-      documentRoot: input.documentRoot,
-      entrypointMode: input.entrypointMode,
-      phpVersion: input.phpVersion,
-      fpmProfile: input.fpmProfile,
-      processLanguage: input.processLanguage,
-      processVersion: input.processVersion,
-      processCommand: input.processCommand,
-      processWorkdir: input.processWorkdir,
-      processPort: input.processPort,
-      processHealthPath: input.processHealthPath,
-      databaseEngine: input.databaseEngine,
-      mysqlVersion: input.databaseEngine === "mysql" ? input.databaseService : undefined,
-      postgresVersion: input.databaseEngine === "postgres" ? input.databaseService : undefined,
-      createDatabase: input.createDatabase,
-      databaseName: input.databaseName,
-      tls: tlsMode(input),
-      accessLog: input.accessLog,
-    },
-    { autoEnableLitestream: true },
-  );
+  const result = await ctx.applications.provision({
+    slug: input.slug,
+    domain: input.domain,
+    aliases: input.aliases,
+    kind: input.kind,
+    documentRoot: input.documentRoot,
+    entrypointMode: input.entrypointMode,
+    phpVersion: input.phpVersion,
+    fpmProfile: input.fpmProfile,
+    processLanguage: input.processLanguage,
+    processVersion: input.processVersion,
+    processCommand: input.processCommand,
+    processWorkdir: input.processWorkdir,
+    processPort: input.processPort,
+    processHealthPath: input.processHealthPath,
+    databaseEngine: input.databaseEngine,
+    mysqlVersion: input.databaseEngine === "mysql" ? input.databaseService : undefined,
+    postgresVersion: input.databaseEngine === "postgres" ? input.databaseService : undefined,
+    createDatabase: input.createDatabase,
+    databaseName: input.databaseName,
+    tls: tlsMode(input),
+    accessLog: input.accessLog,
+  });
   return toApplication(result.app);
 }
 
@@ -241,7 +238,7 @@ export function toApplication(app: AppState): Application {
         database.engine === "mysql" || database.engine === "postgres"
           ? database.databases.map((item) => item.name)
           : [],
-      file: database.engine === "sqlite" || database.engine === "litestream" ? database.file.path : undefined,
+      file: database.engine === "sqlite" ? database.file.path : undefined,
     })),
   };
 }

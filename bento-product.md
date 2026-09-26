@@ -50,7 +50,7 @@ Validation failure restores the previous generated files. Reload failure keeps v
 - App lifecycle, domains, aliases, reverse proxies, TLS, and optional HTTP/3.
 - Multiple runtime and database versions on one host.
 - PHP schedules, workers, and signed webhook deployment queues.
-- Logical backups, restore, optional rclone uploads, and Litestream replication.
+- Logical backups, restore, and optional rclone uploads.
 - Stack export/import, health checks, logs, diagnostics, and permission repair.
 - Optional Cloudflare Tunnel ingress and browser management.
 

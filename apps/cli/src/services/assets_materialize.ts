@@ -110,8 +110,6 @@ export async function materializeDockerAssets(platform: Platform, phpVersions: s
   await platform.fs.chmod(join(platform.paths.paths.root, "sqlite"), 0o711);
   await platform.fs.mkdirp(join(platform.paths.paths.root, "runtime", "php-fpm"));
   await platform.fs.mkdirp(join(platform.paths.paths.root, "runtime", "apps"));
-  await platform.fs.mkdirp(join(platform.paths.paths.root, "runtime", "litestream"), 0o700);
-  await platform.fs.mkdirp(join(platform.paths.paths.root, "litestream-meta"), 0o700);
   await platform.fs.mkdirp(join(platform.paths.paths.root, "logs", "nginx"));
   await platform.fs.mkdirp(platform.paths.paths.certsDir);
   for (const v of phpVersions) {

@@ -21,7 +21,6 @@ export { assertSafeComposeArgs } from "#/platform/docker.ts";
 
 const DEFAULT_COMPOSE_ENVIRONMENT: StackComposeEnvironment = {
   projectName: "bento",
-  litestreamEnabled: false,
   cloudflareTunnelEnabled: false,
   nginx: { hostNetwork: true, http3: false },
 };
@@ -88,15 +87,6 @@ export function assembleComposeDocuments(
     });
   }
 
-  if (state.sqliteBackup?.enabled) {
-    files.push({
-      relPath: "compose/docker-compose.litestream.yml",
-      content: withManagedMarker(renderLitestreamFragment(environment)),
-      mode: 0o644,
-      managed: true,
-    });
-  }
-
   // Aggregated project file listing for inspectability
   const list = buildComposeFileList(platform, state);
   files.push({
@@ -134,9 +124,6 @@ export function buildComposeFileList(platform: Platform, state: DesiredState): C
   }
   for (const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))) {
     files.push(`${gen}/docker-compose.${database.service}.yml`);
-  }
-  if (state.sqliteBackup?.enabled) {
-    files.push(`${gen}/docker-compose.litestream.yml`);
   }
   // Local overlays in deterministic lexicographic order (operator-owned)
   // Actual disk scan happens at invoke time; list known pattern here.
@@ -318,36 +305,6 @@ function renderBaseCompose(environment: StackComposeEnvironment): string {
   return stringifyYaml(doc);
 }
 
-function renderLitestreamFragment(environment: StackComposeEnvironment): string {
-  const disabled = environment.litestreamEnabled === false;
-  return stringifyYaml({
-    services: {
-      litestream: {
-        image: "litestream/litestream:0.5.15",
-        restart: "unless-stopped",
-        logging: composeLogging(),
-        command: ["replicate", "-config", "/etc/litestream/litestream.yml"],
-        ...(disabled ? { profiles: ["litestream-disabled"] } : {}),
-        user: "0:0",
-        read_only: true,
-        cap_drop: ["ALL"],
-        cap_add: ["DAC_OVERRIDE", "CHOWN", "FOWNER"],
-        security_opt: ["no-new-privileges:true"],
-        stop_grace_period: "45s",
-        networks: ["backup-egress"],
-        env_file: ["./generated/secrets/litestream/stack-s3.env"],
-        environment: { COMPOSE_PROJECT_NAME: environment.projectName },
-        volumes: [
-          "./sqlite:/sqlite",
-          "./litestream-meta:/var/lib/litestream",
-          "./generated/litestream:/etc/litestream:ro",
-          "./runtime/litestream:/run/litestream",
-        ],
-      },
-    },
-  });
-}
-
 function renderPhpFragment(service: string, image: string, version: string): string {
   const logging = composeLogging();
   const build = {
@@ -479,7 +436,7 @@ function renderProcessAppFragment(app: ProcessAppState): string {
   const dataVolumes = [
     `./homes/${app.slug}:${app.home}`,
     ...app.databases
-      .filter((binding) => binding.engine === "sqlite" || binding.engine === "litestream")
+      .filter((binding) => binding.engine === "sqlite")
       .map((binding) => `./sqlite/${binding.file.id}:/sqlite/${binding.file.id}`),
     "./backups/sqlite:/var/backups/bento/sqlite",
     "./docker/process/entrypoint.sh:/usr/local/bin/bento-process-entrypoint:ro",

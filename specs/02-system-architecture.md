@@ -41,7 +41,7 @@ The product is organized into these operator-facing areas:
 | Applications  | Stable identity, home, domain links, runtime, data bindings, lifecycle             |
 | Traffic       | Nginx, app vhosts, reverse proxies, TLS, HTTP/3, access logs                       |
 | Runtime       | Versioned PHP roles plus dedicated Node/Bun/Python process services and app CLI    |
-| Data          | MySQL, PostgreSQL, SQLite, Litestream, Redis, credentials, grants                  |
+| Data          | MySQL, PostgreSQL, SQLite, Redis, credentials, grants                  |
 | Work          | App-owned minicrond jobs/workers, signed deploy queue and operator hook                       |
 | Recovery      | Logical backup/restore, scheduled rclone upload, stack transfer                    |
 | Operations    | Status, doctor, support bundle, permissions, maintenance, reports                  |
@@ -71,7 +71,7 @@ Branded TypeScript values reduce accidental mixing after runtime validation; the
 
 - app/proxy/PHP/database lifecycle;
 - generation, staged render/apply, and asset materialization;
-- database grants, backups, restore, SQLite/Litestream, Redis ACLs;
+- database grants, backups, restore, SQLite, Redis ACLs;
 - schedules, workers, deploy queue, permissions, logs, TLS;
 - stack environment, safe Compose assembly, transfer, diagnostics, and maintenance.
 
@@ -110,7 +110,6 @@ Mutable stack data MUST never be inferred from or stored beside the executable.
 | MySQL       |        One per managed version | Persistent              | Private relational service + named volume          |
 | PostgreSQL  |          One per managed major | Persistent              | Private relational service + named volume          |
 | Redis       |                  One per stack | Persistent              | Shared/ACL cache + named volume                    |
-| Litestream  |          Zero or one per stack | Persistent when enabled | Watches explicit replicated SQLite files           |
 | rclone      | Per invocation/artifact upload | Ephemeral profile       | Backup-only egress; config + read-only backups     |
 | cloudflared |          Zero or one per stack | Persistent when enabled | Outbound tunnel sharing Nginx's network namespace  |
 
@@ -149,7 +148,6 @@ The docs site is a separate Bun workspace using Astro 7/Starlight. It is not a c
 | Scheduling         | Minicrond 0.2.2, one socket-only daemon per enabled PHP app plus root maintenance |
 | Relational data    | official MySQL/PostgreSQL images per managed version                             |
 | Cache              | Redis 7 Alpine                                                                   |
-| SQLite replication | Litestream, S3-compatible object storage                                         |
 | Backup egress      | rclone 1.68.2 isolated Compose profile                                           |
 | Logs               | Docker `local`, logrotate, optional GoAccess reports                             |
 
@@ -189,7 +187,7 @@ A small entrypoint-owned adapter forwards the app's Unix ingress socket to its f
 
 - MySQL uses app-namespaced users/databases and explicit grants.
 - PostgreSQL uses unprivileged app roles, app-owned databases, and revoked default public access.
-- Plain/Litestream SQLite files live in private app-ID directories.
+- SQLite files live in private app-ID directories.
 - Redis shared mode relies on app prefix discipline; ACL mode additionally restricts user key/channel patterns.
 
 All backend services share a private network, so database credentials/grants remain necessary even without published ports.
@@ -198,7 +196,7 @@ All backend services share a private network, so database credentials/grants rem
 
 ### 7.1 Base topology
 
-PHP FPM, runner, CLI, databases, Redis, and Litestream use stack-private networking. MySQL, PostgreSQL, and Redis publish no base host ports.
+PHP FPM, runner, CLI, databases, and Redis use stack-private networking. MySQL, PostgreSQL, and Redis publish no base host ports.
 
 Nginx has two modes:
 
@@ -249,12 +247,11 @@ DesiredState schema v1
     phpVersion, database service, FPM profile, Redis mode
   phpVersions[]
   databaseServices[]              MySQL | PostgreSQL
-  sqliteBackup?                   stack-wide Litestream policy
   apps{slug -> AppState}
     identity/runtimeKind/TLS/log/template/deploy/Redis
     php runtime                   version/profile/docroot/pool
       or process runtime          language/version/image/service/argv/workdir/port/health
-    databases[]                   MySQL | PostgreSQL | SQLite | Litestream
+    databases[]                   MySQL | PostgreSQL | SQLite
   proxies{name -> ProxySite}
   domains{domain -> app|proxy}    authoritative ownership
   timestamps
@@ -271,7 +268,7 @@ Every load reconstructs the complete in-memory model and applies the strict doma
 | Desired/source    | `.env`, `state.db`, `secrets/cloudflare-tunnel-token`                             | Sensitive; private modes; back up            |
 | Operator custom   | `custom/`, `overlays/`                                                            | Durable/trusted input; preserve/review       |
 | Generated         | `generated/`, `docker/`, `helpers/`                                               | Rebuildable; never edit                      |
-| Durable bind data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, `rclone/`, `logs/` | Sensitive; protect and back up               |
+| Durable bind data | `homes/`, `sqlite/`, `certs/`, `backups/`, `rclone/`, `logs/` | Sensitive; protect and back up               |
 | Durable volumes   | versioned MySQL/PostgreSQL volumes, Redis volume                                  | Outside stack root; explicit backup/transfer |
 | Ephemeral         | `runtime/`, `locks/`                                                              | Recreated/recovered                          |
 | Rebuildable cache | `.asset-cache/`                                                                   | Digest-addressed immutable assets            |
@@ -362,8 +359,6 @@ The initial managed process runtime deliberately does not expose this PHP-backed
 4. Write a private partial, require successful non-empty output, atomically rename final.
 5. After complete batch success, apply per-database retention.
 6. For scheduled runs, persist bounded status; if configured, invoke ephemeral rclone `copyto` for each newly created artifact while preserving its path below `backups/`.
-
-Litestream bindings are protected by the watcher/verify/export workflow rather than this local artifact loop.
 
 ### 9.8 Stack transfer
 

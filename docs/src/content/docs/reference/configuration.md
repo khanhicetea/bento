@@ -19,12 +19,6 @@ Bento creates the stack root's `.env` with mode `0600`. Change only variables li
 | `NGINX_HOST_NETWORK` | `1` | `1` host mode; `0` bridge mode |
 | `NGINX_HTTP_PORT` | Empty | Optional bridge host publication; ignored in host mode |
 | `NGINX_HTTPS_PORT` | Empty | Optional bridge HTTPS TCP and, with HTTP/3, UDP publication |
-| `BENTO_LITESTREAM_ENABLED` | `false` | Permit the optional shared Litestream service |
-| `S3_BUCKET_NAME` | Empty | Required bucket for SQLite continuous backup |
-| `S3_REGION` | Empty | Required S3 region for SQLite continuous backup |
-| `S3_ENDPOINT` | Empty | Optional custom S3-compatible endpoint |
-| `S3_ACCESS_KEY_ID` | Empty | S3 credential; sensitive |
-| `S3_SECRET_ACCESS_KEY` | Empty | S3 credential; sensitive |
 
 Use the CLI for ingress values:
 
@@ -51,4 +45,4 @@ bento doctor
 bento compose -- config
 ```
 
-See [networking](/concepts/networking/) and [TLS modes](/guides/apps/domains-tls/) before changing public ingress. See [SQLite continuous backup](/guides/data/sqlite/) before configuring the Litestream and S3 values.
+See [networking](/concepts/networking/) and [TLS modes](/guides/apps/domains-tls/) before changing public ingress.

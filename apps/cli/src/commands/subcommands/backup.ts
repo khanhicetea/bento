@@ -143,9 +143,6 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     compress: argv.gzip === true ? "gzip" : argv.none === true ? "none" : "zstd",
   });
   logBackupArtifacts(ctx, result.artifacts);
-  for (const slug of result.syncedLitestreamApps) {
-    ctx.log.info(`remote sync confirmed for Litestream app ${slug}`);
-  }
   return 0;
 }
 

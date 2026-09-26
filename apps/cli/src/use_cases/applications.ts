@@ -24,7 +24,6 @@ import {
   stopProcessApp,
 } from "#/services/process_app.ts";
 import { RenderService } from "#/services/render.ts";
-import { enableSqliteBackup, sqliteCompose } from "#/services/sqlite.ts";
 import { StateStore } from "#/services/state_store.ts";
 import { loadRedisPassword } from "#/services/stack_env.ts";
 
@@ -37,8 +36,6 @@ export type ApplicationUseCaseDependencies = {
 export type ProvisionApplicationOptions = {
   apply?: boolean;
   skipValidate?: boolean;
-  /** Preserve the web workflow that enables the stack watcher with a Litestream binding. */
-  autoEnableLitestream?: boolean;
 };
 
 export type ProvisionApplicationResult = ProvisionAppResult & {
@@ -76,33 +73,30 @@ export function createApplicationUseCases({ platform, store, render }: Applicati
     service?: string;
     databaseName?: string;
   }): Promise<ProvisionApplicationResult> {
-    return await provisionResolved(
-      (state) => {
-        const current = getAppOrThrow(state, input.slug);
-        return {
-          slug: current.slug,
-          domain: current.mainDomain,
-          aliases: current.aliases,
-          kind: current.kind,
-          ...(current.kind === "process"
-            ? {
-                processLanguage: current.runtime.language,
-                processVersion: current.runtime.version,
-                processCommand: current.runtime.command,
-                processWorkdir: current.runtime.workdir,
-                processPort: current.runtime.internalPort,
-                processHealthPath: current.runtime.healthPath,
-              }
-            : {}),
-          databaseEngine: input.engine,
-          mysqlVersion: input.engine === "mysql" ? input.service : undefined,
-          postgresVersion: input.engine === "postgres" ? input.service : undefined,
-          createDatabase: true,
-          databaseName: input.databaseName,
-        };
-      },
-      { autoEnableLitestream: true },
-    );
+    return await provisionResolved((state) => {
+      const current = getAppOrThrow(state, input.slug);
+      return {
+        slug: current.slug,
+        domain: current.mainDomain,
+        aliases: current.aliases,
+        kind: current.kind,
+        ...(current.kind === "process"
+          ? {
+              processLanguage: current.runtime.language,
+              processVersion: current.runtime.version,
+              processCommand: current.runtime.command,
+              processWorkdir: current.runtime.workdir,
+              processPort: current.runtime.internalPort,
+              processHealthPath: current.runtime.healthPath,
+            }
+          : {}),
+        databaseEngine: input.engine,
+        mysqlVersion: input.engine === "mysql" ? input.service : undefined,
+        postgresVersion: input.engine === "postgres" ? input.service : undefined,
+        createDatabase: true,
+        databaseName: input.databaseName,
+      };
+    });
   }
 
   async function provisionResolved(
@@ -133,13 +127,7 @@ export function createApplicationUseCases({ platform, store, render }: Applicati
         redisSharedPassword: await loadRedisPassword(platform),
       });
 
-      let nextState = provisioned.state;
-      let startLitestream = false;
-      if (options.autoEnableLitestream && selectedEngine === "litestream" && !nextState.sqliteBackup?.enabled) {
-        nextState = await enableSqliteBackup(platform, nextState, input.slug);
-        startLitestream = true;
-      }
-
+      const nextState = provisioned.state;
       await store.save(nextState);
       if (apply) {
         try {
@@ -152,20 +140,8 @@ export function createApplicationUseCases({ platform, store, render }: Applicati
           throw new ApplicationApplyError(cause);
         }
       }
-      return { provisioned, state: nextState, dataPlane, startLitestream };
+      return { provisioned, state: nextState, dataPlane };
     });
-
-    if (apply && result.startLitestream) {
-      const started = await sqliteCompose(platform, result.state, ["up", "-d", "--force-recreate", "litestream"]);
-      if (started.code !== 0) {
-        throw new ApplicationApplyError(
-          serviceError(
-            `Litestream failed to start: ${diagnostic(started)}`,
-            "Fix the Litestream configuration, then run `bento apply` and start the Litestream service.",
-          ),
-        );
-      }
-    }
     if (apply && !result.provisioned.created) {
       const recreated = await recreateRunningProcessApp(platform, result.state, result.provisioned.app);
       if (recreated && recreated.code !== 0) {

@@ -1,5 +1,5 @@
 import { relative, resolve } from "node:path";
-import { notFoundError, validationError } from "#/domain/errors.ts";
+import { notFoundError } from "#/domain/errors.ts";
 import type { Platform } from "#/platform/mod.ts";
 import {
   runDatabaseBackup,
@@ -8,12 +8,10 @@ import {
   type DatabaseBackupRequest,
   type DatabaseRestoreRequest,
 } from "#/services/database_backup.ts";
-import { syncSqliteBackup } from "#/services/sqlite.ts";
 import { StateStore } from "#/services/state_store.ts";
 
 export type BackupDatabasesResult = {
   artifacts: DatabaseBackupArtifact[];
-  syncedLitestreamApps: string[];
 };
 
 export function createDataUseCases(deps: { platform: Platform; store: StateStore }) {
@@ -21,10 +19,8 @@ export function createDataUseCases(deps: { platform: Platform; store: StateStore
 
   async function backup(request: DatabaseBackupRequest): Promise<BackupDatabasesResult> {
     const state = await store.load();
-    const litestreamApps = resolveLitestreamApps(state, request);
     const artifacts = await runDatabaseBackup(platform, state, request);
-    for (const slug of litestreamApps) await syncSqliteBackup(platform, state, slug);
-    return { artifacts, syncedLitestreamApps: litestreamApps };
+    return { artifacts };
   }
 
   async function restore(request: DatabaseRestoreRequest): Promise<void> {
@@ -73,32 +69,3 @@ export function createDataUseCases(deps: { platform: Platform; store: StateStore
 }
 
 export type DataUseCases = ReturnType<typeof createDataUseCases>;
-
-function resolveLitestreamApps(
-  state: Awaited<ReturnType<StateStore["load"]>>,
-  request: DatabaseBackupRequest,
-): string[] {
-  if (request.engine) return [];
-  if (request.scope !== "all" && !request.slug) {
-    throw validationError(`${request.scope} backup requires an application`);
-  }
-  const apps =
-    request.scope === "all"
-      ? Object.values(state.apps)
-      : [
-          state.apps[request.slug!] ??
-            (() => {
-              throw notFoundError(`app not found: ${request.slug}`);
-            })(),
-        ];
-  if (request.scope === "database") {
-    const selected = apps.some((app) =>
-      app.databases.some((database) => database.engine === "litestream" && database.file.id === request.database),
-    );
-    if (selected) throw validationError("Litestream has one explicit SQLite file; omit the database selector");
-    return [];
-  }
-  return apps
-    .filter((app) => app.databases.some((database) => database.engine === "litestream"))
-    .map((app) => String(app.slug));
-}

@@ -26,7 +26,7 @@ Export archives contain passwords, private keys, application files, and raw data
 :::
 
 :::caution
-Stack export includes the stack-root `sqlite/` directory mechanically, but it does not make a live SQLite file and its WAL/SHM files consistency-safe. Use SQLite's logical `.backup` or [Litestream continuous backup](/guides/data/sqlite/) and verify recovery separately.
+Stack export includes the stack-root `sqlite/` directory mechanically, but it does not make a live SQLite file and its WAL/SHM files consistency-safe. Use SQLite's [logical `.backup`](/guides/data/sqlite/) and verify recovery separately.
 :::
 
 ## Export
@@ -61,7 +61,7 @@ bento doctor
 bento stack ingress show
 ```
 
-Verify representative applications and imported MySQL/PostgreSQL/Redis data before retiring the source. Also verify every imported SQLite database from a logical backup or Litestream recovery point; raw inclusion in `stack.tar.gz` is not proof of consistency.
+Verify representative applications and imported MySQL/PostgreSQL/Redis data before retiring the source. Also verify every imported SQLite database from a logical backup; raw inclusion in `stack.tar.gz` is not proof of consistency.
 
 ## Troubleshooting
 

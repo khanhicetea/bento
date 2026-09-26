@@ -335,7 +335,6 @@ export function ApplicationEditor({ application, settings, error, saving, onClos
                         </NativeSelectOption>
                       ))}
                       <NativeSelectOption value="sqlite">SQLite</NativeSelectOption>
-                      <NativeSelectOption value="litestream">SQLite + Litestream</NativeSelectOption>
                     </NativeSelect>
                   </label>
                   {relationalDatabase && (

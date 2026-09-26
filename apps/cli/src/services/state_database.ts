@@ -35,13 +35,6 @@ type StackConfigRow = {
   default_database_service: string;
   default_fpm_profile: string;
   default_redis_mode: "shared" | "acl";
-  sqlite_backup_provider: "litestream" | null;
-  sqlite_backup_destination: string | null;
-  sqlite_backup_sync_interval: "1s" | "10s" | "60s" | null;
-  sqlite_backup_snapshot_interval: string | null;
-  sqlite_backup_snapshot_retention: string | null;
-  sqlite_backup_l0_retention: string | null;
-  sqlite_backup_enabled: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -119,7 +112,6 @@ type BindingRow = {
   file_id: string | null;
   file_path: string | null;
   file_created_at: string | null;
-  backup_verified_at: string | null;
   vacuum_day_of_week: number | null;
   vacuum_hour: number | null;
   vacuum_minute: number | null;
@@ -172,28 +164,11 @@ CREATE TABLE stack_config (
   default_database_service TEXT NOT NULL,
   default_fpm_profile TEXT NOT NULL,
   default_redis_mode TEXT NOT NULL CHECK (default_redis_mode IN ('shared', 'acl')),
-  sqlite_backup_provider TEXT CHECK (sqlite_backup_provider IS NULL OR sqlite_backup_provider = 'litestream'),
-  sqlite_backup_destination TEXT,
-  sqlite_backup_sync_interval TEXT CHECK (sqlite_backup_sync_interval IS NULL OR sqlite_backup_sync_interval IN ('1s', '10s', '60s')),
-  sqlite_backup_snapshot_interval TEXT,
-  sqlite_backup_snapshot_retention TEXT,
-  sqlite_backup_l0_retention TEXT,
-  sqlite_backup_enabled INTEGER CHECK (sqlite_backup_enabled IS NULL OR sqlite_backup_enabled IN (0, 1)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (default_php_version) REFERENCES managed_php_versions(version),
   FOREIGN KEY (default_database_service, default_database_engine, default_database_version)
-    REFERENCES managed_database_services(service, engine, version),
-  CHECK (
-    (sqlite_backup_provider IS NULL AND sqlite_backup_destination IS NULL AND sqlite_backup_sync_interval IS NULL AND
-      sqlite_backup_snapshot_interval IS NULL AND sqlite_backup_snapshot_retention IS NULL AND
-      sqlite_backup_l0_retention IS NULL AND sqlite_backup_enabled IS NULL)
-    OR
-    (sqlite_backup_provider = 'litestream' AND sqlite_backup_destination IS NOT NULL AND
-      sqlite_backup_sync_interval IS NOT NULL AND sqlite_backup_snapshot_interval IS NOT NULL AND
-      sqlite_backup_snapshot_retention IS NOT NULL AND sqlite_backup_l0_retention IS NOT NULL AND
-      sqlite_backup_enabled IS NOT NULL)
-  )
+    REFERENCES managed_database_services(service, engine, version)
 );
 
 CREATE TABLE managed_php_versions (
@@ -273,14 +248,13 @@ CREATE TABLE app_database_bindings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   app_slug TEXT NOT NULL REFERENCES applications(slug) ON DELETE CASCADE,
   position INTEGER NOT NULL CHECK (position >= 0),
-  engine TEXT NOT NULL CHECK (engine IN ('mysql', 'postgres', 'sqlite', 'litestream')),
+  engine TEXT NOT NULL CHECK (engine IN ('mysql', 'postgres', 'sqlite')),
   service TEXT,
   username TEXT,
   password TEXT,
   file_id TEXT UNIQUE,
   file_path TEXT,
   file_created_at TEXT,
-  backup_verified_at TEXT,
   vacuum_day_of_week INTEGER CHECK (vacuum_day_of_week IS NULL OR vacuum_day_of_week BETWEEN 0 AND 6),
   vacuum_hour INTEGER CHECK (vacuum_hour IS NULL OR vacuum_hour BETWEEN 0 AND 4),
   vacuum_minute INTEGER CHECK (vacuum_minute IS NULL OR vacuum_minute BETWEEN 0 AND 59),
@@ -288,15 +262,11 @@ CREATE TABLE app_database_bindings (
   FOREIGN KEY (service, engine) REFERENCES managed_database_services(service, engine),
   CHECK (
     (engine IN ('mysql', 'postgres') AND service IS NOT NULL AND username IS NOT NULL AND password IS NOT NULL AND
-      file_id IS NULL AND file_path IS NULL AND file_created_at IS NULL AND backup_verified_at IS NULL AND
-      vacuum_day_of_week IS NULL AND vacuum_hour IS NULL AND vacuum_minute IS NULL)
-    OR
-    (engine = 'litestream' AND service IS NULL AND username IS NULL AND password IS NULL AND
-      file_id IS NOT NULL AND file_path IS NOT NULL AND file_created_at IS NOT NULL AND
+      file_id IS NULL AND file_path IS NULL AND file_created_at IS NULL AND
       vacuum_day_of_week IS NULL AND vacuum_hour IS NULL AND vacuum_minute IS NULL)
     OR
     (engine = 'sqlite' AND service IS NULL AND username IS NULL AND password IS NULL AND
-      file_id IS NOT NULL AND file_path IS NOT NULL AND file_created_at IS NOT NULL AND backup_verified_at IS NULL AND
+      file_id IS NOT NULL AND file_path IS NOT NULL AND file_created_at IS NOT NULL AND
       ((vacuum_day_of_week IS NULL AND vacuum_hour IS NULL AND vacuum_minute IS NULL) OR
        (vacuum_day_of_week IS NOT NULL AND vacuum_hour IS NOT NULL AND vacuum_minute IS NOT NULL)))
   )
@@ -698,19 +668,6 @@ function readState(database: Database, path: string): DesiredState {
     },
     phpVersions,
     databaseServices,
-    ...(config.sqlite_backup_provider !== null
-      ? {
-          sqliteBackup: {
-            provider: config.sqlite_backup_provider,
-            destination: config.sqlite_backup_destination,
-            syncInterval: config.sqlite_backup_sync_interval,
-            snapshotInterval: config.sqlite_backup_snapshot_interval,
-            snapshotRetention: config.sqlite_backup_snapshot_retention,
-            l0Retention: config.sqlite_backup_l0_retention,
-            enabled: asBoolean(config.sqlite_backup_enabled!),
-          },
-        }
-      : {}),
     apps,
     proxies,
     domains,
@@ -761,9 +718,6 @@ function bindingFromRow(row: BindingRow, databaseEntries: AppDatabaseRow[]): Rec
       path: row.file_path,
       createdAt: row.file_created_at,
     },
-    ...(row.engine === "litestream" && row.backup_verified_at !== null
-      ? { backupVerifiedAt: row.backup_verified_at }
-      : {}),
     ...(row.engine === "sqlite" && row.vacuum_day_of_week !== null
       ? {
           vacuumSchedule: {
@@ -801,16 +755,13 @@ function replaceState(database: Database, state: DesiredState): void {
       [service.service, service.engine, service.version, service.image, service.volume],
     );
   }
-  const backup = state.sqliteBackup;
   run(
     database,
     `INSERT INTO stack_config (
       id, state_schema_version, default_php_version, default_database_engine,
       default_database_version, default_database_service, default_fpm_profile, default_redis_mode,
-      sqlite_backup_provider, sqlite_backup_destination, sqlite_backup_sync_interval,
-      sqlite_backup_snapshot_interval, sqlite_backup_snapshot_retention, sqlite_backup_l0_retention,
-      sqlite_backup_enabled, created_at, updated_at
-    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      created_at, updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       state.schemaVersion,
       state.defaults.phpVersion,
@@ -819,13 +770,6 @@ function replaceState(database: Database, state: DesiredState): void {
       state.defaults.database.service,
       state.defaults.fpmProfile,
       state.defaults.redisMode,
-      backup?.provider ?? null,
-      backup?.destination ?? null,
-      backup?.syncInterval ?? null,
-      backup?.snapshotInterval ?? null,
-      backup?.snapshotRetention ?? null,
-      backup?.l0Retention ?? null,
-      backup?.enabled ?? null,
       state.createdAt,
       state.updatedAt,
     ],
@@ -912,8 +856,8 @@ function insertApp(database: Database, app: AppState, state: DesiredState): void
             database,
             `INSERT INTO app_database_bindings (
               app_slug, position, engine, file_id, file_path, file_created_at,
-              backup_verified_at, vacuum_day_of_week, vacuum_hour, vacuum_minute
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              vacuum_day_of_week, vacuum_hour, vacuum_minute
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               app.slug,
               position,
@@ -921,7 +865,6 @@ function insertApp(database: Database, app: AppState, state: DesiredState): void
               binding.file.id,
               binding.file.path,
               binding.file.createdAt,
-              binding.engine === "litestream" ? (binding.backupVerifiedAt ?? null) : null,
               binding.engine === "sqlite" ? (binding.vacuumSchedule?.dayOfWeek ?? null) : null,
               binding.engine === "sqlite" ? (binding.vacuumSchedule?.hour ?? null) : null,
               binding.engine === "sqlite" ? (binding.vacuumSchedule?.minute ?? null) : null,

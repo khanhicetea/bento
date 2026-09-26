@@ -62,7 +62,7 @@ openssl version
 command -v ssh-keygen
 ```
 
-Later optional operations also use `tar` for stack transfer and support bundles and `crontab` for scheduled backups. SQLite continuous backup does not require `setfacl`; it uses a narrowly mounted, capability-limited root Litestream container.
+Later optional operations also use `tar` for stack transfer and support bundles and `crontab` for scheduled backups.
 
 ### Storage and permissions
 

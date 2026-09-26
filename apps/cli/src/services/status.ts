@@ -14,16 +14,7 @@ import { sqliteContainerPath } from "#/services/sqlite_paths.ts";
 
 export type RoleStatus = {
   name: string;
-  kind:
-    | "nginx"
-    | "redis"
-    | "php-fpm"
-    | "php-runner"
-    | "process-app"
-    | "mysql"
-    | "postgres"
-    | "litestream"
-    | "cloudflare-tunnel";
+  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "process-app" | "mysql" | "postgres" | "cloudflare-tunnel";
   /** observed | expected-only */
   state: "running" | "stopped" | "unknown" | "config-ready";
   /** Best-effort elapsed seconds since the running container started. */
@@ -75,11 +66,11 @@ export type StatusReport = {
     entrypointMode?: string;
     tls: string;
     accessLog: boolean;
-    databaseEngine: "mysql" | "postgres" | "sqlite" | "litestream";
+    databaseEngine: "mysql" | "postgres" | "sqlite";
     databaseService: string;
     databases: string[];
     databaseBindings: Array<{
-      engine: "mysql" | "postgres" | "sqlite" | "litestream";
+      engine: "mysql" | "postgres" | "sqlite";
       service: string;
       databases: string[];
     }>;
@@ -234,27 +225,17 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
         tls: a.tls.kind,
         accessLog: a.accessLog,
         databaseEngine: a.database.engine,
-        databaseService:
-          a.database.engine === "sqlite"
-            ? "local-file"
-            : a.database.engine === "litestream"
-              ? "litestream"
-              : a.database.service,
+        databaseService: a.database.engine === "sqlite" ? "local-file" : a.database.service,
         databases:
-          a.database.engine === "sqlite" || a.database.engine === "litestream"
-            ? [sqliteContainerPath(a.database.file.id, a.slug, a.database.engine)]
+          a.database.engine === "sqlite"
+            ? [sqliteContainerPath(a.database.file.id, a.slug)]
             : a.database.databases.map((d) => d.name),
         databaseBindings: a.databases.map((database) => ({
           engine: database.engine,
-          service:
-            database.engine === "sqlite"
-              ? "local-file"
-              : database.engine === "litestream"
-                ? "litestream"
-                : database.service,
+          service: database.engine === "sqlite" ? "local-file" : database.service,
           databases:
-            database.engine === "sqlite" || database.engine === "litestream"
-              ? [sqliteContainerPath(database.file.id, a.slug, database.engine)]
+            database.engine === "sqlite"
+              ? [sqliteContainerPath(database.file.id, a.slug)]
               : database.databases.map((entry) => String(entry.name)),
         })),
         redisMode: a.redis.mode,
@@ -373,7 +354,6 @@ function buildExpectedRoles(
   for (const database of state.databaseServices) {
     push(database.service, database.engine);
   }
-  if (state.sqliteBackup?.enabled) push("litestream", "litestream");
 
   if (running === null) {
     notes.push("Service process observation skipped (Docker unavailable). Status does not imply reload success.");

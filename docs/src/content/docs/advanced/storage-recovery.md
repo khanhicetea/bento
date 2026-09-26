@@ -10,7 +10,7 @@ description: Learn what to back up, which recovery method to use, and what can f
 <!-- DIAGRAM PLACEHOLDER
 Asset: /diagrams/backup-coverage.svg
 Alt: Bento backup methods mapped to desired state, app homes, certificates, relational databases, SQLite, and Redis.
-Show: Rows for each durable data type and columns for filesystem backup, logical backup, Litestream, and stack export. Use check marks only where a method covers the data. Highlight that no single method covers every row and that off-host copies require separate verification.
+Show: Rows for each durable data type and columns for filesystem backup, logical backup, and stack export. Use check marks only where a method covers the data. Highlight that no single method covers every row and that off-host copies require separate verification.
 -->
 
 ## Ownership layers
@@ -29,7 +29,7 @@ For MySQL and PostgreSQL, `backup` uses matching database tools. Bento writes to
 
 Logical backups let you restore one database and are the correct path for a PostgreSQL major upgrade. Verify a backup by restoring it under a new name. Replacing an existing database has safeguards, but the restore is not atomic at the object level.
 
-SQLite uses optional Litestream replication to S3-compatible storage. Verification restores a temporary copy and runs a full integrity check. Bento does not yet expose a guarded production replacement restore.
+SQLite uses online `.backup` to create consistent logical snapshots. Copy the artifacts off-host and test recovery separately. Bento does not yet expose a guarded production replacement restore.
 
 Stack export combines supported stack files with raw archives of named volumes. It stops only the running data services required for a consistent copy, then restarts the same services.
 

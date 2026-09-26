@@ -122,7 +122,7 @@ bunRuntime.test("doctor runs a read-only quick_check for SQLite bindings", async
     });
     const database = provisioned.app.databases[0]!;
     if (database.engine !== "sqlite") throw new Error("expected SQLite binding");
-    const path = sqliteHostPath(platform, database.file.id, "localdb", "sqlite");
+    const path = sqliteHostPath(platform, database.file.id, "localdb");
     await platform.fs.mkdirp(dirname(path));
     await platform.fs.writeBytes(path, new Uint8Array([1, 2, 3]), 0o600);
 

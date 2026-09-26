@@ -333,16 +333,7 @@ type Runtime = {
 
 type OperationsRole = {
   name: string;
-  kind:
-    | "nginx"
-    | "redis"
-    | "php-fpm"
-    | "php-runner"
-    | "process-app"
-    | "mysql"
-    | "postgres"
-    | "litestream"
-    | "cloudflare-tunnel";
+  kind: "nginx" | "redis" | "php-fpm" | "php-runner" | "process-app" | "mysql" | "postgres" | "cloudflare-tunnel";
   state: "running" | "stopped" | "unknown" | "config-ready";
   uptimeSeconds?: number;
   detail?: string;
@@ -479,7 +470,7 @@ function roleStatus(state: OperationsRole["state"]) {
 
 function roleIcon(kind: OperationsRole["kind"]) {
   if (kind === "php-fpm" || kind === "php-runner") return <Gauge className="size-4" aria-hidden="true" />;
-  if (kind === "mysql" || kind === "postgres" || kind === "litestream") {
+  if (kind === "mysql" || kind === "postgres") {
     return <Database className="size-4" aria-hidden="true" />;
   }
   return <Server className="size-4" aria-hidden="true" />;

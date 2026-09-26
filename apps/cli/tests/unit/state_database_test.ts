@@ -111,27 +111,10 @@ bunRuntime.test("state database round-trips nested state and JSON argument field
       aliases: ["www.files.test"],
       databaseEngine: "sqlite",
     }).state;
-    state = provisionApp(platform, state, {
-      slug: "files",
-      domain: "files.test",
-      aliases: ["www.files.test"],
-      databaseEngine: "litestream",
-    }).state;
     const app = state.apps.files!;
-    const databases = app.databases.map((binding) =>
-      binding.engine === "litestream" ? { ...binding, backupVerifiedAt: now } : binding,
-    );
+    const databases = app.databases;
     state = {
       ...state,
-      sqliteBackup: {
-        provider: "litestream",
-        destination: "s3://example/sqlite",
-        syncInterval: "10s",
-        snapshotInterval: "24h",
-        snapshotRetention: "168h",
-        l0Retention: "24h",
-        enabled: true,
-      },
       apps: {
         ...state.apps,
         files: {

@@ -102,18 +102,18 @@ Technical choices are evaluated in this order:
 ### D-10 — Add-only heterogeneous database bindings
 
 **Context:** Engine moves, password rotation, and volume deletion are high-risk data migrations.  
-**Decision:** Persist `databases[]`; add independent MySQL/PostgreSQL/SQLite/Litestream bindings; preserve old bindings; block managed relational removal/rotation.  
+**Decision:** Persist `databases[]`; add independent MySQL/PostgreSQL/SQLite bindings; preserve old bindings; block managed relational removal/rotation.
 **Benefits:** Mixed data use without pretending to migrate data; explicit grants and ownership.  
 **Trade-offs:** The first binding has compatibility/default semantics; operators coordinate migration/cleanup.  
 **Rejected:** Automatic cross-engine conversion and automatic destructive version removal.
 
-### D-11 — Distinct plain SQLite and Litestream products
+### D-11 — SQLite local recovery
 
-**Context:** Local maintenance/logical dumps and continuous remote replication have different guarantees and privileges.  
-**Decision:** Model `sqlite` and `litestream` separately. Plain SQLite uses `.db`, online `.backup`, and randomized weekly `VACUUM`; Litestream uses watched `.sqlite` files and stack-wide S3 policy.  
-**Benefits:** Backup behavior is explicit and plain files stay outside the watcher glob.  
-**Trade-offs:** The watcher has stack-wide read/write authority over SQLite mounts and requires rootful Docker constraints.  
-**Invariant:** Verify/export restores to separate files; no public in-place production restore.
+**Context:** A live filesystem copy of a SQLite file may not include committed WAL transactions.
+**Decision:** Use private `.db` files, online `.backup`, and randomized weekly `VACUUM`.
+**Benefits:** Consistent logical backups without stopping application writers.
+**Trade-offs:** Operators must copy artifacts off-host and test recovery.
+**Invariant:** No public in-place production restore.
 
 ### D-12 — Staged, journaled, scoped apply
 
@@ -255,7 +255,7 @@ Strict compiler options MUST remain enabled, including no implicit `any`, unchec
 
 - validators, strict state loading, relationships, and unsupported schema refusal;
 - app identity/domain/runtime/data binding transitions;
-- MySQL/PostgreSQL/Redis and SQLite/Litestream policy behavior;
+- MySQL/PostgreSQL/Redis and SQLite behavior;
 - render staging, rollback, interruption recovery, and reload plans;
 - deploy HMAC/queue/retention/locking behavior;
 - app-scoped minicrond access and command parsing;
@@ -275,7 +275,7 @@ A live supported host SHOULD prove:
 - stack bootstrap/build/start and health;
 - multi-app routing and filesystem/process identity;
 - MySQL and PostgreSQL connectivity/isolation/backup/restore;
-- plain SQLite and Litestream watcher behavior;
+- SQLite file ownership, backup, and maintenance behavior;
 - Redis behavior;
 - app-scoped minicrond access, deploy enqueue/drain;
 - TLS modes except production ACME where test DNS is unavailable;
@@ -335,7 +335,6 @@ Tests MUST prove:
 - database password reconciliation preserves existing values;
 - managed MySQL/PostgreSQL removal is refused;
 - plain SQLite backup uses a consistent SQLite `.backup`, not a direct live copy;
-- Litestream verify/export does not replace production;
 - only one logical batch runs at once;
 - failed/empty dump output is never finalized;
 - retention waits for complete batch success;

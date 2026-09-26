@@ -16,7 +16,7 @@ import { runPostgresBackup, runPostgresRestore } from "#/services/postgres.ts";
 import { runSqliteBackup } from "#/services/sqlite_local.ts";
 
 export type DatabaseBackupRequest = BackupRequest & {
-  /** Limit the batch to one local backup engine. Litestream is synchronized separately. */
+  /** Limit the batch to one backup engine. */
   engine?: "mysql" | "postgres" | "sqlite";
 };
 export type DatabaseBackupArtifact = {
@@ -130,7 +130,7 @@ export async function runDatabaseRestore(
   const nextBinding = next.apps[req.slug]!.databases.find(
     (entry) => entry.engine === database.engine && entry.service === database.service,
   );
-  if (!nextBinding || nextBinding.engine === "sqlite" || nextBinding.engine === "litestream") {
+  if (!nextBinding || nextBinding.engine === "sqlite") {
     throw validationError(`database binding disappeared for app ${req.slug}`);
   }
   nextBinding.databases.push({
@@ -173,7 +173,6 @@ function resolveTargets(
   for (const app of apps) {
     let matched = false;
     for (const binding of app.databases) {
-      if (binding.engine === "litestream") continue;
       if (req.engine && binding.engine !== req.engine) continue;
       if (binding.engine === "sqlite") {
         if (req.scope !== "database" || req.database === binding.file.id) {

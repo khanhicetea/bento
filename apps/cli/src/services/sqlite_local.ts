@@ -39,7 +39,7 @@ export async function runSqliteBackup(
   const containerFinal = `${containerDirectory}/${name}`;
   const containerPartial = `${containerFinal}.partial`;
   const raw = `${containerDirectory}/.${name}.raw`;
-  const source = sqliteContainerPath(database.file.id, app.slug, "sqlite");
+  const source = sqliteContainerPath(database.file.id, app.slug);
   await platform.fs.mkdirp(directory, 0o700);
 
   // .backup creates a real SQLite file, so keep that snapshot in the mounted

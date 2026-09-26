@@ -4,14 +4,9 @@ Status: prioritized work proposal, not an approved change to the current product
 
 ## Decision
 
-**Fix backup coverage reporting first (T-03).** A successful `backup --app` or `backup --all` can currently omit Litestream bindings: `apps/cli/src/services/database_backup.ts` skips them in `resolveTargets`, and scheduled backup status in `backup_schedule.ts` counts only returned artifacts. On a Litestream-only selection, the result can even be an empty successful batch. That is a concrete, relatively bounded false-confidence risk. It matters more now than changing language, ingress, or container topology.
+**Make stack transfer SQLite-consistent first (T-04).** Export currently archives a live `sqlite/` tree without quiescing writers. A successful transfer can therefore contain inconsistent database bytes.
 
-**First deliverable:** make unfiltered app/all batch coverage explicit and fail closed when Litestream coverage cannot be confirmed; do not claim a replica is verified merely because another engine's dump succeeded. Agree the exact operator-facing result/exit behavior before changing the baseline backup contract. A deliberately engine-filtered local backup may remain local-only, but its scope must be clear.
-
-- Start with failing unit/CLI tests for a Litestream-only app, a mixed-engine app, and `--all` with a disabled/unreachable watcher. Assert that no selected binding silently vanishes and no successful scheduled status is written for incomplete coverage.
-- Small safe implementation path: preflight selected bindings; if a batch includes Litestream and cannot produce proven sync evidence, return a typed, redacted incomplete-coverage error **before** starting local artifacts. Keep explicit `--engine` local-only behavior and a separate Litestream verify/export path. Later, if a reliable sync/evidence protocol is designed, return a distinct non-artifact `replica-synced` result; keep sync and restore verification separate.
-- Update CLI help, scheduled status/error handling, README/operator docs, and baseline specs when the chosen semantics ship. Do not upload a nonexistent Litestream artifact or treat rclone upload as restore proof.
-- Done when every requested binding is accounted for, incomplete batches cannot look green, and source/compiled and integration tests exercise the new behavior. Preserve existing retention, redaction, and partial-artifact guarantees.
+**First deliverable:** define a versioned SQLite-aware snapshot component for transfer and verify it with concurrent WAL writers. Keep live filesystem copies separate from recovery-grade logical artifacts.
 
 ## Ordered follow-up
 
@@ -34,4 +29,4 @@ Status: prioritized work proposal, not an approved change to the current product
 
 ## Suggested first PR boundary
 
-Only T-03's coverage contract, service/CLI/schedule tests, and matching docs/specs. **No** new backup scheduler, transfer format, web page, runtime abstraction, or Go rewrite in this PR. Follow with a separate lock-design PR and then the versioned SQLite transfer PR. This keeps each risky change reviewable and reversible.
+Start with a lock-design PR, followed by the versioned SQLite transfer format. Keep each risky change reviewable and reversible. This keeps each risky change reviewable and reversible.

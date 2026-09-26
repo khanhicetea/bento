@@ -49,7 +49,7 @@ The baseline was derived from:
 
 These specs intentionally follow current code over older documentation:
 
-- An app persists `databases[]` and can hold multiple add-only MySQL, PostgreSQL, plain SQLite, and Litestream bindings. The first binding is the compatibility/default connection, not the only possible binding.
+- An app persists `databases[]` and can hold multiple add-only MySQL, PostgreSQL, and SQLite bindings. The first binding is the compatibility/default connection, not the only possible binding.
 - Scheduled logical backups can upload newly created artifacts through the isolated rclone sidecar. This supersedes older statements that all off-host replication is manual.
-- `stack.tar.gz` mechanically includes the stack-root `sqlite/` tree because it archives the root; it is not a consistency-guaranteed live SQLite backup. Use SQLite `.backup` or Litestream for recovery assurance.
+- `stack.tar.gz` mechanically includes the stack-root `sqlite/` tree because it archives the root; it is not a consistency-guaranteed live SQLite backup. Use SQLite `.backup` for recovery assurance.
 - The checked-in GitHub workflow runs frozen install, formatting, linting, typecheck, unit/contract tests, integration tests, and release builds on tags/releases. Smoke and parity remain additional local gates.

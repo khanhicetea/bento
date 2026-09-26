@@ -19,7 +19,6 @@ export type NginxComposeEnvironment = {
 export type StackComposeEnvironment = {
   projectName: string;
   nginx: NginxComposeEnvironment;
-  litestreamEnabled?: boolean;
   cloudflareTunnelEnabled?: boolean;
 };
 
@@ -94,7 +93,6 @@ export async function loadStackComposeEnvironment(platform: Platform): Promise<S
   return {
     projectName,
     cloudflareTunnelEnabled: (await loadCloudflareTunnelToken(platform)) !== undefined,
-    litestreamEnabled: parseEnvBoolean(env.BENTO_LITESTREAM_ENABLED, false, "BENTO_LITESTREAM_ENABLED"),
     nginx: {
       hostNetwork,
       ...(httpPort !== undefined ? { httpPort } : {}),

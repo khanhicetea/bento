@@ -194,7 +194,7 @@ bento compose -- logs --tail 100 php85 nginx
 
 Without `--db`, Bento may create the database account on a best-effort basis and defer that work while MySQL is unavailable. The first-app path uses `--db` so database creation is explicit and transactional with respect to desired-state recording.
 
-An app can keep several add-only database bindings across MySQL, PostgreSQL, SQLite, and Litestream. The first binding remains the default for compatibility.
+An app can keep several add-only database bindings across MySQL, PostgreSQL, and SQLite. The first binding remains the default for compatibility.
 
 To add PostgreSQL, first add a supported major version. Then run `app update` with `--database-engine postgres --postgres <major> --db`. For private file databases and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/).
 

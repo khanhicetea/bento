@@ -9,19 +9,14 @@ import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import { generateAll } from "../../src/services/generate.ts";
 import { runSqliteBackup } from "../../src/services/sqlite_local.ts";
 
-bunRuntime.test("one app can persist independent SQLite and Litestream bindings", () => {
+bunRuntime.test("one app can persist multiple independent SQLite bindings", () => {
   const platform = createPlatform("/tmp/bento-sqlite-multiple", bunRuntime.cwd());
   const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
     slug: "files",
     domain: "files.test",
     databaseEngine: "sqlite",
   });
-  const mixed = provisionApp(platform, result.state, {
-    slug: "files",
-    domain: "files.test",
-    databaseEngine: "litestream",
-  });
-  const withSecondLocal = provisionApp(platform, mixed.state, {
+  const withSecondLocal = provisionApp(platform, result.state, {
     slug: "files",
     domain: "files.test",
     databaseEngine: "sqlite",
@@ -33,7 +28,7 @@ bunRuntime.test("one app can persist independent SQLite and Litestream bindings"
   if (parsed.ok) {
     assertEquals(
       parsed.value.apps.files?.databases.map((database) => database.engine),
-      ["sqlite", "litestream", "sqlite"],
+      ["sqlite", "sqlite"],
     );
     const sqliteIds = parsed.value.apps.files?.databases
       .filter((database) => database.engine === "sqlite")
@@ -42,7 +37,7 @@ bunRuntime.test("one app can persist independent SQLite and Litestream bindings"
   }
 });
 
-bunRuntime.test("plain SQLite rejects Litestream file paths", () => {
+bunRuntime.test("SQLite rejects noncanonical file paths", () => {
   const platform = createPlatform("/tmp/bento-sqlite-path", bunRuntime.cwd());
   const state = provisionApp(platform, createEmptyState(), {
     slug: "local",
@@ -99,7 +94,7 @@ bunRuntime.test("plain SQLite backup uses .backup and gzip in the runner", async
   }
 });
 
-bunRuntime.test("plain SQLite is distinct from Litestream and gets weekly runner maintenance", async () => {
+bunRuntime.test("SQLite gets weekly runner maintenance", async () => {
   const root = await bunRuntime.makeTempDir({
     prefix: "bento-sqlite-local-",
   });

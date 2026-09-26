@@ -25,16 +25,7 @@ import {
 } from "#/domain/types.ts";
 import { STATE_SCHEMA_VERSION } from "#/version.ts";
 
-export type DatabaseEngine = "mysql" | "postgres" | "sqlite" | "litestream";
-export type SqliteBackupPolicy = {
-  provider: "litestream";
-  destination: string;
-  syncInterval: string;
-  snapshotInterval: string;
-  snapshotRetention: string;
-  l0Retention: string;
-  enabled: boolean;
-};
+export type DatabaseEngine = "mysql" | "postgres" | "sqlite";
 export type TlsMode =
   | { kind: "self-ca" }
   | { kind: "shared" }
@@ -99,17 +90,6 @@ export type AppDatabaseBinding =
       file: { id: string; path: string; createdAt: string };
       /** Stable weekly local-time slot selected when the file is created. */
       vacuumSchedule?: SqliteVacuumSchedule;
-      /** Type-only compatibility members; file bindings never persist these. */
-      service: DatabaseService;
-      user: string;
-      password: string;
-      databases: AppDatabase[];
-    }
-  | {
-      /** SQLite file continuously replicated by the stack Litestream service. */
-      engine: "litestream";
-      file: { id: string; path: string; createdAt: string };
-      backupVerifiedAt?: string;
       /** Type-only compatibility members; file bindings never persist these. */
       service: DatabaseService;
       user: string;
@@ -241,7 +221,6 @@ export type DesiredState = {
   defaults: StackDefaults;
   phpVersions: ManagedPhpVersion[];
   databaseServices: ManagedDatabaseService[];
-  sqliteBackup?: SqliteBackupPolicy;
   apps: Record<string, AppState>;
   proxies: Record<string, ProxySite>;
   domains: Record<string, DomainOwner>;

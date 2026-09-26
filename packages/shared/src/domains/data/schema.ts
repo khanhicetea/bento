@@ -12,10 +12,9 @@ const databaseServiceSchema = z.object({
 const databaseBindingSchema = z.object({
   app: z.string(),
   primary: z.boolean(),
-  engine: z.enum(["mysql", "postgres", "sqlite", "litestream"]),
+  engine: z.enum(["mysql", "postgres", "sqlite"]),
   service: z.string(),
   resources: z.array(z.string()),
-  backupVerifiedAt: z.string().optional(),
 });
 
 export const dataOverviewSchema = z.object({
@@ -33,16 +32,6 @@ export const dataOverviewSchema = z.object({
       }),
     )
     .default([]),
-  sqliteBackup: z
-    .object({
-      enabled: z.boolean(),
-      provider: z.literal("litestream"),
-      destination: z.string(),
-      syncInterval: z.string(),
-      snapshotInterval: z.string(),
-      snapshotRetention: z.string(),
-    })
-    .optional(),
 });
 
 const databaseProcessSchema = z.object({

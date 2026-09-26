@@ -30,7 +30,6 @@ PHP runner -> per-app minicrond (jobs, workers, deploy drain) + root maintenance
 | Process CLI       |   Ephemeral per command | Same image, app UID/GID, own home                                    |
 | MySQL/PostgreSQL  | One per managed version | Private service and durable named volume                             |
 | Redis             |           One per stack | Private shared/ACL cache and durable volume                          |
-| Litestream        |  Optional one per stack | Constrained-root directory watcher for every managed SQLite file     |
 
 ## How requests move
 

@@ -35,7 +35,7 @@ Nothing here is implemented merely because it is specified. Each proposal requir
 
 ### Problem
 
-Bento can create logical dumps, schedule them, upload artifacts with rclone, and verify Litestream restores. Operators still have to infer whether coverage is complete, remote copies exist, artifacts are intact, and restores have been tested recently.
+Bento can create logical dumps, schedule them, upload artifacts with rclone, and create SQLite logical backups. Operators still have to infer whether coverage is complete, remote copies exist, artifacts are intact, and restores have been tested recently.
 
 A successful backup process is not the same as recovery readiness.
 
@@ -56,7 +56,7 @@ bento recovery drill --app APP [--engine ENGINE] --target APP_drill
 
 The feature MUST:
 
-- enumerate every app binding and classify its recovery method: relational logical dump, plain SQLite logical dump, or Litestream replica;
+- enumerate every app binding and classify its recovery method: relational logical dump or SQLite logical backup;
 - show latest local success, artifact age/size/checksum, latest remote upload evidence, and latest restore/verification evidence;
 - distinguish `healthy`, `stale`, `unverified`, `missing`, and `failed` without claiming remote durability from a local command result alone;
 - produce a versioned manifest for each successful backup batch containing artifact-relative path, engine, service, app, database/file identity, byte size, SHA-256, creation time, and tool/image version;
@@ -70,7 +70,7 @@ A restore drill SHOULD create a new namespaced relational database or separate S
 
 ### Acceptance criteria
 
-- A mixed MySQL/PostgreSQL/plain-SQLite/Litestream stack reports every binding exactly once.
+- A mixed MySQL/PostgreSQL/SQLite stack reports every binding exactly once.
 - Missing or corrupt artifacts cannot appear healthy.
 - A successful remote upload with no restore test remains `unverified`.
 - Evidence paths are relative to the stack ownership boundary and cannot traverse it.
@@ -87,7 +87,7 @@ A restore drill SHOULD create a new namespaced relational database or separate S
 
 ### Problem
 
-Bento can verify and export a Litestream replica and create plain SQLite logical backups, but it does not provide a guarded in-place production restore. The manual procedure is error-prone because SQLite may have active writers and WAL/SHM sidecars.
+Bento can create SQLite logical backups, but it does not provide a guarded in-place production restore. The manual procedure is error-prone because SQLite may have active writers and WAL/SHM sidecars.
 
 ### Proposed outcome
 
@@ -106,7 +106,7 @@ bento sqlite restore status --app APP
 
 `prepare` MUST:
 
-- accept a plain SQLite backup or a separately exported Litestream database;
+- accept a SQLite logical backup;
 - refuse compressed/content mismatches, symlinks, unsafe paths, and wrong app/file identity unless explicitly importing as a new binding;
 - restore to a private staging file on the same filesystem as production;
 - run `PRAGMA integrity_check`, verify it is a database, and record size/checksum/schema metadata;
@@ -138,7 +138,6 @@ bento sqlite restore status --app APP
 
 - Zero-downtime SQLite replacement.
 - Cross-engine conversion.
-- Automatic deletion of remote Litestream objects.
 
 ## 5. F-03 — First-class change plans and approvals
 

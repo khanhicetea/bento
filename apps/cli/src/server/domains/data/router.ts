@@ -66,19 +66,11 @@ async function dataOverview(ctx: CliContext): Promise<DataOverview> {
           app: String(app.slug),
           primary: index === 0,
           engine: binding.engine,
-          service:
-            binding.engine === "sqlite"
-              ? "local file"
-              : binding.engine === "litestream"
-                ? "Litestream"
-                : String(binding.service),
+          service: binding.engine === "sqlite" ? "local file" : String(binding.service),
           resources:
-            binding.engine === "sqlite" || binding.engine === "litestream"
+            binding.engine === "sqlite"
               ? [binding.file.path]
               : binding.databases.map((database) => String(database.name)),
-          ...(binding.engine === "litestream" && binding.backupVerifiedAt
-            ? { backupVerifiedAt: binding.backupVerifiedAt }
-            : {}),
         })),
       );
     return {
@@ -98,18 +90,6 @@ async function dataOverview(ctx: CliContext): Promise<DataOverview> {
       })),
       bindings,
       backups: await listBackups(ctx),
-      ...(state.sqliteBackup
-        ? {
-            sqliteBackup: {
-              enabled: state.sqliteBackup.enabled,
-              provider: state.sqliteBackup.provider,
-              destination: state.sqliteBackup.destination,
-              syncInterval: state.sqliteBackup.syncInterval,
-              snapshotInterval: state.sqliteBackup.snapshotInterval,
-              snapshotRetention: state.sqliteBackup.snapshotRetention,
-            },
-          }
-        : {}),
     };
   } catch (error) {
     return empty(ctx.stackRoot, redact(error instanceof Error ? error.message : String(error)));

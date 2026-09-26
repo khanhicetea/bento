@@ -98,15 +98,6 @@ const databaseSchema = strict({
   name: nonEmptyStringSchema.regex(/^[a-zA-Z0-9_]+$/, "must be alphanumeric/underscore"),
   createdAt: isoDateSchema,
 });
-const sqliteBackupSchema = strict({
-  provider: z.literal("litestream"),
-  destination: nonEmptyStringSchema,
-  syncInterval: z.enum(["1s", "10s", "60s"]),
-  snapshotInterval: nonEmptyStringSchema,
-  snapshotRetention: nonEmptyStringSchema,
-  l0Retention: nonEmptyStringSchema,
-  enabled: z.boolean(),
-});
 const sqliteVacuumScheduleSchema: z.ZodType<SqliteVacuumSchedule> = strict({
   dayOfWeek: z.number().int().min(0).max(6),
   hour: z.number().int().min(0).max(4),
@@ -128,23 +119,6 @@ const bindingSchema = z.discriminatedUnion("engine", [
     databases: z.array(databaseSchema).default([]),
   }),
   strict({
-    engine: z.literal("litestream"),
-    file: strict({
-      id: nonEmptyStringSchema.regex(/^[a-z][a-z0-9-]{1,31}_[a-f0-9]{10}$/),
-      path: safeRelativePathSchema,
-      createdAt: isoDateSchema,
-    }).refine(
-      (file) => {
-        const slug = file.id.slice(0, -11);
-        return file.path === `sqlite/${file.id}/${slug}.sqlite`;
-      },
-      {
-        message: "Litestream path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite",
-      },
-    ),
-    backupVerifiedAt: isoDateSchema.optional(),
-  }),
-  strict({
     engine: z.literal("sqlite"),
     file: strict({
       id: nonEmptyStringSchema.regex(/^[a-z][a-z0-9-]{1,31}_[a-f0-9]{10}$/),
@@ -160,7 +134,6 @@ const bindingSchema = z.discriminatedUnion("engine", [
       },
     ),
     vacuumSchedule: sqliteVacuumScheduleSchema.optional(),
-    backupVerifiedAt: isoDateSchema.optional(),
   }),
 ]);
 const appCommon = {
@@ -213,20 +186,14 @@ const appSchema = z.discriminatedUnion("kind", [phpAppSchema, processAppSchema])
   }
   const identities = new Set<string>();
   for (const [index, database] of app.databases.entries()) {
-    if (
-      (database.engine === "sqlite" || database.engine === "litestream") &&
-      !database.file.id.startsWith(`${app.slug}_`)
-    ) {
+    if (database.engine === "sqlite" && !database.file.id.startsWith(`${app.slug}_`)) {
       ctx.addIssue({
         code: "custom",
         path: ["databases", index, "file", "id"],
         message: "SQLite file identity must belong to the app slug",
       });
     }
-    const identity =
-      database.engine === "sqlite" || database.engine === "litestream"
-        ? database.file.id
-        : `${database.engine}:${database.service}`;
+    const identity = database.engine === "sqlite" ? database.file.id : `${database.engine}:${database.service}`;
     if (identities.has(identity)) {
       ctx.addIssue({
         code: "custom",
@@ -306,7 +273,6 @@ const desiredStateRawSchema = strict({
   defaults: defaultsSchema,
   phpVersions: z.array(managedPhpSchema).min(1),
   databaseServices: z.array(managedDatabaseSchema).min(1),
-  sqliteBackup: sqliteBackupSchema.optional(),
   apps: z.record(z.string(), appSchema),
   ...commonState,
 }).superRefine((state, ctx) => {
@@ -356,7 +322,7 @@ const desiredStateRawSchema = strict({
       }
     }
     for (const [index, database] of app.databases.entries()) {
-      if (database.engine === "sqlite" || database.engine === "litestream") continue;
+      if (database.engine === "sqlite") continue;
       if (!services.has(database.service)) {
         ctx.addIssue({
           code: "custom",
@@ -449,16 +415,11 @@ function brandRedis(r: z.infer<typeof redisSchema>): AppRedisIdentity {
 }
 function brandApp(app: z.infer<typeof appSchema>): AppState {
   const databases: AppState["databases"] = app.databases.map((database) =>
-    database.engine === "sqlite" || database.engine === "litestream"
+    database.engine === "sqlite"
       ? ({
           engine: database.engine,
           file: database.file,
-          ...(database.engine === "sqlite" && database.vacuumSchedule
-            ? { vacuumSchedule: database.vacuumSchedule }
-            : {}),
-          ...(database.engine === "litestream" && database.backupVerifiedAt
-            ? { backupVerifiedAt: database.backupVerifiedAt }
-            : {}),
+          ...(database.vacuumSchedule ? { vacuumSchedule: database.vacuumSchedule } : {}),
         } as AppState["databases"][number])
       : {
           engine: database.engine,
@@ -601,7 +562,6 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
       }),
     ),
     databaseServices: raw.databaseServices.map(brandManaged),
-    ...(raw.sqliteBackup ? { sqliteBackup: raw.sqliteBackup } : {}),
     apps: Object.fromEntries(
       Object.entries(apps).map(([slug, app]) => [slug, withAppRelations(app, { apps, domains } as DesiredState)]),
     ),

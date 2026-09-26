@@ -2,17 +2,7 @@ import { z } from "zod";
 
 const roleSchema = z.object({
   name: z.string(),
-  kind: z.enum([
-    "nginx",
-    "redis",
-    "php-fpm",
-    "php-runner",
-    "process-app",
-    "mysql",
-    "postgres",
-    "litestream",
-    "cloudflare-tunnel",
-  ]),
+  kind: z.enum(["nginx", "redis", "php-fpm", "php-runner", "process-app", "mysql", "postgres", "cloudflare-tunnel"]),
   state: z.enum(["running", "stopped", "unknown", "config-ready"]),
   uptimeSeconds: z.number().int().nonnegative().optional(),
   detail: z.string().optional(),

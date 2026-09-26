@@ -57,7 +57,7 @@ If the service is unavailable, check `compose -- ps`, MySQL logs, and that `MYSQ
 
 ## Advanced
 
-Each app may link multiple database kinds. Its MySQL binding has a same-name user limited to recorded namespaced databases and coexists with any PostgreSQL, SQLite, or Litestream bindings. Never use `compose down -v`.
+Each app may link multiple database kinds. Its MySQL binding has a same-name user limited to recorded namespaced databases and coexists with any PostgreSQL or SQLite bindings. Never use `compose down -v`.
 
 ## Next steps
 

@@ -7,8 +7,6 @@ description: Create database backups, copy them off-host, and prove that you can
 
 Create portable backups for MySQL, PostgreSQL, and plain SQLite apps. Then schedule them, copy them off the host, and test a restore before you replace production data.
 
-Apps that use Litestream follow the [continuous backup workflow](/guides/data/sqlite/) instead.
-
 <!-- DIAGRAM PLACEHOLDER
 Asset: /diagrams/backup-and-restore-flow.svg
 Alt: Database data flowing to an on-host dump, an encrypted off-host copy, a verification database, and finally an optional production replacement.
@@ -38,7 +36,7 @@ bento backup --app demo
 
 Bento uses Zstandard compression by default. It runs `mysqldump` or the matching `pg_dump` inside the selected database container. Bento publishes the final file only after the dump succeeds and contains data.
 
-When an app has mixed database bindings, limit the batch to one local engine with `--engine mysql`, `--engine postgres`, or `--engine sqlite`. Always pass the intended engine explicitly for an app or all scope to avoid including bindings from another engine. Litestream synchronization remains part of an unfiltered app or all backup.
+When an app has mixed database bindings, limit the batch to one engine with `--engine mysql`, `--engine postgres`, or `--engine sqlite`. Always pass the intended engine explicitly for an app or all scope to avoid including bindings from another engine.
 
 A typical path is:
 
@@ -84,9 +82,7 @@ bento backup --all
 
 Bento creates logical dumps for MySQL and PostgreSQL. For a plain `sqlite` binding, it uses SQLite's online `.backup` command, compresses the result, and publishes it under `backups/sqlite/<app>/`.
 
-For a `litestream` binding, Bento waits for the stack-wide watcher to confirm synchronization instead of creating a local dump.
-
-Bento runs only one logical backup batch at a time. If a later database or SQLite synchronization fails, earlier successful dumps remain. Bento does not apply relational retention to that failed batch.
+Bento runs only one logical backup batch at a time. If a later database backup fails, earlier successful dumps remain. Bento does not apply relational retention to that failed batch.
 
 Read the error, fix service health, storage, or SQLite replication, and run the batch again.
 
@@ -119,7 +115,7 @@ The stack's logical dumps cover managed relational databases. They do not includ
 
 ## Schedule on-host logical backups
 
-Bento can add one stack-qualified block to the current host user's crontab. The scheduled command runs an all-database, Zstandard-compressed logical backup batch, including plain SQLite apps. Litestream remains the continuous-replication option.
+Bento can add one stack-qualified block to the current host user's crontab. The scheduled command runs an all-database, Zstandard-compressed logical backup batch, including plain SQLite apps.
 
 Confirm the absolute installed binary path:
 

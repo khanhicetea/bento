@@ -15,7 +15,6 @@ These proposals MUST preserve the baseline invariants in `01-product-spec.md`, `
 | --- | --- | ---: | --- | --- |
 | T-01 | Enforce complete CI/release gates | P0 | Unverified release artifacts | Workflow/tests |
 | T-02 | Eliminate contract/documentation drift | P0 | Operators follow stale behavior | Docs/tooling/tests |
-| T-03 | Make Litestream batch-backup semantics truthful | P0 | False recovery confidence | Backup service/docs/tests |
 | T-04 | Make stack transfer SQLite-consistent | P0 | Importable but inconsistent SQLite bytes | Transfer/backup format |
 | T-05 | Formalize lock hierarchy and operation conflicts | P1 | Races/deadlocks across operations | Platform/services/tests |
 | T-06 | Derive reload plans from semantic/output differences | P1 | Missed or excessive reloads | Domain/render/apply |
@@ -63,7 +62,7 @@ A pull-request workflow SHOULD run the fast/static/unit contract. A protected ta
 
 ### Finding
 
-Older pages and test comments conflict with current behavior around `databases[]`, scheduled rclone upload, Litestream batch behavior, and SQLite inclusion in stack transfer. Manually maintained CLI tables and state prose are likely to drift again.
+Older pages and test comments conflict with current behavior around `databases[]`, scheduled rclone upload, and SQLite inclusion in stack transfer. Manually maintained CLI tables and state prose are likely to drift again.
 
 ### Decision
 
@@ -85,42 +84,10 @@ The generated inventory MUST NOT become a second runtime source of truth. Code/s
 
 - A command added without CLI-reference update fails verification.
 - Bun/Bento/schema/asset version references are checked against `apps/cli/src/version.ts`.
-- The docs consistently describe multiple bindings, rclone, actual Litestream backup behavior, and transfer SQLite semantics.
+- The docs consistently describe multiple bindings, rclone, and transfer SQLite semantics.
 - Historical tests are renamed/reworded without weakening safety assertions.
 
-## 5. T-03 — Make Litestream batch-backup semantics truthful
-
-### Finding
-
-The engine-neutral backup target resolver skips Litestream bindings. Some operator prose says `bento backup --app` confirms synchronization. Silent omission can be interpreted as successful coverage even when no Litestream sync/verification occurred.
-
-### Decision
-
-Choose and enforce explicit semantics: a batch containing Litestream MUST either perform a confirmed sync and report evidence or report that the binding is externally covered and not verified by this batch. It MUST never disappear from results.
-
-### Preferred behavior
-
-For `backup --app` and `backup --all`:
-
-1. enumerate each Litestream binding as a target;
-2. require the watcher/policy to be enabled;
-3. request/observe synchronization for the binding;
-4. record remote generation/timestamp and latest successful integrity-verify timestamp;
-5. return a non-artifact result type such as `replica-synced`;
-6. fail the requested batch when synchronization cannot be confirmed, unless an explicit `--allow-unverified-litestream` policy is approved;
-7. include the result in scheduled last-run status and recovery manifests.
-
-Retention remains limited to local managed artifacts. rclone MUST NOT upload a nonexistent Litestream artifact.
-
-### Acceptance criteria
-
-- A mixed batch result accounts for every selected binding.
-- Disabled/unreachable Litestream cannot produce an all-green backup result.
-- Sync success and restore-verification success remain distinct.
-- Last-run status can represent artifact and non-artifact targets without exceeding bounds or leaking S3 details.
-- Documentation and tests use the same semantics.
-
-## 6. T-04 — Make stack transfer SQLite-consistent
+## 5. T-04 — Make stack transfer SQLite-consistent
 
 ### Finding
 
@@ -145,10 +112,9 @@ SHA256SUMS
 ### Export requirements
 
 - Acquire the transfer lock and a compatible backup lock before snapshotting.
-- Enumerate all plain SQLite and Litestream bindings from validated state.
+- Enumerate all SQLite bindings from validated state.
 - Pause Bento-managed app writers through a scoped maintenance/drain operation or use SQLite online `.backup` under the app identity while clearly recording the consistency point.
 - Create one clean database snapshot per binding, run `integrity_check`, preserve target UID/GID/mode metadata, and exclude WAL/SHM from authoritative transfer content.
-- For Litestream, optionally confirm remote sync but still create a local consistent transfer snapshot unless the operator explicitly chooses remote recovery.
 - Exclude the live `sqlite/` tree from `stack.tar.gz` to avoid two competing copies.
 - Generate a strict manifest and checksums only after all components succeed.
 - Resume exactly the Bento-managed writers/services paused by export, even after failure.
@@ -168,9 +134,9 @@ SHA256SUMS
 - Every file binding has exactly one manifest entry.
 - Import cannot overwrite an existing SQLite target.
 - Failed export/import resumes prior services where possible and cleans only operation-owned staging.
-- Transfer docs distinguish logical recovery, Litestream recovery, and full-stack transfer.
+- Transfer docs distinguish logical recovery and full-stack transfer.
 
-## 7. T-05 — Formalize lock hierarchy and operation conflicts
+## 6. T-05 — Formalize lock hierarchy and operation conflicts
 
 ### Finding
 
@@ -208,7 +174,7 @@ Code MUST acquire locks only in declared order. Multi-lock operations MUST use o
 - Deadlock tests run competing operations repeatedly with deterministic timeouts.
 - Diagnostics identify the conflicting operation without exposing command secrets.
 
-## 8. T-06 — Derive reload plans from semantic and generated differences
+## 7. T-06 — Derive reload plans from semantic and generated differences
 
 ### Finding
 
@@ -236,7 +202,7 @@ Compute the final reload plan from a typed semantic diff plus the generated-file
 - Cron-only and worker-only changes remain scoped.
 - Source and compiled mode compute identical plans.
 
-## 9. T-07 — Version machine output and error contracts
+## 8. T-07 — Version machine output and error contracts
 
 ### Finding
 
@@ -262,7 +228,7 @@ Implement one versioned result/error envelope in the CLI presentation layer, whi
 - No JSON field contains ANSI sequences.
 - Secrets are removed structurally, not only replaced by string pattern matching.
 
-## 10. T-08 — Strengthen the supply chain
+## 9. T-08 — Strengthen the supply chain
 
 ### Finding
 
@@ -275,7 +241,7 @@ Make every release input traceable and every published output verifiable.
 ### Requirements
 
 - Pin production base images and fixed tool artifacts by digest/checksum through a reviewed lock manifest.
-- Record human-readable version plus immutable digest for Nginx, PHP bases, Composer, Node, MySQL, PostgreSQL, Redis, Litestream, rclone, s6, and minicrond where applicable.
+- Record human-readable version plus immutable digest for Nginx, PHP bases, Composer, Node, MySQL, PostgreSQL, Redis, rclone, s6, and minicrond where applicable.
 - Add an explicit dependency/image update workflow that regenerates locks and runs full integration/parity.
 - Generate SBOMs for the Bento binary and built images.
 - Generate release checksums and keyless or project-key signatures with provenance tied to the Git commit/workflow identity.
@@ -289,7 +255,7 @@ Make every release input traceable and every published output verifiable.
 - Image update diffs are reviewable and identify every changed digest/version.
 - Dynamic operator-selected database versions resolve to a recorded digest at render/build time or are explicitly marked unpinned with a warning.
 
-## 11. T-09 — Standardize subprocess safety
+## 10. T-09 — Standardize subprocess safety
 
 ### Finding
 
@@ -327,7 +293,7 @@ The adapter MUST:
 - Large backup/restore streams are not buffered entirely in the control-plane process.
 - Locale-sensitive tools produce stable parseable output.
 
-## 12. T-10 — Separate secrets from structural desired state
+## 11. T-10 — Separate secrets from structural desired state
 
 ### Finding
 
@@ -363,7 +329,7 @@ secrets/values/<id>        opaque bytes, mode 0600, atomic writes
 - Secret garbage collection cannot remove a referenced or recently tombstoned value.
 - Source/compiled parity includes reference behavior while excluding secret bytes from diagnostics.
 
-## 13. T-11 — Add bounded operation journals and evidence
+## 12. T-11 — Add bounded operation journals and evidence
 
 ### Finding
 
@@ -389,7 +355,7 @@ Introduce versioned per-operation records for complex operations. They support r
 - Old records can be pruned without losing desired state or durable data.
 - Human and JSON status can explain a partial result consistently.
 
-## 14. T-12 — Expand fault-injection and compatibility testing
+## 13. T-12 — Expand fault-injection and compatibility testing
 
 ### Finding
 
@@ -418,7 +384,7 @@ Compatibility fixtures MUST include:
 - source and compiled execution;
 - amd64 and arm64 artifact metadata;
 - custom template and overlay drift cases;
-- mixed MySQL/PostgreSQL/plain-SQLite/Litestream apps.
+- mixed MySQL/PostgreSQL/SQLite apps.
 
 ### Acceptance criteria
 
@@ -427,7 +393,7 @@ Compatibility fixtures MUST include:
 - Integration tests use disposable roots/projects and can never target the checked-in `bento/` root.
 - Release reports distinguish simulated proof, Docker integration proof, and scenarios not executed.
 
-## 15. Cross-cutting implementation rules
+## 14. Cross-cutting implementation rules
 
 Any approved technical change MUST:
 
@@ -440,14 +406,13 @@ Any approved technical change MUST:
 7. update baseline specs/docs only when implementation ships;
 8. include operator migration/recovery notes before release.
 
-## 16. Recommended execution sequence
+## 15. Recommended execution sequence
 
 ### Phase A — Correct published truth
 
 1. T-01 complete CI gates.
 2. T-02 documentation/capability consistency.
-3. T-03 explicit Litestream batch semantics.
-4. T-04 transfer format v2 for SQLite consistency.
+3. T-04 transfer format v2 for SQLite consistency.
 
 ### Phase B — Strengthen control-plane correctness
 

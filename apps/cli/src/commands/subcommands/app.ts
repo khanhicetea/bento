@@ -77,8 +77,8 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
             })
             .option("database-engine", {
               type: "string",
-              choices: ["mysql", "postgres", "sqlite", "litestream"],
-              describe: "Database engine (sqlite is local; litestream adds continuous S3 replication)",
+              choices: ["mysql", "postgres", "sqlite"],
+              describe: "Database engine",
             })
             .option("mysql", {
               type: "string",
@@ -146,7 +146,7 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
             .option("fpm", { type: "string" })
             .option("database-engine", {
               type: "string",
-              choices: ["mysql", "postgres", "sqlite", "litestream"],
+              choices: ["mysql", "postgres", "sqlite"],
             })
             .option("mysql", { type: "string" })
             .option("postgres", { type: "string" })
@@ -249,8 +249,8 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
       a.tls.kind,
       a.databases
         .map((database) =>
-          database.engine === "sqlite" || database.engine === "litestream"
-            ? `${database.engine}/${sqliteContainerPath(database.file.id, a.slug, database.engine)}`
+          database.engine === "sqlite"
+            ? `${database.engine}/${sqliteContainerPath(database.file.id, a.slug)}`
             : `${database.engine}/${database.service}`,
         )
         .join(", "),
@@ -273,7 +273,7 @@ async function cmdAppShow(argv: ArgsWith<"slug">, ctx: CliContext): Promise<numb
 
 export function redactAppForOutput(app: AppState): AppState {
   const databases = app.databases.map((database) =>
-    database.engine === "sqlite" || database.engine === "litestream" ? database : { ...database, password: "***" },
+    database.engine === "sqlite" ? database : { ...database, password: "***" },
   );
   const redacted: AppState = {
     ...app,
@@ -418,12 +418,12 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
         binding.engine === "mysql" ? "MySQL" : binding.engine === "postgres" ? "PostgreSQL" : "SQLite";
       for (const database of binding.databases) {
         ctx.log.out(
-          binding.engine === "sqlite" || binding.engine === "litestream"
+          binding.engine === "sqlite"
             ? `  - SQLite directory (${binding.engine}): ${ctx.platform.paths.paths.root}/sqlite/${database}`
             : `  - ${engineLabel} database: ${database} (${binding.databaseService})`,
         );
       }
-      if (binding.engine !== "sqlite" && binding.engine !== "litestream") {
+      if (binding.engine !== "sqlite") {
         const identity = binding.engine === "mysql" ? `${binding.databaseUser}@%` : binding.databaseUser;
         ctx.log.out(
           `  - ${engineLabel} ${

@@ -90,8 +90,7 @@ Every app has at least one binding in `databases[]`. A binding is one of:
 
 - MySQL on one managed versioned service;
 - PostgreSQL on one managed major-version service;
-- plain SQLite with local logical backup and weekly randomized maintenance;
-- SQLite continuously replicated by the stack Litestream watcher.
+- SQLite with local logical backup and weekly randomized maintenance.
 
 Adding a binding MUST preserve existing bindings and data. Bento does not convert or move data between engines/services. The first binding remains the default compatibility connection written to the conventional `DB_*` fields; all bindings are also represented in indexed `BENTO_DB_*` credential entries.
 
@@ -210,7 +209,7 @@ PostgreSQL app roles MUST remain unprivileged; app databases MUST be owned by th
 
 Redis shared mode requires an app key prefix. ACL mode MUST create an app-specific user restricted to its namespace. Redis MUST not publish a base host port.
 
-Plain SQLite MUST use a private app-owned file, stable randomized weekly `VACUUM` slot, and online `.backup` for logical artifacts. Litestream-backed SQLite MUST use an explicit binding type, one stack-wide watcher, S3-compatible policy, and non-destructive verify/export flows. A Litestream export MUST not replace the production database.
+SQLite MUST use a private app-owned file, stable randomized weekly `VACUUM` slot, and online `.backup` for logical artifacts.
 
 ### 7.7 Commands, schedules, workers, and deploys
 
@@ -252,7 +251,7 @@ State mutation, data-plane side effects, generated-file promotion, and service r
 
 ### 7.9 Backup, restore, and transfer
 
-Logical backup MUST support one database, one app, or all apps across MySQL, PostgreSQL, and plain SQLite. Zstandard is default; gzip and uncompressed output are supported. Litestream bindings use their separate continuous-replication workflow rather than local logical dump artifacts.
+Logical backup MUST support one database, one app, or all apps across MySQL, PostgreSQL, and SQLite. Zstandard is default; gzip and uncompressed output are supported.
 
 Only one logical backup batch may run at once. Retention MUST run only after the requested batch succeeds. Earlier completed artifacts MAY remain if a later target fails.
 
@@ -326,7 +325,7 @@ From `/operations`, paste a remotely managed Cloudflare Tunnel token, observe th
 
 ### 8.8 Prove recovery
 
-Run a complete logical batch, upload artifacts off-host, inspect schedule status, restore one relational dump to a new verification database, validate application invariants, and only then consider an exact-confirmed replacement. Verify Litestream through temporary restore/export separately.
+Run a complete logical batch, upload artifacts off-host, inspect schedule status, restore one relational dump to a new verification database, validate application invariants, and only then consider an exact-confirmed replacement.
 
 ### 8.9 Clone or recover a stack
 

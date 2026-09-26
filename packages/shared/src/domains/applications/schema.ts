@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const databaseEngineSchema = z.enum(["mysql", "postgres", "sqlite", "litestream"]);
+export const databaseEngineSchema = z.enum(["mysql", "postgres", "sqlite"]);
 export const entrypointModeSchema = z.enum(["front-controller", "legacy"]);
 export const tlsKindSchema = z.enum(["shared", "self-ca", "acme", "external"]);
 

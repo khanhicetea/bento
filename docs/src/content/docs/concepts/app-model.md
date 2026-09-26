@@ -83,7 +83,6 @@ An app can own several database bindings and mix engines:
 
 - A MySQL or PostgreSQL binding selects one managed service. Bento creates a matching user or role. The app can own databases named `<app>` or `<app>_*`.
 - A `sqlite` binding creates a private file under the stack root's `sqlite/` directory. Bento schedules a weekly `VACUUM` and uses SQLite's `.backup` command for logical backups.
-- A `litestream` binding also uses SQLite and adds continuous replication to S3-compatible storage.
 
 Adding a binding never removes an existing one.
 

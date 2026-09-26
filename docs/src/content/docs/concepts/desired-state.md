@@ -43,7 +43,7 @@ Bento is an on-demand control plane, not a resident daemon. It reconciles the st
 | Stack environment | `.env` | Bento initialization and deliberate operator configuration | Secrets are not safely derivable from generated files |
 | Customization | `custom/`, `overlays/` | Operator or supported customization commands | No; preserve it |
 | Generated configuration | `generated/nginx/`, `generated/php/`, `generated/compose/`, generated client files | Bento | Yes, from current intent and assets |
-| Durable runtime data | `homes/`, `sqlite/`, `litestream-meta/`, `certs/`, `backups/`, logs, Docker named volumes | Applications, services, and Bento operations | No; use an appropriate backup method |
+| Durable runtime data | `homes/`, `sqlite/`, `certs/`, `backups/`, logs, Docker named volumes | Applications, services, and Bento operations | No; use an appropriate backup method |
 
 `state.db` is a mode-`0600` Bun SQLite database. Normalized tables record apps, runtimes, domains, database bindings, SQLite backup policy, jobs, proxies, ordered command arguments, and related settings. It can also contain deploy and database secrets.
 

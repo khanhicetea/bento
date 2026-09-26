@@ -149,7 +149,7 @@ export function provisionApp(platform: Platform, state: DesiredState, input: Pro
   const databaseEngine = (input.databaseEngine ??
     currentPrimary?.engine ??
     state.defaults.database.engine) as DatabaseEngine;
-  const fileDatabase = databaseEngine === "sqlite" || databaseEngine === "litestream";
+  const fileDatabase = databaseEngine === "sqlite";
   const managedDatabase = fileDatabase ? undefined : resolveAppDatabaseService(state, existing, input);
 
   // Explicit database requests require a live engine adapter in applyAppDataPlane before save.
@@ -175,9 +175,7 @@ export function provisionApp(platform: Platform, state: DesiredState, input: Pro
         (database) => database.engine === managedDatabase?.engine && database.service === managedDatabase.service,
       );
   const databasePassword =
-    existingBinding && existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
-      ? existingBinding.password
-      : platform.random.hex(18);
+    existingBinding && existingBinding.engine !== "sqlite" ? existingBinding.password : platform.random.hex(18);
   const redisPassword =
     existing?.redis.password ?? (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
 
@@ -195,10 +193,7 @@ export function provisionApp(platform: Platform, state: DesiredState, input: Pro
     };
   }
 
-  const databases =
-    existingBinding && existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
-      ? [...existingBinding.databases]
-      : [];
+  const databases = existingBinding && existingBinding.engine !== "sqlite" ? [...existingBinding.databases] : [];
   if (input.createDatabase && !fileDatabase) {
     const dbName = input.databaseName ?? slug;
     if (!/^[a-zA-Z0-9_]+$/.test(dbName)) {
@@ -216,7 +211,7 @@ export function provisionApp(platform: Platform, state: DesiredState, input: Pro
   const selectedBinding = fileDatabase
     ? existingBinding && !input.createDatabase
       ? existingBinding
-      : createSqliteBinding(platform, state, slug, now, databaseEngine as "sqlite" | "litestream")
+      : createSqliteBinding(platform, state, slug, now)
     : databaseBinding(managedDatabase!.engine, String(managedDatabase!.service), slug, databasePassword, databases);
   const appDatabases = existing ? [...existing.databases] : [];
   const selectedIndex =
@@ -372,24 +367,16 @@ function asDatabaseName(name: string): AppDatabase["name"] {
   return name as AppDatabase["name"];
 }
 
-function createSqliteBinding(
-  platform: Platform,
-  state: DesiredState,
-  slug: string,
-  now: string,
-  engine: "sqlite" | "litestream",
-): AppDatabaseBinding {
+function createSqliteBinding(platform: Platform, state: DesiredState, slug: string, now: string): AppDatabaseBinding {
   const id = `${slug}_${platform.random.hex(5)}`;
   const file = {
     id,
-    path: sqliteRelativePath(id, slug, engine),
+    path: sqliteRelativePath(id, slug),
     createdAt: now,
   };
-  if (engine === "litestream") return { engine, file } as AppDatabaseBinding;
-
   const occupied = new Set([...resolveSqliteVacuumSchedules(state).values()].map(sqliteVacuumScheduleSlot));
   return {
-    engine,
+    engine: "sqlite",
     file,
     vacuumSchedule: randomSqliteVacuumSchedule(platform.random, occupied),
   } as AppDatabaseBinding;
@@ -416,16 +403,10 @@ function resolveAppDatabaseService(
   existing: AppState | undefined,
   input: ProvisionAppInput,
 ): ManagedDatabaseService {
-  if (
-    input.databaseEngine !== undefined &&
-    !["mysql", "postgres", "sqlite", "litestream"].includes(input.databaseEngine)
-  ) {
-    throw validationError("database engine must be mysql, postgres, sqlite, or litestream");
+  if (input.databaseEngine !== undefined && !["mysql", "postgres", "sqlite"].includes(input.databaseEngine)) {
+    throw validationError("database engine must be mysql, postgres, or sqlite");
   }
-  if (
-    (input.databaseEngine === "sqlite" || input.databaseEngine === "litestream") &&
-    (input.mysqlVersion || input.postgresVersion)
-  ) {
+  if (input.databaseEngine === "sqlite" && (input.mysqlVersion || input.postgresVersion)) {
     throw validationError(`--database-engine ${input.databaseEngine} cannot be combined with --mysql or --postgres`);
   }
   if (input.mysqlVersion && input.postgresVersion) {
@@ -440,7 +421,7 @@ function resolveAppDatabaseService(
 
   const requestedEngine = (input.databaseEngine ??
     (input.mysqlVersion ? "mysql" : input.postgresVersion ? "postgres" : undefined)) as
-    | Exclude<DatabaseEngine, "sqlite" | "litestream">
+    | Exclude<DatabaseEngine, "sqlite">
     | undefined;
   const current = existing
     ? (existing.databases.find(
@@ -449,17 +430,11 @@ function resolveAppDatabaseService(
       ) ?? primaryDatabase(existing))
     : undefined;
   const engine = requestedEngine ?? current?.engine ?? state.defaults.database.engine;
-  if (engine === "sqlite" || engine === "litestream") {
-    throw validationError("SQLite and Litestream do not use a managed relational service");
+  if (engine === "sqlite") {
+    throw validationError("SQLite does not use a managed relational service");
   }
   const token = engine === "mysql" ? input.mysqlVersion : input.postgresVersion;
-  if (
-    current &&
-    current.engine !== "sqlite" &&
-    current.engine !== "litestream" &&
-    current.engine === engine &&
-    token === undefined
-  ) {
+  if (current && current.engine !== "sqlite" && current.engine === engine && token === undefined) {
     const preserved = state.databaseServices.find(
       (entry) => entry.engine === engine && entry.service === current.service,
     );
@@ -552,12 +527,10 @@ export async function materializeAppHome(
     await platform.fs.mkdirp(processRuntimeRoot, 0o755);
     await platform.fs.mkdirp(join(processRuntimeRoot, app.slug), 0o750);
   }
-  for (const database of app.databases.filter(
-    (database) => database.engine === "sqlite" || database.engine === "litestream",
-  )) {
-    if (database.engine !== "sqlite" && database.engine !== "litestream") continue;
+  for (const database of app.databases) {
+    if (database.engine !== "sqlite") continue;
     const sqliteDir = sqliteHostDir(platform, database.file.id);
-    const sqlitePath = sqliteHostPath(platform, database.file.id, app.slug, database.engine);
+    const sqlitePath = sqliteHostPath(platform, database.file.id, app.slug);
     await platform.fs.mkdirp(sqliteDir, 0o700);
     if (!(await platform.fs.exists(sqlitePath))) {
       await platform.fs.writeBytes(sqlitePath, new Uint8Array(), 0o600);
@@ -606,7 +579,7 @@ export async function materializeAppHome(
           ]
         : [
             "DB_CONNECTION=sqlite",
-            `DB_DATABASE=${sqliteContainerPath(database.file.id, app.slug, database.engine)}`,
+            `DB_DATABASE=${sqliteContainerPath(database.file.id, app.slug)}`,
             "SQLITE_BUSY_TIMEOUT=5000",
           ];
   const linkedDatabaseLines = app.databases.flatMap((binding, index) => {
@@ -620,10 +593,7 @@ export async function materializeAppHome(
         `${prefix}_DATABASES=${binding.databases.map((entry) => entry.name).join(",")}`,
       ];
     }
-    return [
-      `${prefix}_ENGINE=${binding.engine}`,
-      `${prefix}_PATH=${sqliteContainerPath(binding.file.id, app.slug, binding.engine)}`,
-    ];
+    return [`${prefix}_ENGINE=${binding.engine}`, `${prefix}_PATH=${sqliteContainerPath(binding.file.id, app.slug)}`];
   });
   const cred = [
     ...databaseLines,
