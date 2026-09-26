@@ -5,6 +5,8 @@ import {
   applicationDatabaseCredentialsInputSchema,
   applicationDatabaseCredentialsSchema,
   applicationListSchema,
+  applicationPublicKeyInputSchema,
+  applicationPublicKeySchema,
   applicationSchema,
   removeApplicationInputSchema,
   saveApplicationInputSchema,
@@ -17,6 +19,7 @@ const emptyInputSchema = z.object({}).optional();
 /** Browser-safe application procedures. Mutations are explicit domain operations, not CLI argv. */
 export const applicationsContract = oc.router({
   list: oc.input(emptyInputSchema).output(applicationListSchema),
+  publicKey: oc.input(applicationPublicKeyInputSchema).output(applicationPublicKeySchema),
   databaseCredentials: oc.input(applicationDatabaseCredentialsInputSchema).output(applicationDatabaseCredentialsSchema),
   save: oc.input(saveApplicationInputSchema).output(applicationSchema),
   addDatabase: oc.input(addApplicationDatabaseInputSchema).output(applicationSchema),

@@ -210,6 +210,31 @@ describe("web API contract", () => {
   });
 });
 
+test("application public key is fetched only for an existing app and never includes the private key", async () => {
+  const root = await runtime.makeTempDir();
+  try {
+    const ctx = createContext({ stackRoot: root, repoRoot: runtime.cwd() });
+    await ctx.store.init();
+    const state = await ctx.store.load();
+    const provisioned = provisionApp(ctx.platform, state, { slug: "demo", domain: "demo.test" });
+    await ctx.store.save(provisioned.state);
+    const sshDir = `${ctx.platform.paths.appHome("demo")}/.ssh`;
+    await ctx.platform.fs.mkdirp(sshDir);
+    await ctx.platform.fs.writeText(`${sshDir}/id_ed25519.pub`, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA demo\n");
+    await ctx.platform.fs.writeText(`${sshDir}/id_ed25519`, "PRIVATE KEY");
+    const client = createRouterClient(createApplicationsRouter(ctx));
+    expect(await client.publicKey({ slug: "demo" })).toEqual({
+      publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA demo",
+    });
+    expect(JSON.stringify(await client.list({}))).not.toContain("AAAAC3");
+    await expect(client.publicKey({ slug: "missing" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await ctx.platform.fs.remove(`${sshDir}/id_ed25519.pub`);
+    await expect(client.publicKey({ slug: "demo" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  } finally {
+    await runtime.remove(root, { recursive: true });
+  }
+});
+
 test("application save reports an apply failure after persisting the app", async () => {
   const root = await runtime.makeTempDir();
   try {

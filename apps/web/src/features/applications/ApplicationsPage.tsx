@@ -4,6 +4,7 @@ import type { Application } from "@bento/shared";
 import {
   ArrowUpRight,
   CircleCheck,
+  Copy,
   Database,
   Gauge,
   Globe2,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
+import { ApplicationPublicKeyDialog } from "./ApplicationPublicKeyDialog.tsx";
 import { orpc } from "../../api/client.ts";
 import { ApplicationTerminalDialog } from "./ApplicationTerminalDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
@@ -57,6 +59,7 @@ export function ApplicationsPage() {
   const schedulerAccess = useQuery(orpc.jobs.schedulerAccess.queryOptions({ input: {} }));
   const [terminalTarget, setTerminalTarget] = useState<Application | null>(null);
   const [removeTarget, setRemoveTarget] = useState<Application | null>(null);
+  const [keyTarget, setKeyTarget] = useState<Application | null>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const allApplications = data?.applications ?? [];
   const applications = allApplications.filter((app) => {
@@ -98,7 +101,8 @@ export function ApplicationsPage() {
         editorTarget === null &&
         databaseTarget === null &&
         terminalTarget === null &&
-        removeTarget === null && (
+        removeTarget === null &&
+        keyTarget === null && (
           <Alert className="mt-6" variant="destructive">
             <span>{error}</span>
           </Alert>
@@ -232,6 +236,7 @@ export function ApplicationsPage() {
                 schedulerPath={schedulerAccess.data?.schedulers.find((item) => item.app === app.slug)?.path}
                 schedulerUnavailableReason={schedulerAccess.data?.reason}
                 onTerminal={() => setTerminalTarget(app)}
+                onPublicKey={() => setKeyTarget(app)}
                 onRemove={() => {
                   resetErrors();
                   setRemoveTarget(app);
@@ -290,6 +295,9 @@ export function ApplicationsPage() {
           onClose={() => setTerminalTarget(null)}
         />
       )}
+      {keyTarget && (
+        <ApplicationPublicKeyDialog key={keyTarget.slug} application={keyTarget} onClose={() => setKeyTarget(null)} />
+      )}
       {removeTarget && (
         <RemoveApplicationDialog
           key={removeTarget.slug}
@@ -341,6 +349,7 @@ function ApplicationCard({
   schedulerPath,
   schedulerUnavailableReason,
   onTerminal,
+  onPublicKey,
   onRemove,
 }: {
   app: Application;
@@ -353,6 +362,7 @@ function ApplicationCard({
   schedulerPath?: string;
   schedulerUnavailableReason?: string;
   onTerminal: () => void;
+  onPublicKey: () => void;
   onRemove: () => void;
 }) {
   const visibleAliases = app.aliases.slice(0, 2);
@@ -556,6 +566,19 @@ function ApplicationCard({
                   >
                     <SquareTerminal className="size-3.5" aria-hidden="true" />
                     Open shell
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      onPublicKey();
+                    }}
+                  >
+                    <Copy className="size-3.5" aria-hidden="true" />
+                    Copy deploy key
                   </button>
                   {app.kind === "process" && (
                     <>

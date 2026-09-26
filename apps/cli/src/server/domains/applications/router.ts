@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { implement, ORPCError } from "@orpc/server";
 import {
   applicationsContract,
@@ -19,6 +19,26 @@ const os = implement(applicationsContract);
 export function createApplicationsRouter(ctx: CliContext) {
   return os.router({
     list: os.list.handler(async () => await listApplications(ctx)),
+    publicKey: os.publicKey.handler(async ({ input }) => {
+      const state = await ctx.store.load();
+      if (!state.apps[input.slug]) throw new ORPCError("NOT_FOUND", { message: "application was not found" });
+      const sshDir = join(ctx.platform.paths.appHome(input.slug), ".ssh");
+      const path = join(sshDir, "id_ed25519.pub");
+      try {
+        const dir = await ctx.platform.fs.lstat(sshDir);
+        const file = await ctx.platform.fs.lstat(path);
+        if (!dir.isDirectory || dir.isSymlink || !file.isFile || file.isSymlink || file.size > 1024) {
+          throw new Error("invalid public key file");
+        }
+        const publicKey = (await ctx.platform.fs.readText(path)).trim();
+        if (!/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [^\r\n]*)?$/.test(publicKey)) {
+          throw new Error("invalid public key format");
+        }
+        return { publicKey };
+      } catch {
+        throw new ORPCError("NOT_FOUND", { message: "application public key is unavailable" });
+      }
+    }),
     databaseCredentials: os.databaseCredentials.handler(async ({ input }) => {
       const state = await ctx.store.load();
       const app = state.apps[input.slug];

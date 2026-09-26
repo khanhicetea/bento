@@ -74,6 +74,14 @@ export const applicationListSchema = z.object({
     .optional(),
 });
 
+export const applicationPublicKeyInputSchema = z.object({
+  slug: z.string().min(1).max(128),
+});
+
+export const applicationPublicKeySchema = z.object({
+  publicKey: z.string().startsWith("ssh-ed25519 "),
+});
+
 export const applicationDatabaseCredentialsInputSchema = z.object({
   slug: z.string().min(1).max(128),
   engine: z.enum(["mysql", "postgres"]),
@@ -234,6 +242,7 @@ export const removeApplicationInputSchema = z.object({
 
 export type AddApplicationDatabaseInput = z.infer<typeof addApplicationDatabaseInputSchema>;
 export type ApplicationDatabaseCredentials = z.infer<typeof applicationDatabaseCredentialsSchema>;
+export type ApplicationPublicKey = z.infer<typeof applicationPublicKeySchema>;
 export type Application = z.infer<typeof applicationSchema>;
 export type ApplicationList = z.infer<typeof applicationListSchema>;
 export type SaveApplicationInput = z.infer<typeof saveApplicationInputSchema>;
