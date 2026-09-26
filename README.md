@@ -200,10 +200,10 @@ A new stack initially shows **Stack not ready** in the browser. That is expected
 Choose the permanent Compose project name before initialization. The example uses `production`:
 
 ```bash
-docker exec bento bento init --name production
+docker exec bento bento bootstrap --name production
 ```
 
-Initialization creates the private SQLite database `/var/lib/bento/state.db`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. Bento refuses to overwrite an initialized stack. Run `bento migrate` to apply pending database schema migrations; `bento serve` does this automatically before startup; CLI-only installations should run `bento migrate` after upgrading.
+The first `bootstrap` invocation only initializes; it does not contact Docker. Initialization creates the private SQLite database `/var/lib/bento/state.db`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. `bento init` refuses to overwrite an initialized stack. Run `bento migrate` to apply pending database schema migrations; `bento serve` does this automatically before startup; CLI-only installations should run `bento migrate` after upgrading.
 
 #### Step 2: Review and change `.env`
 
@@ -217,13 +217,13 @@ Set the ingress, ACME, HTTP/3, or other environment options required for this ho
 
 #### Step 3: Render, validate, start, and apply
 
-Run the rest of the first-stack bootstrap as one host command:
+Run `bootstrap` again with the same stack root:
 
 ```bash
-docker exec bento sh -lc 'bento render && bento compose -- config --quiet && bento compose -- up -d --build && bento apply'
+docker exec bento bento bootstrap
 ```
 
-This stops at the first failed operation. On success it renders configuration, validates the Compose model, builds images, creates durable volumes, starts Nginx/PHP/MySQL/Redis, validates the running configuration, and applies scoped reloads. Default host-mode Nginx binds host ports 80 and 443. The first build can take several minutes.
+This checks required `.env` values, renders configuration, validates the Compose model, pulls and builds images, starts Nginx/PHP/MySQL/Redis, then validates the running configuration and applies the reload plan. It stops at the first failure; fix the issue and retry the second invocation. No generated passwords are printed. Default host-mode Nginx binds host ports 80 and 443. The first build can take several minutes.
 
 Do not use `docker compose down -v`; that can destroy durable database volumes, and Bento blocks it through its supported Compose wrapper.
 

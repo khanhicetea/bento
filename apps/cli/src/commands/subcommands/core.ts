@@ -1,4 +1,7 @@
 import { describeReloadPlan } from "#/domain/reload.ts";
+import { safetyError, validationError } from "#/domain/errors.ts";
+import { docker } from "#/platform/docker.ts";
+import { composeArgs } from "#/services/compose.ts";
 import { detectTemplateDrift, formatDriftWarnings } from "#/services/customization.ts";
 import { createSupportBundle, formatDoctor, runDoctor } from "#/services/doctor.ts";
 import { buildStatus, formatStatus, statusToJson } from "#/services/status.ts";
@@ -9,7 +12,7 @@ import {
   resolveTestStackOptions,
   runTestStack,
 } from "#/services/test_stack.ts";
-import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
+import { loadStackComposeEnvironment, loadStackEnv } from "#/services/stack_env.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
 import { bind, printVersion, type RunState, type YargsBuilder } from "#/commands/shared.ts";
@@ -34,6 +37,16 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           describe: "Stable stack name used to prefix Docker resources (default: bento; not derived from --stack)",
         }),
       bind(state, cmdInit),
+    )
+    .command(
+      "bootstrap",
+      "Initialize a new stack, then on a second run start its services",
+      (y: YargsBuilder) =>
+        y.option("name", {
+          type: "string",
+          describe: "Stable Compose project name (first run only; default: bento)",
+        }),
+      bind(state, cmdBootstrap),
     )
     .command("migrate", "Apply pending desired-state database schema migrations", () => {}, bind(state, cmdMigrate))
     .command("render", "Render generated config (no reload)", () => {}, bind(state, cmdRender))
@@ -131,6 +144,50 @@ async function cmdInit(argv: CliArgs, ctx: CliContext): Promise<number> {
   const environment = await loadStackComposeEnvironment(ctx.platform);
   ctx.log.info(`initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateDb}`);
   ctx.log.info(`defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`);
+  return 0;
+}
+
+async function cmdBootstrap(argv: CliArgs, ctx: CliContext): Promise<number> {
+  return await bootstrapStack(ctx, argv.name);
+}
+
+/** Two invocations: initialize without Docker, then bootstrap after operator review. */
+export async function bootstrapStack(
+  ctx: CliContext,
+  name?: string,
+  attach: (command: string[]) => Promise<number> = docker(ctx.platform).attach,
+): Promise<number> {
+  if (!(await ctx.store.exists())) {
+    await ctx.store.init({ projectName: name });
+    ctx.log.info(`initialized stack at ${ctx.stackRoot}`);
+    ctx.log.info(
+      `Review and edit ${ctx.platform.paths.paths.envFile}, then run bento bootstrap again with the same --stack.`,
+    );
+    return 0;
+  }
+
+  const state = await ctx.store.load();
+  const env = await loadStackEnv(ctx.platform);
+  const required = ["COMPOSE_PROJECT_NAME", "MYSQL_ROOT_PASSWORD", "POSTGRES_PASSWORD", "REDIS_PASSWORD"];
+  const missing = required.filter((key) => !env[key]?.trim());
+  if (missing.length) {
+    throw validationError(`stack .env is missing required values: ${missing.join(", ")}`);
+  }
+  const environment = await loadStackComposeEnvironment(ctx.platform);
+  if (name !== undefined && name !== environment.projectName) {
+    throw safetyError(`stack is named '${environment.projectName}', not '${name}'`);
+  }
+
+  // Render before Compose so the first start sees the complete mounted config.
+  await ctx.operations.apply({ renderOnly: true, skipValidate: true });
+  for (const args of [["config", "--quiet"], ["pull", "--ignore-buildable"], ["build"], ["up", "-d", "--no-build"]]) {
+    ctx.log.info(`running: docker compose ${args.join(" ")}`);
+    const code = await attach(await composeArgs(ctx.platform, state, args));
+    if (code !== 0) return code;
+  }
+  // Validate the running services and execute the normal scoped reload plan.
+  const result = await ctx.operations.apply();
+  ctx.log.info(`bootstrap complete; reload=${describeReloadPlan(result.reloadPlan).join(",")}`);
   return 0;
 }
 
