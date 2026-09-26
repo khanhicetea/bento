@@ -80,18 +80,28 @@ Use `--stack PATH` when you deliberately need to target another stack for one co
 
 Tagged releases also publish an optional `ghcr.io/khanhicetea/bento:<release-tag>` image containing the compiled Bento command, embedded web UI, Docker CLI, and Compose v2 plugin. This uses the host Docker daemon rather than Docker-in-Docker. Select a specific release tag rather than an unpinned moving tag.
 
-```sh
+From a reviewed checkout containing `deploy/container/compose.yml`, in a Bash shell:
+
+```bash
 sudo install -d -m 0750 /var/lib/bento
 export BENTO_STACK_ROOT=/var/lib/bento
 export BENTO_IMAGE=ghcr.io/khanhicetea/bento:<release-tag>
+read -r -s -p 'Bento WEB_BASIC_AUTH (user:password): ' WEB_BASIC_AUTH; echo
+export WEB_BASIC_AUTH
 docker compose -f deploy/container/compose.yml pull
 docker compose -f deploy/container/compose.yml run --rm bento init --name bento
-docker compose -f deploy/container/compose.yml up -d
 ```
 
-For a reviewed source checkout, build `bento:local` with `bun run container:build` and leave `BENTO_IMAGE` unset.
+For a reviewed source checkout, build `bento:local` with `bun run container:build` and leave `BENTO_IMAGE` unset. Choose a unique, permanent stack name instead of `bento` if that Compose project name is already in use. Review `/var/lib/bento/.env` before starting managed services. Then start the control plane and bootstrap its data plane explicitly:
 
-Open `http://127.0.0.1:8080`. The example deliberately publishes only on loopback because the management UI has no authentication.
+```sh
+docker compose -f deploy/container/compose.yml up -d
+docker compose -f deploy/container/compose.yml exec bento bento bootstrap
+```
+
+The first `init` invocation does not start the data plane. `bootstrap` validates, builds, and starts Bento's separate Nginx, runtime, and database containers; in the default host ingress mode, Nginx takes host ports 80/443. Open `http://127.0.0.1:8080` locally or through an SSH tunnel. The example publishes the management UI only on host loopback and the image refuses to start `serve` without `WEB_BASIC_AUTH`; Basic auth alone does not make public exposure safe.
+
+If a platform such as Dokploy or Coolify already owns ports 80/443, **do not bootstrap in default host mode**. Follow [Run Bento alongside a container platform](/start/container-platforms/) before running `bootstrap`.
 
 :::danger
 Mounting `/var/run/docker.sock` grants effective root control of the host. Anyone who can operate this Bento instance or access its management UI must be trusted as a host administrator.
@@ -99,7 +109,7 @@ Mounting `/var/run/docker.sock` grants effective root control of the host. Anyon
 
 Use an absolute stack-root path and mount it at exactly the same path inside the control-plane container. For example, host `/var/lib/bento` must remain container `/var/lib/bento`. Compose resolves bind sources in the client container, while Docker Engine applies them on the host; changing the path can make sibling stack containers mount the wrong host directories.
 
-The container does not manage the host crontab. Do not use `backup schedule register` inside it; configure a host scheduler to invoke a one-off Bento container or `docker compose exec` instead. Export/import destinations and other paths outside the stack root also need same-path bind mounts when those operations are used.
+The container does not manage the host crontab. Do not use `backup schedule register` inside it; configure a host scheduler to invoke a one-off Bento container or `docker compose exec` instead. Export/import destinations and other paths outside the stack root also need same-path bind mounts when those operations are used. `WEB_BASIC_AUTH` is present in the container environment and visible to Docker administrators via inspect; keep Docker access restricted.
 
 ## Run from source instead
 

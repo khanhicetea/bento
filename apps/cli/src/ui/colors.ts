@@ -14,10 +14,12 @@ function style(open: string, close: string, replace = open): (value: string) => 
   return (value) => `${open}${String(value).split(close).join(replace)}${close}`;
 }
 
-function color(name: string): (value: string) => string {
-  const open = Bun.color(name, "ansi");
-  if (!open) throw new Error(`unsupported terminal color: ${name}`);
-  return style(open, "\x1b[39m");
+const ansiFallback = { cyan: "\x1b[36m", green: "\x1b[32m", yellow: "\x1b[33m", red: "\x1b[31m" } as const;
+
+function color(name: keyof typeof ansiFallback): (value: string) => string {
+  // Bun.color can return null in a headless container without TERM, even for a known color.
+  if (!enabled) return (value) => String(value);
+  return style(Bun.color(name, "ansi") ?? ansiFallback[name], "\x1b[39m");
 }
 
 export const colors = {

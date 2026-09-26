@@ -3,6 +3,15 @@ import type { CliContext } from "#/commands/context.ts";
 import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
 import { runWebServer } from "#/server/server.ts";
 
+export function validateWebAuth(basicAuth: string | undefined, required: boolean): void {
+  if (required && basicAuth === undefined) {
+    throw new Error("WEB_BASIC_AUTH is required for the container web server");
+  }
+  if (basicAuth !== undefined && (!/^[^:\r\n]+:[^\r\n]+$/.test(basicAuth) || basicAuth.length > 1024)) {
+    throw new Error("WEB_BASIC_AUTH must be a non-empty user:password value");
+  }
+}
+
 export function registerServeCommand(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(
     "serve",
@@ -28,9 +37,7 @@ export function registerServeCommand(parser: YargsBuilder, state: RunState): Yar
       if (!Number.isInteger(argv.port) || argv.port < 0 || argv.port > 65535)
         throw new Error("--port must be an integer between 0 and 65535");
       const basicAuth = Bun.env.WEB_BASIC_AUTH;
-      if (basicAuth !== undefined && (!/^[^:\r\n]+:[^\r\n]+$/.test(basicAuth) || basicAuth.length > 1024)) {
-        throw new Error("WEB_BASIC_AUTH must be a non-empty user:password value");
-      }
+      validateWebAuth(basicAuth, Bun.env.BENTO_REQUIRE_WEB_AUTH === "1");
       if (!["127.0.0.1", "localhost", "::1"].includes(argv.host) && basicAuth === undefined) {
         ctx.log.warn(
           `web management is exposed on ${argv.host} without authentication; use only for temporary testing`,

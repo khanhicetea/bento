@@ -173,12 +173,14 @@ The host path and container path must be identical (`/var/lib/bento` in this exa
 
 ### 3. Start the Bento control plane
 
-Run this as one command:
+The container image refuses to serve the UI without `WEB_BASIC_AUTH`. Read a strong `user:password` into your shell without putting it on the Docker command line (your platform's secret environment setting is another option):
 
 ```bash
+read -r -s -p 'Bento WEB_BASIC_AUTH (user:password): ' WEB_BASIC_AUTH; echo
+export WEB_BASIC_AUTH
 docker run -d --name bento --restart unless-stopped \
   -e BENTO_STACK_ROOT=/var/lib/bento \
-  -e WEB_BASIC_AUTH='operator:replace-with-a-strong-password' \
+  -e WEB_BASIC_AUTH \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /var/lib/bento:/var/lib/bento \
   -p 127.0.0.1:8080:8080 "$BENTO_IMAGE"
@@ -275,7 +277,9 @@ docker rm -f bento
 
 To upgrade, pull a specific newer image, remove the old `bento` control-plane container, and repeat the `docker run` command with the new image. Keep `/var/lib/bento` mounted at the same absolute path. The `serve` startup applies pending `state.db` schema migrations; for CLI-only installations, run `bento migrate` before other post-upgrade commands.
 
-Mounting `/var/run/docker.sock` grants the Bento container effective root control of the Docker host. Only trusted administrators may access it. Host-crontab registration (`backup schedule register`) is not supported from this container; configure a host-managed scheduler to invoke `docker exec bento bento backup schedule run` instead.
+Mounting `/var/run/docker.sock` grants the Bento container effective root control of the Docker host. Only trusted administrators may access it. The credential is visible to operators with Docker inspect access; use host-loopback publication and SSH tunneling rather than exposing the UI to an untrusted network. Host-crontab registration (`backup schedule register`) is not supported from this container; configure a host-managed scheduler to invoke `docker exec bento bento backup schedule run` instead.
+
+When deploying alongside Dokploy, Coolify, or another Docker-based proxy, use a separate Bento stack identity and bridge ingress rather than letting its default Nginx compete for host ports 80/443. See the [container platform deployment guide](docs/src/content/docs/start/container-platforms.md) for mounts, bootstrap, routing, and backup boundaries. Bento manages its own Compose project, not the platform's application services.
 
 ## Architecture (short)
 

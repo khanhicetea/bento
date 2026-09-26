@@ -79,7 +79,7 @@ The `/operations` page can configure one remotely managed Cloudflare Tunnel toke
 
 `cloudflared` shares Nginx's exact network namespace. Configure Cloudflare application hostnames with an Nginx origin such as `http://localhost:80`; the same address reaches Nginx in both ingress modes. Remote tunnel rules are trusted operator configuration and can reach anything Nginx can reach.
 
-In host mode, the shared namespace can also reach a loopback-bound `bento serve` at `http://localhost:8080`. In bridge mode, loopback is the Nginx container instead, so a host control-plane origin needs a separately reachable and carefully firewalled address. Bento's web control plane has no built-in authentication. Put every control-plane hostname behind a trusted Cloudflare Access policy, and do not make the direct listener available to an untrusted network.
+In host mode, the shared namespace can also reach a loopback-bound `bento serve` at `http://localhost:8080`. In bridge mode, loopback is the Nginx container instead, so a host control-plane origin needs a separately reachable and carefully firewalled address. Bento supports `WEB_BASIC_AUTH` (required by its control-plane container image), but this alone does not make a public management endpoint safe. Put every control-plane hostname behind a trusted Cloudflare Access policy, and do not make the direct listener available to an untrusted network.
 
 ## Choose a reverse-proxy upstream
 

@@ -34,7 +34,10 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=build /src/dist/bento /usr/local/bin/bento
 
-ENV BENTO_STACK_ROOT=/var/lib/bento
+# A published or platform-routed control plane has host-level Docker access.
+# Keep the container web server closed until its operator supplies credentials.
+ENV BENTO_STACK_ROOT=/var/lib/bento \
+    BENTO_REQUIRE_WEB_AUTH=1
 WORKDIR /var/lib/bento
 EXPOSE 8080
 

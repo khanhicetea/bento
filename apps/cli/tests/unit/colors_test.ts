@@ -31,3 +31,9 @@ test("CLI colors use Bun ANSI codes and reset nested styles", () => {
   expect(result).toEndWith("\x1b[22m");
   expect(result.replace(/\x1b\[[\d;]*m/g, "")).toBe("heading");
 });
+
+test("CLI colors work without TERM in a headless container", () => {
+  expect(runColors({ TERM: "" })).toBe("heading");
+  const forced = runColors({ TERM: "", FORCE_COLOR: "1" });
+  expect(forced.replace(/\x1b\[[\d;]*m/g, "")).toBe("heading");
+});
