@@ -42,6 +42,19 @@ bunRuntime.test("one app can persist independent SQLite and Litestream bindings"
   }
 });
 
+bunRuntime.test("plain SQLite rejects Litestream file paths", () => {
+  const platform = createPlatform("/tmp/bento-sqlite-path", bunRuntime.cwd());
+  const state = provisionApp(platform, createEmptyState(), {
+    slug: "local",
+    domain: "local.test",
+    databaseEngine: "sqlite",
+  }).state;
+  const raw = JSON.parse(stateToJson(state));
+  const binding = raw.apps.local.databases[0];
+  binding.file.path = binding.file.path.replace(/\.db$/, ".sqlite");
+  assertEquals(parseDesiredState(raw).ok, false);
+});
+
 bunRuntime.test("plain SQLite backup uses .backup and gzip in the runner", async () => {
   const root = await bunRuntime.makeTempDir({
     prefix: "bento-sqlite-backup-",

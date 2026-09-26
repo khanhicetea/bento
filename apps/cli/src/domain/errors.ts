@@ -110,7 +110,8 @@ export function stateError(message: string, recoveryOrOpts?: string | { recovery
 export function migrationError(message: string, cause?: unknown): BentoError {
   return new BentoError("MIGRATION", message, {
     cause,
-    recovery: "Keep the existing state.db, fix the reported migration problem, and rerun `bento migrate`.",
+    recovery:
+      "Preserve state.db and its WAL. For an unsupported development schema, back up and move the database aside before initializing a new stack; otherwise fix the reported problem and retry.",
   });
 }
 

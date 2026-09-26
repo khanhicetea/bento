@@ -242,7 +242,7 @@ A proxy site uses the same domain/TLS ownership model as an app and forwards to 
 ### 8.1 Conceptual state model
 
 ```text
-DesiredState schema v3
+DesiredState schema v1
   defaults
     phpVersion, database service, FPM profile, Redis mode
   phpVersions[]
@@ -285,11 +285,11 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 3. Refuse to initialize any database that already has desired state.
 4. Create private state/environment and directory structure.
 5. Generate administrator secrets once.
-6. Persist empty domain-schema-v3 state with default PHP/MySQL services in one transaction.
+6. Persist empty domain-schema-v1 state with default PHP/MySQL services in one transaction.
 7. Initialize private rclone config placeholder.
 8. Render/materialize when requested by the command flow.
 
-`bento migrate` explicitly applies pending database migrations for scripted CLI use. `bento serve` runs the same migration gate before entering the web/API server. Migration markers and DDL commit together; future/unknown migration versions are refused. Bento never reads `state.json` as a fallback.
+`bento migrate` applies pending numbered database migrations for scripted CLI use, starting with the consolidated version-1 baseline. `bento serve` runs the same migration gate before entering the web/API server. Each migration marker and its DDL commit together; previous development databases with different migration histories and unknown future versions are refused rather than upgraded. Bento never reads `state.json` as a fallback.
 
 ### 9.2 App provisioning
 

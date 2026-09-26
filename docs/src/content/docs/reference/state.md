@@ -32,7 +32,7 @@ Apply pending database migrations after installing a new Bento binary:
 bento migrate
 ```
 
-Migrations are numbered and transactional. Their DDL and applied marker commit together. This development-only release resets the initial schema: prior migration histories, including old job/worker tables, are refused without rewriting or dropping rows. Back up `state.db` and its WAL while the stack is stopped, move the old database aside, then initialize a fresh development stack. Preserve the backup until app settings and minicrond definitions have been recreated and verified. There is no automatic row import. Bento also refuses unknown future migration versions. `bento init` establishes the current schema before writing initial state, while `bento serve` automatically runs the migration gate before entering the server. Run `bento migrate` after upgrading a CLI-only installation.
+The development baseline uses database migration 1 and domain schema 1. The numbered migration lane remains available for future schema changes: each migration's DDL and applied marker commit together. Previous development databases and domain versions are not upgraded: Bento refuses old, unversioned, and unknown migration histories without importing rows. Stop the stack, make a SQLite-consistent backup of `state.db` and its WAL, move the old database aside, then initialize a fresh development stack. Preserve the backup until app settings and minicrond definitions have been recreated and verified. `bento init` establishes the schema before writing initial state; `bento serve` runs the schema gate before entering the server. Run `bento migrate` for CLI-only installations.
 
 Routine state reads do not migrate the database. Bento does not import or fall back to `state.json`.
 

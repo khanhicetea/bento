@@ -54,7 +54,7 @@ Technical choices are evaluated in this order:
 **Decision:** Persist desired state in relational tables in private `state.db` using Bun SQLite, with command argument arrays stored as JSON fields on their parent rows. Keep the strict domain schema version distinct from numbered database schema migrations. Reject unsupported domain versions, unknown future database migrations, and invalid reconstructed state. `bento migrate` is the scripted migration entrypoint; `serve` runs it before startup; CLI-only operators invoke `migrate` explicitly.
 **Benefits:** Relational integrity for entities and relationships, compact storage for atomic argument arrays, transactional whole-state updates, deterministic generation, and an auditable upgrade path.
 **Trade-offs:** Desired state is no longer hand-editable; incompatible domain changes still require a deliberate product migration.
-**Invariant:** Routine loads never rewrite invalid state; failed migrations leave no applied marker; Bento never falls back to `state.json`.
+**Invariant:** Routine loads never rewrite invalid state; failed migrations leave no applied marker; Bento never falls back to `state.json`. This development baseline does not upgrade previous database or domain schemas.
 
 ### D-05 — Desired state is separate from generated and durable data
 
@@ -212,7 +212,7 @@ Technical choices are evaluated in this order:
 A conforming reimplementation MAY change libraries, file internals, or container build mechanics only if it preserves:
 
 - CLI intent and documented safety behavior;
-- strict domain-schema-v3 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
+- strict domain-schema-v1 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
 - stack/project identity and durable resource naming;
 - domain uniqueness and app identity allocation/preservation;
 - component cardinality and private/public topology;
@@ -300,7 +300,7 @@ Tests MUST demonstrate:
 
 Round-trip tests MUST prove that:
 
-- persisted state is strict schema v3;
+- persisted state is strict schema v1;
 - derived `database`, `mainDomain`, and `aliases` views are omitted from JSON;
 - app and proxy map keys match their identities;
 - domain records point to existing owners and exactly one primary exists per owner;
@@ -309,7 +309,7 @@ Round-trip tests MUST prove that:
 - relational bindings reference managed services of the same engine;
 - adding a binding preserves all existing bindings and credentials;
 - unsupported old/new versions fail without state modification;
-- every app has exactly one runtime variant, existing apps migrate to PHP, and process runtime service/workdir/argv/port fields are strict;
+- every app has exactly one runtime variant, and process runtime service/workdir/argv/port fields are strict;
 - process services are stable by slug and cannot collide.
 
 ### A-06 — Identity and secret safety

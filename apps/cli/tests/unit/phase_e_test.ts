@@ -672,7 +672,7 @@ bunRuntime.test("E6 only current schemaVersion is accepted; load does not rewrit
     await store.load();
     assertEquals(await store.load(), original);
 
-    for (const unsupportedVersion of [0, 1, 999]) {
+    for (const unsupportedVersion of [0, 3, 999]) {
       const unsupported = JSON.parse(stateToJson(original));
       unsupported.schemaVersion = unsupportedVersion;
       assertEquals(parseDesiredState(unsupported).ok, false);

@@ -161,7 +161,7 @@ type PositionValueRow = {
 const migrations: Migration[] = [
   {
     version: 1,
-    name: "minicrond-owned-user-jobs",
+    name: "initial-state",
     sql: `
 CREATE TABLE stack_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -357,23 +357,38 @@ export async function migrateStateDatabase(platform: Platform): Promise<Migratio
   try {
     database = openDatabase(path, "create");
     await platform.fs.chmod(path, 0o600);
-    database.exec(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY CHECK (version > 0),
-        name TEXT NOT NULL UNIQUE,
-        applied_at TEXT NOT NULL
-      )
-    `);
-    const appliedRows = database
-      .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
-      .all();
-    validateAppliedMigrations(appliedRows);
+    const hasTable = hasMigrationTable(database);
+    const appliedRows = hasTable ? readMigrations(database) : [];
+    if (hasTable) {
+      validateAppliedMigrations(appliedRows);
+    } else {
+      const existingTable = database
+        .query<
+          { name: string },
+          []
+        >("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1")
+        .get();
+      if (existingTable) {
+        throw migrationError(
+          `unversioned desired state database contains ${existingTable.name}; back up state.db and its WAL while stopped, move the old database aside, then initialize a new stack`,
+        );
+      }
+    }
     const fromVersion = appliedRows.at(-1)?.version ?? 0;
     const applied: number[] = [];
     for (const migration of migrations) {
       if (migration.version <= fromVersion) continue;
       database
         .transaction(() => {
+          if (!hasTable && applied.length === 0) {
+            database!.exec(`
+              CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY CHECK (version > 0),
+                name TEXT NOT NULL UNIQUE,
+                applied_at TEXT NOT NULL
+              )
+            `);
+          }
           database!.exec(migration.sql);
           database!.run("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)", [
             migration.version,
@@ -384,11 +399,7 @@ export async function migrateStateDatabase(platform: Platform): Promise<Migratio
         .immediate();
       applied.push(migration.version);
     }
-    return {
-      fromVersion,
-      toVersion: STATE_DATABASE_SCHEMA_VERSION,
-      applied,
-    };
+    return { fromVersion, toVersion: STATE_DATABASE_SCHEMA_VERSION, applied };
   } catch (cause) {
     if (isBentoError(cause)) throw cause;
     throw migrationError(`failed to migrate desired state database at ${path}`, cause);
@@ -477,34 +488,46 @@ function openDatabase(path: string, mode: "read" | "write" | "create"): Database
   return database;
 }
 
+function hasMigrationTable(database: Database): boolean {
+  return !!database
+    .query<
+      { present: number },
+      []
+    >("SELECT 1 AS present FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'")
+    .get();
+}
+
+function readMigrations(database: Database): { version: number; name: string }[] {
+  return database
+    .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
+    .all();
+}
+
 function validateAppliedMigrations(rows: { version: number; name: string }[]): void {
+  if (rows.length === 0) {
+    throw migrationError(
+      "desired state database has an empty migration history; back up state.db before reinitializing",
+    );
+  }
   for (const [index, row] of rows.entries()) {
     const expected = migrations[index];
     if (!expected || row.version !== expected.version || row.name !== expected.name) {
       throw migrationError(
-        `unsupported desired state database migration ${row.version} (${row.name}); this development schema cannot migrate an old state.db. Back up state.db and its WAL while the stack is stopped, move the old database aside, then run bento init to create a new stack. Recreate app scheduler definitions in each app's minicrond registry.`,
+        `unsupported desired state database migration ${row.version} (${row.name}); back up state.db and its WAL while stopped, move the old database aside, then initialize a new stack`,
       );
     }
   }
 }
 
 function assertCurrentMigrations(database: Database): void {
-  const table = database
-    .query<
-      { present: number },
-      []
-    >("SELECT 1 AS present FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'")
-    .get();
-  if (!table) {
+  if (!hasMigrationTable(database)) {
     throw stateError("desired state database schema is not initialized", {
       recovery: "Run `bento migrate` before using this stack.",
     });
   }
-  const rows = database
-    .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
-    .all();
+  const rows = readMigrations(database);
   validateAppliedMigrations(rows);
-  const current = rows.at(-1)?.version ?? 0;
+  const current = rows.at(-1)!.version;
   if (current !== STATE_DATABASE_SCHEMA_VERSION) {
     throw stateError(`desired state database schema is version ${current}; expected ${STATE_DATABASE_SCHEMA_VERSION}`, {
       recovery: "Run `bento migrate` with this Bento binary before retrying.",

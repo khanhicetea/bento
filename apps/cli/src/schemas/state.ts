@@ -153,12 +153,10 @@ const bindingSchema = z.discriminatedUnion("engine", [
     }).refine(
       (file) => {
         const slug = file.id.slice(0, -11);
-        // Legacy schema-v3 SQLite files are now identified as Litestream.
-        // New plain SQLite files use .db to stay outside the *.sqlite watcher.
-        return file.path === `sqlite/${file.id}/${slug}.db` || file.path === `sqlite/${file.id}/${slug}.sqlite`;
+        return file.path === `sqlite/${file.id}/${slug}.db`;
       },
       {
-        message: "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.(db|sqlite)",
+        message: "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.db",
       },
     ),
     vacuumSchedule: sqliteVacuumScheduleSchema.optional(),

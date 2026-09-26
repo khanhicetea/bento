@@ -8,7 +8,7 @@ import { addPostgresVersion } from "../../src/services/postgres.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 import { STATE_SCHEMA_VERSION } from "../../src/version.ts";
 
-bunRuntime.test("schema v3 persists linked domains and multiple database-engine bindings", () => {
+bunRuntime.test("schema v1 persists linked domains and multiple database-engine bindings", () => {
   const platform = createPlatform("/tmp/unused", bunRuntime.cwd());
   let state = addPostgresVersion(createEmptyState("2026-01-01T00:00:00.000Z"), "17");
   state = provisionApp(platform, state, {
@@ -53,7 +53,7 @@ bunRuntime.test("schema v3 persists linked domains and multiple database-engine 
   assertEquals(parsed.value.apps.alpha?.aliases, ["www.alpha.test"]);
 });
 
-bunRuntime.test("schema v3 rejects app-owned ingress and singular database fields", () => {
+bunRuntime.test("schema v1 rejects app-owned ingress and singular database fields", () => {
   const platform = createPlatform("/tmp/unused", bunRuntime.cwd());
   const state = provisionApp(platform, createEmptyState(), {
     slug: "demo",
@@ -66,18 +66,18 @@ bunRuntime.test("schema v3 rejects app-owned ingress and singular database field
 });
 
 bunRuntime.test("state store rejects another domain schema without rewriting it", async () => {
-  const root = await bunRuntime.makeTempDir({ prefix: "bento-v1-state-" });
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-wrong-state-version-" });
   try {
     const platform = createPlatform(root, bunRuntime.cwd());
     const store = new StateStore(platform);
     await store.init();
     using database = new Database(platform.paths.paths.stateDb);
-    database.run("UPDATE stack_config SET state_schema_version = 4 WHERE id = 1");
-    await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 4");
+    database.run("UPDATE stack_config SET state_schema_version = 3 WHERE id = 1");
+    await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 3");
     const row = database
       .query<{ state_schema_version: number }, []>("SELECT state_schema_version FROM stack_config WHERE id = 1")
       .get();
-    assertEquals(row?.state_schema_version, 4);
+    assertEquals(row?.state_schema_version, 3);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

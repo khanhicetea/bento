@@ -34,7 +34,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
     const migration = database
       .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
       .all();
-    assertEquals(migration, [{ version: 1, name: "minicrond-owned-user-jobs" }]);
+    assertEquals(migration, [{ version: 1, name: "initial-state" }]);
     const tables = database
       .query<{ name: string }, []>(
         "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -54,7 +54,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
   }
 });
 
-bunRuntime.test("old development schema is refused without deleting user job rows", async () => {
+bunRuntime.test("previous development schema is refused without altering its rows", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-retired-db-" });
   try {
     const platform = createPlatform(root, bunRuntime.cwd());
@@ -70,6 +70,26 @@ bunRuntime.test("old development schema is refused without deleting user job row
     assertEquals(
       database.query<{ name: string }, []>("SELECT name FROM schema_migrations").get()?.name,
       "normalized-desired-state",
+    );
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("unversioned databases are refused without creating migration markers", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-unversioned-db-" });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    {
+      using database = new Database(platform.paths.paths.stateDb, { create: true });
+      database.exec("CREATE TABLE old_state (value TEXT); INSERT INTO old_state VALUES ('keep-me')");
+    }
+    await assertRejects(() => migrateStateDatabase(platform), Error, "unversioned desired state database");
+    using database = new Database(platform.paths.paths.stateDb, { readonly: true });
+    assertEquals(database.query<{ value: string }, []>("SELECT value FROM old_state").get()?.value, "keep-me");
+    assertEquals(
+      database.query<{ name: string }, []>("SELECT name FROM sqlite_schema WHERE name = 'schema_migrations'").get(),
+      null,
     );
   } finally {
     await bunRuntime.remove(root, { recursive: true });
