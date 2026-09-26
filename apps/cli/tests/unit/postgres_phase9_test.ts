@@ -10,16 +10,21 @@ async function read(path: string): Promise<string> {
 }
 
 bunRuntime.test("PostgreSQL CLI retains app and operator workflows", async () => {
-  const [postgres, backup, app] = await Promise.all([
+  const [postgres, backup, app, dataUseCases, applicationUseCases] = await Promise.all([
     read("src/commands/subcommands/postgres.ts"),
     read("src/commands/subcommands/backup.ts"),
     read("src/commands/subcommands/app.ts"),
+    read("src/use_cases/data.ts"),
+    read("src/use_cases/applications.ts"),
   ]);
   assertMatch(postgres, /shell/);
   assertMatch(postgres, /size/);
-  assertMatch(backup, /runDatabaseBackup/);
-  assertMatch(backup, /runDatabaseRestore/);
-  assertMatch(app, /createPostgresAppDatabaseLive|provisionApp/);
+  assertMatch(backup, /ctx\.data\.backup/);
+  assertMatch(backup, /ctx\.data\.restore/);
+  assertMatch(dataUseCases, /runDatabaseBackup/);
+  assertMatch(dataUseCases, /runDatabaseRestore/);
+  assertMatch(app, /ctx\.applications\.provision/);
+  assertMatch(applicationUseCases, /provisionApp/);
 });
 
 bunRuntime.test("test-stack carries PostgreSQL connectivity, isolation, recovery, and transfer proof", async () => {

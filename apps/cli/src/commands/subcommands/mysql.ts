@@ -119,7 +119,7 @@ async function cmdMysqlAdd(argv: ArgsWith<"version">, ctx: CliContext): Promise<
   const { version } = argv;
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const next = addMysqlVersion(state, version);
+    const next = addMysqlVersion(state, version, ctx.platform.clock.nowIso());
     await ctx.store.save(next);
     if (!noApply) {
       await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });

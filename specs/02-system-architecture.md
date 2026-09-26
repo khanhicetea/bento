@@ -53,7 +53,7 @@ The product is organized into these operator-facing areas:
 
 `apps/cli/src/main.ts` is the source and compiled entrypoint. `apps/cli/src/commands/router.ts` owns global yargs parsing, help, error mapping, and command registration. `apps/cli/src/commands/subcommands/` groups scriptable command handlers; `apps/cli/src/ui/` handles redacted CLI presentation. `bento serve` exposes typed domain operations to the loopback-default web UI.
 
-Command adapters SHOULD parse/present and coordinate use cases. They SHOULD NOT own domain invariants or direct filesystem/process details.
+Command adapters SHOULD parse/present and delegate to shared use cases. They SHOULD NOT own domain invariants, persistence/apply ordering, or direct filesystem/process details. CLI and web adapters use the same application, data, operations, and routing coordinators from `apps/cli/src/use_cases/` so transport-specific code cannot silently diverge.
 
 ### 3.2 Domain and schemas
 
@@ -63,9 +63,11 @@ Command adapters SHOULD parse/present and coordinate use cases. They SHOULD NOT 
 
 Branded TypeScript values reduce accidental mixing after runtime validation; they are not a substitute for boundary checks.
 
-### 3.3 Services
+### 3.3 Use cases and services
 
-`apps/cli/src/services/` owns use cases and state transitions:
+`apps/cli/src/use_cases/` owns cross-service operation ordering, including locks, external side effects, state persistence, render/apply, and post-save reconciliation. These coordinators are constructed once in the CLI context and are shared by command and web adapters. They use composition rather than an inheritance hierarchy.
+
+`apps/cli/src/services/` owns focused capabilities and state transitions:
 
 - app/proxy/PHP/database lifecycle;
 - generation, staged render/apply, and asset materialization;
@@ -73,7 +75,7 @@ Branded TypeScript values reduce accidental mixing after runtime validation; the
 - schedules, workers, deploy queue, permissions, logs, TLS;
 - stack environment, safe Compose assembly, transfer, diagnostics, and maintenance.
 
-Services receive a `Platform` and SHOULD remain independent from terminal formatting.
+Use cases and effectful services receive a `Platform` and SHOULD remain independent from terminal formatting. Pure state, SQL, rendering, validation, and planning helpers SHOULD remain ordinary functions; classes are reserved for cohesive resources or transaction lifecycles such as `StateStore` and `RenderService`.
 
 ### 3.4 Platform adapters
 

@@ -892,7 +892,7 @@ export function deleteApp(
   state: DesiredState,
   slug: string,
   confirmation?: string,
-  now: string = new Date().toISOString(),
+  now: string = state.updatedAt,
 ): AppLifecycleResult {
   const app = getAppOrThrow(state, slug);
   const expected = `delete ${slug}`;

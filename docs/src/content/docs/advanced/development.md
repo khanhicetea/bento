@@ -24,14 +24,15 @@ Never run destructive tests against the checked-in `bento/` stack. Create a temp
 
 ## Layers
 
-- `apps/cli/src/commands/`: parse/present and coordinate use cases.
-- `apps/cli/src/services/` and `apps/cli/src/domain/`: state transitions and operation plans.
+- `apps/cli/src/commands/` and `apps/cli/src/server/domains/`: transport adapters that parse/present and delegate.
+- `apps/cli/src/use_cases/`: shared CLI/web workflows and persistence/apply ordering.
+- `apps/cli/src/services/` and `apps/cli/src/domain/`: focused capabilities, state transitions, and operation plans.
 - `apps/cli/src/schemas/`: runtime validation of untrusted input.
 - `apps/cli/src/platform/`: filesystem, lock, process, clock, random, assets.
 - `apps/cli/templates/`: immutable Compose, images, config, in-container helpers.
 - `apps/cli/tests/`: unit, contract/parity, and Docker integration behavior.
 
-Keep dependencies moving in one direction: command adapters → services/domain → narrow platform interfaces. Keep terminal formatting, input parsing, and unchecked external values out of domain code.
+Keep dependencies moving in one direction: command/web adapters → use cases → services/domain → narrow platform interfaces. Keep terminal formatting, input parsing, and unchecked external values out of domain code. Prefer pure functions for state and planning; use classes only where a resource or transaction has a cohesive lifecycle.
 
 ## Compile and parity
 

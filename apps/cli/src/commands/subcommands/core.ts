@@ -135,8 +135,7 @@ async function cmdInit(argv: CliArgs, ctx: CliContext): Promise<number> {
 }
 
 async function cmdRender(_argv: CliArgs, ctx: CliContext): Promise<number> {
-  const state = await ctx.store.load();
-  const result = await ctx.render.apply(state, {
+  const result = await ctx.operations.apply({
     renderOnly: true,
     skipValidate: true,
   });
@@ -177,7 +176,7 @@ async function cmdApply(argv: ArgsWith<"renderOnly" | "skipValidate" | "preview"
     return 0;
   }
 
-  const result = await ctx.render.apply(state, { renderOnly, skipValidate });
+  const result = await ctx.operations.apply({ renderOnly, skipValidate });
   ctx.log.info(
     `applied ${result.files.length} files; reload=${describeReloadPlan(result.reloadPlan).join(
       ",",

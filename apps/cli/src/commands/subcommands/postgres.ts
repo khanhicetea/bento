@@ -97,7 +97,7 @@ async function cmdPostgresList(_argv: CliArgs, ctx: CliContext): Promise<number>
 async function cmdPostgresAdd(argv: ArgsWith<"version">, ctx: CliContext): Promise<number> {
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const next = addPostgresVersion(state, argv.version);
+    const next = addPostgresVersion(state, argv.version, ctx.platform.clock.nowIso());
     await ctx.store.save(next);
     if (!noApply) {
       await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });

@@ -5,14 +5,8 @@ import {
   runScheduledBackup,
   unregisterBackupSchedule,
 } from "#/services/backup_schedule.ts";
-import {
-  type DatabaseBackupArtifact,
-  type DatabaseBackupRequest,
-  runDatabaseBackup,
-  runDatabaseRestore,
-} from "#/services/database_backup.ts";
+import type { DatabaseBackupArtifact, DatabaseBackupRequest } from "#/services/database_backup.ts";
 import { readRcloneBackupTarget } from "#/services/rclone.ts";
-import { syncSqliteBackup } from "#/services/sqlite.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
 import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
@@ -131,7 +125,6 @@ function backupOptions(y: YargsBuilder): YargsBuilder {
 }
 
 async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
-  const state = await ctx.store.load();
   const scope = argv.all === true ? ("all" as const) : argv.database ? ("database" as const) : ("app" as const);
   if (scope !== "all" && !argv.app) {
     ctx.log.error("usage: bento backup --app <app> [--database name] | --all");
@@ -142,39 +135,16 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
     return 2;
   }
 
-  // A database-scoped request may still target a local SQLite file on an app
-  // that also owns a Litestream file. Only reject an explicitly selected remote
-  // file; app/all scope performs local backups and then syncs remote replicas.
-  const engine = argv.engine as DatabaseBackupRequest["engine"];
-  const litestreamApps = engine
-    ? []
-    : scope === "all"
-      ? Object.values(state.apps).filter((app) => app.databases.some((database) => database.engine === "litestream"))
-      : scope === "database"
-        ? argv.app &&
-          state.apps[argv.app]?.databases.some(
-            (database) => database.engine === "litestream" && database.file.id === argv.database,
-          )
-          ? [state.apps[argv.app]!]
-          : []
-        : argv.app && state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
-          ? [state.apps[argv.app]!]
-          : [];
-  if (scope === "database" && litestreamApps.length > 0) {
-    ctx.log.error("Litestream has one explicit SQLite file; omit --database");
-    return 2;
-  }
-  const artifacts = await runDatabaseBackup(ctx.platform, state, {
+  const result = await ctx.data.backup({
     scope,
     slug: argv.app,
     database: argv.database,
-    engine,
+    engine: argv.engine as DatabaseBackupRequest["engine"],
     compress: argv.gzip === true ? "gzip" : argv.none === true ? "none" : "zstd",
   });
-  logBackupArtifacts(ctx, artifacts);
-  for (const app of litestreamApps) {
-    await syncSqliteBackup(ctx.platform, state, app.slug);
-    ctx.log.info(`remote sync confirmed for Litestream app ${app.slug}`);
+  logBackupArtifacts(ctx, result.artifacts);
+  for (const slug of result.syncedLitestreamApps) {
+    ctx.log.info(`remote sync confirmed for Litestream app ${slug}`);
   }
   return 0;
 }
@@ -267,16 +237,12 @@ async function cmdRestore(argv: ArgsWith<"file" | "app" | "target" | "engine">, 
     return 10;
   }
   ctx.log.warn("restore is not object-level atomic; a failed import can leave a partial destination");
-  await ctx.store.withExclusive(async (state) => {
-    const next = await runDatabaseRestore(ctx.platform, state, {
-      file,
-      slug: app,
-      targetDatabase: target,
-      replaceOriginal: argv.replace,
-      engine: argv.engine as "mysql" | "postgres" | undefined,
-    });
-    if (next !== state) await ctx.store.save(next);
-    return next;
+  await ctx.data.restore({
+    file,
+    slug: app,
+    targetDatabase: target,
+    replaceOriginal: argv.replace,
+    engine: argv.engine as "mysql" | "postgres" | undefined,
   });
   ctx.log.info(`restore completed into ${target}`);
   return 0;

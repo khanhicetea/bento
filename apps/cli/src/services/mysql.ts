@@ -26,7 +26,11 @@ function mysqlDatabase(app: AppState, service?: string) {
   return database;
 }
 
-export function addMysqlVersion(state: DesiredState, versionInput: string): DesiredState {
+export function addMysqlVersion(
+  state: DesiredState,
+  versionInput: string,
+  now: string = state.updatedAt,
+): DesiredState {
   const version = asMysqlVersion(unwrap(parseMysqlVersion(versionInput), "mysqlVersion"));
   if (state.databaseServices.filter((v) => v.engine === "mysql").some((v) => v.version === version)) {
     throw conflictError(`MySQL version ${version} is already managed`);
@@ -42,7 +46,7 @@ export function addMysqlVersion(state: DesiredState, versionInput: string): Desi
   return {
     ...state,
     databaseServices: [...state.databaseServices, managed].sort((a, b) => a.service.localeCompare(b.service)),
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
   };
 }
 

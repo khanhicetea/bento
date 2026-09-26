@@ -1,9 +1,8 @@
-import { basename, relative, resolve } from "node:path";
+import { basename, relative } from "node:path";
 import { implement } from "@orpc/server";
 import { dataContract, type DatabaseActivity, type DatabaseRuntime, type DataOverview } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
 import type { AppDatabaseBinding } from "#/domain/state.ts";
-import { runDatabaseBackup, runDatabaseRestore } from "#/services/database_backup.ts";
 import { queryDatabaseSizes, queryProcesslist } from "#/services/mysql.ts";
 import { queryPostgresActivity, queryPostgresDatabaseSizes } from "#/services/postgres.ts";
 import { requireMysqlRootPassword, requirePostgresRootPassword } from "#/services/stack_env.ts";
@@ -26,7 +25,7 @@ export function createDataRouter(ctx: CliContext) {
             )?.file.id
           : input.database;
       if (!database) throw new Error("database binding was not found");
-      const artifacts = await runDatabaseBackup(ctx.platform, state, {
+      const result = await ctx.data.backup({
         scope: "database",
         slug: input.app,
         database,
@@ -34,7 +33,7 @@ export function createDataRouter(ctx: CliContext) {
         compress: "zstd",
       });
       return {
-        artifacts: artifacts.map((item) => ({
+        artifacts: result.artifacts.map((item) => ({
           name: relative(ctx.platform.paths.paths.backupsDir, item.path),
           database: item.database,
           bytes: item.bytes,
@@ -44,26 +43,12 @@ export function createDataRouter(ctx: CliContext) {
     restore: os.restore.handler(async ({ input }) => {
       if (input.confirmation !== input.targetDatabase)
         throw new Error("confirmation must exactly match the target database");
-      const root = resolve(ctx.platform.paths.paths.backupsDir);
-      const file = resolve(root, input.artifact);
-      const rel = relative(root, file);
-      if (
-        !rel ||
-        rel === ".." ||
-        rel.startsWith("../") ||
-        rel.startsWith("..\\") ||
-        !(await ctx.platform.fs.exists(file))
-      ) {
-        throw new Error("backup artifact was not found");
-      }
-      await ctx.store.withExclusive(async (state) => {
-        const next = await runDatabaseRestore(ctx.platform, state, {
-          file,
-          slug: input.app,
-          targetDatabase: input.targetDatabase,
-          engine: input.engine,
-        });
-        await ctx.store.save(next);
+      const file = await ctx.data.resolveBackupArtifact(input.artifact);
+      await ctx.data.restore({
+        file,
+        slug: input.app,
+        targetDatabase: input.targetDatabase,
+        engine: input.engine,
       });
       return { message: `Restored ${basename(file)} into ${input.targetDatabase}` };
     }),
@@ -263,27 +248,7 @@ async function queryDatabaseActivity(
 }
 
 async function listBackups(ctx: CliContext): Promise<DataOverview["backups"]> {
-  const root = resolve(ctx.platform.paths.paths.backupsDir);
-  if (!(await ctx.platform.fs.exists(root))) return [];
-  const found: DataOverview["backups"] = [];
-  const pending = [root];
-  while (pending.length) {
-    const directory = pending.pop()!;
-    for (const name of await ctx.platform.fs.readDir(directory)) {
-      const path = resolve(directory, name);
-      const rel = relative(root, path);
-      if (!rel || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) continue;
-      const stat = await ctx.platform.fs.stat(path);
-      if (stat.isDirectory) pending.push(path);
-      if (stat.isFile && /\.(?:sql|sqlite)(?:\.gz|\.zst|\.zstd)?$/i.test(name))
-        found.push({
-          name: rel,
-          bytes: stat.size,
-          ...(stat.modifiedAt ? { modifiedAt: stat.modifiedAt.toISOString() } : {}),
-        });
-    }
-  }
-  return found.sort((a, b) => b.name.localeCompare(a.name));
+  return await ctx.data.listBackupArtifacts();
 }
 
 function messageOf(error: unknown) {

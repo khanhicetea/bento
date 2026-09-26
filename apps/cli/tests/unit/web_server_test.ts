@@ -23,6 +23,7 @@ import {
 } from "../../src/server/server.ts";
 import { createContext } from "../../src/commands/context.ts";
 import { RenderService } from "../../src/services/render.ts";
+import { createApplicationUseCases } from "../../src/use_cases/applications.ts";
 import { createRecordingProcessRunner } from "../../src/platform/mod.ts";
 import { runtime } from "../runtime.ts";
 
@@ -221,6 +222,11 @@ test("application save reports an apply failure after persisting the app", async
         throw new Error("private validator detail");
       }
     })(ctx.platform);
+    ctx.applications = createApplicationUseCases({
+      platform: ctx.platform,
+      store: ctx.store,
+      render: ctx.render,
+    });
 
     const client = createRouterClient(createApplicationsRouter(ctx));
     await expect(

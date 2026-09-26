@@ -1,4 +1,3 @@
-import { createProxy, deleteProxy } from "#/services/proxy.ts";
 import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
@@ -51,27 +50,16 @@ async function cmdProxyCreate(argv: ArgsWith<"name" | "domain" | "upstream">, ct
   const { name, domain, upstream } = argv;
   const upstreams = Array.isArray(upstream) ? upstream : [upstream];
   const noApply = wantsNoApply(argv);
-  await ctx.store.withExclusive(async (state) => {
-    const result = createProxy(
-      state,
-      {
-        name,
-        domain,
-        upstreams,
-        aliases: argv.alias?.split(",") ?? [],
-      },
-      ctx.platform.clock.nowIso(),
-    );
-    await ctx.store.save(result.state);
-    if (!noApply) {
-      await ctx.render.apply(result.state, {
-        reloadPlan: result.reloadPlan,
-        skipValidate: true,
-        alreadyLocked: true,
-      });
-    }
-    return result;
-  });
+  await ctx.routing.saveProxy(
+    {
+      operation: "create",
+      name,
+      domain,
+      upstreams,
+      aliases: argv.alias?.split(",") ?? [],
+    },
+    { apply: !noApply, skipValidate: true },
+  );
   ctx.log.info(noApply ? `created proxy ${name} (state only; run bento apply)` : `created proxy ${name}`);
   return 0;
 }
@@ -87,18 +75,7 @@ function proxyDeleteOptions(y: YargsBuilder): YargsBuilder {
 
 async function cmdProxyDelete(argv: ArgsWith<"name">, ctx: CliContext): Promise<number> {
   const noApply = wantsNoApply(argv);
-  const result = await ctx.store.withExclusive(async (state) => {
-    const removed = deleteProxy(state, argv.name, argv.confirm, ctx.platform.clock.nowIso());
-    await ctx.store.save(removed.state);
-    if (!noApply) {
-      await ctx.render.apply(removed.state, {
-        reloadPlan: removed.reloadPlan,
-        skipValidate: false,
-        alreadyLocked: true,
-      });
-    }
-    return removed;
-  });
+  const result = await ctx.routing.removeProxy(argv.name, argv.confirm, { apply: !noApply });
   ctx.log.info(`removed proxy ${result.proxy.name}${noApply ? " (state only; run bento apply)" : ""}`);
   return 0;
 }

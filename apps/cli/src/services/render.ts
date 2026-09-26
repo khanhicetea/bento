@@ -16,14 +16,10 @@ import { materializeDockerAssets } from "#/services/assets_materialize.ts";
 import { composeArgs } from "#/services/compose.ts";
 import { ensureAppLogDirs } from "#/services/permissions.ts";
 import { ensureManagedTlsCertificates } from "#/services/tls.ts";
+import { isManagedMarker, type GeneratedFile } from "#/services/generated_file.ts";
 
-export type GeneratedFile = {
-  /** Path relative to generatedDir */
-  relPath: string;
-  content: string | Uint8Array;
-  mode: number;
-  managed: boolean;
-};
+export type { GeneratedFile, ManagedMarkerStyle } from "#/services/generated_file.ts";
+export { isManagedMarker, withManagedMarker } from "#/services/generated_file.ts";
 
 export type RenderResult = {
   files: GeneratedFile[];
@@ -90,29 +86,7 @@ type RenderJournal = {
   };
 };
 
-const MANAGED_MARKER_HASH = "# bento-managed: true\n";
-const MANAGED_MARKER_SEMI = "; bento-managed: true\n";
-
 const NGINX_CUSTOM_DIRS = ["main.d", "events.d", "http.d", "sites.d", "apps", "proxies"] as const;
-
-export type ManagedMarkerStyle = "hash" | "semicolon" | "none";
-
-export function withManagedMarker(content: string, style: ManagedMarkerStyle = "hash"): string {
-  if (style === "none") return content;
-  const marker = style === "semicolon" ? MANAGED_MARKER_SEMI : MANAGED_MARKER_HASH;
-  if (
-    content.startsWith(MANAGED_MARKER_HASH) ||
-    content.startsWith(MANAGED_MARKER_SEMI) ||
-    content.startsWith(marker)
-  ) {
-    return content;
-  }
-  return `${marker}${content}`;
-}
-
-export function isManagedMarker(head: string): boolean {
-  return head.startsWith("# bento-managed:") || head.startsWith("; bento-managed:");
-}
 
 export class RenderService {
   constructor(

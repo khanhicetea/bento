@@ -9,31 +9,10 @@ import {
 } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
 import { isBentoError, type BentoError } from "#/domain/errors.ts";
-import type { AppDatabaseBinding, AppState, DesiredState, TlsMode } from "#/domain/state.ts";
-import { isProcessApp } from "#/domain/state.ts";
+import type { AppDatabaseBinding, AppState, TlsMode } from "#/domain/state.ts";
 import { FPM_PROFILES } from "#/domain/types.ts";
-import {
-  applyAppDataPlane,
-  deleteApp,
-  getAppOrThrow,
-  materializeAppHome,
-  provisionApp,
-  setAppEnabled,
-} from "#/services/app.ts";
-import { writeAppPruneManifest } from "#/services/app_prune.ts";
-import { enableSqliteBackup, sqliteCompose } from "#/services/sqlite.ts";
-import { loadRedisPassword } from "#/services/stack_env.ts";
 import { redact } from "#/ui/output.ts";
-import { composeArgs } from "#/services/compose.ts";
-import {
-  isProcessAppHealthy,
-  recreateRunningProcessApp as recreateProcessApp,
-  removeProcessAppContainer,
-  startProcessApp,
-  stopProcessApp,
-} from "#/services/process_app.ts";
-import { emptyReloadPlan } from "#/domain/reload.ts";
-import { safetyError } from "#/domain/errors.ts";
+import { ApplicationApplyError } from "#/use_cases/applications.ts";
 
 const os = implement(applicationsContract);
 
@@ -78,34 +57,8 @@ export function createApplicationsRouter(ctx: CliContext) {
     }),
     setEnabled: os.setEnabled.handler(async ({ input }) => {
       try {
-        const changed = await ctx.store.withExclusive(async (state) => {
-          const current = getAppOrThrow(state, input.slug);
-          if (input.enabled && isProcessApp(current)) {
-            if (!(await isProcessAppHealthy(ctx.platform, state, current))) {
-              throw safetyError(
-                `refusing to publish process app ${current.slug} before it is running`,
-                `Run 'bento app start ${current.slug}', verify health, then enable it.`,
-              );
-            }
-          }
-          const result = setAppEnabled(state, input.slug, input.enabled, ctx.platform.clock.nowIso());
-          await ctx.store.save(result.state);
-          await ctx.render.apply(result.state, {
-            reloadPlan: result.reloadPlan,
-            skipValidate: false,
-            alreadyLocked: true,
-          });
-          return result;
-        });
-        if (!input.enabled && isProcessApp(changed.app)) {
-          const stopped = await ctx.platform.process.run(
-            await composeArgs(ctx.platform, changed.state, ["stop", changed.app.runtime.service]),
-            { cwd: ctx.platform.paths.paths.root, timeoutMs: 60_000 },
-          );
-          if (stopped.code !== 0) {
-            ctx.log.warn(`process app ${changed.app.slug} route is disabled but its private container did not stop`);
-          }
-        }
+        const changed = await ctx.applications.setEnabled(input.slug, input.enabled);
+        if (changed.stopWarning) ctx.log.warn(changed.stopWarning);
         return toApplication(changed.app);
       } catch (error) {
         logApplicationError(ctx, "set enabled", error);
@@ -114,25 +67,7 @@ export function createApplicationsRouter(ctx: CliContext) {
     }),
     setRunning: os.setRunning.handler(async ({ input }) => {
       try {
-        const state = await ctx.store.load();
-        const app = getAppOrThrow(state, input.slug);
-        if (!isProcessApp(app)) {
-          throw safetyError("start/stop is only available for process applications");
-        }
-        if (input.action === "start") {
-          await ctx.render.apply(state, {
-            reloadPlan: emptyReloadPlan(),
-            skipValidate: false,
-          });
-        }
-        const result =
-          input.action === "start"
-            ? await startProcessApp(ctx.platform, state, app)
-            : await stopProcessApp(ctx.platform, state, app);
-        if (!result || result.code !== 0) {
-          throw new Error(`Process application ${input.action} failed`);
-        }
-        return toApplication(app);
+        return toApplication(await ctx.applications.setRunning(input.slug, input.action));
       } catch (error) {
         logApplicationError(ctx, "set running", error);
         throw asORPCError(error);
@@ -140,26 +75,8 @@ export function createApplicationsRouter(ctx: CliContext) {
     }),
     remove: os.remove.handler(async ({ input }) => {
       try {
-        const removed = await ctx.store.withExclusive(async (state) => {
-          const result = deleteApp(state, input.slug, input.confirmation, ctx.platform.clock.nowIso());
-          if (isProcessApp(result.app)) {
-            const stopped = await removeProcessAppContainer(ctx.platform, state, result.app);
-            if (stopped && stopped.code !== 0) {
-              throw safetyError(
-                `refusing to remove process app ${result.app.slug} while its container cannot be stopped`,
-              );
-            }
-          }
-          await writeAppPruneManifest(ctx.platform, result.app);
-          await ctx.store.save(result.state);
-          await ctx.render.apply(result.state, {
-            reloadPlan: result.reloadPlan,
-            skipValidate: false,
-            alreadyLocked: true,
-          });
-          return result.app;
-        });
-        return toApplication(removed);
+        const removed = await ctx.applications.remove(input.slug, input.confirmation);
+        return toApplication(removed.app);
       } catch (error) {
         logApplicationError(ctx, "remove", error);
         throw asORPCError(error);
@@ -169,8 +86,8 @@ export function createApplicationsRouter(ctx: CliContext) {
 }
 
 async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Promise<Application> {
-  const result = await ctx.store.withExclusive(async (state) => {
-    const provisioned = provisionApp(ctx.platform, state, {
+  const result = await ctx.applications.provision(
+    {
       slug: input.slug,
       domain: input.domain,
       aliases: input.aliases,
@@ -192,134 +109,20 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
       databaseName: input.databaseName,
       tls: tlsMode(input),
       accessLog: input.accessLog,
-    });
-    const selectedService = state.databaseServices.find(
-      (service) =>
-        service.engine === input.databaseEngine &&
-        (service.service === input.databaseService || service.version === input.databaseService),
-    );
-    await applyAppDataPlane(ctx.platform, provisioned.app, {
-      explicitDatabase: input.createDatabase,
-      databaseEngine: input.databaseEngine,
-      databaseService: selectedService?.service,
-      databaseName: input.databaseName,
-    });
-    const redisSharedPassword = await loadRedisPassword(ctx.platform);
-    await materializeAppHome(ctx.platform, provisioned.app, {
-      recursivePerms: true,
-      redisSharedPassword,
-    });
-
-    let nextState = provisioned.state;
-    let startLitestream = false;
-    if (input.databaseEngine === "litestream" && !nextState.sqliteBackup?.enabled) {
-      nextState = await enableSqliteBackup(ctx.platform, nextState, input.slug);
-      startLitestream = true;
-    }
-
-    await ctx.store.save(nextState);
-    try {
-      await ctx.render.apply(nextState, {
-        reloadPlan: provisioned.reloadPlan,
-        skipValidate: false,
-        alreadyLocked: true,
-      });
-    } catch (cause) {
-      throw new SavedApplicationApplyError(cause);
-    }
-    return {
-      app: provisioned.app,
-      state: nextState,
-      startLitestream,
-      created: provisioned.created,
-    };
-  });
-
-  try {
-    if (result.startLitestream) {
-      const up = await sqliteCompose(ctx.platform, result.state, ["up", "-d", "--force-recreate", "litestream"]);
-      if (up.code !== 0) {
-        throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
-      }
-    }
-    if (!result.created) await recreateRunningProcessApp(ctx, result.state, result.app);
-  } catch (cause) {
-    throw new SavedApplicationApplyError(cause);
-  }
-
+    },
+    { autoEnableLitestream: true },
+  );
   return toApplication(result.app);
 }
 
 async function addApplicationDatabase(ctx: CliContext, input: AddApplicationDatabaseInput): Promise<Application> {
-  const result = await ctx.store.withExclusive(async (state) => {
-    const current = getAppOrThrow(state, input.slug);
-    const provisioned = provisionApp(ctx.platform, state, {
-      slug: current.slug,
-      domain: current.mainDomain,
-      aliases: current.aliases,
-      kind: current.kind,
-      ...(current.kind === "process"
-        ? {
-            processLanguage: current.runtime.language,
-            processVersion: current.runtime.version,
-            processCommand: current.runtime.command,
-            processWorkdir: current.runtime.workdir,
-            processPort: current.runtime.internalPort,
-            processHealthPath: current.runtime.healthPath,
-          }
-        : {}),
-      databaseEngine: input.engine,
-      mysqlVersion: input.engine === "mysql" ? input.service : undefined,
-      postgresVersion: input.engine === "postgres" ? input.service : undefined,
-      createDatabase: true,
-      databaseName: input.databaseName,
-    });
-    const selectedService = state.databaseServices.find(
-      (service) =>
-        service.engine === input.engine && (service.service === input.service || service.version === input.service),
-    );
-    await applyAppDataPlane(ctx.platform, provisioned.app, {
-      explicitDatabase: true,
-      databaseEngine: input.engine,
-      databaseService: selectedService?.service,
-      databaseName: input.databaseName,
-    });
-    const redisSharedPassword = await loadRedisPassword(ctx.platform);
-    await materializeAppHome(ctx.platform, provisioned.app, {
-      recursivePerms: true,
-      redisSharedPassword,
-    });
-
-    let nextState = provisioned.state;
-    let startLitestream = false;
-    if (input.engine === "litestream" && !nextState.sqliteBackup?.enabled) {
-      nextState = await enableSqliteBackup(ctx.platform, nextState, input.slug);
-      startLitestream = true;
-    }
-    await ctx.store.save(nextState);
-    await ctx.render.apply(nextState, {
-      reloadPlan: provisioned.reloadPlan,
-      skipValidate: false,
-      alreadyLocked: true,
-    });
-    return { app: provisioned.app, state: nextState, startLitestream };
+  const result = await ctx.applications.addDatabase({
+    slug: input.slug,
+    engine: input.engine,
+    service: input.service,
+    databaseName: input.databaseName,
   });
-
-  if (result.startLitestream) {
-    const up = await sqliteCompose(ctx.platform, result.state, ["up", "-d", "--force-recreate", "litestream"]);
-    if (up.code !== 0) {
-      throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
-    }
-  }
-  await recreateRunningProcessApp(ctx, result.state, result.app);
   return toApplication(result.app);
-}
-
-async function recreateRunningProcessApp(ctx: CliContext, state: DesiredState, app: AppState): Promise<void> {
-  const recreated = await recreateProcessApp(ctx.platform, state, app);
-  if (recreated && recreated.code !== 0) {
-    throw new Error("Process app state was saved, but its container could not be recreated");
-  }
 }
 
 function tlsMode(input: SaveApplicationInput): TlsMode {
@@ -424,13 +227,13 @@ export function toApplication(app: AppState): Application {
 }
 
 function logApplicationError(ctx: CliContext, operation: string, error: unknown): void {
-  const failure = error instanceof SavedApplicationApplyError ? error.cause : error;
+  const failure = error instanceof ApplicationApplyError ? error.cause : error;
   const detail = failure instanceof Error ? (failure.stack ?? failure.message) : String(failure);
   ctx.log.error(`application ${operation} failed: ${redact(detail)}`);
 }
 
 function asORPCError(error: unknown): ORPCError<string, unknown> {
-  if (error instanceof SavedApplicationApplyError) {
+  if (error instanceof ApplicationApplyError) {
     return new ORPCError("INTERNAL_SERVER_ERROR", {
       message:
         "Application settings were saved, but applying them failed. Check the server log, fix the cause, then run bento apply.",
@@ -453,12 +256,6 @@ function asORPCError(error: unknown): ORPCError<string, unknown> {
   return new ORPCError(code, {
     message: code === "INTERNAL_SERVER_ERROR" ? "Application operation failed" : errorMessage(error),
   });
-}
-
-class SavedApplicationApplyError extends Error {
-  constructor(cause: unknown) {
-    super("Application settings were saved, but applying them failed", { cause });
-  }
 }
 
 function errorMessage(error: BentoError): string {

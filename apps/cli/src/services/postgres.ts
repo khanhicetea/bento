@@ -38,7 +38,11 @@ export function postgresVersionDetails(versionInput: string): ManagedPostgresVer
   };
 }
 
-export function addPostgresVersion(state: DesiredState, versionInput: string): DesiredState {
+export function addPostgresVersion(
+  state: DesiredState,
+  versionInput: string,
+  now: string = state.updatedAt,
+): DesiredState {
   const managed = postgresVersionDetails(versionInput);
   if (state.databaseServices.some((entry) => entry.engine === "postgres" && entry.version === managed.version)) {
     throw conflictError(`PostgreSQL version ${managed.version} is already managed`);
@@ -46,7 +50,7 @@ export function addPostgresVersion(state: DesiredState, versionInput: string): D
   return {
     ...state,
     databaseServices: [...state.databaseServices, managed].sort((a, b) => a.service.localeCompare(b.service)),
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
   };
 }
 

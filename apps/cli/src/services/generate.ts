@@ -8,7 +8,7 @@ import { FPM_PROFILES, SHARED_SOCKET_GID } from "#/domain/types.ts";
 import { validationError } from "#/domain/errors.ts";
 import { ASSET_VERSION } from "#/version.ts";
 import { renderTemplate } from "#/services/template.ts";
-import { type GeneratedFile, withManagedMarker } from "#/services/render.ts";
+import { type GeneratedFile, withManagedMarker } from "#/services/generated_file.ts";
 import { containerAppHome } from "#/platform/paths.ts";
 import { assembleComposeDocuments } from "#/services/compose.ts";
 import {

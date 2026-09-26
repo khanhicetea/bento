@@ -2,15 +2,12 @@ import { basename } from "node:path";
 import { implement } from "@orpc/server";
 import { operationsContract, type OperationsOverview } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
-import { composeArgs } from "#/services/compose.ts";
 import { runDatabaseBackup } from "#/services/database_backup.ts";
 import { drainDeploy } from "#/services/deploy.ts";
 import { runDoctor } from "#/services/doctor.ts";
 import { runStackMaintenance } from "#/services/maintenance.ts";
 import { buildStatus } from "#/services/status.ts";
 import { redact } from "#/ui/output.ts";
-import { validateCloudflareTunnelToken, writeCloudflareTunnelToken } from "#/services/cloudflare_tunnel.ts";
-import { emptyReloadPlan } from "#/domain/reload.ts";
 
 const os = implement(operationsContract);
 
@@ -18,74 +15,19 @@ export function createOperationsRouter(ctx: CliContext) {
   return os.router({
     overview: os.overview.handler(async () => await operationsOverview(ctx)),
     stackAction: os.stackAction.handler(async ({ input }) => {
-      const state = await ctx.store.load();
-      const status = await buildStatus(ctx.platform, state);
-      if (input.action !== "start" && input.confirmation !== status.stackName) {
-        throw new Error(`confirmation must exactly match stack name: ${status.stackName}`);
-      }
-      const subcommand = input.action === "start" ? ["up", "-d"] : input.action === "stop" ? ["stop"] : ["restart"];
-      const result = await ctx.platform.process.run(await composeArgs(ctx.platform, state, subcommand), {
-        cwd: ctx.stackRoot,
-        timeoutMs: 120_000,
-      });
-      if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || result.stdout));
+      await ctx.operations.stackAction(input.action, input.confirmation);
       return completed(`Stack ${input.action} completed`, ctx);
     }),
     restartService: os.restartService.handler(async ({ input }) => {
-      if (input.confirmation !== input.service) {
-        throw new Error("confirmation must exactly match the service name");
-      }
-      const state = await ctx.store.load();
-      const servicesResult = await ctx.platform.process.run(
-        await composeArgs(ctx.platform, state, ["config", "--services"]),
-        { cwd: ctx.stackRoot, timeoutMs: 15_000 },
-      );
-      if (servicesResult.code !== 0) {
-        throw new Error(safeDiagnostic(servicesResult.stderr || servicesResult.stdout));
-      }
-      const services = servicesResult.stdout.split("\n").map((service) => service.trim());
-      if (!services.includes(input.service)) throw new Error(`unknown service: ${input.service}`);
-      const result = await ctx.platform.process.run(
-        await composeArgs(ctx.platform, state, ["restart", input.service]),
-        { cwd: ctx.stackRoot, timeoutMs: 120_000 },
-      );
-      if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || result.stdout));
+      await ctx.operations.restartService(input.service, input.confirmation);
       return completed(`Service ${input.service} restarted`, ctx);
     }),
     apply: os.apply.handler(async () => {
-      const state = await ctx.store.load();
-      await ctx.render.apply(state);
+      await ctx.operations.apply();
       return completed("Configuration rendered, validated, and applied", ctx);
     }),
     setupCloudflareTunnel: os.setupCloudflareTunnel.handler(async ({ input }) => {
-      const token = validateCloudflareTunnelToken(input.token);
-      const state = await ctx.store.load();
-      const tokenPath = ctx.platform.paths.paths.cloudflareTunnelTokenFile;
-      const release = await ctx.platform.lock.exclusive(ctx.platform.paths.paths.renderLock);
-      try {
-        const previousToken = (await ctx.platform.fs.exists(tokenPath))
-          ? await ctx.platform.fs.readText(tokenPath)
-          : undefined;
-        await writeCloudflareTunnelToken(ctx.platform, token);
-        try {
-          await ctx.render.apply(state, {
-            alreadyLocked: true,
-            renderOnly: true,
-            reloadPlan: emptyReloadPlan(),
-          });
-        } catch (error) {
-          if (previousToken === undefined) await ctx.platform.fs.remove(tokenPath);
-          else await ctx.platform.fs.atomicWriteText(tokenPath, previousToken, 0o600);
-          throw error;
-        }
-        const result = await ctx.platform.process.run(
-          await composeArgs(ctx.platform, state, ["up", "-d", "--force-recreate", "cloudflared"]),
-          { cwd: ctx.stackRoot, timeoutMs: 120_000 },
-        );
-        if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || result.stdout));
-      } finally {
-        await release();
-      }
+      await ctx.operations.configureCloudflareTunnel(input.token);
       return completed("Cloudflare tunnel configured and started", ctx);
     }),
     backup: os.backup.handler(async () => {
@@ -105,30 +47,8 @@ export function createOperationsRouter(ctx: CliContext) {
       };
     }),
     logs: os.logs.handler(async ({ input }) => {
-      const state = await ctx.store.load();
-      const logArgs = ["logs", "--no-color", "--tail", String(input.tail)];
-      if (input.service) {
-        const servicesResult = await ctx.platform.process.run(
-          await composeArgs(ctx.platform, state, ["config", "--services"]),
-          { cwd: ctx.stackRoot, timeoutMs: 15_000 },
-        );
-        if (servicesResult.code !== 0) {
-          throw new Error(safeDiagnostic(servicesResult.stderr || servicesResult.stdout));
-        }
-        const services = servicesResult.stdout.split("\n").map((service) => service.trim());
-        if (!services.includes(input.service)) throw new Error(`unknown service: ${input.service}`);
-        logArgs.push(input.service);
-      }
-      const result = await ctx.platform.process.run(await composeArgs(ctx.platform, state, logArgs), {
-        cwd: ctx.stackRoot,
-        timeoutMs: 15_000,
-      });
-      if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || "Unable to read logs"));
-      const allLines = redact(result.stdout)
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => line.slice(0, 2_000));
-      return { lines: allLines.slice(-input.tail), truncated: allLines.length > input.tail };
+      const result = await ctx.operations.logs(input);
+      return { ...result, lines: result.lines.map(redact) };
     }),
     doctor: os.doctor.handler(async () => {
       const state = await ctx.store.load();
@@ -157,10 +77,6 @@ export function createOperationsRouter(ctx: CliContext) {
 
 function completed(message: string, ctx: CliContext) {
   return { message, completedAt: ctx.platform.clock.nowIso() };
-}
-
-function safeDiagnostic(value: string) {
-  return redact(value).slice(0, 4_000) || "Operation failed";
 }
 
 async function operationsOverview(ctx: CliContext): Promise<OperationsOverview> {

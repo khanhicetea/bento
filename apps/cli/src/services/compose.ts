@@ -13,7 +13,7 @@ function stringifyYaml(value: unknown): string {
 }
 import { assertNever, isProcessApp, type DesiredState, type ProcessAppState } from "#/domain/state.ts";
 import type { Platform } from "#/platform/mod.ts";
-import { type GeneratedFile, withManagedMarker } from "#/services/render.ts";
+import { type GeneratedFile, withManagedMarker } from "#/services/generated_file.ts";
 import { safetyError } from "#/domain/errors.ts";
 import type { StackComposeEnvironment } from "#/services/stack_env.ts";
 

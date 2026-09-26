@@ -42,7 +42,7 @@ async function cmdPhpAdd(argv: ArgsWith<"version">, ctx: CliContext): Promise<nu
   const { version } = argv;
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const next = addPhpVersion(state, version);
+    const next = addPhpVersion(state, version, undefined, ctx.platform.clock.nowIso());
     await ctx.store.save(next);
     if (!noApply) {
       await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });
@@ -59,7 +59,7 @@ async function cmdPhpRemove(argv: ArgsWith<"version">, ctx: CliContext): Promise
   const { version } = argv;
   const noApply = wantsNoApply(argv);
   await ctx.store.withExclusive(async (state) => {
-    const next = removePhpVersion(state, version);
+    const next = removePhpVersion(state, version, ctx.platform.clock.nowIso());
     await ctx.store.save(next);
     if (!noApply) {
       await ctx.render.apply(next, { skipValidate: true, alreadyLocked: true });

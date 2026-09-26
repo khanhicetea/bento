@@ -3,7 +3,6 @@ import { routingContract, type RoutingOverview, type RoutingProxy, type SaveRout
 import type { CliContext } from "#/commands/context.ts";
 import { isBentoError, type BentoError } from "#/domain/errors.ts";
 import type { ProxySite, TlsMode } from "#/domain/state.ts";
-import { createProxy, deleteProxy, setProxyEnabled, updateProxy } from "#/services/proxy.ts";
 import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
 import { redact } from "#/ui/output.ts";
 
@@ -14,29 +13,16 @@ export function createRoutingRouter(ctx: CliContext) {
     overview: os.overview.handler(async () => await routingOverview(ctx)),
     saveProxy: os.saveProxy.handler(async ({ input }) => {
       try {
-        const saved = await ctx.store.withExclusive(async (state) => {
-          const mutation = input.operation === "create" ? createProxy : updateProxy;
-          const result = mutation(
-            state,
-            {
-              name: input.name,
-              domain: input.domain,
-              aliases: input.aliases,
-              upstreams: input.upstreams,
-              tls: tlsMode(input),
-              accessLog: input.accessLog,
-            },
-            ctx.platform.clock.nowIso(),
-          );
-          await ctx.store.save(result.state);
-          await ctx.render.apply(result.state, {
-            reloadPlan: result.reloadPlan,
-            skipValidate: false,
-            alreadyLocked: true,
-          });
-          return result.proxy;
+        const saved = await ctx.routing.saveProxy({
+          operation: input.operation,
+          name: input.name,
+          domain: input.domain,
+          aliases: input.aliases,
+          upstreams: input.upstreams,
+          tls: tlsMode(input),
+          accessLog: input.accessLog,
         });
-        return toRoutingProxy(saved);
+        return toRoutingProxy(saved.proxy);
       } catch (error) {
         logRoutingError(ctx, "save proxy", error);
         throw asORPCError(error);
@@ -44,17 +30,8 @@ export function createRoutingRouter(ctx: CliContext) {
     }),
     setProxyEnabled: os.setProxyEnabled.handler(async ({ input }) => {
       try {
-        const changed = await ctx.store.withExclusive(async (state) => {
-          const result = setProxyEnabled(state, input.name, input.enabled, ctx.platform.clock.nowIso());
-          await ctx.store.save(result.state);
-          await ctx.render.apply(result.state, {
-            reloadPlan: result.reloadPlan,
-            skipValidate: false,
-            alreadyLocked: true,
-          });
-          return result.proxy;
-        });
-        return toRoutingProxy(changed);
+        const changed = await ctx.routing.setEnabled(input.name, input.enabled);
+        return toRoutingProxy(changed.proxy);
       } catch (error) {
         logRoutingError(ctx, "set proxy enabled", error);
         throw asORPCError(error);
@@ -62,17 +39,8 @@ export function createRoutingRouter(ctx: CliContext) {
     }),
     removeProxy: os.removeProxy.handler(async ({ input }) => {
       try {
-        const removed = await ctx.store.withExclusive(async (state) => {
-          const result = deleteProxy(state, input.name, input.confirmation, ctx.platform.clock.nowIso());
-          await ctx.store.save(result.state);
-          await ctx.render.apply(result.state, {
-            reloadPlan: result.reloadPlan,
-            skipValidate: false,
-            alreadyLocked: true,
-          });
-          return result.proxy;
-        });
-        return toRoutingProxy(removed);
+        const removed = await ctx.routing.removeProxy(input.name, input.confirmation);
+        return toRoutingProxy(removed.proxy);
       } catch (error) {
         logRoutingError(ctx, "remove proxy", error);
         throw asORPCError(error);

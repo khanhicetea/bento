@@ -17,11 +17,13 @@ export type CreateProxyInput = {
   accessLog?: boolean;
 };
 
-export function createProxy(
-  state: DesiredState,
-  input: CreateProxyInput,
-  now: string,
-): { state: DesiredState; proxy: ProxySite; reloadPlan: ReloadPlan } {
+export type ProxyMutationResult = {
+  state: DesiredState;
+  proxy: ProxySite;
+  reloadPlan: ReloadPlan;
+};
+
+export function createProxy(state: DesiredState, input: CreateProxyInput, now: string): ProxyMutationResult {
   const name = unwrap(parseAppSlug(input.name), "name");
   if (state.proxies[name]) {
     throw conflictError(`proxy site ${name} already exists`);
@@ -123,11 +125,7 @@ export function validateUpstreams(upstreams: string[]): NginxUpstreamConfig {
   };
 }
 
-export function updateProxy(
-  state: DesiredState,
-  input: CreateProxyInput,
-  now: string,
-): { state: DesiredState; proxy: ProxySite; reloadPlan: ReloadPlan } {
+export function updateProxy(state: DesiredState, input: CreateProxyInput, now: string): ProxyMutationResult {
   const name = unwrap(parseAppSlug(input.name), "name");
   const current = getProxyOrThrow(state, name);
 
@@ -186,12 +184,7 @@ export function getProxyOrThrow(state: DesiredState, name: string): ProxySite {
   return p;
 }
 
-export function setProxyEnabled(
-  state: DesiredState,
-  name: string,
-  enabled: boolean,
-  now: string,
-): { state: DesiredState; proxy: ProxySite; reloadPlan: ReloadPlan } {
+export function setProxyEnabled(state: DesiredState, name: string, enabled: boolean, now: string): ProxyMutationResult {
   const current = getProxyOrThrow(state, name);
   const proxy = { ...current, enabled, updatedAt: now };
   return {
@@ -210,8 +203,8 @@ export function deleteProxy(
   state: DesiredState,
   name: string,
   confirmation?: string,
-  now: string = new Date().toISOString(),
-): { state: DesiredState; proxy: ProxySite; reloadPlan: ReloadPlan } {
+  now: string = state.updatedAt,
+): ProxyMutationResult {
   const proxy = getProxyOrThrow(state, name);
   const expected = `delete ${name}`;
   if (confirmation !== expected) {

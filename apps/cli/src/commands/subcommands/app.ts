@@ -3,27 +3,11 @@ import { RuntimeCommand } from "#/platform/runtime.ts";
 import { minicrondComposeCommand } from "#/services/minicrond.ts";
 import { redact } from "#/ui/output.ts";
 import type { AppState, ProcessLanguage } from "#/domain/state.ts";
-import { isPhpApp, isProcessApp } from "#/domain/state.ts";
-import {
-  applyAppDataPlane,
-  capacityWarnings,
-  deleteApp,
-  materializeAppHome,
-  provisionApp,
-  setAppEnabled,
-} from "#/services/app.ts";
-import { loadRedisPassword } from "#/services/stack_env.ts";
+import { isPhpApp } from "#/domain/state.ts";
+import { capacityWarnings } from "#/services/app.ts";
 import { composeArgs } from "#/services/compose.ts";
-import { emptyReloadPlan } from "#/domain/reload.ts";
-import {
-  isProcessAppHealthy,
-  recreateRunningProcessApp,
-  removeProcessAppContainer,
-  startProcessApp,
-  stopProcessApp,
-} from "#/services/process_app.ts";
 import { sqliteContainerPath } from "#/services/sqlite_paths.ts";
-import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "#/services/app_prune.ts";
+import { executeAppPrune, planAppPrune } from "#/services/app_prune.ts";
 import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
@@ -334,22 +318,9 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
   const noApply = wantsNoApply(argv);
   const skipValidate = argv.skipValidate === true;
   const explicitDb = argv.db === true;
-  const result = await ctx.store.withExclusive(async (state) => {
-    const requestedDatabaseEngine = (argv.databaseEngine ??
-      (argv.mysql ? "mysql" : argv.postgres ? "postgres" : undefined)) as
-      | "mysql"
-      | "postgres"
-      | "sqlite"
-      | "litestream"
-      | undefined;
-    const requestedDatabaseToken =
-      requestedDatabaseEngine === "mysql"
-        ? argv.mysql
-        : requestedDatabaseEngine === "postgres"
-          ? argv.postgres
-          : undefined;
-    const processLanguage = processSelected ? (argv.runtime as ProcessLanguage) : undefined;
-    const provisioned = provisionApp(ctx.platform, state, {
+  const processLanguage = processSelected ? (argv.runtime as ProcessLanguage) : undefined;
+  const result = await ctx.applications.provision(
+    {
       slug,
       domain,
       kind: processLanguage ? "process" : "php",
@@ -370,59 +341,14 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
       createDatabase: explicitDb,
       databaseName: argv.database,
       accessLog: argv.accessLog === true,
-    });
-    // Live database/Redis side effects run before state save (explicit --db fails closed).
-    const plane = await applyAppDataPlane(ctx.platform, provisioned.app, {
-      explicitDatabase: explicitDb,
-      databaseEngine: requestedDatabaseEngine,
-      databaseService: requestedDatabaseToken
-        ? state.databaseServices.find(
-            (service) =>
-              service.engine === requestedDatabaseEngine &&
-              (service.version === requestedDatabaseToken || service.service === requestedDatabaseToken),
-          )?.service
-        : undefined,
-      databaseName: argv.database ?? (explicitDb ? slug : undefined),
-    });
-    const redisShared = await loadRedisPassword(ctx.platform);
-    await materializeAppHome(ctx.platform, provisioned.app, {
-      recursivePerms: true,
-      redisSharedPassword: redisShared,
-    });
-    await ctx.store.save(provisioned.state);
-    if (!noApply) {
-      await ctx.render.apply(provisioned.state, {
-        reloadPlan: provisioned.reloadPlan,
-        skipValidate,
-        alreadyLocked: true,
-      });
-    }
-    return { provisioned, plane };
-  });
-  if (
-    !noApply &&
-    !result.provisioned.created &&
-    isProcessApp(result.provisioned.app) &&
-    result.provisioned.app.enabled
-  ) {
-    const app = result.provisioned.app;
-    const recreated = await recreateRunningProcessApp(ctx.platform, result.provisioned.state, app);
-    if (recreated && recreated.code !== 0) {
-      ctx.log.error(
-        `process app state was saved, but container recreation failed: ${(
-          recreated.stderr || recreated.stdout
-        ).trim()}`,
-      );
-      return 1;
-    }
-  }
-  ctx.log.info(
-    `${
-      result.provisioned.created ? "created" : "updated"
-    } app ${result.provisioned.app.slug} uid=${result.provisioned.app.uid} domain=${result.provisioned.app.mainDomain}`,
+    },
+    { apply: !noApply, skipValidate },
   );
-  for (const note of result.plane.deferredNotes) ctx.log.warn(note);
-  for (const w of capacityWarnings(result.provisioned.state)) ctx.log.warn(w);
+  ctx.log.info(
+    `${result.created ? "created" : "updated"} app ${result.app.slug} uid=${result.app.uid} domain=${result.app.mainDomain}`,
+  );
+  for (const note of result.dataPlane.deferredNotes) ctx.log.warn(note);
+  for (const w of capacityWarnings(result.state)) ctx.log.warn(w);
   return 0;
 }
 
@@ -432,42 +358,13 @@ function normalizeStartArgv(value: string | string[] | undefined): string[] | un
 }
 
 async function cmdAppStart(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
-  const state = await ctx.store.load();
-  const app = state.apps[argv.slug];
-  if (!app) {
-    ctx.log.error(`app not found: ${argv.slug}`);
-    return 3;
-  }
-  if (!isProcessApp(app)) {
-    ctx.log.error("app start is only needed for process apps; PHP uses the shared runtime");
-    return 2;
-  }
-  await ctx.render.apply(state, { reloadPlan: emptyReloadPlan(), skipValidate: false });
-  const result = await startProcessApp(ctx.platform, state, app);
-  if (!result || result.code !== 0) {
-    ctx.log.error(`failed to start ${app.slug}: ${(result?.stderr || result?.stdout || "").trim()}`);
-    return 1;
-  }
+  const app = await ctx.applications.setRunning(argv.slug, "start");
   ctx.log.info(`started process app ${app.slug} privately; run 'bento app enable ${app.slug}' after it is healthy`);
   return 0;
 }
 
 async function cmdAppStop(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
-  const state = await ctx.store.load();
-  const app = state.apps[argv.slug];
-  if (!app) {
-    ctx.log.error(`app not found: ${argv.slug}`);
-    return 3;
-  }
-  if (!isProcessApp(app)) {
-    ctx.log.error("app stop is only available for process apps");
-    return 2;
-  }
-  const result = await stopProcessApp(ctx.platform, state, app);
-  if (!result || result.code !== 0) {
-    ctx.log.error(`failed to stop ${app.slug}: ${(result?.stderr || result?.stdout || "").trim()}`);
-    return 1;
-  }
+  const app = await ctx.applications.setRunning(argv.slug, "stop");
   ctx.log.info(`stopped process app ${app.slug}`);
   return 0;
 }
@@ -483,41 +380,8 @@ function appDeleteOptions(y: YargsBuilder): YargsBuilder {
 
 async function mutateAppEnabled(argv: ArgsWith<"slug">, ctx: CliContext, enabled: boolean): Promise<number> {
   const noApply = wantsNoApply(argv);
-  const result = await ctx.store.withExclusive(async (state) => {
-    const current = state.apps[argv.slug];
-    if (!current) throw new Error(`app not found: ${argv.slug}`);
-    if (enabled && !noApply && isProcessApp(current)) {
-      if (!(await isProcessAppHealthy(ctx.platform, state, current))) {
-        throw safetyError(
-          `refusing to publish process app ${current.slug} before its container is running`,
-          `Run 'bento app start ${current.slug}', verify health, then enable it.`,
-        );
-      }
-    }
-    const changed = setAppEnabled(state, argv.slug, enabled, ctx.platform.clock.nowIso());
-    await ctx.store.save(changed.state);
-    if (!noApply) {
-      await ctx.render.apply(changed.state, {
-        reloadPlan: changed.reloadPlan,
-        skipValidate: false,
-        alreadyLocked: true,
-      });
-    }
-    return changed;
-  });
-  if (!enabled && !noApply && isProcessApp(result.app)) {
-    const stopped = await ctx.platform.process.run(
-      await composeArgs(ctx.platform, result.state, ["stop", result.app.runtime.service]),
-      { cwd: ctx.platform.paths.paths.root, timeoutMs: 60_000 },
-    );
-    if (stopped.code !== 0) {
-      ctx.log.warn(
-        `public route was disabled, but the private process container did not stop: ${(
-          stopped.stderr || stopped.stdout
-        ).trim()}`,
-      );
-    }
-  }
+  const result = await ctx.applications.setEnabled(argv.slug, enabled, { apply: !noApply });
+  if (result.stopWarning) ctx.log.warn(result.stopWarning);
   ctx.log.info(
     `${result.app.enabled ? "enabled" : "disabled"} app ${argv.slug}${noApply ? " (state only; run bento apply)" : ""}`,
   );
@@ -534,29 +398,7 @@ async function cmdAppDisable(argv: ArgsWith<"slug">, ctx: CliContext): Promise<n
 
 async function cmdAppDelete(argv: ArgsWith<"slug">, ctx: CliContext): Promise<number> {
   const noApply = wantsNoApply(argv);
-  const result = await ctx.store.withExclusive(async (state) => {
-    const current = state.apps[argv.slug];
-    const removed = deleteApp(state, argv.slug, argv.confirm, ctx.platform.clock.nowIso());
-    if (current && isProcessApp(current) && !noApply) {
-      const stopped = await removeProcessAppContainer(ctx.platform, state, current);
-      if (stopped && stopped.code !== 0) {
-        throw safetyError(
-          `refusing to remove process app ${current.slug} while its container cannot be stopped`,
-          "Restore Docker/Compose access and retry; durable data remains unchanged.",
-        );
-      }
-    }
-    await writeAppPruneManifest(ctx.platform, removed.app);
-    await ctx.store.save(removed.state);
-    if (!noApply) {
-      await ctx.render.apply(removed.state, {
-        reloadPlan: removed.reloadPlan,
-        skipValidate: false,
-        alreadyLocked: true,
-      });
-    }
-    return removed;
-  });
+  const result = await ctx.applications.remove(argv.slug, argv.confirm, { apply: !noApply });
   ctx.log.info(
     `removed app ${result.app.slug}; durable home and database data retained${
       noApply ? " (state only; run bento apply)" : ""

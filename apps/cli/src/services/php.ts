@@ -13,6 +13,7 @@ export function addPhpVersion(
   state: DesiredState,
   versionInput: string,
   processCap = PHP_GLOBAL_PROCESS_CAP,
+  now: string = state.updatedAt,
 ): DesiredState {
   const version = asPhpVersion(unwrap(parsePhpVersion(versionInput), "phpVersion"));
   if (state.phpVersions.some((v) => v.version === version)) {
@@ -27,11 +28,15 @@ export function addPhpVersion(
   return {
     ...state,
     phpVersions: [...state.phpVersions, managed].sort((a, b) => compareMajorMinor(a.version, b.version)),
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
   };
 }
 
-export function removePhpVersion(state: DesiredState, versionInput: string): DesiredState {
+export function removePhpVersion(
+  state: DesiredState,
+  versionInput: string,
+  now: string = state.updatedAt,
+): DesiredState {
   const version = asPhpVersion(unwrap(parsePhpVersion(versionInput), "phpVersion"));
   const found = state.phpVersions.find((v) => v.version === version);
   if (!found) throw notFoundError(`PHP version ${version} is not managed`);
@@ -53,7 +58,7 @@ export function removePhpVersion(state: DesiredState, versionInput: string): Des
   return {
     ...state,
     phpVersions: state.phpVersions.filter((v) => v.version !== version),
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
   };
 }
 
