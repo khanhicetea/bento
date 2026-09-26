@@ -179,9 +179,7 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
   // Role observation via docker compose ps (best-effort; soft when Docker down)
   const runningNames = await observeRunningServices(platform);
   const uptimes =
-    runningNames === null
-      ? new Map<string, number>()
-      : await observeServiceUptimes(platform, state, runningNames);
+    runningNames === null ? new Map<string, number>() : await observeServiceUptimes(platform, state, runningNames);
   const roles = buildExpectedRoles(
     state,
     runningNames,
@@ -193,16 +191,10 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
   // Database health is probed only for observed running containers. Stopped services
   // remain down/config-ready rather than being reported as healthy.
   const databaseVersions = await Promise.all(
-    state.databaseServices.map((managed) =>
-      databaseVersionStatus(platform, state, managed, runningNames),
-    ),
+    state.databaseServices.map((managed) => databaseVersionStatus(platform, state, managed, runningNames)),
   );
-  const mysqlVersions = databaseVersions.filter(
-    (_, index) => state.databaseServices[index]?.engine === "mysql",
-  );
-  const postgresVersions = databaseVersions.filter(
-    (_, index) => state.databaseServices[index]?.engine === "postgres",
-  );
+  const mysqlVersions = databaseVersions.filter((_, index) => state.databaseServices[index]?.engine === "mysql");
+  const postgresVersions = databaseVersions.filter((_, index) => state.databaseServices[index]?.engine === "postgres");
 
   return {
     stackRoot: platform.paths.paths.root,
@@ -211,9 +203,7 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
     ingress: {
       mode: nginxEnvironment.hostNetwork ? "host" : "bridge",
       ...(nginxEnvironment.httpPort !== undefined ? { httpPort: nginxEnvironment.httpPort } : {}),
-      ...(nginxEnvironment.httpsPort !== undefined
-        ? { httpsPort: nginxEnvironment.httpsPort }
-        : {}),
+      ...(nginxEnvironment.httpsPort !== undefined ? { httpsPort: nginxEnvironment.httpsPort } : {}),
       http3: nginxEnvironment.http3,
     },
     defaults: {
@@ -240,9 +230,7 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
         kind: a.kind,
         runtime: isPhpApp(a) ? `php@${a.phpVersion}` : `${a.runtime.language}@${a.runtime.version}`,
         runtimeService: isPhpApp(a) ? a.phpService : a.runtime.service,
-        ...(isPhpApp(a)
-          ? { fpmProfile: String(a.fpmProfile), entrypointMode: a.entrypointMode }
-          : {}),
+        ...(isPhpApp(a) ? { fpmProfile: String(a.fpmProfile), entrypointMode: a.entrypointMode } : {}),
         tls: a.tls.kind,
         accessLog: a.accessLog,
         databaseEngine: a.database.engine,
@@ -300,9 +288,7 @@ async function databaseVersionStatus(
   runningNames: Set<string> | null,
 ): Promise<DatabaseVersionStatus> {
   const appCount = Object.values(state.apps).filter((app) =>
-    app.databases.some(
-      (database) => database.engine === managed.engine && database.service === managed.service,
-    ),
+    app.databases.some((database) => database.engine === managed.engine && database.service === managed.service),
   ).length;
   let health: DatabaseVersionStatus["health"] = "unknown";
   let healthDetail: string | undefined;
@@ -325,9 +311,7 @@ async function databaseVersionStatus(
     if (probe.code === 0) health = "ok";
     else {
       health = "error";
-      healthDetail = redactStatusText(
-        (probe.stderr || probe.stdout || "probe failed").trim().slice(0, 120),
-      );
+      healthDetail = redactStatusText((probe.stderr || probe.stdout || "probe failed").trim().slice(0, 120));
     }
   }
   return {
@@ -392,15 +376,11 @@ function buildExpectedRoles(
   if (state.sqliteBackup?.enabled) push("litestream", "litestream");
 
   if (running === null) {
-    notes.push(
-      "Service process observation skipped (Docker unavailable). Status does not imply reload success.",
-    );
+    notes.push("Service process observation skipped (Docker unavailable). Status does not imply reload success.");
   } else {
     const stopped = roles.filter((r) => r.state === "config-ready");
     if (stopped.length) {
-      notes.push(
-        `${stopped.length} expected role(s) not running; generated config is ready for their next startup.`,
-      );
+      notes.push(`${stopped.length} expected role(s) not running; generated config is ready for their next startup.`);
     }
   }
 
@@ -439,10 +419,7 @@ async function observeServiceUptimes(
       if (inspect.code !== 0) return null;
       const startedAt = Date.parse(inspect.stdout.trim());
       if (!Number.isFinite(startedAt)) return null;
-      const uptimeSeconds = Math.max(
-        0,
-        Math.floor((platform.clock.now().getTime() - startedAt) / 1_000),
-      );
+      const uptimeSeconds = Math.max(0, Math.floor((platform.clock.now().getTime() - startedAt) / 1_000));
       return [service, uptimeSeconds] as const;
     }),
   );
@@ -494,11 +471,7 @@ export function formatStatus(report: StatusReport): string {
         }${report.ingress.http3 && report.ingress.httpsPort ? ", HTTP/3 UDP published" : ""}`;
   lines.push(`  ingress: ${report.ingress.mode} (${ingressDetail})`);
   if (report.generation?.renderedAt) {
-    lines.push(
-      `  generation: ${report.generation.renderedAt} (assets ${
-        report.generation.assetVersion ?? "?"
-      })`,
-    );
+    lines.push(`  generation: ${report.generation.renderedAt} (assets ${report.generation.assetVersion ?? "?"})`);
   }
   lines.push(
     `  defaults: php=${report.defaults.phpVersion} database=${report.defaults.databaseEngine}:${report.defaults.databaseService}(${report.defaults.databaseVersion}) fpm=${report.defaults.fpmProfile} redis=${report.defaults.redisMode}`,
@@ -521,16 +494,12 @@ export function formatStatus(report: StatusReport): string {
   lines.push("MySQL services:");
   for (const m of report.mysqlVersions) {
     const health = m.healthDetail ? `${m.health}: ${m.healthDetail}` : m.health;
-    lines.push(
-      `  ${m.version}  service=${m.service}  volume=${m.volume}  apps=${m.appCount}  health=${health}`,
-    );
+    lines.push(`  ${m.version}  service=${m.service}  volume=${m.volume}  apps=${m.appCount}  health=${health}`);
   }
   lines.push("");
   lines.push("PostgreSQL services:");
   for (const database of report.postgresVersions) {
-    const health = database.healthDetail
-      ? `${database.health}: ${database.healthDetail}`
-      : database.health;
+    const health = database.healthDetail ? `${database.health}: ${database.healthDetail}` : database.health;
     lines.push(
       `  ${database.version}  service=${database.service}  volume=${database.volume}  apps=${database.appCount}  health=${health}`,
     );

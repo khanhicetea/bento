@@ -63,34 +63,27 @@ function healthyCommand(command: string[]): RunResult {
   return { code: 0, stdout: "ok\n", stderr: "" };
 }
 
-bunRuntime.test(
-  "doctor reports invalid stack environment and incomplete generation instead of throwing",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-doctor-env-" });
-    try {
-      const platform = testPlatform(root);
-      await platform.fs.writeText(
-        platform.paths.paths.envFile,
-        "NGINX_HOST_NETWORK=perhaps\n",
-        0o600,
-      );
-      await platform.fs.mkdirp(platform.paths.paths.generatedDir);
-      await platform.fs.writeText(
-        `${platform.paths.paths.generatedDir}/.generation.json`,
-        JSON.stringify({ managedFiles: ["nginx/missing.conf"] }),
-        0o644,
-      );
+bunRuntime.test("doctor reports invalid stack environment and incomplete generation instead of throwing", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-doctor-env-" });
+  try {
+    const platform = testPlatform(root);
+    await platform.fs.writeText(platform.paths.paths.envFile, "NGINX_HOST_NETWORK=perhaps\n", 0o600);
+    await platform.fs.mkdirp(platform.paths.paths.generatedDir);
+    await platform.fs.writeText(
+      `${platform.paths.paths.generatedDir}/.generation.json`,
+      JSON.stringify({ managedFiles: ["nginx/missing.conf"] }),
+      0o644,
+    );
 
-      const report = await runDoctor(platform, createEmptyState(platform.clock.nowIso()));
-      assertEquals(report.checks.find((check) => check.id === "stack-environment")?.status, "fail");
-      const generation = report.checks.find((check) => check.id === "generation");
-      assertEquals(generation?.status, "fail");
-      assertStringIncludes(generation?.detail ?? "", "managed generated file");
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const report = await runDoctor(platform, createEmptyState(platform.clock.nowIso()));
+    assertEquals(report.checks.find((check) => check.id === "stack-environment")?.status, "fail");
+    const generation = report.checks.find((check) => check.id === "generation");
+    assertEquals(generation?.status, "fail");
+    assertStringIncludes(generation?.detail ?? "", "managed generated file");
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("doctor authenticates the Redis health probe with the stack password", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-doctor-redis-" });
@@ -101,11 +94,7 @@ bunRuntime.test("doctor authenticates the Redis health probe with the stack pass
       }
       return healthyCommand(command);
     });
-    await platform.fs.writeText(
-      platform.paths.paths.envFile,
-      "REDIS_PASSWORD=doctor-secret\n",
-      0o600,
-    );
+    await platform.fs.writeText(platform.paths.paths.envFile, "REDIS_PASSWORD=doctor-secret\n", 0o600);
 
     const report = await runDoctor(platform, createEmptyState(platform.clock.nowIso()));
     const check = report.checks.find((candidate) => candidate.id === "redis");

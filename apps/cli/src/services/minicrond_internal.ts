@@ -43,11 +43,7 @@ export function appInternalJobs(state: DesiredState, app: AppState): string {
     if (!schedule) throw validationError("missing SQLite VACUUM schedule");
     lines.push(
       `[[job]]\nname = ${toml(`${INTERNAL_JOB_PREFIX}vacuum-${binding.file.id}`)}\nschedule = ${toml(formatSqliteVacuumSchedule(schedule))}\nargv = ${argv(
-        [
-          "/usr/bin/sqlite3",
-          `/sqlite/${binding.file.id}/${app.slug}.db`,
-          "PRAGMA busy_timeout=30000; VACUUM;",
-        ],
+        ["/usr/bin/sqlite3", `/sqlite/${binding.file.id}/${app.slug}.db`, "PRAGMA busy_timeout=30000; VACUUM;"],
       )}\nworking_dir = ${toml(app.home)}\n`,
     );
   }
@@ -60,14 +56,12 @@ export function rootInternalJobs(apps: AppState[]): string {
     .sort((a, b) => a.slug.localeCompare(b.slug))
     .map(
       (app) =>
-        `[[job]]\nname = ${toml(`${INTERNAL_JOB_PREFIX}logrotate-${app.slug}`)}\nschedule = "0 * * * *"\nargv = ${argv(
-          [
-            "/usr/sbin/logrotate",
-            "--state",
-            `/var/lib/bento/minicron/logrotate-${app.slug}.status`,
-            `/etc/bento/minicrond/logrotate/${app.slug}.conf`,
-          ],
-        )}\n`,
+        `[[job]]\nname = ${toml(`${INTERNAL_JOB_PREFIX}logrotate-${app.slug}`)}\nschedule = "0 * * * *"\nargv = ${argv([
+          "/usr/sbin/logrotate",
+          "--state",
+          `/var/lib/bento/minicron/logrotate-${app.slug}.status`,
+          `/etc/bento/minicrond/logrotate/${app.slug}.conf`,
+        ])}\n`,
     )
     .join("\n");
 }

@@ -7,13 +7,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { AppState, DesiredState, ManagedMysqlVersion } from "#/domain/state.ts";
 import { databaseBindings, mysqlImage, mysqlServiceName } from "#/domain/state.ts";
 import { asDatabaseName, asMysqlService, asMysqlVersion } from "#/domain/types.ts";
-import {
-  conflictError,
-  notFoundError,
-  safetyError,
-  serviceError,
-  validationError,
-} from "#/domain/errors.ts";
+import { conflictError, notFoundError, safetyError, serviceError, validationError } from "#/domain/errors.ts";
 import { compareMajorMinor, parseMysqlVersion, unwrap } from "#/schemas/validators.ts";
 import type { Platform, RunResult } from "#/platform/mod.ts";
 import { mysqlIdent, mysqlLikeEscape, mysqlStringLiteral } from "#/services/template.ts";
@@ -34,9 +28,7 @@ function mysqlDatabase(app: AppState, service?: string) {
 
 export function addMysqlVersion(state: DesiredState, versionInput: string): DesiredState {
   const version = asMysqlVersion(unwrap(parseMysqlVersion(versionInput), "mysqlVersion"));
-  if (
-    state.databaseServices.filter((v) => v.engine === "mysql").some((v) => v.version === version)
-  ) {
+  if (state.databaseServices.filter((v) => v.engine === "mysql").some((v) => v.version === version)) {
     throw conflictError(`MySQL version ${version} is already managed`);
   }
   const service = mysqlServiceName(version);
@@ -49,9 +41,7 @@ export function addMysqlVersion(state: DesiredState, versionInput: string): Desi
   };
   return {
     ...state,
-    databaseServices: [...state.databaseServices, managed].sort((a, b) =>
-      a.service.localeCompare(b.service),
-    ),
+    databaseServices: [...state.databaseServices, managed].sort((a, b) => a.service.localeCompare(b.service)),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -157,28 +147,22 @@ export async function execMysqlSql(
     'mysql --defaults-extra-file="$OPT" --batch --skip-column-names < "$SQL"',
   ].join("\n");
 
-  const stdin = [
-    "[client]",
-    "user=root",
-    `password=${password.replace(/\n/g, "")}`,
-    "__END_CNF__",
-    sql,
-    "",
-  ].join("\n");
+  const stdin = ["[client]", "user=root", `password=${password.replace(/\n/g, "")}`, "__END_CNF__", sql, ""].join("\n");
 
-  return await platform.process.run(
-    ["docker", "compose", "exec", "-T", service, "sh", "-c", script],
-    { cwd: platform.paths.paths.root, stdin, timeoutMs: 60_000 },
-  );
+  return await platform.process.run(["docker", "compose", "exec", "-T", service, "sh", "-c", script], {
+    cwd: platform.paths.paths.root,
+    stdin,
+    timeoutMs: 60_000,
+  });
 }
 
 /** True when the MySQL service container accepts compose exec. */
 export async function isMysqlReachable(platform: Platform, service: string): Promise<boolean> {
   try {
-    const result = await platform.process.run(
-      ["docker", "compose", "exec", "-T", service, "true"],
-      { cwd: platform.paths.paths.root, timeoutMs: 8_000 },
-    );
+    const result = await platform.process.run(["docker", "compose", "exec", "-T", service, "true"], {
+      cwd: platform.paths.paths.root,
+      timeoutMs: 8_000,
+    });
     return result.code === 0;
   } catch {
     return false;
@@ -247,12 +231,7 @@ export async function createAppDatabaseLive(
       "Start the stack MySQL service (e.g. `bento compose -- up -d`), confirm MYSQL_ROOT_PASSWORD, then retry `bento mysql db` or `bento app create --db`.",
     );
   }
-  await applyAppMysqlGrants(
-    platform,
-    { ...app, databases: [database], database },
-    dbName,
-    rootPassword,
-  );
+  await applyAppMysqlGrants(platform, { ...app, databases: [database], database }, dbName, rootPassword);
   return validated;
 }
 
@@ -283,10 +262,7 @@ export type RecentBackupFile = {
  * Symlinks, partial dumps, restore staging files, and unrelated state backups
  * are excluded.
  */
-export async function listRecentBackupFiles(
-  platform: Platform,
-  limit = 20,
-): Promise<RecentBackupFile[]> {
+export async function listRecentBackupFiles(platform: Platform, limit = 20): Promise<RecentBackupFile[]> {
   const root = platform.paths.paths.backupsDir;
   if (!(await platform.fs.exists(root))) return [];
 
@@ -351,12 +327,7 @@ export async function runBackup(
     const dump =
       `mysqldump --defaults-extra-file=/etc/bento/mysql/root.cnf ` +
       `--single-transaction --routines --triggers ${shellQuote(t.database)}`;
-    const pipeline =
-      compress === "gzip"
-        ? `${dump} | gzip -c`
-        : compress === "zstd"
-          ? `${dump} | zstd -3 -q -c`
-          : dump;
+    const pipeline = compress === "gzip" ? `${dump} | gzip -c` : compress === "zstd" ? `${dump} | zstd -3 -q -c` : dump;
 
     // The dump and compression run beside mysqld over its Unix socket. The
     // bind-mounted backup directory keeps dump bytes off the exec stream.
@@ -379,13 +350,10 @@ export async function runBackup(
       "trap - EXIT",
     ].join("\n");
 
-    const result = await platform.process.run(
-      ["docker", "compose", "exec", "-T", t.service, "sh", "-c", script],
-      {
-        cwd: platform.paths.paths.root,
-        timeoutMs: 30 * 60_000,
-      },
-    );
+    const result = await platform.process.run(["docker", "compose", "exec", "-T", t.service, "sh", "-c", script], {
+      cwd: platform.paths.paths.root,
+      timeoutMs: 30 * 60_000,
+    });
 
     if (result.code !== 0) {
       await platform.fs.remove(partialPath).catch(() => {});
@@ -473,10 +441,7 @@ export async function applyBackupRetention(
 ): Promise<void> {
   const byDb = new Map<string, string>();
   for (const a of artifacts) {
-    byDb.set(
-      `${a.service}/${a.database}`,
-      join(platform.paths.paths.backupsDir, a.service, a.database),
-    );
+    byDb.set(`${a.service}/${a.database}`, join(platform.paths.paths.backupsDir, a.service, a.database));
   }
   for (const [key, dir] of byDb.entries()) {
     if (!(await platform.fs.exists(dir))) continue;
@@ -510,11 +475,7 @@ export type RestoreRequest = {
   replaceOriginal?: string;
 };
 
-export async function runRestore(
-  platform: Platform,
-  state: DesiredState,
-  req: RestoreRequest,
-): Promise<void> {
+export async function runRestore(platform: Platform, state: DesiredState, req: RestoreRequest): Promise<void> {
   const app = state.apps[req.slug];
   if (!app) throw notFoundError(`app not found: ${req.slug}`);
   if (mysqlDatabase(app).engine !== "mysql") {
@@ -660,11 +621,7 @@ export function buildMysqlShellPlan(
 
   if (identity.kind === "root") {
     const optionPath = "/etc/bento/mysql/root.cnf";
-    const openArgs = [
-      "mysql",
-      `--defaults-extra-file=${optionPath}`,
-      "--default-character-set=utf8mb4",
-    ];
+    const openArgs = ["mysql", `--defaults-extra-file=${optionPath}`, "--default-character-set=utf8mb4"];
     if (database) openArgs.push(database);
     return {
       service: identity.service,
@@ -702,11 +659,7 @@ export function buildMysqlShellPlan(
     `cat > ${shellQuote(optionPath)}`,
     `chmod 600 ${shellQuote(optionPath)}`,
   ].join("\n");
-  const openArgs = [
-    "mysql",
-    `--defaults-extra-file=${optionPath}`,
-    "--default-character-set=utf8mb4",
-  ];
+  const openArgs = ["mysql", `--defaults-extra-file=${optionPath}`, "--default-character-set=utf8mb4"];
   if (database) openArgs.push(database);
 
   return {
@@ -732,11 +685,7 @@ export function buildMysqlShellPlan(
 
 /** Assert no secret material appears in shell plan argv. */
 export function assertShellPlanSecretsOffArgv(plan: MysqlShellPlan, secrets: string[]): void {
-  const argv = [
-    ...(plan.stage?.command ?? []),
-    ...plan.open.command,
-    ...(plan.cleanup?.command ?? []),
-  ].join(" ");
+  const argv = [...(plan.stage?.command ?? []), ...plan.open.command, ...(plan.cleanup?.command ?? [])].join(" ");
   for (const secret of secrets) {
     if (secret && argv.includes(secret)) {
       throw serviceError("mysql shell plan leaked a secret onto host argv");
@@ -789,11 +738,7 @@ export async function queryDatabaseSizes(
   const result = await execMysqlSql(platform, service, sql, rootPassword);
   if (result.code !== 0) {
     throw serviceError(
-      `MySQL size query failed on ${service}: ${(
-        result.stderr ||
-        result.stdout ||
-        "unknown"
-      ).trim()}`,
+      `MySQL size query failed on ${service}: ${(result.stderr || result.stdout || "unknown").trim()}`,
       "Ensure the MySQL service is running and MYSQL_ROOT_PASSWORD matches the container.",
     );
   }
@@ -834,11 +779,7 @@ export async function queryProcesslist(
   const result = await execMysqlSql(platform, service, processlistSql(), rootPassword);
   if (result.code !== 0) {
     throw serviceError(
-      `MySQL processlist failed on ${service}: ${(
-        result.stderr ||
-        result.stdout ||
-        "unknown"
-      ).trim()}`,
+      `MySQL processlist failed on ${service}: ${(result.stderr || result.stdout || "unknown").trim()}`,
       "Ensure the MySQL service is running and MYSQL_ROOT_PASSWORD matches the container.",
     );
   }
@@ -846,10 +787,7 @@ export async function queryProcesslist(
 }
 
 /** Resolve which MySQL service(s) an operator request targets. */
-export function resolveMysqlServices(
-  state: DesiredState,
-  opts?: { service?: string; app?: string },
-): string[] {
+export function resolveMysqlServices(state: DesiredState, opts?: { service?: string; app?: string }): string[] {
   if (opts?.service) {
     const found = state.databaseServices
       .filter((v) => v.engine === "mysql")

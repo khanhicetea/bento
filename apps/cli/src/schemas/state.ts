@@ -139,8 +139,7 @@ const bindingSchema = z.discriminatedUnion("engine", [
         return file.path === `sqlite/${file.id}/${slug}.sqlite`;
       },
       {
-        message:
-          "Litestream path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite",
+        message: "Litestream path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite",
       },
     ),
     backupVerifiedAt: isoDateSchema.optional(),
@@ -156,14 +155,10 @@ const bindingSchema = z.discriminatedUnion("engine", [
         const slug = file.id.slice(0, -11);
         // Legacy schema-v3 SQLite files are now identified as Litestream.
         // New plain SQLite files use .db to stay outside the *.sqlite watcher.
-        return (
-          file.path === `sqlite/${file.id}/${slug}.db` ||
-          file.path === `sqlite/${file.id}/${slug}.sqlite`
-        );
+        return file.path === `sqlite/${file.id}/${slug}.db` || file.path === `sqlite/${file.id}/${slug}.sqlite`;
       },
       {
-        message:
-          "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.(db|sqlite)",
+        message: "SQLite path must be sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.(db|sqlite)",
       },
     ),
     vacuumSchedule: sqliteVacuumScheduleSchema.optional(),
@@ -210,42 +205,40 @@ const processAppSchema = strict({
   kind: z.literal("process"),
   runtime: processRuntimeSchema,
 });
-const appSchema = z
-  .discriminatedUnion("kind", [phpAppSchema, processAppSchema])
-  .superRefine((app, ctx) => {
-    if (app.kind === "process" && app.deploy.enabled) {
+const appSchema = z.discriminatedUnion("kind", [phpAppSchema, processAppSchema]).superRefine((app, ctx) => {
+  if (app.kind === "process" && app.deploy.enabled) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["deploy", "enabled"],
+      message: "process app webhook deploy is not supported yet",
+    });
+  }
+  const identities = new Set<string>();
+  for (const [index, database] of app.databases.entries()) {
+    if (
+      (database.engine === "sqlite" || database.engine === "litestream") &&
+      !database.file.id.startsWith(`${app.slug}_`)
+    ) {
       ctx.addIssue({
         code: "custom",
-        path: ["deploy", "enabled"],
-        message: "process app webhook deploy is not supported yet",
+        path: ["databases", index, "file", "id"],
+        message: "SQLite file identity must belong to the app slug",
       });
     }
-    const identities = new Set<string>();
-    for (const [index, database] of app.databases.entries()) {
-      if (
-        (database.engine === "sqlite" || database.engine === "litestream") &&
-        !database.file.id.startsWith(`${app.slug}_`)
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["databases", index, "file", "id"],
-          message: "SQLite file identity must belong to the app slug",
-        });
-      }
-      const identity =
-        database.engine === "sqlite" || database.engine === "litestream"
-          ? database.file.id
-          : `${database.engine}:${database.service}`;
-      if (identities.has(identity)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["databases", index],
-          message: `duplicate database binding ${identity}`,
-        });
-      }
-      identities.add(identity);
+    const identity =
+      database.engine === "sqlite" || database.engine === "litestream"
+        ? database.file.id
+        : `${database.engine}:${database.service}`;
+    if (identities.has(identity)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["databases", index],
+        message: `duplicate database binding ${identity}`,
+      });
     }
-  });
+    identities.add(identity);
+  }
+});
 const proxySchema = strict({
   name: appSlugSchema,
   enabled: z.boolean().default(true),
@@ -320,9 +313,7 @@ const desiredStateRawSchema = strict({
   ...commonState,
 }).superRefine((state, ctx) => {
   const services = new Set(state.databaseServices.map((s) => s.service));
-  const defaultManaged = state.databaseServices.find(
-    (s) => s.service === state.defaults.database.service,
-  );
+  const defaultManaged = state.databaseServices.find((s) => s.service === state.defaults.database.service);
   if (!defaultManaged) {
     ctx.addIssue({
       code: "custom",
@@ -383,9 +374,7 @@ const desiredStateRawSchema = strict({
           message: "must match managed service engine",
         });
       }
-      if (
-        new Set(database.databases.map((entry) => entry.name)).size !== database.databases.length
-      ) {
+      if (new Set(database.databases.map((entry) => entry.name)).size !== database.databases.length) {
         ctx.addIssue({
           code: "custom",
           path: ["apps", slug, "databases", index, "databases"],
@@ -393,9 +382,7 @@ const desiredStateRawSchema = strict({
         });
       }
     }
-    const links = Object.values(state.domains).filter(
-      (owner) => owner.kind === "app" && owner.slug === slug,
-    );
+    const links = Object.values(state.domains).filter((owner) => owner.kind === "app" && owner.slug === slug);
     if (links.filter((owner) => owner.primary).length !== 1) {
       ctx.addIssue({
         code: "custom",
@@ -429,9 +416,7 @@ const desiredStateRawSchema = strict({
     }
   }
   for (const [name] of Object.entries(state.proxies)) {
-    const links = Object.values(state.domains).filter(
-      (owner) => owner.kind === "proxy" && owner.name === name,
-    );
+    const links = Object.values(state.domains).filter((owner) => owner.kind === "proxy" && owner.name === name);
     if (links.filter((owner) => owner.primary).length !== 1) {
       ctx.addIssue({
         code: "custom",
@@ -620,10 +605,7 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
     databaseServices: raw.databaseServices.map(brandManaged),
     ...(raw.sqliteBackup ? { sqliteBackup: raw.sqliteBackup } : {}),
     apps: Object.fromEntries(
-      Object.entries(apps).map(([slug, app]) => [
-        slug,
-        withAppRelations(app, { apps, domains } as DesiredState),
-      ]),
+      Object.entries(apps).map(([slug, app]) => [slug, withAppRelations(app, { apps, domains } as DesiredState)]),
     ),
     proxies,
     domains,

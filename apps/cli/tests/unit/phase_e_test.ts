@@ -7,19 +7,9 @@ import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { createProxy, setProxyEnabled } from "../../src/services/proxy.ts";
 import { materializeAppHome } from "../../src/services/app.ts";
-import {
-  type DeployJob,
-  drainDeploy,
-  enableDeploy,
-  enqueueDeploy,
-  retainJobs,
-} from "../../src/services/deploy.ts";
+import { type DeployJob, drainDeploy, enableDeploy, enqueueDeploy, retainJobs } from "../../src/services/deploy.ts";
 import { generateAll } from "../../src/services/generate.ts";
-import {
-  applyAppPermissionPolicy,
-  checkPermissions,
-  repairPermissions,
-} from "../../src/services/permissions.ts";
+import { applyAppPermissionPolicy, checkPermissions, repairPermissions } from "../../src/services/permissions.ts";
 import { buildStatus, formatStatus, statusToJson } from "../../src/services/status.ts";
 import { assertSafeComposeArgs, resolveComposeFiles } from "../../src/services/compose.ts";
 import {
@@ -126,9 +116,7 @@ bunRuntime.test("E1 ACME TLS: native issuer + managed certificate variables", as
     assertEquals(nginxMain.includes('uri "https://acme.example.test/directory";'), true);
     assertEquals(nginxMain.includes('contact "ops@example.com";'), true);
     assertEquals(nginxMain.includes("state_path /var/cache/nginx/acme/bento_acme;"), true);
-    const snippet = textContent(
-      files.find((f) => f.relPath === "nginx/snippets/acme-ssl.conf")!.content,
-    );
+    const snippet = textContent(files.find((f) => f.relPath === "nginx/snippets/acme-ssl.conf")!.content);
     assertEquals(snippet.includes("acme_certificate bento_acme;"), true);
     assertEquals(snippet.includes("ssl_certificate     $acme_certificate;"), true);
     assertEquals(snippet.includes("ssl_certificate_key $acme_certificate_key;"), true);
@@ -160,12 +148,8 @@ bunRuntime.test("E1 ACME TLS works for reverse proxies", async () => {
     };
 
     const files = await generateAll(platform, state, "digest");
-    const vhost = textContent(
-      files.find((f) => f.relPath === "nginx/sites/proxy-edge.conf")!.content,
-    );
-    const snippet = textContent(
-      files.find((f) => f.relPath === "nginx/snippets/acme-ssl.conf")!.content,
-    );
+    const vhost = textContent(files.find((f) => f.relPath === "nginx/sites/proxy-edge.conf")!.content);
+    const snippet = textContent(files.find((f) => f.relPath === "nginx/snippets/acme-ssl.conf")!.content);
     assertEquals(vhost.includes("server_name edge.test www.edge.test;"), true);
     assertEquals(vhost.includes("return 301 https://$host$request_uri;"), true);
     assertEquals(vhost.includes("acme-ssl.conf"), true);
@@ -190,12 +174,8 @@ bunRuntime.test("E1 proxy renders named multi-server upstream with keepalive", a
     ).state;
 
     const files = await generateAll(platform, state, "digest");
-    const vhost = textContent(
-      files.find((f) => f.relPath === "nginx/sites/proxy-edge.conf")!.content,
-    );
-    const proxyCommon = textContent(
-      files.find((f) => f.relPath === "nginx/snippets/proxy-common.conf")!.content,
-    );
+    const vhost = textContent(files.find((f) => f.relPath === "nginx/sites/proxy-edge.conf")!.content);
+    const proxyCommon = textContent(files.find((f) => f.relPath === "nginx/snippets/proxy-common.conf")!.content);
     assertEquals(vhost.includes("upstream upstream_edge {"), true);
     assertEquals(vhost.includes("server 127.0.0.1:3000;"), true);
     assertEquals(vhost.includes("server 10.0.0.2:3000;"), true);
@@ -320,17 +300,9 @@ bunRuntime.test("E1 self-CA TLS: manages SAN leaf and exports only public CA", a
       tls: { kind: "self-ca" },
     });
     const files = await generateAll(platform, provisioned.state, "digest");
-    const vhost = textContent(
-      files.find((file) => file.relPath === "nginx/sites/alpha.conf")!.content,
-    );
-    assertEquals(
-      vhost.includes("ssl_certificate     /etc/nginx/certs/private-ca/sites/alpha.crt;"),
-      true,
-    );
-    assertEquals(
-      vhost.includes("ssl_certificate_key /etc/nginx/certs/private-ca/sites/alpha.key;"),
-      true,
-    );
+    const vhost = textContent(files.find((file) => file.relPath === "nginx/sites/alpha.conf")!.content);
+    assertEquals(vhost.includes("ssl_certificate     /etc/nginx/certs/private-ca/sites/alpha.crt;"), true);
+    assertEquals(vhost.includes("ssl_certificate_key /etc/nginx/certs/private-ca/sites/alpha.key;"), true);
     assertEquals(vhost.includes("include /etc/nginx/snippets/ssl-common.conf;"), true);
     assertEquals(
       files.some((file) => file.relPath === "nginx/snippets/ssl-alpha.conf"),
@@ -368,11 +340,7 @@ bunRuntime.test("E1 external TLS: validates paths and key mode", async () => {
     await platform.fs.chmod(key, 0o600);
     await validateExternalTlsPaths(platform, "site.crt", "site.key");
 
-    const ssl = resolveSslForSite(
-      { kind: "external", certPath: "site.crt", keyPath: "site.key" },
-      "alpha",
-      "a.test",
-    );
+    const ssl = resolveSslForSite({ kind: "external", certPath: "site.crt", keyPath: "site.key" }, "alpha", "a.test");
     assertEquals(ssl.redirectHttps, true);
     assertEquals(ssl.snippetContent?.includes("/etc/nginx/certs/site.crt"), true);
     assertEquals(containerCertPath("site.crt"), "/etc/nginx/certs/site.crt");
@@ -406,10 +374,7 @@ bunRuntime.test("E2 front-controller rejects non-index PHP; legacy allows script
     const legacy = textContent(files.find((f) => f.relPath === "nginx/sites/legacy.conf")!.content);
 
     // Front-controller: only index.php is executable; other .php return 404
-    assertEquals(
-      front.includes("\n    if ($uri !~ ^/index\\.php$) {\n      return 404;\n    }\n\n"),
-      true,
-    );
+    assertEquals(front.includes("\n    if ($uri !~ ^/index\\.php$) {\n      return 404;\n    }\n\n"), true);
     assertEquals(front.includes("try_files $uri $uri/ /index.php?$query_string;"), true);
     // Must not use try_files $uri =404 for php (that would allow direct scripts)
     assertEquals(front.includes("try_files $uri =404;"), false);
@@ -461,9 +426,7 @@ bunRuntime.test("E3 disabled deploy omits /_bento routes; enabled matches helper
     const app = state.apps["alpha"]!;
     assertEquals(app.deploy.argv[0], "sh");
     assertEquals(app.deploy.argv[1], "/home/alpha/.bento/deploy.sh");
-    const seed = textContent(
-      files.find((f) => f.relPath === "runner/php85/minicrond/alpha/config.toml")!.content,
-    );
+    const seed = textContent(files.find((f) => f.relPath === "runner/php85/minicrond/alpha/config.toml")!.content);
     assertEquals(seed.includes("/opt/bento/helpers/deploy-drain.sh"), true);
     assertEquals(seed.includes("/run/php-fpm/php85/alpha.sock"), true);
     const scheduler = textContent(
@@ -472,9 +435,7 @@ bunRuntime.test("E3 disabled deploy omits /_bento routes; enabled matches helper
     assertEquals(scheduler.includes(`bento-minicrond-start ${app.uid} ${app.gid}`), true);
     assertEquals(scheduler.includes("export BASE_PATH=/scheduler/apps/alpha/"), true);
     assertEquals(scheduler.includes("/home/alpha/.local/share/minicron"), true);
-    const compose = textContent(
-      files.find((f) => f.relPath === "compose/docker-compose.php-php85.yml")!.content,
-    );
+    const compose = textContent(files.find((f) => f.relPath === "compose/docker-compose.php-php85.yml")!.content);
     assertEquals(compose.includes("./runtime/php-fpm/php85:/run/php-fpm/php85:ro"), true);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
@@ -576,9 +537,7 @@ bunRuntime.test("E3 drain reclaim interrupted + log retention prune", async () =
       resetOpcache: async () => ({ ok: true, detail: "ok" }),
     });
     const after = await platform.fs.readDir(join(home, "logs"));
-    const leftoverOrphans = after.filter(
-      (n) => n.startsWith("deploy-") && n.endsWith(".log") && !n.includes("dep_"),
-    );
+    const leftoverOrphans = after.filter((n) => n.startsWith("deploy-") && n.endsWith(".log") && !n.includes("dep_"));
     // All deploy-*.log names should correspond to jobs still in queue
     const finalQueue = JSON.parse(await platform.fs.readText(queuePath)) as {
       jobs: DeployJob[];
@@ -743,11 +702,7 @@ bunRuntime.test("E8 overlay order is lexicographic; compose files lists them", a
 
     const files = await resolveComposeFiles(platform, state);
     const overlayFiles = files.filter((f) => f.startsWith("overlays/"));
-    assertEquals(overlayFiles, [
-      "overlays/a-first.yml",
-      "overlays/m-mid.yaml",
-      "overlays/z-last.yml",
-    ]);
+    assertEquals(overlayFiles, ["overlays/a-first.yml", "overlays/m-mid.yaml", "overlays/z-last.yml"]);
     // Base + php + mysql before overlays
     assertEquals(files[0]?.includes("docker-compose.base.yml"), true);
     assertEquals(files.indexOf("overlays/a-first.yml") > 0, true);
@@ -764,10 +719,7 @@ bunRuntime.test("E8 status includes compose file list with overlays", async () =
     const platform = testPlatform(root);
     const state = createEmptyState();
     await platform.fs.mkdirp(platform.paths.paths.overlaysDir);
-    await platform.fs.atomicWriteText(
-      join(platform.paths.paths.overlaysDir, "custom.yml"),
-      "services: {}\n",
-    );
+    await platform.fs.atomicWriteText(join(platform.paths.paths.overlaysDir, "custom.yml"), "services: {}\n");
     const report = await buildStatus(platform, state);
     assertEquals(
       report.composeFiles.some((f) => f === "overlays/custom.yml"),

@@ -60,9 +60,7 @@ async function cmdComposeFiles(_argv: CliArgs, ctx: CliContext): Promise<number>
   if (ctx.json) {
     ctx.log.out(JSON.stringify({ files }, null, 2));
   } else {
-    ctx.log.out(
-      "Compose files (deterministic order):\n" + files.map((f) => `  - ${f}`).join("\n") + "\n",
-    );
+    ctx.log.out("Compose files (deterministic order):\n" + files.map((f) => `  - ${f}`).join("\n") + "\n");
   }
   return 0;
 }

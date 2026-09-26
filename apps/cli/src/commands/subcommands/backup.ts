@@ -132,8 +132,7 @@ function backupOptions(y: YargsBuilder): YargsBuilder {
 
 async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
   const state = await ctx.store.load();
-  const scope =
-    argv.all === true ? ("all" as const) : argv.database ? ("database" as const) : ("app" as const);
+  const scope = argv.all === true ? ("all" as const) : argv.database ? ("database" as const) : ("app" as const);
   if (scope !== "all" && !argv.app) {
     ctx.log.error("usage: bento backup --app <app> [--database name] | --all");
     return 2;
@@ -150,9 +149,7 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
   const litestreamApps = engine
     ? []
     : scope === "all"
-      ? Object.values(state.apps).filter((app) =>
-          app.databases.some((database) => database.engine === "litestream"),
-        )
+      ? Object.values(state.apps).filter((app) => app.databases.some((database) => database.engine === "litestream"))
       : scope === "database"
         ? argv.app &&
           state.apps[argv.app]?.databases.some(
@@ -160,8 +157,7 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
           )
           ? [state.apps[argv.app]!]
           : []
-        : argv.app &&
-            state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
+        : argv.app && state.apps[argv.app]?.databases.some((database) => database.engine === "litestream")
           ? [state.apps[argv.app]!]
           : [];
   if (scope === "database" && litestreamApps.length > 0) {
@@ -183,10 +179,7 @@ async function cmdBackup(argv: CliArgs, ctx: CliContext): Promise<number> {
   return 0;
 }
 
-async function cmdScheduleRegister(
-  argv: ArgsWith<"schedule" | "bin">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdScheduleRegister(argv: ArgsWith<"schedule" | "bin">, ctx: CliContext): Promise<number> {
   // Loading validates that the selected stack has been initialized before any
   // host crontab process is invoked.
   await ctx.store.load();
@@ -196,16 +189,10 @@ async function cmdScheduleRegister(
     rcloneRemote: argv.rcloneRemote,
     rclonePrefix: argv.rclonePrefix,
   });
-  ctx.log.info(
-    result.changed ? "backup schedule registered" : "backup schedule already registered",
-  );
+  ctx.log.info(result.changed ? "backup schedule registered" : "backup schedule already registered");
   const rcloneTarget = await readRcloneBackupTarget(ctx.platform);
   if (rcloneTarget) {
-    ctx.log.info(
-      `scheduled dumps upload to rclone remote ${rcloneTarget.remote}:${
-        rcloneTarget.prefix || "/"
-      }`,
-    );
+    ctx.log.info(`scheduled dumps upload to rclone remote ${rcloneTarget.remote}:${rcloneTarget.prefix || "/"}`);
   } else {
     warnOnHostOnly(ctx);
   }
@@ -234,17 +221,11 @@ async function cmdScheduleStatus(_argv: CliArgs, ctx: CliContext): Promise<numbe
     if (status.lastRun) {
       ctx.log.out(`started: ${status.lastRun.startedAt}`);
       ctx.log.out(`finished: ${status.lastRun.finishedAt ?? "unknown/interrupted"}`);
-      ctx.log.out(
-        `artifacts: ${status.lastRun.artifactCount} (${status.lastRun.artifactBytes} bytes)`,
-      );
+      ctx.log.out(`artifacts: ${status.lastRun.artifactCount} (${status.lastRun.artifactBytes} bytes)`);
       if (status.lastRun.error) ctx.log.out(`error: ${status.lastRun.error}`);
     }
     ctx.log.out(`on-host backups: ${backupsDir}`);
-    ctx.log.out(
-      `rclone upload: ${
-        rcloneTarget ? `${rcloneTarget.remote}:${rcloneTarget.prefix || "/"}` : "disabled"
-      }`,
-    );
+    ctx.log.out(`rclone upload: ${rcloneTarget ? `${rcloneTarget.remote}:${rcloneTarget.prefix || "/"}` : "disabled"}`);
   }
   if (!rcloneTarget) warnOnHostOnly(ctx);
   return 0;
@@ -252,9 +233,7 @@ async function cmdScheduleStatus(_argv: CliArgs, ctx: CliContext): Promise<numbe
 
 async function cmdScheduleUnregister(_argv: CliArgs, ctx: CliContext): Promise<number> {
   const result = await unregisterBackupSchedule(ctx.platform);
-  ctx.log.info(
-    result.changed ? "backup schedule unregistered" : "backup schedule was not registered",
-  );
+  ctx.log.info(result.changed ? "backup schedule unregistered" : "backup schedule was not registered");
   ctx.log.info("existing dumps and the last-run record were not removed");
   return 0;
 }
@@ -281,18 +260,13 @@ function warnOnHostOnly(ctx: CliContext): void {
   );
 }
 
-async function cmdRestore(
-  argv: ArgsWith<"file" | "app" | "target" | "engine">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdRestore(argv: ArgsWith<"file" | "app" | "target" | "engine">, ctx: CliContext): Promise<number> {
   const { file, app, target } = argv;
   if (argv.replace && argv.replace !== target) {
     ctx.log.error("replace confirmation must exactly match target database name");
     return 10;
   }
-  ctx.log.warn(
-    "restore is not object-level atomic; a failed import can leave a partial destination",
-  );
+  ctx.log.warn("restore is not object-level atomic; a failed import can leave a partial destination");
   await ctx.store.withExclusive(async (state) => {
     const next = await runDatabaseRestore(ctx.platform, state, {
       file,

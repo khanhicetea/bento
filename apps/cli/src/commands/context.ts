@@ -41,11 +41,7 @@ export function createContext(flags: GlobalFlags): CliContext {
 }
 
 /** Build a CliContext from yargs-parsed global options. */
-export function contextFromArgv(argv: {
-  stack: string;
-  json: boolean;
-  repoRoot?: string;
-}): CliContext {
+export function contextFromArgv(argv: { stack: string; json: boolean; repoRoot?: string }): CliContext {
   return createContext({
     stackRoot: argv.stack,
     json: argv.json,

@@ -54,19 +54,11 @@ export async function writeAppPruneManifest(platform: Platform, app: AppState): 
             },
     ),
   };
-  await platform.fs.writeText(
-    join(home, MANIFEST),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    0o600,
-  );
+  await platform.fs.writeText(join(home, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`, 0o600);
 }
 
 /** Build the exact cleanup list. Active apps can never be pruned. */
-export async function planAppPrune(
-  platform: Platform,
-  state: DesiredState,
-  slugInput: string,
-): Promise<AppPrunePlan> {
+export async function planAppPrune(platform: Platform, state: DesiredState, slugInput: string): Promise<AppPrunePlan> {
   const slug = unwrap(parseAppSlug(slugInput), "slug");
   if (state.apps[slug]) {
     throw conflictError(
@@ -102,8 +94,7 @@ export async function planAppPrune(
       binding.engine === "sqlite" ||
       binding.engine === "litestream" ||
       state.databaseServices.some(
-        (service) =>
-          service.engine === binding.engine && service.service === binding.databaseService,
+        (service) => service.engine === binding.engine && service.service === binding.databaseService,
       );
     if (!managed) throw validationError(`unsafe app prune manifest: ${manifestPath}`);
   }
@@ -125,31 +116,19 @@ function normalizeManifest(raw: unknown, slug: string): AppPruneManifest {
     }
     const binding = rawBinding as Record<string, unknown>;
     const engine = binding.engine;
-    if (
-      engine !== "mysql" &&
-      engine !== "postgres" &&
-      engine !== "sqlite" &&
-      engine !== "litestream"
-    ) {
+    if (engine !== "mysql" && engine !== "postgres" && engine !== "sqlite" && engine !== "litestream") {
       throw validationError("invalid app prune database engine");
     }
-    const databaseService =
-      typeof binding.databaseService === "string" ? binding.databaseService : "";
+    const databaseService = typeof binding.databaseService === "string" ? binding.databaseService : "";
     const databaseUser = typeof binding.databaseUser === "string" ? binding.databaseUser : "";
     const databases = Array.isArray(binding.databases) ? binding.databases.filter(isString) : [];
     const validNames =
       engine === "sqlite" || engine === "litestream"
         ? databaseService === "local-file" &&
           databases.length === 1 &&
-          databases.every(
-            (name) =>
-              name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1)),
-          )
+          databases.every((name) => name.startsWith(`${slug}_`) && /^[a-f0-9]{10}$/.test(name.slice(slug.length + 1)))
         : /^[a-zA-Z0-9_-]+$/.test(databaseService) &&
-          databases.every(
-            (name) =>
-              /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`)),
-          );
+          databases.every((name) => /^[a-zA-Z0-9_]+$/.test(name) && (name === slug || name.startsWith(`${slug}_`)));
     if (databaseUser !== slug || !validNames) {
       throw validationError("unsafe app prune database binding");
     }
@@ -189,11 +168,7 @@ export async function executeAppPrune(
       }
       if (binding.engine !== "sqlite" && binding.engine !== "litestream") {
         for (const database of binding.databases) cleaned.push(`database ${database}`);
-        cleaned.push(
-          `${
-            binding.engine === "mysql" ? "MySQL account" : "PostgreSQL role"
-          } ${binding.databaseUser}`,
-        );
+        cleaned.push(`${binding.engine === "mysql" ? "MySQL account" : "PostgreSQL role"} ${binding.databaseUser}`);
       }
     }
   }
@@ -216,11 +191,7 @@ async function pruneMysql(platform: Platform, slug: string, plan: AppPruneDataba
   }
 }
 
-async function prunePostgres(
-  platform: Platform,
-  slug: string,
-  plan: AppPruneDatabase,
-): Promise<void> {
+async function prunePostgres(platform: Platform, slug: string, plan: AppPruneDatabase): Promise<void> {
   const password = await requirePostgresRootPassword(platform);
   const sql = [
     ...plan.databases.flatMap((database) => [
@@ -237,12 +208,7 @@ async function prunePostgres(
   }
 }
 
-function throwPruneServiceError(
-  engine: "MySQL" | "PostgreSQL",
-  slug: string,
-  stderr: string,
-  code: number,
-): never {
+function throwPruneServiceError(engine: "MySQL" | "PostgreSQL", slug: string, stderr: string, code: number): never {
   throw serviceError(
     `failed to prune ${engine} data for ${slug}: ${stderr.trim() || `exit ${code}`}`,
     `Start the recorded ${engine} service and retry; the retained home was not removed.`,

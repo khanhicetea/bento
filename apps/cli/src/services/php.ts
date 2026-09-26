@@ -26,9 +26,7 @@ export function addPhpVersion(
   };
   return {
     ...state,
-    phpVersions: [...state.phpVersions, managed].sort((a, b) =>
-      compareMajorMinor(a.version, b.version),
-    ),
+    phpVersions: [...state.phpVersions, managed].sort((a, b) => compareMajorMinor(a.version, b.version)),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -47,13 +45,9 @@ export function removePhpVersion(state: DesiredState, versionInput: string): Des
       "Change the stack default PHP version first.",
     );
   }
-  const inUse = Object.values(state.apps).filter(
-    (app) => isPhpApp(app) && app.phpVersion === version,
-  );
+  const inUse = Object.values(state.apps).filter((app) => isPhpApp(app) && app.phpVersion === version);
   if (inUse.length > 0) {
-    throw safetyError(
-      `refusing to remove PHP ${version}: used by apps ${inUse.map((a) => a.slug).join(", ")}`,
-    );
+    throw safetyError(`refusing to remove PHP ${version}: used by apps ${inUse.map((a) => a.slug).join(", ")}`);
   }
 
   return {
@@ -162,10 +156,7 @@ export function buildCliExec(
  * Use `-it` for interactive shells and `-T` for scripted non-TTY invocations.
  * Never pass docker `-u` here — that yields "I have no name!" with no passwd entry.
  */
-export function cliRunComposeCommand(
-  plan: CliExecPlan,
-  opts?: { tty?: boolean; containerName?: string },
-): string[] {
+export function cliRunComposeCommand(plan: CliExecPlan, opts?: { tty?: boolean; containerName?: string }): string[] {
   const tty = opts?.tty ?? true;
   return [
     "--profile",

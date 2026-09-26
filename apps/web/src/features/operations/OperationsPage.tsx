@@ -12,18 +12,9 @@ import {
   Server,
   ServerCog,
 } from "lucide-react";
-import {
-  DomainError,
-  DomainLoading,
-  EmptyPanel,
-  StackNotReady,
-} from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, EmptyPanel, StackNotReady } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
-import {
-  OperationsControls,
-  ServiceLogsButton,
-  ServiceRestartButton,
-} from "./OperationsControls.tsx";
+import { OperationsControls, ServiceLogsButton, ServiceRestartButton } from "./OperationsControls.tsx";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,10 +45,7 @@ export function OperationsPage() {
   const health = getHealth(runningRoles, data.roles.length);
 
   return (
-    <section
-      className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4"
-      aria-live="polite"
-    >
+    <section className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4" aria-live="polite">
       <div className="flex items-end justify-between gap-6 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -83,8 +71,7 @@ export function OperationsPage() {
         <Alert className="mt-6" variant="destructive">
           <CircleAlert aria-hidden="true" />
           <div>
-            <strong className="font-medium">Status may be out of date.</strong>{" "}
-            {messageOf(query.error)}
+            <strong className="font-medium">Status may be out of date.</strong> {messageOf(query.error)}
           </div>
         </Alert>
       )}
@@ -102,12 +89,8 @@ export function OperationsPage() {
                   <span className={`size-1.5 rounded-full ${health.dotClass}`} aria-hidden="true" />
                   {health.label}
                 </Badge>
-                <h3 className="mb-0 mt-4 text-2xl font-semibold tracking-tight">
-                  {data.stackName ?? "Bento stack"}
-                </h3>
-                <p className="mb-0 mt-2 max-w-[620px] text-sm text-muted-foreground">
-                  {health.description}
-                </p>
+                <h3 className="mb-0 mt-4 text-2xl font-semibold tracking-tight">{data.stackName ?? "Bento stack"}</h3>
+                <p className="mb-0 mt-2 max-w-[620px] text-sm text-muted-foreground">{health.description}</p>
                 <div className="mt-6 flex flex-wrap gap-2 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5">
                     <Server className="size-3.5" aria-hidden="true" />
@@ -123,11 +106,7 @@ export function OperationsPage() {
                 <Detail label="Stack root" value={data.stackRoot} />
                 <Detail
                   label="Last render"
-                  value={
-                    data.generation?.renderedAt
-                      ? formatDate(data.generation.renderedAt)
-                      : "Not rendered"
-                  }
+                  value={data.generation?.renderedAt ? formatDate(data.generation.renderedAt) : "Not rendered"}
                 />
                 <Detail label="Asset version" value={data.generation?.assetVersion ?? "Unknown"} />
               </div>
@@ -147,25 +126,14 @@ export function OperationsPage() {
                     : "default"
               }
             />
-            <Summary
-              value={data.roles.length}
-              label="Expected roles"
-              icon={<ServerCog className="size-4" />}
-            />
-            <Summary
-              value={data.counts.applications}
-              label="Applications"
-              icon={<Layers3 className="size-4" />}
-            />
+            <Summary value={data.roles.length} label="Expected roles" icon={<ServerCog className="size-4" />} />
+            <Summary value={data.counts.applications} label="Applications" icon={<Layers3 className="size-4" />} />
           </div>
 
           {(data.warnings.length > 0 || data.notes.length > 0) && (
             <section className="mt-8 space-y-3" aria-labelledby="operations-notices">
               <div className="flex items-center gap-2">
-                <CircleAlert
-                  className="size-4 text-amber-600 dark:text-amber-400"
-                  aria-hidden="true"
-                />
+                <CircleAlert className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                 <h3 id="operations-notices" className="m-0 text-base font-semibold">
                   Runtime notices
                 </h3>
@@ -314,9 +282,7 @@ function RoleCard({ role }: { role: OperationsRole }) {
             <h4 className="m-0 truncate text-sm font-semibold" title={role.name}>
               {role.name}
             </h4>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              {formatLabel(role.kind)}
-            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">{formatLabel(role.kind)}</span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -402,9 +368,7 @@ function RuntimeCard({ runtime }: { runtime: Runtime }) {
           </span>
           <div>
             <h4 className="m-0 text-sm font-semibold">PHP {runtime.version}</h4>
-            <p className="m-0 mt-1 text-xs text-muted-foreground">
-              {runtime.appCount} applications
-            </p>
+            <p className="m-0 mt-1 text-xs text-muted-foreground">{runtime.appCount} applications</p>
           </div>
         </div>
         <Badge className={status.className}>
@@ -425,16 +389,9 @@ function RuntimeCard({ runtime }: { runtime: Runtime }) {
           aria-label={`PHP ${runtime.version} pool allocation`}
           aria-valuemin={0}
           aria-valuemax={runtime.processCap > 0 ? runtime.processCap : undefined}
-          aria-valuenow={
-            runtime.processCap > 0
-              ? Math.min(runtime.poolMaxSum, runtime.processCap)
-              : runtime.poolMaxSum
-          }
+          aria-valuenow={runtime.processCap > 0 ? Math.min(runtime.poolMaxSum, runtime.processCap) : runtime.poolMaxSum}
         >
-          <div
-            className={`h-full rounded-full transition-all ${status.barClassName}`}
-            style={{ width: `${ratio}%` }}
-          />
+          <div className={`h-full rounded-full transition-all ${status.barClassName}`} style={{ width: `${ratio}%` }} />
         </div>
       </div>
       <div className="mt-5 grid grid-cols-2 divide-x divide-border overflow-hidden rounded-xl border border-border bg-muted/30">
@@ -513,8 +470,7 @@ function roleStatus(state: OperationsRole["state"]) {
 }
 
 function roleIcon(kind: OperationsRole["kind"]) {
-  if (kind === "php-fpm" || kind === "php-runner")
-    return <Gauge className="size-4" aria-hidden="true" />;
+  if (kind === "php-fpm" || kind === "php-runner") return <Gauge className="size-4" aria-hidden="true" />;
   if (kind === "mysql" || kind === "postgres" || kind === "litestream") {
     return <Database className="size-4" aria-hidden="true" />;
   }

@@ -59,9 +59,7 @@ async function hmacSha256(secret: string, body: string): Promise<string> {
     false,
     ["sign"],
   );
-  const bytes = new Uint8Array(
-    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)),
-  );
+  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -240,9 +238,7 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       };
       assertEquals(accepted.status, "queued");
 
-      let queue = JSON.parse(
-        await readContainerFile(container, "/home/alpha/.bento/queue.json"),
-      ) as {
+      let queue = JSON.parse(await readContainerFile(container, "/home/alpha/.bento/queue.json")) as {
         jobs: Array<{
           id: string;
           status: string;
@@ -282,14 +278,8 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
       const job = queue.jobs.find((candidate) => candidate.id === accepted.id);
       assertEquals(job?.status, "success");
       assertEquals(job?.exitCode, 0);
-      assertEquals(
-        (await readContainerFile(container, "/home/alpha/.bento/hook-ran")).trim(),
-        accepted.id,
-      );
-      const log = await readContainerFile(
-        container,
-        `/home/alpha/logs/${job?.logName ?? `deploy-${accepted.id}.log`}`,
-      );
+      assertEquals((await readContainerFile(container, "/home/alpha/.bento/hook-ran")).trim(), accepted.id);
+      const log = await readContainerFile(container, `/home/alpha/logs/${job?.logName ?? `deploy-${accepted.id}.log`}`);
       assertEquals(log.includes("live hook executed"), true);
       assertEquals(log.includes("opcache reset: reset"), true);
       const payload = await runDocker([
@@ -304,14 +294,7 @@ echo "live hook executed: $BENTO_DEPLOY_ID"
     } finally {
       if (container !== "") {
         await runDocker(
-          [
-            "exec",
-            container,
-            "chown",
-            "-R",
-            `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
-            "/home/alpha",
-          ],
+          ["exec", container, "chown", "-R", `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`, "/home/alpha"],
           { timeoutMs: 30_000 },
         );
         await runDocker(["rm", "-f", container], { timeoutMs: 30_000 });

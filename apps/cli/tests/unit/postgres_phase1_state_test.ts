@@ -75,10 +75,7 @@ bunRuntime.test("state store rejects another domain schema without rewriting it"
     database.run("UPDATE stack_config SET state_schema_version = 4 WHERE id = 1");
     await assertRejects(() => store.load(), Error, "unsupported state schemaVersion 4");
     const row = database
-      .query<
-        { state_schema_version: number },
-        []
-      >("SELECT state_schema_version FROM stack_config WHERE id = 1")
+      .query<{ state_schema_version: number }, []>("SELECT state_schema_version FROM stack_config WHERE id = 1")
       .get();
     assertEquals(row?.state_schema_version, 4);
   } finally {

@@ -39,9 +39,8 @@ export function CloudflareTunnelCard({ configured }: { configured: boolean }) {
             </p>
             <h3 className="m-0 mt-1 text-lg font-semibold tracking-tight">Cloudflare Tunnel</h3>
             <p className="m-0 mt-1 max-w-[760px] text-sm text-muted-foreground">
-              Run cloudflared in Nginx&apos;s network namespace. Configure Cloudflare public
-              hostnames to use Nginx origins for Bento applications or the loopback-safe Bento web
-              server.
+              Run cloudflared in Nginx&apos;s network namespace. Configure Cloudflare public hostnames to use Nginx
+              origins for Bento applications or the loopback-safe Bento web server.
             </p>
           </div>
         </div>
@@ -87,11 +86,7 @@ export function CloudflareTunnelCard({ configured }: { configured: boolean }) {
             />
           </div>
         </div>
-        <Button
-          className="max-[640px]:w-full"
-          type="submit"
-          disabled={setup.isPending || !token.trim()}
-        >
+        <Button className="max-[640px]:w-full" type="submit" disabled={setup.isPending || !token.trim()}>
           {setup.isPending ? <Spinner /> : <Cloud className="size-4" aria-hidden="true" />}
           {setup.isPending ? "Starting…" : configured ? "Update token" : "Set up tunnel"}
         </Button>

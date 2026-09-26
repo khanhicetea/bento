@@ -40,9 +40,7 @@ export async function runDatabaseBackup(
   state: DesiredState,
   req: DatabaseBackupRequest,
 ): Promise<DatabaseBackupArtifact[]> {
-  const release = await platform.lock.tryExclusive(
-    join(platform.paths.paths.lockDir, "database-backup.lock"),
-  );
+  const release = await platform.lock.tryExclusive(join(platform.paths.paths.lockDir, "database-backup.lock"));
   if (!release) {
     throw conflictError(
       "another logical backup batch is already running",
@@ -77,9 +75,7 @@ export async function runDatabaseBackup(
           artifacts.push(await runPostgresBackup(platform, target, compress));
           break;
         case "sqlite":
-          artifacts.push(
-            await runSqliteBackup(platform, state, target.slug, compress, target.database),
-          );
+          artifacts.push(await runSqliteBackup(platform, state, target.slug, compress, target.database));
           break;
         default:
           assertNever(target.engine);
@@ -221,30 +217,22 @@ function resolveRestoreBinding(
     (binding): binding is Extract<AppDatabaseBinding, { engine: "mysql" | "postgres" }> =>
       binding.engine === "mysql" || binding.engine === "postgres",
   );
-  const requested = req.engine
-    ? relational.filter((binding) => binding.engine === req.engine)
-    : relational;
+  const requested = req.engine ? relational.filter((binding) => binding.engine === req.engine) : relational;
   const named = requested.filter((binding) =>
-    binding.databases.some(
-      (database) => database.name === req.replaceOriginal || database.name === req.targetDatabase,
-    ),
+    binding.databases.some((database) => database.name === req.replaceOriginal || database.name === req.targetDatabase),
   );
   if (named.length === 1) return named[0]!;
 
   const rel = relative(resolve(platform.paths.paths.backupsDir), resolve(req.file));
   const service =
-    rel && rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\")
-      ? rel.split(/[\\/]/)[0]
-      : undefined;
+    rel && rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\") ? rel.split(/[\\/]/)[0] : undefined;
   const byService = requested.filter((binding) => binding.service === service);
   if (byService.length === 1) return byService[0]!;
   if (requested.length === 1) return requested[0]!;
   if (requested.length === 0) {
     throw validationError(`app ${req.slug} has no ${req.engine ?? "relational"} database binding`);
   }
-  throw validationError(
-    `restore target is ambiguous for app ${req.slug}; specify --engine mysql or --engine postgres`,
-  );
+  throw validationError(`restore target is ambiguous for app ${req.slug}; specify --engine mysql or --engine postgres`);
 }
 
 function validateDumpPathForEngine(

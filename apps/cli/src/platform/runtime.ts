@@ -109,11 +109,7 @@ export class RuntimeChild {
   async output(): Promise<CommandOutput> {
     const stdoutPromise = bytes(this.#process.stdout);
     const stderrPromise = bytes(this.#process.stderr);
-    const [code, stdout, stderr] = await Promise.all([
-      this.#process.exited,
-      stdoutPromise,
-      stderrPromise,
-    ]);
+    const [code, stdout, stderr] = await Promise.all([this.#process.exited, stdoutPromise, stderrPromise]);
     return {
       code,
       success: code === 0,

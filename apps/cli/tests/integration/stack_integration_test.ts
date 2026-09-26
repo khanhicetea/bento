@@ -78,10 +78,7 @@ bunRuntime.test("F2 create two apps; homes/pools/sockets/domains separate", asyn
     assertEquals(await h.run("app", "create", "alpha", "--domain", "alpha.test", "--no-apply"), 0);
     assertEquals(await h.run("app", "create", "beta", "--domain", "beta.test", "--no-apply"), 0);
     // Domain collision refused
-    assertEquals(
-      (await h.run("app", "create", "gamma", "--domain", "alpha.test", "--no-apply")) !== 0,
-      true,
-    );
+    assertEquals((await h.run("app", "create", "gamma", "--domain", "alpha.test", "--no-apply")) !== 0, true);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
 
     assertEquals(await exists(home(h, "alpha")), true);
@@ -96,10 +93,7 @@ bunRuntime.test("F2 create two apps; homes/pools/sockets/domains separate", asyn
     assertEquals(state.domains["alpha.test"].kind, "app");
     assertEquals(state.domains["beta.test"].slug, "beta");
     assertEquals(state.apps.alpha.databases[0].user !== state.apps.beta.databases[0].user, true);
-    assertEquals(
-      state.apps.alpha.databases[0].password !== state.apps.beta.databases[0].password,
-      true,
-    );
+    assertEquals(state.apps.alpha.databases[0].password !== state.apps.beta.databases[0].password, true);
 
     // Pool files distinct
     const phpDir = gen(h, "php");
@@ -137,10 +131,7 @@ bunRuntime.test("F2 PHP add second version; move one app; exec uses new version"
     assertEquals(await h.run("app", "create", "alpha", "--domain", "a.test", "--no-apply"), 0);
     assertEquals(await h.run("php", "add", "8.3"), 0);
     // Move app to 8.3 via app create upsert
-    assertEquals(
-      await h.run("app", "create", "alpha", "--domain", "a.test", "--php", "8.3", "--no-apply"),
-      0,
-    );
+    assertEquals(await h.run("app", "create", "alpha", "--domain", "a.test", "--php", "8.3", "--no-apply"), 0);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
 
     const state = await loadStateJson(h.stack);
@@ -183,37 +174,15 @@ bunRuntime.test("F2 PHP add second version; move one app; exec uses new version"
 bunRuntime.test("F2 front-controller + legacy + reverse-proxy domains unique", async () => {
   await withStack(async (h) => {
     await bootstrapStack(h);
+    assertEquals(await h.run("app", "create", "front", "--domain", "front.test", "--front", "--no-apply"), 0);
+    assertEquals(await h.run("app", "create", "legacy", "--domain", "legacy.test", "--legacy", "--no-apply"), 0);
     assertEquals(
-      await h.run("app", "create", "front", "--domain", "front.test", "--front", "--no-apply"),
-      0,
-    );
-    assertEquals(
-      await h.run("app", "create", "legacy", "--domain", "legacy.test", "--legacy", "--no-apply"),
-      0,
-    );
-    assertEquals(
-      await h.run(
-        "proxy",
-        "create",
-        "api",
-        "--domain",
-        "api.test",
-        "--upstream",
-        "http://127.0.0.1:3000",
-      ),
+      await h.run("proxy", "create", "api", "--domain", "api.test", "--upstream", "http://127.0.0.1:3000"),
       0,
     );
     // Proxy domain collision with app refused
     assertEquals(
-      (await h.run(
-        "proxy",
-        "create",
-        "clash",
-        "--domain",
-        "front.test",
-        "--upstream",
-        "http://127.0.0.1:9",
-      )) !== 0,
+      (await h.run("proxy", "create", "clash", "--domain", "front.test", "--upstream", "http://127.0.0.1:9")) !== 0,
       true,
     );
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
@@ -245,10 +214,7 @@ bunRuntime.test("F2 TLS mode switch shared → external (files) nginx-only plan"
     assertEquals(await h.run("app", "create", "alpha", "--domain", "a.test", "--no-apply"), 0);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
     let vhost = await readText(gen(h, "nginx", "sites", "alpha.conf"));
-    assertEquals(
-      vhost.includes("boot-ssl.conf") || vhost.includes("return 301 https://") === false,
-      true,
-    );
+    assertEquals(vhost.includes("boot-ssl.conf") || vhost.includes("return 301 https://") === false, true);
     assertEquals(vhost.includes("return 301 https://"), false);
 
     const certs = join(h.stack, "certs");
@@ -303,9 +269,7 @@ bunRuntime.test("F2 MySQL namespace refuse + stable app passwords (control plane
       const state = await loadStateJson(h.stack);
       // Must not record database when fail-closed
       assertEquals(
-        state.apps.alpha.databases[0].databases.some(
-          (d: { name: string }) => d.name === "alpha_extra",
-        ),
+        state.apps.alpha.databases[0].databases.some((d: { name: string }) => d.name === "alpha_extra"),
         false,
       );
     }
@@ -356,12 +320,7 @@ bunRuntime.test("F2 Redis shared prefix + ACL credential materialize", async () 
       for await (const e of bunRuntime.readDir(dir)) {
         const p = join(dir, e.name);
         if (e.isDirectory) {
-          if (
-            e.name === ".bento" ||
-            e.name === "code" ||
-            e.name === "logs" ||
-            !e.name.startsWith(".")
-          ) {
+          if (e.name === ".bento" || e.name === "code" || e.name === "logs" || !e.name.startsWith(".")) {
             await walk(p);
           }
         } else {
@@ -384,10 +343,7 @@ bunRuntime.test("F2 Redis shared prefix + ACL credential materialize", async () 
     // State records redis identity
     const state = await loadStateJson(h.stack);
     assertEquals(!!state.apps.alpha.redis.prefix, true);
-    assertEquals(
-      state.apps.alpha.redis.mode === "shared" || state.apps.alpha.redis.mode === "acl",
-      true,
-    );
+    assertEquals(state.apps.alpha.redis.mode === "shared" || state.apps.alpha.redis.mode === "acl", true);
     void foundPrefix;
     void isDockerAvailable;
   });
@@ -528,17 +484,7 @@ bunRuntime.test("F2 custom template select / drift / return preserves source", a
       "# custom-marker-{{slug}}\nserver { listen 80; server_name {{serverNames}}; }\n",
     );
     assertEquals(
-      await h.run(
-        "template",
-        "select",
-        "--app",
-        "alpha",
-        "--kind",
-        "vhost",
-        "--source",
-        customTpl,
-        "--no-apply",
-      ),
+      await h.run("template", "select", "--app", "alpha", "--kind", "vhost", "--source", customTpl, "--no-apply"),
       0,
     );
     assertEquals(await h.run("template", "drift", "--app", "alpha"), 0);
@@ -546,10 +492,7 @@ bunRuntime.test("F2 custom template select / drift / return preserves source", a
     const vhost = await readText(gen(h, "nginx", "sites", "alpha.conf"));
     assertEquals(vhost.includes("custom-marker") || vhost.includes("alpha"), true);
 
-    assertEquals(
-      await h.run("template", "return", "--app", "alpha", "--kind", "vhost", "--no-apply"),
-      0,
-    );
+    assertEquals(await h.run("template", "return", "--app", "alpha", "--kind", "vhost", "--no-apply"), 0);
     // Custom source preserved under stack custom/
     const preserved = join(h.stack, "custom", "apps", "alpha", "vhost", "vhost.conf.tpl");
     assertEquals(await exists(preserved), true);
@@ -587,27 +530,10 @@ bunRuntime.test("F2 corrupt state/env/CLI boundaries reject before side effects"
     await bunRuntime.writeFile(statePath, goodState);
 
     // Invalid CLI token
+    assertEquals((await h.run("app", "create", "BAD_SLUG", "--domain", "x.test", "--no-apply")) !== 0, true);
+    assertEquals((await h.run("app", "create", "okapp", "--domain", "not a domain", "--no-apply")) !== 0, true);
     assertEquals(
-      (await h.run("app", "create", "BAD_SLUG", "--domain", "x.test", "--no-apply")) !== 0,
-      true,
-    );
-    assertEquals(
-      (await h.run("app", "create", "okapp", "--domain", "not a domain", "--no-apply")) !== 0,
-      true,
-    );
-    assertEquals(
-      (await h.run(
-        "cron",
-        "add",
-        "--app",
-        "missing",
-        "--name",
-        "x",
-        "--schedule",
-        "bad",
-        "--",
-        "true",
-      )) !== 0,
+      (await h.run("cron", "add", "--app", "missing", "--name", "x", "--schedule", "bad", "--", "true")) !== 0,
       true,
     );
 
@@ -617,15 +543,7 @@ bunRuntime.test("F2 corrupt state/env/CLI boundaries reject before side effects"
     assertEquals(await h.run("app", "create", "envapp", "--domain", "env.test", "--no-apply"), 0);
     // --db without root password fails before recording db
     assertEquals(
-      (await h.run(
-        "app",
-        "create",
-        "needsdb",
-        "--domain",
-        "needsdb.test",
-        "--db",
-        "--no-apply",
-      )) !== 0,
+      (await h.run("app", "create", "needsdb", "--domain", "needsdb.test", "--db", "--no-apply")) !== 0,
       true,
     );
     await bunRuntime.writeTextFile(envPath, goodEnv, { mode: 0o600 });
@@ -639,28 +557,25 @@ bunRuntime.test("F2 corrupt state/env/CLI boundaries reject before side effects"
 // F2.14 Compose files listing deterministic
 // ---------------------------------------------------------------------------
 
-bunRuntime.test(
-  "F2 compose files listing is deterministic and includes overlays pattern",
-  async () => {
-    await withStack(async (h) => {
-      await bootstrapStack(h);
-      assertEquals(await h.run("php", "add", "8.3"), 0);
-      assertEquals(await h.run("render"), 0);
-      // Overlay file
-      await bunRuntime.mkdir(join(h.stack, "overlays"), { recursive: true });
-      await bunRuntime.writeTextFile(join(h.stack, "overlays", "10-extra.yml"), "services: {}\n");
-      await bunRuntime.writeTextFile(join(h.stack, "overlays", "02-first.yml"), "services: {}\n");
-      assertEquals(await h.run("compose", "files"), 0);
+bunRuntime.test("F2 compose files listing is deterministic and includes overlays pattern", async () => {
+  await withStack(async (h) => {
+    await bootstrapStack(h);
+    assertEquals(await h.run("php", "add", "8.3"), 0);
+    assertEquals(await h.run("render"), 0);
+    // Overlay file
+    await bunRuntime.mkdir(join(h.stack, "overlays"), { recursive: true });
+    await bunRuntime.writeTextFile(join(h.stack, "overlays", "10-extra.yml"), "services: {}\n");
+    await bunRuntime.writeTextFile(join(h.stack, "overlays", "02-first.yml"), "services: {}\n");
+    assertEquals(await h.run("compose", "files"), 0);
 
-      const list = await readText(gen(h, "compose", "compose.files"));
-      const lines = list.split("\n").filter((l) => l && !l.startsWith("#"));
-      // PHP fragments sorted by service name
-      const phpLines = lines.filter((l) => l.includes("docker-compose.php-"));
-      const sorted = [...phpLines].sort();
-      assertEquals(phpLines, sorted);
-    });
-  },
-);
+    const list = await readText(gen(h, "compose", "compose.files"));
+    const lines = list.split("\n").filter((l) => l && !l.startsWith("#"));
+    // PHP fragments sorted by service name
+    const phpLines = lines.filter((l) => l.includes("docker-compose.php-"));
+    const sorted = [...phpLines].sort();
+    assertEquals(phpLines, sorted);
+  });
+});
 
 // Ensure runCli import is used if helpers re-export path needs it
 void runCli;

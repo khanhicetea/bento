@@ -10,19 +10,11 @@ export function sqliteFileName(slug: string, engine: SqliteFileEngine = "litestr
   return `${slug}.${engine === "sqlite" ? "db" : "sqlite"}`;
 }
 
-export function sqliteRelativePath(
-  fileId: string,
-  slug: string,
-  engine: SqliteFileEngine = "litestream",
-): string {
+export function sqliteRelativePath(fileId: string, slug: string, engine: SqliteFileEngine = "litestream"): string {
   return `sqlite/${fileId}/${sqliteFileName(slug, engine)}`;
 }
 
-export function sqliteContainerPath(
-  fileId: string,
-  slug: string,
-  engine: SqliteFileEngine = "litestream",
-): string {
+export function sqliteContainerPath(fileId: string, slug: string, engine: SqliteFileEngine = "litestream"): string {
   return `${SQLITE_CONTAINER_ROOT}/${fileId}/${sqliteFileName(slug, engine)}`;
 }
 

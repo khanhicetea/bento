@@ -39,13 +39,7 @@ import {
   type PhpVersion,
 } from "#/domain/types.ts";
 import { conflictError, notFoundError, safetyError, validationError } from "#/domain/errors.ts";
-import {
-  parseAppSlug,
-  parseDomainName,
-  parsePhpVersion,
-  parseSafeRelativePath,
-  unwrap,
-} from "#/schemas/validators.ts";
+import { parseAppSlug, parseDomainName, parsePhpVersion, parseSafeRelativePath, unwrap } from "#/schemas/validators.ts";
 import type { Platform } from "#/platform/mod.ts";
 import { containerAppHome } from "#/platform/paths.ts";
 import {
@@ -56,23 +50,10 @@ import {
   reloadPlanForRunnerChange,
 } from "#/domain/reload.ts";
 import { applyAppPermissionPolicy } from "#/services/permissions.ts";
-import {
-  applyAppMysqlGrants,
-  isMysqlReachable,
-  tryBestEffortMysqlAccount,
-} from "#/services/mysql.ts";
-import {
-  applyAppPostgresDatabase,
-  isPostgresReachable,
-  tryBestEffortPostgresRole,
-} from "#/services/postgres.ts";
+import { applyAppMysqlGrants, isMysqlReachable, tryBestEffortMysqlAccount } from "#/services/mysql.ts";
+import { applyAppPostgresDatabase, isPostgresReachable, tryBestEffortPostgresRole } from "#/services/postgres.ts";
 import { tryApplyAppRedisAcl } from "#/services/redis.ts";
-import {
-  sqliteContainerPath,
-  sqliteHostDir,
-  sqliteHostPath,
-  sqliteRelativePath,
-} from "#/services/sqlite_paths.ts";
+import { sqliteContainerPath, sqliteHostDir, sqliteHostPath, sqliteRelativePath } from "#/services/sqlite_paths.ts";
 import {
   randomSqliteVacuumSchedule,
   resolveSqliteVacuumSchedules,
@@ -120,11 +101,7 @@ export type ProvisionAppResult = {
   created: boolean;
 };
 
-export function provisionApp(
-  platform: Platform,
-  state: DesiredState,
-  input: ProvisionAppInput,
-): ProvisionAppResult {
+export function provisionApp(platform: Platform, state: DesiredState, input: ProvisionAppInput): ProvisionAppResult {
   if (input.kind === "process") return provisionProcessApp(platform, state, input);
   const slug = unwrap(parseAppSlug(input.slug), "slug");
   const domain = unwrap(parseDomainName(input.domain), "domain");
@@ -146,9 +123,7 @@ export function provisionApp(
     if (!owner) continue;
     if (owner.kind === "app" && owner.slug === slug) continue;
     throw conflictError(
-      `domain ${d} is already owned by ${
-        owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`
-      }`,
+      `domain ${d} is already owned by ${owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`}`,
     );
   }
 
@@ -165,9 +140,7 @@ export function provisionApp(
   const fpmProfileStr = input.fpmProfile ?? existing?.fpmProfile ?? state.defaults.fpmProfile;
   if (!(String(fpmProfileStr) in FPM_PROFILES)) {
     throw validationError(
-      `unknown FPM profile ${fpmProfileStr}; choose one of: ${Object.keys(FPM_PROFILES).join(
-        ", ",
-      )}`,
+      `unknown FPM profile ${fpmProfileStr}; choose one of: ${Object.keys(FPM_PROFILES).join(", ")}`,
     );
   }
   const fpmProfile = asFpmProfile(String(fpmProfileStr));
@@ -177,9 +150,7 @@ export function provisionApp(
     currentPrimary?.engine ??
     state.defaults.database.engine) as DatabaseEngine;
   const fileDatabase = databaseEngine === "sqlite" || databaseEngine === "litestream";
-  const managedDatabase = fileDatabase
-    ? undefined
-    : resolveAppDatabaseService(state, existing, input);
+  const managedDatabase = fileDatabase ? undefined : resolveAppDatabaseService(state, existing, input);
 
   // Explicit database requests require a live engine adapter in applyAppDataPlane before save.
 
@@ -187,15 +158,12 @@ export function provisionApp(
     parseSafeRelativePath(input.documentRoot ?? existing?.documentRoot ?? "public"),
     "documentRoot",
   );
-  const entrypointMode: EntrypointMode =
-    input.entrypointMode ?? existing?.entrypointMode ?? "front-controller";
+  const entrypointMode: EntrypointMode = input.entrypointMode ?? existing?.entrypointMode ?? "front-controller";
   const tls: TlsMode = input.tls ?? existing?.tls ?? { kind: "shared" };
   const accessLog = input.accessLog ?? existing?.accessLog ?? false;
 
   // Stable UID/GID
-  const { uid, gid } = existing
-    ? { uid: existing.uid, gid: existing.gid }
-    : allocateIdentity(state);
+  const { uid, gid } = existing ? { uid: existing.uid, gid: existing.gid } : allocateIdentity(state);
 
   const homeContainer = containerAppHome(slug);
   const now = platform.clock.nowIso();
@@ -204,19 +172,14 @@ export function provisionApp(
   const existingBinding = fileDatabase
     ? existing?.databases.find((database) => database.engine === databaseEngine)
     : existing?.databases.find(
-        (database) =>
-          database.engine === managedDatabase?.engine &&
-          database.service === managedDatabase.service,
+        (database) => database.engine === managedDatabase?.engine && database.service === managedDatabase.service,
       );
   const databasePassword =
-    existingBinding &&
-    existingBinding.engine !== "sqlite" &&
-    existingBinding.engine !== "litestream"
+    existingBinding && existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
       ? existingBinding.password
       : platform.random.hex(18);
   const redisPassword =
-    existing?.redis.password ??
-    (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
+    existing?.redis.password ?? (state.defaults.redisMode === "shared" ? undefined : platform.random.hex(18));
 
   let redis = existing?.redis ?? defaultRedisIdentity(slug, state.defaults.redisMode);
   if (!existing) {
@@ -233,9 +196,7 @@ export function provisionApp(
   }
 
   const databases =
-    existingBinding &&
-    existingBinding.engine !== "sqlite" &&
-    existingBinding.engine !== "litestream"
+    existingBinding && existingBinding.engine !== "sqlite" && existingBinding.engine !== "litestream"
       ? [...existingBinding.databases]
       : [];
   if (input.createDatabase && !fileDatabase) {
@@ -245,9 +206,7 @@ export function provisionApp(
     }
     // Namespace: app databases must start with slug_ or equal slug
     if (dbName !== slug && !dbName.startsWith(`${slug}_`)) {
-      throw validationError(
-        `database ${dbName} is outside app namespace; use ${slug} or ${slug}_*`,
-      );
+      throw validationError(`database ${dbName} is outside app namespace; use ${slug} or ${slug}_*`);
     }
     if (!databases.some((d) => d.name === dbName)) {
       databases.push({ name: asDatabaseName(dbName), createdAt: now });
@@ -258,18 +217,10 @@ export function provisionApp(
     ? existingBinding && !input.createDatabase
       ? existingBinding
       : createSqliteBinding(platform, state, slug, now, databaseEngine as "sqlite" | "litestream")
-    : databaseBinding(
-        managedDatabase!.engine,
-        String(managedDatabase!.service),
-        slug,
-        databasePassword,
-        databases,
-      );
+    : databaseBinding(managedDatabase!.engine, String(managedDatabase!.service), slug, databasePassword, databases);
   const appDatabases = existing ? [...existing.databases] : [];
   const selectedIndex =
-    existingBinding && !(fileDatabase && input.createDatabase)
-      ? appDatabases.indexOf(existingBinding)
-      : -1;
+    existingBinding && !(fileDatabase && input.createDatabase) ? appDatabases.indexOf(existingBinding) : -1;
   if (selectedIndex >= 0) appDatabases[selectedIndex] = selectedBinding;
   else appDatabases.push(selectedBinding);
 
@@ -326,21 +277,14 @@ export function provisionApp(
       reloadPlanForPoolChange(app.phpService),
       reloadPlanForRunnerChange(`${app.phpService}-runner`),
       ...(existing && existing.phpService !== app.phpService
-        ? [
-            reloadPlanForPoolChange(existing.phpService),
-            reloadPlanForRunnerChange(`${existing.phpService}-runner`),
-          ]
+        ? [reloadPlanForPoolChange(existing.phpService), reloadPlanForRunnerChange(`${existing.phpService}-runner`)]
         : []),
     ),
     created,
   };
 }
 
-function provisionProcessApp(
-  platform: Platform,
-  state: DesiredState,
-  input: ProvisionAppInput,
-): ProvisionAppResult {
+function provisionProcessApp(platform: Platform, state: DesiredState, input: ProvisionAppInput): ProvisionAppResult {
   const slug = unwrap(parseAppSlug(input.slug), "slug");
   const existing = state.apps[slug];
   if (existing && isPhpApp(existing)) {
@@ -371,9 +315,7 @@ function provisionProcessApp(
   // Reuse the established identity/domain/data transition through a temporary
   // PHP-shaped view. The persisted result remains a strict process app and never
   // receives an FPM pool or PHP route.
-  const defaultPhp = state.phpVersions.find(
-    (entry) => entry.version === state.defaults.phpVersion,
-  )!;
+  const defaultPhp = state.phpVersions.find((entry) => entry.version === state.defaults.phpVersion)!;
   const shadowExisting = existing
     ? {
         ...existing,
@@ -386,9 +328,7 @@ function provisionProcessApp(
         poolTemplate: { kind: "upstream" as const },
       }
     : undefined;
-  const shadowState = shadowExisting
-    ? { ...state, apps: { ...state.apps, [slug]: shadowExisting } }
-    : state;
+  const shadowState = shadowExisting ? { ...state, apps: { ...state.apps, [slug]: shadowExisting } } : state;
   const base = provisionApp(platform, shadowState, {
     ...input,
     kind: "php",
@@ -447,9 +387,7 @@ function createSqliteBinding(
   };
   if (engine === "litestream") return { engine, file } as AppDatabaseBinding;
 
-  const occupied = new Set(
-    [...resolveSqliteVacuumSchedules(state).values()].map(sqliteVacuumScheduleSlot),
-  );
+  const occupied = new Set([...resolveSqliteVacuumSchedules(state).values()].map(sqliteVacuumScheduleSlot));
   return {
     engine,
     file,
@@ -488,9 +426,7 @@ function resolveAppDatabaseService(
     (input.databaseEngine === "sqlite" || input.databaseEngine === "litestream") &&
     (input.mysqlVersion || input.postgresVersion)
   ) {
-    throw validationError(
-      `--database-engine ${input.databaseEngine} cannot be combined with --mysql or --postgres`,
-    );
+    throw validationError(`--database-engine ${input.databaseEngine} cannot be combined with --mysql or --postgres`);
   }
   if (input.mysqlVersion && input.postgresVersion) {
     throw validationError("--mysql and --postgres cannot be used together");
@@ -509,8 +445,7 @@ function resolveAppDatabaseService(
   const current = existing
     ? (existing.databases.find(
         (database) =>
-          database.engine === requestedEngine &&
-          (database.engine === "mysql" || database.engine === "postgres"),
+          database.engine === requestedEngine && (database.engine === "mysql" || database.engine === "postgres"),
       ) ?? primaryDatabase(existing))
     : undefined;
   const engine = requestedEngine ?? current?.engine ?? state.defaults.database.engine;
@@ -545,9 +480,7 @@ function resolveAppDatabaseService(
   }
   if (!selected) {
     throw validationError(
-      token
-        ? `${engine} version or service ${token} is not managed`
-        : `select a managed ${engine} service explicitly`,
+      token ? `${engine} version or service ${token} is not managed` : `select a managed ${engine} service explicitly`,
     );
   }
   return selected;
@@ -580,17 +513,13 @@ export async function materializeAppHome(
   recursivePermsOrOpts: boolean | MaterializeAppHomeOptions = true,
 ): Promise<void> {
   const opts: MaterializeAppHomeOptions =
-    typeof recursivePermsOrOpts === "boolean"
-      ? { recursivePerms: recursivePermsOrOpts }
-      : recursivePermsOrOpts;
+    typeof recursivePermsOrOpts === "boolean" ? { recursivePerms: recursivePermsOrOpts } : recursivePermsOrOpts;
   const recursivePerms = opts.recursivePerms ?? true;
   const home = platform.paths.appHome(app.slug);
   const dirs = [
     home,
     join(home, "code"),
-    ...(isPhpApp(app)
-      ? [join(home, app.documentRoot ? join("code", app.documentRoot) : "code")]
-      : []),
+    ...(isPhpApp(app) ? [join(home, app.documentRoot ? join("code", app.documentRoot) : "code")] : []),
     join(home, "logs"),
     join(home, "tmp"),
     join(home, "tmp", "sessions"),
@@ -633,12 +562,7 @@ export async function materializeAppHome(
     if (!(await platform.fs.exists(sqlitePath))) {
       await platform.fs.writeBytes(sqlitePath, new Uint8Array(), 0o600);
     }
-    const ownership = await platform.process.run([
-      "chown",
-      "-R",
-      `${app.uid}:${app.gid}`,
-      sqliteDir,
-    ]);
+    const ownership = await platform.process.run(["chown", "-R", `${app.uid}:${app.gid}`, sqliteDir]);
     if (ownership.code !== 0) {
       throw safetyError(`cannot set SQLite ownership: ${ownership.stderr.trim()}`);
     }
@@ -652,11 +576,7 @@ export async function materializeAppHome(
   const sharedRedisPassword = app.redis.password ?? opts.redisSharedPassword ?? "";
   const redisLines =
     app.redis.mode === "shared"
-      ? [
-          `REDIS_PASSWORD=${sharedRedisPassword}`,
-          `REDIS_PREFIX=${app.redis.prefix}`,
-          `REDIS_MODE=shared`,
-        ]
+      ? [`REDIS_PASSWORD=${sharedRedisPassword}`, `REDIS_PREFIX=${app.redis.prefix}`, `REDIS_MODE=shared`]
       : [
           `REDIS_USERNAME=${app.redis.aclUsername ?? ""}`,
           `REDIS_PASSWORD=${app.redis.aclPassword ?? ""}`,
@@ -745,11 +665,7 @@ export async function materializeAppHome(
   // queue.json
   const queuePath = join(home, ".bento", "queue.json");
   if (!(await platform.fs.exists(queuePath))) {
-    await platform.fs.atomicWriteText(
-      queuePath,
-      `${JSON.stringify({ schemaVersion: 1, jobs: [] }, null, 2)}\n`,
-      0o600,
-    );
+    await platform.fs.atomicWriteText(queuePath, `${JSON.stringify({ schemaVersion: 1, jobs: [] }, null, 2)}\n`, 0o600);
   }
 
   // Placeholder entrypoint is PHP-only. Process projects keep their code tree untouched.
@@ -789,18 +705,7 @@ export async function ensureAppSshKeyPair(platform: Platform, app: AppState): Pr
 
   if (!hasPrivateKey) {
     const result = await platform.process.run(
-      [
-        "ssh-keygen",
-        "-q",
-        "-t",
-        "ed25519",
-        "-N",
-        "",
-        "-C",
-        `bento-app-${app.slug}`,
-        "-f",
-        privateKey,
-      ],
+      ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", `bento-app-${app.slug}`, "-f", privateKey],
       { timeoutMs: 10_000 },
     );
     if (result.code !== 0) {
@@ -823,11 +728,7 @@ export async function ensureAppSshKeyPair(platform: Platform, app: AppState): Pr
         `Check ${privateKey} and retry app provisioning.`,
       );
     }
-    await platform.fs.atomicWriteText(
-      publicKey,
-      `${result.stdout.trim()} bento-app-${app.slug}\n`,
-      0o644,
-    );
+    await platform.fs.atomicWriteText(publicKey, `${result.stdout.trim()} bento-app-${app.slug}\n`, 0o644);
   }
 
   // Recording process runners used by tests may not materialize command outputs.
@@ -902,17 +803,11 @@ export async function applyAppDataPlane(
         databaseApplied = true;
         mysqlApplied = true;
       } else {
-        const applied = await tryBestEffortMysqlAccount(
-          platform,
-          scopedApp,
-          await loadMysqlRootPassword(platform),
-        );
+        const applied = await tryBestEffortMysqlAccount(platform, scopedApp, await loadMysqlRootPassword(platform));
         databaseApplied ||= applied;
         mysqlApplied ||= applied;
         if (!applied) {
-          deferredNotes.push(
-            `MySQL account setup deferred for ${app.slug}; retry when ${database.service} is up`,
-          );
+          deferredNotes.push(`MySQL account setup deferred for ${app.slug}; retry when ${database.service} is up`);
         }
       }
     } else if (database.engine === "postgres") {
@@ -929,16 +824,10 @@ export async function applyAppDataPlane(
         }
         databaseApplied = true;
       } else {
-        const applied = await tryBestEffortPostgresRole(
-          platform,
-          scopedApp,
-          await loadPostgresRootPassword(platform),
-        );
+        const applied = await tryBestEffortPostgresRole(platform, scopedApp, await loadPostgresRootPassword(platform));
         databaseApplied ||= applied;
         if (!applied) {
-          deferredNotes.push(
-            `PostgreSQL role setup deferred for ${app.slug}; retry when ${database.service} is up`,
-          );
+          deferredNotes.push(`PostgreSQL role setup deferred for ${app.slug}; retry when ${database.service} is up`);
         }
       }
     } else {
@@ -981,12 +870,7 @@ function appLifecycleReloadPlan(app: AppState): ReloadPlan {
 }
 
 /** Disable or enable runtime config while retaining the app and all durable data. */
-export function setAppEnabled(
-  state: DesiredState,
-  slug: string,
-  enabled: boolean,
-  now: string,
-): AppLifecycleResult {
+export function setAppEnabled(state: DesiredState, slug: string, enabled: boolean, now: string): AppLifecycleResult {
   const current = getAppOrThrow(state, slug);
   const app = { ...current, enabled, updatedAt: now };
   return {
@@ -1039,9 +923,7 @@ export function deleteApp(
 export function capacityWarnings(state: DesiredState): string[] {
   const warnings: string[] = [];
   for (const v of state.phpVersions) {
-    const apps = Object.values(state.apps).filter(
-      (a) => isPhpApp(a) && a.enabled && a.phpVersion === v.version,
-    );
+    const apps = Object.values(state.apps).filter((a) => isPhpApp(a) && a.enabled && a.phpVersion === v.version);
     let sum = 0;
     for (const a of apps) {
       const p = FPM_PROFILES[a.fpmProfile] ?? FPM_PROFILES[DEFAULT_FPM_PROFILE]!;

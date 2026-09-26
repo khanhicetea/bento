@@ -1,9 +1,4 @@
-import {
-  runtime as bunRuntime,
-  assertEquals,
-  assertStringIncludes,
-  assertThrows,
-} from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertStringIncludes, assertThrows } from "../runtime.ts";
 import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
@@ -43,78 +38,65 @@ function testPlatform(root: string): Platform & {
   };
 }
 
-bunRuntime.test(
-  "rclone sidecar configuration is private and backup paths are mounted read-only",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-rclone-" });
-    try {
-      const platform = testPlatform(root);
-      await initializeRcloneConfig(platform);
-      const config = platform.paths.paths.rcloneConfigFile;
-      assertEquals(await platform.fs.exists(config), true);
-      assertEquals((await platform.fs.stat(config)).mode & 0o777, 0o600);
-      assertEquals((await platform.fs.stat(platform.paths.paths.rcloneDir)).mode & 0o777, 0o700);
+bunRuntime.test("rclone sidecar configuration is private and backup paths are mounted read-only", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-rclone-" });
+  try {
+    const platform = testPlatform(root);
+    await initializeRcloneConfig(platform);
+    const config = platform.paths.paths.rcloneConfigFile;
+    assertEquals(await platform.fs.exists(config), true);
+    assertEquals((await platform.fs.stat(config)).mode & 0o777, 0o600);
+    assertEquals((await platform.fs.stat(platform.paths.paths.rcloneDir)).mode & 0o777, 0o700);
 
-      const command = await rcloneComposeCommand(platform, createEmptyState(), ["listremotes"]);
-      assertEquals(command.slice(-5), ["run", "--rm", "--no-deps", "rclone", "listremotes"]);
-      assertStringIncludes(command.join(" "), "docker-compose.base.yml");
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const command = await rcloneComposeCommand(platform, createEmptyState(), ["listremotes"]);
+    assertEquals(command.slice(-5), ["run", "--rm", "--no-deps", "rclone", "listremotes"]);
+    assertStringIncludes(command.join(" "), "docker-compose.base.yml");
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
-bunRuntime.test(
-  "redaction preserves timestamped rclone diagnostics while hiding pgpass records",
-  () => {
-    const diagnostic = "2026/07/31 03:36:54 ERROR : report.sql.zst: Access denied";
-    assertEquals(redact(diagnostic), diagnostic);
-    assertEquals(redact("db:5432:app:user:super-secret"), "db:5432:app:user:***");
-  },
-);
+bunRuntime.test("redaction preserves timestamped rclone diagnostics while hiding pgpass records", () => {
+  const diagnostic = "2026/07/31 03:36:54 ERROR : report.sql.zst: Access denied";
+  assertEquals(redact(diagnostic), diagnostic);
+  assertEquals(redact("db:5432:app:user:super-secret"), "db:5432:app:user:***");
+});
 
-bunRuntime.test(
-  "scheduled rclone uploads preserve backup-relative paths and validate destinations",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-rclone-upload-",
-    });
-    try {
-      const platform = testPlatform(root);
-      const target = await saveRcloneBackupTarget(platform, "archive", "/bento//production/");
-      assertEquals(target.prefix, "bento/production");
-      assertEquals(await readRcloneBackupTarget(platform), target);
+bunRuntime.test("scheduled rclone uploads preserve backup-relative paths and validate destinations", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-rclone-upload-",
+  });
+  try {
+    const platform = testPlatform(root);
+    const target = await saveRcloneBackupTarget(platform, "archive", "/bento//production/");
+    assertEquals(target.prefix, "bento/production");
+    assertEquals(await readRcloneBackupTarget(platform), target);
 
-      const artifact = join(platform.paths.paths.backupsDir, "postgres17", "demo", "demo.sql.zst");
-      await uploadBackupArtifacts(
-        platform,
-        createEmptyState(),
-        [
-          {
-            engine: "postgres",
-            service: "postgres17",
-            database: "demo",
-            path: artifact,
-            bytes: 42,
-          },
-        ],
-        target,
-      );
-      const call = platform.process.calls[0]!;
-      assertEquals(call.command.slice(-3), [
-        "copyto",
-        "/backups/postgres17/demo/demo.sql.zst",
-        "archive:bento/production/postgres17/demo/demo.sql.zst",
-      ]);
+    const artifact = join(platform.paths.paths.backupsDir, "postgres17", "demo", "demo.sql.zst");
+    await uploadBackupArtifacts(
+      platform,
+      createEmptyState(),
+      [
+        {
+          engine: "postgres",
+          service: "postgres17",
+          database: "demo",
+          path: artifact,
+          bytes: 42,
+        },
+      ],
+      target,
+    );
+    const call = platform.process.calls[0]!;
+    assertEquals(call.command.slice(-3), [
+      "copyto",
+      "/backups/postgres17/demo/demo.sql.zst",
+      "archive:bento/production/postgres17/demo/demo.sql.zst",
+    ]);
 
-      assertThrows(() => validateRcloneBackupTarget("archive:bad", "ok"), Error, "rclone remote");
-      assertThrows(
-        () => validateRcloneBackupTarget("archive", "../outside"),
-        Error,
-        "rclone prefix",
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    assertThrows(() => validateRcloneBackupTarget("archive:bad", "ok"), Error, "rclone remote");
+    assertThrows(() => validateRcloneBackupTarget("archive", "../outside"), Error, "rclone prefix");
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});

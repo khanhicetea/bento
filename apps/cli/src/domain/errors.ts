@@ -96,15 +96,11 @@ export function conflictError(message: string, recovery?: string): BentoError {
 
 export function safetyError(message: string, recovery?: string): BentoError {
   return new BentoError("SAFETY", message, {
-    recovery:
-      recovery ?? "This operation is intentionally blocked. Use an explicit safe alternative.",
+    recovery: recovery ?? "This operation is intentionally blocked. Use an explicit safe alternative.",
   });
 }
 
-export function stateError(
-  message: string,
-  recoveryOrOpts?: string | { recovery?: string },
-): BentoError {
+export function stateError(message: string, recoveryOrOpts?: string | { recovery?: string }): BentoError {
   const recovery = typeof recoveryOrOpts === "string" ? recoveryOrOpts : recoveryOrOpts?.recovery;
   return new BentoError("STATE", message, {
     recovery: recovery ?? "Inspect state.db and restore from a known-good backup if needed.",
@@ -114,8 +110,7 @@ export function stateError(
 export function migrationError(message: string, cause?: unknown): BentoError {
   return new BentoError("MIGRATION", message, {
     cause,
-    recovery:
-      "Keep the existing state.db, fix the reported migration problem, and rerun `bento migrate`.",
+    recovery: "Keep the existing state.db, fix the reported migration problem, and rerun `bento migrate`.",
   });
 }
 

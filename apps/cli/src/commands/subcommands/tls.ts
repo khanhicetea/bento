@@ -1,18 +1,8 @@
 import type { TlsMode } from "#/domain/state.ts";
-import {
-  exportPrivateCaCertificate,
-  tlsOperatorDocs,
-  validateExternalTlsPaths,
-} from "#/services/tls.ts";
+import { exportPrivateCaCertificate, tlsOperatorDocs, validateExternalTlsPaths } from "#/services/tls.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerTlsCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("tls", "TLS mode management", (y: YargsBuilder) =>
@@ -131,9 +121,7 @@ async function cmdTlsSet(argv: ArgsWith<"mode">, ctx: CliContext): Promise<numbe
     }
     return next;
   });
-  ctx.log.info(
-    noApply ? `tls mode set to ${mode} (state only; run bento apply)` : `tls mode set to ${mode}`,
-  );
+  ctx.log.info(noApply ? `tls mode set to ${mode} (state only; run bento apply)` : `tls mode set to ${mode}`);
   if (mode === "acme") {
     ctx.log.info(
       "ACME: configure shared ACME_EMAIL/ACME_URL in the stack .env, point DNS at this host, and expose port 80.",
@@ -142,10 +130,7 @@ async function cmdTlsSet(argv: ArgsWith<"mode">, ctx: CliContext): Promise<numbe
   return 0;
 }
 
-async function cmdTlsCaExport(
-  argv: ArgsWith<"output" | "force">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdTlsCaExport(argv: ArgsWith<"output" | "force">, ctx: CliContext): Promise<number> {
   try {
     const destination = await ctx.store.withExclusive(
       async () => await exportPrivateCaCertificate(ctx.platform, argv.output, argv.force === true),

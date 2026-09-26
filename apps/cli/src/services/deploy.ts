@@ -68,10 +68,7 @@ export function enableDeploy(
   if (!isPhpApp(app)) throw validationError("webhook deploy for process apps is not supported yet");
 
   const secret = platform.random.hex(32);
-  const workdir = platform.paths.assertInsideHome(
-    app.home,
-    input.workdir ?? app.deploy.workdir ?? app.home,
-  );
+  const workdir = platform.paths.assertInsideHome(app.home, input.workdir ?? app.deploy.workdir ?? app.home);
   const next: AppState = {
     ...app,
     deploy: {
@@ -191,11 +188,7 @@ export async function verifyDeploySignature(
   );
 
   for (const c of candidates) {
-    const sig = await crypto.subtle.sign(
-      "HMAC",
-      c.alg === "sha256" ? key : keySha1,
-      rawBody.slice(),
-    );
+    const sig = await crypto.subtle.sign("HMAC", c.alg === "sha256" ? key : keySha1, rawBody.slice());
     const hex = encodeHex(new Uint8Array(sig));
     if (constantTimeEqual(hex, c.hex)) return true;
   }
@@ -230,11 +223,7 @@ export async function loadQueue(platform: Platform, appHomeHost: string): Promis
   }
 }
 
-export async function saveQueue(
-  platform: Platform,
-  appHomeHost: string,
-  queue: DeployQueue,
-): Promise<void> {
+export async function saveQueue(platform: Platform, appHomeHost: string, queue: DeployQueue): Promise<void> {
   const path = join(appHomeHost, ".bento", "queue.json");
   const lockPath = join(appHomeHost, ".bento", "queue.lock");
   const release = await platform.lock.exclusive(lockPath);
@@ -502,11 +491,7 @@ export async function drainDeploy(
   }
 }
 
-async function pruneDeployLogs(
-  platform: Platform,
-  appHomeHost: string,
-  jobs: DeployJob[],
-): Promise<void> {
+async function pruneDeployLogs(platform: Platform, appHomeHost: string, jobs: DeployJob[]): Promise<void> {
   const logsDir = join(appHomeHost, "logs");
   if (!(await platform.fs.exists(logsDir))) return;
   const keep = new Set(jobs.map((j) => j.logName).filter((x): x is string => !!x));

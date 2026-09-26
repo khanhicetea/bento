@@ -30,10 +30,8 @@ export function useRouting() {
     removing: removeMutation.isPending,
     changing: enableMutation.isPending ? (enableMutation.variables?.name ?? null) : null,
     saveProxy: async (input: SaveRoutingProxyInput) => await saveMutation.mutateAsync(input),
-    setProxyEnabled: (proxy: RoutingProxy) =>
-      enableMutation.mutate({ name: proxy.name, enabled: !proxy.enabled }),
-    removeProxy: async (name: string, confirmation: string) =>
-      await removeMutation.mutateAsync({ name, confirmation }),
+    setProxyEnabled: (proxy: RoutingProxy) => enableMutation.mutate({ name: proxy.name, enabled: !proxy.enabled }),
+    removeProxy: async (name: string, confirmation: string) => await removeMutation.mutateAsync({ name, confirmation }),
     resetErrors() {
       saveMutation.reset();
       enableMutation.reset();

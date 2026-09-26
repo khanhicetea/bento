@@ -9,11 +9,7 @@ import { checkPermissions } from "#/services/permissions.ts";
 import { composeArgs } from "#/services/compose.ts";
 import { buildStatus, statusToJson } from "#/services/status.ts";
 import { redact } from "#/ui/output.ts";
-import {
-  DEFAULT_COMPOSE_PROJECT_NAME,
-  loadRedisPassword,
-  loadStackComposeEnvironment,
-} from "#/services/stack_env.ts";
+import { DEFAULT_COMPOSE_PROJECT_NAME, loadRedisPassword, loadStackComposeEnvironment } from "#/services/stack_env.ts";
 import { sqliteContainerPath, sqliteHostPath } from "#/services/sqlite_paths.ts";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
@@ -37,13 +33,11 @@ const run = async (
   timeoutMs = 5_000,
   options: Pick<RunOptions, "env" | "stdin"> = {},
 ) =>
-  await platform.process
-    .run(command, { cwd: platform.paths.paths.root, timeoutMs, ...options })
-    .catch((e) => ({
-      code: 1,
-      stdout: "",
-      stderr: e instanceof Error ? e.message : String(e),
-    }));
+  await platform.process.run(command, { cwd: platform.paths.paths.root, timeoutMs, ...options }).catch((e) => ({
+    code: 1,
+    stdout: "",
+    stderr: e instanceof Error ? e.message : String(e),
+  }));
 
 export async function runDoctor(platform: Platform, state: DesiredState): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
@@ -96,12 +90,7 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     "{{.Driver}}|{{.Architecture}}|{{json .SecurityOptions}}",
   ]);
   if (dockerInfo.code !== 0) {
-    add(
-      "docker-info",
-      "runtime",
-      "fail",
-      `cannot inspect Docker daemon: ${failureDetail(dockerInfo)}`,
-    );
+    add("docker-info", "runtime", "fail", `cannot inspect Docker daemon: ${failureDetail(dockerInfo)}`);
   } else {
     const securityRestricted = /rootless|userns/i.test(dockerInfo.stdout);
     const incompatible = !!state.sqliteBackup?.enabled && securityRestricted;
@@ -117,12 +106,7 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
 
   const compose = await run(platform, ["docker", "compose", "version", "--short"]);
   if (compose.code !== 0) {
-    add(
-      "compose-version",
-      "runtime",
-      "fail",
-      `Docker Compose v2 unavailable: ${failureDetail(compose)}`,
-    );
+    add("compose-version", "runtime", "fail", `Docker Compose v2 unavailable: ${failureDetail(compose)}`);
   } else {
     const version = compose.stdout.trim().replace(/^v/, "");
     add(
@@ -135,9 +119,7 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
 
   const expectedPorts = nginxEnvironment.hostNetwork
     ? [80, 443]
-    : [nginxEnvironment.httpPort, nginxEnvironment.httpsPort].filter(
-        (port): port is number => port !== undefined,
-      );
+    : [nginxEnvironment.httpPort, nginxEnvironment.httpsPort].filter((port): port is number => port !== undefined);
   add(
     "nginx-network",
     "network",
@@ -164,9 +146,7 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
     if (ports.code !== 0) {
       add(`port-${port}`, "network", "warn", "cannot inspect listening TCP ports (ss unavailable)");
     } else {
-      const listening = ports.stdout
-        .split("\n")
-        .some((line) => new RegExp(`[:.]${port}\\s`).test(line));
+      const listening = ports.stdout.split("\n").some((line) => new RegExp(`[:.]${port}\\s`).test(line));
       add(
         `port-${port}`,
         "network",
@@ -220,17 +200,10 @@ export async function runDoctor(platform: Platform, state: DesiredState): Promis
   await addServiceChecks(platform, state, add, dockerOk);
   await addSqliteChecks(platform, state, add, dockerOk);
   await addPermissionChecks(platform, state, add);
-  await addVolumeChecks(
-    platform,
-    state,
-    add,
-    composeEnvironmentOk ? composeEnvironment.projectName : undefined,
-  );
+  await addVolumeChecks(platform, state, add, composeEnvironmentOk ? composeEnvironment.projectName : undefined);
 
   const overlays = (await platform.fs.exists(platform.paths.paths.overlaysDir))
-    ? (await platform.fs.readDir(platform.paths.paths.overlaysDir)).filter((n) =>
-        /\.ya?ml$/.test(n),
-      )
+    ? (await platform.fs.readDir(platform.paths.paths.overlaysDir)).filter((n) => /\.ya?ml$/.test(n))
     : [];
   let config: RunResult;
   try {
@@ -272,11 +245,8 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
   const architecture = await run(platform, ["uname", "-m"]);
   const kernelName = kernel.stdout.trim();
   const architectureName = architecture.stdout.trim();
-  const supportedArchitecture = ["x86_64", "amd64", "aarch64", "arm64"].includes(
-    architectureName.toLowerCase(),
-  );
-  const hostSupported =
-    kernel.code === 0 && kernelName === "Linux" && architecture.code === 0 && supportedArchitecture;
+  const supportedArchitecture = ["x86_64", "amd64", "aarch64", "arm64"].includes(architectureName.toLowerCase());
+  const hostSupported = kernel.code === 0 && kernelName === "Linux" && architecture.code === 0 && supportedArchitecture;
   add(
     "host-platform",
     "host",
@@ -318,14 +288,7 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
       : `stack root denies ${denied.join(", ")} access to the current operator`,
   );
 
-  const mount = await run(platform, [
-    "findmnt",
-    "-n",
-    "-o",
-    "FSTYPE,OPTIONS",
-    "--target",
-    platform.paths.paths.root,
-  ]);
+  const mount = await run(platform, ["findmnt", "-n", "-o", "FSTYPE,OPTIONS", "--target", platform.paths.paths.root]);
   if (mount.code !== 0) {
     add("stack-filesystem", "host", "warn", "filesystem type and mount options unavailable");
   } else {
@@ -348,12 +311,7 @@ async function addHostChecks(platform: Platform, add: AddCheck) {
 async function addGenerationChecks(platform: Platform, add: AddCheck) {
   const metadataPath = join(platform.paths.paths.generatedDir, ".generation.json");
   if (!(await platform.fs.exists(metadataPath))) {
-    add(
-      "generation",
-      "configuration",
-      "fail",
-      "generated stack is missing; run bento render or apply",
-    );
+    add("generation", "configuration", "fail", "generated stack is missing; run bento render or apply");
     return;
   }
   try {
@@ -366,19 +324,10 @@ async function addGenerationChecks(platform: Platform, add: AddCheck) {
     if (
       !Array.isArray(metadata.managedFiles) ||
       !metadata.managedFiles.every(
-        (p) =>
-          typeof p === "string" &&
-          p.length > 0 &&
-          !p.startsWith("/") &&
-          !p.split("/").includes(".."),
+        (p) => typeof p === "string" && p.length > 0 && !p.startsWith("/") && !p.split("/").includes(".."),
       )
     ) {
-      add(
-        "generation",
-        "configuration",
-        "fail",
-        "generation metadata has an invalid managed-file manifest",
-      );
+      add("generation", "configuration", "fail", "generation metadata has an invalid managed-file manifest");
       return;
     }
     const missing: string[] = [];
@@ -396,9 +345,7 @@ async function addGenerationChecks(platform: Platform, add: AddCheck) {
       );
       return;
     }
-    const currentDigest = metadata.assetDigest
-      ? await platform.assets.digest().catch(() => undefined)
-      : undefined;
+    const currentDigest = metadata.assetDigest ? await platform.assets.digest().catch(() => undefined) : undefined;
     const assetMismatch = currentDigest !== undefined && currentDigest !== metadata.assetDigest;
     const assetUnknown = !metadata.assetDigest || currentDigest === undefined;
     add(
@@ -432,13 +379,7 @@ async function addFilesystemChecks(platform: Platform, add: AddCheck) {
     const columns = result.stdout.trim().split("\n").at(-1)?.trim().split(/\s+/);
     const available = Number(columns?.[3]);
     const used = Number(columns?.[4]?.replace("%", ""));
-    if (
-      result.code !== 0 ||
-      !Number.isFinite(available) ||
-      !Number.isFinite(used) ||
-      used < 0 ||
-      used > 100
-    ) {
+    if (result.code !== 0 || !Number.isFinite(available) || !Number.isFinite(used) || used < 0 || used > 100) {
       add(id, "storage", "warn", `cannot inspect ${label}`);
       continue;
     }
@@ -448,12 +389,7 @@ async function addFilesystemChecks(platform: Platform, add: AddCheck) {
       label === "disk"
         ? `${used}% used, ${formatBytes(available * 1024)} available on the stack filesystem`
         : `${used}% used, ${available.toLocaleString("en-US")} inodes available`;
-    add(
-      id,
-      "storage",
-      used >= 95 || criticallyLow ? "fail" : used >= 85 || low ? "warn" : "pass",
-      detail,
-    );
+    add(id, "storage", used >= 95 || criticallyLow ? "fail" : used >= 85 || low ? "warn" : "pass", detail);
   }
 }
 
@@ -475,12 +411,7 @@ async function addClockCheck(platform: Platform, add: AddCheck) {
   }
 }
 
-async function addServiceChecks(
-  platform: Platform,
-  state: DesiredState,
-  add: AddCheck,
-  dockerOk: boolean,
-) {
+async function addServiceChecks(platform: Platform, state: DesiredState, add: AddCheck, dockerOk: boolean) {
   if (!dockerOk) {
     add("services", "health", "fail", "service probes skipped because Docker is unavailable");
     return;
@@ -488,19 +419,11 @@ async function addServiceChecks(
   const probes: Array<[string, string, string[]]> = [
     ["nginx", "nginx", ["nginx", "-t"]],
     ["redis", "redis", ["redis-cli", "ping"]],
-    ...state.phpVersions.map((v): [string, string, string[]] => [
-      `php:${v.service}`,
-      v.service,
-      ["php-fpm", "-t"],
-    ]),
+    ...state.phpVersions.map((v): [string, string, string[]] => [`php:${v.service}`, v.service, ["php-fpm", "-t"]]),
     ...state.databaseServices.map((v): [string, string, string[]] =>
       v.engine === "mysql"
         ? [`mysql:${v.service}`, v.service, ["mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]]
-        : [
-            `postgres:${v.service}`,
-            v.service,
-            ["pg_isready", "--username", "postgres", "--dbname", "postgres"],
-          ],
+        : [`postgres:${v.service}`, v.service, ["pg_isready", "--username", "postgres", "--dbname", "postgres"]],
     ),
   ];
   for (const [id, service, command] of probes) {
@@ -515,12 +438,7 @@ async function addServiceChecks(
           ]
         : command;
       const args = await composeArgs(platform, state, ["exec", "-T", service, ...probeCommand]);
-      result = await run(
-        platform,
-        args,
-        5_000,
-        isRedis ? { stdin: `${await loadRedisPassword(platform)}\n` } : {},
-      );
+      result = await run(platform, args, 5_000, isRedis ? { stdin: `${await loadRedisPassword(platform)}\n` } : {});
     } catch (e) {
       result = {
         code: 1,
@@ -540,24 +458,14 @@ async function addServiceChecks(
   }
 }
 
-async function addSqliteChecks(
-  platform: Platform,
-  state: DesiredState,
-  add: AddCheck,
-  dockerOk: boolean,
-) {
+async function addSqliteChecks(platform: Platform, state: DesiredState, add: AddCheck, dockerOk: boolean) {
   const seen = new Set<string>();
   for (const app of Object.values(state.apps)) {
     for (const database of app.databases) {
       if (database.engine !== "sqlite" && database.engine !== "litestream") continue;
       if (seen.has(database.file.id)) continue;
       seen.add(database.file.id);
-      const hostPath = sqliteHostPath(
-        platform,
-        database.file.id,
-        String(app.slug),
-        database.engine,
-      );
+      const hostPath = sqliteHostPath(platform, database.file.id, String(app.slug), database.engine);
       const id = `sqlite:${app.slug}:${database.file.id}`;
       if (!(await platform.fs.exists(hostPath))) {
         add(id, "storage", "fail", `${database.engine} database file missing: ${hostPath}`);
@@ -565,12 +473,7 @@ async function addSqliteChecks(
       }
       const stat = await platform.fs.stat(hostPath);
       if (!stat.isFile || stat.size === 0) {
-        add(
-          id,
-          "storage",
-          "fail",
-          !stat.isFile ? `${hostPath} is not a regular file` : `${hostPath} is empty`,
-        );
+        add(id, "storage", "fail", !stat.isFile ? `${hostPath} is not a regular file` : `${hostPath} is empty`);
         continue;
       }
       if (!dockerOk) {
@@ -617,9 +520,7 @@ async function addSqliteChecks(
 }
 
 async function addPermissionChecks(platform: Platform, state: DesiredState, add: AddCheck) {
-  for (const app of Object.values(state.apps).sort((a, b) =>
-    String(a.slug).localeCompare(String(b.slug)),
-  )) {
+  for (const app of Object.values(state.apps).sort((a, b) => String(a.slug).localeCompare(String(b.slug)))) {
     try {
       const report = await checkPermissions(platform, state, String(app.slug));
       add(
@@ -634,22 +535,12 @@ async function addPermissionChecks(platform: Platform, state: DesiredState, add:
           : `${report.checked} paths checked`,
       );
     } catch (e) {
-      add(
-        `permissions:${app.slug}`,
-        "permissions",
-        "fail",
-        e instanceof Error ? e.message : String(e),
-      );
+      add(`permissions:${app.slug}`, "permissions", "fail", e instanceof Error ? e.message : String(e));
     }
   }
 }
 
-async function addVolumeChecks(
-  platform: Platform,
-  state: DesiredState,
-  add: AddCheck,
-  project?: string,
-) {
+async function addVolumeChecks(platform: Platform, state: DesiredState, add: AddCheck, project?: string) {
   if (!project) {
     add("volumes", "storage", "warn", "volume checks skipped because stack name is invalid");
     return;
@@ -759,9 +650,7 @@ async function addCertificateChecks(platform: Platform, state: DesiredState, add
       const failures: string[] = [];
       for (const host of cert.hosts) {
         const command =
-          `openssl s_client -connect ${shellQuote(`${host}:443`)} -servername ${shellQuote(
-            host,
-          )} ` +
+          `openssl s_client -connect ${shellQuote(`${host}:443`)} -servername ${shellQuote(host)} ` +
           `</dev/null 2>/dev/null | openssl x509 -noout -checkhost ${shellQuote(host)} ` +
           "-checkend 2592000";
         const result = await run(platform, ["sh", "-c", command], 8_000);
@@ -787,73 +676,31 @@ async function addCertificateChecks(platform: Platform, state: DesiredState, add
       continue;
     }
 
-    const validNow = await run(platform, [
-      "openssl",
-      "x509",
-      "-in",
-      cert.path,
-      "-noout",
-      "-checkend",
-      "0",
-    ]);
+    const validNow = await run(platform, ["openssl", "x509", "-in", cert.path, "-noout", "-checkend", "0"]);
     const validThirtyDays =
       validNow.code === 0
-        ? await run(platform, [
-            "openssl",
-            "x509",
-            "-in",
-            cert.path,
-            "-noout",
-            "-checkend",
-            "2592000",
-          ])
+        ? await run(platform, ["openssl", "x509", "-in", cert.path, "-noout", "-checkend", "2592000"])
         : validNow;
-    const dates = await run(platform, [
-      "openssl",
-      "x509",
-      "-in",
-      cert.path,
-      "-noout",
-      "-startdate",
-      "-enddate",
-    ]);
+    const dates = await run(platform, ["openssl", "x509", "-in", cert.path, "-noout", "-startdate", "-enddate"]);
     const notBeforeText = dates.stdout.match(/^notBefore=(.+)$/m)?.[1];
     const notBefore = notBeforeText ? Date.parse(notBeforeText) : Number.NaN;
     const datesReadable = dates.code === 0 && Number.isFinite(notBefore);
     const notYetValid = datesReadable && platform.clock.now().getTime() < notBefore;
     const uncovered: string[] = [];
     for (const host of cert.hosts) {
-      const hostname = await run(platform, [
-        "openssl",
-        "x509",
-        "-in",
-        cert.path,
-        "-noout",
-        "-checkhost",
-        host,
-      ]);
+      const hostname = await run(platform, ["openssl", "x509", "-in", cert.path, "-noout", "-checkhost", host]);
       if (hostname.code !== 0) uncovered.push(host);
     }
 
     let keyMatches = true;
     if (cert.keyPath) {
-      const certificateKey = await run(platform, [
-        "openssl",
-        "x509",
-        "-in",
-        cert.path,
-        "-noout",
-        "-pubkey",
-      ]);
+      const certificateKey = await run(platform, ["openssl", "x509", "-in", cert.path, "-noout", "-pubkey"]);
       const privateKey = await run(platform, ["openssl", "pkey", "-in", cert.keyPath, "-pubout"]);
       keyMatches =
-        certificateKey.code === 0 &&
-        privateKey.code === 0 &&
-        certificateKey.stdout.trim() === privateKey.stdout.trim();
+        certificateKey.code === 0 && privateKey.code === 0 && certificateKey.stdout.trim() === privateKey.stdout.trim();
     }
 
-    const invalid =
-      validNow.code !== 0 || !datesReadable || notYetValid || uncovered.length > 0 || !keyMatches;
+    const invalid = validNow.code !== 0 || !datesReadable || notYetValid || uncovered.length > 0 || !keyMatches;
     const expiring = validThirtyDays.code !== 0;
     const status: DoctorStatus = invalid ? "fail" : expiring || cert.sharedBoot ? "warn" : "pass";
     const details: string[] = [];
@@ -900,11 +747,7 @@ function certificatePaths(platform: Platform, state: DesiredState): CertificateT
   for (const proxy of Object.values(state.proxies)) {
     add(String(proxy.mainDomain), proxy.aliases.map(String), proxy.tls, `proxy-${proxy.name}`);
   }
-  if (
-    [...Object.values(state.apps), ...Object.values(state.proxies)].some(
-      (site) => site.tls.kind === "shared",
-    )
-  ) {
+  if ([...Object.values(state.apps), ...Object.values(state.proxies)].some((site) => site.tls.kind === "shared")) {
     certs.push({
       name: "shared boot certificate",
       hosts: [],
@@ -937,11 +780,7 @@ function versionAtLeast(value: string, major: number, minor: number): boolean {
 }
 
 export function formatDoctor(report: DoctorReport): string {
-  const lines = [
-    `Bento doctor (${report.ok ? "healthy" : "problems found"})`,
-    `  stack: ${report.stackRoot}`,
-    "",
-  ];
+  const lines = [`Bento doctor (${report.ok ? "healthy" : "problems found"})`, `  stack: ${report.stackRoot}`, ""];
   const routineChecks = report.checks.filter((check) => check.status !== "fail");
   const categories = [...new Set(routineChecks.map((check) => check.category))];
   for (const category of categories) {
@@ -968,11 +807,7 @@ export function formatDoctor(report: DoctorReport): string {
 }
 
 /** Create a tar.gz containing only redacted, operator-safe diagnostic text. */
-export async function createSupportBundle(
-  platform: Platform,
-  state: DesiredState,
-  output: string,
-): Promise<string> {
+export async function createSupportBundle(platform: Platform, state: DesiredState, output: string): Promise<string> {
   const destination = resolve(output);
   const temp = join(platform.paths.paths.root, `.support-${platform.random.id()}`);
   await platform.fs.mkdirp(dirname(destination), 0o700);
@@ -982,18 +817,10 @@ export async function createSupportBundle(
     const status = await buildStatus(platform, state);
     await platform.fs.writeText(join(temp, "doctor.json"), safeJson(doctor), 0o600);
     await platform.fs.writeText(join(temp, "status.json"), redact(statusToJson(status)), 0o600);
-    await platform.fs.writeText(
-      join(temp, "state.redacted.json"),
-      safeJson(redactObject(state)),
-      0o600,
-    );
+    await platform.fs.writeText(join(temp, "state.redacted.json"), safeJson(redactObject(state)), 0o600);
     if (await platform.fs.exists(platform.paths.paths.envFile)) {
       const env = await platform.fs.readText(platform.paths.paths.envFile);
-      await platform.fs.writeText(
-        join(temp, "environment.redacted.txt"),
-        redactEnvironment(env),
-        0o600,
-      );
+      await platform.fs.writeText(join(temp, "environment.redacted.txt"), redactEnvironment(env), 0o600);
     }
     const composePs = await composeArgs(platform, state, ["ps", "--all"]).catch(() => [
       "docker",
@@ -1007,11 +834,7 @@ export async function createSupportBundle(
       ["system.txt", ["uname", "-a"]],
     ] as Array<[string, string[]]>) {
       const result: RunResult = await run(platform, command, 10_000);
-      await platform.fs.writeText(
-        join(temp, name),
-        redact(`${result.stdout}\n${result.stderr}`),
-        0o600,
-      );
+      await platform.fs.writeText(join(temp, name), redact(`${result.stdout}\n${result.stderr}`), 0o600);
     }
     const partial = `${destination}.partial`;
     await platform.fs.remove(partial).catch(() => undefined);
@@ -1035,9 +858,7 @@ function redactObject(value: unknown): unknown {
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
-      out[key] = /(pass(word)?|secret|token|private.?key|hmac|credential)/i.test(key)
-        ? "***"
-        : redactObject(item);
+      out[key] = /(pass(word)?|secret|token|private.?key|hmac|credential)/i.test(key) ? "***" : redactObject(item);
     }
     return out;
   }

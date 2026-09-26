@@ -72,9 +72,7 @@ export async function runStackMaintenance(
     }
   }
 
-  notes.push(
-    `retention=${retainDays}d removed=${removed.length} retained_active=${retained.length}`,
-  );
+  notes.push(`retention=${retainDays}d removed=${removed.length} retained_active=${retained.length}`);
   return { removed, retained, notes };
 }
 
@@ -132,15 +130,9 @@ export type CrontabMergeResult = {
 };
 
 /** Build the managed maintenance crontab fragment. */
-export function maintenanceCronFragment(opts: {
-  schedule?: string;
-  bentoBin: string;
-  stackRoot: string;
-}): string {
+export function maintenanceCronFragment(opts: { schedule?: string; bentoBin: string; stackRoot: string }): string {
   const schedule = opts.schedule ?? "15 3 * * *";
-  const line = `${schedule} ${opts.bentoBin} --stack ${shellSingle(
-    opts.stackRoot,
-  )} maintenance run >/dev/null 2>&1`;
+  const line = `${schedule} ${opts.bentoBin} --stack ${shellSingle(opts.stackRoot)} maintenance run >/dev/null 2>&1`;
   return `${CRON_BEGIN_MARKER}\n${line}\n${CRON_END_MARKER}\n`;
 }
 
@@ -247,12 +239,9 @@ export async function registerHostMaintenance(
       timeoutMs: 5_000,
     });
     if (result.code !== 0) {
-      throw validationError(
-        `failed to update host crontab: ${(result.stderr || result.stdout || "unknown").trim()}`,
-        {
-          recovery: "Run as a user allowed to edit crontab, or paste the fragment manually.",
-        },
-      );
+      throw validationError(`failed to update host crontab: ${(result.stderr || result.stdout || "unknown").trim()}`, {
+        recovery: "Run as a user allowed to edit crontab, or paste the fragment manually.",
+      });
     }
   }
   return merged;

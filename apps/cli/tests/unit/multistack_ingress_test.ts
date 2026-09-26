@@ -1,9 +1,4 @@
-import {
-  runtime as bunRuntime,
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertStringIncludes } from "../runtime.ts";
 import { load as parseYaml } from "js-yaml";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
@@ -25,10 +20,7 @@ import {
 import { StateStore } from "../../src/services/state_store.ts";
 import { generateAll } from "../../src/services/generate.ts";
 import { deployWebhookInstructions } from "../../src/services/deploy.ts";
-import {
-  validateCloudflareTunnelToken,
-  writeCloudflareTunnelToken,
-} from "../../src/services/cloudflare_tunnel.ts";
+import { validateCloudflareTunnelToken, writeCloudflareTunnelToken } from "../../src/services/cloudflare_tunnel.ts";
 
 function testPlatform(root: string): Platform {
   const fs = createFileSystem();
@@ -50,43 +42,33 @@ function baseCompose(
   const generated = assembleComposeDocuments(platform, createEmptyState(), environment).find(
     (file) => file.relPath === "compose/docker-compose.base.yml",
   )!;
-  const text =
-    typeof generated.content === "string"
-      ? generated.content
-      : new TextDecoder().decode(generated.content);
+  const text = typeof generated.content === "string" ? generated.content : new TextDecoder().decode(generated.content);
   return parseYaml(text) as Record<string, unknown>;
 }
 
-bunRuntime.test(
-  "stack init persists an explicit name independent from the stack directory",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "directory-is-not-stack-name-",
-    });
-    try {
-      const platform = testPlatform(root);
-      const store = new StateStore(platform);
-      await store.init({ projectName: "customer-a" });
-      const environment = await loadStackComposeEnvironment(platform);
-      assertEquals(environment.projectName, "customer-a");
-      assertEquals(environment.nginx.hostNetwork, true);
-      const env = await platform.fs.readText(platform.paths.paths.envFile);
-      assertStringIncludes(env, "COMPOSE_PROJECT_NAME=customer-a");
-      assertStringIncludes(env, "NGINX_HOST_NETWORK=1");
-      assertStringIncludes(env, "NGINX_HTTP_PORT=");
-      const originalState = await store.load();
-      await assertRejects(
-        () => store.init({ projectName: "customer-b" }),
-        Error,
-        "already initialized",
-      );
-      assertEquals(await store.load(), originalState);
-      assertEquals(await platform.fs.readText(platform.paths.paths.envFile), env);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+bunRuntime.test("stack init persists an explicit name independent from the stack directory", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "directory-is-not-stack-name-",
+  });
+  try {
+    const platform = testPlatform(root);
+    const store = new StateStore(platform);
+    await store.init({ projectName: "customer-a" });
+    const environment = await loadStackComposeEnvironment(platform);
+    assertEquals(environment.projectName, "customer-a");
+    assertEquals(environment.nginx.hostNetwork, true);
+    const env = await platform.fs.readText(platform.paths.paths.envFile);
+    assertStringIncludes(env, "COMPOSE_PROJECT_NAME=customer-a");
+    assertStringIncludes(env, "NGINX_HOST_NETWORK=1");
+    assertStringIncludes(env, "NGINX_HTTP_PORT=");
+    const originalState = await store.load();
+    await assertRejects(() => store.init({ projectName: "customer-b" }), Error, "already initialized");
+    assertEquals(await store.load(), originalState);
+    assertEquals(await platform.fs.readText(platform.paths.paths.envFile), env);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("concurrent stack initialization creates state only once", async () => {
   const root = await bunRuntime.makeTempDir({
@@ -142,10 +124,7 @@ bunRuntime.test("bridge mode joins the private network and publishes stack-selec
     },
   });
   assertEquals(doc.name, "secondary");
-  assertEquals(
-    (doc.networks as Record<string, Record<string, unknown>>).private?.name,
-    "secondary_private",
-  );
+  assertEquals((doc.networks as Record<string, Record<string, unknown>>).private?.name, "secondary_private");
   const nginx = (doc.services as Record<string, Record<string, unknown>>).nginx!;
   assertEquals("network_mode" in nginx, false);
   assertEquals(nginx.networks, ["private"]);
@@ -153,49 +132,44 @@ bunRuntime.test("bridge mode joins the private network and publishes stack-selec
   assertEquals(nginx.extra_hosts, ["host.docker.internal:host-gateway"]);
 });
 
-bunRuntime.test(
-  "bridge HTTPS port is advertised in redirects, HTTP/3, and deploy URLs",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-bridge-https-",
+bunRuntime.test("bridge HTTPS port is advertised in redirects, HTTP/3, and deploy URLs", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-bridge-https-",
+  });
+  try {
+    const platform = testPlatform(root);
+    await new StateStore(platform).init({ projectName: "redirect-stack" });
+    await updateStackEnv(platform, {
+      NGINX_HOST_NETWORK: "0",
+      NGINX_HTTP_PORT: "18080",
+      NGINX_HTTPS_PORT: "18443",
+      HTTP3: "true",
     });
-    try {
-      const platform = testPlatform(root);
-      await new StateStore(platform).init({ projectName: "redirect-stack" });
-      await updateStackEnv(platform, {
-        NGINX_HOST_NETWORK: "0",
-        NGINX_HTTP_PORT: "18080",
-        NGINX_HTTPS_PORT: "18443",
-        HTTP3: "true",
-      });
-      const provisioned = provisionApp(platform, createEmptyState(), {
-        slug: "alpha",
-        domain: "alpha.test",
-      });
-      const state = {
-        ...provisioned.state,
-        apps: {
-          ...provisioned.state.apps,
-          alpha: { ...provisioned.app, tls: { kind: "acme" as const } },
-        },
-      };
-      const files = await generateAll(platform, state, "digest");
-      const generated = files.find((file) => file.relPath === "nginx/sites/alpha.conf")!;
-      const vhost =
-        typeof generated.content === "string"
-          ? generated.content
-          : new TextDecoder().decode(generated.content);
-      assertStringIncludes(vhost, "return 301 https://$host:18443$request_uri;");
-      assertStringIncludes(vhost, `Alt-Svc 'h3=":18443"`);
-      assertStringIncludes(
-        deployWebhookInstructions(provisioned.app, "secret", 18443),
-        "URL: https://alpha.test:18443/_bento/deploy",
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const provisioned = provisionApp(platform, createEmptyState(), {
+      slug: "alpha",
+      domain: "alpha.test",
+    });
+    const state = {
+      ...provisioned.state,
+      apps: {
+        ...provisioned.state.apps,
+        alpha: { ...provisioned.app, tls: { kind: "acme" as const } },
+      },
+    };
+    const files = await generateAll(platform, state, "digest");
+    const generated = files.find((file) => file.relPath === "nginx/sites/alpha.conf")!;
+    const vhost =
+      typeof generated.content === "string" ? generated.content : new TextDecoder().decode(generated.content);
+    assertStringIncludes(vhost, "return 301 https://$host:18443$request_uri;");
+    assertStringIncludes(vhost, `Alt-Svc 'h3=":18443"`);
+    assertStringIncludes(
+      deployWebhookInstructions(provisioned.app, "secret", 18443),
+      "URL: https://alpha.test:18443/_bento/deploy",
+    );
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("Cloudflare tunnel shares only Nginx's network namespace", () => {
   const platform = testPlatform("/tmp/cloudflare-compose");
@@ -214,36 +188,29 @@ bunRuntime.test("Cloudflare tunnel shares only Nginx's network namespace", () =>
   assertEquals("profiles" in cloudflared, false);
 });
 
-bunRuntime.test(
-  "Cloudflare token uses a private source file instead of shared stack env",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-cloudflare-token-" });
-    try {
-      const platform = testPlatform(root);
-      await new StateStore(platform).init({ projectName: "tunnel-stack" });
-      const token = validateCloudflareTunnelToken("eyJhbGciOiJIUzI1NiJ9.valid-signature");
-      await writeCloudflareTunnelToken(platform, token);
-      const environment = await loadStackComposeEnvironment(platform);
-      assertEquals(environment.cloudflareTunnelEnabled, true);
-      assertEquals(
-        await platform.fs.readText(platform.paths.paths.cloudflareTunnelTokenFile),
-        `${token}\n`,
-      );
-      const env = await platform.fs.readText(platform.paths.paths.envFile);
-      assertEquals(env.includes(token), false);
-      const mode =
-        (await platform.fs.stat(platform.paths.paths.cloudflareTunnelTokenFile)).mode & 0o777;
-      assertEquals(mode, 0o600);
-      await assertRejects(
-        () => writeCloudflareTunnelToken(platform, "valid-token-value-that-injects\nOTHER=value"),
-        Error,
-        "invalid Cloudflare tunnel token",
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+bunRuntime.test("Cloudflare token uses a private source file instead of shared stack env", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cloudflare-token-" });
+  try {
+    const platform = testPlatform(root);
+    await new StateStore(platform).init({ projectName: "tunnel-stack" });
+    const token = validateCloudflareTunnelToken("eyJhbGciOiJIUzI1NiJ9.valid-signature");
+    await writeCloudflareTunnelToken(platform, token);
+    const environment = await loadStackComposeEnvironment(platform);
+    assertEquals(environment.cloudflareTunnelEnabled, true);
+    assertEquals(await platform.fs.readText(platform.paths.paths.cloudflareTunnelTokenFile), `${token}\n`);
+    const env = await platform.fs.readText(platform.paths.paths.envFile);
+    assertEquals(env.includes(token), false);
+    const mode = (await platform.fs.stat(platform.paths.paths.cloudflareTunnelTokenFile)).mode & 0o777;
+    assertEquals(mode, 0o600);
+    await assertRejects(
+      () => writeCloudflareTunnelToken(platform, "valid-token-value-that-injects\nOTHER=value"),
+      Error,
+      "invalid Cloudflare tunnel token",
+    );
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("bridge mode can remain internal-only for overlay-owned publications", async () => {
   const root = await bunRuntime.makeTempDir({

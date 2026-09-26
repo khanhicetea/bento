@@ -13,12 +13,8 @@ const backupEngine = z.enum(["mysql", "postgres", "sqlite"]);
 
 export const dataContract = oc.router({
   overview: oc.input(z.object({}).optional()).output(dataOverviewSchema),
-  runtime: oc
-    .input(z.object({ service: z.string().min(1), engine: relationalEngine }))
-    .output(databaseRuntimeSchema),
-  activity: oc
-    .input(z.object({ service: z.string().min(1), engine: relationalEngine }))
-    .output(databaseActivitySchema),
+  runtime: oc.input(z.object({ service: z.string().min(1), engine: relationalEngine })).output(databaseRuntimeSchema),
+  activity: oc.input(z.object({ service: z.string().min(1), engine: relationalEngine })).output(databaseActivitySchema),
   backup: oc
     .input(z.object({ app: z.string().min(1), database: z.string().min(1), engine: backupEngine }))
     .output(databaseBackupResultSchema),

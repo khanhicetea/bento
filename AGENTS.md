@@ -27,7 +27,7 @@ These rules apply to the whole repository. A more specific `AGENTS.md` in a subd
 - Validate untrusted input at boundaries with Zod or the existing oRPC contract schemas.
 - Prefer small domain operations and explicit error handling over shelling out or routing browser actions through CLI argv.
 - Use the existing platform abstractions for filesystem, process, clock, and runtime behavior so code remains testable.
-- Run Prettier instead of manually formatting around its output.
+- Run Prettier instead of manually formatting around its output. `bun run fmt` uses a 120-character width for TS/TSX (including both apps and shared code); keep intentional multiline grouping for complex objects and JSX rather than forcing everything onto one line.
 
 ## React 19 and server state
 

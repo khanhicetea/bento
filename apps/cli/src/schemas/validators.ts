@@ -28,10 +28,7 @@ export function unwrap<T>(result: ParseResult<T>, context = "value"): T {
 }
 
 /** Map a Zod safeParse result into the project ParseResult shape. */
-export function fromZod<T>(
-  result: z.SafeParseReturnType<unknown, T>,
-  field?: string,
-): ParseResult<T> {
+export function fromZod<T>(result: z.SafeParseReturnType<unknown, T>, field?: string): ParseResult<T> {
   if (result.success) return ok(result.data);
   return err(
     result.error.issues.map((issue) => {
@@ -68,11 +65,7 @@ export const domainNameSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "is too long" });
       return;
     }
-    if (
-      !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$|^localhost$|^[a-z0-9-]+$/.test(
-        domain,
-      )
-    ) {
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$|^localhost$|^[a-z0-9-]+$/.test(domain)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "is not a valid domain name",
@@ -103,9 +96,7 @@ export const mysqlVersionSchema = z
   .refine(isMajorMinorVersion, "must look like major.minor (e.g. 8.4)");
 
 /** PostgreSQL managed versions use official major-only tags (for example 17). */
-export const postgresVersionSchema = z
-  .string()
-  .regex(/^[1-9]\d*$/, "must be an official major-only tag (e.g. 17)");
+export const postgresVersionSchema = z.string().regex(/^[1-9]\d*$/, "must be an official major-only tag (e.g. 17)");
 
 export const databaseServiceSchema = z
   .string()
@@ -187,10 +178,7 @@ export const fpmProfileSchema = nonEmptyStringSchema.refine((v) => v in FPM_PROF
   message: `must be one of: ${Object.keys(FPM_PROFILES).join(", ")}`,
 });
 
-export const absolutePathSchema = nonEmptyStringSchema.refine(
-  (v) => v.startsWith("/"),
-  "must be absolute",
-);
+export const absolutePathSchema = nonEmptyStringSchema.refine((v) => v.startsWith("/"), "must be absolute");
 
 // --- Parse helpers (ParseResult API) ---------------------------------------
 
@@ -210,17 +198,11 @@ export function parseMysqlVersion(value: unknown, field = "mysqlVersion"): Parse
   return parseWith(mysqlVersionSchema, value, field);
 }
 
-export function parsePostgresVersion(
-  value: unknown,
-  field = "postgresVersion",
-): ParseResult<string> {
+export function parsePostgresVersion(value: unknown, field = "postgresVersion"): ParseResult<string> {
   return parseWith(postgresVersionSchema, value, field);
 }
 
-export function parseDatabaseService(
-  value: unknown,
-  field = "databaseService",
-): ParseResult<string> {
+export function parseDatabaseService(value: unknown, field = "databaseService"): ParseResult<string> {
   return parseWith(databaseServiceSchema, value, field);
 }
 

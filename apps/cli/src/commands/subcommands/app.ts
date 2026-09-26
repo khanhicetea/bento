@@ -27,14 +27,7 @@ import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "#/services
 import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  trailing,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, trailing, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 import { runCliExec } from "#/commands/subcommands/exec.ts";
 
 export function registerAppCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
@@ -101,8 +94,7 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
             .option("database-engine", {
               type: "string",
               choices: ["mysql", "postgres", "sqlite", "litestream"],
-              describe:
-                "Database engine (sqlite is local; litestream adds continuous S3 replication)",
+              describe: "Database engine (sqlite is local; litestream adds continuous S3 replication)",
             })
             .option("mysql", {
               type: "string",
@@ -198,15 +190,13 @@ export function registerAppCommands(parser: YargsBuilder, state: RunState): Yarg
       .command(
         "enable <slug>",
         "Enable an application and its runtime configuration",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
         bind(state, cmdAppEnable),
       )
       .command(
         "disable <slug>",
         "Disable runtime configuration while retaining app data",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("slug", { type: "string", demandOption: true })),
         bind(state, cmdAppDisable),
       )
       .command(
@@ -281,12 +271,7 @@ async function cmdAppList(_argv: CliArgs, ctx: CliContext): Promise<number> {
         )
         .join(", "),
     ]);
-  ctx.log.out(
-    printTable(
-      ["slug", "status", "uid", "domain", "runtime", "service/profile", "tls", "database"],
-      rows,
-    ),
-  );
+  ctx.log.out(printTable(["slug", "status", "uid", "domain", "runtime", "service/profile", "tls", "database"], rows));
   return 0;
 }
 
@@ -304,9 +289,7 @@ async function cmdAppShow(argv: ArgsWith<"slug">, ctx: CliContext): Promise<numb
 
 export function redactAppForOutput(app: AppState): AppState {
   const databases = app.databases.map((database) =>
-    database.engine === "sqlite" || database.engine === "litestream"
-      ? database
-      : { ...database, password: "***" },
+    database.engine === "sqlite" || database.engine === "litestream" ? database : { ...database, password: "***" },
   );
   const redacted: AppState = {
     ...app,
@@ -341,18 +324,11 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
   const processSelected = argv.runtime !== undefined && argv.runtime !== "php";
   if (
     !processSelected &&
-    (argv.runtimeVersion ||
-      argv.start ||
-      argv.healthPath ||
-      argv.workdir ||
-      argv.port !== undefined)
+    (argv.runtimeVersion || argv.start || argv.healthPath || argv.workdir || argv.port !== undefined)
   ) {
     throw validationError("process runtime options require --runtime node, bun, or python");
   }
-  if (
-    processSelected &&
-    (argv.php || argv.fpm || argv.docroot || argv.front === true || argv.legacy === true)
-  ) {
+  if (processSelected && (argv.php || argv.fpm || argv.docroot || argv.front === true || argv.legacy === true)) {
     throw validationError("PHP runtime options cannot be combined with a process runtime");
   }
   const noApply = wantsNoApply(argv);
@@ -385,8 +361,7 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
       processHealthPath: argv.healthPath,
       aliases,
       documentRoot: argv.docroot,
-      entrypointMode:
-        argv.legacy === true ? "legacy" : argv.front === true ? "front-controller" : undefined,
+      entrypointMode: argv.legacy === true ? "legacy" : argv.front === true ? "front-controller" : undefined,
       phpVersion: argv.php,
       fpmProfile: argv.fpm,
       databaseEngine: argv.databaseEngine,
@@ -404,8 +379,7 @@ async function cmdAppCreate(argv: ArgsWith<"slug" | "domain">, ctx: CliContext):
         ? state.databaseServices.find(
             (service) =>
               service.engine === requestedDatabaseEngine &&
-              (service.version === requestedDatabaseToken ||
-                service.service === requestedDatabaseToken),
+              (service.version === requestedDatabaseToken || service.service === requestedDatabaseToken),
           )?.service
         : undefined,
       databaseName: argv.database ?? (explicitDb ? slug : undefined),
@@ -471,14 +445,10 @@ async function cmdAppStart(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   await ctx.render.apply(state, { reloadPlan: emptyReloadPlan(), skipValidate: false });
   const result = await startProcessApp(ctx.platform, state, app);
   if (!result || result.code !== 0) {
-    ctx.log.error(
-      `failed to start ${app.slug}: ${(result?.stderr || result?.stdout || "").trim()}`,
-    );
+    ctx.log.error(`failed to start ${app.slug}: ${(result?.stderr || result?.stdout || "").trim()}`);
     return 1;
   }
-  ctx.log.info(
-    `started process app ${app.slug} privately; run 'bento app enable ${app.slug}' after it is healthy`,
-  );
+  ctx.log.info(`started process app ${app.slug} privately; run 'bento app enable ${app.slug}' after it is healthy`);
   return 0;
 }
 
@@ -511,11 +481,7 @@ function appDeleteOptions(y: YargsBuilder): YargsBuilder {
   );
 }
 
-async function mutateAppEnabled(
-  argv: ArgsWith<"slug">,
-  ctx: CliContext,
-  enabled: boolean,
-): Promise<number> {
+async function mutateAppEnabled(argv: ArgsWith<"slug">, ctx: CliContext, enabled: boolean): Promise<number> {
   const noApply = wantsNoApply(argv);
   const result = await ctx.store.withExclusive(async (state) => {
     const current = state.apps[argv.slug];
@@ -553,9 +519,7 @@ async function mutateAppEnabled(
     }
   }
   ctx.log.info(
-    `${result.app.enabled ? "enabled" : "disabled"} app ${argv.slug}${
-      noApply ? " (state only; run bento apply)" : ""
-    }`,
+    `${result.app.enabled ? "enabled" : "disabled"} app ${argv.slug}${noApply ? " (state only; run bento apply)" : ""}`,
   );
   return 0;
 }
@@ -609,11 +573,7 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
   if (plan.manifestFound) {
     for (const binding of plan.bindings) {
       const engineLabel =
-        binding.engine === "mysql"
-          ? "MySQL"
-          : binding.engine === "postgres"
-            ? "PostgreSQL"
-            : "SQLite";
+        binding.engine === "mysql" ? "MySQL" : binding.engine === "postgres" ? "PostgreSQL" : "SQLite";
       for (const database of binding.databases) {
         ctx.log.out(
           binding.engine === "sqlite" || binding.engine === "litestream"
@@ -622,8 +582,7 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
         );
       }
       if (binding.engine !== "sqlite" && binding.engine !== "litestream") {
-        const identity =
-          binding.engine === "mysql" ? `${binding.databaseUser}@%` : binding.databaseUser;
+        const identity = binding.engine === "mysql" ? `${binding.databaseUser}@%` : binding.databaseUser;
         ctx.log.out(
           `  - ${engineLabel} ${
             binding.engine === "mysql" ? "account" : "role"
@@ -632,15 +591,12 @@ async function cmdAppPrune(argv: ArgsWith<"slug">, ctx: CliContext): Promise<num
       }
     }
   } else {
-    ctx.log.warn(
-      "cleanup metadata is unavailable; database data cannot be identified and will not be deleted",
-    );
+    ctx.log.warn("cleanup metadata is unavailable; database data cannot be identified and will not be deleted");
   }
   ctx.log.out(`  - App home: ${plan.home}`);
   ctx.log.out("");
 
-  const confirmation =
-    argv.confirm ?? globalThis.prompt("Type 'delete' to permanently clean these parts:");
+  const confirmation = argv.confirm ?? globalThis.prompt("Type 'delete' to permanently clean these parts:");
   const result = await ctx.store.withExclusive(async (current) => {
     const checked = await planAppPrune(ctx.platform, current, argv.slug);
     if (JSON.stringify(checked) !== JSON.stringify(plan)) {
@@ -686,11 +642,7 @@ async function cmdAppMinicrond(argv: ArgsWith<"slug">, ctx: CliContext): Promise
     }
     return new TextDecoder().decode(Buffer.concat(chunks));
   }
-  const [stdout, stderr, result] = await Promise.all([
-    collect(child.stdout),
-    collect(child.stderr),
-    child.status,
-  ]);
+  const [stdout, stderr, result] = await Promise.all([collect(child.stdout), collect(child.stderr), child.status]);
   if (stdout) ctx.log.out(stdout.trimEnd());
   if (stderr) ctx.log.error(redact(stderr.trimEnd()));
   return result.code;

@@ -61,11 +61,7 @@ bunRuntime.test("PostgreSQL add/list is sorted and rejects duplicates", () => {
 });
 
 bunRuntime.test("PostgreSQL version removal is always refused", () => {
-  assertThrows(
-    () => removePostgresVersion(createEmptyState(), "17"),
-    Error,
-    "removal is unsupported",
-  );
+  assertThrows(() => removePostgresVersion(createEmptyState(), "17"), Error, "removal is unsupported");
 });
 
 bunRuntime.test("PostgreSQL identifier and literal quoting contains hostile input", () => {
@@ -74,10 +70,7 @@ bunRuntime.test("PostgreSQL identifier and literal quoting contains hostile inpu
   assertEquals(postgresIdentifier('role"name'), '"role""name"');
   assertEquals(postgresIdentifier('x"; DROP ROLE postgres; --'), '"x""; DROP ROLE postgres; --"');
   assertEquals(postgresLiteral("plain_name"), "E'plain_name'");
-  assertEquals(
-    postgresLiteral("it's\\hostile'; DROP DATABASE x; --"),
-    "E'it''s\\\\hostile''; DROP DATABASE x; --'",
-  );
+  assertEquals(postgresLiteral("it's\\hostile'; DROP DATABASE x; --"), "E'it''s\\\\hostile''; DROP DATABASE x; --'");
   assertThrows(() => postgresIdentifier("bad\0name"));
   assertThrows(() => postgresLiteral("bad\0value"));
 });
@@ -104,23 +97,16 @@ bunRuntime.test("protected PostgreSQL SQL execution keeps SQL and password off a
   assertEquals(stdin.includes(sql), true);
 });
 
-bunRuntime.test(
-  "PostgreSQL reachability uses pg_isready and authenticated check reports failure",
-  async () => {
-    const platform = testPlatform("/tmp/postgres-phase3", (command) => ({
-      code: command.includes("pg_isready") ? 0 : 1,
-      stdout: "",
-      stderr: "authentication failed",
-    }));
-    assertEquals(await isPostgresReachable(platform, "postgres17"), true);
-    const reachabilityArgv = platform.process.calls[0]!.command.join(" ");
-    assertEquals(reachabilityArgv.includes("pg_isready"), true);
-    assertEquals(reachabilityArgv.includes("password"), false);
-    await assertRejects(
-      () => verifyPostgresSql(platform, "postgres17", "not-on-argv"),
-      Error,
-      "authentication failed",
-    );
-    assertEquals(platform.process.calls[1]!.command.join(" ").includes("not-on-argv"), false);
-  },
-);
+bunRuntime.test("PostgreSQL reachability uses pg_isready and authenticated check reports failure", async () => {
+  const platform = testPlatform("/tmp/postgres-phase3", (command) => ({
+    code: command.includes("pg_isready") ? 0 : 1,
+    stdout: "",
+    stderr: "authentication failed",
+  }));
+  assertEquals(await isPostgresReachable(platform, "postgres17"), true);
+  const reachabilityArgv = platform.process.calls[0]!.command.join(" ");
+  assertEquals(reachabilityArgv.includes("pg_isready"), true);
+  assertEquals(reachabilityArgv.includes("password"), false);
+  await assertRejects(() => verifyPostgresSql(platform, "postgres17", "not-on-argv"), Error, "authentication failed");
+  assertEquals(platform.process.calls[1]!.command.join(" ").includes("not-on-argv"), false);
+});

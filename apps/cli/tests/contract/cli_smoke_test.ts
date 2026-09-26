@@ -37,10 +37,7 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals(await runCli([...base, "render"]), 0);
     assertEquals(await runCli([...base, "status"]), 0);
     // Without --db: best-effort MySQL may defer when the service is down.
-    assertEquals(
-      await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]), 0);
     // Explicit --db must fail closed when MySQL is unavailable (no database recorded).
     const dbFail = await runCli([
       ...base,
@@ -54,10 +51,7 @@ bunRuntime.test("cli init render status app create", async () => {
     ]);
     assertEquals(dbFail !== 0, true);
     // A missing app must never reach Docker, even with forwarded CLI flags.
-    assertEquals(
-      (await runCli([...base, "app", "minicrond", "missing", "--", "logs", "--follow"])) !== 0,
-      true,
-    );
+    assertEquals((await runCli([...base, "app", "minicrond", "missing", "--", "logs", "--follow"])) !== 0, true);
     assertEquals(await runCli([...base, "app", "list"]), 0);
     assertEquals(await runCli([...base, "render"]), 0);
 
@@ -85,15 +79,7 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals(await fileExists(vhost), true);
 
     // domain collision
-    const code = await runCli([
-      ...base,
-      "app",
-      "create",
-      "other",
-      "--domain",
-      "demo.test",
-      "--no-apply",
-    ]);
+    const code = await runCli([...base, "app", "create", "other", "--domain", "demo.test", "--no-apply"]);
     assertEquals(code !== 0, true);
 
     // php add/remove
@@ -114,10 +100,7 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals((await runCli([...base, "postgres", "add", "17.2", "--no-apply"])) !== 0, true);
     assertEquals((await runCli([...base, "postgres", "remove", "17"])) !== 0, true);
     assertEquals(await runCli([...base, "render"]), 0);
-    assertEquals(
-      await fileExists(join(stack, "generated/compose/docker-compose.postgres17.yml")),
-      true,
-    );
+    assertEquals(await fileExists(join(stack, "generated/compose/docker-compose.postgres17.yml")), true);
 
     // PostgreSQL app selection is persisted; contradictory flags and engine moves fail closed.
     assertEquals(
@@ -159,17 +142,7 @@ bunRuntime.test("cli init render status app create", async () => {
       true,
     );
     assertEquals(
-      await runCli([
-        ...base,
-        "app",
-        "update",
-        "pgdemo",
-        "--domain",
-        "pgdemo.test",
-        "--mysql",
-        "8.4",
-        "--no-apply",
-      ]),
+      await runCli([...base, "app", "update", "pgdemo", "--domain", "pgdemo.test", "--mysql", "8.4", "--no-apply"]),
       0,
     );
     const afterRefusals = await loadState(stack);
@@ -199,9 +172,7 @@ bunRuntime.test("cli init render status app create", async () => {
       ]),
       0,
     );
-    const proxyVhost = await bunRuntime.readTextFile(
-      join(stack, "generated/nginx/sites/proxy-api.conf"),
-    );
+    const proxyVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/proxy-api.conf"));
     assertEquals(proxyVhost.includes("upstream upstream_api {"), true);
     assertEquals(proxyVhost.includes("server 127.0.0.1:3000;"), true);
     assertEquals(proxyVhost.includes("server 127.0.0.1:3001;"), true);
@@ -211,10 +182,7 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals((await runCli([...base, "proxy", "remove", "api"])) !== 0, true);
     // proxy still listed after unconfirmed delete, then exact confirmation removes it
     assertEquals(await runCli([...base, "proxy", "list"]), 0);
-    assertEquals(
-      await runCli([...base, "proxy", "delete", "api", "--confirm", "delete api", "--no-apply"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "proxy", "delete", "api", "--confirm", "delete api", "--no-apply"]), 0);
     const afterProxyDelete = await loadState(stack);
     assertEquals(afterProxyDelete.proxies.api, undefined);
 
@@ -286,10 +254,7 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals((await runCli([...base, "worker", "inspect", "missing", "x"])) !== 0, true);
 
     // Phase B: access logs enable (nginx-only) + rotate + report dry-run
-    assertEquals(
-      await runCli([...base, "logs", "access", "enable", "--app", "demo", "--no-apply"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "logs", "access", "enable", "--app", "demo", "--no-apply"]), 0);
     // vhost should include access_log after apply
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
     const vhostLogged = await bunRuntime.readTextFile(vhost);
@@ -297,14 +262,8 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals(await runCli([...base, "logs", "access", "rotate", "--app", "demo"]), 0);
     await bunRuntime.mkdir(join(stack, "logs", "nginx"), { recursive: true });
     await bunRuntime.writeTextFile(join(stack, "logs", "nginx", "demo.access.log"), "request\n");
-    assertEquals(
-      await runCli([...base, "logs", "access", "report", "--app", "demo", "--dry-run"]),
-      0,
-    );
-    assertEquals(
-      await runCli([...base, "logs", "access", "report", "--app", "demo", "--attach", "--dry-run"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "logs", "access", "report", "--app", "demo", "--dry-run"]), 0);
+    assertEquals(await runCli([...base, "logs", "access", "report", "--app", "demo", "--attach", "--dry-run"]), 0);
 
     // Phase B: mysql shell --print keeps secrets off printed argv
     // (stack .env has MYSQL_ROOT_PASSWORD from init)
@@ -315,10 +274,7 @@ bunRuntime.test("cli init render status app create", async () => {
     for (const command of ["db", "shell", "size", "processlist"]) {
       assertEquals(await runCli([...base, "postgres", command, "--help"]), 0);
     }
-    assertEquals(
-      await runCli([...base, "postgres", "shell", "--root", "--service", "17", "--print"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "postgres", "shell", "--root", "--service", "17", "--print"]), 0);
     assertEquals(await runCli([...base, "postgres", "shell", "--app", "pgdemo", "--print"]), 0);
 
     // App CLI shell / exec --print (profile-gated php*-cli; no live attach)
@@ -344,19 +300,7 @@ bunRuntime.test("cli init render status app create", async () => {
       0,
     );
     assertEquals(await runCli([...base, "template", "drift", "--app", "demo"]), 0);
-    assertEquals(
-      await runCli([
-        ...base,
-        "template",
-        "return",
-        "--app",
-        "demo",
-        "--kind",
-        "vhost",
-        "--no-apply",
-      ]),
-      0,
-    );
+    assertEquals(await runCli([...base, "template", "return", "--app", "demo", "--kind", "vhost", "--no-apply"]), 0);
     // custom source preserved under stack custom/
     const customCopied = join(stack, "custom/apps/demo/vhost/vhost.conf.tpl");
     assertEquals(
@@ -373,19 +317,7 @@ bunRuntime.test("cli init render status app create", async () => {
 
     // Phase B: batched --no-apply then single apply
     assertEquals(
-      await runCli([
-        ...base,
-        "worker",
-        "add",
-        "--app",
-        "demo",
-        "--name",
-        "batch",
-        "--no-apply",
-        "--",
-        "sleep",
-        "60",
-      ]),
+      await runCli([...base, "worker", "add", "--app", "demo", "--name", "batch", "--no-apply", "--", "sleep", "60"]),
       2,
     );
     assertEquals(
@@ -408,10 +340,7 @@ bunRuntime.test("cli init render status app create", async () => {
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
 
     // Exact typed confirmation removes desired state/config but retains durable home data.
-    assertEquals(
-      await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]), 0);
     const afterDelete = await loadState(stack);
     assertEquals(afterDelete.apps.demo, undefined);
     assertEquals(await fileExists(join(stack, "homes/demo/code/public/index.php")), true);
@@ -421,10 +350,7 @@ bunRuntime.test("cli init render status app create", async () => {
     database.run("UPDATE stack_config SET state_schema_version = 999 WHERE id = 1");
     assertEquals((await runCli([...base, "status"])) !== 0, true);
     const version = database
-      .query<
-        { state_schema_version: number },
-        []
-      >("SELECT state_schema_version FROM stack_config WHERE id = 1")
+      .query<{ state_schema_version: number }, []>("SELECT state_schema_version FROM stack_config WHERE id = 1")
       .get();
     assertEquals(version?.state_schema_version, 999);
   });
@@ -445,36 +371,31 @@ bunRuntime.test("cli refuses to reinitialize an existing stack", async () => {
   });
 });
 
-bunRuntime.test(
-  "cli backup keeps legacy flags and exposes schedule help/run without crontab",
-  async () => {
-    await withStack(async (stack) => {
-      const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
-      assertEquals(await runCli([...base, "init"]), 0);
+bunRuntime.test("cli backup keeps legacy flags and exposes schedule help/run without crontab", async () => {
+  await withStack(async (stack) => {
+    const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
+    assertEquals(await runCli([...base, "init"]), 0);
 
-      // The existing top-level option remains routed to the default backup command.
-      assertEquals(await runCli([...base, "backup", "--all", "--none"]), 0);
-      assertEquals(await runCli([...base, "backup", "--all", "--engine", "mysql", "--none"]), 0);
+    // The existing top-level option remains routed to the default backup command.
+    assertEquals(await runCli([...base, "backup", "--all", "--none"]), 0);
+    assertEquals(await runCli([...base, "backup", "--all", "--engine", "mysql", "--none"]), 0);
 
-      // Help and an empty all-database run do not use schedule status/register paths,
-      // so this smoke coverage never reads or mutates the host user's crontab.
-      assertEquals(await runCli([...base, "backup", "schedule", "--help"]), 0);
-      assertEquals(await runCli([...base, "backup", "schedule", "run"]), 0);
-      assertEquals(await fileExists(join(stack, "backups/.schedule/last-run.json")), true);
+    // Help and an empty all-database run do not use schedule status/register paths,
+    // so this smoke coverage never reads or mutates the host user's crontab.
+    assertEquals(await runCli([...base, "backup", "schedule", "--help"]), 0);
+    assertEquals(await runCli([...base, "backup", "schedule", "run"]), 0);
+    assertEquals(await fileExists(join(stack, "backups/.schedule/last-run.json")), true);
 
-      // Manual backups preserve the typed conflict exit code when a scheduled/manual
-      // batch already owns the shared stack backup lock.
-      const release = await createFileLock().tryExclusive(
-        join(stack, "locks/database-backup.lock"),
-      );
-      try {
-        assertEquals(await runCli([...base, "backup", "--all", "--none"]), 4);
-      } finally {
-        await release?.();
-      }
-    });
-  },
-);
+    // Manual backups preserve the typed conflict exit code when a scheduled/manual
+    // batch already owns the shared stack backup lock.
+    const release = await createFileLock().tryExclusive(join(stack, "locks/database-backup.lock"));
+    try {
+      assertEquals(await runCli([...base, "backup", "--all", "--none"]), 4);
+    } finally {
+      await release?.();
+    }
+  });
+});
 
 bunRuntime.test("invalid state database is not overwritten on read", async () => {
   await withStack(async (stack) => {
@@ -492,10 +413,7 @@ bunRuntime.test("cli tls set + permissions + backup/restore dry paths", async ()
   await withStack(async (stack) => {
     const base = ["--stack", stack, "--repo-root", bunRuntime.cwd()];
     assertEquals(await runCli([...base, "init"]), 0);
-    assertEquals(
-      await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]), 0);
 
     // Private CA mode creates a per-site SAN leaf and permits public-CA export.
     assertEquals(await runCli([...base, "tls", "set", "--app", "demo", "--mode", "self-ca"]), 0);
@@ -504,29 +422,18 @@ bunRuntime.test("cli tls set + permissions + backup/restore dry paths", async ()
     assertEquals(await runCli([...base, "tls", "ca", "export", "--output", caExport]), 0);
     assertEquals(await fileExists(caExport), true);
     const caVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
-    assertEquals(
-      caVhost.includes("ssl_certificate     /etc/nginx/certs/private-ca/sites/demo.crt;"),
-      true,
-    );
-    assertEquals(
-      caVhost.includes("ssl_certificate_key /etc/nginx/certs/private-ca/sites/demo.key;"),
-      true,
-    );
+    assertEquals(caVhost.includes("ssl_certificate     /etc/nginx/certs/private-ca/sites/demo.crt;"), true);
+    assertEquals(caVhost.includes("ssl_certificate_key /etc/nginx/certs/private-ca/sites/demo.key;"), true);
     assertEquals(caVhost.includes("ssl-common.conf"), true);
     assertEquals(await fileExists(join(stack, "generated/nginx/snippets/ssl-demo.conf")), false);
     assertEquals(caVhost.includes("return 301 https://"), true);
 
     // Private CA -> ACME (no cert files needed for ACME mode recording)
-    assertEquals(
-      await runCli([...base, "tls", "set", "--app", "demo", "--mode", "acme", "--no-apply"]),
-      0,
-    );
+    assertEquals(await runCli([...base, "tls", "set", "--app", "demo", "--mode", "acme", "--no-apply"]), 0);
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
     const acmeVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/demo.conf"));
     const acmeMain = await bunRuntime.readTextFile(join(stack, "generated/nginx/nginx.conf"));
-    const acmeSsl = await bunRuntime.readTextFile(
-      join(stack, "generated/nginx/snippets/acme-ssl.conf"),
-    );
+    const acmeSsl = await bunRuntime.readTextFile(join(stack, "generated/nginx/snippets/acme-ssl.conf"));
     assertEquals(acmeVhost.includes("acme-challenge"), false);
     assertEquals(acmeVhost.includes("return 301 https://"), true);
     assertEquals(acmeMain.includes("acme_issuer bento_acme"), true);
@@ -646,9 +553,7 @@ bunRuntime.test("cli tls set + permissions + backup/restore dry paths", async ()
       0,
     );
     assertEquals(await runCli([...base, "apply", "--render-only", "--skip-validate"]), 0);
-    const legacyVhost = await bunRuntime.readTextFile(
-      join(stack, "generated/nginx/sites/legacy.conf"),
-    );
+    const legacyVhost = await bunRuntime.readTextFile(join(stack, "generated/nginx/sites/legacy.conf"));
     assertEquals(legacyVhost.includes("if ($uri !~ ^/index\\.php$)"), false);
     assertEquals(legacyVhost.includes("try_files $uri =404;"), true);
   });

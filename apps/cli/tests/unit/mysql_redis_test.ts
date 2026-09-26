@@ -9,12 +9,7 @@ import {
   grantSql,
   isMysqlReachable,
 } from "../../src/services/mysql.ts";
-import {
-  aclRuleParts,
-  aclRules,
-  redisConnectionEnv,
-  tryApplyAppRedisAcl,
-} from "../../src/services/redis.ts";
+import { aclRuleParts, aclRules, redisConnectionEnv, tryApplyAppRedisAcl } from "../../src/services/redis.ts";
 import { generateMysqlSecrets } from "../../src/services/generate.ts";
 import { parseDotEnv } from "../../src/services/stack_env.ts";
 import { StateStore } from "../../src/services/state_store.ts";
@@ -63,10 +58,7 @@ bunRuntime.test("stack init generates the MySQL root password only once", async 
     const initialEnv = await platform.fs.readText(platform.paths.paths.envFile);
     assertEquals(initialEnv.includes("HTTP3=false"), true);
     assertEquals(initialEnv.includes("ACME_EMAIL="), true);
-    assertEquals(
-      initialEnv.includes("ACME_URL=https://acme-v02.api.letsencrypt.org/directory"),
-      true,
-    );
+    assertEquals(initialEnv.includes("ACME_URL=https://acme-v02.api.letsencrypt.org/directory"), true);
 
     await assertRejects(() => store.init(), Error, "already initialized");
     assertEquals(await platform.fs.readText(platform.paths.paths.envFile), initialEnv);
@@ -183,11 +175,7 @@ bunRuntime.test("explicit database fails when MySQL is unreachable", async () =>
       domain: "alpha.test",
     }).state;
 
-    await assertRejects(
-      () => createAppDatabaseLive(platform, state, "alpha", "alpha", "rootpw"),
-      Error,
-      "unavailable",
-    );
+    await assertRejects(() => createAppDatabaseLive(platform, state, "alpha", "alpha", "rootpw"), Error, "unavailable");
     assertEquals(state.apps["alpha"]?.database.databases.length ?? 0, 0);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
@@ -246,9 +234,7 @@ bunRuntime.test("shared redis credentials include prefix and stack password", as
       recursivePerms: false,
       redisSharedPassword: "shared-secret",
     });
-    const cred = await platform.fs.readText(
-      join(platform.paths.appHome("alpha"), "credentials", "app.env"),
-    );
+    const cred = await platform.fs.readText(join(platform.paths.appHome("alpha"), "credentials", "app.env"));
     assertEquals(cred.includes("REDIS_PASSWORD=shared-secret"), true);
     assertEquals(cred.includes("REDIS_PREFIX=alpha:"), true);
     assertEquals(cred.includes("REDIS_MODE=shared"), true);
@@ -309,9 +295,7 @@ bunRuntime.test("apply Redis ACL keeps secrets off host argv", async () => {
       assertEquals(joined.includes("redis-auth"), false);
     }
     // secrets on stdin only
-    const aclCall = platform.process.calls.find(
-      (c) => c.command.includes("redis") && c.options?.stdin,
-    );
+    const aclCall = platform.process.calls.find((c) => c.command.includes("redis") && c.options?.stdin);
     assertEquals(!!aclCall, true);
     const stdin = String(aclCall!.options!.stdin);
     assertEquals(stdin.includes("redis-auth"), true);
@@ -345,10 +329,7 @@ bunRuntime.test("root MySQL client option files get real password and mode 0600"
     assertEquals(content.includes("host=mysql84"), false);
     assertEquals(content.includes("{{MYSQL_ROOT_PASSWORD}}"), false);
     // no .tpl placeholder left
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/mysql/mysql84/root.cnf.tpl")),
-      false,
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/mysql/mysql84/root.cnf.tpl")), false);
 
     const st = await platform.fs.stat(cnfPath);
     assertEquals(st.mode & 0o777, 0o600);
@@ -361,9 +342,7 @@ bunRuntime.test("root MySQL client option files get real password and mode 0600"
     assertEquals(String(files[0]!.content).includes("password=unit-test-pw"), true);
     assertEquals(String(files[0]!.content).includes("protocol=socket"), true);
 
-    const compose = await platform.fs.readText(
-      join(root, "generated/compose/docker-compose.mysql84.yml"),
-    );
+    const compose = await platform.fs.readText(join(root, "generated/compose/docker-compose.mysql84.yml"));
     assertEquals(compose.includes("./backups/mysql84:/var/backups/bento"), true);
   } finally {
     await bunRuntime.remove(root, { recursive: true });

@@ -31,27 +31,24 @@ function testPlatform(root: string): Platform {
   };
 }
 
-bunRuntime.test(
-  "materialization accepts an existing Docker-owned ACME state directory",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-acme-state-" });
-    try {
-      const platform = testPlatform(root);
-      await materializeDockerAssets(platform, ["8.5"]);
-      const acmeState = join(platform.paths.paths.certsDir, "acme-state");
-      const chmod = platform.fs.chmod.bind(platform.fs);
-      platform.fs.chmod = async (path, mode) => {
-        if (path === acmeState) throw new Error("host user cannot chmod Docker-owned ACME state");
-        await chmod(path, mode);
-      };
+bunRuntime.test("materialization accepts an existing Docker-owned ACME state directory", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-acme-state-" });
+  try {
+    const platform = testPlatform(root);
+    await materializeDockerAssets(platform, ["8.5"]);
+    const acmeState = join(platform.paths.paths.certsDir, "acme-state");
+    const chmod = platform.fs.chmod.bind(platform.fs);
+    platform.fs.chmod = async (path, mode) => {
+      if (path === acmeState) throw new Error("host user cannot chmod Docker-owned ACME state");
+      await chmod(path, mode);
+    };
 
-      await materializeDockerAssets(platform, ["8.5"]);
-      assertEquals((await platform.fs.lstat(acmeState)).isDirectory, true);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    await materializeDockerAssets(platform, ["8.5"]);
+    assertEquals((await platform.fs.lstat(acmeState)).isDirectory, true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("init + render produces startable topology files", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
@@ -93,12 +90,8 @@ bunRuntime.test("init + render produces startable topology files", async () => {
     for (const name of ["main.d", "events.d", "http.d", "sites.d", "apps", "proxies"]) {
       assertEquals((await platform.fs.stat(join(root, "custom/nginx", name))).isDirectory, true);
     }
-    const appCommon = await platform.fs.readText(
-      join(root, "generated/nginx/snippets/app-common.conf"),
-    );
-    const proxyCommon = await platform.fs.readText(
-      join(root, "generated/nginx/snippets/proxy-common.conf"),
-    );
+    const appCommon = await platform.fs.readText(join(root, "generated/nginx/snippets/app-common.conf"));
+    const proxyCommon = await platform.fs.readText(join(root, "generated/nginx/snippets/proxy-common.conf"));
     assertEquals(appCommon.includes("expires 30d;"), true);
     assertEquals(appCommon.includes("Never expose dotfiles"), true);
     assertEquals(proxyCommon.includes("proxy_socket_keepalive on;"), true);
@@ -124,27 +117,15 @@ bunRuntime.test("init + render produces startable topology files", async () => {
     assertEquals(await platform.fs.exists(tunnelEnv), true);
     assertEquals((await platform.fs.stat(join(root, "generated/secrets"))).mode & 0o777, 0o700);
     assertEquals((await platform.fs.stat(tunnelEnv)).mode & 0o777, 0o600);
-    const defaultVhost = await platform.fs.readText(
-      join(root, "generated/nginx/sites/00-default.conf"),
-    );
+    const defaultVhost = await platform.fs.readText(join(root, "generated/nginx/sites/00-default.conf"));
     assertEquals(defaultVhost.includes("listen 80 default_server;"), true);
     assertEquals(defaultVhost.includes("listen 443 ssl default_server;"), true);
     assertEquals(defaultVhost.match(/return 404;/g)?.length, 2);
     // PHP and MySQL fragments
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/compose/docker-compose.php-php85.yml")),
-      true,
-    );
-    assertEquals(
-      await platform.fs.exists(join(root, "generated/compose/docker-compose.mysql84.yml")),
-      true,
-    );
-    const phpCompose = await platform.fs.readText(
-      join(root, "generated/compose/docker-compose.php-php85.yml"),
-    );
-    const mysqlCompose = await platform.fs.readText(
-      join(root, "generated/compose/docker-compose.mysql84.yml"),
-    );
+    assertEquals(await platform.fs.exists(join(root, "generated/compose/docker-compose.php-php85.yml")), true);
+    assertEquals(await platform.fs.exists(join(root, "generated/compose/docker-compose.mysql84.yml")), true);
+    const phpCompose = await platform.fs.readText(join(root, "generated/compose/docker-compose.php-php85.yml"));
+    const mysqlCompose = await platform.fs.readText(join(root, "generated/compose/docker-compose.mysql84.yml"));
     assertEquals(phpCompose.includes("x-log-common:"), true);
     assertEquals(phpCompose.match(/logging: \*/g)?.length, 3);
     assertEquals(phpCompose.includes("TZ: '${TZ:-UTC}'"), true);
@@ -224,9 +205,7 @@ bunRuntime.test("default PHP-FPM reload uses the shell kill builtin", async () =
     });
 
     assertEquals(
-      process.calls.some(
-        ({ command }) => command.slice(-6).join(" ") === "exec -T php85 sh -c kill -USR2 1",
-      ),
+      process.calls.some(({ command }) => command.slice(-6).join(" ") === "exec -T php85 sh -c kill -USR2 1"),
       true,
     );
   } finally {
@@ -412,145 +391,105 @@ bunRuntime.test("ondemand FPM profile renders only ondemand directives", async (
   }
 });
 
-bunRuntime.test(
-  "disabled app retains data and emits no vhost, pool, or runner config",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-disabled-" });
-    try {
-      const platform = testPlatform(root);
-      const render = new RenderService(platform);
-      let state = provisionApp(platform, createEmptyState(), {
-        slug: "paused",
-        domain: "paused.test",
-      }).state;
-      await platform.fs.mkdirp(platform.paths.appHome("paused"));
-      await platform.fs.writeText(join(platform.paths.appHome("paused"), "keep.txt"), "data");
-      await render.apply(state, { renderOnly: true, skipValidate: true });
-      assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")), true);
+bunRuntime.test("disabled app retains data and emits no vhost, pool, or runner config", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-disabled-" });
+  try {
+    const platform = testPlatform(root);
+    const render = new RenderService(platform);
+    let state = provisionApp(platform, createEmptyState(), {
+      slug: "paused",
+      domain: "paused.test",
+    }).state;
+    await platform.fs.mkdirp(platform.paths.appHome("paused"));
+    await platform.fs.writeText(join(platform.paths.appHome("paused"), "keep.txt"), "data");
+    await render.apply(state, { renderOnly: true, skipValidate: true });
+    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")), true);
 
-      state = setAppEnabled(state, "paused", false, platform.clock.nowIso()).state;
-      await render.apply(state, { renderOnly: true, skipValidate: true });
-      assertEquals(state.apps.paused?.enabled, false);
-      assertEquals(
-        await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")),
-        false,
-      );
-      assertEquals(
-        await platform.fs.exists(join(root, "generated/php/php85/pools/paused.conf")),
-        false,
-      );
-      assertEquals(
-        await platform.fs.exists(join(root, "generated/runner/php85/cron/paused.crontab")),
-        false,
-      );
-      assertEquals(
-        await platform.fs.readText(join(platform.paths.appHome("paused"), "keep.txt")),
-        "data",
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
+    state = setAppEnabled(state, "paused", false, platform.clock.nowIso()).state;
+    await render.apply(state, { renderOnly: true, skipValidate: true });
+    assertEquals(state.apps.paused?.enabled, false);
+    assertEquals(await platform.fs.exists(join(root, "generated/nginx/sites/paused.conf")), false);
+    assertEquals(await platform.fs.exists(join(root, "generated/php/php85/pools/paused.conf")), false);
+    assertEquals(await platform.fs.exists(join(root, "generated/runner/php85/cron/paused.crontab")), false);
+    assertEquals(await platform.fs.readText(join(platform.paths.appHome("paused"), "keep.txt")), "data");
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("app apply emits INI-safe pool marker, include file, and code/ docroot", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
+  try {
+    const platform = testPlatform(root);
+    const store = new StateStore(platform);
+    const render = new RenderService(platform);
+    await store.init();
+    let state = await store.load();
+    state = provisionApp(platform, state, {
+      slug: "alpha",
+      domain: "alpha.test",
+      documentRoot: "public",
+    }).state;
+    await store.save(state);
+    await render.apply(state, {
+      renderOnly: true,
+      skipValidate: true,
+    });
+
+    const pool = await platform.fs.readText(join(root, "generated/php/php85/pools/alpha.conf"));
+    assertEquals(pool.startsWith("; bento-managed: true\n"), true);
+    assertEquals(pool.includes("# bento-managed"), false);
+    assertEquals(pool.includes("[alpha]"), true);
+    assertEquals(pool.includes("listen = /run/php-fpm/alpha.sock"), true);
+
+    const includeFile = await platform.fs.readText(join(root, "generated/php/php85/zz-bento-pools.conf"));
+    assertEquals(includeFile.includes("include=/usr/local/etc/php-fpm.d/bento/*.conf"), true);
+
+    const vhost = await platform.fs.readText(join(root, "generated/nginx/sites/alpha.conf"));
+    assertEquals(vhost.includes("root /home/alpha/code/public;"), true);
+    assertEquals(vhost.includes("fastcgi_pass unix:/run/php-fpm/php85/alpha.sock;"), true);
+    for (const name of ["server.d", "http.d", "https.d"]) {
+      assertEquals((await platform.fs.stat(join(root, "custom/nginx/apps/alpha", name))).isDirectory, true);
     }
-  },
-);
 
-bunRuntime.test(
-  "app apply emits INI-safe pool marker, include file, and code/ docroot",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
-    try {
-      const platform = testPlatform(root);
-      const store = new StateStore(platform);
-      const render = new RenderService(platform);
-      await store.init();
-      let state = await store.load();
-      state = provisionApp(platform, state, {
-        slug: "alpha",
-        domain: "alpha.test",
-        documentRoot: "public",
-      }).state;
-      await store.save(state);
-      await render.apply(state, {
-        renderOnly: true,
-        skipValidate: true,
-      });
+    const phpCompose = await platform.fs.readText(join(root, "generated/compose/docker-compose.php-php85.yml"));
+    assertEquals(phpCompose.includes("zz-bento-pools.conf:/usr/local/etc/php-fpm.d/zz-bento-pools.conf:ro"), true);
+    assertEquals(phpCompose.includes("entrypoint.sh:/usr/local/bin/bento-php-entrypoint:ro"), true);
+    // PHP-FPM needs ptrace to write slow-request backtraces to each pool's slowlog.
+    assertEquals(phpCompose.includes("SYS_PTRACE"), true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
-      const pool = await platform.fs.readText(join(root, "generated/php/php85/pools/alpha.conf"));
-      assertEquals(pool.startsWith("; bento-managed: true\n"), true);
-      assertEquals(pool.includes("# bento-managed"), false);
-      assertEquals(pool.includes("[alpha]"), true);
-      assertEquals(pool.includes("listen = /run/php-fpm/alpha.sock"), true);
+bunRuntime.test("enabled process app renders private Unix-socket proxy without an FPM pool", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-process-render-" });
+  try {
+    const platform = testPlatform(root);
+    const store = new StateStore(platform);
+    const render = new RenderService(platform);
+    await store.init();
+    let state = await store.load();
+    const provisioned = provisionApp(platform, state, {
+      slug: "api",
+      domain: "api.example",
+      kind: "process",
+      processLanguage: "node",
+      processVersion: "24",
+      processCommand: ["node", "server.js"],
+    });
+    state = setAppEnabled(provisioned.state, "api", true, platform.clock.nowIso()).state;
+    await render.apply(state, { renderOnly: true, skipValidate: true });
 
-      const includeFile = await platform.fs.readText(
-        join(root, "generated/php/php85/zz-bento-pools.conf"),
-      );
-      assertEquals(includeFile.includes("include=/usr/local/etc/php-fpm.d/bento/*.conf"), true);
-
-      const vhost = await platform.fs.readText(join(root, "generated/nginx/sites/alpha.conf"));
-      assertEquals(vhost.includes("root /home/alpha/code/public;"), true);
-      assertEquals(vhost.includes("fastcgi_pass unix:/run/php-fpm/php85/alpha.sock;"), true);
-      for (const name of ["server.d", "http.d", "https.d"]) {
-        assertEquals(
-          (await platform.fs.stat(join(root, "custom/nginx/apps/alpha", name))).isDirectory,
-          true,
-        );
-      }
-
-      const phpCompose = await platform.fs.readText(
-        join(root, "generated/compose/docker-compose.php-php85.yml"),
-      );
-      assertEquals(
-        phpCompose.includes("zz-bento-pools.conf:/usr/local/etc/php-fpm.d/zz-bento-pools.conf:ro"),
-        true,
-      );
-      assertEquals(
-        phpCompose.includes("entrypoint.sh:/usr/local/bin/bento-php-entrypoint:ro"),
-        true,
-      );
-      // PHP-FPM needs ptrace to write slow-request backtraces to each pool's slowlog.
-      assertEquals(phpCompose.includes("SYS_PTRACE"), true);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
-
-bunRuntime.test(
-  "enabled process app renders private Unix-socket proxy without an FPM pool",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-process-render-" });
-    try {
-      const platform = testPlatform(root);
-      const store = new StateStore(platform);
-      const render = new RenderService(platform);
-      await store.init();
-      let state = await store.load();
-      const provisioned = provisionApp(platform, state, {
-        slug: "api",
-        domain: "api.example",
-        kind: "process",
-        processLanguage: "node",
-        processVersion: "24",
-        processCommand: ["node", "server.js"],
-      });
-      state = setAppEnabled(provisioned.state, "api", true, platform.clock.nowIso()).state;
-      await render.apply(state, { renderOnly: true, skipValidate: true });
-
-      const vhost = await platform.fs.readText(join(root, "generated/nginx/sites/api.conf"));
-      assertEquals(vhost.includes("server unix:/run/bento-apps/api/http.sock;"), true);
-      assertEquals(vhost.includes("proxy_pass http://app_api;"), true);
-      assertEquals(vhost.includes("fastcgi_pass"), false);
-      assertEquals(
-        await platform.fs.exists(join(root, "generated/php/php85/pools/api.conf")),
-        false,
-      );
-      assertEquals(
-        await platform.fs.exists(join(root, "generated/compose/docker-compose.app-api.yml")),
-        true,
-      );
-      assertEquals(await platform.fs.exists(join(root, "docker/process/Dockerfile")), true);
-      assertEquals(await platform.fs.exists(join(root, "docker/process/entrypoint.sh")), true);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const vhost = await platform.fs.readText(join(root, "generated/nginx/sites/api.conf"));
+    assertEquals(vhost.includes("server unix:/run/bento-apps/api/http.sock;"), true);
+    assertEquals(vhost.includes("proxy_pass http://app_api;"), true);
+    assertEquals(vhost.includes("fastcgi_pass"), false);
+    assertEquals(await platform.fs.exists(join(root, "generated/php/php85/pools/api.conf")), false);
+    assertEquals(await platform.fs.exists(join(root, "generated/compose/docker-compose.app-api.yml")), true);
+    assertEquals(await platform.fs.exists(join(root, "docker/process/Dockerfile")), true);
+    assertEquals(await platform.fs.exists(join(root, "docker/process/entrypoint.sh")), true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});

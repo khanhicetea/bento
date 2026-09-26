@@ -2,24 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import type { ReactNode } from "react";
 import { Archive, Database, HardDrive, Server } from "lucide-react";
-import {
-  DomainError,
-  DomainLoading,
-  EmptyPanel,
-  StackNotReady,
-} from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, EmptyPanel, StackNotReady } from "../../components/DomainState.tsx";
 import { orpc } from "../../api/client.ts";
 import { DatabaseManager } from "./DatabaseManager.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
 
 export function DatabasesPage() {
@@ -45,20 +33,11 @@ export function DatabasesPage() {
   const fileBindings = data.bindings.filter(
     (binding) => binding.engine === "sqlite" || binding.engine === "litestream",
   );
-  const databaseCount = data.bindings.reduce(
-    (total, binding) => total + binding.resources.length,
-    0,
-  );
-  const fileDatabaseCount = fileBindings.reduce(
-    (total, binding) => total + binding.resources.length,
-    0,
-  );
+  const databaseCount = data.bindings.reduce((total, binding) => total + binding.resources.length, 0);
+  const fileDatabaseCount = fileBindings.reduce((total, binding) => total + binding.resources.length, 0);
 
   return (
-    <section
-      className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4"
-      aria-live="polite"
-    >
+    <section className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4" aria-live="polite">
       <div className="flex items-end justify-between gap-6 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -87,11 +66,7 @@ export function DatabasesPage() {
       ) : (
         <>
           <div className="mt-8 grid grid-cols-4 gap-3 max-[1050px]:grid-cols-2 max-[560px]:grid-cols-1">
-            <Summary
-              value={databaseCount}
-              label="Attached databases"
-              icon={<Database className="size-4" />}
-            />
+            <Summary value={databaseCount} label="Attached databases" icon={<Database className="size-4" />} />
             <Summary
               value={data.services.length}
               label="Managed services"
@@ -103,11 +78,7 @@ export function DatabasesPage() {
               label="Applications using data"
               icon={<HardDrive className="size-4" />}
             />
-            <Summary
-              value={data.backups.length}
-              label="Backup artifacts"
-              icon={<Archive className="size-4" />}
-            />
+            <Summary value={data.backups.length} label="Backup artifacts" icon={<Archive className="size-4" />} />
           </div>
 
           <SectionHeading
@@ -166,9 +137,7 @@ export function DatabasesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {binding.engine === "litestream" ? "Litestream" : "SQLite"}
-                            </Badge>
+                            <Badge variant="outline">{binding.engine === "litestream" ? "Litestream" : "SQLite"}</Badge>
                           </TableCell>
                           <TableCell>
                             <code className="text-xs">{resource}</code>

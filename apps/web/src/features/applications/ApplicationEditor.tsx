@@ -26,21 +26,11 @@ type ApplicationEditorProps = {
   onSave: (input: SaveApplicationInput) => Promise<Application>;
 };
 
-export function ApplicationEditor({
-  application,
-  settings,
-  error,
-  saving,
-  onClose,
-  onSave,
-}: ApplicationEditorProps) {
+export function ApplicationEditor({ application, settings, error, saving, onClose, onSave }: ApplicationEditorProps) {
   const primaryDatabase = application?.databases[0];
   const initialDatabase = primaryDatabase
     ? databaseSelection(primaryDatabase.engine, primaryDatabase.service)
-    : databaseSelection(
-        settings.defaults?.databaseEngine ?? "sqlite",
-        settings.defaults?.databaseService,
-      );
+    : databaseSelection(settings.defaults?.databaseEngine ?? "sqlite", settings.defaults?.databaseService);
   const [database, setDatabase] = useState(initialDatabase);
   const [tls, setTls] = useState(application?.tls ?? "shared");
   const [kind, setKind] = useState<Application["kind"]>(application?.kind ?? "php");
@@ -66,16 +56,12 @@ export function ApplicationEditor({
       ...(kind === "php"
         ? {
             documentRoot: String(form.get("documentRoot") ?? "").trim(),
-            entrypointMode: String(
-              form.get("entrypointMode"),
-            ) as SaveApplicationInput["entrypointMode"],
+            entrypointMode: String(form.get("entrypointMode")) as SaveApplicationInput["entrypointMode"],
             phpVersion: String(form.get("phpVersion")),
             fpmProfile: String(form.get("fpmProfile")),
           }
         : {
-            processLanguage: String(
-              form.get("processLanguage"),
-            ) as SaveApplicationInput["processLanguage"],
+            processLanguage: String(form.get("processLanguage")) as SaveApplicationInput["processLanguage"],
             processVersion: String(form.get("processVersion") ?? "").trim(),
             processCommand: String(form.get("processCommand") ?? "")
               .split("\n")
@@ -86,17 +72,13 @@ export function ApplicationEditor({
             processHealthPath: String(form.get("processHealthPath") ?? "").trim() || undefined,
           }),
       tls,
-      tlsCertificatePath:
-        tls === "external" ? String(form.get("tlsCertificatePath") ?? "").trim() : undefined,
+      tlsCertificatePath: tls === "external" ? String(form.get("tlsCertificatePath") ?? "").trim() : undefined,
       tlsKeyPath: tls === "external" ? String(form.get("tlsKeyPath") ?? "").trim() : undefined,
       accessLog: form.get("accessLog") === "on",
       databaseEngine,
       databaseService,
       createDatabase: relationalDatabase && form.get("createDatabase") === "on",
-      databaseName:
-        relationalDatabase && form.get("createDatabase") === "on"
-          ? databaseName || undefined
-          : undefined,
+      databaseName: relationalDatabase && form.get("createDatabase") === "on" ? databaseName || undefined : undefined,
     };
 
     try {
@@ -171,8 +153,7 @@ export function ApplicationEditor({
                 </label>
                 <label className="col-span-full">
                   <FieldLabel>
-                    Aliases{" "}
-                    <span className="font-normal text-muted-foreground">(comma-separated)</span>
+                    Aliases <span className="font-normal text-muted-foreground">(comma-separated)</span>
                   </FieldLabel>
                   <Input
                     className="w-full"
@@ -201,9 +182,7 @@ export function ApplicationEditor({
                     onChange={(event) => setKind(event.target.value as Application["kind"])}
                   >
                     <NativeSelectOption value="php">PHP-FPM application</NativeSelectOption>
-                    <NativeSelectOption value="process">
-                      Node.js, Bun, or Python process
-                    </NativeSelectOption>
+                    <NativeSelectOption value="process">Node.js, Bun, or Python process</NativeSelectOption>
                   </NativeSelect>
                   {!creating && <FieldHint>Runtime kind cannot be changed in place.</FieldHint>}
                 </label>
@@ -256,12 +235,8 @@ export function ApplicationEditor({
                         name="entrypointMode"
                         defaultValue={application?.entrypointMode ?? "front-controller"}
                       >
-                        <NativeSelectOption value="front-controller">
-                          Front controller
-                        </NativeSelectOption>
-                        <NativeSelectOption value="legacy">
-                          Direct PHP files (legacy)
-                        </NativeSelectOption>
+                        <NativeSelectOption value="front-controller">Front controller</NativeSelectOption>
+                        <NativeSelectOption value="legacy">Direct PHP files (legacy)</NativeSelectOption>
                       </NativeSelect>
                     </label>
                   </>
@@ -356,24 +331,17 @@ export function ApplicationEditor({
                           key={`${service.engine}:${service.service}`}
                           value={databaseSelection(service.engine, service.service)}
                         >
-                          {service.engine === "mysql" ? "MySQL" : "PostgreSQL"} {service.version} (
-                          {service.service})
+                          {service.engine === "mysql" ? "MySQL" : "PostgreSQL"} {service.version} ({service.service})
                         </NativeSelectOption>
                       ))}
                       <NativeSelectOption value="sqlite">SQLite</NativeSelectOption>
-                      <NativeSelectOption value="litestream">
-                        SQLite + Litestream
-                      </NativeSelectOption>
+                      <NativeSelectOption value="litestream">SQLite + Litestream</NativeSelectOption>
                     </NativeSelect>
                   </label>
                   {relationalDatabase && (
                     <>
                       <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-3">
-                        <Checkbox
-                          name="createDatabase"
-                          defaultChecked={creating}
-                          className="mt-0.5"
-                        />
+                        <Checkbox name="createDatabase" defaultChecked={creating} className="mt-0.5" />
                         <span className="text-sm">
                           <span className="font-medium">Create database</span>
                           <small className="mt-1 block text-xs text-muted-foreground">
@@ -410,9 +378,7 @@ export function ApplicationEditor({
                     value={tls}
                     onChange={(event) => setTls(event.target.value as Application["tls"])}
                   >
-                    <NativeSelectOption value="shared">
-                      Shared starter certificate
-                    </NativeSelectOption>
+                    <NativeSelectOption value="shared">Shared starter certificate</NativeSelectOption>
                     <NativeSelectOption value="self-ca">Stack private CA</NativeSelectOption>
                     <NativeSelectOption value="acme">ACME</NativeSelectOption>
                     <NativeSelectOption value="external">External certificate</NativeSelectOption>
@@ -465,20 +431,10 @@ export function ApplicationEditor({
   );
 }
 
-function SectionHeading({
-  icon,
-  title,
-  description,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
+function SectionHeading({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-primary">
-        {icon}
-      </span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-primary">{icon}</span>
       <div>
         <h3 className="m-0 text-base font-semibold">{title}</h3>
         <p className="m-0 mt-1 text-sm text-muted-foreground">{description}</p>

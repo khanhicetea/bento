@@ -14,13 +14,7 @@ import {
 
 type ConnectionState = "connecting" | "connected" | "closed" | "error";
 
-export function ApplicationTerminalDialog({
-  application,
-  onClose,
-}: {
-  application: Application;
-  onClose: () => void;
-}) {
+export function ApplicationTerminalDialog({ application, onClose }: { application: Application; onClose: () => void }) {
   const [terminalElement, setTerminalElement] = useState<HTMLDivElement | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [attempt, setAttempt] = useState(0);
@@ -135,8 +129,7 @@ export function ApplicationTerminalDialog({
           signal: outputAbort.signal,
           headers: { accept: "application/octet-stream" },
         });
-        if (!outputResponse.ok || !outputResponse.body)
-          throw new Error("Unable to attach shell output");
+        if (!outputResponse.ok || !outputResponse.body) throw new Error("Unable to attach shell output");
         if (!active) return;
 
         setConnectionState("connected");
@@ -169,9 +162,7 @@ export function ApplicationTerminalDialog({
       input.dispose();
       outputAbort.abort();
       if (sessionId) {
-        void fetch(`/api/terminal/${sessionId}`, { method: "DELETE", keepalive: true }).catch(
-          () => undefined,
-        );
+        void fetch(`/api/terminal/${sessionId}`, { method: "DELETE", keepalive: true }).catch(() => undefined);
       }
       terminal.dispose();
     };

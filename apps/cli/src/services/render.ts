@@ -207,8 +207,7 @@ export class RenderService {
 
       for (const file of candidate.files) {
         const dest = join(staging, file.relPath);
-        const content =
-          typeof file.content === "string" ? new TextEncoder().encode(file.content) : file.content;
+        const content = typeof file.content === "string" ? new TextEncoder().encode(file.content) : file.content;
         await this.platform.fs.writeBytes(dest, content, file.mode);
       }
 
@@ -305,8 +304,7 @@ export class RenderService {
         await this.writeJournal(journal);
 
         if (!options.skipValidate) {
-          const validators =
-            options.validators ?? defaultValidators(this.platform, reloadPlan, state);
+          const validators = options.validators ?? defaultValidators(this.platform, reloadPlan, state);
           try {
             for (const v of validators) {
               await v.validate();
@@ -388,10 +386,7 @@ export class RenderService {
           // best effort
         }
         await this.clearJournal();
-        throw renderError(
-          `render/apply failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          cause,
-        );
+        throw renderError(`render/apply failed: ${cause instanceof Error ? cause.message : String(cause)}`, cause);
       }
     } finally {
       await release();
@@ -465,12 +460,7 @@ export class RenderService {
 
   private async listManagedFiles(liveRoot: string): Promise<string[]> {
     const result: string[] = [];
-    const skip = new Set([
-      ".staging",
-      ".transaction-backup",
-      ".render-journal.json",
-      ".generation.json",
-    ]);
+    const skip = new Set([".staging", ".transaction-backup", ".render-journal.json", ".generation.json"]);
 
     const walk = async (dir: string, prefix: string) => {
       if (!(await this.platform.fs.exists(dir))) return;
@@ -518,10 +508,7 @@ export class RenderService {
   }
 }
 
-async function ensureNginxCustomizationDirs(
-  platform: Platform,
-  state: DesiredState,
-): Promise<void> {
+async function ensureNginxCustomizationDirs(platform: Platform, state: DesiredState): Promise<void> {
   const dir = join(platform.paths.paths.root, "custom", "nginx");
   await platform.fs.mkdirp(dir, 0o755);
   for (const name of NGINX_CUSTOM_DIRS) {
@@ -571,11 +558,7 @@ function isDockerUnavailable(text: string): boolean {
   );
 }
 
-function defaultValidators(
-  platform: Platform,
-  plan: ReloadPlan,
-  state: DesiredState,
-): ServiceValidator[] {
+function defaultValidators(platform: Platform, plan: ReloadPlan, state: DesiredState): ServiceValidator[] {
   const validators: ServiceValidator[] = [];
 
   // Compose fragment assembly: validate merged project when Docker is available;
@@ -627,9 +610,7 @@ function defaultValidators(
           .catch(() => ({ code: 0, stdout: "", stderr: "skipped" }));
         const detail = `${result.stderr}\n${result.stdout}`;
         if (result.code !== 0 && !isDockerUnavailable(detail)) {
-          throw platformError(
-            `php-fpm validation failed for ${svc}: ${result.stderr || result.stdout}`,
-          );
+          throw platformError(`php-fpm validation failed for ${svc}: ${result.stderr || result.stdout}`);
         }
       },
     });
@@ -664,14 +645,8 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
         if (r.code !== 0 && /issuer "[^"]+" is missing/.test(detail)) {
           const restarted = await soft(["docker", "compose", "restart", "nginx"]);
           const restartDetail = `${restarted.stderr}\n${restarted.stdout}`;
-          if (
-            restarted.code !== 0 &&
-            !isDockerUnavailable(restartDetail) &&
-            restarted.code !== 124
-          ) {
-            throw platformError(
-              `nginx ACME issuer migration restart failed: ${restarted.stderr || restarted.stdout}`,
-            );
+          if (restarted.code !== 0 && !isDockerUnavailable(restartDetail) && restarted.code !== 124) {
+            throw platformError(`nginx ACME issuer migration restart failed: ${restarted.stderr || restarted.stdout}`);
           }
         } else if (r.code !== 0 && !isDockerUnavailable(detail) && r.code !== 124) {
           // Stopped/unavailable services are not fatal; config is ready for next start.
@@ -687,25 +662,10 @@ function defaultReloader(platform: Platform, state: DesiredState): ServiceReload
         // Reconcile generated service directories into s6's mutable /run scan
         // tree. New/removed/changed services are handled without restarting the
         // runner container or unrelated app services.
-        const reconciled = await soft([
-          "docker",
-          "compose",
-          "exec",
-          "-T",
-          svc,
-          "/usr/local/bin/bento-s6-reconcile",
-        ]);
+        const reconciled = await soft(["docker", "compose", "exec", "-T", svc, "/usr/local/bin/bento-s6-reconcile"]);
         const reconcileDetail = `${reconciled.stderr}\n${reconciled.stdout}`;
-        if (
-          reconciled.code !== 0 &&
-          !isDockerUnavailable(reconcileDetail) &&
-          reconciled.code !== 124
-        ) {
-          throw platformError(
-            `s6 service reconciliation failed for ${svc}: ${
-              reconciled.stderr || reconciled.stdout
-            }`,
-          );
+        if (reconciled.code !== 0 && !isDockerUnavailable(reconcileDetail) && reconciled.code !== 124) {
+          throw platformError(`s6 service reconciliation failed for ${svc}: ${reconciled.stderr || reconciled.stdout}`);
         }
       }
     },

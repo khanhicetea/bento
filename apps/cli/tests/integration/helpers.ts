@@ -127,9 +127,7 @@ export function home(h: StackHarness, slug: string, ...parts: string[]): string 
 }
 
 /** Run docker compose config -q against the stack's generated file list. */
-export async function composeConfigValidate(
-  h: StackHarness,
-): Promise<{ ok: boolean; detail: string }> {
+export async function composeConfigValidate(h: StackHarness): Promise<{ ok: boolean; detail: string }> {
   if (!(await isComposeAvailable())) {
     return { ok: false, detail: "docker compose unavailable" };
   }

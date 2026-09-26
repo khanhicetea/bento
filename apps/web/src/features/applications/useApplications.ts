@@ -1,10 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  AddApplicationDatabaseInput,
-  Application,
-  ApplicationList,
-  SaveApplicationInput,
-} from "@bento/shared";
+import type { AddApplicationDatabaseInput, Application, ApplicationList, SaveApplicationInput } from "@bento/shared";
 import { orpc } from "../../api/client.ts";
 
 export function useApplications() {
@@ -13,9 +8,8 @@ export function useApplications() {
   const saveMutation = useMutation(
     orpc.applications.save.mutationOptions({
       onSuccess(updated) {
-        queryClient.setQueryData<ApplicationList>(
-          orpc.applications.list.queryKey({ input: {} }),
-          (current) => upsertApplication(current, updated),
+        queryClient.setQueryData<ApplicationList>(orpc.applications.list.queryKey({ input: {} }), (current) =>
+          upsertApplication(current, updated),
         );
       },
       onError() {
@@ -30,9 +24,8 @@ export function useApplications() {
   const addDatabaseMutation = useMutation(
     orpc.applications.addDatabase.mutationOptions({
       onSuccess(updated) {
-        queryClient.setQueryData<ApplicationList>(
-          orpc.applications.list.queryKey({ input: {} }),
-          (current) => upsertApplication(current, updated),
+        queryClient.setQueryData<ApplicationList>(orpc.applications.list.queryKey({ input: {} }), (current) =>
+          upsertApplication(current, updated),
         );
       },
     }),
@@ -40,9 +33,8 @@ export function useApplications() {
   const setEnabledMutation = useMutation(
     orpc.applications.setEnabled.mutationOptions({
       onSuccess(updated) {
-        queryClient.setQueryData<ApplicationList>(
-          orpc.applications.list.queryKey({ input: {} }),
-          (current) => upsertApplication(current, updated),
+        queryClient.setQueryData<ApplicationList>(orpc.applications.list.queryKey({ input: {} }), (current) =>
+          upsertApplication(current, updated),
         );
       },
     }),
@@ -50,9 +42,8 @@ export function useApplications() {
   const setRunningMutation = useMutation(
     orpc.applications.setRunning.mutationOptions({
       onSuccess(updated) {
-        queryClient.setQueryData<ApplicationList>(
-          orpc.applications.list.queryKey({ input: {} }),
-          (current) => upsertApplication(current, updated),
+        queryClient.setQueryData<ApplicationList>(orpc.applications.list.queryKey({ input: {} }), (current) =>
+          upsertApplication(current, updated),
         );
       },
     }),
@@ -60,17 +51,13 @@ export function useApplications() {
   const removeMutation = useMutation(
     orpc.applications.remove.mutationOptions({
       onSuccess(removed) {
-        queryClient.setQueryData<ApplicationList>(
-          orpc.applications.list.queryKey({ input: {} }),
-          (current) =>
-            current
-              ? {
-                  ...current,
-                  applications: current.applications.filter(
-                    (application) => application.slug !== removed.slug,
-                  ),
-                }
-              : current,
+        queryClient.setQueryData<ApplicationList>(orpc.applications.list.queryKey({ input: {} }), (current) =>
+          current
+            ? {
+                ...current,
+                applications: current.applications.filter((application) => application.slug !== removed.slug),
+              }
+            : current,
         );
       },
     }),
@@ -137,16 +124,11 @@ export function useApplications() {
   };
 }
 
-function upsertApplication(
-  current: ApplicationList | undefined,
-  updated: Application,
-): ApplicationList | undefined {
+function upsertApplication(current: ApplicationList | undefined, updated: Application): ApplicationList | undefined {
   if (!current) return current;
   const exists = current.applications.some((application) => application.slug === updated.slug);
   const applications = exists
-    ? current.applications.map((application) =>
-        application.slug === updated.slug ? updated : application,
-      )
+    ? current.applications.map((application) => (application.slug === updated.slug ? updated : application))
     : [...current.applications, updated];
   applications.sort((left, right) => left.slug.localeCompare(right.slug));
   return { ...current, applications };

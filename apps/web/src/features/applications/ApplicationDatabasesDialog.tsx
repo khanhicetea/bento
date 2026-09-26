@@ -87,17 +87,10 @@ export function ApplicationDatabasesDialog({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const [engine, service] = selection.split(":") as [
-      AddApplicationDatabaseInput["engine"],
-      string | undefined,
-    ];
+    const [engine, service] = selection.split(":") as [AddApplicationDatabaseInput["engine"], string | undefined];
     const databasePart = String(form.get("databaseName") ?? "").trim();
     const databaseName =
-      relational && databasePart
-        ? `${application.slug}_${databasePart}`
-        : relational
-          ? application.slug
-          : undefined;
+      relational && databasePart ? `${application.slug}_${databasePart}` : relational ? application.slug : undefined;
     try {
       await onAdd({
         slug: application.slug,
@@ -126,8 +119,7 @@ export function ApplicationDatabasesDialog({
               <div className="min-w-0">
                 <DialogTitle className="text-xl">Application databases</DialogTitle>
                 <DialogDescription className="mt-1">
-                  Manage data bindings for{" "}
-                  <strong className="font-medium text-foreground">{application.slug}</strong>
+                  Manage data bindings for <strong className="font-medium text-foreground">{application.slug}</strong>
                 </DialogDescription>
               </div>
             </div>
@@ -144,19 +136,14 @@ export function ApplicationDatabasesDialog({
           )}
 
           <form onSubmit={(event) => void submit(event)}>
-            <fieldset
-              disabled={adding}
-              className="rounded-xl border border-border bg-muted/30 p-3.5 max-[600px]:p-3"
-            >
+            <fieldset disabled={adding} className="rounded-xl border border-border bg-muted/30 p-3.5 max-[600px]:p-3">
               <div className="mb-3 flex items-center gap-2.5">
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-card text-primary shadow-sm">
                   <Plus className="size-4" aria-hidden="true" />
                 </span>
                 <div>
                   <h3 className="m-0 text-sm font-semibold">Add a database</h3>
-                  <p className="m-0 mt-0.5 text-xs text-muted-foreground">
-                    Choose a managed service or local file.
-                  </p>
+                  <p className="m-0 mt-0.5 text-xs text-muted-foreground">Choose a managed service or local file.</p>
                 </div>
               </div>
               <div
@@ -216,10 +203,7 @@ export function ApplicationDatabasesDialog({
             </h3>
             <div className="grid gap-3">
               {groups.map((group) => (
-                <section
-                  className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
-                  key={group.key}
-                >
+                <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" key={group.key}>
                   <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -228,9 +212,7 @@ export function ApplicationDatabasesDialog({
                       <div className="min-w-0">
                         <h4 className="m-0 truncate text-sm font-semibold">{group.label}</h4>
                         {group.service && (
-                          <p className="m-0 mt-0.5 truncate text-xs text-muted-foreground">
-                            {group.service}
-                          </p>
+                          <p className="m-0 mt-0.5 truncate text-xs text-muted-foreground">{group.service}</p>
                         )}
                       </div>
                     </div>
@@ -248,9 +230,7 @@ export function ApplicationDatabasesDialog({
                           ) : (
                             <Eye className="size-3.5" aria-hidden="true" />
                           )}
-                          {credentialsTarget?.key === group.key
-                            ? "Hide credentials"
-                            : "Show credentials"}
+                          {credentialsTarget?.key === group.key ? "Hide credentials" : "Show credentials"}
                         </Button>
                       )}
                       {group.bindings.some((item) => item.primary) && (
@@ -265,8 +245,7 @@ export function ApplicationDatabasesDialog({
                           if (isManagedEngine(binding.engine)) {
                             const engine = binding.engine;
                             return binding.names.map((name) => {
-                              const backingUp =
-                                backup.isPending && backup.variables?.database === name;
+                              const backingUp = backup.isPending && backup.variables?.database === name;
                               return (
                                 <TableRow key={`${binding.engine}:${binding.service}:${name}`}>
                                   <TableCell>
@@ -297,8 +276,7 @@ export function ApplicationDatabasesDialog({
 
                           if (binding.engine === "sqlite") {
                             const database = binding.file ?? "Local application database";
-                            const backingUp =
-                              backup.isPending && backup.variables?.database === database;
+                            const backingUp = backup.isPending && backup.variables?.database === database;
                             return (
                               <TableRow key={`${binding.engine}:${database}`}>
                                 <TableCell>
@@ -328,9 +306,7 @@ export function ApplicationDatabasesDialog({
                           }
 
                           return (
-                            <TableRow
-                              key={`${binding.engine}:${binding.service ?? binding.file ?? "local"}`}
-                            >
+                            <TableRow key={`${binding.engine}:${binding.service ?? binding.file ?? "local"}`}>
                               <TableCell>
                                 <code>{binding.file ?? "Local application database"}</code>
                               </TableCell>
@@ -341,18 +317,13 @@ export function ApplicationDatabasesDialog({
                     </Table>
                   </div>
                   {credentialsTarget?.key === group.key && (
-                    <div
-                      className="border-t border-border bg-muted/20 px-4 py-3"
-                      aria-live="polite"
-                    >
+                    <div className="border-t border-border bg-muted/20 px-4 py-3" aria-live="polite">
                       {credentials.isPending && !credentials.data && (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Spinner /> Loading credentials…
                         </div>
                       )}
-                      {credentials.error && (
-                        <Alert variant="destructive">{messageOf(credentials.error)}</Alert>
-                      )}
+                      {credentials.error && <Alert variant="destructive">{messageOf(credentials.error)}</Alert>}
                       {credentials.data && (
                         <div>
                           <p className="m-0 text-xs text-muted-foreground">
@@ -360,16 +331,9 @@ export function ApplicationDatabasesDialog({
                           </p>
                           <dl className="mt-3 grid gap-3 sm:grid-cols-2">
                             <CredentialField label="DB host" value={credentials.data.host} />
-                            <CredentialField
-                              label="DB port"
-                              value={String(credentials.data.port)}
-                            />
+                            <CredentialField label="DB port" value={String(credentials.data.port)} />
                             <CredentialField label="DB user" value={credentials.data.user} />
-                            <CredentialField
-                              label="DB password"
-                              value={credentials.data.password}
-                              secret
-                            />
+                            <CredentialField label="DB password" value={credentials.data.password} secret />
                             <CredentialField
                               label="DB name(s)"
                               value={credentials.data.databases.join(", ") || "None"}
@@ -396,8 +360,7 @@ export function ApplicationDatabasesDialog({
           </DialogFooter>
 
           <p className="m-0 text-xs leading-relaxed text-muted-foreground">
-            Database removal and permanent data deletion remain unavailable in the web control
-            plane.
+            Database removal and permanent data deletion remain unavailable in the web control plane.
           </p>
         </div>
       </DialogContent>
@@ -416,9 +379,7 @@ function groupDatabases(application: Application, settings: ApplicationList): Da
           )
         : undefined;
     const key = managed ? `${binding.engine}:${binding.service}` : binding.engine;
-    const label = managed
-      ? `${databaseLabel(binding.engine)} ${managed.version}`
-      : databaseLabel(binding.engine);
+    const label = managed ? `${databaseLabel(binding.engine)} ${managed.version}` : databaseLabel(binding.engine);
     const service = managed?.service;
     const group = groups.get(key) ?? {
       key,
@@ -445,15 +406,7 @@ function databaseLabel(engine: string): string {
   return "SQLite";
 }
 
-function CredentialField({
-  label,
-  value,
-  secret = false,
-}: {
-  label: string;
-  value: string;
-  secret?: boolean;
-}) {
+function CredentialField({ label, value, secret = false }: { label: string; value: string; secret?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   const displayedValue = value;
 
@@ -470,9 +423,7 @@ function CredentialField({
             className="h-8 min-w-0 flex-1 rounded-md border border-input bg-muted px-2 py-1 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
           />
         ) : (
-          <code className="min-w-0 flex-1 break-all rounded-md bg-muted px-2 py-1.5 text-xs">
-            {displayedValue}
-          </code>
+          <code className="min-w-0 flex-1 break-all rounded-md bg-muted px-2 py-1.5 text-xs">{displayedValue}</code>
         )}
         {secret && (
           <>

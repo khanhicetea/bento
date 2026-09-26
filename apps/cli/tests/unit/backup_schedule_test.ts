@@ -1,9 +1,4 @@
-import {
-  runtime as bunRuntime,
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertStringIncludes } from "../runtime.ts";
 import { join } from "node:path";
 import { isBentoError } from "../../src/domain/errors.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
@@ -47,98 +42,92 @@ function testPlatform(
   };
 }
 
-bunRuntime.test(
-  "backup schedule helpers quote commands and preserve unrelated crontab bytes",
-  () => {
-    assertEquals(shellSingleQuote("/opt/Bento's bin"), "'/opt/Bento'\\''s bin'");
-    const root = "/srv/bento stack";
-    const fragment = backupScheduleCronFragment({
-      schedule: "  15   3 * * *  ",
-      bentoBin: "/opt/Bento's bin",
-      stackRoot: root,
-    });
-    assertStringIncludes(fragment, "15 3 * * * '/opt/Bento'\\''s bin' --stack '/srv/bento stack'");
-    assertStringIncludes(fragment, "backup schedule run >/dev/null 2>&1");
+bunRuntime.test("backup schedule helpers quote commands and preserve unrelated crontab bytes", () => {
+  assertEquals(shellSingleQuote("/opt/Bento's bin"), "'/opt/Bento'\\''s bin'");
+  const root = "/srv/bento stack";
+  const fragment = backupScheduleCronFragment({
+    schedule: "  15   3 * * *  ",
+    bentoBin: "/opt/Bento's bin",
+    stackRoot: root,
+  });
+  assertStringIncludes(fragment, "15 3 * * * '/opt/Bento'\\''s bin' --stack '/srv/bento stack'");
+  assertStringIncludes(fragment, "backup schedule run >/dev/null 2>&1");
 
-    const other = backupScheduleCronFragment({
-      schedule: "0 4 * * *",
-      bentoBin: "/usr/local/bin/bento",
-      stackRoot: "/srv/other",
+  const other = backupScheduleCronFragment({
+    schedule: "0 4 * * *",
+    bentoBin: "/usr/local/bin/bento",
+    stackRoot: "/srv/other",
+  });
+  const existing = `MAILTO=ops@example.test\n${other}5 5 * * * echo keep`;
+  const installed = mergeBackupScheduleCrontab(existing, {
+    action: "install",
+    stackRoot: root,
+    fragment,
+  });
+  assertEquals(installed.changed, true);
+  assertEquals(installed.crontab.startsWith(existing + "\n"), true);
+  assertStringIncludes(installed.crontab, other);
+
+  const idempotent = mergeBackupScheduleCrontab(installed.crontab, {
+    action: "install",
+    stackRoot: root,
+    fragment,
+  });
+  assertEquals(idempotent.changed, false);
+  const removed = mergeBackupScheduleCrontab(installed.crontab, {
+    action: "remove",
+    stackRoot: root,
+  });
+  assertEquals(removed.crontab, existing + "\n");
+  assertEquals(removed.crontab.includes("/srv/other"), true);
+});
+
+bunRuntime.test("backup schedule service registers, reports, and unregisters through injected crontab", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-backup-schedule-service-",
+  });
+  try {
+    let crontab = "MAILTO=ops@example.test\n";
+    const platform = testPlatform(root, (command, options) => {
+      assertEquals(command[0], "crontab");
+      if (command[1] === "-l") return { code: 0, stdout: crontab, stderr: "" };
+      assertEquals(command, ["crontab", "-"]);
+      crontab = String(options?.stdin ?? "");
+      return { code: 0, stdout: "", stderr: "" };
     });
-    const existing = `MAILTO=ops@example.test\n${other}5 5 * * * echo keep`;
-    const installed = mergeBackupScheduleCrontab(existing, {
-      action: "install",
-      stackRoot: root,
-      fragment,
+    const bin = join(root, "bento executable");
+    await platform.fs.writeText(bin, "#!/bin/sh\n", 0o700);
+
+    const installed = await registerBackupSchedule(platform, {
+      schedule: "15 3 * * *",
+      bentoBin: bin,
     });
     assertEquals(installed.changed, true);
-    assertEquals(installed.crontab.startsWith(existing + "\n"), true);
-    assertStringIncludes(installed.crontab, other);
+    assertEquals(
+      (
+        await registerBackupSchedule(platform, {
+          schedule: "15 3 * * *",
+          bentoBin: bin,
+        })
+      ).changed,
+      false,
+    );
+    const status = await getBackupScheduleStatus(platform);
+    assertEquals(status.installed, true);
+    assertEquals(status.schedule, "15 3 * * *");
+    assertEquals(status.lastRun, null);
 
-    const idempotent = mergeBackupScheduleCrontab(installed.crontab, {
-      action: "install",
-      stackRoot: root,
-      fragment,
-    });
-    assertEquals(idempotent.changed, false);
-    const removed = mergeBackupScheduleCrontab(installed.crontab, {
-      action: "remove",
-      stackRoot: root,
-    });
-    assertEquals(removed.crontab, existing + "\n");
-    assertEquals(removed.crontab.includes("/srv/other"), true);
-  },
-);
-
-bunRuntime.test(
-  "backup schedule service registers, reports, and unregisters through injected crontab",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-backup-schedule-service-",
-    });
-    try {
-      let crontab = "MAILTO=ops@example.test\n";
-      const platform = testPlatform(root, (command, options) => {
-        assertEquals(command[0], "crontab");
-        if (command[1] === "-l") return { code: 0, stdout: crontab, stderr: "" };
-        assertEquals(command, ["crontab", "-"]);
-        crontab = String(options?.stdin ?? "");
-        return { code: 0, stdout: "", stderr: "" };
-      });
-      const bin = join(root, "bento executable");
-      await platform.fs.writeText(bin, "#!/bin/sh\n", 0o700);
-
-      const installed = await registerBackupSchedule(platform, {
-        schedule: "15 3 * * *",
-        bentoBin: bin,
-      });
-      assertEquals(installed.changed, true);
-      assertEquals(
-        (
-          await registerBackupSchedule(platform, {
-            schedule: "15 3 * * *",
-            bentoBin: bin,
-          })
-        ).changed,
-        false,
-      );
-      const status = await getBackupScheduleStatus(platform);
-      assertEquals(status.installed, true);
-      assertEquals(status.schedule, "15 3 * * *");
-      assertEquals(status.lastRun, null);
-
-      assertEquals((await unregisterBackupSchedule(platform)).changed, true);
-      assertEquals(crontab, "MAILTO=ops@example.test\n");
-      assertEquals((await unregisterBackupSchedule(platform)).changed, false);
-      assertEquals(
-        platform.process.calls.every((call) => call.command[0] === "crontab"),
-        true,
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    assertEquals((await unregisterBackupSchedule(platform)).changed, true);
+    assertEquals(crontab, "MAILTO=ops@example.test\n");
+    assertEquals((await unregisterBackupSchedule(platform)).changed, false);
+    assertEquals(
+      platform.process.calls.every((call) => call.command[0] === "crontab"),
+      true,
+    );
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("backup schedule serializes crontab updates across stack roots", async () => {
   const rootA = await bunRuntime.makeTempDir({
@@ -237,49 +226,46 @@ bunRuntime.test("database backup rejects overlapping batches without waiting", a
   }
 });
 
-bunRuntime.test(
-  "scheduled backup persists bounded redacted last-run records with private modes",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-backup-last-run-",
-    });
-    try {
-      const secret = "schedule-super-secret";
-      const platform = testPlatform(root, () => ({
-        code: 1,
-        stdout: "",
-        stderr: `password=${secret}`,
-      }));
-      let state = addPostgresVersion(createEmptyState(), "17");
-      state = provisionApp(platform, state, {
-        slug: "reports",
-        domain: "reports.test",
-        databaseEngine: "postgres",
-        postgresVersion: "17",
-        createDatabase: true,
-      }).state;
+bunRuntime.test("scheduled backup persists bounded redacted last-run records with private modes", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-backup-last-run-",
+  });
+  try {
+    const secret = "schedule-super-secret";
+    const platform = testPlatform(root, () => ({
+      code: 1,
+      stdout: "",
+      stderr: `password=${secret}`,
+    }));
+    let state = addPostgresVersion(createEmptyState(), "17");
+    state = provisionApp(platform, state, {
+      slug: "reports",
+      domain: "reports.test",
+      databaseEngine: "postgres",
+      postgresVersion: "17",
+      createDatabase: true,
+    }).state;
 
-      await assertRejects(() => runScheduledBackup(platform, state), Error, "dump failed");
-      const failed = await readBackupScheduleLastRun(platform);
-      assertEquals(failed?.status, "failed");
-      assertEquals(failed?.exitCode, 1);
-      assertEquals(failed?.error?.includes(secret), false);
-      assertStringIncludes(failed?.error ?? "", "password=***");
+    await assertRejects(() => runScheduledBackup(platform, state), Error, "dump failed");
+    const failed = await readBackupScheduleLastRun(platform);
+    assertEquals(failed?.status, "failed");
+    assertEquals(failed?.exitCode, 1);
+    assertEquals(failed?.error?.includes(secret), false);
+    assertStringIncludes(failed?.error ?? "", "password=***");
 
-      const recordPath = backupScheduleLastRunPath(platform);
-      assertEquals((await platform.fs.stat(recordPath)).mode & 0o777, 0o600);
-      assertEquals((await platform.fs.stat(join(recordPath, ".."))).mode & 0o777, 0o700);
+    const recordPath = backupScheduleLastRunPath(platform);
+    assertEquals((await platform.fs.stat(recordPath)).mode & 0o777, 0o600);
+    assertEquals((await platform.fs.stat(join(recordPath, ".."))).mode & 0o777, 0o700);
 
-      assertEquals(await runScheduledBackup(platform, createEmptyState()), []);
-      const succeeded = await readBackupScheduleLastRun(platform);
-      assertEquals(succeeded?.status, "succeeded");
-      assertEquals(succeeded?.exitCode, 0);
-      assertEquals(succeeded?.artifactCount, 0);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    assertEquals(await runScheduledBackup(platform, createEmptyState()), []);
+    const succeeded = await readBackupScheduleLastRun(platform);
+    assertEquals(succeeded?.status, "succeeded");
+    assertEquals(succeeded?.exitCode, 0);
+    assertEquals(succeeded?.artifactCount, 0);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("backup retention removes only allowlisted regular dump files", async () => {
   const root = await bunRuntime.makeTempDir({
@@ -291,21 +277,14 @@ bunRuntime.test("backup retention removes only allowlisted regular dump files", 
     await platform.fs.mkdirp(dir);
     const generated = Array.from(
       { length: 12 },
-      (_, index) =>
-        `postgres17_reports_2026-08-${String(index + 1).padStart(2, "0")}T03-15-00-000Z.sql.gz`,
+      (_, index) => `postgres17_reports_2026-08-${String(index + 1).padStart(2, "0")}T03-15-00-000Z.sql.gz`,
     );
     for (const name of generated) {
       await platform.fs.writeText(join(dir, name), "dump\n");
     }
     await platform.fs.writeText(join(dir, "aaa-manual.sql"), "keep\n");
-    await platform.fs.writeText(
-      join(dir, "postgres17_reports_2026-08-01T03-15-00-000Z.sql.zstd"),
-      "keep\n",
-    );
-    await platform.fs.writeText(
-      join(dir, "postgres17_reports_2026-99-99T99-99-99-999Z.sql.gz"),
-      "keep\n",
-    );
+    await platform.fs.writeText(join(dir, "postgres17_reports_2026-08-01T03-15-00-000Z.sql.zstd"), "keep\n");
+    await platform.fs.writeText(join(dir, "postgres17_reports_2026-99-99T99-99-99-999Z.sql.gz"), "keep\n");
     await platform.fs.writeText(join(dir, "notes.txt"), "keep\n");
     await platform.fs.writeText(join(dir, `${generated[11]}.partial`), "keep\n");
     await platform.fs.mkdirp(join(dir, "directory.sql"));

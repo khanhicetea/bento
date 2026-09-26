@@ -7,13 +7,7 @@ import {
 } from "#/services/access_log.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerLogCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("logs", "Access log control and reports", (y: YargsBuilder) =>
@@ -26,15 +20,13 @@ export function registerLogCommands(parser: YargsBuilder, state: RunState): Yarg
             .command(
               "enable",
               "Enable access logs for an app (nginx-only reload)",
-              (y3: YargsBuilder) =>
-                noApplyOption(y3.option("app", { type: "string", demandOption: true })),
+              (y3: YargsBuilder) => noApplyOption(y3.option("app", { type: "string", demandOption: true })),
               bind(state, cmdLogsAccessEnable),
             )
             .command(
               "disable",
               "Disable access logs (preserves existing files)",
-              (y3: YargsBuilder) =>
-                noApplyOption(y3.option("app", { type: "string", demandOption: true })),
+              (y3: YargsBuilder) => noApplyOption(y3.option("app", { type: "string", demandOption: true })),
               bind(state, cmdLogsAccessDisable),
             )
             .command(
@@ -88,21 +80,11 @@ async function cmdLogsAccessDisable(argv: ArgsWith<"app">, ctx: CliContext): Pro
   return await mutateAccessLog(argv, ctx, false);
 }
 
-async function mutateAccessLog(
-  argv: ArgsWith<"app">,
-  ctx: CliContext,
-  enabled: boolean,
-): Promise<number> {
+async function mutateAccessLog(argv: ArgsWith<"app">, ctx: CliContext, enabled: boolean): Promise<number> {
   const { app: slug } = argv;
   const noApply = wantsNoApply(argv);
   const result = await ctx.store.withExclusive(async (state) => {
-    const mutation = setAppAccessLog(
-      state,
-      slug,
-      enabled,
-      ctx.platform.clock.nowIso(),
-      ctx.platform,
-    );
+    const mutation = setAppAccessLog(state, slug, enabled, ctx.platform.clock.nowIso(), ctx.platform);
     if (!isNginxOnlyReloadPlan(mutation.reloadPlan)) {
       throw new Error("access log mutation must be nginx-only");
     }
@@ -167,9 +149,7 @@ async function cmdLogsAccessReport(argv: ArgsWith<"app">, ctx: CliContext): Prom
       tty = false;
     }
     if (!tty) {
-      ctx.log.error(
-        "GoAccess attach requires an interactive terminal; use HTML mode or --dry-run.",
-      );
+      ctx.log.error("GoAccess attach requires an interactive terminal; use HTML mode or --dry-run.");
       return 2;
     }
 

@@ -35,9 +35,7 @@ export function createProxy(
     const owner = state.domains[d];
     if (owner) {
       throw conflictError(
-        `domain ${d} is already owned by ${
-          owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`
-        }`,
+        `domain ${d} is already owned by ${owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`}`,
       );
     }
   }
@@ -120,9 +118,7 @@ export function validateUpstreams(upstreams: string[]): NginxUpstreamConfig {
 
   return {
     scheme: first.protocol.slice(0, -1) as "http" | "https",
-    servers: urls.map((url) =>
-      url.port ? url.host : `${url.hostname}:${url.protocol === "https:" ? "443" : "80"}`,
-    ),
+    servers: urls.map((url) => (url.port ? url.host : `${url.hostname}:${url.protocol === "https:" ? "443" : "80"}`)),
     uri,
   };
 }
@@ -136,9 +132,7 @@ export function updateProxy(
   const current = getProxyOrThrow(state, name);
 
   const domain = unwrap(parseDomainName(input.domain), "domain");
-  const aliases = (input.aliases ?? []).map((alias, index) =>
-    unwrap(parseDomainName(alias), `aliases[${index}]`),
-  );
+  const aliases = (input.aliases ?? []).map((alias, index) => unwrap(parseDomainName(alias), `aliases[${index}]`));
   validateProxyDomains(domain, aliases);
   validateUpstreams(input.upstreams);
 
@@ -146,9 +140,7 @@ export function updateProxy(
     const owner = state.domains[candidate];
     if (owner && !(owner.kind === "proxy" && owner.name === name)) {
       throw conflictError(
-        `domain ${candidate} is already owned by ${
-          owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`
-        }`,
+        `domain ${candidate} is already owned by ${owner.kind === "app" ? `app ${owner.slug}` : `proxy ${owner.name}`}`,
       );
     }
   }
@@ -241,12 +233,7 @@ export function deleteProxy(
   };
 }
 
-export function setProxyTls(
-  state: DesiredState,
-  name: string,
-  tls: TlsMode,
-  now: string,
-): DesiredState {
+export function setProxyTls(state: DesiredState, name: string, tls: TlsMode, now: string): DesiredState {
   const proxy = getProxyOrThrow(state, name);
   return {
     ...state,

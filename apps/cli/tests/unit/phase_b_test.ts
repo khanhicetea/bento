@@ -71,9 +71,7 @@ function testPlatform(
   };
 }
 
-async function withRoot(
-  fn: (root: string, platform: ReturnType<typeof testPlatform>) => Promise<void>,
-) {
+async function withRoot(fn: (root: string, platform: ReturnType<typeof testPlatform>) => Promise<void>) {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-phase-b-" });
   try {
     const platform = testPlatform(root);
@@ -95,10 +93,7 @@ bunRuntime.test("root mysql shell uses generated socket option file", async () =
     assertEquals(plan.stage, undefined);
     assertEquals(plan.cleanup, undefined);
     assertEquals(plan.optionPath, "/etc/bento/mysql/root.cnf");
-    assertEquals(
-      plan.open.command.includes("--defaults-extra-file=/etc/bento/mysql/root.cnf"),
-      true,
-    );
+    assertEquals(plan.open.command.includes("--defaults-extra-file=/etc/bento/mysql/root.cnf"), true);
     assertEquals(plan.open.command.includes("--default-character-set=utf8mb4"), true);
   });
 });
@@ -161,11 +156,7 @@ bunRuntime.test("queryProcesslist fails closed on non-zero", async () => {
       stdout: "",
       stderr: "boom",
     }));
-    await assertRejects(
-      () => queryProcesslist(platform, "mysql84", "pw"),
-      Error,
-      "processlist failed",
-    );
+    await assertRejects(() => queryProcesslist(platform, "mysql84", "pw"), Error, "processlist failed");
   });
 });
 
@@ -187,13 +178,7 @@ bunRuntime.test("access log enable is nginx-only and disable preserves path", as
     assertEquals(isNginxOnlyReloadPlan(enabled.reloadPlan), true);
     assertEquals(describeReloadPlan(enabled.reloadPlan), ["nginx"]);
 
-    const disabled = setAppAccessLog(
-      enabled.state,
-      "demo",
-      false,
-      platform.clock.nowIso(),
-      platform,
-    );
+    const disabled = setAppAccessLog(enabled.state, "demo", false, platform.clock.nowIso(), platform);
     assertEquals(disabled.enabled, false);
     assertEquals(disabled.preservedLogPath.includes("demo.access.log"), true);
     // path is under stack logs
@@ -350,9 +335,7 @@ bunRuntime.test("upstream template digest is stable for same content", async () 
 // --- B5 Host maintenance / crontab ------------------------------------------
 
 bunRuntime.test("crontab merge preserves unrelated entries", () => {
-  const existing = ["MAILTO=ops@example.com", "0 1 * * * /usr/local/bin/host-backup", ""].join(
-    "\n",
-  );
+  const existing = ["MAILTO=ops@example.com", "0 1 * * * /usr/local/bin/host-backup", ""].join("\n");
 
   const fragment = maintenanceCronFragment({
     bentoBin: "/usr/local/bin/bento",
@@ -385,13 +368,7 @@ bunRuntime.test("crontab merge preserves unrelated entries", () => {
 });
 
 bunRuntime.test("stripManagedBlock removes only bento section", () => {
-  const body = [
-    "A=1",
-    CRON_BEGIN_MARKER,
-    "15 3 * * * bento maintenance run",
-    CRON_END_MARKER,
-    "B=2",
-  ].join("\n");
+  const body = ["A=1", CRON_BEGIN_MARKER, "15 3 * * * bento maintenance run", CRON_END_MARKER, "B=2"].join("\n");
   const stripped = stripManagedBlock(body);
   assertEquals(stripped.includes("A=1"), true);
   assertEquals(stripped.includes("B=2"), true);
@@ -413,10 +390,7 @@ bunRuntime.test("maintenance prunes old rotated logs and keeps active", async ()
       true,
     );
     assertEquals(await platform.fs.exists(join(dir, "demo.access.log")), true);
-    assertEquals(
-      await platform.fs.exists(join(dir, "demo.access.log.2020-01-01T00-00-00-000Z")),
-      false,
-    );
+    assertEquals(await platform.fs.exists(join(dir, "demo.access.log.2020-01-01T00-00-00-000Z")), false);
   });
 });
 

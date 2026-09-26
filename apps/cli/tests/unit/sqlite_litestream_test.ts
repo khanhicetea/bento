@@ -1,42 +1,29 @@
-import {
-  runtime as bunRuntime,
-  assert,
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "../runtime.ts";
+import { runtime as bunRuntime, assert, assertEquals, assertRejects, assertStringIncludes } from "../runtime.ts";
 import { basename, join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { createPlatform, createRecordingProcessRunner } from "../../src/platform/mod.ts";
 import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { assembleComposeDocuments } from "../../src/services/compose.ts";
-import {
-  generateAll,
-  generateLitestreamConfig,
-  generateLitestreamEnvironment,
-} from "../../src/services/generate.ts";
+import { generateAll, generateLitestreamConfig, generateLitestreamEnvironment } from "../../src/services/generate.ts";
 import { exportSqliteBackup } from "../../src/services/sqlite.ts";
 
-bunRuntime.test(
-  "Litestream state has one explicit private SQLite file and no relational credentials",
-  () => {
-    const platform = createPlatform("/tmp/sqlite-state-test", bunRuntime.cwd());
-    const result = provisionApp(platform, createEmptyState("2026-07-29T00:00:00.000Z"), {
-      slug: "lite-app",
-      domain: "lite-app.test",
-      databaseEngine: "litestream",
-      createDatabase: true,
-    });
-    assert(result.app.database.engine === "litestream");
-    assert(/^lite-app_[a-f0-9]{10}$/.test(result.app.database.file.id));
-    const json = stateToJson(result.state);
-    assertStringIncludes(json, '"path": "sqlite/lite-app_');
-    assertStringIncludes(json, '/lite-app.sqlite"');
-    assert(!json.includes('"password"'), "Litestream app binding must not serialize DB passwords");
-    assert(parseDesiredState(JSON.parse(json)).ok);
-  },
-);
+bunRuntime.test("Litestream state has one explicit private SQLite file and no relational credentials", () => {
+  const platform = createPlatform("/tmp/sqlite-state-test", bunRuntime.cwd());
+  const result = provisionApp(platform, createEmptyState("2026-07-29T00:00:00.000Z"), {
+    slug: "lite-app",
+    domain: "lite-app.test",
+    databaseEngine: "litestream",
+    createDatabase: true,
+  });
+  assert(result.app.database.engine === "litestream");
+  assert(/^lite-app_[a-f0-9]{10}$/.test(result.app.database.file.id));
+  const json = stateToJson(result.state);
+  assertStringIncludes(json, '"path": "sqlite/lite-app_');
+  assertStringIncludes(json, '/lite-app.sqlite"');
+  assert(!json.includes('"password"'), "Litestream app binding must not serialize DB passwords");
+  assert(parseDesiredState(JSON.parse(json)).ok);
+});
 
 bunRuntime.test("other state versions are rejected without migration", () => {
   const unsupported = {
@@ -134,115 +121,109 @@ bunRuntime.test("stack SQLite backup renders one constrained-root directory watc
   assert(!compose.content.includes("networks:\n      - private"));
 });
 
-bunRuntime.test(
-  "render regenerates the Litestream environment after stack .env changes",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-litestream-render-",
-    });
-    try {
-      const platform = createPlatform(root, bunRuntime.cwd());
-      const state = createEmptyState("2026-07-29T00:00:00.000Z");
-      state.sqliteBackup = {
-        provider: "litestream",
-        destination: "primary-s3",
-        syncInterval: "60s",
-        snapshotInterval: "6h",
-        snapshotRetention: "168h",
-        l0Retention: "24h",
-        enabled: true,
-      };
-      const writeEnv = async (accessKey: string) => {
-        await platform.fs.atomicWriteText(
-          platform.paths.paths.envFile,
-          [
-            "COMPOSE_PROJECT_NAME=test",
-            "BENTO_LITESTREAM_ENABLED=true",
-            "S3_BUCKET_NAME=bucket",
-            "S3_REGION=us-east-1",
-            `S3_ACCESS_KEY_ID=${accessKey}`,
-            "S3_SECRET_ACCESS_KEY=secret",
-            "",
-          ].join("\n"),
-          0o600,
-        );
-      };
-      const renderedEnvironment = async () => {
-        const files = await generateAll(platform, state, "digest");
-        return files.find((file) => file.relPath === "secrets/litestream/stack-s3.env")!;
-      };
-
-      await writeEnv("old-key");
-      const first = await renderedEnvironment();
-      await writeEnv("new-key");
-      const second = await renderedEnvironment();
-
-      assertStringIncludes(first.content as string, "AWS_ACCESS_KEY_ID=old-key");
-      assertStringIncludes(second.content as string, "AWS_ACCESS_KEY_ID=new-key");
-      assertEquals(second.mode, 0o600);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
-
-bunRuntime.test(
-  "SQLite S3 export restores with integrity checking and refuses overwrite",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-sqlite-export-",
-    });
-    try {
-      const platform = createPlatform(root, bunRuntime.cwd());
-      const process = createRecordingProcessRunner(async (command) => {
-        const outputIndex = command.indexOf("-o");
-        if (outputIndex >= 0) {
-          const containerOutput = command[outputIndex + 1]!;
-          await platform.fs.writeBytes(
-            join(root, "litestream-meta", basename(containerOutput)),
-            new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]),
-          );
-        }
-        return { code: 0, stdout: "restored", stderr: "" };
-      });
-      platform.process = process;
-      await platform.fs.writeText(
+bunRuntime.test("render regenerates the Litestream environment after stack .env changes", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-litestream-render-",
+  });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    const state = createEmptyState("2026-07-29T00:00:00.000Z");
+    state.sqliteBackup = {
+      provider: "litestream",
+      destination: "primary-s3",
+      syncInterval: "60s",
+      snapshotInterval: "6h",
+      snapshotRetention: "168h",
+      l0Retention: "24h",
+      enabled: true,
+    };
+    const writeEnv = async (accessKey: string) => {
+      await platform.fs.atomicWriteText(
         platform.paths.paths.envFile,
-        "COMPOSE_PROJECT_NAME=test-stack\nS3_BUCKET_NAME=test-bucket\nS3_REGION=us-east-1\n",
+        [
+          "COMPOSE_PROJECT_NAME=test",
+          "BENTO_LITESTREAM_ENABLED=true",
+          "S3_BUCKET_NAME=bucket",
+          "S3_REGION=us-east-1",
+          `S3_ACCESS_KEY_ID=${accessKey}`,
+          "S3_SECRET_ACCESS_KEY=secret",
+          "",
+        ].join("\n"),
+        0o600,
       );
-      const provisioned = provisionApp(platform, createEmptyState(), {
-        slug: "lite",
-        domain: "lite.test",
-        databaseEngine: "litestream",
-      });
-      provisioned.state.sqliteBackup = {
-        provider: "litestream",
-        destination: "primary-s3",
-        syncInterval: "60s",
-        snapshotInterval: "6h",
-        snapshotRetention: "168h",
-        l0Retention: "24h",
-        enabled: true,
-      };
+    };
+    const renderedEnvironment = async () => {
+      const files = await generateAll(platform, state, "digest");
+      return files.find((file) => file.relPath === "secrets/litestream/stack-s3.env")!;
+    };
 
-      const output = join(root, "recovery", "lite.sqlite");
-      assertEquals(await exportSqliteBackup(platform, provisioned.state, "lite", output), output);
-      assertEquals((await platform.fs.stat(output)).mode & 0o777, 0o600);
-      const restoreCall = process.calls[0]!.command;
-      assert(restoreCall.includes("-integrity-check"));
-      assert(restoreCall.includes("full"));
-      assert(restoreCall.some((arg) => arg.startsWith("s3://test-bucket/bento/test-stack/")));
+    await writeEnv("old-key");
+    const first = await renderedEnvironment();
+    await writeEnv("new-key");
+    const second = await renderedEnvironment();
 
-      await assertRejects(
-        () => exportSqliteBackup(platform, provisioned.state, "lite", output),
-        Error,
-        "refusing to overwrite existing file",
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    assertStringIncludes(first.content as string, "AWS_ACCESS_KEY_ID=old-key");
+    assertStringIncludes(second.content as string, "AWS_ACCESS_KEY_ID=new-key");
+    assertEquals(second.mode, 0o600);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("SQLite S3 export restores with integrity checking and refuses overwrite", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-sqlite-export-",
+  });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    const process = createRecordingProcessRunner(async (command) => {
+      const outputIndex = command.indexOf("-o");
+      if (outputIndex >= 0) {
+        const containerOutput = command[outputIndex + 1]!;
+        await platform.fs.writeBytes(
+          join(root, "litestream-meta", basename(containerOutput)),
+          new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]),
+        );
+      }
+      return { code: 0, stdout: "restored", stderr: "" };
+    });
+    platform.process = process;
+    await platform.fs.writeText(
+      platform.paths.paths.envFile,
+      "COMPOSE_PROJECT_NAME=test-stack\nS3_BUCKET_NAME=test-bucket\nS3_REGION=us-east-1\n",
+    );
+    const provisioned = provisionApp(platform, createEmptyState(), {
+      slug: "lite",
+      domain: "lite.test",
+      databaseEngine: "litestream",
+    });
+    provisioned.state.sqliteBackup = {
+      provider: "litestream",
+      destination: "primary-s3",
+      syncInterval: "60s",
+      snapshotInterval: "6h",
+      snapshotRetention: "168h",
+      l0Retention: "24h",
+      enabled: true,
+    };
+
+    const output = join(root, "recovery", "lite.sqlite");
+    assertEquals(await exportSqliteBackup(platform, provisioned.state, "lite", output), output);
+    assertEquals((await platform.fs.stat(output)).mode & 0o777, 0o600);
+    const restoreCall = process.calls[0]!.command;
+    assert(restoreCall.includes("-integrity-check"));
+    assert(restoreCall.includes("full"));
+    assert(restoreCall.some((arg) => arg.startsWith("s3://test-bucket/bento/test-stack/")));
+
+    await assertRejects(
+      () => exportSqliteBackup(platform, provisioned.state, "lite", output),
+      Error,
+      "refusing to overwrite existing file",
+    );
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("stack watcher remains rendered after the last SQLite app leaves state", () => {
   const state = createEmptyState("2026-07-29T00:00:00.000Z");
@@ -257,8 +238,6 @@ bunRuntime.test("stack watcher remains rendered after the last SQLite app leaves
   };
   assertEquals(generateLitestreamConfig(state).length, 1);
   const platform = createPlatform("/tmp/sqlite-retained-compose-test", bunRuntime.cwd());
-  const compose = assembleComposeDocuments(platform, state).find((file) =>
-    file.relPath.endsWith("litestream.yml"),
-  );
+  const compose = assembleComposeDocuments(platform, state).find((file) => file.relPath.endsWith("litestream.yml"));
   assert(compose, "retained SQLite directories remain watched until prune");
 });

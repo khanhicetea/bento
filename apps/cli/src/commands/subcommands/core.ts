@@ -31,17 +31,11 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
       (y: YargsBuilder) =>
         y.option("name", {
           type: "string",
-          describe:
-            "Stable stack name used to prefix Docker resources (default: bento; not derived from --stack)",
+          describe: "Stable stack name used to prefix Docker resources (default: bento; not derived from --stack)",
         }),
       bind(state, cmdInit),
     )
-    .command(
-      "migrate",
-      "Apply pending desired-state database schema migrations",
-      () => {},
-      bind(state, cmdMigrate),
-    )
+    .command("migrate", "Apply pending desired-state database schema migrations", () => {}, bind(state, cmdMigrate))
     .command("render", "Render generated config (no reload)", () => {}, bind(state, cmdRender))
     .command(
       "apply",
@@ -135,12 +129,8 @@ async function cmdMigrate(_argv: CliArgs, ctx: CliContext): Promise<number> {
 async function cmdInit(argv: CliArgs, ctx: CliContext): Promise<number> {
   const state = await ctx.store.init({ projectName: argv.name });
   const environment = await loadStackComposeEnvironment(ctx.platform);
-  ctx.log.info(
-    `initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateDb}`,
-  );
-  ctx.log.info(
-    `defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`,
-  );
+  ctx.log.info(`initialized stack '${environment.projectName}' at ${ctx.platform.paths.paths.stateDb}`);
+  ctx.log.info(`defaults: php=${state.defaults.phpVersion} mysql=${state.defaults.database.version}`);
   return 0;
 }
 
@@ -157,10 +147,7 @@ async function cmdRender(_argv: CliArgs, ctx: CliContext): Promise<number> {
   return 0;
 }
 
-async function cmdApply(
-  argv: ArgsWith<"renderOnly" | "skipValidate" | "preview">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdApply(argv: ArgsWith<"renderOnly" | "skipValidate" | "preview">, ctx: CliContext): Promise<number> {
   const { renderOnly, skipValidate, preview } = argv;
   const state = await ctx.store.load();
 
@@ -228,9 +215,7 @@ async function cmdTestStack(
 ): Promise<number> {
   const { name } = argv;
   // Only honor --stack when the operator actually passed it (yargs always fills the default).
-  const explicitStack = process.argv
-    .slice(2)
-    .some((a) => a === "--stack" || a.startsWith("--stack="));
+  const explicitStack = process.argv.slice(2).some((a) => a === "--stack" || a.startsWith("--stack="));
   const opts = resolveTestStackOptions({
     name,
     stack: explicitStack ? argv.stack : undefined,

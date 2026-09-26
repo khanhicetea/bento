@@ -46,10 +46,10 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
       skipValidate: true,
     });
 
-    const up = await platform.process.run(
-      await composeArgs(platform, state, ["up", "-d", "postgres17"]),
-      { cwd: root, timeoutMs: 180_000 },
-    );
+    const up = await platform.process.run(await composeArgs(platform, state, ["up", "-d", "postgres17"]), {
+      cwd: root,
+      timeoutMs: 180_000,
+    });
     if (up.code !== 0) {
       console.log(`  [soft-skip] postgres:17 unavailable: ${up.stderr.slice(0, 240)}`);
       return;
@@ -57,14 +57,7 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
     let ready = false;
     for (let attempt = 0; attempt < 30; attempt++) {
       const result = await platform.process.run(
-        await composeArgs(platform, state, [
-          "exec",
-          "-T",
-          "postgres17",
-          "pg_isready",
-          "-U",
-          "postgres",
-        ]),
+        await composeArgs(platform, state, ["exec", "-T", "postgres17", "pg_isready", "-U", "postgres"]),
         { cwd: root, timeoutMs: 5_000 },
       );
       if (result.code === 0) {
@@ -115,10 +108,10 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
     assertEquals(cross.code !== 0, true);
 
     // The CLI image reads the protected app credential file; no password is placed on host argv.
-    const build = await platform.process.run(
-      await composeArgs(platform, state, ["build", "php85"]),
-      { cwd: root, timeoutMs: 600_000 },
-    );
+    const build = await platform.process.run(await composeArgs(platform, state, ["build", "php85"]), {
+      cwd: root,
+      timeoutMs: 600_000,
+    });
     if (build.code !== 0) {
       console.log(`  [soft-skip] PHP image build unavailable: ${build.stderr.slice(-240)}`);
       return;
@@ -133,9 +126,7 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
       { cwd: root, timeoutMs: 600_000 },
     );
     if (php.code !== 0 && /GLIBC_[0-9.]+.*not found/.test(php.stderr)) {
-      console.log(
-        `  [soft-skip] PHP image ABI is incompatible with this Docker host: ${php.stderr.trim()}`,
-      );
+      console.log(`  [soft-skip] PHP image ABI is incompatible with this Docker host: ${php.stderr.trim()}`);
       return;
     }
     assertEquals(php.code, 0, `pdo_pgsql failed: ${php.stdout}\n${php.stderr}`);
@@ -149,9 +140,7 @@ bunRuntime.test("PG-03/PG-05 PostgreSQL PHP connectivity and two-app isolation",
         })
         .catch(() => undefined);
     }
-    await platform.process
-      .run(["docker", "volume", "rm", `${project}_postgres17-data`])
-      .catch(() => undefined);
+    await platform.process.run(["docker", "volume", "rm", `${project}_postgres17-data`]).catch(() => undefined);
     for (const slug of ["alpha", "beta"]) {
       const home = join(root, "homes", slug);
       if (await platform.fs.exists(home)) {

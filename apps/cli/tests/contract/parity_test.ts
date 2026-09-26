@@ -151,10 +151,7 @@ bunRuntime.test("materialize uses digest-addressed cache and skips republish", a
     assertEquals(first.digest.length, 64);
     assertEquals(first.published, true);
     assertEquals(await bunRuntime.stat(join(first.cacheDir, ".ready")).then(() => true), true);
-    assertEquals(
-      await bunRuntime.stat(join(stack, "docker/nginx/Dockerfile")).then(() => true),
-      true,
-    );
+    assertEquals(await bunRuntime.stat(join(stack, "docker/nginx/Dockerfile")).then(() => true), true);
     assertEquals(await bunRuntime.stat(join(stack, "helpers/bento.php")).then(() => true), true);
     const drainPhp = await bunRuntime.readTextFile(join(stack, "helpers/deploy-drain.php"));
     const drainSh = await bunRuntime.readTextFile(join(stack, "helpers/deploy-drain.sh"));
@@ -163,10 +160,7 @@ bunRuntime.test("materialize uses digest-addressed cache and skips republish", a
     assertEquals(drainPhp.includes("umask($previousUmask);"), true);
     assertEquals(drainSh.includes("deploy-drain.php"), true);
     assertEquals(drainSh.includes("bento deploy drain"), false);
-    assertEquals(
-      await bunRuntime.stat(join(stack, "docker/php/helpers/deploy-drain.php")).then(() => true),
-      true,
-    );
+    assertEquals(await bunRuntime.stat(join(stack, "docker/php/helpers/deploy-drain.php")).then(() => true), true);
 
     const meta1 = await bunRuntime.readTextFile(join(stack, "docker/.materialized.json"));
     assertEquals(JSON.parse(meta1).digest, first.digest);
@@ -180,10 +174,7 @@ bunRuntime.test("materialize uses digest-addressed cache and skips republish", a
     // Cache entry remains the single source of truth
     const cacheDocker = join(first.cacheDir, "docker/nginx/Dockerfile");
     const pubDocker = join(stack, "docker/nginx/Dockerfile");
-    assertEquals(
-      await bunRuntime.readTextFile(cacheDocker),
-      await bunRuntime.readTextFile(pubDocker),
-    );
+    assertEquals(await bunRuntime.readTextFile(cacheDocker), await bunRuntime.readTextFile(pubDocker));
   });
 });
 
@@ -196,14 +187,9 @@ bunRuntime.test("source init/render/status smoke (F-28)", async () => {
     assertEquals(await runCli([...base, "version"]), 0);
 
     // digest-addressed cache present after render
-    const meta = JSON.parse(
-      await bunRuntime.readTextFile(join(stack, "docker/.materialized.json")),
-    );
+    const meta = JSON.parse(await bunRuntime.readTextFile(join(stack, "docker/.materialized.json")));
     assertEquals(typeof meta.digest, "string");
-    assertEquals(
-      await bunRuntime.stat(join(stack, ".asset-cache", meta.digest, ".ready")).then(() => true),
-      true,
-    );
+    assertEquals(await bunRuntime.stat(join(stack, ".asset-cache", meta.digest, ".ready")).then(() => true), true);
   });
 });
 
@@ -215,13 +201,9 @@ bunRuntime.test({
     const bin = await resolveBentoBin();
     if (!bin) {
       if (bunRuntime.env.get("REQUIRE_BENTO_BIN") === "1") {
-        throw new Error(
-          "BENTO_BIN not set and dist/bento missing; run `bun run compile` or `bun run test:parity`",
-        );
+        throw new Error("BENTO_BIN not set and dist/bento missing; run `bun run compile` or `bun run test:parity`");
       }
-      console.log(
-        "skip compiled parity: no BENTO_BIN / dist/bento (set REQUIRE_BENTO_BIN=1 to require)",
-      );
+      console.log("skip compiled parity: no BENTO_BIN / dist/bento (set REQUIRE_BENTO_BIN=1 to require)");
       return;
     }
 
@@ -287,21 +269,16 @@ bunRuntime.test({
           ).code,
           0,
         );
-        const shellPlan = await runBin(
-          bin,
-          ["--stack", stack, "postgres", "shell", "--app", "pgparity", "--print"],
-          { cwd: "/tmp", env },
-        );
+        const shellPlan = await runBin(bin, ["--stack", stack, "postgres", "shell", "--app", "pgparity", "--print"], {
+          cwd: "/tmp",
+          env,
+        });
         assertEquals(shellPlan.code, 0, shellPlan.stderr);
         assertEquals(shellPlan.stdout.includes("psql"), true);
         const state = await loadState(stack);
-        const postgresBinding = state.apps.pgparity!.databases.find(
-          (binding) => binding.engine === "postgres",
-        );
+        const postgresBinding = state.apps.pgparity!.databases.find((binding) => binding.engine === "postgres");
         assertEquals(
-          shellPlan.stdout.includes(
-            postgresBinding?.engine === "postgres" ? postgresBinding.password : "",
-          ),
+          shellPlan.stdout.includes(postgresBinding?.engine === "postgres" ? postgresBinding.password : ""),
           false,
         );
         assertEquals(
@@ -376,13 +353,7 @@ bunRuntime.test({
           await bunRuntime.remove(join(s, ".asset-cache"), { recursive: true }).catch(() => {});
         }
 
-        const srcCode = await runCli([
-          "--stack",
-          srcStack,
-          "--repo-root",
-          bunRuntime.cwd(),
-          "render",
-        ]);
+        const srcCode = await runCli(["--stack", srcStack, "--repo-root", bunRuntime.cwd(), "render"]);
         const binRender = await runBin(bin, ["--stack", binStack, "render"], {
           cwd: "/tmp",
           env: {
@@ -393,13 +364,7 @@ bunRuntime.test({
         assertEquals(srcCode, 0);
         assertEquals(binRender.code, 0, binRender.stderr + binRender.stdout);
 
-        const srcStatus = await runCli([
-          "--stack",
-          srcStack,
-          "--repo-root",
-          bunRuntime.cwd(),
-          "status",
-        ]);
+        const srcStatus = await runCli(["--stack", srcStack, "--repo-root", bunRuntime.cwd(), "status"]);
         const binStatus = await runBin(bin, ["--stack", binStack, "status"], {
           cwd: "/tmp",
           env: {
@@ -416,12 +381,8 @@ bunRuntime.test({
         assertEquals(normalizeParityText(srcState), normalizeParityText(binState));
 
         // Asset digests equal
-        const srcMeta = JSON.parse(
-          await bunRuntime.readTextFile(join(srcStack, "docker/.materialized.json")),
-        );
-        const binMeta = JSON.parse(
-          await bunRuntime.readTextFile(join(binStack, "docker/.materialized.json")),
-        );
+        const srcMeta = JSON.parse(await bunRuntime.readTextFile(join(srcStack, "docker/.materialized.json")));
+        const binMeta = JSON.parse(await bunRuntime.readTextFile(join(binStack, "docker/.materialized.json")));
         assertEquals(srcMeta.digest, binMeta.digest);
 
         // Generated managed files byte-equivalent (normalized)

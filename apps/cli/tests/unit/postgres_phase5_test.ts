@@ -1,10 +1,4 @@
-import {
-  runtime as bunRuntime,
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-  assertThrows,
-} from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertStringIncludes, assertThrows } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import type { Platform, RunOptions, RunResult } from "../../src/platform/mod.ts";
 import { createAssetResolver } from "../../src/platform/assets.ts";
@@ -79,53 +73,34 @@ bunRuntime.test("PostgreSQL database state enforces namespace, engine, and dupli
   );
 });
 
-bunRuntime.test(
-  "PostgreSQL operations target a selected binding without changing the primary",
-  () => {
-    const platform = testPlatform("/tmp/bento-pg5-multi");
-    let state = addPostgresVersion(addPostgresVersion(createEmptyState(), "16"), "17");
-    state = provisionApp(platform, state, {
-      slug: "demo",
-      domain: "demo.test",
-      databaseEngine: "postgres",
-      postgresVersion: "16",
-    }).state;
-    state = provisionApp(platform, state, {
-      slug: "demo",
-      domain: "demo.test",
-      databaseEngine: "postgres",
-      postgresVersion: "17",
-    }).state;
+bunRuntime.test("PostgreSQL operations target a selected binding without changing the primary", () => {
+  const platform = testPlatform("/tmp/bento-pg5-multi");
+  let state = addPostgresVersion(addPostgresVersion(createEmptyState(), "16"), "17");
+  state = provisionApp(platform, state, {
+    slug: "demo",
+    domain: "demo.test",
+    databaseEngine: "postgres",
+    postgresVersion: "16",
+  }).state;
+  state = provisionApp(platform, state, {
+    slug: "demo",
+    domain: "demo.test",
+    databaseEngine: "postgres",
+    postgresVersion: "17",
+  }).state;
 
-    const next = createPostgresAppDatabase(
-      state,
-      "demo",
-      "demo_events",
-      "2026-07-30T00:00:00Z",
-      "postgres17",
-    );
-    const app = next.apps.demo!;
-    const postgres16 = app.databases.find(
-      (binding) => binding.engine === "postgres" && binding.service === "postgres16",
-    );
-    const postgres17 = app.databases.find(
-      (binding) => binding.engine === "postgres" && binding.service === "postgres17",
-    );
+  const next = createPostgresAppDatabase(state, "demo", "demo_events", "2026-07-30T00:00:00Z", "postgres17");
+  const app = next.apps.demo!;
+  const postgres16 = app.databases.find((binding) => binding.engine === "postgres" && binding.service === "postgres16");
+  const postgres17 = app.databases.find((binding) => binding.engine === "postgres" && binding.service === "postgres17");
 
-    assertEquals(postgres16?.engine === "postgres" ? postgres16.databases.length : -1, 0);
-    assertEquals(
-      postgres17?.engine === "postgres"
-        ? postgres17.databases.map((database) => database.name)
-        : [],
-      ["demo_events"],
-    );
-    assertEquals(app.database.engine === "postgres" ? app.database.service : "", "postgres16");
-    assertEquals(
-      buildPostgresShellPlan(platform, { kind: "app", app }, { service: "postgres17" }).service,
-      "postgres17",
-    );
-  },
-);
+  assertEquals(postgres16?.engine === "postgres" ? postgres16.databases.length : -1, 0);
+  assertEquals(postgres17?.engine === "postgres" ? postgres17.databases.map((database) => database.name) : [], [
+    "demo_events",
+  ]);
+  assertEquals(app.database.engine === "postgres" ? app.database.service : "", "postgres16");
+  assertEquals(buildPostgresShellPlan(platform, { kind: "app", app }, { service: "postgres17" }).service, "postgres17");
+});
 
 bunRuntime.test("PostgreSQL database failure occurs before state can be recorded", async () => {
   const platform = testPlatform("/tmp/bento-pg5", (command) => ({
@@ -171,29 +146,22 @@ bunRuntime.test("PostgreSQL app shell stages password on stdin and always cleans
   assertEquals(platform.process.calls.at(-1)?.command.includes(plan.credentialPath), true);
 });
 
-bunRuntime.test(
-  "PostgreSQL root shell uses mounted pgpass and service resolution is engine-safe",
-  () => {
-    const platform = testPlatform("/tmp/bento-pg5");
-    const state = postgresState(platform);
-    const plan = buildPostgresShellPlan(platform, {
-      kind: "root",
-      service: "postgres17",
-    });
-    assertEquals(plan.stage, undefined);
-    assertStringIncludes(plan.open.command.join(" "), "PGPASSFILE=/etc/bento/postgres/root.pgpass");
-    assertEquals(resolvePostgresServices(state, { service: "17" }), ["postgres17"]);
-    const mysqlState = provisionApp(platform, state, {
-      slug: "myapp",
-      domain: "my.test",
-    }).state;
-    assertThrows(
-      () => resolvePostgresServices(mysqlState, { app: "myapp" }),
-      Error,
-      "not PostgreSQL-backed",
-    );
-  },
-);
+bunRuntime.test("PostgreSQL root shell uses mounted pgpass and service resolution is engine-safe", () => {
+  const platform = testPlatform("/tmp/bento-pg5");
+  const state = postgresState(platform);
+  const plan = buildPostgresShellPlan(platform, {
+    kind: "root",
+    service: "postgres17",
+  });
+  assertEquals(plan.stage, undefined);
+  assertStringIncludes(plan.open.command.join(" "), "PGPASSFILE=/etc/bento/postgres/root.pgpass");
+  assertEquals(resolvePostgresServices(state, { service: "17" }), ["postgres17"]);
+  const mysqlState = provisionApp(platform, state, {
+    slug: "myapp",
+    domain: "my.test",
+  }).state;
+  assertThrows(() => resolvePostgresServices(mysqlState, { app: "myapp" }), Error, "not PostgreSQL-backed");
+});
 
 bunRuntime.test("PostgreSQL size/activity parsing skips empty and malformed output", async () => {
   let call = 0;

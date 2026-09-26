@@ -83,9 +83,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
   };
 
   const expectedAuthorization =
-    options.basicAuth === undefined
-      ? undefined
-      : `Basic ${Buffer.from(options.basicAuth, "utf8").toString("base64")}`;
+    options.basicAuth === undefined ? undefined : `Basic ${Buffer.from(options.basicAuth, "utf8").toString("base64")}`;
 
   const maxTerminals = 4;
   let pendingTerminalCount = 0;
@@ -137,15 +135,11 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
         const sessionCookie = schedulerGatewayEnabled
           ? schedulerSessionCookie(schedulerSessions, cookieHeader, url.pathname)
           : undefined;
-        const withSecurity = (response: Response, cookie = sessionCookie) =>
-          applySecurity(response, cookie);
+        const withSecurity = (response: Response, cookie = sessionCookie) => applySecurity(response, cookie);
 
         if (schedulerApp !== undefined) {
           if (!schedulerGatewayEnabled) return schedulerDenied(404);
-          if (
-            !schedulerSessions.authorizes(cookieHeader, schedulerApp) &&
-            sessionCookie === undefined
-          )
+          if (!schedulerSessions.authorizes(cookieHeader, schedulerApp) && sessionCookie === undefined)
             return schedulerDenied(401);
           try {
             const state = await ctx.store.load();
@@ -186,9 +180,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
           if (!isSameOriginRequest(request))
             return withSecurity(new Response("Request origin denied", { status: 403 }));
           if (activeTerminals.size + pendingTerminalCount >= maxTerminals)
-            return withSecurity(
-              Response.json({ error: "Too many active terminal sessions" }, { status: 503 }),
-            );
+            return withSecurity(Response.json({ error: "Too many active terminal sessions" }, { status: 503 }));
           if (Number(request.headers.get("content-length") ?? 0) > 4_096)
             return withSecurity(new Response("Request too large", { status: 413 }));
 
@@ -196,20 +188,12 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
           try {
             const body = await readBoundedRequestText(request, 4_096);
             const input: unknown = body === null ? null : JSON.parse(body);
-            if (
-              input &&
-              typeof input === "object" &&
-              "app" in input &&
-              typeof input.app === "string"
-            )
+            if (input && typeof input === "object" && "app" in input && typeof input.app === "string")
               app = input.app.trim();
           } catch {
             // The validation response below covers malformed JSON.
           }
-          if (!app)
-            return withSecurity(
-              Response.json({ error: "Application is required" }, { status: 400 }),
-            );
+          if (!app) return withSecurity(Response.json({ error: "Application is required" }, { status: 400 }));
 
           pendingTerminalCount += 1;
           try {
@@ -228,39 +212,26 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
             activeTerminals.set(id, active);
             pendingTerminalCount -= 1;
             return withSecurity(
-              Response.json(
-                { id },
-                { headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } },
-              ),
+              Response.json({ id }, { headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" } }),
             );
           } catch {
             pendingTerminalCount -= 1;
             return withSecurity(
-              Response.json(
-                { error: "Unable to prepare shell for this application" },
-                { status: 400 },
-              ),
+              Response.json({ error: "Unable to prepare shell for this application" }, { status: 400 }),
             );
           }
         }
 
-        const terminalRoute = /^\/api\/terminal\/([a-f0-9]{48})(?:\/(output|input))?$/.exec(
-          url.pathname,
-        );
+        const terminalRoute = /^\/api\/terminal\/([a-f0-9]{48})(?:\/(output|input))?$/.exec(url.pathname);
         if (terminalRoute) {
           const id = terminalRoute[1]!;
           const action = terminalRoute[2];
           const active = activeTerminals.get(id);
-          if (!active)
-            return withSecurity(
-              Response.json({ error: "Terminal session not found" }, { status: 404 }),
-            );
+          if (!active) return withSecurity(Response.json({ error: "Terminal session not found" }, { status: 404 }));
 
           if (action === "output" && request.method === "GET") {
             if (active.attached)
-              return withSecurity(
-                new Response("Terminal output is already attached", { status: 409 }),
-              );
+              return withSecurity(new Response("Terminal output is already attached", { status: 409 }));
             active.attached = true;
             clearTimeout(active.idleTimer);
             const encoder = new TextEncoder();
@@ -293,9 +264,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
                     exit(exitCode) {
                       try {
                         controller.enqueue(
-                          encoder.encode(
-                            `\r\n\x1b[90mShell exited (code ${exitCode ?? "unknown"}).\x1b[0m\r\n`,
-                          ),
+                          encoder.encode(`\r\n\x1b[90mShell exited (code ${exitCode ?? "unknown"}).\x1b[0m\r\n`),
                         );
                       } catch {
                         // The output request may already be closed.
@@ -305,9 +274,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
                     },
                     error() {
                       try {
-                        controller.enqueue(
-                          encoder.encode("\r\n\x1b[31mUnable to start shell.\x1b[0m\r\n"),
-                        );
+                        controller.enqueue(encoder.encode("\r\n\x1b[31mUnable to start shell.\x1b[0m\r\n"));
                       } catch {
                         // The output request may already be closed.
                       }
@@ -346,8 +313,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
             if (Number(request.headers.get("content-length") ?? 0) > 64 * 1024)
               return withSecurity(new Response("Request too large", { status: 413 }));
             const body = await readBoundedRequestText(request, 64 * 1024);
-            if (body === null)
-              return withSecurity(new Response("Request too large", { status: 413 }));
+            if (body === null) return withSecurity(new Response("Request too large", { status: 413 }));
             const accepted = handleTerminalMessage(active.session, body);
             return withSecurity(new Response(null, { status: accepted ? 204 : 400 }));
           }
@@ -372,12 +338,9 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
         if (!/^[a-zA-Z0-9._/-]+$/.test(requested) || requested.includes(".."))
           return withSecurity(new Response("Not found", { status: 404 }));
         let file = Bun.file(embeddedAssets[requested] ?? join(assetRoot, requested));
+        if (!(await file.exists())) file = Bun.file(embeddedAssets["index.html"] ?? join(assetRoot, "index.html"));
         if (!(await file.exists()))
-          file = Bun.file(embeddedAssets["index.html"] ?? join(assetRoot, "index.html"));
-        if (!(await file.exists()))
-          return withSecurity(
-            new Response("Web assets are missing. Run 'bun run web:build'.", { status: 503 }),
-          );
+          return withSecurity(new Response("Web assets are missing. Run 'bun run web:build'.", { status: 503 }));
         const headers = new Headers({
           "content-type": contentType(file.name ?? requested),
           "cache-control": requested === "index.html" ? "no-cache" : "public, max-age=3600",
@@ -395,9 +358,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
   const address = listenerAddress;
   ctx.log.info(`Bento web UI: ${address}`);
   if (schedulerGatewayEnabled) {
-    ctx.log.info(
-      "Authenticated same-origin app scheduler paths are enabled (no browser origin isolation)",
-    );
+    ctx.log.info("Authenticated same-origin app scheduler paths are enabled (no browser origin isolation)");
   } else if (schedulerGatewayReason) {
     ctx.log.info(`Browser schedulers disabled: ${schedulerGatewayReason}`);
   }
@@ -427,10 +388,7 @@ export function acceptsWebAuthorization(
   );
 }
 
-export function matchesBasicAuthorization(
-  authorization: string | null,
-  expectedAuthorization: string,
-): boolean {
+export function matchesBasicAuthorization(authorization: string | null, expectedAuthorization: string): boolean {
   if (authorization === null) return false;
   const actual = Buffer.from(authorization, "utf8");
   const expected = Buffer.from(expectedAuthorization, "utf8");
@@ -495,10 +453,7 @@ export function schedulerSessionCookie(
 ): string | undefined {
   // Called only after Basic authentication (or with an existing scheduler session).
   // A direct scheduler navigation can establish its session without a redirect.
-  if (
-    (pathname === SCHEDULER_PREFIX || pathname.startsWith(`${SCHEDULER_PREFIX}/`)) &&
-    !schedulerAppFromPath(pathname)
-  )
+  if ((pathname === SCHEDULER_PREFIX || pathname.startsWith(`${SCHEDULER_PREFIX}/`)) && !schedulerAppFromPath(pathname))
     return undefined;
   if (sessions.has(cookieHeader)) return undefined;
   return sessions.issue();
@@ -550,10 +505,7 @@ async function readBoundedRequestText(request: Request, maxBytes: number): Promi
 function applySecurity(response: Response, sessionCookie?: string): Response {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
-  headers.set(
-    "content-security-policy",
-    `${SECURITY_HEADERS["content-security-policy"]}; frame-src 'self'`,
-  );
+  headers.set("content-security-policy", `${SECURITY_HEADERS["content-security-policy"]}; frame-src 'self'`);
   return attachSessionCookie(
     new Response(response.body, {
       status: response.status,

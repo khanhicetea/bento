@@ -2,13 +2,7 @@ import { createProxy, deleteProxy } from "#/services/proxy.ts";
 import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerProxyCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("proxy", "Reverse-proxy sites", (y: YargsBuilder) =>
@@ -39,18 +33,8 @@ export function registerProxyCommands(parser: YargsBuilder, state: RunState): Ya
           ),
         bind(state, cmdProxyCreate),
       )
-      .command(
-        "delete <name>",
-        "Remove a reverse-proxy site",
-        proxyDeleteOptions,
-        bind(state, cmdProxyDelete),
-      )
-      .command(
-        "remove <name>",
-        "Alias for proxy delete",
-        proxyDeleteOptions,
-        bind(state, cmdProxyDelete),
-      )
+      .command("delete <name>", "Remove a reverse-proxy site", proxyDeleteOptions, bind(state, cmdProxyDelete))
+      .command("remove <name>", "Alias for proxy delete", proxyDeleteOptions, bind(state, cmdProxyDelete))
       .demandCommand(1, "Specify a proxy subcommand: create|list|delete")
       .recommendCommands(),
   );
@@ -58,20 +42,12 @@ export function registerProxyCommands(parser: YargsBuilder, state: RunState): Ya
 
 async function cmdProxyList(_argv: CliArgs, ctx: CliContext): Promise<number> {
   const state = await ctx.store.load();
-  const rows = Object.values(state.proxies).map((p) => [
-    p.name,
-    p.mainDomain,
-    p.upstreams.join(", "),
-    p.tls.kind,
-  ]);
+  const rows = Object.values(state.proxies).map((p) => [p.name, p.mainDomain, p.upstreams.join(", "), p.tls.kind]);
   ctx.log.out(printTable(["name", "domain", "upstream", "tls"], rows));
   return 0;
 }
 
-async function cmdProxyCreate(
-  argv: ArgsWith<"name" | "domain" | "upstream">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdProxyCreate(argv: ArgsWith<"name" | "domain" | "upstream">, ctx: CliContext): Promise<number> {
   const { name, domain, upstream } = argv;
   const upstreams = Array.isArray(upstream) ? upstream : [upstream];
   const noApply = wantsNoApply(argv);
@@ -96,9 +72,7 @@ async function cmdProxyCreate(
     }
     return result;
   });
-  ctx.log.info(
-    noApply ? `created proxy ${name} (state only; run bento apply)` : `created proxy ${name}`,
-  );
+  ctx.log.info(noApply ? `created proxy ${name} (state only; run bento apply)` : `created proxy ${name}`);
   return 0;
 }
 
@@ -125,8 +99,6 @@ async function cmdProxyDelete(argv: ArgsWith<"name">, ctx: CliContext): Promise<
     }
     return removed;
   });
-  ctx.log.info(
-    `removed proxy ${result.proxy.name}${noApply ? " (state only; run bento apply)" : ""}`,
-  );
+  ctx.log.info(`removed proxy ${result.proxy.name}${noApply ? " (state only; run bento apply)" : ""}`);
   return 0;
 }

@@ -52,8 +52,7 @@ export async function prepareCustomTemplate(
   const path = join(destDir, kind === "vhost" ? "vhost.conf.tpl" : "pool.conf.tpl");
   if (await platform.fs.exists(path)) return { path, created: false };
 
-  const asset =
-    kind === "vhost" && !isPhpApp(app) ? "nginx/process-app-vhost.conf.tpl" : UPSTREAM_ASSET[kind];
+  const asset = kind === "vhost" && !isPhpApp(app) ? "nginx/process-app-vhost.conf.tpl" : UPSTREAM_ASSET[kind];
   const content = await platform.assets.readText(asset);
   await platform.fs.mkdirp(destDir, 0o755);
   await platform.fs.writeText(path, content, 0o644);
@@ -136,11 +135,7 @@ export async function selectCustomTemplate(
     throw validationError("template source is empty");
   }
 
-  const { digest: upstreamDigest } = await appUpstreamTemplateDigest(
-    platform,
-    input.kind,
-    !isPhpApp(app),
-  );
+  const { digest: upstreamDigest } = await appUpstreamTemplateDigest(platform, input.kind, !isPhpApp(app));
   const now = platform.clock.nowIso();
   const copy = input.copy !== false;
 
@@ -165,8 +160,7 @@ export async function selectCustomTemplate(
       ? { ...app, vhostTemplate: provenance, updatedAt: now }
       : { ...app, poolTemplate: provenance, updatedAt: now };
 
-  const reloadPlan =
-    input.kind === "vhost" ? reloadPlanForDomainChange() : reloadPlanForPoolChange(app.phpService);
+  const reloadPlan = input.kind === "vhost" ? reloadPlanForDomainChange() : reloadPlanForPoolChange(app.phpService);
 
   return {
     state: {
@@ -212,8 +206,7 @@ export function returnToUpstreamTemplate(
       ? { ...app, vhostTemplate: { kind: "upstream" as const }, updatedAt: now }
       : { ...app, poolTemplate: { kind: "upstream" as const }, updatedAt: now };
 
-  const reloadPlan =
-    kind === "vhost" ? reloadPlanForDomainChange() : reloadPlanForPoolChange(app.phpService);
+  const reloadPlan = kind === "vhost" ? reloadPlanForDomainChange() : reloadPlanForPoolChange(app.phpService);
 
   return {
     state: {
@@ -270,10 +263,7 @@ export async function detectTemplateDrift(
 export function formatDriftWarnings(drifts: TemplateDrift[]): string[] {
   return drifts
     .filter((d) => d.drifted)
-    .map(
-      (d) =>
-        `upstream ${d.kind} template drifted for app ${d.slug} (custom source preserved at ${d.sourcePath})`,
-    );
+    .map((d) => `upstream ${d.kind} template drifted for app ${d.slug} (custom source preserved at ${d.sourcePath})`);
 }
 
 /** Ensure parent of a path exists (for tests / copy targets). */

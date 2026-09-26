@@ -1,9 +1,4 @@
-import {
-  runtime as bunRuntime,
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertRejects, assertStringIncludes } from "../runtime.ts";
 import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import type { Platform, RunOptions, RunResult } from "../../src/platform/mod.ts";
@@ -50,56 +45,50 @@ function mixedState(platform: Platform) {
   return state;
 }
 
-bunRuntime.test(
-  "Phase 6 PostgreSQL dump is portable, protected, and atomically finalized",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-backup-" });
-    try {
-      const fs = createFileSystem();
-      const final = join(
-        root,
-        "backups/postgres17/pgapp/postgres17_pgapp_2026-07-27T14-00-00-000Z.sql.zst",
-      );
-      const process = createRecordingProcessRunner(async () => {
-        await fs.writeBytes(final, new Uint8Array([1, 2, 3]), 0o600);
-        return { code: 0, stdout: "", stderr: "" };
-      });
-      const platform: Platform = {
-        ...testPlatform(root),
-        fs,
-        process,
-        assets: createAssetResolver(fs),
-      };
-      const state = mixedState(platform);
-      const secret = state.apps.pgapp!.database.password;
-      const artifacts = await runDatabaseBackup(platform, state, {
-        scope: "app",
-        slug: "pgapp",
-      });
+bunRuntime.test("Phase 6 PostgreSQL dump is portable, protected, and atomically finalized", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-backup-" });
+  try {
+    const fs = createFileSystem();
+    const final = join(root, "backups/postgres17/pgapp/postgres17_pgapp_2026-07-27T14-00-00-000Z.sql.zst");
+    const process = createRecordingProcessRunner(async () => {
+      await fs.writeBytes(final, new Uint8Array([1, 2, 3]), 0o600);
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    const platform: Platform = {
+      ...testPlatform(root),
+      fs,
+      process,
+      assets: createAssetResolver(fs),
+    };
+    const state = mixedState(platform);
+    const secret = state.apps.pgapp!.database.password;
+    const artifacts = await runDatabaseBackup(platform, state, {
+      scope: "app",
+      slug: "pgapp",
+    });
 
-      assertEquals(artifacts, [
-        {
-          engine: "postgres",
-          path: final,
-          database: "pgapp",
-          service: "postgres17",
-          bytes: 3,
-        },
-      ]);
-      const call = process.calls[0]!;
-      const script = call.command.at(-1) ?? "";
-      assertStringIncludes(script, "pg_dump");
-      assertStringIncludes(script, "--no-owner --no-acl");
-      assertStringIncludes(script, "PGPASSFILE=/etc/bento/postgres/root.pgpass");
-      assertStringIncludes(script, "zstd -3 -q -c");
-      assertStringIncludes(script, ".partial");
-      assertEquals(call.command.join(" ").includes(secret), false);
-      assertEquals(call.options?.stdin, undefined);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    assertEquals(artifacts, [
+      {
+        engine: "postgres",
+        path: final,
+        database: "pgapp",
+        service: "postgres17",
+        bytes: 3,
+      },
+    ]);
+    const call = process.calls[0]!;
+    const script = call.command.at(-1) ?? "";
+    assertStringIncludes(script, "pg_dump");
+    assertStringIncludes(script, "--no-owner --no-acl");
+    assertStringIncludes(script, "PGPASSFILE=/etc/bento/postgres/root.pgpass");
+    assertStringIncludes(script, "zstd -3 -q -c");
+    assertStringIncludes(script, ".partial");
+    assertEquals(call.command.join(" ").includes(secret), false);
+    assertEquals(call.options?.stdin, undefined);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("Phase 6 failed or empty PostgreSQL dump publishes no artifact", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-empty-" });
@@ -110,11 +99,7 @@ bunRuntime.test("Phase 6 failed or empty PostgreSQL dump publishes no artifact",
       stderr: "",
     }));
     const state = mixedState(platform);
-    await assertRejects(
-      () => runDatabaseBackup(platform, state, { scope: "app", slug: "pgapp" }),
-      Error,
-      "empty",
-    );
+    await assertRejects(() => runDatabaseBackup(platform, state, { scope: "app", slug: "pgapp" }), Error, "empty");
     const dir = join(root, "backups/postgres17/pgapp");
     assertEquals(
       (await platform.fs.readDir(dir)).filter((name) => name.includes(".sql")),
@@ -132,10 +117,7 @@ bunRuntime.test("Phase 6 mixed-engine all dispatches correctly and defers retent
     const platform = testPlatform(root, async (command) => {
       const service = command[4]!;
       const database = service === "mysql84" ? "myapp" : "pgapp";
-      const path = join(
-        root,
-        `backups/${service}/${database}/${service}_${database}_2026-07-27T14-00-00-000Z.sql.zst`,
-      );
+      const path = join(root, `backups/${service}/${database}/${service}_${database}_2026-07-27T14-00-00-000Z.sql.zst`);
       await fs.mkdirp(join(root, `backups/${service}/${database}`));
       await fs.writeBytes(path, new Uint8Array([1]), 0o600);
       return { code: 0, stdout: "", stderr: "" };
@@ -163,10 +145,7 @@ bunRuntime.test("engine-filtered app backup excludes its other database bindings
     const platform = testPlatform(root, async (command) => {
       const service = command[4]!;
       const database = "myapp";
-      const path = join(
-        root,
-        `backups/${service}/${database}/${service}_${database}_2026-07-27T14-00-00-000Z.sql.zst`,
-      );
+      const path = join(root, `backups/${service}/${database}/${service}_${database}_2026-07-27T14-00-00-000Z.sql.zst`);
       await fs.mkdirp(join(root, `backups/${service}/${database}`));
       await fs.writeBytes(path, new Uint8Array([1]), 0o600);
       return { code: 0, stdout: "", stderr: "" };
@@ -205,11 +184,7 @@ bunRuntime.test("Phase 6 mid-batch failure preserves artifacts and skips retenti
     let call = 0;
     const platform = testPlatform(root, async () => {
       if (call++ === 0) {
-        await fs.writeText(
-          join(mysqlDir, "mysql84_myapp_2026-07-27T14-00-00-000Z.sql.zst"),
-          "new",
-          0o600,
-        );
+        await fs.writeText(join(mysqlDir, "mysql84_myapp_2026-07-27T14-00-00-000Z.sql.zst"), "new", 0o600);
         return { code: 0, stdout: "", stderr: "" };
       }
       return { code: 1, stdout: "", stderr: "pg_dump failed" };
@@ -227,78 +202,72 @@ bunRuntime.test("Phase 6 mid-batch failure preserves artifacts and skips retenti
   }
 });
 
-bunRuntime.test(
-  "Phase 6 PostgreSQL restore uses app credentials off argv and records only success",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-restore-" });
-    try {
-      const platform = testPlatform(root, () => ({
-        code: 0,
-        stdout: "",
-        stderr: "",
-      }));
-      const state = mixedState(platform);
-      const dump = join(root, "portable.sql.gz");
-      await platform.fs.writeBytes(dump, new Uint8Array([1, 2]), 0o600);
-      const next = await runDatabaseRestore(platform, state, {
-        file: dump,
-        slug: "pgapp",
-        targetDatabase: "pgapp_verify",
-      });
+bunRuntime.test("Phase 6 PostgreSQL restore uses app credentials off argv and records only success", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-restore-" });
+  try {
+    const platform = testPlatform(root, () => ({
+      code: 0,
+      stdout: "",
+      stderr: "",
+    }));
+    const state = mixedState(platform);
+    const dump = join(root, "portable.sql.gz");
+    await platform.fs.writeBytes(dump, new Uint8Array([1, 2]), 0o600);
+    const next = await runDatabaseRestore(platform, state, {
+      file: dump,
+      slug: "pgapp",
+      targetDatabase: "pgapp_verify",
+    });
 
-      assertEquals(state.apps.pgapp!.database.databases.length, 1);
-      assertEquals(next.apps.pgapp!.database.databases.at(-1)?.name, "pgapp_verify");
-      const call = platform.process.calls[0]!;
-      const script = call.command.at(-1) ?? "";
-      const secret = state.apps.pgapp!.database.password;
-      assertStringIncludes(script, "CREATE DATABASE");
-      assertStringIncludes(script, "gzip -dc");
-      assertStringIncludes(script, "ALTER SCHEMA public OWNER TO");
-      assertEquals(call.command.join(" ").includes(secret), false);
-      assertEquals(String(call.options?.stdin).includes(secret), true);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    assertEquals(state.apps.pgapp!.database.databases.length, 1);
+    assertEquals(next.apps.pgapp!.database.databases.at(-1)?.name, "pgapp_verify");
+    const call = platform.process.calls[0]!;
+    const script = call.command.at(-1) ?? "";
+    const secret = state.apps.pgapp!.database.password;
+    assertStringIncludes(script, "CREATE DATABASE");
+    assertStringIncludes(script, "gzip -dc");
+    assertStringIncludes(script, "ALTER SCHEMA public OWNER TO");
+    assertEquals(call.command.join(" ").includes(secret), false);
+    assertEquals(String(call.options?.stdin).includes(secret), true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
-bunRuntime.test(
-  "Phase 6 replacement confirmation and cross-engine source fail before side effects",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-safety-" });
-    try {
-      const platform = testPlatform(root);
-      const state = mixedState(platform);
-      const pgDump = join(root, "pg.sql");
-      await platform.fs.writeText(pgDump, "SELECT 1", 0o600);
-      await assertRejects(
-        () =>
-          runDatabaseRestore(platform, state, {
-            file: pgDump,
-            slug: "pgapp",
-            targetDatabase: "pgapp",
-            replaceOriginal: "wrong",
-          }),
-        Error,
-        "exactly match",
-      );
+bunRuntime.test("Phase 6 replacement confirmation and cross-engine source fail before side effects", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-pg6-safety-" });
+  try {
+    const platform = testPlatform(root);
+    const state = mixedState(platform);
+    const pgDump = join(root, "pg.sql");
+    await platform.fs.writeText(pgDump, "SELECT 1", 0o600);
+    await assertRejects(
+      () =>
+        runDatabaseRestore(platform, state, {
+          file: pgDump,
+          slug: "pgapp",
+          targetDatabase: "pgapp",
+          replaceOriginal: "wrong",
+        }),
+      Error,
+      "exactly match",
+    );
 
-      const mysqlDump = join(root, "backups/mysql84/myapp/source.sql");
-      await platform.fs.mkdirp(join(root, "backups/mysql84/myapp"));
-      await platform.fs.writeText(mysqlDump, "SELECT 1", 0o600);
-      await assertRejects(
-        () =>
-          runDatabaseRestore(platform, state, {
-            file: mysqlDump,
-            slug: "pgapp",
-            targetDatabase: "pgapp_verify",
-          }),
-        Error,
-        "cannot be restored",
-      );
-      assertEquals(platform.process.calls.length, 0);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const mysqlDump = join(root, "backups/mysql84/myapp/source.sql");
+    await platform.fs.mkdirp(join(root, "backups/mysql84/myapp"));
+    await platform.fs.writeText(mysqlDump, "SELECT 1", 0o600);
+    await assertRejects(
+      () =>
+        runDatabaseRestore(platform, state, {
+          file: mysqlDump,
+          slug: "pgapp",
+          targetDatabase: "pgapp_verify",
+        }),
+      Error,
+      "cannot be restored",
+    );
+    assertEquals(platform.process.calls.length, 0);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});

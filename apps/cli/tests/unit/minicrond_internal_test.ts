@@ -1,11 +1,7 @@
 import { runtime, assertEquals } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
-import {
-  appInternalJobs,
-  minicrondBootstrapConfig,
-  rootInternalJobs,
-} from "../../src/services/minicrond_internal.ts";
+import { appInternalJobs, minicrondBootstrapConfig, rootInternalJobs } from "../../src/services/minicrond_internal.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
 
 runtime.test("internal minicrond config is isolated from user jobs and deterministic", () => {

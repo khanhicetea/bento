@@ -19,19 +19,10 @@ import {
   loadStackComposeEnvironment,
   loadStackEnv,
 } from "#/services/stack_env.ts";
-import {
-  renderAcmeIssuer,
-  renderAcmeSslSnippet,
-  renderSslCommonSnippet,
-  resolveSslForSite,
-} from "#/services/tls.ts";
+import { renderAcmeIssuer, renderAcmeSslSnippet, renderSslCommonSnippet, resolveSslForSite } from "#/services/tls.ts";
 import { validateUpstreams } from "#/services/proxy.ts";
 import { loadCloudflareTunnelToken } from "#/services/cloudflare_tunnel.ts";
-import {
-  appInternalJobs,
-  minicrondBootstrapConfig,
-  rootInternalJobs,
-} from "#/services/minicrond_internal.ts";
+import { appInternalJobs, minicrondBootstrapConfig, rootInternalJobs } from "#/services/minicrond_internal.ts";
 
 export async function generateAll(
   platform: Platform,
@@ -102,9 +93,7 @@ async function generateNginx(platform: Platform, state: DesiredState): Promise<G
   const files: GeneratedFile[] = [];
   const http3 = await loadHttp3Enabled(platform);
   const composeEnvironment = await loadStackComposeEnvironment(platform);
-  const publishedHttpsPort = composeEnvironment.nginx.hostNetwork
-    ? 443
-    : (composeEnvironment.nginx.httpsPort ?? 443);
+  const publishedHttpsPort = composeEnvironment.nginx.hostNetwork ? 443 : (composeEnvironment.nginx.httpsPort ?? 443);
   const httpsPortSuffix = publishedHttpsPort === 443 ? "" : `:${publishedHttpsPort}`;
   // Nginx templates are compiled immutable assets. Fail candidate generation when
   // one is missing instead of silently rendering a stale in-code fallback.
@@ -135,9 +124,7 @@ async function generateNginx(platform: Platform, state: DesiredState): Promise<G
   });
   files.push({
     relPath: "nginx/snippets/boot-ssl.conf",
-    content: withManagedMarker(
-      await platform.assets.readText("docker/nginx/snippets/boot-ssl.conf"),
-    ),
+    content: withManagedMarker(await platform.assets.readText("docker/nginx/snippets/boot-ssl.conf")),
     mode: 0o644,
     managed: true,
   });
@@ -170,23 +157,12 @@ async function generateNginx(platform: Platform, state: DesiredState): Promise<G
 
   for (const app of Object.values(state.apps)) {
     if (app.enabled) {
-      files.push(
-        ...(await generateAppVhost(
-          platform,
-          state,
-          app,
-          http3,
-          httpsPortSuffix,
-          publishedHttpsPort,
-        )),
-      );
+      files.push(...(await generateAppVhost(platform, state, app, http3, httpsPortSuffix, publishedHttpsPort)));
     }
   }
   for (const proxy of Object.values(state.proxies)) {
     if (proxy.enabled) {
-      files.push(
-        ...(await generateProxyVhost(platform, proxy, http3, httpsPortSuffix, publishedHttpsPort)),
-      );
+      files.push(...(await generateProxyVhost(platform, proxy, http3, httpsPortSuffix, publishedHttpsPort)));
     }
   }
 
@@ -202,9 +178,7 @@ async function generateAppVhost(
   httpsAdvertisedPort: number,
 ): Promise<GeneratedFile[]> {
   let tpl: string;
-  const upstreamTemplate = isPhpApp(app)
-    ? "nginx/app-vhost.conf.tpl"
-    : "nginx/process-app-vhost.conf.tpl";
+  const upstreamTemplate = isPhpApp(app) ? "nginx/app-vhost.conf.tpl" : "nginx/process-app-vhost.conf.tpl";
   if (app.vhostTemplate.kind === "custom") {
     try {
       tpl = await platform.fs.readText(app.vhostTemplate.sourcePath);
@@ -356,9 +330,7 @@ async function generatePhpPools(platform: Platform, state: DesiredState): Promis
       openBasedir: `${home}:/usr/share/php:/tmp${app.databases
         .filter((database) => database.engine === "sqlite" || database.engine === "litestream")
         .map((database) =>
-          database.engine === "sqlite" || database.engine === "litestream"
-            ? `:/sqlite/${database.file.id}`
-            : "",
+          database.engine === "sqlite" || database.engine === "litestream" ? `:/sqlite/${database.file.id}` : "",
         )
         .join("")}${app.deploy.enabled ? ":/opt/bento/helpers" : ""}`,
       deployEnabled: app.deploy.enabled,
@@ -437,18 +409,10 @@ export function generateLitestreamConfig(state: DesiredState): GeneratedFile[] {
   ];
 }
 
-export function generateLitestreamEnvironment(
-  state: DesiredState,
-  env: Record<string, string>,
-): GeneratedFile[] {
+export function generateLitestreamEnvironment(state: DesiredState, env: Record<string, string>): GeneratedFile[] {
   if (!state.sqliteBackup?.enabled) return [];
 
-  const required = [
-    "S3_BUCKET_NAME",
-    "S3_REGION",
-    "S3_ACCESS_KEY_ID",
-    "S3_SECRET_ACCESS_KEY",
-  ] as const;
+  const required = ["S3_BUCKET_NAME", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const;
   for (const key of required) {
     if (!env[key]) throw validationError(`${key} is required in the stack .env`);
   }
@@ -558,10 +522,7 @@ function generateRunnerConfig(state: DesiredState): GeneratedFile[] {
  * Materialize root MySQL client option files with real password content from stack env.
  * Mode is always 0600; files are disposable generated config (not durable secrets store).
  */
-export function generatePostgresSecrets(
-  state: DesiredState,
-  rootPassword: string,
-): GeneratedFile[] {
+export function generatePostgresSecrets(state: DesiredState, rootPassword: string): GeneratedFile[] {
   const files: GeneratedFile[] = [];
   // .pgpass escapes backslashes and field delimiters. Strip line breaks so an
   // operator-supplied value cannot create a second credential record.
@@ -604,11 +565,7 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-async function readOrDefault(
-  platform: Platform,
-  assetPath: string,
-  fallback: string,
-): Promise<string> {
+async function readOrDefault(platform: Platform, assetPath: string, fallback: string): Promise<string> {
   try {
     return await platform.assets.readText(assetPath);
   } catch {

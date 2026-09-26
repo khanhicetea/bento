@@ -22,10 +22,7 @@ export function createProcessRunner(): ProcessRunner {
 
         if (options?.stdin !== undefined) {
           const writer = child.stdin.getWriter();
-          const data =
-            typeof options.stdin === "string"
-              ? new TextEncoder().encode(options.stdin)
-              : options.stdin;
+          const data = typeof options.stdin === "string" ? new TextEncoder().encode(options.stdin) : options.stdin;
           await writer.write(data);
           await writer.close();
         }

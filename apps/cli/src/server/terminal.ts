@@ -6,9 +6,7 @@ const MAX_TERMINAL_INPUT_BYTES = 64 * 1024;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
-type TerminalClientMessage =
-  | { type: "input"; data: string }
-  | { type: "resize"; cols: number; rows: number };
+type TerminalClientMessage = { type: "input"; data: string } | { type: "resize"; cols: number; rows: number };
 
 type TerminalOutput = {
   data: (data: Uint8Array) => void;
@@ -29,18 +27,11 @@ export type TerminalSession = {
   closed: boolean;
 };
 
-export async function prepareTerminalSession(
-  ctx: CliContext,
-  app: string,
-): Promise<TerminalSession> {
+export async function prepareTerminalSession(ctx: CliContext, app: string): Promise<TerminalSession> {
   const state = await ctx.store.load();
   const plan = buildCliExec(ctx.platform, state, app, ["bash"]);
   const containerName = `bento-web-shell-${ctx.platform.random.hex(12)}`;
-  const command = await composeArgs(
-    ctx.platform,
-    state,
-    cliRunComposeCommand(plan, { tty: true, containerName }),
-  );
+  const command = await composeArgs(ctx.platform, state, cliRunComposeCommand(plan, { tty: true, containerName }));
   return {
     command,
     cwd: ctx.stackRoot,

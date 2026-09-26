@@ -10,10 +10,7 @@ import {
   setApplicationRunningInputSchema,
   webContract,
 } from "@bento/shared";
-import {
-  createApplicationsRouter,
-  toApplication,
-} from "../../src/server/domains/applications/router.ts";
+import { createApplicationsRouter, toApplication } from "../../src/server/domains/applications/router.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
@@ -35,18 +32,12 @@ describe("web server authentication", () => {
 
     expect(matchesBasicAuthorization(expected, expected)).toBe(true);
     expect(matchesBasicAuthorization(null, expected)).toBe(false);
-    expect(
-      matchesBasicAuthorization(
-        `Basic ${Buffer.from("operator:wrong").toString("base64")}`,
-        expected,
-      ),
-    ).toBe(false);
-    expect(
-      matchesBasicAuthorization(
-        `basic ${Buffer.from("operator:secret").toString("base64")}`,
-        expected,
-      ),
-    ).toBe(false);
+    expect(matchesBasicAuthorization(`Basic ${Buffer.from("operator:wrong").toString("base64")}`, expected)).toBe(
+      false,
+    );
+    expect(matchesBasicAuthorization(`basic ${Buffer.from("operator:secret").toString("base64")}`, expected)).toBe(
+      false,
+    );
   });
 
   test("issues, scopes, and revokes scheduler sessions", () => {
@@ -97,14 +88,7 @@ describe("web server authentication", () => {
 
 describe("web API contract", () => {
   test("is composed from explicit domain routers", () => {
-    expect(Object.keys(webContract)).toEqual([
-      "system",
-      "applications",
-      "data",
-      "routing",
-      "jobs",
-      "operations",
-    ]);
+    expect(Object.keys(webContract)).toEqual(["system", "applications", "data", "routing", "jobs", "operations"]);
     expect("execute" in webContract).toBe(false);
     expect(Object.keys(webContract.jobs)).toEqual(["schedulerAccess"]);
     expect("schedulerAccess" in webContract.jobs).toBe(true);
@@ -209,12 +193,8 @@ describe("web API contract", () => {
         databaseName: "demo_reporting",
       }),
     ).toBeTruthy();
-    expect(() =>
-      addApplicationDatabaseInputSchema.parse({ slug: "demo", engine: "mysql" }),
-    ).toThrow();
-    expect(
-      removeApplicationInputSchema.parse({ slug: "demo", confirmation: "delete demo" }),
-    ).toBeTruthy();
+    expect(() => addApplicationDatabaseInputSchema.parse({ slug: "demo", engine: "mysql" })).toThrow();
+    expect(removeApplicationInputSchema.parse({ slug: "demo", confirmation: "delete demo" })).toBeTruthy();
     expect(
       applicationListSchema.parse({
         initialized: false,

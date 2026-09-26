@@ -11,11 +11,7 @@ import {
   stateDatabaseInitialized,
   type MigrationResult,
 } from "#/services/state_database.ts";
-import {
-  DEFAULT_COMPOSE_PROJECT_NAME,
-  parseDotEnv,
-  validateComposeProjectName,
-} from "#/services/stack_env.ts";
+import { DEFAULT_COMPOSE_PROJECT_NAME, parseDotEnv, validateComposeProjectName } from "#/services/stack_env.ts";
 import { initializeRcloneConfig } from "#/services/rclone.ts";
 
 export type StackInitOptions = {
@@ -71,18 +67,11 @@ export class StateStore {
       }
 
       let requestedProject = options.projectName;
-      if (
-        requestedProject === undefined &&
-        (await this.platform.fs.exists(this.platform.paths.paths.envFile))
-      ) {
-        const existingEnv = parseDotEnv(
-          await this.platform.fs.readText(this.platform.paths.paths.envFile),
-        );
+      if (requestedProject === undefined && (await this.platform.fs.exists(this.platform.paths.paths.envFile))) {
+        const existingEnv = parseDotEnv(await this.platform.fs.readText(this.platform.paths.paths.envFile));
         requestedProject = existingEnv.COMPOSE_PROJECT_NAME?.trim() || undefined;
       }
-      const projectName = validateComposeProjectName(
-        requestedProject ?? DEFAULT_COMPOSE_PROJECT_NAME,
-      );
+      const projectName = validateComposeProjectName(requestedProject ?? DEFAULT_COMPOSE_PROJECT_NAME);
       const state = createEmptyState(this.platform.clock.nowIso());
       await this.platform.fs.mkdirp(this.platform.paths.paths.generatedDir);
       await this.platform.fs.mkdirp(this.platform.paths.paths.overlaysDir);
@@ -102,10 +91,7 @@ export class StateStore {
   }
 
   /** Add missing stack settings/secrets without replacing existing non-empty values. */
-  async reconcileStackEnv(
-    projectName = DEFAULT_COMPOSE_PROJECT_NAME,
-    initializeTopology = false,
-  ): Promise<void> {
+  async reconcileStackEnv(projectName = DEFAULT_COMPOSE_PROJECT_NAME, initializeTopology = false): Promise<void> {
     projectName = validateComposeProjectName(projectName);
     const envPath = this.platform.paths.paths.envFile;
     if (!(await this.platform.fs.exists(envPath))) {
@@ -150,11 +136,7 @@ export class StateStore {
     if (missing.length === 0) return;
 
     const separator = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
-    await this.platform.fs.atomicWriteText(
-      envPath,
-      `${existing}${separator}${missing.join("\n")}\n`,
-      0o600,
-    );
+    await this.platform.fs.atomicWriteText(envPath, `${existing}${separator}${missing.join("\n")}\n`, 0o600);
   }
 
   /** Mutate state under exclusive lock. */

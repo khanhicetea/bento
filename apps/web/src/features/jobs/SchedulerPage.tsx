@@ -9,12 +9,10 @@ export function SchedulerPage() {
     <main className="space-y-5 p-6">
       <h1 className="text-2xl font-semibold">App schedulers</h1>
       <p>
-        Each enabled PHP app has its own minicrond registry for jobs, workers, runs, and logs. Bento
-        no longer edits user definitions.
+        Each enabled PHP app has its own minicrond registry for jobs, workers, runs, and logs. Bento no longer edits
+        user definitions.
       </p>
-      {access.data && !access.data.enabled && (
-        <p className="text-sm opacity-75">{access.data.reason}</p>
-      )}
+      {access.data && !access.data.enabled && <p className="text-sm opacity-75">{access.data.reason}</p>}
       {access.isError && <p role="alert">Unable to determine browser scheduler access.</p>}
       {apps.isPending && <p>Loading applications…</p>}
       {apps.isError && <p role="alert">Unable to load applications.</p>}
@@ -40,12 +38,8 @@ export function SchedulerPage() {
                 />
               ) : (
                 <>
-                  <code className="block overflow-x-auto text-sm">
-                    bento app minicrond {app.slug} -- list
-                  </code>
-                  <code className="block overflow-x-auto text-sm">
-                    bento app minicrond {app.slug} -- status
-                  </code>
+                  <code className="block overflow-x-auto text-sm">bento app minicrond {app.slug} -- list</code>
+                  <code className="block overflow-x-auto text-sm">bento app minicrond {app.slug} -- status</code>
                 </>
               )}
             </section>

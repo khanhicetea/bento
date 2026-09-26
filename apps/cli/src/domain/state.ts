@@ -311,9 +311,7 @@ export function managedMysqlServices(state: DesiredState): ManagedMysqlVersion[]
 export function managedPostgresServices(state: DesiredState): ManagedPostgresVersion[] {
   return state.databaseServices.filter((v): v is ManagedPostgresVersion => v.engine === "postgres");
 }
-export function requireMysqlBinding(
-  app: AppState,
-): Extract<AppDatabaseBinding, { engine: "mysql" }> {
+export function requireMysqlBinding(app: AppState): Extract<AppDatabaseBinding, { engine: "mysql" }> {
   const database = databaseBindings(app, "mysql")[0];
   if (!database) throw new Error(`app ${app.slug} has no MySQL database binding`);
   return database;
@@ -363,8 +361,7 @@ export function databaseBindings<E extends DatabaseEngine>(
   engine: E,
 ): Extract<AppDatabaseBinding, { engine: E }>[] {
   return app.databases.filter(
-    (database): database is Extract<AppDatabaseBinding, { engine: E }> =>
-      database.engine === engine,
+    (database): database is Extract<AppDatabaseBinding, { engine: E }> => database.engine === engine,
   );
 }
 export function assertKnownPhpVersion(state: DesiredState, version: PhpVersion): ManagedPhpVersion {
@@ -372,10 +369,7 @@ export function assertKnownPhpVersion(state: DesiredState, version: PhpVersion):
   if (!found) throw new Error(`PHP version ${version} is not managed`);
   return found;
 }
-export function assertKnownMysqlService(
-  state: DesiredState,
-  service: DatabaseService,
-): ManagedMysqlVersion {
+export function assertKnownMysqlService(state: DesiredState, service: DatabaseService): ManagedMysqlVersion {
   const found = managedMysqlServices(state).find((v) => v.service === service);
   if (!found) throw new Error(`MySQL service ${service} is not managed`);
   return found;

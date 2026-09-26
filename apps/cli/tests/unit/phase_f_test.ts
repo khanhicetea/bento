@@ -6,13 +6,7 @@ import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts
 import { basename, join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { materializeAppHome, provisionApp } from "../../src/services/app.ts";
-import {
-  type DeployJob,
-  drainDeploy,
-  enableDeploy,
-  enqueueDeploy,
-  retainJobs,
-} from "../../src/services/deploy.ts";
+import { type DeployJob, drainDeploy, enableDeploy, enqueueDeploy, retainJobs } from "../../src/services/deploy.ts";
 import { generateAll } from "../../src/services/generate.ts";
 import { createAppDatabase, listRecentBackupFiles } from "../../src/services/mysql.ts";
 import { aclRules, redisConnectionEnv } from "../../src/services/redis.ts";
@@ -120,19 +114,16 @@ bunRuntime.test("F1 CLI tokens: domain / path / cron / version rejection cases",
   assertEquals(parseUidGid(1000, "uid").ok, true);
 });
 
-bunRuntime.test(
-  "F1 state boundary: corrupt and future schema rejected before parse succeeds",
-  () => {
-    const future = {
-      ...createEmptyState("2026-01-01T00:00:00.000Z"),
-      schemaVersion: 999,
-    };
-    assertEquals(parseDesiredState(future).ok, false);
-    assertThrows(() => loadStateFromJson("{"), Error);
-    assertThrows(() => loadStateFromJson("null"), Error);
-    assertThrows(() => loadStateFromJson("[]"), Error);
-  },
-);
+bunRuntime.test("F1 state boundary: corrupt and future schema rejected before parse succeeds", () => {
+  const future = {
+    ...createEmptyState("2026-01-01T00:00:00.000Z"),
+    schemaVersion: 999,
+  };
+  assertEquals(parseDesiredState(future).ok, false);
+  assertThrows(() => loadStateFromJson("{"), Error);
+  assertThrows(() => loadStateFromJson("null"), Error);
+  assertThrows(() => loadStateFromJson("[]"), Error);
+});
 
 // --- F-02 / F-04 docroot safety + legacy generation ------------------------
 
@@ -169,47 +160,40 @@ bunRuntime.test("F1 app docroot safety rejects traversal", async () => {
   }
 });
 
-bunRuntime.test(
-  "F1 legacy flag generation allows non-index PHP; front-controller does not",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
-    try {
-      const platform = testPlatform(root);
-      let state = createEmptyState();
-      const front = provisionApp(platform, state, {
-        slug: "front",
-        domain: "front.test",
-        entrypointMode: "front-controller",
-        documentRoot: "public",
-      });
-      state = front.state;
-      const legacy = provisionApp(platform, state, {
-        slug: "legacy",
-        domain: "legacy.test",
-        entrypointMode: "legacy",
-        documentRoot: "htdocs",
-      });
-      state = legacy.state;
-      const files = await generateAll(platform, state, "digest");
-      const frontVhost = textContent(
-        files.find((f) => f.relPath === "nginx/sites/front.conf")!.content,
-      );
-      const legacyVhost = textContent(
-        files.find((f) => f.relPath === "nginx/sites/legacy.conf")!.content,
-      );
-      assertEquals(frontVhost.includes("if ($uri !~ ^/index\\.php$)"), true);
-      assertEquals(frontVhost.includes("return 404"), true);
-      assertEquals(legacyVhost.includes("if ($uri !~ ^/index\\.php$)"), false);
-      assertEquals(legacyVhost.includes("try_files $uri =404;"), true);
-      assertEquals(front.app.documentRoot, "public");
-      assertEquals(legacy.app.documentRoot, "htdocs");
-      // Generated paths embed docroot under code/
-      assertEquals(frontVhost.includes("/code/public") || frontVhost.includes("public"), true);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+bunRuntime.test("F1 legacy flag generation allows non-index PHP; front-controller does not", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
+  try {
+    const platform = testPlatform(root);
+    let state = createEmptyState();
+    const front = provisionApp(platform, state, {
+      slug: "front",
+      domain: "front.test",
+      entrypointMode: "front-controller",
+      documentRoot: "public",
+    });
+    state = front.state;
+    const legacy = provisionApp(platform, state, {
+      slug: "legacy",
+      domain: "legacy.test",
+      entrypointMode: "legacy",
+      documentRoot: "htdocs",
+    });
+    state = legacy.state;
+    const files = await generateAll(platform, state, "digest");
+    const frontVhost = textContent(files.find((f) => f.relPath === "nginx/sites/front.conf")!.content);
+    const legacyVhost = textContent(files.find((f) => f.relPath === "nginx/sites/legacy.conf")!.content);
+    assertEquals(frontVhost.includes("if ($uri !~ ^/index\\.php$)"), true);
+    assertEquals(frontVhost.includes("return 404"), true);
+    assertEquals(legacyVhost.includes("if ($uri !~ ^/index\\.php$)"), false);
+    assertEquals(legacyVhost.includes("try_files $uri =404;"), true);
+    assertEquals(front.app.documentRoot, "public");
+    assertEquals(legacy.app.documentRoot, "htdocs");
+    // Generated paths embed docroot under code/
+    assertEquals(frontVhost.includes("/code/public") || frontVhost.includes("public"), true);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 // --- F-09 / F-10 / F-11 matrix anchors -------------------------------------
 
@@ -234,11 +218,7 @@ bunRuntime.test("F1 MySQL namespace refuse + one-time app passwords", async () =
     const pwB = b.app.database.password;
     assertEquals(pwA !== pwB, true);
 
-    assertThrows(
-      () => createAppDatabase(state, "alpha", "beta_stolen", platform.clock.nowIso()),
-      Error,
-      "namespace",
-    );
+    assertThrows(() => createAppDatabase(state, "alpha", "beta_stolen", platform.clock.nowIso()), Error, "namespace");
 
     const updated = provisionApp(platform, state, {
       slug: "alpha",
@@ -311,9 +291,7 @@ bunRuntime.test("F1 runner generates only app and root minicrond services", asyn
       false,
     );
     assertEquals(
-      names.some(
-        (path) => path.includes("services/scheduler-") || path.includes("services/worker-"),
-      ),
+      names.some((path) => path.includes("services/scheduler-") || path.includes("services/worker-")),
       false,
     );
     assertEquals(names.includes("runner/php85/services/minicrond-alpha/run"), true);
@@ -354,10 +332,7 @@ bunRuntime.test("empty runner binds are operator-owned before Docker creates the
     for (const dir of ["services", "minicrond"]) {
       const path = join(root, "generated", "runner", "php85", dir);
       assertEquals((await platform.fs.lstat(path)).isDirectory, true);
-      assertEquals(
-        await platform.fs.exists(join(root, "generated", "runner", "php85", "cron")),
-        false,
-      );
+      assertEquals(await platform.fs.exists(join(root, "generated", "runner", "php85", "cron")), false);
     }
   } finally {
     await bunRuntime.remove(root, { recursive: true });
@@ -412,9 +387,9 @@ bunRuntime.test("F1 deploy history prune removes orphan log files", async () => 
       resetOpcache: async () => ({ ok: true, detail: "ok" }),
     });
 
-    const finalQueue = JSON.parse(
-      await platform.fs.readText(join(home, ".bento", "queue.json")),
-    ) as { jobs: DeployJob[] };
+    const finalQueue = JSON.parse(await platform.fs.readText(join(home, ".bento", "queue.json"))) as {
+      jobs: DeployJob[];
+    };
     const keep = new Set(finalQueue.jobs.map((j) => j.logName).filter(Boolean));
     const logs = await platform.fs.readDir(join(home, "logs"));
     for (const n of logs) {
@@ -499,10 +474,7 @@ bunRuntime.test("restore picker finds only the latest 20 finalized backup files"
     }
     await platform.fs.writeText(join(dir, "notes.txt"), "not a dump");
     await platform.fs.writeText(join(dir, "unfinished.sql.partial"), "partial");
-    await platform.fs.writeText(
-      join(platform.paths.paths.backupsDir, "state", "state.db"),
-      "fixture",
-    );
+    await platform.fs.writeText(join(platform.paths.paths.backupsDir, "state", "state.db"), "fixture");
 
     const files = await listRecentBackupFiles(platform);
     assertEquals(files.length, 20);
@@ -572,13 +544,7 @@ bunRuntime.test("F1 backup writes in-container with socket config and zstd level
   const root = await bunRuntime.makeTempDir({ prefix: "bento-f1-" });
   try {
     const fs = createFileSystem();
-    const finalPath = join(
-      root,
-      "backups",
-      "mysql84",
-      "alpha",
-      "mysql84_alpha_2026-07-17T15-00-00-000Z.sql.zst",
-    );
+    const finalPath = join(root, "backups", "mysql84", "alpha", "mysql84_alpha_2026-07-17T15-00-00-000Z.sql.zst");
     const process = createRecordingProcessRunner(async () => {
       await fs.writeBytes(finalPath, new Uint8Array([1, 2, 3, 4]), 0o600);
       return { code: 0, stdout: "", stderr: "" };
@@ -700,10 +666,7 @@ bunRuntime.test("F1 restore imports in-container from the writable backup bind",
   }
 });
 
-async function assertThrowsAsync(
-  fn: () => Promise<unknown>,
-  messageIncludes: string,
-): Promise<void> {
+async function assertThrowsAsync(fn: () => Promise<unknown>, messageIncludes: string): Promise<void> {
   let threw = false;
   try {
     await fn();

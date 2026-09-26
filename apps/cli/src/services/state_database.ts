@@ -365,10 +365,7 @@ export async function migrateStateDatabase(platform: Platform): Promise<Migratio
       )
     `);
     const appliedRows = database
-      .query<
-        { version: number; name: string },
-        []
-      >("SELECT version, name FROM schema_migrations ORDER BY version")
+      .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
       .all();
     validateAppliedMigrations(appliedRows);
     const fromVersion = appliedRows.at(-1)?.version ?? 0;
@@ -378,10 +375,11 @@ export async function migrateStateDatabase(platform: Platform): Promise<Migratio
       database
         .transaction(() => {
           database!.exec(migration.sql);
-          database!.run(
-            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-            [migration.version, migration.name, platform.clock.nowIso()],
-          );
+          database!.run("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)", [
+            migration.version,
+            migration.name,
+            platform.clock.nowIso(),
+          ]);
         })
         .immediate();
       applied.push(migration.version);
@@ -407,12 +405,8 @@ export async function stateDatabaseInitialized(platform: Platform): Promise<bool
     database = openDatabase(path, "read");
     assertCurrentMigrations(database);
     return (
-      database
-        .query<
-          { initialized: number },
-          []
-        >("SELECT 1 AS initialized FROM stack_config WHERE id = 1")
-        .get() !== null
+      database.query<{ initialized: number }, []>("SELECT 1 AS initialized FROM stack_config WHERE id = 1").get() !==
+      null
     );
   } catch (cause) {
     if (isBentoError(cause)) throw cause;
@@ -446,10 +440,7 @@ export async function loadStateDatabase(platform: Platform): Promise<DesiredStat
   }
 }
 
-export async function saveStateDatabase(
-  platform: Platform,
-  state: DesiredState,
-): Promise<DesiredState> {
+export async function saveStateDatabase(platform: Platform, state: DesiredState): Promise<DesiredState> {
   const path = platform.paths.paths.stateDb;
   if (!(await platform.fs.exists(path))) {
     throw stateError(`no desired state database at ${path}`, {
@@ -467,8 +458,7 @@ export async function saveStateDatabase(
   } catch (cause) {
     if (isBentoError(cause)) throw cause;
     throw stateError(`failed to save desired state database at ${path}`, {
-      recovery:
-        "The transaction was rolled back. Check state.db permissions and integrity, then retry.",
+      recovery: "The transaction was rolled back. Check state.db permissions and integrity, then retry.",
     });
   } finally {
     database?.close();
@@ -511,18 +501,14 @@ function assertCurrentMigrations(database: Database): void {
     });
   }
   const rows = database
-    .query<
-      { version: number; name: string },
-      []
-    >("SELECT version, name FROM schema_migrations ORDER BY version")
+    .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
     .all();
   validateAppliedMigrations(rows);
   const current = rows.at(-1)?.version ?? 0;
   if (current !== STATE_DATABASE_SCHEMA_VERSION) {
-    throw stateError(
-      `desired state database schema is version ${current}; expected ${STATE_DATABASE_SCHEMA_VERSION}`,
-      { recovery: "Run `bento migrate` with this Bento binary before retrying." },
-    );
+    throw stateError(`desired state database schema is version ${current}; expected ${STATE_DATABASE_SCHEMA_VERSION}`, {
+      recovery: "Run `bento migrate` with this Bento binary before retrying.",
+    });
   }
 }
 
@@ -538,9 +524,7 @@ function validateState(state: DesiredState): DesiredState {
 }
 
 function readState(database: Database, path: string): DesiredState {
-  const config = database
-    .query<StackConfigRow, []>("SELECT * FROM stack_config WHERE id = 1")
-    .get();
+  const config = database.query<StackConfigRow, []>("SELECT * FROM stack_config WHERE id = 1").get();
   if (!config) {
     throw stateError(`no desired state in ${path}`, {
       recovery: "Run `bento init` to initialize this migrated database.",
@@ -548,9 +532,7 @@ function readState(database: Database, path: string): DesiredState {
   }
 
   const phpVersions = database
-    .query<PhpVersionRow, []>(
-      "SELECT version, service, image, process_cap FROM managed_php_versions ORDER BY rowid",
-    )
+    .query<PhpVersionRow, []>("SELECT version, service, image, process_cap FROM managed_php_versions ORDER BY rowid")
     .all()
     .map((row) => ({
       version: row.version,
@@ -632,14 +614,9 @@ function readState(database: Database, path: string): DesiredState {
                   image: row.process_image,
                   service: row.process_service,
                   internalPort: row.process_internal_port,
-                  command:
-                    row.process_command_json === null
-                      ? []
-                      : parseJsonArray(row.process_command_json),
+                  command: row.process_command_json === null ? [] : parseJsonArray(row.process_command_json),
                   workdir: row.process_workdir,
-                  ...(row.process_health_path !== null
-                    ? { healthPath: row.process_health_path }
-                    : {}),
+                  ...(row.process_health_path !== null ? { healthPath: row.process_health_path } : {}),
                 },
               },
         ];
@@ -665,9 +642,7 @@ function readState(database: Database, path: string): DesiredState {
       .query<ProxyRow, []>("SELECT * FROM proxy_sites ORDER BY name")
       .all()
       .map((row) => {
-        const linked = domainRows.filter(
-          (domain) => domain.owner_kind === "proxy" && domain.proxy_name === row.name,
-        );
+        const linked = domainRows.filter((domain) => domain.owner_kind === "proxy" && domain.proxy_name === row.name);
         const primary = linked.find((domain) => asBoolean(domain.primary_domain));
         return [
           row.name,
@@ -675,9 +650,7 @@ function readState(database: Database, path: string): DesiredState {
             name: row.name,
             enabled: asBoolean(row.enabled),
             mainDomain: primary?.domain ?? "unlinked.invalid",
-            aliases: linked
-              .filter((domain) => !asBoolean(domain.primary_domain))
-              .map((domain) => domain.domain),
+            aliases: linked.filter((domain) => !asBoolean(domain.primary_domain)).map((domain) => domain.domain),
             upstreams: upstreams.get(row.name) ?? [],
             tls: tlsFromColumns(row),
             accessLog: asBoolean(row.access_log),
@@ -746,10 +719,7 @@ function readDomains(database: Database): Record<string, unknown> {
   );
 }
 
-function bindingFromRow(
-  row: BindingRow,
-  databaseEntries: AppDatabaseRow[],
-): Record<string, unknown> {
+function bindingFromRow(row: BindingRow, databaseEntries: AppDatabaseRow[]): Record<string, unknown> {
   if (row.engine === "mysql" || row.engine === "postgres") {
     return {
       engine: row.engine,
@@ -794,11 +764,12 @@ function replaceState(database: Database, state: DesiredState): void {
   `);
 
   for (const php of state.phpVersions) {
-    run(
-      database,
-      "INSERT INTO managed_php_versions (version, service, image, process_cap) VALUES (?, ?, ?, ?)",
-      [php.version, php.service, php.image, php.processCap],
-    );
+    run(database, "INSERT INTO managed_php_versions (version, service, image, process_cap) VALUES (?, ?, ?, ?)", [
+      php.version,
+      php.service,
+      php.image,
+      php.processCap,
+    ]);
   }
   for (const service of state.databaseServices) {
     run(
@@ -850,9 +821,7 @@ function insertApp(database: Database, app: AppState, state: DesiredState): void
   const tls = tlsColumns(app.tls);
   const vhost = templateColumns(app.vhostTemplate);
   const pool = templateColumns(isPhpApp(app) ? app.poolTemplate : { kind: "upstream" });
-  const compatibilityPhp = state.phpVersions.find(
-    (entry) => entry.version === state.defaults.phpVersion,
-  )!;
+  const compatibilityPhp = state.phpVersions.find((entry) => entry.version === state.defaults.phpVersion)!;
   run(
     database,
     `INSERT INTO applications (
@@ -938,11 +907,12 @@ function insertApp(database: Database, app: AppState, state: DesiredState): void
     if (binding.engine === "mysql" || binding.engine === "postgres") {
       const bindingId = Number(changes.lastInsertRowid);
       for (const [databasePosition, appDatabase] of binding.databases.entries()) {
-        run(
-          database,
-          "INSERT INTO app_databases (binding_id, position, name, created_at) VALUES (?, ?, ?, ?)",
-          [bindingId, databasePosition, appDatabase.name, appDatabase.createdAt],
-        );
+        run(database, "INSERT INTO app_databases (binding_id, position, name, created_at) VALUES (?, ?, ?, ?)", [
+          bindingId,
+          databasePosition,
+          appDatabase.name,
+          appDatabase.createdAt,
+        ]);
       }
     }
   }
@@ -970,12 +940,8 @@ function insertDomains(database: Database, state: DesiredState): void {
     byOwner.set(ownerId, entries);
   }
 
-  for (const [ownerId, entries] of [...byOwner.entries()].sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
-    const proxy = ownerId.startsWith("proxy:")
-      ? state.proxies[ownerId.slice("proxy:".length)]
-      : undefined;
+  for (const [ownerId, entries] of [...byOwner.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    const proxy = ownerId.startsWith("proxy:") ? state.proxies[ownerId.slice("proxy:".length)] : undefined;
     const aliasOrder = new Map(proxy?.aliases.map((domain, index) => [String(domain), index]));
     entries.sort((left, right) => {
       const primary = Number(right[1].primary) - Number(left[1].primary);
@@ -983,9 +949,7 @@ function insertDomains(database: Database, state: DesiredState): void {
       const leftPosition = aliasOrder.get(left[0]);
       const rightPosition = aliasOrder.get(right[0]);
       if (leftPosition !== undefined || rightPosition !== undefined) {
-        return (
-          (leftPosition ?? Number.MAX_SAFE_INTEGER) - (rightPosition ?? Number.MAX_SAFE_INTEGER)
-        );
+        return (leftPosition ?? Number.MAX_SAFE_INTEGER) - (rightPosition ?? Number.MAX_SAFE_INTEGER);
       }
       return left[0].localeCompare(right[0]);
     });

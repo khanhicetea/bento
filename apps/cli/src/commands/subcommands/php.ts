@@ -2,13 +2,7 @@ import { addPhpVersion, listPhpVersions, removePhpVersion } from "#/services/php
 import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerPhpCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("php", "Manage PHP versions", (y: YargsBuilder) =>
@@ -17,15 +11,13 @@ export function registerPhpCommands(parser: YargsBuilder, state: RunState): Yarg
       .command(
         "add <version>",
         "Add a PHP version (fpm+runner+cli)",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
         bind(state, cmdPhpAdd),
       )
       .command(
         "remove <version>",
         "Remove an unused non-default PHP version",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
         bind(state, cmdPhpRemove),
       )
       .demandCommand(1, "Specify a php subcommand: add|remove|list")
@@ -58,9 +50,7 @@ async function cmdPhpAdd(argv: ArgsWith<"version">, ctx: CliContext): Promise<nu
     return next;
   });
   ctx.log.info(
-    noApply
-      ? `added PHP ${version} (state only; run bento apply)`
-      : `added PHP ${version} (fpm+runner+cli roles)`,
+    noApply ? `added PHP ${version} (state only; run bento apply)` : `added PHP ${version} (fpm+runner+cli roles)`,
   );
   return 0;
 }
@@ -76,8 +66,6 @@ async function cmdPhpRemove(argv: ArgsWith<"version">, ctx: CliContext): Promise
     }
     return next;
   });
-  ctx.log.info(
-    noApply ? `removed PHP ${version} (state only; run bento apply)` : `removed PHP ${version}`,
-  );
+  ctx.log.info(noApply ? `removed PHP ${version} (state only; run bento apply)` : `removed PHP ${version}`);
   return 0;
 }

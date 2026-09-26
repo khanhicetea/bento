@@ -7,87 +7,76 @@ import type { ArgsWith, CliArgs } from "#/commands/args.ts";
 import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerStackCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
-  return parser.command(
-    "stack",
-    "Configure, export, or import a complete stack",
-    (y: YargsBuilder) =>
-      y
-        .command(
-          "ingress",
-          "Inspect or configure Nginx networking and host publications",
-          (y2: YargsBuilder) =>
-            y2
-              .command(
-                "show",
-                "Show effective Nginx networking",
-                (y3: YargsBuilder) => y3,
-                bind(state, cmdIngressShow),
-              )
-              .command(
-                "set <ingressMode>",
-                "Use host networking or the stack-private bridge network",
-                (y3: YargsBuilder) =>
-                  y3
-                    .positional("ingressMode", {
-                      type: "string",
-                      choices: ["host", "bridge"] as const,
-                      demandOption: true,
-                      describe: "Nginx network mode",
-                    })
-                    .option("http-port", {
-                      type: "number",
-                      describe: "Bridge-mode host HTTP port; 0 clears publication",
-                    })
-                    .option("https-port", {
-                      type: "number",
-                      describe: "Bridge-mode host HTTPS TCP/UDP port; 0 clears publication",
-                    }),
-                bind(state, cmdIngressSet),
-              )
-              .demandCommand(1, "Specify an ingress subcommand: show|set"),
-        )
-        .command(
-          "export <directory>",
-          "Export stack.tar.gz and one archive per database/Redis volume",
-          (y2: YargsBuilder) =>
-            y2.positional("directory", {
+  return parser.command("stack", "Configure, export, or import a complete stack", (y: YargsBuilder) =>
+    y
+      .command("ingress", "Inspect or configure Nginx networking and host publications", (y2: YargsBuilder) =>
+        y2
+          .command("show", "Show effective Nginx networking", (y3: YargsBuilder) => y3, bind(state, cmdIngressShow))
+          .command(
+            "set <ingressMode>",
+            "Use host networking or the stack-private bridge network",
+            (y3: YargsBuilder) =>
+              y3
+                .positional("ingressMode", {
+                  type: "string",
+                  choices: ["host", "bridge"] as const,
+                  demandOption: true,
+                  describe: "Nginx network mode",
+                })
+                .option("http-port", {
+                  type: "number",
+                  describe: "Bridge-mode host HTTP port; 0 clears publication",
+                })
+                .option("https-port", {
+                  type: "number",
+                  describe: "Bridge-mode host HTTPS TCP/UDP port; 0 clears publication",
+                }),
+            bind(state, cmdIngressSet),
+          )
+          .demandCommand(1, "Specify an ingress subcommand: show|set"),
+      )
+      .command(
+        "export <directory>",
+        "Export stack.tar.gz and one archive per database/Redis volume",
+        (y2: YargsBuilder) =>
+          y2.positional("directory", {
+            type: "string",
+            demandOption: true,
+            describe: "Empty destination directory outside the stack root",
+          }),
+        bind(state, cmdStackExport),
+      )
+      .command(
+        "import <directory>",
+        "Import stack and volume archives into an empty stack root and start it",
+        (y2: YargsBuilder) =>
+          y2
+            .positional("directory", {
               type: "string",
               demandOption: true,
-              describe: "Empty destination directory outside the stack root",
+              describe: "Directory containing stack.tar.gz and volume-named archives",
+            })
+            .option("name", {
+              type: "string",
+              describe: "New stack name, allowing a same-machine clone of the source stack",
+            })
+            .option("ingress-mode", {
+              type: "string",
+              choices: ["host", "bridge"] as const,
+              describe: "Override imported Nginx networking before the stack starts",
+            })
+            .option("http-port", {
+              type: "number",
+              describe: "Override bridge HTTP host port; 0 clears publication",
+            })
+            .option("https-port", {
+              type: "number",
+              describe: "Override bridge HTTPS host TCP/UDP port; 0 clears publication",
             }),
-          bind(state, cmdStackExport),
-        )
-        .command(
-          "import <directory>",
-          "Import stack and volume archives into an empty stack root and start it",
-          (y2: YargsBuilder) =>
-            y2
-              .positional("directory", {
-                type: "string",
-                demandOption: true,
-                describe: "Directory containing stack.tar.gz and volume-named archives",
-              })
-              .option("name", {
-                type: "string",
-                describe: "New stack name, allowing a same-machine clone of the source stack",
-              })
-              .option("ingress-mode", {
-                type: "string",
-                choices: ["host", "bridge"] as const,
-                describe: "Override imported Nginx networking before the stack starts",
-              })
-              .option("http-port", {
-                type: "number",
-                describe: "Override bridge HTTP host port; 0 clears publication",
-              })
-              .option("https-port", {
-                type: "number",
-                describe: "Override bridge HTTPS host TCP/UDP port; 0 clears publication",
-              }),
-          bind(state, cmdStackImport),
-        )
-        .demandCommand(1, "Specify a stack subcommand: ingress|export|import")
-        .recommendCommands(),
+        bind(state, cmdStackImport),
+      )
+      .demandCommand(1, "Specify a stack subcommand: ingress|export|import")
+      .recommendCommands(),
   );
 }
 
@@ -153,13 +142,8 @@ async function cmdIngressSet(argv: ArgsWith<"ingressMode">, ctx: CliContext): Pr
 
   const environment = await loadStackComposeEnvironment(ctx.platform);
   ctx.log.info(`Nginx ingress set to ${environment.nginx.hostNetwork ? "host" : "bridge"} mode`);
-  if (
-    environment.nginx.hostNetwork &&
-    (environment.nginx.httpPort || environment.nginx.httpsPort)
-  ) {
-    ctx.log.warn(
-      "bridge-mode port settings are retained but ignored while host networking is active",
-    );
+  if (environment.nginx.hostNetwork && (environment.nginx.httpPort || environment.nginx.httpsPort)) {
+    ctx.log.warn("bridge-mode port settings are retained but ignored while host networking is active");
   }
 
   const composeVersion = await ctx.platform.process
@@ -188,20 +172,13 @@ async function cmdIngressSet(argv: ArgsWith<"ingressMode">, ctx: CliContext): Pr
     timeoutMs: 10_000,
   });
   if (running.code === 0 && running.stdout.trim()) {
-    const upCommand = await composeArgs(ctx.platform, stateForCompose, [
-      "up",
-      "-d",
-      "--force-recreate",
-      "nginx",
-    ]);
+    const upCommand = await composeArgs(ctx.platform, stateForCompose, ["up", "-d", "--force-recreate", "nginx"]);
     const recreated = await ctx.platform.process.run(upCommand, {
       cwd: ctx.stackRoot,
       timeoutMs: 120_000,
     });
     if (recreated.code !== 0) {
-      throw new Error(
-        `ingress was saved but Nginx recreation failed: ${recreated.stderr || recreated.stdout}`,
-      );
+      throw new Error(`ingress was saved but Nginx recreation failed: ${recreated.stderr || recreated.stdout}`);
     }
     ctx.log.info("recreated Nginx with the new network topology");
   } else {
@@ -213,9 +190,7 @@ async function cmdIngressSet(argv: ArgsWith<"ingressMode">, ctx: CliContext): Pr
 async function cmdStackExport(argv: ArgsWith<"directory">, ctx: CliContext): Promise<number> {
   ctx.log.warn("export contains application data, passwords, and private keys; store it securely");
   // Keep state.db quiescent while tar captures the stack root.
-  const result = await ctx.store.withShared((state) =>
-    exportStack(ctx.platform, state, argv.directory),
-  );
+  const result = await ctx.store.withShared((state) => exportStack(ctx.platform, state, argv.directory));
   ctx.log.info(`stack exported to ${result.directory}`);
   for (const file of result.files) ctx.log.out(`  ${file}`);
   return 0;
@@ -234,12 +209,8 @@ async function cmdStackImport(argv: ArgsWith<"directory">, ctx: CliContext): Pro
   const result = await importStack(ctx.platform, argv.directory, {
     ...(argv.name ? { projectName: argv.name } : {}),
     ...(argv.ingressMode ? { nginxHostNetwork: argv.ingressMode === "host" } : {}),
-    ...(argv.httpPort !== undefined
-      ? { httpPort: argv.httpPort === 0 ? null : argv.httpPort }
-      : {}),
-    ...(argv.httpsPort !== undefined
-      ? { httpsPort: argv.httpsPort === 0 ? null : argv.httpsPort }
-      : {}),
+    ...(argv.httpPort !== undefined ? { httpPort: argv.httpPort === 0 ? null : argv.httpPort } : {}),
+    ...(argv.httpsPort !== undefined ? { httpsPort: argv.httpsPort === 0 ? null : argv.httpsPort } : {}),
   });
   ctx.log.info(`stack imported and started at ${result.directory}`);
   for (const volume of result.volumes) ctx.log.out(`  restored ${volume}`);

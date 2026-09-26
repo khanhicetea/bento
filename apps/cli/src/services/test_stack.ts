@@ -28,11 +28,7 @@ import { applyAppDataPlane, materializeAppHome, provisionApp } from "#/services/
 import { materializeDockerAssets } from "#/services/assets_materialize.ts";
 import { composeArgs } from "#/services/compose.ts";
 import { createAppDatabaseLive, isMysqlReachable } from "#/services/mysql.ts";
-import {
-  addPostgresVersion,
-  execPostgresAppSql,
-  isPostgresReachable,
-} from "#/services/postgres.ts";
+import { addPostgresVersion, execPostgresAppSql, isPostgresReachable } from "#/services/postgres.ts";
 import { isRedisReachable } from "#/services/redis.ts";
 import { loadRedisPassword, requireMysqlRootPassword } from "#/services/stack_env.ts";
 import { runDatabaseBackup, runDatabaseRestore } from "#/services/database_backup.ts";
@@ -229,12 +225,7 @@ async function composeCmd(
   });
 }
 
-async function writeProbePhp(
-  platform: Platform,
-  slug: string,
-  filename: string,
-  body: string,
-): Promise<string> {
+async function writeProbePhp(platform: Platform, slug: string, filename: string, body: string): Promise<string> {
   const home = join(platform.paths.paths.homesDir, slug);
   const path = join(home, "code", "public", filename);
   await platform.fs.mkdirp(join(path, ".."));
@@ -340,21 +331,13 @@ async function hmacSha256Hex(secret: string, body: string): Promise<string> {
     false,
     ["sign"],
   );
-  const signature = new Uint8Array(
-    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)),
-  );
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
   return [...signature].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function loadAppCredEnv(
-  platform: Platform,
-  app: AppState,
-  sharedRedis: string,
-): Promise<Record<string, string>> {
+async function loadAppCredEnv(platform: Platform, app: AppState, sharedRedis: string): Promise<Record<string, string>> {
   const credPath = join(platform.paths.paths.homesDir, app.slug, "credentials", "app.env");
-  const cred = (await platform.fs.exists(credPath))
-    ? parseDotEnv(await platform.fs.readText(credPath))
-    : {};
+  const cred = (await platform.fs.exists(credPath)) ? parseDotEnv(await platform.fs.readText(credPath)) : {};
   const env: Record<string, string> = {
     REDIS_HOST: cred.REDIS_HOST ?? "redis",
     REDIS_PORT: cred.REDIS_PORT ?? "6379",
@@ -462,10 +445,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   const pgAppSlug2 = "pgbeta";
   // The harness opts into bridge networking so it never stops or steals ingress
   // from another Bento stack. Keep the deterministic pair in the unprivileged range.
-  const portSeed = [...opts.name].reduce(
-    (hash, char) => (hash * 31 + char.charCodeAt(0)) % 10_000,
-    0,
-  );
+  const portSeed = [...opts.name].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 10_000, 0);
   const nginxHttpPort = 20_000 + portSeed * 2;
   const nginxHttpsPort = nginxHttpPort + 1;
   let appDomain = `${opts.name}.test`;
@@ -573,10 +553,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const combined = `${out.stdout}\n${out.stderr}`;
     if (out.code !== 0) {
       if (/address already in use|failed to bind|ports are not available/i.test(combined)) {
-        log(
-          "warn",
-          "compose up reported a test ingress port conflict; continuing data-plane checks",
-        );
+        log("warn", "compose up reported a test ingress port conflict; continuing data-plane checks");
         return {
           ok: true,
           detail: "partial up (test ingress port conflict — HTTP checks may skip)",
@@ -589,8 +566,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("mysql-ready", "MySQL service reachable", async () => {
     state = await store.load();
-    const service =
-      state.databaseServices.filter((v) => v.engine === "mysql")[0]?.service ?? "mysql84";
+    const service = state.databaseServices.filter((v) => v.engine === "mysql")[0]?.service ?? "mysql84";
     const ok = await waitFor(
       `mysql ${service}`,
       opts.timeoutMs,
@@ -612,10 +588,11 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
             'mysqladmin --defaults-extra-file="$OPT" ping',
           ].join("\n");
           const stdin = ["[client]", "user=root", `password=${pw}`, "__END_CNF__", ""].join("\n");
-          const r = await runCapture(
-            ["docker", "compose", "exec", "-T", service, "sh", "-c", script],
-            { cwd: opts.stackRoot, stdin, timeoutMs: 10_000 },
-          );
+          const r = await runCapture(["docker", "compose", "exec", "-T", service, "sh", "-c", script], {
+            cwd: opts.stackRoot,
+            stdin,
+            timeoutMs: 10_000,
+          });
           return r.code === 0 && /alive/i.test(r.stdout + r.stderr);
         } catch {
           return false;
@@ -633,8 +610,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
   await record("postgres-ready", "PostgreSQL service reachable on private network", async () => {
     state = await store.load();
-    const service =
-      state.databaseServices.find((entry) => entry.engine === "postgres")?.service ?? "postgres17";
+    const service = state.databaseServices.find((entry) => entry.engine === "postgres")?.service ?? "postgres17";
     const ok = await waitFor(
       `postgres ${service}`,
       opts.timeoutMs,
@@ -712,9 +688,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       });
       return {
         ok: false,
-        detail: `php service ${service} not up. logs:\n${(logs.stdout + logs.stderr)
-          .trim()
-          .slice(0, 500)}`,
+        detail: `php service ${service} not up. logs:\n${(logs.stdout + logs.stderr).trim().slice(0, 500)}`,
       };
     }
     return { ok: true, detail: service };
@@ -879,9 +853,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       });
       return {
         ok: plane.mysqlApplied,
-        detail: plane.mysqlApplied
-          ? `already recorded; grants re-applied`
-          : "already recorded but grants failed",
+        detail: plane.mysqlApplied ? `already recorded; grants re-applied` : "already recorded but grants failed",
       };
     }
     const rootPassword = await requireMysqlRootPassword(platform);
@@ -1061,12 +1033,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     state = await store.load();
     const alpha = state.apps[pgAppSlug];
     const beta = state.apps[pgAppSlug2];
-    if (
-      !alpha ||
-      !beta ||
-      alpha.database.engine !== "postgres" ||
-      beta.database.engine !== "postgres"
-    ) {
+    if (!alpha || !beta || alpha.database.engine !== "postgres" || beta.database.engine !== "postgres") {
       return { ok: false, detail: "PostgreSQL test apps missing" };
     }
     const own = await execPostgresAppSql(
@@ -1088,9 +1055,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (own.code !== 0 || cross.code === 0) {
       return {
         ok: false,
-        detail: `own=${own.code} cross=${cross.code}: ${(cross.stderr || own.stderr)
-          .trim()
-          .slice(0, 240)}`,
+        detail: `own=${own.code} cross=${cross.code}: ${(cross.stderr || own.stderr).trim().slice(0, 240)}`,
       };
     }
     return {
@@ -1099,60 +1064,56 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     };
   });
 
-  await record(
-    "pg-backup-restore",
-    "PostgreSQL logical backup restores to verification DB",
-    async () => {
-      state = await store.load();
-      const app = state.apps[pgAppSlug];
-      if (!app || app.database.engine !== "postgres") {
-        return { ok: false, detail: `${pgAppSlug} PostgreSQL binding missing` };
-      }
-      const seeded = await execPostgresAppSql(
-        platform,
-        app.database.service,
-        app.database.user,
-        pgAppSlug,
-        "DROP TABLE IF EXISTS bento_live_proof; CREATE TABLE bento_live_proof(value text); INSERT INTO bento_live_proof VALUES ('restored');",
-        app.database.password,
-      );
-      if (seeded.code !== 0) return { ok: false, detail: seeded.stderr.trim().slice(0, 300) };
-      const [artifact] = await runDatabaseBackup(platform, state, {
-        scope: "database",
-        slug: pgAppSlug,
-        database: pgAppSlug,
-        compress: "gzip",
-      });
-      if (!artifact || artifact.engine !== "postgres") {
-        return { ok: false, detail: "PostgreSQL backup artifact missing" };
-      }
-      const target = `${pgAppSlug}_verify`;
-      const replacing = app.database.databases.some((database) => database.name === target);
-      const next = await runDatabaseRestore(platform, state, {
-        file: artifact.path,
-        slug: pgAppSlug,
-        targetDatabase: target,
-        replaceOriginal: replacing ? target : undefined,
-      });
-      if (next !== state) await store.save(next);
-      state = next;
-      const verified = await execPostgresAppSql(
-        platform,
-        app.database.service,
-        app.database.user,
-        target,
-        "SELECT value FROM bento_live_proof;",
-        app.database.password,
-      );
-      if (verified.code !== 0 || !verified.stdout.includes("restored")) {
-        return {
-          ok: false,
-          detail: (verified.stderr || verified.stdout).trim().slice(0, 300),
-        };
-      }
-      return { ok: true, detail: `${artifact.path} → ${target}` };
-    },
-  );
+  await record("pg-backup-restore", "PostgreSQL logical backup restores to verification DB", async () => {
+    state = await store.load();
+    const app = state.apps[pgAppSlug];
+    if (!app || app.database.engine !== "postgres") {
+      return { ok: false, detail: `${pgAppSlug} PostgreSQL binding missing` };
+    }
+    const seeded = await execPostgresAppSql(
+      platform,
+      app.database.service,
+      app.database.user,
+      pgAppSlug,
+      "DROP TABLE IF EXISTS bento_live_proof; CREATE TABLE bento_live_proof(value text); INSERT INTO bento_live_proof VALUES ('restored');",
+      app.database.password,
+    );
+    if (seeded.code !== 0) return { ok: false, detail: seeded.stderr.trim().slice(0, 300) };
+    const [artifact] = await runDatabaseBackup(platform, state, {
+      scope: "database",
+      slug: pgAppSlug,
+      database: pgAppSlug,
+      compress: "gzip",
+    });
+    if (!artifact || artifact.engine !== "postgres") {
+      return { ok: false, detail: "PostgreSQL backup artifact missing" };
+    }
+    const target = `${pgAppSlug}_verify`;
+    const replacing = app.database.databases.some((database) => database.name === target);
+    const next = await runDatabaseRestore(platform, state, {
+      file: artifact.path,
+      slug: pgAppSlug,
+      targetDatabase: target,
+      replaceOriginal: replacing ? target : undefined,
+    });
+    if (next !== state) await store.save(next);
+    state = next;
+    const verified = await execPostgresAppSql(
+      platform,
+      app.database.service,
+      app.database.user,
+      target,
+      "SELECT value FROM bento_live_proof;",
+      app.database.password,
+    );
+    if (verified.code !== 0 || !verified.stdout.includes("restored")) {
+      return {
+        ok: false,
+        detail: (verified.stderr || verified.stdout).trim().slice(0, 300),
+      };
+    }
+    return { ok: true, detail: `${artifact.path} → ${target}` };
+  });
 
   // =========================================================================
   // CHAIN 5 — domain add / remove
@@ -1186,9 +1147,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
         detail: `alias ${aliasDomain} missing from domain map`,
       };
     }
-    const vhost = await platform.fs.readText(
-      join(opts.stackRoot, "generated", "nginx", "sites", `${appSlug}.conf`),
-    );
+    const vhost = await platform.fs.readText(join(opts.stackRoot, "generated", "nginx", "sites", `${appSlug}.conf`));
     if (!vhost.includes(aliasDomain)) {
       return { ok: false, detail: `vhost missing server_name ${aliasDomain}` };
     }
@@ -1223,9 +1182,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     if (state.domains[aliasDomain]) {
       return { ok: false, detail: `domain map still owns ${aliasDomain}` };
     }
-    const vhost = await platform.fs.readText(
-      join(opts.stackRoot, "generated", "nginx", "sites", `${appSlug}.conf`),
-    );
+    const vhost = await platform.fs.readText(join(opts.stackRoot, "generated", "nginx", "sites", `${appSlug}.conf`));
     if (vhost.includes(aliasDomain)) {
       return { ok: false, detail: `vhost still lists ${aliasDomain}` };
     }
@@ -1279,20 +1236,15 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       0o600,
     );
     await chown(bundle, app.uid, app.gid);
-    const imported = await schedulerCli(current, [
-      "import",
-      `${app.home}/.bento/test-stack-minicrond.toml`,
-    ]);
-    if (imported.code !== 0)
-      return { ok: false, detail: (imported.stderr || imported.stdout).trim().slice(0, 300) };
+    const imported = await schedulerCli(current, ["import", `${app.home}/.bento/test-stack-minicrond.toml`]);
+    if (imported.code !== 0) return { ok: false, detail: (imported.stderr || imported.stdout).trim().slice(0, 300) };
     const listed = await schedulerCli(current, ["list"]);
     return {
       ok:
         listed.code === 0 &&
         listed.stdout.includes("test-stack-print-job") &&
         listed.stdout.includes("test-stack-print-worker"),
-      detail:
-        listed.code === 0 ? "app registry owns both definitions" : listed.stderr.slice(0, 300),
+      detail: listed.code === 0 ? "app registry owns both definitions" : listed.stderr.slice(0, 300),
     };
   });
 
@@ -1301,35 +1253,27 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     const status = await schedulerCli(state, ["status"]);
     const listed = await schedulerCli(state, ["list"]);
     return {
-      ok:
-        status.code === 0 && listed.code === 0 && listed.stdout.includes("test-stack-print-worker"),
+      ok: status.code === 0 && listed.code === 0 && listed.stdout.includes("test-stack-print-worker"),
       detail: status.code === 0 ? "app minicrond reachable" : status.stderr.slice(0, 300),
     };
   });
 
-  await record(
-    "schedule-wait",
-    `Wait ${opts.scheduleWaitSec}s for minicrond job + worker output`,
-    async () => {
-      if (opts.scheduleWaitSec <= 0) {
-        return { ok: true, skipped: true, detail: "scheduleWaitSec=0" };
+  await record("schedule-wait", `Wait ${opts.scheduleWaitSec}s for minicrond job + worker output`, async () => {
+    if (opts.scheduleWaitSec <= 0) {
+      return { ok: true, skipped: true, detail: "scheduleWaitSec=0" };
+    }
+    log("info", `sleeping ${opts.scheduleWaitSec}s so * * * * * cron can fire and worker can write…`);
+    // Progress ticks every 15s so the operator sees life
+    const end = Date.now() + opts.scheduleWaitSec * 1000;
+    while (Date.now() < end) {
+      const left = Math.ceil((end - Date.now()) / 1000);
+      if (left > 0 && left % 15 === 0) {
+        log("info", `  … ${left}s remaining`);
       }
-      log(
-        "info",
-        `sleeping ${opts.scheduleWaitSec}s so * * * * * cron can fire and worker can write…`,
-      );
-      // Progress ticks every 15s so the operator sees life
-      const end = Date.now() + opts.scheduleWaitSec * 1000;
-      while (Date.now() < end) {
-        const left = Math.ceil((end - Date.now()) / 1000);
-        if (left > 0 && left % 15 === 0) {
-          log("info", `  … ${left}s remaining`);
-        }
-        await sleep(Math.min(1000, Math.max(0, end - Date.now())));
-      }
-      return { ok: true, detail: `waited ${opts.scheduleWaitSec}s` };
-    },
-  );
+      await sleep(Math.min(1000, Math.max(0, end - Date.now())));
+    }
+    return { ok: true, detail: `waited ${opts.scheduleWaitSec}s` };
+  });
 
   await record("cron-verify", "Cron print wrote to logs/cron/print.log", async () => {
     const cronLog = join(platform.paths.paths.homesDir, appSlug, "logs", "cron", "print.log");
@@ -1473,12 +1417,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
 
     const phpService = state.apps[appSlug]?.phpService ?? "php85";
     const sockHost = join(opts.stackRoot, "runtime", "php-fpm", phpService, `${appSlug}.sock`);
-    const sockOk = await waitFor(
-      "php-fpm socket",
-      30_000,
-      async () => await platform.fs.exists(sockHost),
-      log,
-    );
+    const sockOk = await waitFor("php-fpm socket", 30_000, async () => await platform.fs.exists(sockHost), log);
     if (!sockOk) {
       return { ok: false, detail: `missing pool socket at ${sockHost}` };
     }
@@ -1503,15 +1442,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     await sleep(1500);
 
     const sockInNginx = await runCapture(
-      [
-        "docker",
-        "compose",
-        "exec",
-        "-T",
-        "nginx",
-        "ls",
-        `/run/php-fpm/${phpService}/${appSlug}.sock`,
-      ],
+      ["docker", "compose", "exec", "-T", "nginx", "ls", `/run/php-fpm/${phpService}/${appSlug}.sock`],
       { cwd: opts.stackRoot, timeoutMs: 10_000 },
     );
     if (sockInNginx.code !== 0) {
@@ -1549,9 +1480,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       return {
         ok: true,
         skipped: true,
-        detail: `curl failed on test port ${nginxHttpPort}: ${(curl.stderr || "")
-          .trim()
-          .slice(0, 200)}`,
+        detail: `curl failed on test port ${nginxHttpPort}: ${(curl.stderr || "").trim().slice(0, 200)}`,
       };
     }
     if (code !== "200") {
@@ -1565,10 +1494,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
       }
       return {
         ok: false,
-        detail: `HTTP ${code} for Host:${domain}; body=${body.slice(0, 80)}; nginx_err=${errTail.slice(
-          0,
-          200,
-        )}`,
+        detail: `HTTP ${code} for Host:${domain}; body=${body.slice(0, 80)}; nginx_err=${errTail.slice(0, 200)}`,
       };
     }
     if (!body.includes(appSlug) && !body.toLowerCase().includes("bento")) {
@@ -1596,9 +1522,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     return {
       ok: hasSsl,
       detail: hasSsl
-        ? `tls.kind=${app.tls.kind}; shared_cert=${
-            hasBoot ? "present" : "pending-entrypoint"
-          }; ACME not tested`
+        ? `tls.kind=${app.tls.kind}; shared_cert=${hasBoot ? "present" : "pending-entrypoint"}; ACME not tested`
         : "vhost missing 443 ssl listener",
     };
   });
@@ -1644,12 +1568,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
     try {
       const exported = await exportStack(platform, state, destination);
       const names = exported.files.map((path) => path.split(/[\\/]/).at(-1) ?? path);
-      const required = [
-        "stack.tar.gz",
-        "mysql84-data.tar.gz",
-        "postgres17-data.tar.gz",
-        "redis-data.tar.gz",
-      ];
+      const required = ["stack.tar.gz", "mysql84-data.tar.gz", "postgres17-data.tar.gz", "redis-data.tar.gz"];
       const missing = required.filter((name) => !names.includes(name));
       if (missing.length > 0) return { ok: false, detail: `missing ${missing.join(", ")}` };
       return { ok: true, detail: names.join(", ") };
@@ -1665,207 +1584,185 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   // =========================================================================
   chain("deploy");
 
-  await record(
-    "deploy-live",
-    "Signed webhook drains in runner, executes hook, and resets app OPcache",
-    async () => {
-      const httpStep = steps.find((step) => step.id === "http");
-      if (opts.skipHttp || httpStep?.skipped || httpStep?.ok === false) {
-        return {
-          ok: true,
-          skipped: true,
-          detail: opts.skipHttp ? "--skip-http set" : "live Nginx HTTP check unavailable",
-        };
-      }
+  await record("deploy-live", "Signed webhook drains in runner, executes hook, and resets app OPcache", async () => {
+    const httpStep = steps.find((step) => step.id === "http");
+    if (opts.skipHttp || httpStep?.skipped || httpStep?.ok === false) {
+      return {
+        ok: true,
+        skipped: true,
+        detail: opts.skipHttp ? "--skip-http set" : "live Nginx HTTP check unavailable",
+      };
+    }
 
-      state = await store.load();
-      const current = state.apps[appSlug];
-      if (!current) return { ok: false, detail: "demo app missing" };
-      const enabled = enableDeploy(state, { slug: appSlug }, platform);
-      const app = enabled.state.apps[appSlug]!;
-      const appHome = join(platform.paths.paths.homesDir, appSlug);
-      const bentoDir = join(appHome, ".bento");
-      const markerPath = join(bentoDir, "live-deploy-hook-ran");
-      const queuePath = join(bentoDir, "queue.json");
-      await platform.fs.remove(markerPath).catch(() => {});
-      await platform.fs.atomicWriteText(
-        queuePath,
-        `${JSON.stringify({ schemaVersion: 1, jobs: [] }, null, 2)}\n`,
-        0o600,
-      );
-      await platform.fs.atomicWriteText(
-        join(bentoDir, "deploy.sh"),
-        `#!/bin/sh
+    state = await store.load();
+    const current = state.apps[appSlug];
+    if (!current) return { ok: false, detail: "demo app missing" };
+    const enabled = enableDeploy(state, { slug: appSlug }, platform);
+    const app = enabled.state.apps[appSlug]!;
+    const appHome = join(platform.paths.paths.homesDir, appSlug);
+    const bentoDir = join(appHome, ".bento");
+    const markerPath = join(bentoDir, "live-deploy-hook-ran");
+    const queuePath = join(bentoDir, "queue.json");
+    await platform.fs.remove(markerPath).catch(() => {});
+    await platform.fs.atomicWriteText(queuePath, `${JSON.stringify({ schemaVersion: 1, jobs: [] }, null, 2)}\n`, 0o600);
+    await platform.fs.atomicWriteText(
+      join(bentoDir, "deploy.sh"),
+      `#!/bin/sh
 set -eu
 test -s "$BENTO_DEPLOY_PAYLOAD_FILE"
 printf '%s\n' "$BENTO_DEPLOY_ID" > "$HOME/.bento/live-deploy-hook-ran"
 echo "live deploy hook executed: $BENTO_DEPLOY_ID"
 `,
-        0o750,
-      );
-      const redisShared = await loadRedisPassword(platform);
-      await materializeAppHome(platform, app, {
-        recursivePerms: false,
-        redisSharedPassword: redisShared,
-      });
-      await store.save(enabled.state);
-      state = enabled.state;
-      await render.apply(state, { renderOnly: true, skipValidate: true });
+      0o750,
+    );
+    const redisShared = await loadRedisPassword(platform);
+    await materializeAppHome(platform, app, {
+      recursivePerms: false,
+      redisSharedPassword: redisShared,
+    });
+    await store.save(enabled.state);
+    state = enabled.state;
+    await render.apply(state, { renderOnly: true, skipValidate: true });
 
-      const phpService = app.phpService;
-      const runner = `${phpService}-runner`;
-      const restarted = await composeCmd(
-        platform,
-        state,
-        ["restart", phpService, runner, "nginx"],
-        180_000,
-      );
-      if (restarted.code !== 0) {
-        return {
-          ok: false,
-          detail: `deploy service restart failed: ${(restarted.stderr || restarted.stdout)
-            .trim()
-            .slice(0, 400)}`,
-        };
-      }
-      const ready = await waitFor(
-        "deploy FPM socket",
-        30_000,
-        async () =>
-          await platform.fs.exists(
-            join(opts.stackRoot, "runtime", "php-fpm", phpService, `${appSlug}.sock`),
-          ),
-        log,
-      );
-      if (!ready)
-        return {
-          ok: false,
-          detail: "app FPM socket did not return after restart",
-        };
-      await sleep(1500);
-
-      const body = JSON.stringify({ ref: "refs/heads/main", live: true });
-      const signature = await hmacSha256Hex(enabled.secret, body);
-      const webhook = await runCapture(
-        [
-          "curl",
-          "-sS",
-          "--max-time",
-          "15",
-          "-w",
-          "\n%{http_code}",
-          "-H",
-          `Host: ${app.mainDomain}`,
-          "-H",
-          "Content-Type: application/json",
-          "-H",
-          `X-Hub-Signature-256: sha256=${signature}`,
-          "--data-binary",
-          "@-",
-          `http://127.0.0.1:${nginxHttpPort}/_bento/deploy`,
-        ],
-        { stdin: body, timeoutMs: 20_000 },
-      );
-      const responseLines = webhook.stdout.trimEnd().split("\n");
-      const statusCode = responseLines.pop() ?? "";
-      const responseBody = responseLines.join("\n");
-      if (webhook.code !== 0 || statusCode !== "202") {
-        return {
-          ok: false,
-          detail: `webhook exit=${webhook.code} HTTP=${statusCode}: ${(
-            webhook.stderr || responseBody
-          )
-            .trim()
-            .slice(0, 300)}`,
-        };
-      }
-      let accepted: { id?: string; status?: string };
-      try {
-        accepted = JSON.parse(responseBody) as { id?: string; status?: string };
-      } catch {
-        return {
-          ok: false,
-          detail: `invalid webhook response: ${responseBody.slice(0, 200)}`,
-        };
-      }
-      const jobId = accepted.id ?? "";
-      if (!/^dep_[A-Za-z0-9_-]+$/.test(jobId) || accepted.status !== "queued") {
-        return {
-          ok: false,
-          detail: `unexpected webhook response: ${responseBody.slice(0, 200)}`,
-        };
-      }
-
-      const socketPath = `/run/php-fpm/${phpService}/${appSlug}.sock`;
-      const drained = await composeCmd(
-        platform,
-        state,
-        [
-          "exec",
-          "-T",
-          runner,
-          "setpriv",
-          `--reuid=${app.uid}`,
-          `--regid=${app.gid}`,
-          "--clear-groups",
-          "--",
-          "/opt/bento/helpers/deploy-drain.sh",
-          appSlug,
-          socketPath,
-        ],
-        60_000,
-      );
-      if (drained.code !== 0) {
-        return {
-          ok: false,
-          detail: `runner drain exit ${drained.code}: ${(drained.stderr || drained.stdout)
-            .trim()
-            .slice(0, 400)}`,
-        };
-      }
-
-      const queue = JSON.parse(await platform.fs.readText(queuePath)) as {
-        jobs: Array<{
-          id?: string;
-          status?: string;
-          exitCode?: number;
-          logName?: string;
-        }>;
-      };
-      const job = queue.jobs.find((candidate) => candidate.id === jobId);
-      if (job?.status !== "success" || job.exitCode !== 0) {
-        return {
-          ok: false,
-          detail: `job did not succeed: ${JSON.stringify(job ?? null)}`,
-        };
-      }
-      const marker = await platform.fs.readText(markerPath).catch(() => "");
-      if (marker.trim() !== jobId) {
-        return { ok: false, detail: `deploy hook marker missing for ${jobId}` };
-      }
-      const logPath = join(appHome, "logs", job.logName ?? `deploy-${jobId}.log`);
-      const deployLog = await platform.fs.readText(logPath);
-      if (!deployLog.includes("live deploy hook executed")) {
-        return { ok: false, detail: "deploy hook output missing from job log" };
-      }
-      if (!deployLog.includes("opcache reset: reset")) {
-        return {
-          ok: false,
-          detail: `OPcache reset was not confirmed: ${deployLog.trim().slice(-300)}`,
-        };
-      }
-      if (await platform.fs.exists(join(bentoDir, `payload-${jobId}.json`))) {
-        return {
-          ok: false,
-          detail: "deploy payload snapshot was not cleaned up",
-        };
-      }
+    const phpService = app.phpService;
+    const runner = `${phpService}-runner`;
+    const restarted = await composeCmd(platform, state, ["restart", phpService, runner, "nginx"], 180_000);
+    if (restarted.code !== 0) {
       return {
-        ok: true,
-        detail: `webhook 202; ${jobId} success; hook marker + OPcache reset confirmed`,
+        ok: false,
+        detail: `deploy service restart failed: ${(restarted.stderr || restarted.stdout).trim().slice(0, 400)}`,
       };
-    },
-  );
+    }
+    const ready = await waitFor(
+      "deploy FPM socket",
+      30_000,
+      async () => await platform.fs.exists(join(opts.stackRoot, "runtime", "php-fpm", phpService, `${appSlug}.sock`)),
+      log,
+    );
+    if (!ready)
+      return {
+        ok: false,
+        detail: "app FPM socket did not return after restart",
+      };
+    await sleep(1500);
+
+    const body = JSON.stringify({ ref: "refs/heads/main", live: true });
+    const signature = await hmacSha256Hex(enabled.secret, body);
+    const webhook = await runCapture(
+      [
+        "curl",
+        "-sS",
+        "--max-time",
+        "15",
+        "-w",
+        "\n%{http_code}",
+        "-H",
+        `Host: ${app.mainDomain}`,
+        "-H",
+        "Content-Type: application/json",
+        "-H",
+        `X-Hub-Signature-256: sha256=${signature}`,
+        "--data-binary",
+        "@-",
+        `http://127.0.0.1:${nginxHttpPort}/_bento/deploy`,
+      ],
+      { stdin: body, timeoutMs: 20_000 },
+    );
+    const responseLines = webhook.stdout.trimEnd().split("\n");
+    const statusCode = responseLines.pop() ?? "";
+    const responseBody = responseLines.join("\n");
+    if (webhook.code !== 0 || statusCode !== "202") {
+      return {
+        ok: false,
+        detail: `webhook exit=${webhook.code} HTTP=${statusCode}: ${(webhook.stderr || responseBody)
+          .trim()
+          .slice(0, 300)}`,
+      };
+    }
+    let accepted: { id?: string; status?: string };
+    try {
+      accepted = JSON.parse(responseBody) as { id?: string; status?: string };
+    } catch {
+      return {
+        ok: false,
+        detail: `invalid webhook response: ${responseBody.slice(0, 200)}`,
+      };
+    }
+    const jobId = accepted.id ?? "";
+    if (!/^dep_[A-Za-z0-9_-]+$/.test(jobId) || accepted.status !== "queued") {
+      return {
+        ok: false,
+        detail: `unexpected webhook response: ${responseBody.slice(0, 200)}`,
+      };
+    }
+
+    const socketPath = `/run/php-fpm/${phpService}/${appSlug}.sock`;
+    const drained = await composeCmd(
+      platform,
+      state,
+      [
+        "exec",
+        "-T",
+        runner,
+        "setpriv",
+        `--reuid=${app.uid}`,
+        `--regid=${app.gid}`,
+        "--clear-groups",
+        "--",
+        "/opt/bento/helpers/deploy-drain.sh",
+        appSlug,
+        socketPath,
+      ],
+      60_000,
+    );
+    if (drained.code !== 0) {
+      return {
+        ok: false,
+        detail: `runner drain exit ${drained.code}: ${(drained.stderr || drained.stdout).trim().slice(0, 400)}`,
+      };
+    }
+
+    const queue = JSON.parse(await platform.fs.readText(queuePath)) as {
+      jobs: Array<{
+        id?: string;
+        status?: string;
+        exitCode?: number;
+        logName?: string;
+      }>;
+    };
+    const job = queue.jobs.find((candidate) => candidate.id === jobId);
+    if (job?.status !== "success" || job.exitCode !== 0) {
+      return {
+        ok: false,
+        detail: `job did not succeed: ${JSON.stringify(job ?? null)}`,
+      };
+    }
+    const marker = await platform.fs.readText(markerPath).catch(() => "");
+    if (marker.trim() !== jobId) {
+      return { ok: false, detail: `deploy hook marker missing for ${jobId}` };
+    }
+    const logPath = join(appHome, "logs", job.logName ?? `deploy-${jobId}.log`);
+    const deployLog = await platform.fs.readText(logPath);
+    if (!deployLog.includes("live deploy hook executed")) {
+      return { ok: false, detail: "deploy hook output missing from job log" };
+    }
+    if (!deployLog.includes("opcache reset: reset")) {
+      return {
+        ok: false,
+        detail: `OPcache reset was not confirmed: ${deployLog.trim().slice(-300)}`,
+      };
+    }
+    if (await platform.fs.exists(join(bentoDir, `payload-${jobId}.json`))) {
+      return {
+        ok: false,
+        detail: "deploy payload snapshot was not cleaned up",
+      };
+    }
+    return {
+      ok: true,
+      detail: `webhook 202; ${jobId} success; hook marker + OPcache reset confirmed`,
+    };
+  });
 
   // Cleanup
   if (!opts.keep) {
@@ -1894,11 +1791,7 @@ echo "live deploy hook executed: $BENTO_DEPLOY_ID"
   return finish(opts, steps, startedAt);
 }
 
-function finish(
-  opts: TestStackOptions,
-  steps: TestStepResult[],
-  startedAt: string,
-): TestStackReport {
+function finish(opts: TestStackOptions, steps: TestStepResult[], startedAt: string): TestStackReport {
   const passed = steps.filter((s) => s.ok && !s.skipped).length;
   const failed = steps.filter((s) => !s.ok && !s.skipped).length;
   const skipped = steps.filter((s) => s.skipped).length;
@@ -1926,9 +1819,7 @@ export function formatTestStackReport(report: TestStackReport): string {
     lines.push(`  [${mark}] ${s.id.padEnd(18)} ${s.title}${s.detail ? ` — ${s.detail}` : ""}`);
   }
   lines.push("");
-  lines.push(
-    `summary: ${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped`,
-  );
+  lines.push(`summary: ${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped`);
   lines.push(report.ok ? "RESULT: PASS" : "RESULT: FAIL");
   lines.push("");
   lines.push(
@@ -1960,8 +1851,7 @@ export function resolveTestStackOptions(argv: {
     skipBuild: !!argv.skipBuild,
     skipHttp: !!argv.skipHttp,
     timeoutMs: Math.max(30, argv.timeoutSec ?? 180) * 1000,
-    scheduleWaitSec:
-      argv.scheduleWaitSec != null ? Math.max(0, argv.scheduleWaitSec) : DEFAULT_SCHEDULE_WAIT_SEC,
+    scheduleWaitSec: argv.scheduleWaitSec != null ? Math.max(0, argv.scheduleWaitSec) : DEFAULT_SCHEDULE_WAIT_SEC,
     log:
       argv.log ??
       ((level, msg) => {

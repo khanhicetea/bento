@@ -8,10 +8,7 @@ import { createPlatform } from "../../src/platform/mod.ts";
 import { stateToJson } from "../../src/schemas/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { createProxy, setProxyEnabled } from "../../src/services/proxy.ts";
-import {
-  STATE_DATABASE_SCHEMA_VERSION,
-  migrateStateDatabase,
-} from "../../src/services/state_database.ts";
+import { STATE_DATABASE_SCHEMA_VERSION, migrateStateDatabase } from "../../src/services/state_database.ts";
 import { StateStore } from "../../src/services/state_store.ts";
 
 bunRuntime.test("state database migrations are numbered, private, and idempotent", async () => {
@@ -35,10 +32,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
 
     using database = new Database(platform.paths.paths.stateDb, { readonly: true });
     const migration = database
-      .query<
-        { version: number; name: string },
-        []
-      >("SELECT version, name FROM schema_migrations ORDER BY version")
+      .query<{ version: number; name: string }, []>("SELECT version, name FROM schema_migrations ORDER BY version")
       .all();
     assertEquals(migration, [{ version: 1, name: "minicrond-owned-user-jobs" }]);
     const tables = database
@@ -68,20 +62,11 @@ bunRuntime.test("old development schema is refused without deleting user job row
     {
       using database = new Database(platform.paths.paths.stateDb);
       database.exec("CREATE TABLE cron_jobs (name TEXT); INSERT INTO cron_jobs VALUES ('keep-me')");
-      database.run(
-        "UPDATE schema_migrations SET name = 'normalized-desired-state' WHERE version = 1",
-      );
+      database.run("UPDATE schema_migrations SET name = 'normalized-desired-state' WHERE version = 1");
     }
-    await assertRejects(
-      () => migrateStateDatabase(platform),
-      Error,
-      "unsupported desired state database migration 1",
-    );
+    await assertRejects(() => migrateStateDatabase(platform), Error, "unsupported desired state database migration 1");
     using database = new Database(platform.paths.paths.stateDb, { readonly: true });
-    assertEquals(
-      database.query<{ name: string }, []>("SELECT name FROM cron_jobs").get()?.name,
-      "keep-me",
-    );
+    assertEquals(database.query<{ name: string }, []>("SELECT name FROM cron_jobs").get()?.name, "keep-me");
     assertEquals(
       database.query<{ name: string }, []>("SELECT name FROM schema_migrations").get()?.name,
       "normalized-desired-state",
@@ -181,17 +166,11 @@ bunRuntime.test("state database round-trips nested state and JSON argument field
     using database = new Database(platform.paths.paths.stateDb, { readonly: true });
     assertEquals(
       database
-        .query<
-          { deploy_argv_json: string },
-          []
-        >("SELECT deploy_argv_json FROM applications WHERE slug = 'files'")
+        .query<{ deploy_argv_json: string }, []>("SELECT deploy_argv_json FROM applications WHERE slug = 'files'")
         .get()?.deploy_argv_json,
       JSON.stringify(state.apps.files!.deploy.argv),
     );
-    assertEquals(
-      JSON.parse(stateToJson(await store.load())),
-      JSON.parse(stateToJson({ ...state, updatedAt: now })),
-    );
+    assertEquals(JSON.parse(stateToJson(await store.load())), JSON.parse(stateToJson({ ...state, updatedAt: now })));
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }
@@ -254,73 +233,62 @@ bunRuntime.test("explicit migrate command applies migrations for CLI-only stacks
   }
 });
 
-bunRuntime.test(
-  "future database migrations are refused without changing their marker",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-future-state-db-" });
-    try {
-      const platform = createPlatform(root, bunRuntime.cwd());
-      const store = new StateStore(platform);
-      await store.migrate();
-      {
-        using database = new Database(platform.paths.paths.stateDb);
-        database.run(
-          "INSERT INTO schema_migrations (version, name, applied_at) VALUES (999, 'future', ?)",
-          ["2026-01-01T00:00:00.000Z"],
-        );
-      }
-
-      await assertRejects(
-        () => store.migrate(),
-        Error,
-        "unsupported desired state database migration",
-      );
-      using database = new Database(platform.paths.paths.stateDb, { readonly: true });
-      const future = database
-        .query<{ version: number }, []>("SELECT version FROM schema_migrations WHERE version = 999")
-        .get();
-      assertEquals(future?.version, 999);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
+bunRuntime.test("future database migrations are refused without changing their marker", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-future-state-db-" });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    const store = new StateStore(platform);
+    await store.migrate();
+    {
+      using database = new Database(platform.paths.paths.stateDb);
+      database.run("INSERT INTO schema_migrations (version, name, applied_at) VALUES (999, 'future', ?)", [
+        "2026-01-01T00:00:00.000Z",
+      ]);
     }
-  },
-);
 
-bunRuntime.test(
-  "state database persists process runtime fields without PHP runtime output",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-process-db-" });
-    try {
-      const platform = createPlatform(root, bunRuntime.cwd());
-      const store = new StateStore(platform);
-      let state = await store.init();
-      state = provisionApp(platform, state, {
-        slug: "api",
-        domain: "api.example",
-        kind: "process",
-        processLanguage: "bun",
-        processVersion: "1.2.20",
-        processCommand: ["bun", "run", "server.ts"],
-        processHealthPath: "/ready",
-      }).state;
-      await store.save(state);
+    await assertRejects(() => store.migrate(), Error, "unsupported desired state database migration");
+    using database = new Database(platform.paths.paths.stateDb, { readonly: true });
+    const future = database
+      .query<{ version: number }, []>("SELECT version FROM schema_migrations WHERE version = 999")
+      .get();
+    assertEquals(future?.version, 999);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
-      const loaded = await store.load();
-      const app = loaded.apps.api;
-      assertEquals(app?.kind, "process");
-      if (!app || app.kind !== "process") throw new Error("expected process app");
-      assertEquals(app.runtime.language, "bun");
-      assertEquals(app.runtime.version, "1.2.20");
-      assertEquals(app.runtime.command, ["bun", "run", "server.ts"]);
-      assertEquals(app.runtime.healthPath, "/ready");
-      const serialized = JSON.parse(stateToJson(loaded)) as {
-        apps: Record<string, Record<string, unknown>>;
-      };
-      assertEquals(typeof serialized.apps.api?.runtime, "object");
-      assertEquals(serialized.apps.api?.phpVersion, undefined);
-      assertEquals(serialized.apps.api?.poolTemplate, undefined);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+bunRuntime.test("state database persists process runtime fields without PHP runtime output", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-process-db-" });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    const store = new StateStore(platform);
+    let state = await store.init();
+    state = provisionApp(platform, state, {
+      slug: "api",
+      domain: "api.example",
+      kind: "process",
+      processLanguage: "bun",
+      processVersion: "1.2.20",
+      processCommand: ["bun", "run", "server.ts"],
+      processHealthPath: "/ready",
+    }).state;
+    await store.save(state);
+
+    const loaded = await store.load();
+    const app = loaded.apps.api;
+    assertEquals(app?.kind, "process");
+    if (!app || app.kind !== "process") throw new Error("expected process app");
+    assertEquals(app.runtime.language, "bun");
+    assertEquals(app.runtime.version, "1.2.20");
+    assertEquals(app.runtime.command, ["bun", "run", "server.ts"]);
+    assertEquals(app.runtime.healthPath, "/ready");
+    const serialized = JSON.parse(stateToJson(loaded)) as {
+      apps: Record<string, Record<string, unknown>>;
+    };
+    assertEquals(typeof serialized.apps.api?.runtime, "object");
+    assertEquals(serialized.apps.api?.phpVersion, undefined);
+    assertEquals(serialized.apps.api?.poolTemplate, undefined);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});

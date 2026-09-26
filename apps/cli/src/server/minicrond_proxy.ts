@@ -41,8 +41,7 @@ export async function proxyMinicrond(
   access: SchedulerAccess,
   stackRoot: string,
 ): Promise<Response> {
-  const deny = (status: number) =>
-    new Response(null, { status, headers: { "cache-control": "no-store" } });
+  const deny = (status: number) => new Response(null, { status, headers: { "cache-control": "no-store" } });
   const app = state.apps[access.app];
   if (!app || !app.enabled || !isPhpApp(app)) return deny(404);
   // Never trust forwarded host/proto or an origin supplied as part of the request.
@@ -63,22 +62,18 @@ export async function proxyMinicrond(
   }
   if (decodedPath.includes("\\") || decodedPath.startsWith("//")) return deny(400);
   // The browser never receives, rotates, or supplies a minicrond credential.
-  if (/^\/api\/v1\/(?:auth|token)(?:\/|$)/.test(decodedPath.slice(access.basePath.length - 1)))
-    return deny(404);
+  if (/^\/api\/v1\/(?:auth|token)(?:\/|$)/.test(decodedPath.slice(access.basePath.length - 1))) return deny(404);
   // Reject encoded path separators/aliases; authorization must cover the exact upstream path.
-  if (decodedPath !== url.pathname || decodedPath.includes("/../") || decodedPath.endsWith("/.."))
-    return deny(400);
+  if (decodedPath !== url.pathname || decodedPath.includes("/../") || decodedPath.endsWith("/..")) return deny(400);
   if (request.method !== "GET" && request.method !== "HEAD") {
     if (
       request.headers.get("origin") !== access.origin ||
-      (request.headers.has("sec-fetch-site") &&
-        request.headers.get("sec-fetch-site") !== "same-origin")
+      (request.headers.has("sec-fetch-site") && request.headers.get("sec-fetch-site") !== "same-origin")
     )
       return deny(403);
   }
   const declared = request.headers.get("content-length");
-  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_REQUEST_BYTES))
-    return deny(413);
+  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_REQUEST_BYTES)) return deny(413);
   const chunks: Uint8Array[] = [];
   let total = 0;
   if (request.body) {
@@ -104,11 +99,7 @@ export async function proxyMinicrond(
   const data = join(home, ".local", "share", "minicron");
   const socket = join(data, "minicron.sock");
   try {
-    const [homeStat, dataStat, socketStat] = await Promise.all([
-      lstat(home),
-      lstat(data),
-      lstat(socket),
-    ]);
+    const [homeStat, dataStat, socketStat] = await Promise.all([lstat(home), lstat(data), lstat(socket)]);
     if (
       !homeStat.isDirectory() ||
       homeStat.isSymbolicLink() ||
@@ -166,8 +157,7 @@ export async function proxyMinicrond(
             // Ignore malformed upstream redirects.
           }
         }
-        const sse =
-          upstreamResponse.headers["content-type"]?.startsWith("text/event-stream") ?? false;
+        const sse = upstreamResponse.headers["content-type"]?.startsWith("text/event-stream") ?? false;
         let received = 0;
         let closed = false;
         const limit = sse ? MAX_STREAM_BYTES : MAX_RESPONSE_BYTES;

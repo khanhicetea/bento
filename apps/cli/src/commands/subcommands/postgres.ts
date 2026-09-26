@@ -18,13 +18,7 @@ import { recreateRunningProcessApp } from "#/services/process_app.ts";
 import { printTable } from "#/ui/output.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
 import type { CliContext } from "#/commands/context.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerPostgresCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("postgres", "Manage PostgreSQL (add-only versions)", (y: YargsBuilder) =>
@@ -33,8 +27,7 @@ export function registerPostgresCommands(parser: YargsBuilder, state: RunState):
       .command(
         "add <version>",
         "Add a PostgreSQL major-version service",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
         bind(state, cmdPostgresAdd),
       )
       .command(
@@ -80,15 +73,13 @@ export function registerPostgresCommands(parser: YargsBuilder, state: RunState):
       .command(
         "size",
         "Show PostgreSQL database sizes",
-        (y2: YargsBuilder) =>
-          y2.option("app", { type: "string" }).option("service", { type: "string" }),
+        (y2: YargsBuilder) => y2.option("app", { type: "string" }).option("service", { type: "string" }),
         bind(state, cmdPostgresSize),
       )
       .command(
         "processlist",
         "Show PostgreSQL activity without query text",
-        (y2: YargsBuilder) =>
-          y2.option("app", { type: "string" }).option("service", { type: "string" }),
+        (y2: YargsBuilder) => y2.option("app", { type: "string" }).option("service", { type: "string" }),
         bind(state, cmdPostgresProcesslist),
       )
       .demandCommand(1, "Specify a postgres subcommand: add|list|db|shell|size|processlist")
@@ -98,12 +89,7 @@ export function registerPostgresCommands(parser: YargsBuilder, state: RunState):
 
 async function cmdPostgresList(_argv: CliArgs, ctx: CliContext): Promise<number> {
   const state = await ctx.store.load();
-  const rows = listPostgresVersions(state).map((entry) => [
-    entry.version,
-    entry.service,
-    entry.volume,
-    entry.image,
-  ]);
+  const rows = listPostgresVersions(state).map((entry) => [entry.version, entry.service, entry.volume, entry.image]);
   ctx.log.out(printTable(["version", "service", "volume", "image"], rows));
   return 0;
 }
@@ -119,9 +105,7 @@ async function cmdPostgresAdd(argv: ArgsWith<"version">, ctx: CliContext): Promi
     return next;
   });
   ctx.log.info(
-    noApply
-      ? `added PostgreSQL ${argv.version} (state only; run bento apply)`
-      : `added PostgreSQL ${argv.version}`,
+    noApply ? `added PostgreSQL ${argv.version} (state only; run bento apply)` : `added PostgreSQL ${argv.version}`,
   );
   return 0;
 }
@@ -133,13 +117,7 @@ async function cmdPostgresRemove(argv: ArgsWith<"version">, ctx: CliContext): Pr
 async function cmdPostgresDb(argv: ArgsWith<"app" | "database">, ctx: CliContext): Promise<number> {
   const next = await ctx.store.withExclusive(async (state) => {
     const rootPassword = await requirePostgresRootPassword(ctx.platform);
-    const next = await createPostgresAppDatabaseLive(
-      ctx.platform,
-      state,
-      argv.app,
-      argv.database,
-      rootPassword,
-    );
+    const next = await createPostgresAppDatabaseLive(ctx.platform, state, argv.app, argv.database, rootPassword);
     const app = next.apps[argv.app]!;
     await materializeAppHome(ctx.platform, app, {
       recursivePerms: false,
@@ -157,10 +135,7 @@ async function cmdPostgresDb(argv: ArgsWith<"app" | "database">, ctx: CliContext
   return 0;
 }
 
-async function cmdPostgresShell(
-  argv: ArgsWith<"root" | "print">,
-  ctx: CliContext,
-): Promise<number> {
+async function cmdPostgresShell(argv: ArgsWith<"root" | "print">, ctx: CliContext): Promise<number> {
   const appSlug = argv.app ?? "";
   if (argv.root === Boolean(appSlug)) {
     ctx.log.error("usage: bento postgres shell --root [--service postgres17] | --app <slug>");
@@ -262,12 +237,7 @@ async function cmdPostgresSize(argv: CliArgs, ctx: CliContext): Promise<number> 
       : [];
     // An app with no recorded databases must not broaden into a service-wide query.
     if (argv.app && databases.length === 0) continue;
-    for (const row of await queryPostgresDatabaseSizes(
-      ctx.platform,
-      service,
-      rootPassword,
-      databases,
-    ))
+    for (const row of await queryPostgresDatabaseSizes(ctx.platform, service, rootPassword, databases))
       rows.push({ service, ...row });
   }
   ctx.log.out(
@@ -299,9 +269,7 @@ async function cmdPostgresProcesslist(argv: CliArgs, ctx: CliContext): Promise<n
     queryStart: string;
   }> = [];
   const appUser =
-    argv.app && state.apps[argv.app]
-      ? databaseBindings(state.apps[argv.app]!, "postgres")[0]?.user
-      : undefined;
+    argv.app && state.apps[argv.app] ? databaseBindings(state.apps[argv.app]!, "postgres")[0]?.user : undefined;
   for (const service of services) {
     for (const row of await queryPostgresActivity(ctx.platform, service, rootPassword)) {
       if (appUser && row.user !== appUser) continue;

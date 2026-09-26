@@ -46,11 +46,7 @@ const DOCKER_PHP_FILES = [
 
 const DOCKER_PROCESS_FILES = ["docker/process/Dockerfile", "docker/process/entrypoint.sh"] as const;
 
-const HELPER_FILES = [
-  "helpers/bento.php",
-  "helpers/deploy-drain.php",
-  "helpers/deploy-drain.sh",
-] as const;
+const HELPER_FILES = ["helpers/bento.php", "helpers/deploy-drain.php", "helpers/deploy-drain.sh"] as const;
 
 const HELPER_NAMES = HELPER_FILES.map((path) => path.slice("helpers/".length));
 
@@ -58,10 +54,7 @@ const HELPER_NAMES = HELPER_FILES.map((path) => path.slice("helpers/".length));
  * Materialize docker contexts + helpers under stack/docker and stack/helpers
  * for stable compose-relative paths, via a digest-addressed cache.
  */
-export async function materializeDockerAssets(
-  platform: Platform,
-  phpVersions: string[],
-): Promise<MaterializeResult> {
+export async function materializeDockerAssets(platform: Platform, phpVersions: string[]): Promise<MaterializeResult> {
   const digest = await platform.assets.digest();
   const cacheDir = join(platform.paths.paths.assetCacheDir, digest);
   const dockerRoot = join(platform.paths.paths.root, "docker");
@@ -152,11 +145,7 @@ export async function materializeDockerAssets(
   };
 }
 
-async function buildDigestCache(
-  platform: Platform,
-  cacheDir: string,
-  digest: string,
-): Promise<void> {
+async function buildDigestCache(platform: Platform, cacheDir: string, digest: string): Promise<void> {
   const partial = `${cacheDir}.partial`;
   await platform.fs.remove(partial, { recursive: true });
   await platform.fs.mkdirp(partial);
@@ -189,10 +178,7 @@ async function buildDigestCache(
     }
   }
 
-  await platform.fs.atomicWriteText(
-    join(partial, ".ready"),
-    `${JSON.stringify({ digest, ready: true }, null, 2)}\n`,
-  );
+  await platform.fs.atomicWriteText(join(partial, ".ready"), `${JSON.stringify({ digest, ready: true }, null, 2)}\n`);
 
   // Atomic promote: replace any incomplete cache entry
   if (await platform.fs.exists(cacheDir)) {

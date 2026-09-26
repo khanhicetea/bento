@@ -46,10 +46,7 @@ export function reloadPlanForRunnerChange(phpService: string): ReloadPlan {
   };
 }
 
-export function reloadPlanForFullApply(
-  phpServices: string[],
-  runnerServices: string[],
-): ReloadPlan {
+export function reloadPlanForFullApply(phpServices: string[], runnerServices: string[]): ReloadPlan {
   return {
     nginx: true,
     phpFpm: new Set(phpServices),

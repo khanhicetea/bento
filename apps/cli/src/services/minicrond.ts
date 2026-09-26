@@ -4,11 +4,7 @@ import { notFoundError, validationError } from "#/domain/errors.ts";
 import { appSlugSchema } from "#/schemas/validators.ts";
 
 /** An app-scoped invocation of the *running* PHP runner's private Unix socket. */
-export function minicrondComposeCommand(
-  state: DesiredState,
-  slug: string,
-  args: string[],
-): string[] {
+export function minicrondComposeCommand(state: DesiredState, slug: string, args: string[]): string[] {
   if (!appSlugSchema.safeParse(slug).success) throw validationError("invalid app slug");
   const app = Object.hasOwn(state.apps, slug) ? state.apps[slug] : undefined;
   if (!app) throw notFoundError(`app not found: ${slug}`);

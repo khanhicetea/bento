@@ -11,13 +11,7 @@ import { printTable } from "#/ui/output.ts";
 import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerDeployCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("deploy", "Webhook deploys for an app", (y: YargsBuilder) =>
@@ -38,15 +32,13 @@ export function registerDeployCommands(parser: YargsBuilder, state: RunState): Y
       .command(
         "disable <app>",
         "Disable webhook deploy",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("app", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("app", { type: "string", demandOption: true })),
         bind(state, cmdDeployDisable),
       )
       .command(
         "rotate <app>",
         "Rotate deploy HMAC secret (printed once)",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("app", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("app", { type: "string", demandOption: true })),
         bind(state, cmdDeployRotate),
       )
       .command(
@@ -73,10 +65,7 @@ export function registerDeployCommands(parser: YargsBuilder, state: RunState): Y
         (y2: YargsBuilder) => y2.positional("app", { type: "string", demandOption: true }),
         bind(state, cmdDeployInstructions),
       )
-      .demandCommand(
-        1,
-        "Specify a deploy subcommand: enable|disable|rotate|status|drain|instructions",
-      )
+      .demandCommand(1, "Specify a deploy subcommand: enable|disable|rotate|status|drain|instructions")
       .recommendCommands(),
   );
 }
@@ -155,13 +144,7 @@ async function cmdDeployStatus(argv: ArgsWith<"app">, ctx: CliContext): Promise<
   const queue = await loadQueue(ctx.platform, home);
   if (ctx.json) ctx.log.out(JSON.stringify(queue, null, 2));
   else {
-    const rows = queue.jobs.map((j) => [
-      j.id,
-      j.status,
-      j.receivedAt,
-      j.finishedAt ?? "",
-      j.error ?? "",
-    ]);
+    const rows = queue.jobs.map((j) => [j.id, j.status, j.receivedAt, j.finishedAt ?? "", j.error ?? ""]);
     ctx.log.out(printTable(["id", "status", "received", "finished", "error"], rows));
   }
   return 0;
@@ -189,8 +172,6 @@ async function cmdDeployInstructions(argv: ArgsWith<"app">, ctx: CliContext): Pr
   }
   const environment = await loadStackComposeEnvironment(ctx.platform);
   const httpsPort = environment.nginx.hostNetwork ? 443 : (environment.nginx.httpsPort ?? 443);
-  ctx.log.out(
-    deployWebhookInstructions(app, app.deploy.hmacSecret ? "<stored in state>" : "", httpsPort),
-  );
+  ctx.log.out(deployWebhookInstructions(app, app.deploy.hmacSecret ? "<stored in state>" : "", httpsPort));
   return 0;
 }

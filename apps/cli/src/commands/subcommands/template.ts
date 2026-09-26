@@ -9,13 +9,7 @@ import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
 import { openEditor } from "#/commands/editor.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerTemplateCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("template", "App vhost/pool template customization", (y: YargsBuilder) =>
@@ -121,9 +115,7 @@ async function cmdTemplateReturn(argv: ArgsWith<"app" | "kind">, ctx: CliContext
     return returned;
   });
   if (result.preservedPath) {
-    ctx.log.info(
-      `returned ${slug} ${kind} to upstream; custom source preserved at ${result.preservedPath}`,
-    );
+    ctx.log.info(`returned ${slug} ${kind} to upstream; custom source preserved at ${result.preservedPath}`);
   } else {
     ctx.log.info(`${slug} ${kind} already upstream`);
   }

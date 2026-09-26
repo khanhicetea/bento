@@ -78,8 +78,7 @@ export const runtime = {
     },
     toObject: () => ({ ...process.env }) as Record<string, string>,
   },
-  makeTempDir: async ({ prefix = "bento-test-" }: { prefix?: string } = {}) =>
-    await mkdtemp(join(tmpdir(), prefix)),
+  makeTempDir: async ({ prefix = "bento-test-" }: { prefix?: string } = {}) => await mkdtemp(join(tmpdir(), prefix)),
   mkdir,
   remove: async (path: string | URL, options?: { recursive?: boolean }) => {
     if (options?.recursive) await rm(path, { recursive: true, force: true });
@@ -94,11 +93,7 @@ export const runtime = {
   },
   readTextFile: async (path: string | URL) => await readFile(path, "utf8"),
   readFile: async (path: string | URL) => new Uint8Array(await readFile(path)),
-  writeTextFile: async (
-    path: string | URL,
-    data: string,
-    options?: { append?: boolean; mode?: number },
-  ) => {
+  writeTextFile: async (path: string | URL, data: string, options?: { append?: boolean; mode?: number }) => {
     await writeFile(path, data, {
       flag: options?.append ? "a" : "w",
       mode: options?.mode,

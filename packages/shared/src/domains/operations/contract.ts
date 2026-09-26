@@ -32,9 +32,7 @@ export const operationsContract = oc.router({
   maintenance: oc
     .input(z.object({ retainDays: z.number().int().min(1).max(365).default(14) }))
     .output(operationsMaintenanceResultSchema),
-  drainDeploy: oc
-    .input(z.object({ app: z.string().min(1), confirmation: z.string() }))
-    .output(operationResultSchema),
+  drainDeploy: oc.input(z.object({ app: z.string().min(1), confirmation: z.string() })).output(operationResultSchema),
 });
 
 export type OperationsContract = typeof operationsContract;

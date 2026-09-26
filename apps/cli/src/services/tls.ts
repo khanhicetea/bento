@@ -150,11 +150,7 @@ export function containerCertPath(hostOrRel: string): string {
  * Validate external TLS paths on the host before recording state.
  * Ensures cert/key exist, key is not world-readable, and paths stay under stack certs/.
  */
-export async function validateExternalTlsPaths(
-  platform: Platform,
-  certPath: string,
-  keyPath: string,
-): Promise<void> {
+export async function validateExternalTlsPaths(platform: Platform, certPath: string, keyPath: string): Promise<void> {
   const certsDir = resolve(platform.paths.paths.certsDir);
   const resolveUnderCerts = (p: string): string => {
     const abs = isAbsolute(p) ? resolve(p) : resolve(certsDir, p);
@@ -186,18 +182,13 @@ export async function validateExternalTlsPaths(
     const st = await platform.fs.stat(keyAbs);
     const mode = st.mode & 0o777;
     if ((mode & 0o077) !== 0) {
-      throw validationError(
-        `TLS private key is group/world accessible (mode ${mode.toString(8)}): ${keyAbs}`,
-        {
-          recovery: "chmod 600 the private key so only the owner can read it.",
-        },
-      );
+      throw validationError(`TLS private key is group/world accessible (mode ${mode.toString(8)}): ${keyAbs}`, {
+        recovery: "chmod 600 the private key so only the owner can read it.",
+      });
     }
   } catch (e) {
     if (e instanceof Error && e.message.includes("group/world")) throw e;
-    throw validationError(
-      `unable to stat TLS private key: ${keyAbs}: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    throw validationError(`unable to stat TLS private key: ${keyAbs}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -232,8 +223,7 @@ export async function ensurePrivateCa(platform: Platform): Promise<string> {
   const hasKey = await platform.fs.exists(keyPath);
   if (hasCert !== hasKey) {
     throw validationError(`private CA is incomplete under ${caDir}`, {
-      recovery:
-        "Restore both ca.crt and ca.key from backup, or remove the incomplete CA directory to create a new CA.",
+      recovery: "Restore both ca.crt and ca.key from backup, or remove the incomplete CA directory to create a new CA.",
     });
   }
 
@@ -266,36 +256,16 @@ export async function ensurePrivateCa(platform: Platform): Promise<string> {
     );
   }
 
-  const caValid = await platform.process.run([
-    "openssl",
-    "x509",
-    "-checkend",
-    "0",
-    "-noout",
-    "-in",
-    certPath,
-  ]);
+  const caValid = await platform.process.run(["openssl", "x509", "-checkend", "0", "-noout", "-in", certPath]);
   if (caValid.code !== 0) {
     throw validationError(`private CA certificate is invalid or expired: ${certPath}`, {
-      recovery:
-        "Restore the CA from backup or deliberately create and redistribute a replacement CA.",
+      recovery: "Restore the CA from backup or deliberately create and redistribute a replacement CA.",
     });
   }
 
-  const caCertPublic = await platform.process.run([
-    "openssl",
-    "x509",
-    "-in",
-    certPath,
-    "-pubkey",
-    "-noout",
-  ]);
+  const caCertPublic = await platform.process.run(["openssl", "x509", "-in", certPath, "-pubkey", "-noout"]);
   const caKeyPublic = await platform.process.run(["openssl", "pkey", "-in", keyPath, "-pubout"]);
-  if (
-    caCertPublic.code !== 0 ||
-    caKeyPublic.code !== 0 ||
-    caCertPublic.stdout.trim() !== caKeyPublic.stdout.trim()
-  ) {
+  if (caCertPublic.code !== 0 || caKeyPublic.code !== 0 || caCertPublic.stdout.trim() !== caKeyPublic.stdout.trim()) {
     throw validationError(`private CA certificate and key do not match under ${caDir}`, {
       recovery: "Restore a matching ca.crt and ca.key pair from backup.",
     });
@@ -338,28 +308,11 @@ async function privateCaLeafIsCurrent(
       certPath,
     ]);
     if (valid.code !== 0) return false;
-    const verified = await platform.process.run([
-      "openssl",
-      "verify",
-      "-CAfile",
-      caCertPath,
-      certPath,
-    ]);
+    const verified = await platform.process.run(["openssl", "verify", "-CAfile", caCertPath, certPath]);
     if (verified.code !== 0) return false;
-    const certPublic = await platform.process.run([
-      "openssl",
-      "x509",
-      "-in",
-      certPath,
-      "-pubkey",
-      "-noout",
-    ]);
+    const certPublic = await platform.process.run(["openssl", "x509", "-in", certPath, "-pubkey", "-noout"]);
     const keyPublic = await platform.process.run(["openssl", "pkey", "-in", keyPath, "-pubout"]);
-    return (
-      certPublic.code === 0 &&
-      keyPublic.code === 0 &&
-      certPublic.stdout.trim() === keyPublic.stdout.trim()
-    );
+    return certPublic.code === 0 && keyPublic.code === 0 && certPublic.stdout.trim() === keyPublic.stdout.trim();
   } catch {
     return false;
   }
@@ -377,11 +330,7 @@ export async function ensurePrivateCaSiteCertificate(
   const domains = [...new Set(domainsInput.map((domain) => domain.toLowerCase()))].sort();
   if (domains.length === 0) throw validationError("private CA site requires at least one domain");
   for (const domain of domains) {
-    if (
-      domain.length > 253 ||
-      domain.includes("..") ||
-      !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(domain)
-    ) {
+    if (domain.length > 253 || domain.includes("..") || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(domain)) {
       throw validationError(`invalid DNS name for private CA certificate: ${domain}`);
     }
   }
@@ -399,9 +348,7 @@ export async function ensurePrivateCaSiteCertificate(
   const csrPath = join(sitesDir, `${siteId}.csr.tmp`);
   const extensionsPath = join(sitesDir, `${siteId}.ext.tmp`);
   const metadataPath = join(sitesDir, `${siteId}.json`);
-  if (
-    await privateCaLeafIsCurrent(platform, certPath, keyPath, metadataPath, domains, caCertPath)
-  ) {
+  if (await privateCaLeafIsCurrent(platform, certPath, keyPath, metadataPath, domains, caCertPath)) {
     await platform.fs.chmod(keyPath, 0o600);
     return { certPath, keyPath };
   }
@@ -464,11 +411,7 @@ export async function ensurePrivateCaSiteCertificate(
     );
     await platform.fs.atomicWriteBytes(keyPath, await platform.fs.readBytes(keyTempPath), 0o600);
     await platform.fs.atomicWriteBytes(certPath, await platform.fs.readBytes(certTempPath), 0o644);
-    await platform.fs.atomicWriteText(
-      metadataPath,
-      `${JSON.stringify({ version: 1, domains }, null, 2)}\n`,
-      0o600,
-    );
+    await platform.fs.atomicWriteText(metadataPath, `${JSON.stringify({ version: 1, domains }, null, 2)}\n`, 0o600);
   } finally {
     await platform.fs.remove(certTempPath).catch(() => {});
     await platform.fs.remove(keyTempPath).catch(() => {});
@@ -480,10 +423,7 @@ export async function ensurePrivateCaSiteCertificate(
 }
 
 /** Reconcile every site using the managed private CA before Nginx config promotion. */
-export async function ensureManagedTlsCertificates(
-  platform: Platform,
-  state: DesiredState,
-): Promise<void> {
+export async function ensureManagedTlsCertificates(platform: Platform, state: DesiredState): Promise<void> {
   for (const app of Object.values(state.apps)) {
     if (app.enabled && app.tls.kind === "self-ca") {
       await ensurePrivateCaSiteCertificate(platform, String(app.slug), [
@@ -513,12 +453,9 @@ export async function exportPrivateCaCertificate(
   const managedCaDir = dirname(resolve(source));
   const managedRelative = relative(managedCaDir, destination);
   if (!managedRelative.startsWith("..") && !isAbsolute(managedRelative)) {
-    throw validationError(
-      "CA export destination must be outside the managed private CA directory",
-      {
-        recovery: "Choose a separate destination such as ./bento-ca.crt.",
-      },
-    );
+    throw validationError("CA export destination must be outside the managed private CA directory", {
+      recovery: "Choose a separate destination such as ./bento-ca.crt.",
+    });
   }
   if ((await platform.fs.exists(destination)) && !force) {
     throw validationError(`CA export destination already exists: ${destination}`, {

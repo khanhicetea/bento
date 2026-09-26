@@ -53,11 +53,7 @@ export function aclRules(identity: AppRedisIdentity): string[] {
  *   line 1: redis AUTH password (may be empty)
  *   line 2: ACL user password
  */
-export async function applyAppRedisAcl(
-  platform: Platform,
-  app: AppState,
-  redisAuthPassword?: string,
-): Promise<void> {
+export async function applyAppRedisAcl(platform: Platform, app: AppState, redisAuthPassword?: string): Promise<void> {
   if (app.redis.mode !== "acl") return;
   const password = app.redis.aclPassword;
   if (!password) {
@@ -79,21 +75,14 @@ export async function applyAppRedisAcl(
   ].join("\n");
 
   const stdin = `${redisAuthPassword ?? ""}\n${password}\n`;
-  const result = await platform.process.run(
-    ["docker", "compose", "exec", "-T", "redis", "sh", "-c", applyScript],
-    {
-      cwd: platform.paths.paths.root,
-      stdin,
-      timeoutMs: 15_000,
-    },
-  );
+  const result = await platform.process.run(["docker", "compose", "exec", "-T", "redis", "sh", "-c", applyScript], {
+    cwd: platform.paths.paths.root,
+    stdin,
+    timeoutMs: 15_000,
+  });
   if (result.code !== 0) {
     throw serviceError(
-      `Redis ACL apply failed for app ${app.slug}: ${(
-        result.stderr ||
-        result.stdout ||
-        "unknown error"
-      ).trim()}`,
+      `Redis ACL apply failed for app ${app.slug}: ${(result.stderr || result.stdout || "unknown error").trim()}`,
       "Ensure the redis service is running and REDIS_PASSWORD matches, then retry.",
     );
   }
@@ -119,21 +108,17 @@ export async function tryApplyAppRedisAcl(
 
 export async function isRedisReachable(platform: Platform): Promise<boolean> {
   try {
-    const result = await platform.process.run(
-      ["docker", "compose", "exec", "-T", "redis", "true"],
-      { cwd: platform.paths.paths.root, timeoutMs: 8_000 },
-    );
+    const result = await platform.process.run(["docker", "compose", "exec", "-T", "redis", "true"], {
+      cwd: platform.paths.paths.root,
+      timeoutMs: 8_000,
+    });
     return result.code === 0;
   } catch {
     return false;
   }
 }
 
-export function ensureRedisIdentity(
-  state: DesiredState,
-  slug: string,
-  platform: Platform,
-): DesiredState {
+export function ensureRedisIdentity(state: DesiredState, slug: string, platform: Platform): DesiredState {
   const app = state.apps[slug];
   if (!app) throw notFoundError(`app not found: ${slug}`);
   if (app.redis.mode === "acl" && !app.redis.aclPassword) {

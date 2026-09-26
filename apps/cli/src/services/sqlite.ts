@@ -5,12 +5,7 @@ import { conflictError, notFoundError, serviceError, validationError } from "#/d
 import type { Platform } from "#/platform/mod.ts";
 import { composeArgs } from "#/services/compose.ts";
 import { loadStackComposeEnvironment, loadStackEnv } from "#/services/stack_env.ts";
-import {
-  sqliteContainerPath,
-  sqliteHostDir,
-  sqliteHostPath,
-  sqliteRelativePath,
-} from "#/services/sqlite_paths.ts";
+import { sqliteContainerPath, sqliteHostDir, sqliteHostPath, sqliteRelativePath } from "#/services/sqlite_paths.ts";
 
 type LitestreamBinding = Extract<AppDatabaseBinding, { engine: "litestream" }>;
 
@@ -41,10 +36,7 @@ export function requireSqliteApp(state: DesiredState, slug: string) {
 
 export function requireSqliteBackupPolicy(state: DesiredState): SqliteBackupPolicy {
   if (!state.sqliteBackup?.enabled) {
-    throw conflictError(
-      "stack-wide SQLite backup is not enabled",
-      "Run `bento sqlite backup enable <app>` first.",
-    );
+    throw conflictError("stack-wide SQLite backup is not enabled", "Run `bento sqlite backup enable <app>` first.");
   }
   return state.sqliteBackup;
 }
@@ -67,17 +59,9 @@ export async function enableSqliteBackup(
     throw validationError("--rpo must be one of 1s, 10s, or 60s");
   }
 
-  const dockerInfo = await platform.process.run([
-    "docker",
-    "info",
-    "--format",
-    "{{json .SecurityOptions}}",
-  ]);
+  const dockerInfo = await platform.process.run(["docker", "info", "--format", "{{json .SecurityOptions}}"]);
   const securityOptions = dockerInfo.stdout.toLowerCase();
-  if (
-    dockerInfo.code === 0 &&
-    (securityOptions.includes("rootless") || securityOptions.includes("userns"))
-  ) {
+  if (dockerInfo.code === 0 && (securityOptions.includes("rootless") || securityOptions.includes("userns"))) {
     throw conflictError(
       "SQLite directory watching requires rootful Docker without user-namespace remapping",
       "Use a supported rootful Docker Engine host or keep stack-wide Litestream backup disabled.",
@@ -140,10 +124,7 @@ export async function sqliteCompose(
   });
 }
 
-export async function listSqliteBackups(
-  platform: Platform,
-  state: DesiredState,
-): Promise<WatchedSqliteDatabase[]> {
+export async function listSqliteBackups(platform: Platform, state: DesiredState): Promise<WatchedSqliteDatabase[]> {
   requireSqliteBackupPolicy(state);
   const result = await runSocketCommand(platform, state, ["list", "-json"]);
   try {
@@ -184,11 +165,7 @@ export async function getSqliteBackupStatus(
   };
 }
 
-export async function syncSqliteBackup(
-  platform: Platform,
-  state: DesiredState,
-  slug: string,
-): Promise<string> {
+export async function syncSqliteBackup(platform: Platform, state: DesiredState, slug: string): Promise<string> {
   const { database } = requireSqliteApp(state, slug);
   requireSqliteBackupPolicy(state);
   const result = await runSocketCommand(platform, state, [
@@ -257,11 +234,7 @@ export async function exportSqliteBackup(
   }
 }
 
-export async function verifySqliteBackup(
-  platform: Platform,
-  state: DesiredState,
-  slug: string,
-): Promise<string> {
+export async function verifySqliteBackup(platform: Platform, state: DesiredState, slug: string): Promise<string> {
   const { database } = requireSqliteApp(state, slug);
   requireSqliteBackupPolicy(state);
   await syncSqliteBackup(platform, state, slug);

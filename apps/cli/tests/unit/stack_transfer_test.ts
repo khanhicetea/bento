@@ -21,41 +21,38 @@ function mixedState(): DesiredState {
   return addPostgresVersion(createEmptyState("2026-01-01T00:00:00.000Z"), "17");
 }
 
-bunRuntime.test(
-  "stack transfer names mixed-engine archives deterministically without collisions",
-  () => {
-    assertEquals(STACK_ARCHIVE, "stack.tar.gz");
-    assertEquals(volumeArchiveName("mysql84-data"), "mysql84-data.tar.gz");
-    assertEquals(volumeArchiveName("postgres17-data"), "postgres17-data.tar.gz");
-    assertEquals(volumeArchiveName("redis-data"), REDIS_ARCHIVE);
-    assertThrows(() => volumeArchiveName("../escape"), Error, "invalid Docker volume name");
+bunRuntime.test("stack transfer names mixed-engine archives deterministically without collisions", () => {
+  assertEquals(STACK_ARCHIVE, "stack.tar.gz");
+  assertEquals(volumeArchiveName("mysql84-data"), "mysql84-data.tar.gz");
+  assertEquals(volumeArchiveName("postgres17-data"), "postgres17-data.tar.gz");
+  assertEquals(volumeArchiveName("redis-data"), REDIS_ARCHIVE);
+  assertThrows(() => volumeArchiveName("../escape"), Error, "invalid Docker volume name");
 
-    const names = stackVolumeNames(mixedState(), "customer-stack");
-    assertEquals(names.databases, [
-      {
-        kind: "database",
-        engine: "mysql",
-        service: "mysql84",
-        logical: "mysql84-data",
-        docker: "customer-stack_mysql84-data",
-      },
-      {
-        kind: "database",
-        engine: "postgres",
-        service: "postgres17",
-        logical: "postgres17-data",
-        docker: "customer-stack_postgres17-data",
-      },
-    ]);
-    assertEquals(names.redis, {
-      kind: "redis",
-      service: "redis",
-      logical: "redis-data",
-      docker: "customer-stack_redis-data",
-    });
-    assertEquals(stackDataServiceNames(mixedState()), ["mysql84", "postgres17", "redis"]);
-  },
-);
+  const names = stackVolumeNames(mixedState(), "customer-stack");
+  assertEquals(names.databases, [
+    {
+      kind: "database",
+      engine: "mysql",
+      service: "mysql84",
+      logical: "mysql84-data",
+      docker: "customer-stack_mysql84-data",
+    },
+    {
+      kind: "database",
+      engine: "postgres",
+      service: "postgres17",
+      logical: "postgres17-data",
+      docker: "customer-stack_postgres17-data",
+    },
+  ]);
+  assertEquals(names.redis, {
+    kind: "redis",
+    service: "redis",
+    logical: "redis-data",
+    docker: "customer-stack_redis-data",
+  });
+  assertEquals(stackDataServiceNames(mixedState()), ["mysql84", "postgres17", "redis"]);
+});
 
 bunRuntime.test("stack transfer rejects duplicate logical volume/archive identities", () => {
   const state = mixedState();
@@ -74,70 +71,59 @@ bunRuntime.test("stack transfer validates compose project names", () => {
   assertEquals(isBentoError(err) && err.code === "VALIDATION", true);
 });
 
-bunRuntime.test(
-  "mixed-engine export stops and restarts exactly the running data services",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-transfer-export-",
-    });
-    const output = await bunRuntime.makeTempDir({
-      prefix: "bento-transfer-output-",
-    });
-    await bunRuntime.remove(output);
-    const platform = createPlatform(root, bunRuntime.cwd());
-    const state = mixedState();
-    await platform.fs.writeText(
-      platform.paths.paths.envFile,
-      "COMPOSE_PROJECT_NAME=transfer-test\n",
-      0o600,
-    );
-    const process = createRecordingProcessRunner(async (command) => {
-      if (command.includes("ps") && command.includes("status=running")) {
-        return { code: 0, stdout: "postgres17\nredis\n", stderr: "" };
-      }
-      if (command[0] === "docker" && command[1] === "run") {
-        const target = command.find((part) => part.startsWith("/backup/."));
-        if (target) {
-          await bunRuntime.writeTextFile(join(output, target.slice("/backup/".length)), "archive");
-        }
-      }
-      if (command[0] === "tar" && command.includes("-czpf")) {
-        const target = command[command.indexOf("-czpf") + 1]!;
-        await bunRuntime.writeTextFile(target, "stack archive");
-      }
-      return { code: 0, stdout: "", stderr: "" };
-    });
-    platform.process = process;
-
-    try {
-      const result = await exportStack(platform, state, output);
-      assertEquals(
-        result.files.map((path) => path.slice(output.length + 1)),
-        [STACK_ARCHIVE, "mysql84-data.tar.gz", "postgres17-data.tar.gz", REDIS_ARCHIVE],
-      );
-      const composeCalls = process.calls
-        .map((call) => call.command)
-        .filter((command) => command[0] === "docker" && command[1] === "compose");
-      assertEquals(composeCalls.find((command) => command.includes("stop"))?.slice(-3), [
-        "stop",
-        "postgres17",
-        "redis",
-      ]);
-      assertEquals(composeCalls.find((command) => command.includes("start"))?.slice(-3), [
-        "start",
-        "postgres17",
-        "redis",
-      ]);
-      assertEquals(
-        composeCalls.some((command) => command.includes("mysql84") && command.includes("stop")),
-        false,
-      );
-    } finally {
-      await bunRuntime.remove(root, { recursive: true }).catch(() => undefined);
-      await bunRuntime.remove(output, { recursive: true }).catch(() => undefined);
+bunRuntime.test("mixed-engine export stops and restarts exactly the running data services", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-transfer-export-",
+  });
+  const output = await bunRuntime.makeTempDir({
+    prefix: "bento-transfer-output-",
+  });
+  await bunRuntime.remove(output);
+  const platform = createPlatform(root, bunRuntime.cwd());
+  const state = mixedState();
+  await platform.fs.writeText(platform.paths.paths.envFile, "COMPOSE_PROJECT_NAME=transfer-test\n", 0o600);
+  const process = createRecordingProcessRunner(async (command) => {
+    if (command.includes("ps") && command.includes("status=running")) {
+      return { code: 0, stdout: "postgres17\nredis\n", stderr: "" };
     }
-  },
-);
+    if (command[0] === "docker" && command[1] === "run") {
+      const target = command.find((part) => part.startsWith("/backup/."));
+      if (target) {
+        await bunRuntime.writeTextFile(join(output, target.slice("/backup/".length)), "archive");
+      }
+    }
+    if (command[0] === "tar" && command.includes("-czpf")) {
+      const target = command[command.indexOf("-czpf") + 1]!;
+      await bunRuntime.writeTextFile(target, "stack archive");
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  });
+  platform.process = process;
+
+  try {
+    const result = await exportStack(platform, state, output);
+    assertEquals(
+      result.files.map((path) => path.slice(output.length + 1)),
+      [STACK_ARCHIVE, "mysql84-data.tar.gz", "postgres17-data.tar.gz", REDIS_ARCHIVE],
+    );
+    const composeCalls = process.calls
+      .map((call) => call.command)
+      .filter((command) => command[0] === "docker" && command[1] === "compose");
+    assertEquals(composeCalls.find((command) => command.includes("stop"))?.slice(-3), ["stop", "postgres17", "redis"]);
+    assertEquals(composeCalls.find((command) => command.includes("start"))?.slice(-3), [
+      "start",
+      "postgres17",
+      "redis",
+    ]);
+    assertEquals(
+      composeCalls.some((command) => command.includes("mysql84") && command.includes("stop")),
+      false,
+    );
+  } finally {
+    await bunRuntime.remove(root, { recursive: true }).catch(() => undefined);
+    await bunRuntime.remove(output, { recursive: true }).catch(() => undefined);
+  }
+});
 
 async function prepareImport(
   mutateSource?: (source: string) => Promise<void>,
@@ -154,12 +140,7 @@ async function prepareImport(
   const source = join(parent, "source");
   await bunRuntime.mkdir(source);
   const state = mixedState();
-  for (const name of [
-    STACK_ARCHIVE,
-    "mysql84-data.tar.gz",
-    "postgres17-data.tar.gz",
-    REDIS_ARCHIVE,
-  ])
+  for (const name of [STACK_ARCHIVE, "mysql84-data.tar.gz", "postgres17-data.tar.gz", REDIS_ARCHIVE])
     await bunRuntime.writeTextFile(join(source, name), "fixture");
   await mutateSource?.(source);
 
@@ -190,111 +171,94 @@ async function prepareImport(
   return { parent, root, source, platform, process };
 }
 
-bunRuntime.test(
-  "import refuses missing, corrupt, unsafe, and unexpected archives before volume creation",
-  async () => {
-    const cases = [
-      {
-        mutate: (source: string) => bunRuntime.remove(join(source, "postgres17-data.tar.gz")),
-        listing: undefined,
-        message: "import archive is missing",
-      },
-      {
-        mutate: undefined,
-        listing: (archive: string) =>
-          archive.endsWith("postgres17-data.tar.gz")
-            ? { code: 2, stdout: "", stderr: "corrupt" }
-            : { code: 0, stdout: "./safe\n", stderr: "" },
-        message: "invalid or corrupt archive",
-      },
-      {
-        mutate: undefined,
-        listing: (archive: string) =>
-          archive.endsWith("postgres17-data.tar.gz")
-            ? { code: 0, stdout: "../escape\n", stderr: "" }
-            : { code: 0, stdout: "./safe\n", stderr: "" },
-        message: "archive contains unsafe path",
-      },
-      {
-        mutate: (source: string) =>
-          bunRuntime.writeTextFile(join(source, "unknown-data.tar.gz"), "x"),
-        listing: undefined,
-        message: "unexpected archive",
-      },
-    ];
+bunRuntime.test("import refuses missing, corrupt, unsafe, and unexpected archives before volume creation", async () => {
+  const cases = [
+    {
+      mutate: (source: string) => bunRuntime.remove(join(source, "postgres17-data.tar.gz")),
+      listing: undefined,
+      message: "import archive is missing",
+    },
+    {
+      mutate: undefined,
+      listing: (archive: string) =>
+        archive.endsWith("postgres17-data.tar.gz")
+          ? { code: 2, stdout: "", stderr: "corrupt" }
+          : { code: 0, stdout: "./safe\n", stderr: "" },
+      message: "invalid or corrupt archive",
+    },
+    {
+      mutate: undefined,
+      listing: (archive: string) =>
+        archive.endsWith("postgres17-data.tar.gz")
+          ? { code: 0, stdout: "../escape\n", stderr: "" }
+          : { code: 0, stdout: "./safe\n", stderr: "" },
+      message: "archive contains unsafe path",
+    },
+    {
+      mutate: (source: string) => bunRuntime.writeTextFile(join(source, "unknown-data.tar.gz"), "x"),
+      listing: undefined,
+      message: "unexpected archive",
+    },
+  ];
 
-    for (const testCase of cases) {
-      const fixture = await prepareImport(testCase.mutate, testCase.listing);
-      try {
-        await assertRejects(
-          () => importStack(fixture.platform, fixture.source),
-          Error,
-          testCase.message,
-        );
-        assertEquals(
-          fixture.process.calls.some(
-            (call) =>
-              call.command[0] === "docker" &&
-              call.command[1] === "volume" &&
-              call.command[2] === "create",
-          ),
-          false,
-        );
-      } finally {
-        await bunRuntime.remove(fixture.parent, { recursive: true }).catch(() => undefined);
-      }
-    }
-  },
-);
-
-bunRuntime.test(
-  "import refuses an existing PostgreSQL volume and cleans up only earlier created volumes",
-  async () => {
-    const fixture = await prepareImport();
-    fixture.process.calls.length = 0;
-    fixture.platform.process = createRecordingProcessRunner(async (command) => {
-      if (command[0] === "tar" && command[1] === "-tzf") {
-        return { code: 0, stdout: "./safe\n", stderr: "" };
-      }
-      if (
-        command[0] === "tar" &&
-        command.includes("-xzpf") &&
-        command.some((part) => part.endsWith(`/${STACK_ARCHIVE}`))
-      ) {
-        await bunRuntime.mkdir(fixture.root, { recursive: true });
-        await migrateStateDatabase(fixture.platform);
-        await saveStateDatabase(fixture.platform, mixedState());
-        await bunRuntime.writeTextFile(
-          join(fixture.root, ".env"),
-          "COMPOSE_PROJECT_NAME=transferimport\n",
-        );
-      }
-      if (command.slice(0, 3).join(" ") === "docker volume inspect") {
-        return command[3] === "transferimport_postgres17-data"
-          ? { code: 0, stdout: "exists", stderr: "" }
-          : { code: 1, stdout: "", stderr: "missing" };
-      }
-      return { code: 0, stdout: "", stderr: "" };
-    });
-    const process = fixture.platform.process as ReturnType<typeof createRecordingProcessRunner>;
-
+  for (const testCase of cases) {
+    const fixture = await prepareImport(testCase.mutate, testCase.listing);
     try {
-      await assertRejects(
-        () => importStack(fixture.platform, fixture.source),
-        Error,
-        "destination Docker volume already exists: transferimport_postgres17-data",
+      await assertRejects(() => importStack(fixture.platform, fixture.source), Error, testCase.message);
+      assertEquals(
+        fixture.process.calls.some(
+          (call) => call.command[0] === "docker" && call.command[1] === "volume" && call.command[2] === "create",
+        ),
+        false,
       );
-      const created = process.calls
-        .filter((call) => call.command.slice(0, 3).join(" ") === "docker volume create")
-        .map((call) => call.command[3]);
-      const removed = process.calls
-        .filter((call) => call.command.slice(0, 3).join(" ") === "docker volume rm")
-        .map((call) => call.command[3]);
-      assertEquals(created, ["transferimport_mysql84-data"]);
-      assertEquals(removed, ["transferimport_mysql84-data"]);
-      assertEquals(removed.includes("transferimport_postgres17-data"), false);
     } finally {
       await bunRuntime.remove(fixture.parent, { recursive: true }).catch(() => undefined);
     }
-  },
-);
+  }
+});
+
+bunRuntime.test("import refuses an existing PostgreSQL volume and cleans up only earlier created volumes", async () => {
+  const fixture = await prepareImport();
+  fixture.process.calls.length = 0;
+  fixture.platform.process = createRecordingProcessRunner(async (command) => {
+    if (command[0] === "tar" && command[1] === "-tzf") {
+      return { code: 0, stdout: "./safe\n", stderr: "" };
+    }
+    if (
+      command[0] === "tar" &&
+      command.includes("-xzpf") &&
+      command.some((part) => part.endsWith(`/${STACK_ARCHIVE}`))
+    ) {
+      await bunRuntime.mkdir(fixture.root, { recursive: true });
+      await migrateStateDatabase(fixture.platform);
+      await saveStateDatabase(fixture.platform, mixedState());
+      await bunRuntime.writeTextFile(join(fixture.root, ".env"), "COMPOSE_PROJECT_NAME=transferimport\n");
+    }
+    if (command.slice(0, 3).join(" ") === "docker volume inspect") {
+      return command[3] === "transferimport_postgres17-data"
+        ? { code: 0, stdout: "exists", stderr: "" }
+        : { code: 1, stdout: "", stderr: "missing" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  });
+  const process = fixture.platform.process as ReturnType<typeof createRecordingProcessRunner>;
+
+  try {
+    await assertRejects(
+      () => importStack(fixture.platform, fixture.source),
+      Error,
+      "destination Docker volume already exists: transferimport_postgres17-data",
+    );
+    const created = process.calls
+      .filter((call) => call.command.slice(0, 3).join(" ") === "docker volume create")
+      .map((call) => call.command[3]);
+    const removed = process.calls
+      .filter((call) => call.command.slice(0, 3).join(" ") === "docker volume rm")
+      .map((call) => call.command[3]);
+    assertEquals(created, ["transferimport_mysql84-data"]);
+    assertEquals(removed, ["transferimport_mysql84-data"]);
+    assertEquals(removed.includes("transferimport_postgres17-data"), false);
+  } finally {
+    await bunRuntime.remove(fixture.parent, { recursive: true }).catch(() => undefined);
+  }
+});

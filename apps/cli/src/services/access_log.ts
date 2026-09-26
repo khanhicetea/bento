@@ -70,11 +70,7 @@ export type RotatePlan = {
  * Plan access-log rotation under live traffic:
  * rename current log, then `nginx -s reopen` (not config reload).
  */
-export function buildAccessLogRotatePlan(
-  platform: Platform,
-  slug: string,
-  stamp: string,
-): RotatePlan {
+export function buildAccessLogRotatePlan(platform: Platform, slug: string, stamp: string): RotatePlan {
   const logPath = accessLogHostPath(platform, slug);
   const rotatedPath = `${logPath}.${stamp}`;
   return {

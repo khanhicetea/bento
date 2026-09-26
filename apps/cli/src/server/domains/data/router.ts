@@ -1,11 +1,6 @@
 import { basename, relative, resolve } from "node:path";
 import { implement } from "@orpc/server";
-import {
-  dataContract,
-  type DatabaseActivity,
-  type DatabaseRuntime,
-  type DataOverview,
-} from "@bento/shared";
+import { dataContract, type DatabaseActivity, type DatabaseRuntime, type DataOverview } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
 import type { AppDatabaseBinding } from "#/domain/state.ts";
 import { runDatabaseBackup, runDatabaseRestore } from "#/services/database_backup.ts";
@@ -112,9 +107,7 @@ async function dataOverview(ctx: CliContext): Promise<DataOverview> {
         volume: service.volume,
         appCount: new Set(
           bindings
-            .filter(
-              (binding) => binding.engine === service.engine && binding.service === service.service,
-            )
+            .filter((binding) => binding.engine === service.engine && binding.service === service.service)
             .map((binding) => binding.app),
         ).size,
       })),
@@ -143,9 +136,7 @@ async function databaseRuntime(
   input: { service: string; engine: "mysql" | "postgres" },
 ): Promise<DatabaseRuntime> {
   const state = await ctx.store.load();
-  const managed = state.databaseServices.find(
-    (item) => item.service === input.service && item.engine === input.engine,
-  );
+  const managed = state.databaseServices.find((item) => item.service === input.service && item.engine === input.engine);
   if (!managed) {
     return {
       service: input.service,
@@ -175,9 +166,7 @@ async function databaseActivity(
   input: { service: string; engine: "mysql" | "postgres" },
 ): Promise<DatabaseActivity> {
   const state = await ctx.store.load();
-  const managed = state.databaseServices.find(
-    (item) => item.service === input.service && item.engine === input.engine,
-  );
+  const managed = state.databaseServices.find((item) => item.service === input.service && item.engine === input.engine);
   if (!managed) {
     return {
       service: input.service,

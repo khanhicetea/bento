@@ -71,14 +71,7 @@ type BooleanArgName =
   | "skipHttp"
   | "skipValidate";
 
-type NumberArgName =
-  | "httpPort"
-  | "port"
-  | "httpsPort"
-  | "retainDays"
-  | "scheduleWaitSec"
-  | "timeout"
-  | "timeoutSec";
+type NumberArgName = "httpPort" | "port" | "httpsPort" | "retainDays" | "scheduleWaitSec" | "timeout" | "timeoutSec";
 
 /** Canonical camelCase shape emitted by the configured yargs parser. */
 export type CliArgs = {

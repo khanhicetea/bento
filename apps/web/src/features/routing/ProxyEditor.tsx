@@ -45,8 +45,7 @@ export function ProxyEditor({ proxy, error, saving, onClose, onSave }: Props) {
         aliases: lines(form.get("aliases")),
         upstreams: lines(form.get("upstreams")),
         tls,
-        tlsCertificatePath:
-          tls === "external" ? String(form.get("tlsCertificatePath") ?? "").trim() : undefined,
+        tlsCertificatePath: tls === "external" ? String(form.get("tlsCertificatePath") ?? "").trim() : undefined,
         tlsKeyPath: tls === "external" ? String(form.get("tlsKeyPath") ?? "").trim() : undefined,
         accessLog: form.get("accessLog") === "on",
       });
@@ -58,10 +57,7 @@ export function ProxyEditor({ proxy, error, saving, onClose, onSave }: Props) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent
-        className="max-h-[calc(100vh-2rem)] max-w-[760px] overflow-y-auto"
-        showCloseButton={!saving}
-      >
+      <DialogContent className="max-h-[calc(100vh-2rem)] max-w-[760px] overflow-y-auto" showCloseButton={!saving}>
         <DialogHeader>
           <div className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
@@ -91,12 +87,7 @@ export function ProxyEditor({ proxy, error, saving, onClose, onSave }: Props) {
             </label>
             <label>
               <FieldLabel>Primary domain</FieldLabel>
-              <Input
-                name="domain"
-                required
-                defaultValue={proxy?.domain ?? ""}
-                placeholder="service.example.com"
-              />
+              <Input name="domain" required defaultValue={proxy?.domain ?? ""} placeholder="service.example.com" />
             </label>
             <label className="col-span-full">
               <FieldLabel>Aliases (comma-separated)</FieldLabel>
@@ -116,8 +107,7 @@ export function ProxyEditor({ proxy, error, saving, onClose, onSave }: Props) {
                 placeholder="http://127.0.0.1:3000"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                All upstreams must use the same scheme, path, and query. Credentials and fragments
-                are rejected.
+                All upstreams must use the same scheme, path, and query. Credentials and fragments are rejected.
               </p>
             </label>
             <label>

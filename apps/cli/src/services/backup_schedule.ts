@@ -8,11 +8,7 @@ import type { Platform } from "#/platform/mod.ts";
 import { parseCronSchedule } from "#/schemas/validators.ts";
 import { redact } from "#/ui/output.ts";
 import { type DatabaseBackupArtifact, runDatabaseBackup } from "#/services/database_backup.ts";
-import {
-  readRcloneBackupTarget,
-  saveRcloneBackupTarget,
-  uploadBackupArtifacts,
-} from "#/services/rclone.ts";
+import { readRcloneBackupTarget, saveRcloneBackupTarget, uploadBackupArtifacts } from "#/services/rclone.ts";
 
 const MARKER_PREFIX = "BENTO BACKUP SCHEDULE";
 const RESULT_VERSION = 1;
@@ -115,11 +111,7 @@ export function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-export function backupScheduleCronFragment(opts: {
-  schedule: string;
-  bentoBin: string;
-  stackRoot: string;
-}): string {
+export function backupScheduleCronFragment(opts: { schedule: string; bentoBin: string; stackRoot: string }): string {
   const schedule = requireCronSchedule(opts.schedule);
   validateManagedPath(opts.bentoBin, "Bento executable");
   validateManagedPath(opts.stackRoot, "stack root");
@@ -133,9 +125,7 @@ export function backupScheduleCronFragment(opts: {
 /** Merge only one stack-qualified managed block, preserving every other byte. */
 export function mergeBackupScheduleCrontab(
   existing: string,
-  opts:
-    | { action: "install"; stackRoot: string; fragment: string }
-    | { action: "remove"; stackRoot: string },
+  opts: { action: "install"; stackRoot: string; fragment: string } | { action: "remove"; stackRoot: string },
 ): CrontabMergeResult {
   validateManagedPath(opts.stackRoot, "stack root");
   const blocks = parseManagedBlocks(existing);
@@ -176,11 +166,7 @@ export async function readBackupHostCrontab(platform: Platform): Promise<string>
     timeoutMs: 5_000,
   });
   if (result.code === 0) return result.stdout;
-  if (
-    result.code === 1 &&
-    result.stdout === "" &&
-    /^no crontab for [^\r\n]+\s*$/i.test(result.stderr)
-  ) {
+  if (result.code === 1 && result.stdout === "" && /^no crontab for [^\r\n]+\s*$/i.test(result.stderr)) {
     return "";
   }
   throw platformError(
@@ -243,9 +229,7 @@ export function backupScheduleLastRunPath(platform: Platform): string {
   return join(platform.paths.paths.backupsDir, ".schedule", "last-run.json");
 }
 
-export async function readBackupScheduleLastRun(
-  platform: Platform,
-): Promise<BackupScheduleLastRun | null> {
+export async function readBackupScheduleLastRun(platform: Platform): Promise<BackupScheduleLastRun | null> {
   const path = backupScheduleLastRunPath(platform);
   if (!(await platform.fs.exists(path))) return null;
   const info = await platform.fs.lstat(path);
@@ -264,18 +248,13 @@ export async function readBackupScheduleLastRun(
   const parsed = lastRunSchema.safeParse(raw);
   if (!parsed.success) {
     throw stateError(
-      `backup schedule last-run record is invalid: ${parsed.error.issues
-        .map((i) => i.message)
-        .join("; ")}`,
+      `backup schedule last-run record is invalid: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
     );
   }
   return parsed.data;
 }
 
-export async function runScheduledBackup(
-  platform: Platform,
-  state: DesiredState,
-): Promise<DatabaseBackupArtifact[]> {
+export async function runScheduledBackup(platform: Platform, state: DesiredState): Promise<DatabaseBackupArtifact[]> {
   const startedAt = platform.clock.nowIso();
   await writeLastRun(platform, {
     version: RESULT_VERSION,
@@ -298,10 +277,7 @@ export async function runScheduledBackup(
     return artifacts;
   } catch (cause) {
     const exitCode = isBentoError(cause) ? cause.exitCode : 1;
-    const message = boundedUtf8(
-      redact(cause instanceof Error ? cause.message : String(cause)),
-      ERROR_MAX_BYTES,
-    );
+    const message = boundedUtf8(redact(cause instanceof Error ? cause.message : String(cause)), ERROR_MAX_BYTES);
     await writeLastRun(platform, {
       version: RESULT_VERSION,
       status: "failed",
@@ -320,9 +296,7 @@ export async function runScheduledBackup(
 
 async function mutateHostCrontab(
   platform: Platform,
-  opts:
-    | { action: "install"; stackRoot: string; fragment: string }
-    | { action: "remove"; stackRoot: string },
+  opts: { action: "install"; stackRoot: string; fragment: string } | { action: "remove"; stackRoot: string },
 ): Promise<CrontabMergeResult> {
   // Crontab belongs to the host user, not to one stack. Use a user-scoped lock so
   // concurrent registrations from different stack roots cannot overwrite each other.
@@ -414,10 +388,7 @@ function parseManagedBlocks(crontab: string): ParsedBlock[] {
     const isBegin = line.text.startsWith(beginPrefix);
     const isEnd = line.text.startsWith(endPrefix);
     if (!isBegin && !isEnd) {
-      if (
-        line.text.startsWith(`# BEGIN ${MARKER_PREFIX}`) ||
-        line.text.startsWith(`# END ${MARKER_PREFIX}`)
-      ) {
+      if (line.text.startsWith(`# BEGIN ${MARKER_PREFIX}`) || line.text.startsWith(`# END ${MARKER_PREFIX}`)) {
         throw validationError("malformed Bento backup schedule marker");
       }
       continue;
@@ -499,10 +470,7 @@ async function writeLastRun(platform: Platform, input: BackupScheduleLastRun): P
 
   const record = structuredClone(input);
   let serialized = `${JSON.stringify(record, null, 2)}\n`;
-  while (
-    new TextEncoder().encode(serialized).length > RESULT_MAX_BYTES &&
-    record.artifacts.length
-  ) {
+  while (new TextEncoder().encode(serialized).length > RESULT_MAX_BYTES && record.artifacts.length) {
     record.artifacts.pop();
     record.omittedCount++;
     serialized = `${JSON.stringify(record, null, 2)}\n`;

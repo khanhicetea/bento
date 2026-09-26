@@ -86,9 +86,7 @@ export function AppShell({ children }: PropsWithChildren) {
             <div className="flex items-center gap-2 whitespace-nowrap text-xs text-muted-foreground max-[1050px]:hidden">
               <span
                 className={`size-2.5 rounded-full ${
-                  health.isSuccess
-                    ? "bg-emerald-500 ring-4 ring-emerald-500/20"
-                    : "bg-red-500 ring-4 ring-red-500/20"
+                  health.isSuccess ? "bg-emerald-500 ring-4 ring-emerald-500/20" : "bg-red-500 ring-4 ring-red-500/20"
                 }`}
               />
               <span>{health.isSuccess ? "Connected" : "Disconnected"}</span>

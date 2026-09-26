@@ -52,9 +52,7 @@ export function composeProjectName(env: Record<string, string>): string {
   try {
     return validateComposeProjectName(env.COMPOSE_PROJECT_NAME?.trim() || "bento");
   } catch {
-    throw validationError(
-      `invalid COMPOSE_PROJECT_NAME for volume transfer: ${env.COMPOSE_PROJECT_NAME ?? "bento"}`,
-    );
+    throw validationError(`invalid COMPOSE_PROJECT_NAME for volume transfer: ${env.COMPOSE_PROJECT_NAME ?? "bento"}`);
   }
 }
 
@@ -207,11 +205,7 @@ export async function importStack(
     ["httpPort", options.httpPort],
     ["httpsPort", options.httpsPort],
   ] as const) {
-    if (
-      port !== undefined &&
-      port !== null &&
-      (!Number.isInteger(port) || port < 1 || port > 65535)
-    ) {
+    if (port !== undefined && port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
       throw validationError(`${name} must be between 1 and 65535`);
     }
   }
@@ -377,11 +371,7 @@ function assertUniqueVolumeArchives(volumes: Array<{ logical: string; docker: st
   }
 }
 
-async function refuseUnexpectedImportArchives(
-  platform: Platform,
-  input: string,
-  expected: Set<string>,
-): Promise<void> {
+async function refuseUnexpectedImportArchives(platform: Platform, input: string, expected: Set<string>): Promise<void> {
   for (const name of await platform.fs.readDir(input)) {
     const archiveLike = /\.(?:tar(?:\.(?:gz|zst|xz))?|tgz|zip)$/i.test(name);
     if (archiveLike && !expected.has(name)) {

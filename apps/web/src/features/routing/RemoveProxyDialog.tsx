@@ -2,13 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { RoutingProxy } from "@bento/shared";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -41,8 +35,7 @@ export function RemoveProxyDialog({ proxy, error, removing, onClose, onRemove }:
           <DialogTitle>Delete {proxy.name}?</DialogTitle>
         </DialogHeader>
         <Alert className="border-amber-500/40 bg-amber-500/10">
-          The proxy vhost and its domain claims will be removed. The upstream service is not
-          modified.
+          The proxy vhost and its domain claims will be removed. The upstream service is not modified.
         </Alert>
         {error && <Alert variant="destructive">{error}</Alert>}
         <form onSubmit={(event) => void submit(event)}>
@@ -61,11 +54,7 @@ export function RemoveProxyDialog({ proxy, error, removing, onClose, onRemove }:
             <Button type="button" variant="ghost" disabled={removing} onClick={onClose}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="destructive"
-              disabled={removing || confirmation !== expected}
-            >
+            <Button type="submit" variant="destructive" disabled={removing || confirmation !== expected}>
               {removing && <Spinner />} Delete reverse proxy
             </Button>
           </DialogFooter>

@@ -64,9 +64,7 @@ export function validateRcloneBackupTarget(remote: string, prefix: string): Rclo
   // Keep the scheduled destination unambiguous: a remote is the config section name,
   // not an already-composed `remote:path` expression.
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(normalizedRemote)) {
-    throw validationError(
-      "rclone remote must be a configured remote name containing only letters, digits, _ or -",
-    );
+    throw validationError("rclone remote must be a configured remote name containing only letters, digits, _ or -");
   }
   const normalizedPrefix = normalizeRclonePrefix(prefix);
   return {
@@ -86,17 +84,11 @@ export async function saveRcloneBackupTarget(
   const dir = join(platform.paths.paths.backupsDir, ".schedule");
   await platform.fs.mkdirp(dir, 0o700);
   await platform.fs.chmod(dir, 0o700);
-  await platform.fs.atomicWriteText(
-    rcloneBackupTargetPath(platform),
-    `${JSON.stringify(target, null, 2)}\n`,
-    0o600,
-  );
+  await platform.fs.atomicWriteText(rcloneBackupTargetPath(platform), `${JSON.stringify(target, null, 2)}\n`, 0o600);
   return target;
 }
 
-export async function readRcloneBackupTarget(
-  platform: Platform,
-): Promise<RcloneBackupTarget | null> {
+export async function readRcloneBackupTarget(platform: Platform): Promise<RcloneBackupTarget | null> {
   const path = rcloneBackupTargetPath(platform);
   if (!(await platform.fs.exists(path))) return null;
   const info = await platform.fs.lstat(path);
@@ -113,31 +105,17 @@ export async function readRcloneBackupTarget(
   const parsed = backupTargetSchema.safeParse(raw);
   if (!parsed.success) {
     throw stateError(
-      `rclone backup target is invalid: ${parsed.error.issues
-        .map((issue) => issue.message)
-        .join("; ")}`,
+      `rclone backup target is invalid: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
     );
   }
   return validateRcloneBackupTarget(parsed.data.remote, parsed.data.prefix);
 }
 
 /** Compose command for the dedicated, ephemeral rclone sidecar. */
-export async function rcloneComposeCommand(
-  platform: Platform,
-  state: DesiredState,
-  args: string[],
-): Promise<string[]> {
+export async function rcloneComposeCommand(platform: Platform, state: DesiredState, args: string[]): Promise<string[]> {
   if (args.length === 0) throw validationError("usage: bento rclone -- <rclone arguments>");
   await initializeRcloneConfig(platform);
-  return await composeArgs(platform, state, [
-    "--profile",
-    "rclone",
-    "run",
-    "--rm",
-    "--no-deps",
-    "rclone",
-    ...args,
-  ]);
+  return await composeArgs(platform, state, ["--profile", "rclone", "run", "--rm", "--no-deps", "rclone", ...args]);
 }
 
 /** Upload exactly the artifacts from one successful backup batch, preserving their backup-relative path. */

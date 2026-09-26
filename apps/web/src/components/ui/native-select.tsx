@@ -35,11 +35,7 @@ function NativeSelect({
 
 function NativeSelectOption({ className, ...props }: React.ComponentProps<"option">) {
   return (
-    <option
-      data-slot="native-select-option"
-      className={cn("bg-[Canvas] text-[CanvasText]", className)}
-      {...props}
-    />
+    <option data-slot="native-select-option" className={cn("bg-[Canvas] text-[CanvasText]", className)} {...props} />
   );
 }
 

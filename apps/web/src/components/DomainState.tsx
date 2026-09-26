@@ -25,12 +25,8 @@ export function StackNotReady({ stackRoot, error }: { stackRoot: string; error?:
   return (
     <div className="flex items-end justify-between gap-8 rounded-[1.25rem] bg-gradient-to-br from-sidebar to-primary p-[clamp(1.4rem,4vw,2.7rem)] text-sidebar-foreground shadow-lg max-[760px]:block">
       <div>
-        <p className="m-0 text-[0.64rem] font-bold tracking-[0.14em] text-sidebar-foreground/70">
-          STACK NOT READY
-        </p>
-        <h2 className="my-2 text-[clamp(1.5rem,4vw,2.5rem)]">
-          Initialize this stack to view this domain.
-        </h2>
+        <p className="m-0 text-[0.64rem] font-bold tracking-[0.14em] text-sidebar-foreground/70">STACK NOT READY</p>
+        <h2 className="my-2 text-[clamp(1.5rem,4vw,2.5rem)]">Initialize this stack to view this domain.</h2>
         <p className="max-w-[680px] opacity-70">
           {error ?? (
             <>

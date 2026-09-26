@@ -76,9 +76,7 @@ bunRuntime.test("plain SQLite backup uses .backup and gzip in the runner", async
     assertEquals(gzipArtifact.engine, "sqlite");
     const fileId = gzipArtifact.database;
     assertEquals(
-      gzipArtifact.path.endsWith(
-        `/backups/sqlite/local/${fileId}_2026-08-03T04-05-06-000Z.sqlite.gz`,
-      ),
+      gzipArtifact.path.endsWith(`/backups/sqlite/local/${fileId}_2026-08-03T04-05-06-000Z.sqlite.gz`),
       true,
     );
     assertEquals(zstdArtifact.path.endsWith(".sqlite.zst"), true);
@@ -88,56 +86,49 @@ bunRuntime.test("plain SQLite backup uses .backup and gzip in the runner", async
   }
 });
 
-bunRuntime.test(
-  "plain SQLite is distinct from Litestream and gets weekly runner maintenance",
-  async () => {
-    const root = await bunRuntime.makeTempDir({
-      prefix: "bento-sqlite-local-",
+bunRuntime.test("plain SQLite is distinct from Litestream and gets weekly runner maintenance", async () => {
+  const root = await bunRuntime.makeTempDir({
+    prefix: "bento-sqlite-local-",
+  });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
+      slug: "local",
+      domain: "local.test",
+      databaseEngine: "sqlite",
     });
-    try {
-      const platform = createPlatform(root, bunRuntime.cwd());
-      const result = provisionApp(platform, createEmptyState("2026-08-01T00:00:00.000Z"), {
-        slug: "local",
-        domain: "local.test",
-        databaseEngine: "sqlite",
-      });
-      assert(result.app.database.engine === "sqlite");
-      assertEquals(result.app.database.file.path.endsWith("/local.db"), true);
-      assert(parseDesiredState(JSON.parse(stateToJson(result.state))).ok);
+    assert(result.app.database.engine === "sqlite");
+    assertEquals(result.app.database.file.path.endsWith("/local.db"), true);
+    assert(parseDesiredState(JSON.parse(stateToJson(result.state))).ok);
 
-      const files = await generateAll(platform, result.state, "digest");
-      const seed = files.find((file) => file.relPath.endsWith("minicrond/local/config.toml"));
-      const scheduler = files.find((file) => file.relPath.endsWith("services/minicrond-local/run"));
-      assert(seed && typeof seed.content === "string");
-      const schedule = seed.content.match(/schedule = "(\d+) (\d+) \* \* (\d+)"/);
-      assert(schedule);
-      assertEquals(Number(schedule[1]), result.app.database.vacuumSchedule?.minute);
-      assertEquals(Number(schedule[2]), result.app.database.vacuumSchedule?.hour);
-      assertEquals(Number(schedule[3]), result.app.database.vacuumSchedule?.dayOfWeek);
-      assert(Number(schedule[1]) >= 0 && Number(schedule[1]) <= 59);
-      assert(Number(schedule[2]) >= 0 && Number(schedule[2]) <= 4);
-      assert(Number(schedule[3]) >= 0 && Number(schedule[3]) <= 6);
-      assertStringIncludes(seed.content, "/usr/bin/sqlite3");
-      assertStringIncludes(seed.content, "VACUUM;");
-      assert(scheduler, "plain SQLite must start its own minicrond daemon");
+    const files = await generateAll(platform, result.state, "digest");
+    const seed = files.find((file) => file.relPath.endsWith("minicrond/local/config.toml"));
+    const scheduler = files.find((file) => file.relPath.endsWith("services/minicrond-local/run"));
+    assert(seed && typeof seed.content === "string");
+    const schedule = seed.content.match(/schedule = "(\d+) (\d+) \* \* (\d+)"/);
+    assert(schedule);
+    assertEquals(Number(schedule[1]), result.app.database.vacuumSchedule?.minute);
+    assertEquals(Number(schedule[2]), result.app.database.vacuumSchedule?.hour);
+    assertEquals(Number(schedule[3]), result.app.database.vacuumSchedule?.dayOfWeek);
+    assert(Number(schedule[1]) >= 0 && Number(schedule[1]) <= 59);
+    assert(Number(schedule[2]) >= 0 && Number(schedule[2]) <= 4);
+    assert(Number(schedule[3]) >= 0 && Number(schedule[3]) <= 6);
+    assertStringIncludes(seed.content, "/usr/bin/sqlite3");
+    assertStringIncludes(seed.content, "VACUUM;");
+    assert(scheduler, "plain SQLite must start its own minicrond daemon");
 
-      const rerendered = await generateAll(platform, result.state, "digest");
-      const rerenderedSeed = rerendered.find((file) =>
-        file.relPath.endsWith("minicrond/local/config.toml"),
-      );
-      assert(rerenderedSeed && typeof rerenderedSeed.content === "string");
-      assertEquals(rerenderedSeed.content, seed.content);
+    const rerendered = await generateAll(platform, result.state, "digest");
+    const rerenderedSeed = rerendered.find((file) => file.relPath.endsWith("minicrond/local/config.toml"));
+    assert(rerenderedSeed && typeof rerenderedSeed.content === "string");
+    assertEquals(rerenderedSeed.content, seed.content);
 
-      const compose = assembleComposeDocuments(platform, result.state).find((file) =>
-        file.relPath.includes("php-php85"),
-      );
-      assert(compose && typeof compose.content === "string");
-      assertStringIncludes(compose.content, "./backups/sqlite:/var/backups/bento/sqlite");
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const compose = assembleComposeDocuments(platform, result.state).find((file) => file.relPath.includes("php-php85"));
+    assert(compose && typeof compose.content === "string");
+    assertStringIncludes(compose.content, "./backups/sqlite:/var/backups/bento/sqlite");
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("local SQLite VACUUM slots do not overlap when files are added", async () => {
   const root = await bunRuntime.makeTempDir({
@@ -157,9 +148,7 @@ bunRuntime.test("local SQLite VACUUM slots do not overlap when files are added",
     });
     const files = await generateAll(platform, second.state, "digest");
     const schedules = files
-      .filter(
-        (file) => file.relPath.endsWith("/config.toml") && file.relPath.includes("/minicrond/"),
-      )
+      .filter((file) => file.relPath.endsWith("/config.toml") && file.relPath.includes("/minicrond/"))
       .flatMap((file) => {
         if (typeof file.content !== "string") return [];
         return file.content

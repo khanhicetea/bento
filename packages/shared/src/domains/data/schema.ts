@@ -68,9 +68,7 @@ export const databaseRuntimeSchema = databaseActivityBaseSchema.extend({
 export const databaseActivitySchema = databaseActivityBaseSchema;
 
 export const databaseBackupResultSchema = z.object({
-  artifacts: z.array(
-    z.object({ name: z.string(), database: z.string(), bytes: z.number().int().nonnegative() }),
-  ),
+  artifacts: z.array(z.object({ name: z.string(), database: z.string(), bytes: z.number().int().nonnegative() })),
 });
 
 export const databaseRestoreResultSchema = z.object({ message: z.string() });

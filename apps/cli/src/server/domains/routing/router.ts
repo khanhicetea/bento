@@ -1,10 +1,5 @@
 import { implement, ORPCError } from "@orpc/server";
-import {
-  routingContract,
-  type RoutingOverview,
-  type RoutingProxy,
-  type SaveRoutingProxyInput,
-} from "@bento/shared";
+import { routingContract, type RoutingOverview, type RoutingProxy, type SaveRoutingProxyInput } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
 import { isBentoError, type BentoError } from "#/domain/errors.ts";
 import type { ProxySite, TlsMode } from "#/domain/state.ts";
@@ -50,12 +45,7 @@ export function createRoutingRouter(ctx: CliContext) {
     setProxyEnabled: os.setProxyEnabled.handler(async ({ input }) => {
       try {
         const changed = await ctx.store.withExclusive(async (state) => {
-          const result = setProxyEnabled(
-            state,
-            input.name,
-            input.enabled,
-            ctx.platform.clock.nowIso(),
-          );
+          const result = setProxyEnabled(state, input.name, input.enabled, ctx.platform.clock.nowIso());
           await ctx.store.save(result.state);
           await ctx.render.apply(result.state, {
             reloadPlan: result.reloadPlan,
@@ -73,12 +63,7 @@ export function createRoutingRouter(ctx: CliContext) {
     removeProxy: os.removeProxy.handler(async ({ input }) => {
       try {
         const removed = await ctx.store.withExclusive(async (state) => {
-          const result = deleteProxy(
-            state,
-            input.name,
-            input.confirmation,
-            ctx.platform.clock.nowIso(),
-          );
+          const result = deleteProxy(state, input.name, input.confirmation, ctx.platform.clock.nowIso());
           await ctx.store.save(result.state);
           await ctx.render.apply(result.state, {
             reloadPlan: result.reloadPlan,
@@ -106,12 +91,8 @@ async function routingOverview(ctx: CliContext): Promise<RoutingOverview> {
       stackRoot: ctx.stackRoot,
       ingress: {
         mode: environment.nginx.hostNetwork ? "host" : "bridge",
-        ...(environment.nginx.httpPort !== undefined
-          ? { httpPort: environment.nginx.httpPort }
-          : {}),
-        ...(environment.nginx.httpsPort !== undefined
-          ? { httpsPort: environment.nginx.httpsPort }
-          : {}),
+        ...(environment.nginx.httpPort !== undefined ? { httpPort: environment.nginx.httpPort } : {}),
+        ...(environment.nginx.httpsPort !== undefined ? { httpsPort: environment.nginx.httpsPort } : {}),
         http3: environment.nginx.http3,
       },
       domains: Object.entries(state.domains)

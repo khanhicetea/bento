@@ -44,9 +44,7 @@ export function createLogger(opts?: { json?: boolean }): Logger {
 
 /** Format a simple aligned table via cliui. */
 export function printTable(headers: string[], rows: string[][]): string {
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length), 1),
-  );
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length), 1));
   const colGap = 2;
   const totalWidth = widths.reduce((sum, w) => sum + w + colGap, 0);
   const ui = cliui({ width: Math.max(totalWidth, 40), wrap: false });
@@ -67,10 +65,7 @@ export function printTable(headers: string[], rows: string[][]): string {
 }
 
 /** Multi-column help / section layout via cliui. */
-export function printColumns(
-  pairs: Array<[string, string]>,
-  opts?: { leftWidth?: number; width?: number },
-): string {
+export function printColumns(pairs: Array<[string, string]>, opts?: { leftWidth?: number; width?: number }): string {
   const leftWidth = opts?.leftWidth ?? 28;
   const ui = cliui({ width: opts?.width ?? 100, wrap: true });
   for (const [left, right] of pairs) {

@@ -8,14 +8,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -56,16 +49,13 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
       },
     }),
   );
-  const bindings = data.bindings.filter(
-    (item) => item.engine === service.engine && item.service === service.service,
-  );
+  const bindings = data.bindings.filter((item) => item.engine === service.engine && item.service === service.service);
   const selectedBinding = bindings.find((item) => item.app === app);
   const backups = data.backups.filter((item) => item.name.startsWith(`${service.service}/`));
   const databases = [...(runtime.data?.databases ?? [])];
   for (const binding of bindings) {
     for (const name of binding.resources) {
-      if (!databases.some((database) => database.name === name))
-        databases.push({ name, bytes: -1 });
+      if (!databases.some((database) => database.name === name)) databases.push({ name, bytes: -1 });
     }
   }
   databases.sort((left, right) => left.name.localeCompare(right.name));
@@ -87,9 +77,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
     <Card
       className={`overflow-hidden border-border py-0 shadow-sm ${service.engine === "mysql" ? "border-t-emerald-500/50" : "border-t-sky-500/50"}`}
     >
-      <div
-        className={`h-1 w-full ${service.engine === "mysql" ? "bg-emerald-500" : "bg-sky-500"}`}
-      />
+      <div className={`h-1 w-full ${service.engine === "mysql" ? "bg-emerald-500" : "bg-sky-500"}`} />
       <CardContent className="p-0">
         <div className="flex items-start justify-between gap-5 border-b border-border p-5 max-[760px]:flex-col">
           <div className="flex min-w-0 items-start gap-3">
@@ -101,16 +89,12 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="m-0 truncate text-base font-semibold tracking-tight">
-                  {service.service}
-                </h3>
+                <h3 className="m-0 truncate text-base font-semibold tracking-tight">{service.service}</h3>
                 <Badge variant="outline">{engineLabel(service.engine)}</Badge>
               </div>
               <p className="m-0 mt-1 text-sm text-muted-foreground">
                 Version {runtime.data?.serverVersion ?? service.version}
-                {runtime.data?.serverVersion && runtime.data.serverVersion !== service.version
-                  ? " · Live runtime"
-                  : ""}
+                {runtime.data?.serverVersion && runtime.data.serverVersion !== service.version ? " · Live runtime" : ""}
               </p>
             </div>
           </div>
@@ -197,11 +181,8 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                   </TableRow>
                 ) : databases.length ? (
                   databases.map((database) => {
-                    const owner = bindings.find((binding) =>
-                      binding.resources.includes(database.name),
-                    );
-                    const backingUp =
-                      backup.isPending && backup.variables?.database === database.name;
+                    const owner = bindings.find((binding) => binding.resources.includes(database.name));
+                    const backingUp = backup.isPending && backup.variables?.database === database.name;
                     return (
                       <TableRow key={database.name}>
                         <TableCell>
@@ -227,11 +208,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                             variant="outline"
                             size="sm"
                             disabled={!owner || backup.isPending}
-                            title={
-                              owner
-                                ? `Back up ${database.name}`
-                                : "Only application databases can be backed up"
-                            }
+                            title={owner ? `Back up ${database.name}` : "Only application databases can be backed up"}
                             onClick={() =>
                               owner &&
                               backup.mutate({
@@ -261,9 +238,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
 
           {backup.data && (
             <Alert className="mt-4 border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
-              <span>
-                Backup created: {backup.data.artifacts.map((item) => item.name).join(", ")}
-              </span>
+              <span>Backup created: {backup.data.artifacts.map((item) => item.name).join(", ")}</span>
             </Alert>
           )}
           {backup.error && (
@@ -370,10 +345,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
               <form className="grid gap-4" onSubmit={restoreBackup}>
                 <label className="grid gap-1.5">
                   <span className="text-sm font-medium">Backup artifact</span>
-                  <NativeSelect
-                    value={artifact}
-                    onChange={(event) => setArtifact(event.target.value)}
-                  >
+                  <NativeSelect value={artifact} onChange={(event) => setArtifact(event.target.value)}>
                     <NativeSelectOption value="">Select an artifact</NativeSelectOption>
                     {backups.map((item) => (
                       <NativeSelectOption key={item.name} value={item.name}>
@@ -415,8 +387,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                   </label>
                 </div>
                 <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200">
-                  Restoring to an existing name overwrites that database. The target name is used as
-                  confirmation.
+                  Restoring to an existing name overwrites that database. The target name is used as confirmation.
                 </Alert>
                 <Button
                   type="submit"
@@ -452,9 +423,7 @@ function ManagerFact({
 }) {
   return (
     <div className="min-w-0 px-4 py-3">
-      <span className="block text-[0.68rem] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-        {label}
-      </span>
+      <span className="block text-[0.68rem] font-medium uppercase tracking-[0.1em] text-muted-foreground">{label}</span>
       <strong
         className={`mt-1 block truncate text-sm font-semibold ${tone === "success" ? "text-emerald-700 dark:text-emerald-300" : ""}`}
       >

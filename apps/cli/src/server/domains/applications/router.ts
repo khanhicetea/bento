@@ -88,12 +88,7 @@ export function createApplicationsRouter(ctx: CliContext) {
               );
             }
           }
-          const result = setAppEnabled(
-            state,
-            input.slug,
-            input.enabled,
-            ctx.platform.clock.nowIso(),
-          );
+          const result = setAppEnabled(state, input.slug, input.enabled, ctx.platform.clock.nowIso());
           await ctx.store.save(result.state);
           await ctx.render.apply(result.state, {
             reloadPlan: result.reloadPlan,
@@ -108,9 +103,7 @@ export function createApplicationsRouter(ctx: CliContext) {
             { cwd: ctx.platform.paths.paths.root, timeoutMs: 60_000 },
           );
           if (stopped.code !== 0) {
-            ctx.log.warn(
-              `process app ${changed.app.slug} route is disabled but its private container did not stop`,
-            );
+            ctx.log.warn(`process app ${changed.app.slug} route is disabled but its private container did not stop`);
           }
         }
         return toApplication(changed.app);
@@ -148,12 +141,7 @@ export function createApplicationsRouter(ctx: CliContext) {
     remove: os.remove.handler(async ({ input }) => {
       try {
         const removed = await ctx.store.withExclusive(async (state) => {
-          const result = deleteApp(
-            state,
-            input.slug,
-            input.confirmation,
-            ctx.platform.clock.nowIso(),
-          );
+          const result = deleteApp(state, input.slug, input.confirmation, ctx.platform.clock.nowIso());
           if (isProcessApp(result.app)) {
             const stopped = await removeProcessAppContainer(ctx.platform, state, result.app);
             if (stopped && stopped.code !== 0) {
@@ -249,12 +237,7 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
 
   try {
     if (result.startLitestream) {
-      const up = await sqliteCompose(ctx.platform, result.state, [
-        "up",
-        "-d",
-        "--force-recreate",
-        "litestream",
-      ]);
+      const up = await sqliteCompose(ctx.platform, result.state, ["up", "-d", "--force-recreate", "litestream"]);
       if (up.code !== 0) {
         throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
       }
@@ -267,10 +250,7 @@ async function saveApplication(ctx: CliContext, input: SaveApplicationInput): Pr
   return toApplication(result.app);
 }
 
-async function addApplicationDatabase(
-  ctx: CliContext,
-  input: AddApplicationDatabaseInput,
-): Promise<Application> {
+async function addApplicationDatabase(ctx: CliContext, input: AddApplicationDatabaseInput): Promise<Application> {
   const result = await ctx.store.withExclusive(async (state) => {
     const current = getAppOrThrow(state, input.slug);
     const provisioned = provisionApp(ctx.platform, state, {
@@ -296,8 +276,7 @@ async function addApplicationDatabase(
     });
     const selectedService = state.databaseServices.find(
       (service) =>
-        service.engine === input.engine &&
-        (service.service === input.service || service.version === input.service),
+        service.engine === input.engine && (service.service === input.service || service.version === input.service),
     );
     await applyAppDataPlane(ctx.platform, provisioned.app, {
       explicitDatabase: true,
@@ -327,12 +306,7 @@ async function addApplicationDatabase(
   });
 
   if (result.startLitestream) {
-    const up = await sqliteCompose(ctx.platform, result.state, [
-      "up",
-      "-d",
-      "--force-recreate",
-      "litestream",
-    ]);
+    const up = await sqliteCompose(ctx.platform, result.state, ["up", "-d", "--force-recreate", "litestream"]);
     if (up.code !== 0) {
       throw new Error(`Litestream container failed to start: ${up.stderr.trim()}`);
     }
@@ -341,11 +315,7 @@ async function addApplicationDatabase(
   return toApplication(result.app);
 }
 
-async function recreateRunningProcessApp(
-  ctx: CliContext,
-  state: DesiredState,
-  app: AppState,
-): Promise<void> {
+async function recreateRunningProcessApp(ctx: CliContext, state: DesiredState, app: AppState): Promise<void> {
   const recreated = await recreateProcessApp(ctx.platform, state, app);
   if (recreated && recreated.code !== 0) {
     throw new Error("Process app state was saved, but its container could not be recreated");
@@ -443,18 +413,12 @@ export function toApplication(app: AppState): Application {
       : {}),
     databases: app.databases.map((database) => ({
       engine: database.engine,
-      service:
-        database.engine === "mysql" || database.engine === "postgres"
-          ? database.service
-          : undefined,
+      service: database.engine === "mysql" || database.engine === "postgres" ? database.service : undefined,
       names:
         database.engine === "mysql" || database.engine === "postgres"
           ? database.databases.map((item) => item.name)
           : [],
-      file:
-        database.engine === "sqlite" || database.engine === "litestream"
-          ? database.file.path
-          : undefined,
+      file: database.engine === "sqlite" || database.engine === "litestream" ? database.file.path : undefined,
     })),
   };
 }
@@ -487,8 +451,7 @@ function asORPCError(error: unknown): ORPCError<string, unknown> {
           ? "BAD_REQUEST"
           : "INTERNAL_SERVER_ERROR";
   return new ORPCError(code, {
-    message:
-      code === "INTERNAL_SERVER_ERROR" ? "Application operation failed" : errorMessage(error),
+    message: code === "INTERNAL_SERVER_ERROR" ? "Application operation failed" : errorMessage(error),
   });
 }
 

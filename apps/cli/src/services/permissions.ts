@@ -57,10 +57,7 @@ export async function checkPermissions(
     };
   }
 
-  const checkPath = async (
-    path: string,
-    expect: { private?: boolean; worldTraverse?: boolean },
-  ) => {
+  const checkPath = async (path: string, expect: { private?: boolean; worldTraverse?: boolean }) => {
     checked++;
     if (!(await platform.fs.exists(path))) {
       issues.push({ path, issue: "missing", fix: "create directory" });
@@ -79,9 +76,7 @@ export async function checkPermissions(
       if (expect.worldTraverse && (mode & 0o001) === 0) {
         issues.push({
           path,
-          issue: `mode ${mode.toString(
-            8,
-          )} is not world-traversable (nginx cannot reach public tree)`,
+          issue: `mode ${mode.toString(8)} is not world-traversable (nginx cannot reach public tree)`,
           fix: `chmod 751 ${path}`,
         });
       }
@@ -267,9 +262,7 @@ export async function applyAppPermissionPolicy(
     if (r.code === 0) {
       actions.push(`chown ${owner} ${recursive ? "-R " : ""}${path}`);
     } else {
-      actions.push(
-        `skip chown ${path}: ${(r.stderr || r.stdout || "failed").trim().slice(0, 120)}`,
-      );
+      actions.push(`skip chown ${path}: ${(r.stderr || r.stdout || "failed").trim().slice(0, 120)}`);
     }
   };
 
@@ -292,11 +285,7 @@ export async function applyAppPermissionPolicy(
       join(home, ".ssh", "id_ed25519.pub"),
       join(home, ".composer"),
       ...(phpApp
-        ? [
-            join(home, ".local"),
-            join(home, ".local", "share"),
-            join(home, ".local", "share", "minicron"),
-          ]
+        ? [join(home, ".local"), join(home, ".local", "share"), join(home, ".local", "share", "minicron")]
         : []),
       join(home, "credentials"),
       ...(phpApp ? [docRoot] : []),
@@ -384,9 +373,7 @@ export async function repairPermissions(
   });
 
   if (opts.dryRun) {
-    const actions = report.issues.map(
-      (issue) => `DRY-RUN would fix: ${issue.path} (${issue.issue})`,
-    );
+    const actions = report.issues.map((issue) => `DRY-RUN would fix: ${issue.path} (${issue.issue})`);
     return { report, actions };
   }
 
@@ -437,9 +424,7 @@ async function walkLimited(
 }
 
 export function formatPermReport(report: PermReport): string {
-  const lines = [
-    `Permissions for ${report.app}: checked=${report.checked} issues=${report.issues.length}`,
-  ];
+  const lines = [`Permissions for ${report.app}: checked=${report.checked} issues=${report.issues.length}`];
   for (const i of report.issues) {
     lines.push(`  - ${i.path}: ${i.issue}${i.fix ? ` [${i.fix}]` : ""}`);
   }

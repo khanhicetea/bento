@@ -60,11 +60,8 @@ export function ApplicationsPage() {
   const normalizedQuery = query.trim().toLowerCase();
   const allApplications = data?.applications ?? [];
   const applications = allApplications.filter((app) => {
-    const matchesQuery = `${app.slug} ${app.domain} ${app.aliases.join(" ")}`
-      .toLowerCase()
-      .includes(normalizedQuery);
-    const matchesStatus =
-      statusFilter === "all" || (statusFilter === "running" ? app.enabled : !app.enabled);
+    const matchesQuery = `${app.slug} ${app.domain} ${app.aliases.join(" ")}`.toLowerCase().includes(normalizedQuery);
+    const matchesStatus = statusFilter === "all" || (statusFilter === "running" ? app.enabled : !app.enabled);
     return matchesQuery && matchesStatus;
   });
   const canCreate = Boolean(data?.initialized && data.phpVersions.length);
@@ -75,10 +72,7 @@ export function ApplicationsPage() {
   }
 
   return (
-    <section
-      className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4"
-      aria-live="polite"
-    >
+    <section className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4" aria-live="polite">
       <div className="flex items-end justify-between gap-6 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -90,12 +84,7 @@ export function ApplicationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 max-[760px]:w-full">
-          <Button
-            className="max-[760px]:flex-1"
-            variant="outline"
-            disabled={loading}
-            onClick={() => void reload()}
-          >
+          <Button className="max-[760px]:flex-1" variant="outline" disabled={loading} onClick={() => void reload()}>
             {loading && <Spinner />}
             Refresh
           </Button>
@@ -122,9 +111,7 @@ export function ApplicationsPage() {
       {data && !data.initialized && (
         <div className="mt-8 flex items-end justify-between gap-8 overflow-hidden rounded-2xl bg-gradient-to-br from-sidebar to-primary p-[clamp(1.4rem,4vw,2.7rem)] text-sidebar-foreground shadow-lg max-[760px]:block">
           <div>
-            <p className="m-0 text-[0.68rem] font-bold tracking-[0.14em] text-sidebar-foreground/70">
-              STACK NOT READY
-            </p>
+            <p className="m-0 text-[0.68rem] font-bold tracking-[0.14em] text-sidebar-foreground/70">STACK NOT READY</p>
             <h2 className="my-2 text-[clamp(1.5rem,4vw,2.5rem)]">
               Initialize this stack before managing applications.
             </h2>
@@ -141,11 +128,7 @@ export function ApplicationsPage() {
       {data?.initialized && (
         <>
           <div className="mt-8 grid grid-cols-3 gap-3 max-[560px]:grid-cols-1">
-            <Summary
-              value={allApplications.length}
-              label="Total applications"
-              icon={<Server className="size-4" />}
-            />
+            <Summary value={allApplications.length} label="Total applications" icon={<Server className="size-4" />} />
             <Summary
               value={allApplications.filter((app) => app.enabled).length}
               label="Running now"
@@ -216,8 +199,7 @@ export function ApplicationsPage() {
           </div>
           <div className="mb-4 mt-3 flex items-center justify-between gap-4 text-xs text-muted-foreground">
             <p className="m-0">
-              Showing{" "}
-              <strong className="font-semibold text-foreground">{applications.length}</strong> of{" "}
+              Showing <strong className="font-semibold text-foreground">{applications.length}</strong> of{" "}
               {allApplications.length} applications
             </p>
             {statusFilter !== "all" && (
@@ -247,9 +229,7 @@ export function ApplicationsPage() {
                   resetErrors();
                   setDatabaseTarget(app);
                 }}
-                schedulerPath={
-                  schedulerAccess.data?.schedulers.find((item) => item.app === app.slug)?.path
-                }
+                schedulerPath={schedulerAccess.data?.schedulers.find((item) => item.app === app.slug)?.path}
                 schedulerUnavailableReason={schedulerAccess.data?.reason}
                 onTerminal={() => setTerminalTarget(app)}
                 onRemove={() => {
@@ -264,9 +244,7 @@ export function ApplicationsPage() {
                   <Search className="size-5" aria-hidden="true" />
                 </div>
                 <h3 className="mb-2 mt-4 text-lg font-semibold">
-                  {query || statusFilter !== "all"
-                    ? "No matching applications"
-                    : "No applications yet"}
+                  {query || statusFilter !== "all" ? "No matching applications" : "No applications yet"}
                 </h3>
                 <p className="mx-auto mb-5 max-w-md text-sm text-muted-foreground">
                   {query || statusFilter !== "all"
@@ -458,22 +436,14 @@ function ApplicationCard({
           />
           <Fact
             label={app.kind === "php" ? "Capacity" : "Service"}
-            value={
-              app.kind === "php" ? (app.fpmProfile ?? "-") : (app.processRuntime?.service ?? "-")
-            }
+            value={app.kind === "php" ? (app.fpmProfile ?? "-") : (app.processRuntime?.service ?? "-")}
             icon={<Gauge className="size-3.5" />}
           />
           <Fact
             label={app.kind === "php" ? "Document root" : "Working directory"}
-            value={
-              app.kind === "php" ? (app.documentRoot ?? "-") : (app.processRuntime?.workdir ?? "-")
-            }
+            value={app.kind === "php" ? (app.documentRoot ?? "-") : (app.processRuntime?.workdir ?? "-")}
           />
-          <Fact
-            label="TLS"
-            value={formatLabel(app.tls)}
-            icon={<LockKeyhole className="size-3.5" />}
-          />
+          <Fact label="TLS" value={formatLabel(app.tls)} icon={<LockKeyhole className="size-3.5" />} />
         </div>
 
         <div className="min-h-[3.25rem]">
@@ -522,13 +492,7 @@ function ApplicationCard({
 
         <div className="mt-auto border-t border-border pt-4">
           <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-2 max-[520px]:grid-cols-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full min-w-0 px-2"
-              disabled={busy}
-              onClick={onDatabases}
-            >
+            <Button variant="outline" size="sm" className="w-full min-w-0 px-2" disabled={busy} onClick={onDatabases}>
               <Database className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">Databases</span>
             </Button>
@@ -556,13 +520,7 @@ function ApplicationCard({
                 <span className="truncate">Scheduler</span>
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full min-w-0 px-2"
-              disabled={busy}
-              onClick={onEdit}
-            >
+            <Button variant="outline" size="sm" className="w-full min-w-0 px-2" disabled={busy} onClick={onEdit}>
               <Pencil className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">Edit</span>
             </Button>

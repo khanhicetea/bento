@@ -16,12 +16,7 @@ import {
   Waypoints,
   X,
 } from "lucide-react";
-import {
-  DomainError,
-  DomainLoading,
-  EmptyPanel,
-  StackNotReady,
-} from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, EmptyPanel, StackNotReady } from "../../components/DomainState.tsx";
 import { ProxyEditor } from "./ProxyEditor.tsx";
 import { RemoveProxyDialog } from "./RemoveProxyDialog.tsx";
 import { useRouting } from "./useRouting.ts";
@@ -30,14 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type RoutingView = "all" | "domains" | "proxies";
 type Domain = RoutingOverview["domains"][number];
@@ -47,17 +35,8 @@ type TlsMode = Domain["tls"];
 const tlsModes: TlsMode[] = ["acme", "external", "self-ca", "shared"];
 
 export function RoutingPage() {
-  const {
-    query,
-    error,
-    saving,
-    removing,
-    changing,
-    saveProxy,
-    setProxyEnabled,
-    removeProxy,
-    resetErrors,
-  } = useRouting();
+  const { query, error, saving, removing, changing, saveProxy, setProxyEnabled, removeProxy, resetErrors } =
+    useRouting();
   const [search, setSearch] = useState("");
   const [view, setView] = useState<RoutingView>("all");
   const [editorTarget, setEditorTarget] = useState<RoutingProxy | "create" | null>(null);
@@ -99,18 +78,10 @@ export function RoutingPage() {
     ),
   );
   const proxies = data.proxies.filter((proxy) =>
-    matches(
-      normalizedSearch,
-      proxy.name,
-      proxy.domain,
-      proxy.aliases.join(" "),
-      proxy.upstreams.join(" "),
-      proxy.tls,
-    ),
+    matches(normalizedSearch, proxy.name, proxy.domain, proxy.aliases.join(" "), proxy.upstreams.join(" "), proxy.tls),
   );
   const visibleItems = (showDomains ? domains.length : 0) + (showProxies ? proxies.length : 0);
-  const filterTotal =
-    (showDomains ? data.domains.length : 0) + (showProxies ? data.proxies.length : 0);
+  const filterTotal = (showDomains ? data.domains.length : 0) + (showProxies ? data.proxies.length : 0);
   const filters = [
     { value: "all", label: "All", count: data.domains.length + data.proxies.length },
     { value: "domains", label: "Domains", count: data.domains.length },
@@ -119,10 +90,7 @@ export function RoutingPage() {
   const noMatches = normalizedSearch.length > 0 && visibleItems === 0;
 
   return (
-    <section
-      className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4"
-      aria-live="polite"
-    >
+    <section className="mx-auto w-full max-w-[1800px] p-[clamp(1rem,2.5vw,2.5rem)] max-[760px]:p-4" aria-live="polite">
       <div className="flex items-end justify-between gap-6 max-[760px]:items-stretch max-[760px]:flex-col">
         <div>
           <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -130,8 +98,7 @@ export function RoutingPage() {
           </p>
           <h2 className="m-0 text-[clamp(1.7rem,3vw,2.35rem)] tracking-tight">Routing &amp; TLS</h2>
           <p className="m-0 mt-2 max-w-[680px] text-sm text-muted-foreground">
-            Understand how traffic enters the stack, which domains it serves, and how TLS is
-            configured.
+            Understand how traffic enters the stack, which domains it serves, and how TLS is configured.
           </p>
         </div>
         <div className="flex gap-2 max-[760px]:w-full">
@@ -144,11 +111,7 @@ export function RoutingPage() {
             {query.isFetching ? <RefreshCw className="animate-spin" /> : <RefreshCw />}
             Refresh inventory
           </Button>
-          <Button
-            className="max-[760px]:flex-1"
-            disabled={!data.initialized}
-            onClick={startCreating}
-          >
+          <Button className="max-[760px]:flex-1" disabled={!data.initialized} onClick={startCreating}>
             <span aria-hidden="true">+</span> Add proxy
           </Button>
         </div>
@@ -167,21 +130,13 @@ export function RoutingPage() {
       ) : (
         <>
           <div className="mt-8 grid grid-cols-4 gap-3 max-[1050px]:grid-cols-2 max-[560px]:grid-cols-1">
-            <Summary
-              value={data.domains.length}
-              label="Claimed domains"
-              icon={<Globe2 className="size-4" />}
-            />
+            <Summary value={data.domains.length} label="Claimed domains" icon={<Globe2 className="size-4" />} />
             <Summary
               value={data.domains.filter((domain) => domain.tls === "acme").length}
               label="ACME domains"
               icon={<ShieldCheck className="size-4" />}
             />
-            <Summary
-              value={data.proxies.length}
-              label="Reverse proxies"
-              icon={<Network className="size-4" />}
-            />
+            <Summary value={data.proxies.length} label="Reverse proxies" icon={<Network className="size-4" />} />
             <Summary
               value={data.ingress ? (data.ingress.http3 ? "Enabled" : "Disabled") : "Unknown"}
               label="HTTP/3"
@@ -235,8 +190,8 @@ export function RoutingPage() {
           </div>
           <div className="mb-4 mt-3 flex items-center justify-between gap-4 text-xs text-muted-foreground">
             <p className="m-0">
-              Showing <strong className="font-semibold text-foreground">{visibleItems}</strong> of{" "}
-              {filterTotal} routing entries
+              Showing <strong className="font-semibold text-foreground">{visibleItems}</strong> of {filterTotal} routing
+              entries
             </p>
             {view !== "all" && (
               <button
@@ -267,9 +222,7 @@ export function RoutingPage() {
                     <DomainsTable domains={domains} />
                   ) : (
                     <CollectionEmpty>
-                      {normalizedSearch
-                        ? "No domains match your search."
-                        : "No domains configured."}
+                      {normalizedSearch ? "No domains match your search." : "No domains configured."}
                     </CollectionEmpty>
                   )}
                 </InventorySection>
@@ -306,9 +259,7 @@ export function RoutingPage() {
                     </div>
                   ) : (
                     <CollectionEmpty>
-                      {normalizedSearch
-                        ? "No reverse proxies match your search."
-                        : "No reverse proxies configured."}
+                      {normalizedSearch ? "No reverse proxies match your search." : "No reverse proxies configured."}
                     </CollectionEmpty>
                   )}
                 </InventorySection>
@@ -321,9 +272,7 @@ export function RoutingPage() {
                       <Network className="size-4" aria-hidden="true" />
                     </span>
                     <div className="min-w-0">
-                      <h3 className="m-0 text-base font-semibold tracking-tight">
-                        Ingress &amp; TLS configuration
-                      </h3>
+                      <h3 className="m-0 text-base font-semibold tracking-tight">Ingress &amp; TLS configuration</h3>
                       <p className="m-0 mt-1 truncate text-sm text-muted-foreground">
                         Network entry points and certificate strategies
                       </p>
@@ -412,11 +361,7 @@ function IngressCard({ ingress }: { ingress: RoutingOverview["ingress"] }) {
           </div>
         </div>
         <Badge variant="secondary" className="shrink-0">
-          {mode === "host"
-            ? "Host network"
-            : mode === "bridge"
-              ? "Bridge network"
-              : "Unknown network"}
+          {mode === "host" ? "Host network" : mode === "bridge" ? "Bridge network" : "Unknown network"}
         </Badge>
       </div>
       <p className="m-0 mt-4 text-sm text-muted-foreground">
@@ -425,10 +370,7 @@ function IngressCard({ ingress }: { ingress: RoutingOverview["ingress"] }) {
       <div className="mt-4 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-xl border border-border bg-muted/30 max-[520px]:grid-cols-1 max-[520px]:divide-x-0 max-[520px]:divide-y">
         <Fact label="HTTP" value={port(mode, ingress?.httpPort, 80)} />
         <Fact label="HTTPS" value={port(mode, ingress?.httpsPort, 443)} />
-        <Fact
-          label="HTTP/3"
-          value={ingress ? (ingress.http3 ? "Enabled" : "Disabled") : "Unknown"}
-        />
+        <Fact label="HTTP/3" value={ingress ? (ingress.http3 ? "Enabled" : "Disabled") : "Unknown"} />
       </div>
     </article>
   );
@@ -449,8 +391,8 @@ function TlsCard({ domains }: { domains: RoutingOverview["domains"] }) {
         </div>
       </div>
       <p className="m-0 mt-4 text-sm text-muted-foreground">
-        Configured certificate strategy for each published domain. Certificate health is not
-        inferred from configuration.
+        Configured certificate strategy for each published domain. Certificate health is not inferred from
+        configuration.
       </p>
       <div className="mt-4 grid grid-cols-2 gap-2">
         {tlsModes.map((mode) => {
@@ -539,15 +481,9 @@ function DomainsTable({ domains }: { domains: Domain[] }) {
                     rel="noreferrer"
                     title={`Open ${domain.domain}`}
                   >
-                    <Globe2
-                      className="size-3.5 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
+                    <Globe2 className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <strong className="truncate">{domain.domain}</strong>
-                    <ArrowUpRight
-                      className="size-3.5 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
+                    <ArrowUpRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="sr-only">(opens in a new tab)</span>
                   </a>
                 </TableCell>
@@ -564,9 +500,7 @@ function DomainsTable({ domains }: { domains: Domain[] }) {
                       <strong className="block max-w-[14rem] truncate text-sm" title={domain.owner}>
                         {domain.owner}
                       </strong>
-                      <span className="block text-xs capitalize text-muted-foreground">
-                        {domain.ownerKind}
-                      </span>
+                      <span className="block text-xs capitalize text-muted-foreground">{domain.ownerKind}</span>
                     </div>
                   </div>
                 </TableCell>
@@ -615,9 +549,7 @@ function ProxyCard({
               <strong className="truncate text-sm font-semibold" title={proxy.name}>
                 {proxy.name}
               </strong>
-              <Badge variant={proxy.enabled ? "secondary" : "outline"}>
-                {proxy.enabled ? "Enabled" : "Disabled"}
-              </Badge>
+              <Badge variant={proxy.enabled ? "secondary" : "outline"}>{proxy.enabled ? "Enabled" : "Disabled"}</Badge>
             </div>
             <a
               className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground no-underline hover:text-primary hover:underline hover:underline-offset-2"
@@ -637,9 +569,7 @@ function ProxyCard({
       </div>
 
       <div className="mt-5">
-        <p className="m-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Upstreams
-        </p>
+        <p className="m-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Upstreams</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {proxy.upstreams.map((upstream) => (
             <code
@@ -654,9 +584,7 @@ function ProxyCard({
 
       {proxy.aliases.length > 0 && (
         <div className="mt-5">
-          <p className="m-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Aliases
-          </p>
+          <p className="m-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Aliases</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {proxy.aliases.map((alias) => (
               <Badge variant="outline" className="max-w-full" key={alias}>
@@ -676,8 +604,7 @@ function ProxyCard({
             <Pencil className="size-3.5" /> Edit
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={onToggle}>
-            {busy ? <Spinner /> : <Power className="size-3.5" />}{" "}
-            {proxy.enabled ? "Disable" : "Enable"}
+            {busy ? <Spinner /> : <Power className="size-3.5" />} {proxy.enabled ? "Disable" : "Enable"}
           </Button>
           <Button
             size="icon-sm"
@@ -756,16 +683,8 @@ function tlsLabel(mode: TlsMode) {
   return labels[mode];
 }
 
-function port(
-  mode: "host" | "bridge" | undefined,
-  configured: number | undefined,
-  hostDefault: number,
-) {
-  return mode === "host"
-    ? `Host :${hostDefault}`
-    : configured
-      ? `Published :${configured}`
-      : "Not published";
+function port(mode: "host" | "bridge" | undefined, configured: number | undefined, hostDefault: number) {
+  return mode === "host" ? `Host :${hostDefault}` : configured ? `Published :${configured}` : "Not published";
 }
 
 function matches(search: string, ...values: string[]) {

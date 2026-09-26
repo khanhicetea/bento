@@ -16,11 +16,7 @@ async function runCompose(
   });
 }
 
-export async function isProcessAppHealthy(
-  platform: Platform,
-  state: DesiredState,
-  app: AppState,
-): Promise<boolean> {
+export async function isProcessAppHealthy(platform: Platform, state: DesiredState, app: AppState): Promise<boolean> {
   if (!isProcessApp(app)) return false;
   const container = await runCompose(platform, state, ["ps", "-q", app.runtime.service], 30_000);
   const containerId = container.code === 0 ? container.stdout.trim().split(/\s+/)[0] : undefined;
@@ -37,11 +33,7 @@ export async function isProcessAppHealthy(
   return inspected.code === 0 && inspected.stdout.trim() === "healthy";
 }
 
-export async function isProcessAppRunning(
-  platform: Platform,
-  state: DesiredState,
-  app: AppState,
-): Promise<boolean> {
+export async function isProcessAppRunning(platform: Platform, state: DesiredState, app: AppState): Promise<boolean> {
   if (!isProcessApp(app)) return false;
   const result = await runCompose(
     platform,

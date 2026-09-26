@@ -24,9 +24,7 @@ export function sqliteVacuumScheduleSlot(schedule: SqliteVacuumSchedule): number
  * selected slot in state; older state files get a stable fallback so rendering
  * remains deterministic while their schedules move away from the old fixed slot.
  */
-export function resolveSqliteVacuumSchedules(
-  state: DesiredState,
-): Map<string, SqliteVacuumSchedule> {
+export function resolveSqliteVacuumSchedules(state: DesiredState): Map<string, SqliteVacuumSchedule> {
   const entries = Object.values(state.apps)
     .flatMap((app) =>
       app.databases
@@ -59,12 +57,8 @@ export function resolveSqliteVacuumSchedules(
 }
 
 /** Select a random unused weekly slot for a newly created local SQLite file. */
-export function randomSqliteVacuumSchedule(
-  random: Random,
-  occupied: Set<number>,
-): SqliteVacuumSchedule {
-  const start =
-    random.bytes(4).reduce((value, byte) => value * 256 + byte, 0) % SQLITE_VACUUM_SLOT_COUNT;
+export function randomSqliteVacuumSchedule(random: Random, occupied: Set<number>): SqliteVacuumSchedule {
+  const start = random.bytes(4).reduce((value, byte) => value * 256 + byte, 0) % SQLITE_VACUUM_SLOT_COUNT;
   const slot = firstAvailableSlot(start, occupied);
   occupied.add(slot);
   return scheduleFromSlot(slot);

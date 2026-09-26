@@ -30,8 +30,7 @@ export async function runSqliteBackup(
   if (!database) throw validationError(`app ${slug} has no matching plain SQLite database`);
 
   const timestamp = platform.clock.nowIso().replace(/[:.]/g, "-");
-  const extension =
-    compress === "none" ? "sqlite" : compress === "gzip" ? "sqlite.gz" : "sqlite.zst";
+  const extension = compress === "none" ? "sqlite" : compress === "gzip" ? "sqlite.gz" : "sqlite.zst";
   const name = `${database.file.id}_${timestamp}.${extension}`;
   const directory = join(platform.paths.paths.backupsDir, "sqlite", slug);
   const finalPath = join(directory, name);
@@ -46,9 +45,7 @@ export async function runSqliteBackup(
   // .backup creates a real SQLite file, so keep that snapshot in the mounted
   // backup directory and compress it there. Avoid shell pipelines: the runner
   // invokes POSIX `sh`, which does not support `pipefail` on every image.
-  const backup = `sqlite3 ${shellQuote(source)} ${shellQuote(".timeout 30000")} ${shellQuote(
-    `.backup '${raw}'`,
-  )}`;
+  const backup = `sqlite3 ${shellQuote(source)} ${shellQuote(".timeout 30000")} ${shellQuote(`.backup '${raw}'`)}`;
   const publish =
     compress === "gzip"
       ? 'gzip -c "$RAW" > "$PARTIAL"'
@@ -75,28 +72,14 @@ export async function runSqliteBackup(
 
   const composeCommand = isPhpApp(app)
     ? ["exec", "-T", `${app.phpService}-runner`, "sh", "-c", script]
-    : [
-        "--profile",
-        "cli",
-        "run",
-        "--rm",
-        "-T",
-        "-w",
-        app.home,
-        `${app.runtime.service}-cli`,
-        "sh",
-        "-c",
-        script,
-      ];
+    : ["--profile", "cli", "run", "--rm", "-T", "-w", app.home, `${app.runtime.service}-cli`, "sh", "-c", script];
   const result = await platform.process.run(await composeArgs(platform, state, composeCommand), {
     cwd: platform.paths.paths.root,
     timeoutMs: 30 * 60_000,
   });
   if (result.code !== 0) {
     await platform.fs.remove(partialPath).catch(() => {});
-    throw serviceError(
-      `SQLite backup failed for ${slug}: ${(result.stderr || result.stdout).trim()}`,
-    );
+    throw serviceError(`SQLite backup failed for ${slug}: ${(result.stderr || result.stdout).trim()}`);
   }
   const stat = await platform.fs.stat(finalPath).catch(() => null);
   if (!stat?.isFile || stat.size === 0) {

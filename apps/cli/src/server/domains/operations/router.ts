@@ -9,10 +9,7 @@ import { runDoctor } from "#/services/doctor.ts";
 import { runStackMaintenance } from "#/services/maintenance.ts";
 import { buildStatus } from "#/services/status.ts";
 import { redact } from "#/ui/output.ts";
-import {
-  validateCloudflareTunnelToken,
-  writeCloudflareTunnelToken,
-} from "#/services/cloudflare_tunnel.ts";
+import { validateCloudflareTunnelToken, writeCloudflareTunnelToken } from "#/services/cloudflare_tunnel.ts";
 import { emptyReloadPlan } from "#/domain/reload.ts";
 
 const os = implement(operationsContract);
@@ -26,15 +23,11 @@ export function createOperationsRouter(ctx: CliContext) {
       if (input.action !== "start" && input.confirmation !== status.stackName) {
         throw new Error(`confirmation must exactly match stack name: ${status.stackName}`);
       }
-      const subcommand =
-        input.action === "start" ? ["up", "-d"] : input.action === "stop" ? ["stop"] : ["restart"];
-      const result = await ctx.platform.process.run(
-        await composeArgs(ctx.platform, state, subcommand),
-        {
-          cwd: ctx.stackRoot,
-          timeoutMs: 120_000,
-        },
-      );
+      const subcommand = input.action === "start" ? ["up", "-d"] : input.action === "stop" ? ["stop"] : ["restart"];
+      const result = await ctx.platform.process.run(await composeArgs(ctx.platform, state, subcommand), {
+        cwd: ctx.stackRoot,
+        timeoutMs: 120_000,
+      });
       if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || result.stdout));
       return completed(`Stack ${input.action} completed`, ctx);
     }),
@@ -126,12 +119,11 @@ export function createOperationsRouter(ctx: CliContext) {
         if (!services.includes(input.service)) throw new Error(`unknown service: ${input.service}`);
         logArgs.push(input.service);
       }
-      const result = await ctx.platform.process.run(
-        await composeArgs(ctx.platform, state, logArgs),
-        { cwd: ctx.stackRoot, timeoutMs: 15_000 },
-      );
-      if (result.code !== 0)
-        throw new Error(safeDiagnostic(result.stderr || "Unable to read logs"));
+      const result = await ctx.platform.process.run(await composeArgs(ctx.platform, state, logArgs), {
+        cwd: ctx.stackRoot,
+        timeoutMs: 15_000,
+      });
+      if (result.code !== 0) throw new Error(safeDiagnostic(result.stderr || "Unable to read logs"));
       const allLines = redact(result.stdout)
         .split("\n")
         .filter(Boolean)
@@ -158,10 +150,7 @@ export function createOperationsRouter(ctx: CliContext) {
       const app = state.apps[input.app];
       if (!app) throw new Error(`app not found: ${input.app}`);
       const job = await drainDeploy(ctx.platform, app, ctx.platform.paths.appHome(input.app));
-      return completed(
-        job ? `Deploy ${job.id} finished with status ${job.status}` : "No deploy queued",
-        ctx,
-      );
+      return completed(job ? `Deploy ${job.id} finished with status ${job.status}` : "No deploy queued", ctx);
     }),
   });
 }

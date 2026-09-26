@@ -27,19 +27,13 @@ export type StackComposeEnvironment = {
 export function validateComposeProjectName(value: string): string {
   const project = value.trim();
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(project)) {
-    throw validationError(
-      `invalid stack name '${value}'; use lowercase letters, digits, hyphens, or underscores`,
-    );
+    throw validationError(`invalid stack name '${value}'; use lowercase letters, digits, hyphens, or underscores`);
   }
   return project;
 }
 
 /** Parse a strict operator boolean instead of silently accepting misspellings. */
-export function parseEnvBoolean(
-  value: string | undefined,
-  defaultValue: boolean,
-  name: string,
-): boolean {
+export function parseEnvBoolean(value: string | undefined, defaultValue: boolean, name: string): boolean {
   if (value === undefined || value.trim() === "") return defaultValue;
   const normalized = value.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
@@ -68,10 +62,7 @@ export function parseDotEnv(text: string): Record<string, string> {
     const key = line.slice(0, eq).trim();
     if (!key) continue;
     let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
     out[key] = value;
@@ -91,13 +82,9 @@ export async function loadStackEnv(platform: Platform): Promise<Record<string, s
 }
 
 /** Runtime topology settings. Host-network Nginx remains the compatibility default. */
-export async function loadStackComposeEnvironment(
-  platform: Platform,
-): Promise<StackComposeEnvironment> {
+export async function loadStackComposeEnvironment(platform: Platform): Promise<StackComposeEnvironment> {
   const env = await loadStackEnv(platform);
-  const projectName = validateComposeProjectName(
-    env.COMPOSE_PROJECT_NAME?.trim() || DEFAULT_COMPOSE_PROJECT_NAME,
-  );
+  const projectName = validateComposeProjectName(env.COMPOSE_PROJECT_NAME?.trim() || DEFAULT_COMPOSE_PROJECT_NAME);
   const hostNetwork = parseEnvBoolean(env.NGINX_HOST_NETWORK, true, "NGINX_HOST_NETWORK");
   const httpPort = parseOptionalPort(env.NGINX_HTTP_PORT, "NGINX_HTTP_PORT");
   const httpsPort = parseOptionalPort(env.NGINX_HTTPS_PORT, "NGINX_HTTPS_PORT");
@@ -107,11 +94,7 @@ export async function loadStackComposeEnvironment(
   return {
     projectName,
     cloudflareTunnelEnabled: (await loadCloudflareTunnelToken(platform)) !== undefined,
-    litestreamEnabled: parseEnvBoolean(
-      env.BENTO_LITESTREAM_ENABLED,
-      false,
-      "BENTO_LITESTREAM_ENABLED",
-    ),
+    litestreamEnabled: parseEnvBoolean(env.BENTO_LITESTREAM_ENABLED, false, "BENTO_LITESTREAM_ENABLED"),
     nginx: {
       hostNetwork,
       ...(httpPort !== undefined ? { httpPort } : {}),
@@ -122,10 +105,7 @@ export async function loadStackComposeEnvironment(
 }
 
 /** Update selected operator environment keys while preserving unrelated lines and comments. */
-export async function updateStackEnv(
-  platform: Platform,
-  updates: Record<string, string>,
-): Promise<void> {
+export async function updateStackEnv(platform: Platform, updates: Record<string, string>): Promise<void> {
   const path = platform.paths.paths.envFile;
   const existing = (await platform.fs.exists(path)) ? await platform.fs.readText(path) : "";
   const entries = new Map(Object.entries(updates));

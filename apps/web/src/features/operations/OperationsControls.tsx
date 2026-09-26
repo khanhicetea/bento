@@ -1,15 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Archive,
-  CheckCircle2,
-  FileText,
-  Play,
-  Rocket,
-  RotateCw,
-  Square,
-  Stethoscope,
-  Wrench,
-} from "lucide-react";
+import { Archive, CheckCircle2, FileText, Play, Rocket, RotateCw, Square, Stethoscope, Wrench } from "lucide-react";
 import { useState } from "react";
 import { orpc } from "../../api/client.ts";
 import { ConfirmOperationDialog } from "./ConfirmOperationDialog.tsx";
@@ -45,9 +35,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
   const apply = useMutation(orpc.operations.apply.mutationOptions({ onSuccess: completed }));
   const backup = useMutation(orpc.operations.backup.mutationOptions({ onSuccess: completed }));
   const doctor = useMutation(orpc.operations.doctor.mutationOptions());
-  const maintenance = useMutation(
-    orpc.operations.maintenance.mutationOptions({ onSuccess: completed }),
-  );
+  const maintenance = useMutation(orpc.operations.maintenance.mutationOptions({ onSuccess: completed }));
   const deploy = useMutation(orpc.operations.drainDeploy.mutationOptions({ onSuccess: completed }));
   const busy =
     stack.isPending ||
@@ -57,12 +45,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
     maintenance.isPending ||
     deploy.isPending;
   const error =
-    applicationsQuery.error ??
-    stack.error ??
-    apply.error ??
-    backup.error ??
-    maintenance.error ??
-    deploy.error;
+    applicationsQuery.error ?? stack.error ?? apply.error ?? backup.error ?? maintenance.error ?? deploy.error;
 
   function lifecycle(action: "start" | "stop" | "restart") {
     setNotice(null);
@@ -72,10 +55,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
 
   function confirmLifecycle() {
     if (!pendingLifecycle) return;
-    stack.mutate(
-      { action: pendingLifecycle, confirmation: stackName },
-      { onSuccess: () => setPendingLifecycle(null) },
-    );
+    stack.mutate({ action: pendingLifecycle, confirmation: stackName }, { onSuccess: () => setPendingLifecycle(null) });
   }
 
   function drain() {
@@ -105,8 +85,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
           </p>
           <h3 className="m-0 mt-1 text-lg font-semibold tracking-tight">Operations controls</h3>
           <p className="m-0 mt-1 text-sm text-muted-foreground">
-            Mutating actions run directly against this local stack. Destructive actions ask for
-            confirmation.
+            Mutating actions run directly against this local stack. Destructive actions ask for confirmation.
           </p>
         </div>
       </div>
@@ -126,9 +105,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)]">
         <div>
           <p className="m-0 text-sm font-semibold">Stack lifecycle</p>
-          <p className="m-0 mt-1 text-xs text-muted-foreground">
-            Start, restart, or stop every service in the stack.
-          </p>
+          <p className="m-0 mt-1 text-xs text-muted-foreground">Start, restart, or stop every service in the stack.</p>
           <div className="mt-3 grid grid-cols-3 gap-2 max-[520px]:grid-cols-1">
             <Button
               className="bg-emerald-600 text-white hover:bg-emerald-600/90"
@@ -168,24 +145,12 @@ export function OperationsControls({ stackName }: { stackName: string }) {
               {backup.isPending ? <Spinner /> : <Archive className="size-4" aria-hidden="true" />}
               {backup.isPending ? "Backing up…" : "Back up databases"}
             </Button>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => maintenance.mutate({ retainDays: 14 })}
-            >
-              {maintenance.isPending ? (
-                <Spinner />
-              ) : (
-                <RotateCw className="size-4" aria-hidden="true" />
-              )}
+            <Button variant="outline" disabled={busy} onClick={() => maintenance.mutate({ retainDays: 14 })}>
+              {maintenance.isPending ? <Spinner /> : <RotateCw className="size-4" aria-hidden="true" />}
               {maintenance.isPending ? "Running…" : "Run maintenance"}
             </Button>
             <Button variant="outline" disabled={busy} onClick={runDoctor}>
-              {doctor.isPending ? (
-                <Spinner />
-              ) : (
-                <Stethoscope className="size-4" aria-hidden="true" />
-              )}
+              {doctor.isPending ? <Spinner /> : <Stethoscope className="size-4" aria-hidden="true" />}
               {doctor.isPending ? "Running…" : "Doctor"}
             </Button>
           </div>
@@ -246,10 +211,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
             <strong className="font-medium">Backup complete</strong>
             <span className="ml-1 text-muted-foreground">
               {backup.data.artifacts
-                .map(
-                  (artifact) =>
-                    `${artifact.engine}:${artifact.database} (${formatBytes(artifact.bytes)})`,
-                )
+                .map((artifact) => `${artifact.engine}:${artifact.database} (${formatBytes(artifact.bytes)})`)
                 .join(" · ")}
             </span>
           </div>
@@ -273,20 +235,12 @@ export function OperationsControls({ stackName }: { stackName: string }) {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 p-4">
                 <div className="flex items-center gap-3">
-                  <Badge
-                    className={
-                      doctor.data.ok ? "bg-emerald-600 text-white" : "bg-destructive text-white"
-                    }
-                  >
+                  <Badge className={doctor.data.ok ? "bg-emerald-600 text-white" : "bg-destructive text-white"}>
                     {doctor.data.ok ? "Healthy" : "Problems found"}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Generated {formatDate(doctor.data.generatedAt)}
-                  </span>
+                  <span className="text-xs text-muted-foreground">Generated {formatDate(doctor.data.generatedAt)}</span>
                 </div>
-                <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                  {doctor.data.stackRoot}
-                </span>
+                <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{doctor.data.stackRoot}</span>
               </div>
               <div className="grid grid-cols-3 gap-3 max-[560px]:grid-cols-1">
                 <DoctorSummary
@@ -299,16 +253,9 @@ export function OperationsControls({ stackName }: { stackName: string }) {
                   value={doctor.data.summary.warn}
                   className="text-amber-600 dark:text-amber-400"
                 />
-                <DoctorSummary
-                  label="Failed"
-                  value={doctor.data.summary.fail}
-                  className="text-destructive"
-                />
+                <DoctorSummary label="Failed" value={doctor.data.summary.fail} className="text-destructive" />
               </div>
-              <div
-                className="max-h-[50vh] space-y-2 overflow-y-auto pr-1"
-                aria-label="Doctor checks"
-              >
+              <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1" aria-label="Doctor checks">
                 {[...doctor.data.checks]
                   .sort((a, b) => doctorStatusRank(a.status) - doctorStatusRank(b.status))
                   .map((check) => {
@@ -335,11 +282,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
           )}
           <DialogFooter>
             <Button variant="outline" disabled={doctor.isPending} onClick={runDoctor}>
-              {doctor.isPending ? (
-                <Spinner />
-              ) : (
-                <Stethoscope className="size-4" aria-hidden="true" />
-              )}
+              {doctor.isPending ? <Spinner /> : <Stethoscope className="size-4" aria-hidden="true" />}
               Run again
             </Button>
             <Button variant="ghost" onClick={() => setDoctorOpen(false)}>
@@ -372,15 +315,7 @@ export function OperationsControls({ stackName }: { stackName: string }) {
   );
 }
 
-function DoctorSummary({
-  label,
-  value,
-  className,
-}: {
-  label: string;
-  value: number;
-  className: string;
-}) {
+function DoctorSummary({ label, value, className }: { label: string; value: number; className: string }) {
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-3">
       <strong className={`block text-xl leading-none ${className}`}>{value}</strong>
@@ -420,9 +355,7 @@ export function ServiceLogsButton({ service }: { service: string }) {
         <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[1200px] gap-4 overflow-y-auto p-6 max-[640px]:p-4 sm:!max-w-[1200px]">
           <DialogHeader>
             <DialogTitle>{service} logs</DialogTitle>
-            <DialogDescription>
-              Showing the most recent 200 lines from this service.
-            </DialogDescription>
+            <DialogDescription>Showing the most recent 200 lines from this service.</DialogDescription>
           </DialogHeader>
           {logs.error && <Alert variant="destructive">{messageOf(logs.error)}</Alert>}
           {logs.isPending && (
@@ -476,12 +409,7 @@ export function ServiceRestartButton({ service }: { service: string }) {
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={restart.isPending}
-        onClick={() => setConfirming(true)}
-      >
+      <Button variant="outline" size="sm" disabled={restart.isPending} onClick={() => setConfirming(true)}>
         {restart.isPending ? <Spinner /> : <RotateCw className="size-3.5" aria-hidden="true" />}
         {restart.isPending ? "Restarting…" : "Restart"}
       </Button>

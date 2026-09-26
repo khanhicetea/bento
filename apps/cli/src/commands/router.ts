@@ -63,9 +63,7 @@ function withGlobals<T>(y: Argv<T>) {
 function buildParser(state: RunState) {
   let parser = yargs()
     .scriptName("bento")
-    .usage(
-      "bento — single-server PHP application operations\n\nUsage: $0 [options] <command> [args]",
-    )
+    .usage("bento — single-server PHP application operations\n\nUsage: $0 [options] <command> [args]")
     .strict()
     .help()
     .alias("h", "help")

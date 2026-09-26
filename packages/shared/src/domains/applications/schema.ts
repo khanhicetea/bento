@@ -192,10 +192,7 @@ export const saveApplicationInputSchema = z
         });
       }
     }
-    if (
-      (input.databaseEngine === "mysql" || input.databaseEngine === "postgres") &&
-      !input.databaseService
-    ) {
+    if ((input.databaseEngine === "mysql" || input.databaseEngine === "postgres") && !input.databaseService) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["databaseService"],

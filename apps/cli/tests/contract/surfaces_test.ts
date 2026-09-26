@@ -35,17 +35,7 @@ bunRuntime.test("Bento user job commands are absent; app minicrond remains avail
 bunRuntime.test("serve migrates and starts on loopback", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-serve-migrate-" });
   const child = Bun.spawn(
-    [
-      process.execPath,
-      entry,
-      "--stack",
-      root,
-      "--repo-root",
-      bunRuntime.cwd(),
-      "serve",
-      "--port",
-      "0",
-    ],
+    [process.execPath, entry, "--stack", root, "--repo-root", bunRuntime.cwd(), "serve", "--port", "0"],
     { stdout: "pipe", stderr: "pipe" },
   );
   try {
@@ -79,44 +69,38 @@ bunRuntime.test("serve migrates and starts on loopback", async () => {
   }
 });
 
-bunRuntime.test(
-  "app shell remains scriptable and prune retains its direct exact prompt",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-cli-prompt-" });
-    const base = ["--stack", root, "--repo-root", bunRuntime.cwd()];
-    const originalPrompt = globalThis.prompt;
-    try {
-      assertEquals(await runCli([...base, "init"]), 0);
-      assertEquals(
-        await runCli([
-          ...base,
-          "app",
-          "create",
-          "demo",
-          "--domain",
-          "demo.test",
-          "--database-engine",
-          "sqlite",
-          "--no-apply",
-        ]),
-        0,
-      );
-      assertEquals(await runCli([...base, "app", "shell", "demo", "--print"]), 0);
-      assertEquals(
-        await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]),
-        0,
-      );
-      let promptText = "";
-      globalThis.prompt = (message) => {
-        promptText = message ?? "";
-        return "DELETE";
-      };
-      assertEquals(await runCli([...base, "app", "prune", "demo"]), 10);
-      assertEquals(promptText.includes("Type 'delete'"), true);
-      assertEquals((await bunRuntime.stat(join(root, "homes", "demo"))).isDirectory, true);
-    } finally {
-      globalThis.prompt = originalPrompt;
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+bunRuntime.test("app shell remains scriptable and prune retains its direct exact prompt", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cli-prompt-" });
+  const base = ["--stack", root, "--repo-root", bunRuntime.cwd()];
+  const originalPrompt = globalThis.prompt;
+  try {
+    assertEquals(await runCli([...base, "init"]), 0);
+    assertEquals(
+      await runCli([
+        ...base,
+        "app",
+        "create",
+        "demo",
+        "--domain",
+        "demo.test",
+        "--database-engine",
+        "sqlite",
+        "--no-apply",
+      ]),
+      0,
+    );
+    assertEquals(await runCli([...base, "app", "shell", "demo", "--print"]), 0);
+    assertEquals(await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]), 0);
+    let promptText = "";
+    globalThis.prompt = (message) => {
+      promptText = message ?? "";
+      return "DELETE";
+    };
+    assertEquals(await runCli([...base, "app", "prune", "demo"]), 10);
+    assertEquals(promptText.includes("Type 'delete'"), true);
+    assertEquals((await bunRuntime.stat(join(root, "homes", "demo"))).isDirectory, true);
+  } finally {
+    globalThis.prompt = originalPrompt;
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});

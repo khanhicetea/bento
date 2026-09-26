@@ -22,22 +22,19 @@ bunRuntime.test("PostgreSQL CLI retains app and operator workflows", async () =>
   assertMatch(app, /createPostgresAppDatabaseLive|provisionApp/);
 });
 
-bunRuntime.test(
-  "test-stack carries PostgreSQL connectivity, isolation, recovery, and transfer proof",
-  async () => {
-    const harness = await read("src/services/test_stack.ts");
-    for (const evidence of [
-      /pg-pdo-connect/,
-      /pg-isolation/,
-      /pg-backup-restore/,
-      /Mixed-engine status/,
-      /stack-export-mixed/,
-      /postgres17-data\.tar\.gz/,
-    ]) {
-      assertMatch(harness, evidence);
-    }
-  },
-);
+bunRuntime.test("test-stack carries PostgreSQL connectivity, isolation, recovery, and transfer proof", async () => {
+  const harness = await read("src/services/test_stack.ts");
+  for (const evidence of [
+    /pg-pdo-connect/,
+    /pg-isolation/,
+    /pg-backup-restore/,
+    /Mixed-engine status/,
+    /stack-export-mixed/,
+    /postgres17-data\.tar\.gz/,
+  ]) {
+    assertMatch(harness, evidence);
+  }
+});
 
 bunRuntime.test("release documentation describes shipped PostgreSQL behavior", async () => {
   const [readme, product, architecture, parity] = await Promise.all([

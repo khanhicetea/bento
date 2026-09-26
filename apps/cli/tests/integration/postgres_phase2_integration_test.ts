@@ -42,10 +42,10 @@ bunRuntime.test("PG-04 rendered PostgreSQL starts privately and passes pg_isread
       skipValidate: true,
     });
 
-    const up = await platform.process.run(
-      await composeArgs(platform, state, ["up", "-d", String(service)]),
-      { cwd: root, timeoutMs: 180_000 },
-    );
+    const up = await platform.process.run(await composeArgs(platform, state, ["up", "-d", String(service)]), {
+      cwd: root,
+      timeoutMs: 180_000,
+    });
     if (up.code !== 0) {
       console.log(`  [soft-skip] postgres:17 unavailable: ${up.stderr.slice(0, 240)}`);
       return;
@@ -54,14 +54,7 @@ bunRuntime.test("PG-04 rendered PostgreSQL starts privately and passes pg_isread
     let ready = false;
     for (let attempt = 0; attempt < 30; attempt++) {
       const result = await platform.process.run(
-        await composeArgs(platform, state, [
-          "exec",
-          "-T",
-          String(service),
-          "pg_isready",
-          "-U",
-          "postgres",
-        ]),
+        await composeArgs(platform, state, ["exec", "-T", String(service), "pg_isready", "-U", "postgres"]),
         { cwd: root, timeoutMs: 5_000 },
       );
       if (result.code === 0) {
@@ -92,9 +85,7 @@ bunRuntime.test("PG-04 rendered PostgreSQL starts privately and passes pg_isread
         })
         .catch(() => undefined);
     }
-    await platform.process
-      .run(["docker", "volume", "rm", `${project}_${service}-data`])
-      .catch(() => undefined);
+    await platform.process.run(["docker", "volume", "rm", `${project}_${service}-data`]).catch(() => undefined);
     await bunRuntime.remove(root, { recursive: true }).catch(() => undefined);
   }
 });

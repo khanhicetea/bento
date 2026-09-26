@@ -11,12 +11,7 @@ function stringifyYaml(value: unknown): string {
   // preserve that stable output and prevent YAML from treating punctuation specially.
   return dump(value).replace(/^(\s*[A-Za-z0-9_.-]+:\s)(\$\{[^\n]+\})$/gm, "$1'$2'");
 }
-import {
-  assertNever,
-  isProcessApp,
-  type DesiredState,
-  type ProcessAppState,
-} from "#/domain/state.ts";
+import { assertNever, isProcessApp, type DesiredState, type ProcessAppState } from "#/domain/state.ts";
 import type { Platform } from "#/platform/mod.ts";
 import { type GeneratedFile, withManagedMarker } from "#/services/render.ts";
 import { safetyError } from "#/domain/errors.ts";
@@ -86,21 +81,14 @@ export function assembleComposeDocuments(
     });
   }
 
-  for (const database of [...state.databaseServices].sort((a, b) =>
-    a.service.localeCompare(b.service),
-  )) {
+  for (const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))) {
     let content: string;
     switch (database.engine) {
       case "mysql":
         content = renderMysqlFragment(database.service, database.image, database.volume);
         break;
       case "postgres":
-        content = renderPostgresFragment(
-          database.service,
-          database.image,
-          database.volume,
-          String(database.version),
-        );
+        content = renderPostgresFragment(database.service, database.image, database.volume, String(database.version));
         break;
       default:
         content = assertNever(database);
@@ -157,9 +145,7 @@ export function buildComposeFileList(platform: Platform, state: DesiredState): C
     .sort((left, right) => left.slug.localeCompare(right.slug))) {
     files.push(`${gen}/docker-compose.app-${app.slug}.yml`);
   }
-  for (const database of [...state.databaseServices].sort((a, b) =>
-    a.service.localeCompare(b.service),
-  )) {
+  for (const database of [...state.databaseServices].sort((a, b) => a.service.localeCompare(b.service))) {
     files.push(`${gen}/docker-compose.${database.service}.yml`);
   }
   if (state.sqliteBackup?.enabled) {
@@ -175,19 +161,14 @@ export function buildComposeFileList(platform: Platform, state: DesiredState): C
   };
 }
 
-export async function resolveComposeFiles(
-  platform: Platform,
-  state: DesiredState,
-): Promise<string[]> {
+export async function resolveComposeFiles(platform: Platform, state: DesiredState): Promise<string[]> {
   const base = buildComposeFileList(platform, state);
   const resolved: string[] = [];
   for (const f of base.files) {
     if (f.endsWith("*.yml")) {
       const dir = join(platform.paths.paths.root, "overlays");
       if (await platform.fs.exists(dir)) {
-        const names = (await platform.fs.readDir(dir))
-          .filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"))
-          .sort();
+        const names = (await platform.fs.readDir(dir)).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml")).sort();
         for (const n of names) resolved.push(join("overlays", n));
       }
     } else {
@@ -197,11 +178,7 @@ export async function resolveComposeFiles(
   return resolved;
 }
 
-export async function composeArgs(
-  platform: Platform,
-  state: DesiredState,
-  command: string[],
-): Promise<string[]> {
+export async function composeArgs(platform: Platform, state: DesiredState, command: string[]): Promise<string[]> {
   assertSafeComposeArgs(command);
   const files = await resolveComposeFiles(platform, state);
   const args = ["docker", "compose", "--project-directory", platform.paths.paths.root];
@@ -585,12 +562,7 @@ function renderProcessAppFragment(app: ProcessAppState): string {
   });
 }
 
-function renderPostgresFragment(
-  service: string,
-  image: string,
-  volume: string,
-  version: string,
-): string {
+function renderPostgresFragment(service: string, image: string, volume: string, version: string): string {
   const logging = composeLogging();
   // postgres:18+ changed PGDATA to a major-specific directory below
   // /var/lib/postgresql. Mount the parent there; older official images still

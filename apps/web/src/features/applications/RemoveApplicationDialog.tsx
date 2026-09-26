@@ -3,13 +3,7 @@ import type { Application } from "@bento/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 
 type RemoveApplicationDialogProps = {
@@ -42,16 +36,13 @@ export function RemoveApplicationDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !removing && onClose()}>
-      <DialogContent
-        className="max-w-[560px] max-h-[calc(100vh-2rem)] overflow-y-auto"
-        showCloseButton={!removing}
-      >
+      <DialogContent className="max-w-[560px] max-h-[calc(100vh-2rem)] overflow-y-auto" showCloseButton={!removing}>
         <DialogHeader>
           <DialogTitle>Remove {application.slug}?</DialogTitle>
         </DialogHeader>
         <Alert className="border-amber-500/40 bg-amber-500/10">
-          Runtime configuration will be removed. The application home and database data will be
-          retained for operator-controlled cleanup.
+          Runtime configuration will be removed. The application home and database data will be retained for
+          operator-controlled cleanup.
         </Alert>
         {error && <Alert variant="destructive">{error}</Alert>}
         <form onSubmit={(event) => void submit(event)}>
@@ -71,11 +62,7 @@ export function RemoveApplicationDialog({
             <Button type="button" variant="ghost" disabled={removing} onClick={onClose}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="destructive"
-              disabled={removing || confirmation !== expected}
-            >
+            <Button type="submit" variant="destructive" disabled={removing || confirmation !== expected}>
               {removing && <Spinner />}
               Remove application
             </Button>

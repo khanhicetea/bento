@@ -17,13 +17,7 @@ import { recreateRunningProcessApp } from "#/services/process_app.ts";
 import { printTable } from "#/ui/output.ts";
 import type { CliContext } from "#/commands/context.ts";
 import type { ArgsWith, CliArgs } from "#/commands/args.ts";
-import {
-  bind,
-  noApplyOption,
-  type RunState,
-  wantsNoApply,
-  type YargsBuilder,
-} from "#/commands/shared.ts";
+import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerMysqlCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("mysql", "Manage MySQL (add-only versions)", (y: YargsBuilder) =>
@@ -32,8 +26,7 @@ export function registerMysqlCommands(parser: YargsBuilder, state: RunState): Ya
       .command(
         "add <version>",
         "Add a MySQL version service",
-        (y2: YargsBuilder) =>
-          noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
+        (y2: YargsBuilder) => noApplyOption(y2.positional("version", { type: "string", demandOption: true })),
         bind(state, cmdMysqlAdd),
       )
       .command(
@@ -133,9 +126,7 @@ async function cmdMysqlAdd(argv: ArgsWith<"version">, ctx: CliContext): Promise<
     }
     return next;
   });
-  ctx.log.info(
-    noApply ? `added MySQL ${version} (state only; run bento apply)` : `added MySQL ${version}`,
-  );
+  ctx.log.info(noApply ? `added MySQL ${version} (state only; run bento apply)` : `added MySQL ${version}`);
   return 0;
 }
 
@@ -249,9 +240,7 @@ async function cmdMysqlShell(argv: ArgsWith<"root" | "print">, ctx: CliContext):
       timeoutMs: 15_000,
     });
     if (staged.code !== 0) {
-      ctx.log.error(
-        `failed to stage mysql option file: ${(staged.stderr || staged.stdout || "").trim()}`,
-      );
+      ctx.log.error(`failed to stage mysql option file: ${(staged.stderr || staged.stdout || "").trim()}`);
       return 8;
     }
   }
@@ -300,9 +289,7 @@ async function cmdMysqlSize(argv: CliArgs, ctx: CliContext): Promise<number> {
     if (argv.app) {
       const app = state.apps[argv.app];
       databases = app
-        ? databaseBindings(app, "mysql").flatMap((binding) =>
-            binding.databases.map((database) => database.name),
-          )
+        ? databaseBindings(app, "mysql").flatMap((binding) => binding.databases.map((database) => database.name))
         : [];
     }
     const { rows } = await queryDatabaseSizes(ctx.platform, service, rootPassword, databases);

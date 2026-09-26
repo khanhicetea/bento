@@ -4,11 +4,7 @@ import type { Subprocess } from "bun";
 import type { FileLock } from "#/platform/interfaces.ts";
 import { platformError } from "#/domain/errors.ts";
 
-async function acquire(
-  path: string,
-  shared: boolean,
-  nonblocking: boolean,
-): Promise<(() => Promise<void>) | null> {
+async function acquire(path: string, shared: boolean, nonblocking: boolean): Promise<(() => Promise<void>) | null> {
   await mkdir(dirname(path), { recursive: true });
   const command = ["flock", shared ? "--shared" : "--exclusive"];
   if (nonblocking) command.push("--nonblock");
@@ -28,8 +24,7 @@ async function acquire(
     if (first.done || !new TextDecoder().decode(first.value).startsWith("locked\n")) {
       const code = await child.exited;
       if (nonblocking && code === 1) return null;
-      const stderr =
-        child.stderr instanceof ReadableStream ? await new Response(child.stderr).text() : "";
+      const stderr = child.stderr instanceof ReadableStream ? await new Response(child.stderr).text() : "";
       throw new Error(stderr.trim() || `flock exited ${code}`);
     }
 

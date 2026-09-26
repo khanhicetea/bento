@@ -1,21 +1,12 @@
 import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
-import {
-  allocateIdentity,
-  capacityWarnings,
-  materializeAppHome,
-  provisionApp,
-} from "../../src/services/app.ts";
+import { allocateIdentity, capacityWarnings, materializeAppHome, provisionApp } from "../../src/services/app.ts";
 import { addPhpVersion, buildCliExec, cliRunComposeCommand } from "../../src/services/php.ts";
 import { minicrondComposeCommand } from "../../src/services/minicrond.ts";
 import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
 import { enableDeploy } from "../../src/services/deploy.ts";
-import {
-  addMysqlVersion,
-  buildMysqlShellPlan,
-  createAppDatabase,
-} from "../../src/services/mysql.ts";
+import { addMysqlVersion, buildMysqlShellPlan, createAppDatabase } from "../../src/services/mysql.ts";
 import { createFixedClock } from "../../src/platform/clock.ts";
 import { createSeededRandom } from "../../src/platform/random.ts";
 import { createFileSystem } from "../../src/platform/fs.ts";
@@ -99,47 +90,38 @@ bunRuntime.test("provisionApp rejects duplicate domain links before state is bui
   );
 });
 
-bunRuntime.test(
-  "materializeAppHome generates one stable SSH key pair with strict modes",
-  async () => {
-    const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
-    try {
-      const process = createRecordingProcessRunner(async (command) => {
-        if (command[0] === "ssh-keygen" && command.includes("-f")) {
-          const keyPath = command[command.indexOf("-f") + 1]!;
-          await bunRuntime.writeTextFile(keyPath, "private-key\n");
-          await bunRuntime.writeTextFile(
-            `${keyPath}.pub`,
-            "ssh-ed25519 public-key bento-app-alpha\n",
-          );
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      });
-      const platform = { ...testPlatform(root), process };
-      const app = provisionApp(platform, createEmptyState(), {
-        slug: "alpha",
-        domain: "alpha.example",
-      }).app;
+bunRuntime.test("materializeAppHome generates one stable SSH key pair with strict modes", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
+  try {
+    const process = createRecordingProcessRunner(async (command) => {
+      if (command[0] === "ssh-keygen" && command.includes("-f")) {
+        const keyPath = command[command.indexOf("-f") + 1]!;
+        await bunRuntime.writeTextFile(keyPath, "private-key\n");
+        await bunRuntime.writeTextFile(`${keyPath}.pub`, "ssh-ed25519 public-key bento-app-alpha\n");
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    const platform = { ...testPlatform(root), process };
+    const app = provisionApp(platform, createEmptyState(), {
+      slug: "alpha",
+      domain: "alpha.example",
+    }).app;
 
-      await materializeAppHome(platform, app);
-      await materializeAppHome(platform, app, false);
+    await materializeAppHome(platform, app);
+    await materializeAppHome(platform, app, false);
 
-      const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
-      const schedulerDir = join(platform.paths.appHome(app.slug), ".local/share/minicron");
-      assertEquals((await platform.fs.stat(schedulerDir)).mode & 0o777, 0o700);
-      assertEquals(
-        (await platform.fs.stat(join(platform.paths.appHome(app.slug), ".local"))).mode & 0o777,
-        0o700,
-      );
-      assertEquals((await platform.fs.stat(sshDir)).mode & 0o777, 0o700);
-      assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519"))).mode & 0o777, 0o600);
-      assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519.pub"))).mode & 0o777, 0o644);
-      assertEquals(process.calls.filter((call) => call.command[0] === "ssh-keygen").length, 1);
-    } finally {
-      await bunRuntime.remove(root, { recursive: true });
-    }
-  },
-);
+    const sshDir = join(platform.paths.appHome(app.slug), ".ssh");
+    const schedulerDir = join(platform.paths.appHome(app.slug), ".local/share/minicron");
+    assertEquals((await platform.fs.stat(schedulerDir)).mode & 0o777, 0o700);
+    assertEquals((await platform.fs.stat(join(platform.paths.appHome(app.slug), ".local"))).mode & 0o777, 0o700);
+    assertEquals((await platform.fs.stat(sshDir)).mode & 0o777, 0o700);
+    assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519"))).mode & 0o777, 0o600);
+    assertEquals((await platform.fs.stat(join(sshDir, "id_ed25519.pub"))).mode & 0o777, 0o644);
+    assertEquals(process.calls.filter((call) => call.command[0] === "ssh-keygen").length, 1);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
 
 bunRuntime.test("app home refuses a symlinked scheduler data directory", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
@@ -156,8 +138,7 @@ bunRuntime.test("app home refuses a symlinked scheduler data directory", async (
     try {
       await materializeAppHome(platform, app);
     } catch (error) {
-      refused =
-        error instanceof Error && error.message.includes("non-directory minicrond data path");
+      refused = error instanceof Error && error.message.includes("non-directory minicrond data path");
     }
     assertEquals(refused, true);
   } finally {
@@ -286,31 +267,17 @@ bunRuntime.test("MySQL operations target a selected binding without changing the
     mysqlVersion: "8.0",
   }).state;
 
-  const next = createAppDatabase(
-    state,
-    "alpha",
-    "alpha_archive",
-    "2026-07-30T00:00:00Z",
-    "mysql80",
-  );
+  const next = createAppDatabase(state, "alpha", "alpha_archive", "2026-07-30T00:00:00Z", "mysql80");
   const app = next.apps.alpha!;
-  const mysql84 = app.databases.find(
-    (binding) => binding.engine === "mysql" && binding.service === "mysql84",
-  );
-  const mysql80 = app.databases.find(
-    (binding) => binding.engine === "mysql" && binding.service === "mysql80",
-  );
+  const mysql84 = app.databases.find((binding) => binding.engine === "mysql" && binding.service === "mysql84");
+  const mysql80 = app.databases.find((binding) => binding.engine === "mysql" && binding.service === "mysql80");
 
   assertEquals(mysql84?.engine === "mysql" ? mysql84.databases.length : -1, 0);
-  assertEquals(
-    mysql80?.engine === "mysql" ? mysql80.databases.map((database) => database.name) : [],
-    ["alpha_archive"],
-  );
+  assertEquals(mysql80?.engine === "mysql" ? mysql80.databases.map((database) => database.name) : [], [
+    "alpha_archive",
+  ]);
   assertEquals(app.database.engine === "mysql" ? app.database.service : "", "mysql84");
-  assertEquals(
-    buildMysqlShellPlan(platform, { kind: "app", app }, { service: "mysql80" }).service,
-    "mysql80",
-  );
+  assertEquals(buildMysqlShellPlan(platform, { kind: "app", app }, { service: "mysql80" }).service, "mysql80");
 });
 
 bunRuntime.test("capacity warnings when pools exceed cap", async () => {
@@ -362,44 +329,38 @@ bunRuntime.test("workdir escape rejected by path policy", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-test-" });
   try {
     const platform = testPlatform(root);
-    assertThrows(
-      () => platform.paths.assertInsideHome(join(root, "homes", "app"), "../../etc"),
-      Error,
-    );
+    assertThrows(() => platform.paths.assertInsideHome(join(root, "homes", "app"), "../../etc"), Error);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }
 });
 
-bunRuntime.test(
-  "process app provisions a staged private runtime and round-trips strict state",
-  () => {
-    const platform = testPlatform("/tmp/bento-process-app");
-    const result = provisionApp(platform, createEmptyState("2026-08-23T00:00:00.000Z"), {
-      slug: "api",
-      domain: "api.example",
-      kind: "process",
-      processLanguage: "node",
-      processVersion: "24",
-      processCommand: ["node", "server.js"],
-      processPort: 8080,
-      processHealthPath: "/health",
-    });
+bunRuntime.test("process app provisions a staged private runtime and round-trips strict state", () => {
+  const platform = testPlatform("/tmp/bento-process-app");
+  const result = provisionApp(platform, createEmptyState("2026-08-23T00:00:00.000Z"), {
+    slug: "api",
+    domain: "api.example",
+    kind: "process",
+    processLanguage: "node",
+    processVersion: "24",
+    processCommand: ["node", "server.js"],
+    processPort: 8080,
+    processHealthPath: "/health",
+  });
 
-    assertEquals(result.app.kind, "process");
-    if (result.app.kind !== "process") throw new Error("expected process app");
-    assertEquals(result.app.enabled, false);
-    assertEquals(result.app.runtime.service, "app-api");
-    assertEquals(result.app.runtime.image, "bento/node:24");
-    assertEquals(result.app.runtime.workdir, "/home/api/code");
-    assertEquals(result.app.runtime.command, ["node", "server.js"]);
-    assertEquals(result.app.databases.length, 1);
-    const parsed = parseDesiredState(JSON.parse(stateToJson(result.state)));
-    assertEquals(parsed.ok, true);
-    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
-    assertEquals(parsed.value.apps.api?.kind, "process");
-  },
-);
+  assertEquals(result.app.kind, "process");
+  if (result.app.kind !== "process") throw new Error("expected process app");
+  assertEquals(result.app.enabled, false);
+  assertEquals(result.app.runtime.service, "app-api");
+  assertEquals(result.app.runtime.image, "bento/node:24");
+  assertEquals(result.app.runtime.workdir, "/home/api/code");
+  assertEquals(result.app.runtime.command, ["node", "server.js"]);
+  assertEquals(result.app.databases.length, 1);
+  const parsed = parseDesiredState(JSON.parse(stateToJson(result.state)));
+  assertEquals(parsed.ok, true);
+  if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+  assertEquals(parsed.value.apps.api?.kind, "process");
+});
 
 bunRuntime.test("process app home stays private and receives no PHP placeholder", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-process-home-" });
@@ -436,8 +397,7 @@ bunRuntime.test("process app compose is private, app-scoped, and exposes a CLI r
   });
   const files = assembleComposeDocuments(platform, result.state);
   const process = String(
-    files.find((file) => file.relPath === "compose/docker-compose.app-worker-api.yml")?.content ??
-      "",
+    files.find((file) => file.relPath === "compose/docker-compose.app-worker-api.yml")?.content ?? "",
   );
   assertEquals(process?.includes("app-worker-api:"), true);
   assertEquals(process?.includes("app-worker-api-cli:"), true);
@@ -473,14 +433,7 @@ bunRuntime.test("minicrond CLI targets only the enabled app's runner and numeric
   });
   const args = ["logs", "a job", "--follow"];
   const command = minicrondComposeCommand(withApp, "alpha", args);
-  assertEquals(command.slice(0, 6), [
-    "exec",
-    "-T",
-    "--user",
-    `${app.uid}:${app.gid}`,
-    "-w",
-    app.home,
-  ]);
+  assertEquals(command.slice(0, 6), ["exec", "-T", "--user", `${app.uid}:${app.gid}`, "-w", app.home]);
   assertEquals(command.includes(`MINICRON_DATA=${app.home}/.local/share/minicron`), true);
   assertEquals(command.includes(`BASE_PATH=/scheduler/apps/${app.slug}/`), true);
   assertEquals(command.includes(`HOME=${app.home}`), true);
@@ -493,11 +446,7 @@ bunRuntime.test("minicrond CLI targets only the enabled app's runner and numeric
   assertThrows(() => minicrondComposeCommand(withApp, "alpha", []));
   assertThrows(() => minicrondComposeCommand(withApp, "alpha", ["bad\0arg"]));
   assertThrows(() =>
-    minicrondComposeCommand(
-      { ...withApp, apps: { alpha: { ...app, enabled: false } } },
-      "alpha",
-      args,
-    ),
+    minicrondComposeCommand({ ...withApp, apps: { alpha: { ...app, enabled: false } } }, "alpha", args),
   );
 });
 
