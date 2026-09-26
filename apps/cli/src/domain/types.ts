@@ -20,8 +20,6 @@ export type AbsoluteAppPath = Brand<string, "AbsoluteAppPath">;
 export type UnixSocketPath = Brand<string, "UnixSocketPath">;
 export type AbsolutePath = Brand<string, "AbsolutePath">;
 export type FpmProfile = Brand<string, "FpmProfile">;
-export type WorkerName = Brand<string, "WorkerName">;
-export type CronJobName = Brand<string, "CronJobName">;
 export type DeployJobId = Brand<string, "DeployJobId">;
 export type ProxySiteName = Brand<string, "ProxySiteName">;
 export type DatabaseName = Brand<string, "DatabaseName">;
@@ -64,12 +62,6 @@ export function asAbsolutePath(value: string): AbsolutePath {
 }
 export function asFpmProfile(value: string): FpmProfile {
   return value as FpmProfile;
-}
-export function asWorkerName(value: string): WorkerName {
-  return value as WorkerName;
-}
-export function asCronJobName(value: string): CronJobName {
-  return value as CronJobName;
 }
 export function asDeployJobId(value: string): DeployJobId {
   return value as DeployJobId;

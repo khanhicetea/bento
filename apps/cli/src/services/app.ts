@@ -1025,8 +1025,6 @@ export function deleteApp(
       ...state,
       apps,
       domains,
-      cronJobs: state.cronJobs.filter((job) => job.app !== slug),
-      workers: state.workers.filter((worker) => worker.app !== slug),
       updatedAt: now,
     },
     app,

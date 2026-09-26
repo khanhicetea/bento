@@ -44,8 +44,6 @@ export const operationsOverviewSchema = z.object({
     .optional(),
   counts: z.object({
     applications: z.number().int().nonnegative(),
-    cronJobs: z.number().int().nonnegative(),
-    workers: z.number().int().nonnegative(),
     proxies: z.number().int().nonnegative(),
   }),
   warnings: z.array(z.string()),

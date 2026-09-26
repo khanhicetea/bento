@@ -10,8 +10,6 @@ import { addPhpVersion, buildCliExec, cliRunComposeCommand } from "../../src/ser
 import { minicrondComposeCommand } from "../../src/services/minicrond.ts";
 import { assembleComposeDocuments } from "../../src/services/compose.ts";
 import { parseDesiredState, stateToJson } from "../../src/schemas/state.ts";
-import { addCronJob } from "../../src/services/cron.ts";
-import { addWorker } from "../../src/services/worker.ts";
 import { enableDeploy } from "../../src/services/deploy.ts";
 import {
   addMysqlVersion,
@@ -454,7 +452,7 @@ bunRuntime.test("process app compose is private, app-scoped, and exposes a CLI r
   assertEquals(cli.phpVersion, "python@3.13");
 });
 
-bunRuntime.test("process apps reject PHP-only jobs and webhook deploy", () => {
+bunRuntime.test("process apps reject PHP-only webhook deploy", () => {
   const platform = testPlatform("/tmp/bento-process-surfaces");
   const state = provisionApp(platform, createEmptyState(), {
     slug: "api",
@@ -464,21 +462,6 @@ bunRuntime.test("process apps reject PHP-only jobs and webhook deploy", () => {
     processVersion: "1.2.20",
     processCommand: ["bun", "run", "start"],
   }).state;
-  assertThrows(
-    () =>
-      addCronJob(
-        state,
-        { app: "api", name: "tick", schedule: "* * * * *", command: ["bun", "tick.ts"] },
-        platform,
-      ),
-    Error,
-    "retired",
-  );
-  assertThrows(
-    () => addWorker(state, { app: "api", name: "queue", command: ["bun", "worker.ts"] }, platform),
-    Error,
-    "not supported",
-  );
   assertThrows(() => enableDeploy(state, { slug: "api" }, platform), Error, "not supported");
 });
 

@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { implement, ORPCError } from "@orpc/server";
 import {
   applicationsContract,
@@ -431,6 +432,15 @@ export function toApplication(app: AppState): Application {
     tlsKeyPath: app.tls.kind === "external" ? app.tls.keyPath : undefined,
     accessLog: app.accessLog,
     deployEnabled: app.deploy.enabled,
+    ...(app.deploy.enabled
+      ? {
+          deploySummary: {
+            queuePolicy: app.deploy.queuePolicy,
+            timeoutSec: app.deploy.timeoutSec,
+            command: `${basename(app.deploy.argv[0] ?? "command")}${app.deploy.argv.length > 1 ? ` (+${app.deploy.argv.length - 1} args)` : ""}`,
+          },
+        }
+      : {}),
     databases: app.databases.map((database) => ({
       engine: database.engine,
       service:

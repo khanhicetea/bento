@@ -1,6 +1,6 @@
 # Proposed plan: replace Supercronic and delegate app jobs to minicrond
 
-Status: implementation plan; the minicrond 0.2 runtime migration and authenticated local browser gateway are implemented. Remote exposure remains unsupported until trusted TLS ingress/origin configuration exists. Companion: `../../minicrond/docs/bento-integration-plan.md`. **Decision:** Bento is pre-production; do not migrate its old cron/worker rows or preserve Supercronic compatibility. Remove Supercronic entirely. Minicrond remains an independent Linux scheduler/supervisor, not a Bento-owned registry.
+Status: minicrond 0.2 runtime migration, authenticated local browser gateway, and removal of Bento-owned user job state/CLI/API are implemented. The development state schema is reset; old migration histories are refused (back up, move aside, reinitialize). Remote exposure remains unsupported until trusted TLS ingress/origin configuration exists. Companion: `../../minicrond/docs/bento-integration-plan.md`. **Decision:** Bento is pre-production; do not migrate its old cron/worker rows or preserve the retired scheduler compatibility. Remove Supercronic entirely. Minicrond remains an independent Linux scheduler/supervisor, not a Bento-owned registry.
 
 ## Ownership and topology
 

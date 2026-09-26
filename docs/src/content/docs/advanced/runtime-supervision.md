@@ -21,11 +21,7 @@ Show: Put one PHP image at the top and branch to FPM, runner, and CLI. Inside FP
 
 ## Runner model
 
-The runner uses s6-overlay to watch a dynamic service tree. Bento adds one Supercronic service for each app that uses schedules or deploy draining. It also adds one service for each enabled worker.
-
-When the configuration changes, Bento updates only the affected service directories. Other services and the runner container can keep running.
-
-Crontab-only changes validate then signal the matching `scheduler-<app>` with USR2. Worker `start|stop|restart|signal|inspect` addresses one `worker-<app>-<name>` service. Runtime locks are volatile and app-scoped.
+The runner uses s6-overlay to supervise one socket-only minicrond daemon per enabled PHP app and a separate root maintenance daemon. Minicrond owns the app's jobs, workers, logs, and registry under that app's UID/GID. Bento renders only reserved internal deploy drain, SQLite VACUUM, and root logrotate tasks. App-owned job changes through `bento app minicrond <slug> -- <args>` do not require a Bento render or restart sibling daemons.
 
 The runner must stay at one replica. Scaling it duplicates schedulers, drains, and workers and violates Bento's singleton assumption.
 
@@ -52,7 +48,7 @@ bento compose -- up -d --force-recreate php85-runner
 bento apply
 ```
 
-Inspect failures with `worker inspect`, runner logs, and scoped s6 status. Recreate only when generated config/image changes require it; ordinary cron/worker mutations reconcile live.
+Inspect failures with the app-scoped minicrond CLI, protected scheduler UI, and runner logs. Recreate only when generated config/image changes require it; app job edits go directly to minicrond.
 
 ## Next steps
 

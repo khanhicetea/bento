@@ -495,7 +495,14 @@ function ApplicationCard({
             {extraDatabases > 0 && <Badge variant="outline">+{extraDatabases} databases</Badge>}
             {app.databases.length === 0 && <Badge variant="outline">No database attached</Badge>}
             {app.deployEnabled && (
-              <Badge className="gap-1.5 bg-emerald-600 px-2.5 py-1 text-white">
+              <Badge
+                className="gap-1.5 bg-emerald-600 px-2.5 py-1 text-white"
+                title={
+                  app.deploySummary
+                    ? `${app.deploySummary.queuePolicy} queue · ${app.deploySummary.timeoutSec}s timeout · ${app.deploySummary.command}`
+                    : undefined
+                }
+              >
                 <Rocket className="size-3" aria-hidden="true" /> Deploys
               </Badge>
             )}

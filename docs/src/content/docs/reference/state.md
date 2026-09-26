@@ -9,9 +9,9 @@ description: Learn what state.db stores, how Bento validates and migrates it, an
 
 ## What it records
 
-Normalized relational tables record stack defaults, managed PHP and database services, apps, app database bindings, logical databases, proxies, authoritative domains, cron jobs, workers, deploy settings, TLS choices, Redis identities, template history, and ordered command arguments.
+Normalized relational tables record stack defaults, managed PHP and database services, apps, app database bindings, logical databases, proxies, authoritative domains, deploy settings, TLS choices, Redis identities, template history, and ordered command arguments.
 
-Each app can have MySQL, PostgreSQL, SQLite, or Litestream bindings. Domain rows point to an app or proxy. Cron jobs and workers point back to their app. Checks, unique indexes, and foreign keys enforce local relationships.
+Each app can have MySQL, PostgreSQL, SQLite, or Litestream bindings. Domain rows point to an app or proxy. App-owned jobs and workers live in each app's minicrond registry, not in state.db. Checks, unique indexes, and foreign keys enforce local relationships.
 
 Bento still treats database contents as untrusted. On every load it reconstructs the complete desired-state model and applies the strict domain validator. This catches cross-record rules such as managed-service compatibility, exactly one primary domain per owner, unique binding identities, and valid app links. A save validates first and replaces desired state in one SQLite transaction.
 
@@ -32,7 +32,7 @@ Apply pending database migrations after installing a new Bento binary:
 bento migrate
 ```
 
-Migrations are numbered and transactional. Their DDL and applied marker commit together. Bento refuses unknown future migration versions. `bento init` establishes the current schema before writing initial state, while `bento serve` automatically runs the migration gate before entering the server. Run `bento migrate` after upgrading a CLI-only installation.
+Migrations are numbered and transactional. Their DDL and applied marker commit together. This development-only release resets the initial schema: prior migration histories, including old job/worker tables, are refused without rewriting or dropping rows. Back up `state.db` and its WAL while the stack is stopped, move the old database aside, then initialize a fresh development stack. Preserve the backup until app settings and minicrond definitions have been recreated and verified. There is no automatic row import. Bento also refuses unknown future migration versions. `bento init` establishes the current schema before writing initial state, while `bento serve` automatically runs the migration gate before entering the server. Run `bento migrate` after upgrading a CLI-only installation.
 
 Routine state reads do not migrate the database. Bento does not import or fall back to `state.json`.
 

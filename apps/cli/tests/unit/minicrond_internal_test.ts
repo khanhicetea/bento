@@ -14,21 +14,9 @@ runtime.test("internal minicrond config is isolated from user jobs and determini
   const second = provisionApp(platform, first.state, { slug: "beta", domain: "beta.test" });
   const state = second.state;
   state.apps.alpha!.deploy.enabled = true;
-  state.cronJobs.push({
-    name: "untrusted" as never,
-    app: first.app.slug,
-    schedule: "* * * * *",
-    timezone: "UTC",
-    workdir: first.app.home,
-    command: ["echo", "untrusted"],
-    commandMode: "argv",
-    output: "log",
-    enabled: true,
-  });
   const alpha = appInternalJobs(state, state.apps.alpha!);
   assertEquals(alpha.includes("bento-internal-deploy-drain"), true);
   assertEquals(alpha.includes("/opt/bento/helpers/deploy-drain.sh"), true);
-  assertEquals(alpha.includes("untrusted"), false);
   state.apps.alpha!.deploy.enabled = false;
   assertEquals(appInternalJobs(state, state.apps.alpha!), "");
   assertEquals(appInternalJobs(state, state.apps.beta!), "");
@@ -36,6 +24,5 @@ runtime.test("internal minicrond config is isolated from user jobs and determini
   assertEquals(root.indexOf("logrotate-alpha") < root.indexOf("logrotate-beta"), true);
   assertEquals(root.includes("/var/lib/bento/minicron/logrotate-alpha.status"), true);
   assertEquals(minicrondBootstrapConfig(alpha).includes("tcp_enabled = false"), true);
-  assertEquals(minicrondBootstrapConfig(alpha).includes("untrusted"), false);
   assertEquals(minicrondBootstrapConfig(root).includes("[[job]]"), true);
 });

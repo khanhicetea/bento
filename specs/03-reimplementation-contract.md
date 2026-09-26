@@ -126,7 +126,7 @@ Technical choices are evaluated in this order:
 ### D-13 — s6 singleton runner with per-app schedulers
 
 **Context:** Jobs need app identity and live reconciliation without container recycling.  
-**Decision:** s6-overlay PID 1, one socket-only minicrond daemon per enabled PHP app (jobs and workers), one root maintenance daemon, and one runner per PHP version. Bento seeds only reserved internal tasks; user definitions live in minicrond. See `06-minicrond-migration-plan.md` for the remaining state/UI migration.
+**Decision:** s6-overlay PID 1, one socket-only minicrond daemon per enabled PHP app (jobs and workers), one root maintenance daemon, and one runner per PHP version. Bento seeds only reserved internal tasks; user definitions live in minicrond. User job/worker state and CLI/API CRUD have been removed; see `06-minicrond-migration-plan.md` for the development reset policy.
 **Benefits:** Scoped app-UID control without sibling restarts.
 **Trade-offs:** Dynamic service-tree reconciliation and strict singleton assumption.  
 **Invariant:** Scaling runners above one is unsupported because it duplicates work.
@@ -212,7 +212,7 @@ Technical choices are evaluated in this order:
 A conforming reimplementation MAY change libraries, file internals, or container build mechanics only if it preserves:
 
 - CLI intent and documented safety behavior;
-- strict domain-schema-v2 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
+- strict domain-schema-v3 reconstruction/validation and numbered SQLite database migrations, or provides an explicit product-approved domain migration;
 - stack/project identity and durable resource naming;
 - domain uniqueness and app identity allocation/preservation;
 - component cardinality and private/public topology;
@@ -258,7 +258,7 @@ Strict compiler options MUST remain enabled, including no implicit `any`, unchec
 - MySQL/PostgreSQL/Redis and SQLite/Litestream policy behavior;
 - render staging, rollback, interruption recovery, and reload plans;
 - deploy HMAC/queue/retention/locking behavior;
-- worker/cron controls and command parsing;
+- app-scoped minicrond access and command parsing;
 - backup scheduling, rclone target/upload plans, and redacted status;
 - stack transfer path/archive/volume guards;
 - app/proxy removal, prune, and destructive Compose refusals;
@@ -277,7 +277,7 @@ A live supported host SHOULD prove:
 - MySQL and PostgreSQL connectivity/isolation/backup/restore;
 - plain SQLite and Litestream watcher behavior;
 - Redis behavior;
-- schedules, worker controls, deploy enqueue/drain;
+- app-scoped minicrond access, deploy enqueue/drain;
 - TLS modes except production ACME where test DNS is unavailable;
 - validation rollback and service reload.
 
@@ -300,11 +300,11 @@ Tests MUST demonstrate:
 
 Round-trip tests MUST prove that:
 
-- persisted state is strict schema v2;
+- persisted state is strict schema v3;
 - derived `database`, `mainDomain`, and `aliases` views are omitted from JSON;
 - app and proxy map keys match their identities;
 - domain records point to existing owners and exactly one primary exists per owner;
-- linked jobs/workers point to existing apps and are unique by app/name;
+- app-owned minicrond registries, not Bento state, own user jobs and workers;
 - every app has one or more unique binding identities;
 - relational bindings reference managed services of the same engine;
 - adding a binding preserves all existing bindings and credentials;

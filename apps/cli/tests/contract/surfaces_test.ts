@@ -18,6 +18,20 @@ bunRuntime.test("retired tui is absent from help and refused as an unknown comma
   assertEquals(new TextDecoder().decode(retired.stderr).includes("Unknown argument: tui"), true);
 });
 
+bunRuntime.test("Bento user job commands are absent; app minicrond remains available", () => {
+  const help = Bun.spawnSync([process.execPath, entry, "--help"]);
+  assertEquals(help.exitCode, 0);
+  const text = new TextDecoder().decode(help.stderr);
+  assertEquals(/bento (cron|worker)\b/.test(text), false);
+  const appHelp = Bun.spawnSync([process.execPath, entry, "app", "--help"]);
+  assertEquals(new TextDecoder().decode(appHelp.stdout).includes("app minicrond"), true);
+  for (const command of ["cron", "worker"]) {
+    const result = Bun.spawnSync([process.execPath, entry, command, "list"]);
+    assertEquals(result.exitCode, 2);
+    assertEquals(new TextDecoder().decode(result.stderr).includes("Unknown arguments"), true);
+  }
+});
+
 bunRuntime.test("serve migrates and starts on loopback", async () => {
   const root = await bunRuntime.makeTempDir({ prefix: "bento-serve-migrate-" });
   const child = Bun.spawn(

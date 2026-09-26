@@ -23,7 +23,7 @@ bento compose -- ps
 | App/proxy gives 502 | Check PHP/service health and the upstream address in the correct [network namespace](/concepts/networking/). |
 | DNS/ACME pending | Ensure every A/AAAA record reaches this host and public TCP port 80 reaches Nginx. See [TLS](/guides/apps/domains-tls/). |
 | MySQL/PostgreSQL unhealthy | Inspect service logs and `.env` credential consistency; do not "fix" initialized volumes by changing passwords casually. |
-| Cron/worker/deploy not running | Check app enabled state, selected PHP runner, scoped inspect/status, workdir, hook, and runner logs. |
+| Cron/worker/deploy not running | Check app enabled state, selected PHP runner, `app minicrond <slug> -- status`, workdir, hook, and runner logs. |
 | Backup missing | Check database reachability and free space. Failed/empty dumps are not published; scheduled copies remain on-host. |
 | Restore failed | Destination may be partial. Preserve logs, inspect/drop only the target with authorization, and retry from a verified dump. |
 | Import failed | Use an empty root, complete archives, no destination volumes, and compatible architecture/database images. |

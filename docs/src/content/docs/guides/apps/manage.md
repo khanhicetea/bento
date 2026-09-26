@@ -82,7 +82,7 @@ Until apply succeeds, desired state and the running configuration can differ.
 Disable an app when you want Bento to stop serving and supervising it without deleting its model or durable data. A process app is created disabled; prepare and start it privately before enabling it:
 
 :::caution
-Disabling removes the app's generated vhost, PHP pool, scheduler, and worker configuration. Requests stop working and background jobs stop after apply, while the app remains in desired state and retains its home, credentials, database records, and domain ownership.
+Disabling removes the app's generated vhost, PHP pool, and minicrond service (including its workers). Requests stop working and background jobs stop after apply, while the app remains in desired state and retains its home, credentials, database records, and domain ownership.
 :::
 
 ```sh
@@ -142,7 +142,7 @@ bento exec demo --print -- php -v
 
 ## Remove desired state but retain data
 
-Removing an app is different from pruning it. Removal deletes the app, its domain claims, cron jobs, and workers from desired state and removes its generated runtime configuration. It intentionally retains the app home, databases, and database account for review or manual recovery.
+Removing an app is different from pruning it. Removal deletes the app and its domain claims from Bento desired state and removes its generated runtime configuration. Minicrond definitions remain in the retained app home. It intentionally retains the app home, databases, and database account for review or manual recovery.
 
 :::caution
 The next command takes the app out of service and releases its domains for reuse. Confirm backups and inspect `app show demo` before proceeding. The exact confirmation is `delete demo`; this step does not delete the retained home or database data.
@@ -217,7 +217,7 @@ bento compose -- ps
 
 ## Advanced
 
-An enabled PHP app contributes an Nginx vhost, a pool in its shared versioned PHP-FPM service, and any scheduler or worker definitions in that PHP version's singleton runner. A process app contributes a dedicated private service, ephemeral CLI role, and app-specific Nginx Unix socket. Disable and enable preserve either runtime's durable ownership layer.
+An enabled PHP app contributes an Nginx vhost, a pool in its shared versioned PHP-FPM service, and a private app-UID minicrond daemon in that PHP version's singleton runner. A process app contributes a dedicated private service, ephemeral CLI role, and app-specific Nginx Unix socket. Disable and enable preserve either runtime's durable ownership layer.
 
 `app shell` and `bento exec` use the profile-gated `<php-service>-cli` Compose role. The container starts with enough privilege to install the app's passwd/group identity, then drops to the app UID/GID before running Bash or the requested argv. The app shares its home and private stack network with this ephemeral role; this is convenient operational identity, not a hostile multi-tenant sandbox.
 

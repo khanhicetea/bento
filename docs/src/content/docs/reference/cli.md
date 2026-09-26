@@ -34,7 +34,7 @@ Put global flags before the command. Use `--stack PATH` for a one-command overri
 | Apps/runtime      | `app`, `php`, `exec`                                   | [Apps](/guides/apps/manage/), [PHP](/guides/apps/php-runtimes/), [Node.js/Bun/Python](/guides/apps/process-runtimes/) |
 | Data              | `mysql`, `postgres`, `sqlite`, `backup`, `restore`     | [Relational backup and restore](/guides/data/backup-restore/), [SQLite](/guides/data/sqlite/)                         |
 | Traffic           | `proxy`, `tls`, `logs`                                 | [Reverse proxy](/guides/apps/reverse-proxy/), [TLS](/guides/apps/domains-tls/)                                        |
-| Background        | `deploy`, `cron`, `worker`                             | [Deploy](/guides/apps/deploy/), [jobs](/guides/apps/schedules-workers/)                                               |
+| Background        | `deploy`, `app minicrond`                             | [Deploy](/guides/apps/deploy/), [jobs](/guides/apps/schedules-workers/)                                               |
 | Stack             | `compose`, `stack`, `maintenance`                      | [Stack management](/guides/stacks/manage/)                                                                            |
 | Safety/custom     | `permissions`, `template`                              | [Permissions](/guides/apps/permissions/), [templates](/guides/customization/templates/)                               |
 

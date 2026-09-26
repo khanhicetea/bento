@@ -22,7 +22,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
     assertEquals(first, {
       fromVersion: 0,
       toVersion: STATE_DATABASE_SCHEMA_VERSION,
-      applied: [1, 2, 3],
+      applied: [1],
     });
     assertEquals((await bunRuntime.stat(platform.paths.paths.stateDb)).mode & 0o777, 0o600);
 
@@ -40,11 +40,7 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
         []
       >("SELECT version, name FROM schema_migrations ORDER BY version")
       .all();
-    assertEquals(migration, [
-      { version: 1, name: "normalized-desired-state" },
-      { version: 2, name: "proxy-site-enablement" },
-      { version: 3, name: "process-application-runtime" },
-    ]);
+    assertEquals(migration, [{ version: 1, name: "minicrond-owned-user-jobs" }]);
     const tables = database
       .query<{ name: string }, []>(
         "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -54,11 +50,42 @@ bunRuntime.test("state database migrations are numbered, private, and idempotent
     assertEquals(tables.includes("applications"), true);
     assertEquals(tables.includes("app_database_bindings"), true);
     assertEquals(tables.includes("domains"), true);
-    assertEquals(tables.includes("cron_jobs"), true);
-    assertEquals(tables.includes("workers"), true);
+    assertEquals(tables.includes("cron_jobs"), false);
+    assertEquals(tables.includes("workers"), false);
     assertEquals(tables.includes("app_deploy_arguments"), false);
     assertEquals(tables.includes("cron_job_arguments"), false);
     assertEquals(tables.includes("worker_arguments"), false);
+  } finally {
+    await bunRuntime.remove(root, { recursive: true });
+  }
+});
+
+bunRuntime.test("old development schema is refused without deleting user job rows", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-retired-db-" });
+  try {
+    const platform = createPlatform(root, bunRuntime.cwd());
+    await migrateStateDatabase(platform);
+    {
+      using database = new Database(platform.paths.paths.stateDb);
+      database.exec("CREATE TABLE cron_jobs (name TEXT); INSERT INTO cron_jobs VALUES ('keep-me')");
+      database.run(
+        "UPDATE schema_migrations SET name = 'normalized-desired-state' WHERE version = 1",
+      );
+    }
+    await assertRejects(
+      () => migrateStateDatabase(platform),
+      Error,
+      "unsupported desired state database migration 1",
+    );
+    using database = new Database(platform.paths.paths.stateDb, { readonly: true });
+    assertEquals(
+      database.query<{ name: string }, []>("SELECT name FROM cron_jobs").get()?.name,
+      "keep-me",
+    );
+    assertEquals(
+      database.query<{ name: string }, []>("SELECT name FROM schema_migrations").get()?.name,
+      "normalized-desired-state",
+    );
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

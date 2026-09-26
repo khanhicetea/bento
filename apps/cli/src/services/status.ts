@@ -94,8 +94,6 @@ export type StatusReport = {
   }>;
   domains: Array<{ domain: string; owner: string }>;
   composeFiles: string[];
-  cronJobs: number;
-  workers: number;
   warnings: string[];
   notes: string[];
   generation?: {
@@ -289,8 +287,6 @@ export async function buildStatus(platform: Platform, state: DesiredState): Prom
         owner: owner.kind === "app" ? `app:${owner.slug}` : `proxy:${owner.name}`,
       })),
     composeFiles,
-    cronJobs: state.cronJobs.length,
-    workers: state.workers.length,
     warnings,
     notes,
     generation,
@@ -570,7 +566,6 @@ export function formatStatus(report: StatusReport): string {
     lines.push(`  - ${f}`);
   }
   lines.push("");
-  lines.push(`Background: cron_jobs=${report.cronJobs} workers=${report.workers}`);
   if (report.notes.length) {
     lines.push("");
     lines.push("Notes:");

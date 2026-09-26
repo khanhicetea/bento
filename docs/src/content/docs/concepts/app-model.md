@@ -95,15 +95,11 @@ An app does not receive its own Redis instance.
 
 ## Schedules, workers, and deploys
 
-For PHP apps, cron jobs and workers are separate desired-state records that run under the app UID/GID in the selected PHP runner:
-
-- a **scheduled job** is a timed command with its own schedule, workdir, output behavior, timeout, and optional lock;
-- a **worker** is a named long-running command with scoped start, stop, restart, signal, and inspection controls;
-- **webhook deploy** is optional and adds an authenticated app-specific queue whose trusted hook runs as the app user.
+For PHP apps, schedules and workers live in the app-owned minicrond registry under the app UID/GID in the selected PHP runner. Manage them with `bento app minicrond <slug> -- <args>` or the protected scheduler UI. Bento does not persist a second copy of these definitions. **Webhook deploy** is optional and adds an authenticated app-specific queue whose trusted hook runs as the app user.
 
 The generated deploy hook deliberately skips work until you replace it. Enabling deployment does not invent a Git or framework workflow. Process-app schedules, workers, and signed webhook deploy are currently unsupported and are rejected rather than routed through PHP.
 
-Removing an app from desired state also removes its cron and worker records, but retains durable app and database data for separate review. Permanent prune is a distinct destructive operation.
+Removing an app from Bento desired state retains its app home, including the minicrond registry, and database data for separate review. Permanent prune is a distinct destructive operation.
 
 ## How it affects operations
 
@@ -141,7 +137,7 @@ Bento also does not:
 
 Bento uses the app's stable UID/GID for its FPM pool, temporary CLI containers, scheduler, workers, and deploy hook. Nginx can read the public tree and use the app's Unix socket, but it cannot write freely to the private home.
 
-Each managed PHP version has one persistent FPM service and singleton runner; app pools, sockets, schedulers, and workers live in those shared roles. Each process app instead has one dedicated service and profile-gated CLI role with app-only mounts. Neither design provides VM-grade isolation.
+Each managed PHP version has one persistent FPM service and singleton runner; app pools, sockets, and per-app minicrond daemons live in those shared roles. Each process app instead has one dedicated service and profile-gated CLI role with app-only mounts. Neither design provides VM-grade isolation.
 
 ## Next steps
 

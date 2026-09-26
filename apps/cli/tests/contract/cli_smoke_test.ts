@@ -252,8 +252,6 @@ bunRuntime.test("cli init render status app create", async () => {
       ]),
       2,
     );
-    const cronState = await loadState(stack);
-    assertEquals(cronState.cronJobs.length, 0);
 
     assertEquals(
       await runCli([
@@ -271,7 +269,6 @@ bunRuntime.test("cli init render status app create", async () => {
       ]),
       2,
     );
-    assertEquals((await loadState(stack)).workers.length, 0);
 
     // deploy enable
     assertEquals(await runCli([...base, "deploy", "enable", "demo"]), 0);

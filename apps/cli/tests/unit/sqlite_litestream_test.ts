@@ -41,7 +41,7 @@ bunRuntime.test(
 bunRuntime.test("other state versions are rejected without migration", () => {
   const unsupported = {
     ...createEmptyState("2026-07-29T00:00:00.000Z"),
-    schemaVersion: 3,
+    schemaVersion: 4,
   };
   assertEquals(parseDesiredState(unsupported).ok, false);
 });

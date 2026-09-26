@@ -144,7 +144,7 @@ Provisioning MUST:
 - preserve omitted runtime/database selections during updates;
 - apply requested relational grants or fail without recording an explicitly requested database when its service is unavailable.
 
-Disabling MUST remove active vhost, pool, schedules, and workers after apply while retaining state, domain claims, home, credentials, and databases. Removing desired state MUST require `delete <slug>` and retain durable data. Permanent prune MUST be separate, interactive, enumerate known retained parts, and require the literal `delete` with no bypass.
+Disabling MUST remove the active vhost, pool, and app minicrond service after apply while retaining Bento state, domain claims, home (including the app-owned scheduler registry), credentials, and databases. Removing desired state MUST require `delete <slug>` and retain durable data. Permanent prune MUST be separate, interactive, enumerate known retained parts, and require the literal `delete` with no bypass.
 
 Front-controller routing MUST restrict dynamic execution to the entrypoint. Legacy routing MAY execute PHP scripts beneath the document root.
 
@@ -216,9 +216,7 @@ Plain SQLite MUST use a private app-owned file, stable randomized weekly `VACUUM
 
 `app shell` and `exec` MUST run in an ephemeral CLI container for the app's selected runtime under the app UID/GID. Working directories MUST remain inside the app home.
 
-Schedules MUST support cron expression, timezone, argv or explicit shell mode, workdir, output policy, timeout, lock, and enablement. Each app scheduler MUST run under that app identity.
-
-Workers MUST be named app-scoped long-running commands supervised by s6 and support list/start/stop/restart/signal/inspect/remove. Reconciliation SHOULD affect only the selected worker or app scheduler.
+Each enabled PHP app MUST have an app-UID minicrond daemon owning its schedules, workers, runs, logs, and definitions. Bento MUST NOT persist user job/worker records or provide a parallel CRUD surface. The app-scoped `app minicrond` CLI and authenticated browser gateway MUST target only the selected app's private socket. Bento MAY provision reserved config-owned internal deploy drain and SQLite VACUUM tasks; root logrotate remains separate. Host backup schedules remain in the host crontab.
 
 Webhook deploy MUST:
 
@@ -312,7 +310,7 @@ Create a disabled process app with an exact Node.js, Bun, or Python version and 
 
 ### 8.4 Add asynchronous work
 
-Add one schedule and one queue worker. Both run under app identity in the selected singleton runner. Updating either does not interrupt unrelated web traffic or sibling apps.
+Add one schedule and one queue worker in the app's minicrond registry. Both run under app identity in the selected singleton runner. Updating either does not interrupt unrelated web traffic or sibling apps.
 
 ### 8.5 Add another database kind
 

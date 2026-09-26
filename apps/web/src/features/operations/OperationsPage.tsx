@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Server,
   ServerCog,
-  Settings2,
 } from "lucide-react";
 import {
   DomainError,
@@ -52,7 +51,6 @@ export function OperationsPage() {
   if (!data) return null;
 
   const runningRoles = data.roles.filter((role) => role.state === "running").length;
-  const workloadCount = data.counts.cronJobs + data.counts.workers;
   const health = getHealth(runningRoles, data.roles.length);
 
   return (
@@ -136,7 +134,7 @@ export function OperationsPage() {
             </div>
           </article>
 
-          <div className="mt-5 grid grid-cols-4 gap-3 max-[1050px]:grid-cols-2 max-[560px]:grid-cols-1">
+          <div className="mt-5 grid grid-cols-3 gap-3 max-[1050px]:grid-cols-2 max-[560px]:grid-cols-1">
             <Summary
               value={runningRoles}
               label="Running roles"
@@ -158,11 +156,6 @@ export function OperationsPage() {
               value={data.counts.applications}
               label="Applications"
               icon={<Layers3 className="size-4" />}
-            />
-            <Summary
-              value={workloadCount}
-              label="Background tasks"
-              icon={<Settings2 className="size-4" />}
             />
           </div>
 

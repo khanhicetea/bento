@@ -3,7 +3,7 @@
  * template customization/drift, maintenance crontab merge, batched --no-apply.
  */
 
-import { runtime as bunRuntime, assertEquals, assertRejects, assertThrows } from "../runtime.ts";
+import { runtime as bunRuntime, assertEquals, assertRejects } from "../runtime.ts";
 import { join } from "node:path";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
@@ -15,7 +15,6 @@ import {
   queryDatabaseSizes,
   queryProcesslist,
 } from "../../src/services/mysql.ts";
-import { addWorker } from "../../src/services/worker.ts";
 import {
   buildAccessLogRotatePlan,
   buildGoAccessReportPlan,
@@ -167,28 +166,6 @@ bunRuntime.test("queryProcesslist fails closed on non-zero", async () => {
       Error,
       "processlist failed",
     );
-  });
-});
-
-// --- B2 Worker lifecycle ----------------------------------------------------
-
-bunRuntime.test("Bento worker creation is retired and cannot persist a ghost service", async () => {
-  await withRoot(async (_root, platform) => {
-    const state = provisionApp(platform, createEmptyState(), {
-      slug: "demo",
-      domain: "demo.test",
-    }).state;
-    assertThrows(
-      () =>
-        addWorker(
-          state,
-          { app: "demo", name: "queue", command: ["php", "artisan", "queue:work"] },
-          platform,
-        ),
-      Error,
-      "retired",
-    );
-    assertEquals(state.workers.length, 0);
   });
 });
 
@@ -469,7 +446,6 @@ bunRuntime.test("multiple --no-apply mutations then single apply is one transact
     // Single apply transaction
     const state = await store.load();
     assertEquals(Object.keys(state.apps).sort(), ["one", "two"]);
-    assertEquals(state.workers.length, 0);
     assertEquals(state.apps["one"]!.accessLog, true);
 
     const result = await render.apply(state, {

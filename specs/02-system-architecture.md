@@ -42,7 +42,7 @@ The product is organized into these operator-facing areas:
 | Traffic       | Nginx, app vhosts, reverse proxies, TLS, HTTP/3, access logs                       |
 | Runtime       | Versioned PHP roles plus dedicated Node/Bun/Python process services and app CLI    |
 | Data          | MySQL, PostgreSQL, SQLite, Litestream, Redis, credentials, grants                  |
-| Work          | Schedules, s6 workers, signed deploy queue and operator hook                       |
+| Work          | App-owned minicrond jobs/workers, signed deploy queue and operator hook                       |
 | Recovery      | Logical backup/restore, scheduled rclone upload, stack transfer                    |
 | Operations    | Status, doctor, support bundle, permissions, maintenance, reports                  |
 | Customization | Nginx drop-ins, complete app templates, Compose overlays                           |
@@ -242,7 +242,7 @@ A proxy site uses the same domain/TLS ownership model as an app and forwards to 
 ### 8.1 Conceptual state model
 
 ```text
-DesiredState schema v2
+DesiredState schema v3
   defaults
     phpVersion, database service, FPM profile, Redis mode
   phpVersions[]
@@ -255,14 +255,12 @@ DesiredState schema v2
     databases[]                   MySQL | PostgreSQL | SQLite | Litestream
   proxies{name -> ProxySite}
   domains{domain -> app|proxy}    authoritative ownership
-  cronJobs[]
-  workers[]
   timestamps
 ```
 
-Desired state is stored in relational tables in the private Bun SQLite database `state.db`. Managed runtimes/services, applications, database bindings, logical databases, domains, proxies/upstreams, cron jobs, and workers have explicit keys, ordering columns, checks, and foreign-key relationships. Deploy, cron, and worker argument arrays are JSON fields on their parent rows and are validated when the complete in-memory state is reconstructed. Derived in-memory `database`, `mainDomain`, and `aliases` fields are compatibility views and are not persisted as authority. The first database binding is the primary/default view.
+Desired state is stored in relational tables in the private Bun SQLite database `state.db`. Managed runtimes/services, applications, database bindings, logical databases, domains, and proxies/upstreams have explicit keys, ordering columns, checks, and foreign-key relationships. Deploy argument arrays are JSON fields on their parent rows and are validated when the complete in-memory state is reconstructed. Derived in-memory `database`, `mainDomain`, and `aliases` fields are compatibility views and are not persisted as authority. The first database binding is the primary/default view.
 
-Every load reconstructs the complete in-memory model and applies the strict domain validator. Validation MUST enforce exact domain schema version, strict fields, managed-service references, one primary domain per owner, valid linked app references, and uniqueness of bindings/jobs/workers. Every save validates first and replaces the relational desired state in one synchronous SQLite transaction while the stack's cross-process lock is held by mutation workflows.
+Every load reconstructs the complete in-memory model and applies the strict domain validator. Validation MUST enforce exact domain schema version, strict fields, managed-service references, one primary domain per owner, valid linked app references, and uniqueness of bindings. Every save validates first and replaces the relational desired state in one synchronous SQLite transaction while the stack's cross-process lock is held by mutation workflows.
 
 ### 8.2 Filesystem/storage classes
 
@@ -287,7 +285,7 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 3. Refuse to initialize any database that already has desired state.
 4. Create private state/environment and directory structure.
 5. Generate administrator secrets once.
-6. Persist empty domain-schema-v2 state with default PHP/MySQL services in one transaction.
+6. Persist empty domain-schema-v3 state with default PHP/MySQL services in one transaction.
 7. Initialize private rclone config placeholder.
 8. Render/materialize when requested by the command flow.
 
@@ -341,7 +339,7 @@ Stopped services consume generated configuration when next started. Apply does n
 
 ### 9.5 Schedules and workers
 
-The singleton PHP runner uses s6-overlay as PID 1. It supervises one socket-only, app-UID minicrond for each enabled PHP app and a separate root maintenance minicrond. Bento renders only reserved config-owned `[[job]]` tasks (deploy drain and SQLite VACUUM for apps, logrotate for root) into each daemon's main config; minicrond 0.2.2 syncs them before scheduling and rejects registry name collisions. User jobs and workers belong in minicrond's private per-app registry. Changes to user definitions do not trigger a Bento render. The reconcile helper adds/removes app daemon services in the dynamic s6 scan tree. Legacy Bento job/worker rows and API contracts remain pending removal as specified in `06-minicrond-migration-plan.md`; their mutating service operations fail closed.
+The singleton PHP runner uses s6-overlay as PID 1. It supervises one socket-only, app-UID minicrond for each enabled PHP app and a separate root maintenance minicrond. Bento renders only reserved config-owned `[[job]]` tasks (deploy drain and SQLite VACUUM for apps, logrotate for root) into each daemon's main config; minicrond 0.2.2 syncs them before scheduling and rejects registry name collisions. User jobs and workers belong in minicrond's private per-app registry. Changes to user definitions do not trigger a Bento render. The reconcile helper adds/removes app daemon services in the dynamic s6 scan tree. Bento has no user job/worker tables, CLI CRUD commands, or oRPC CRUD routes; the protected gateway and app-scoped CLI delegate directly to minicrond.
 
 ### 9.6 Webhook deploy
 

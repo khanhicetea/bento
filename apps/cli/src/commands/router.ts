@@ -16,7 +16,6 @@ import { registerAppCommands } from "./subcommands/app.ts";
 import { registerBackupCommands } from "./subcommands/backup.ts";
 import { registerComposeCommand } from "./subcommands/compose.ts";
 import { registerCoreCommands } from "./subcommands/core.ts";
-import { registerCronCommands } from "./subcommands/cron.ts";
 import { registerDeployCommands } from "./subcommands/deploy.ts";
 import { registerExecCommand } from "./subcommands/exec.ts";
 import { registerLogCommands } from "./subcommands/logs.ts";
@@ -32,7 +31,6 @@ import { registerStackCommands } from "./subcommands/stack.ts";
 import { registerSqliteCommands } from "./subcommands/sqlite.ts";
 import { registerTemplateCommands } from "./subcommands/template.ts";
 import { registerTlsCommands } from "./subcommands/tls.ts";
-import { registerWorkerCommands } from "./subcommands/worker.ts";
 
 function withGlobals<T>(y: Argv<T>) {
   return y
@@ -97,8 +95,6 @@ function buildParser(state: RunState) {
   parser = registerSqliteCommands(parser, state);
   parser = registerProxyCommands(parser, state);
   parser = registerDeployCommands(parser, state);
-  parser = registerCronCommands(parser, state);
-  parser = registerWorkerCommands(parser, state);
   parser = registerExecCommand(parser, state);
   parser = registerComposeCommand(parser, state);
   parser = registerRcloneCommand(parser, state);

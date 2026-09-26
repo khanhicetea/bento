@@ -2,10 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createRouterClient } from "@orpc/server";
 import {
   addApplicationDatabaseInputSchema,
-  addCronJobInputSchema,
-  addWorkerInputSchema,
   applicationListSchema,
-  jobsOverviewSchema,
   removeApplicationInputSchema,
   saveApplicationInputSchema,
   schedulerAccessSchema,
@@ -13,8 +10,13 @@ import {
   setApplicationRunningInputSchema,
   webContract,
 } from "@bento/shared";
-import { commandDisplay } from "../../src/server/domains/jobs/router.ts";
-import { createApplicationsRouter } from "../../src/server/domains/applications/router.ts";
+import {
+  createApplicationsRouter,
+  toApplication,
+} from "../../src/server/domains/applications/router.ts";
+import { createEmptyState } from "../../src/domain/state.ts";
+import { provisionApp } from "../../src/services/app.ts";
+import { createPlatform } from "../../src/platform/mod.ts";
 import {
   acceptsWebAuthorization,
   matchesBasicAuthorization,
@@ -104,7 +106,7 @@ describe("web API contract", () => {
       "operations",
     ]);
     expect("execute" in webContract).toBe(false);
-    expect("restartWorker" in webContract.jobs).toBe(true);
+    expect(Object.keys(webContract.jobs)).toEqual(["schedulerAccess"]);
     expect("schedulerAccess" in webContract.jobs).toBe(true);
     expect(
       schedulerAccessSchema.parse({
@@ -123,85 +125,21 @@ describe("web API contract", () => {
     ).toThrow();
   });
 
-  test("returns complete job commands as redacted display strings", () => {
-    const overview = {
-      initialized: true,
-      stackRoot: "/srv/bento",
-      cronJobs: [
-        {
-          name: "tick",
-          app: "demo",
-          schedule: "* * * * *",
-          timezone: "UTC",
-          command: "php artisan schedule:run",
-          commandMode: "argv" as const,
-          output: "log" as const,
-          enabled: true,
-        },
-      ],
-      workers: [],
-      deploys: [],
-    };
-    expect(jobsOverviewSchema.parse(overview)).toEqual(overview);
-    expect(() =>
-      jobsOverviewSchema.parse({
-        ...overview,
-        cronJobs: [{ ...overview.cronJobs[0], command: ["php", "secret"] }],
-      }),
-    ).toThrow();
-    expect(commandDisplay(["php", "artisan", "queue:work"], "argv")).toBe("php artisan queue:work");
-    expect(
-      commandDisplay(["curl", "--token", "do-not-expose", "https://example.test"], "argv"),
-    ).toBe("curl --token *** https://example.test");
-    expect(commandDisplay(["curl --api-key='do-not-expose' example.test"], "shell")).toBe(
-      "curl --api-key=*** example.test",
-    );
-  });
-
-  test("validates app-scoped cron and worker mutations", () => {
-    expect(
-      addCronJobInputSchema.parse({
-        app: "demo",
-        name: "tick",
-        schedule: "*/5 * * * *",
-        timezone: "UTC",
-        command: ["php", "artisan", "schedule:run"],
-        commandMode: "argv",
-        output: "log",
-        timeoutSec: 60,
-      }),
-    ).toBeTruthy();
-    expect(() =>
-      addCronJobInputSchema.parse({
-        app: "demo",
-        name: "tick",
-        schedule: "* * * * *",
-        timezone: "UTC",
-        command: ["echo one", "echo two"],
-        commandMode: "shell",
-        output: "log",
-      }),
-    ).toThrow();
-    expect(
-      addWorkerInputSchema.parse({
-        app: "demo",
-        name: "queue",
-        command: ["php", "artisan", "queue:work"],
-        autorestart: true,
-        stopsignal: "TERM",
-        stopwaitsecs: 10,
-      }),
-    ).toBeTruthy();
-    expect(() =>
-      addWorkerInputSchema.parse({
-        app: "demo",
-        name: "queue",
-        command: [],
-        autorestart: true,
-        stopsignal: "TERM",
-        stopwaitsecs: 0,
-      }),
-    ).toThrow();
+  test("application deploy summary stays in its domain and never exposes argv secrets", () => {
+    const platform = createPlatform("/tmp/bento-web-deploy-summary", runtime.cwd());
+    const { app } = provisionApp(platform, createEmptyState(), {
+      slug: "demo",
+      domain: "demo.test",
+    });
+    app.deploy.enabled = true;
+    app.deploy.argv = ["/usr/bin/deploy", "--token", "private-value"];
+    const response = toApplication(app);
+    expect(response.deploySummary).toEqual({
+      queuePolicy: app.deploy.queuePolicy,
+      timeoutSec: app.deploy.timeoutSec,
+      command: "deploy (+2 args)",
+    });
+    expect(JSON.stringify(response)).not.toContain("private-value");
   });
 
   test("validates the applications feature boundary", () => {

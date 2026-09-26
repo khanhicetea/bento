@@ -35,7 +35,7 @@ The transaction covers generated service files and protected database client fil
 | --- | --- |
 | Domain, proxy, TLS, access log, vhost | Nginx |
 | App identity, PHP version/profile, pool | PHP-FPM and sometimes Nginx |
-| Cron, deploy drain, worker | Matching PHP runner |
+| Internal deploy drain / SQLite VACUUM | Matching PHP runner |
 | Database creation, backup, restore | No web/runtime reload |
 | Full `apply` | Relevant Nginx, FPM, runners |
 

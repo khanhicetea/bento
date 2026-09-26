@@ -36,7 +36,7 @@ Bento passes database passwords through protected files instead of host command 
 
 Bento keeps app working directories inside the app home. Recursive permission repair does not follow symlink targets.
 
-Worker arguments do not invoke a shell implicitly. Cron `--cmd` does allow shell syntax, so treat it as trusted input. Bento also rejects duplicate domains and blocks Compose commands that would delete volumes.
+Minicrond job and worker definitions are app-owned; treat shell commands in those definitions as trusted input. Bento also rejects duplicate domains and blocks Compose commands that would delete volumes.
 
 ## Residual risk
 

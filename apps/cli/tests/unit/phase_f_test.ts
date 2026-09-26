@@ -16,12 +16,6 @@ import {
 import { generateAll } from "../../src/services/generate.ts";
 import { createAppDatabase, listRecentBackupFiles } from "../../src/services/mysql.ts";
 import { aclRules, redisConnectionEnv } from "../../src/services/redis.ts";
-import {
-  addCronJob,
-  buildCronReloadCommand,
-  editCronJob,
-  removeCronJob,
-} from "../../src/services/cron.ts";
 import { RenderService } from "../../src/services/render.ts";
 import { parseDotEnv } from "../../src/services/stack_env.ts";
 import {
@@ -346,32 +340,6 @@ bunRuntime.test("F1 runner generates only app and root minicrond services", asyn
     assertEquals(logrotate.includes("copytruncate"), true);
     assertEquals(rootSeed.includes("/etc/bento/minicrond/logrotate/alpha.conf"), true);
     assertEquals(rootSeed.includes("[[job]]"), true);
-  } finally {
-    await bunRuntime.remove(root, { recursive: true });
-  }
-});
-
-bunRuntime.test("retired Bento cron mutations fail closed", async () => {
-  const root = await bunRuntime.makeTempDir({ prefix: "bento-cron-retired-" });
-  try {
-    const platform = testPlatform(root);
-    const state = provisionApp(platform, createEmptyState(), {
-      slug: "alpha",
-      domain: "a.test",
-    }).state;
-    assertThrows(() =>
-      addCronJob(
-        state,
-        { app: "alpha", name: "tick", schedule: "* * * * *", command: ["true"] },
-        platform,
-      ),
-    );
-    assertThrows(() =>
-      editCronJob(state, { app: "alpha", name: "tick", schedule: "0 * * * *" }, platform),
-    );
-    assertThrows(() => removeCronJob(state, "alpha", "tick", platform.clock.nowIso()));
-    assertThrows(() => buildCronReloadCommand(state, "alpha"));
-    assertEquals(state.cronJobs.length, 0);
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }

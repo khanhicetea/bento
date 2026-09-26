@@ -189,8 +189,6 @@ async function operationsOverview(ctx: CliContext): Promise<OperationsOverview> 
       ...(status.generation ? { generation: status.generation } : {}),
       counts: {
         applications: status.apps.length,
-        cronJobs: status.cronJobs,
-        workers: status.workers,
         proxies: status.proxies.length,
       },
       warnings: status.warnings,
@@ -208,7 +206,7 @@ function empty(stackRoot: string, error?: string): OperationsOverview {
     cloudflareTunnel: { configured: false },
     roles: [],
     runtimes: [],
-    counts: { applications: 0, cronJobs: 0, workers: 0, proxies: 0 },
+    counts: { applications: 0, proxies: 0 },
     warnings: [],
     notes: [],
     ...(error ? { error } : {}),

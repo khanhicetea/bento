@@ -3,7 +3,6 @@
 import type {
   AbsoluteAppPath,
   AppSlug,
-  CronJobName,
   DatabaseName,
   DatabaseService,
   DomainName,
@@ -14,7 +13,6 @@ import type {
   PostgresVersion,
   ProxySiteName,
   Uid,
-  WorkerName,
 } from "./types.ts";
 import {
   asDatabaseService,
@@ -205,30 +203,6 @@ export type ProxySite = {
   createdAt: string;
   updatedAt: string;
 };
-export type CronJob = {
-  name: CronJobName;
-  app: AppSlug;
-  schedule: string;
-  timezone: string;
-  workdir: string;
-  command: string[];
-  commandMode: "argv" | "shell";
-  output: "log" | "null" | "inherit";
-  timeoutSec?: number;
-  lock?: string;
-  enabled: boolean;
-};
-export type Worker = {
-  name: WorkerName;
-  app: AppSlug;
-  command: string[];
-  workdir: string;
-  enabled: boolean;
-  autorestart: boolean;
-  stopsignal: string;
-  stopwaitsecs: number;
-};
-
 export type DatabaseDefault =
   | { engine: "mysql"; version: MysqlVersion; service: DatabaseService }
   | { engine: "postgres"; version: PostgresVersion; service: DatabaseService };
@@ -271,8 +245,6 @@ export type DesiredState = {
   apps: Record<string, AppState>;
   proxies: Record<string, ProxySite>;
   domains: Record<string, DomainOwner>;
-  cronJobs: CronJob[];
-  workers: Worker[];
   createdAt: string;
   updatedAt: string;
 };
@@ -328,8 +300,6 @@ export function createEmptyState(now: string = new Date().toISOString()): Desire
     apps: {},
     proxies: {},
     domains: {},
-    cronJobs: [],
-    workers: [],
     createdAt: now,
     updatedAt: now,
   };

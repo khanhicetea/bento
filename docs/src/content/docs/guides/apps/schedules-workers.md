@@ -1,67 +1,22 @@
 ---
 title: Operate schedules and workers
-description: Run app schedules and long-lived workers with locks, timeouts, and scoped controls.
+description: Manage app-owned minicrond schedules and workers.
 ---
 
 # Operate schedules and workers
 
-Run scheduled commands and long-lived workers as the app user. Bento supervises them through the app's selected PHP runner.
+Each enabled PHP app has its own minicrond registry, socket, jobs, runs, logs, and supervised workers under its UID/GID. Bento does **not** store user job definitions or offer `bento cron` / `bento worker` commands.
 
-## Add a schedule
-
-Prefer an explicit shell command only when you need redirects or pipelines:
+Use the app-scoped CLI to invoke the shipped minicrond binary inside the selected runner as the app user. Everything after `--` is passed as argv, not interpreted by Bento:
 
 ```sh
-bento cron add \
-  --app demo --name scheduler \
-  --schedule '* * * * *' --timezone UTC \
-  --lock scheduler --timeout 300 \
-  --cmd 'php artisan schedule:run >> logs/scheduler.log 2>&1'
-bento cron list demo
+bento app minicrond demo -- status
+bento app minicrond demo -- list
+bento app minicrond demo -- --help
 ```
 
-Working directories and locks remain inside the app boundary. Edit omitted options without changing them:
+Use minicrond's own CLI help for the installed version's job, worker, run, and log commands. With `WEB_BASIC_AUTH` configured on a fixed local Bento port, `bento serve` also offers a protected **Open scheduler** link for each enabled PHP app. It defaults to loopback: tunnel to the server rather than exposing an unauthenticated listener. The browser proxy uses the app's private socket; it never receives scheduler credentials. See [runtime supervision](/advanced/runtime-supervision/).
 
-```sh
-bento cron edit demo scheduler --timeout 600
-```
+Check the selected runner with `bento compose -- logs --tail 100 php85-runner` if a daemon is not running. App schedulers are independent: changes in one registry do not trigger `bento apply` or modify another app. The runner must stay a singleton to avoid duplicate firings. Back up each app's registry and WAL consistently when transferring a stack; a live stack archive is not a SQLite snapshot.
 
-`cron reload demo` signals only that app's Supercronic service after generated crontab validation.
-
-## Add and control a worker
-
-Prefer argv after `--` to avoid unintended shell evaluation:
-
-```sh
-bento worker add \
-  --app demo --name queue -- php artisan queue:work
-bento worker inspect demo queue
-bento worker restart demo queue
-```
-
-Other scoped controls are `start`, `stop`, and `signal --signal HUP|ALRM|INT|QUIT|USR1|USR2|TERM|KILL`.
-
-:::caution
-Removing a worker stops supervision for that definition. Confirm the application can tolerate interrupted in-flight work before running `worker remove demo queue`.
-:::
-
-## Verify
-
-```sh
-bento worker list demo
-bento compose -- logs --tail 100 php85-runner
-```
-
-## Troubleshooting
-
-If no scheduler/worker starts, verify the app is enabled, its PHP runner is running, and generated command/workdir paths exist. Inspect the individual worker and runner logs. Use `--no-apply` only when intentionally batching changes, followed by `apply`.
-
-## Advanced
-
-One runner per PHP version uses s6 to reconcile flat per-app services. Adding/removing one definition does not restart sibling workers or Nginx. Scaling runners is unsupported because it duplicates schedules and work.
-
-## Next steps
-
-- [Configure webhook deployment](/guides/apps/deploy/)
-- [Run app commands](/guides/apps/manage/)
-- [Runtime supervision](/advanced/runtime-supervision/)
+Host `backup schedule` remains a separate host-crontab operation. Bento's deploy drain, SQLite VACUUM, and root logrotate are reserved config-owned internal tasks; do not reuse their names for user jobs.

@@ -45,6 +45,13 @@ export const applicationSchema = z.object({
   tlsKeyPath: z.string().optional(),
   accessLog: z.boolean(),
   deployEnabled: z.boolean(),
+  deploySummary: z
+    .object({
+      queuePolicy: z.enum(["latest", "fifo"]),
+      timeoutSec: z.number().int().positive(),
+      command: z.string(),
+    })
+    .optional(),
   databases: z.array(databaseBindingSchema),
 });
 

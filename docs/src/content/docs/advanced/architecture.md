@@ -14,7 +14,7 @@ Operator -> bento CLI -> state.db -> staged render -> validate -> targeted reloa
 Internet -> Nginx -> app PHP-FPM socket -> private MySQL/PostgreSQL/Redis
                     -> app process socket -> Node.js/Bun/Python loopback HTTP
                     -> reverse-proxy upstream
-PHP runner -> per-app Supercronic, deploy drain, and s6 workers
+PHP runner -> per-app minicrond (jobs, workers, deploy drain) + root maintenance minicrond
 ```
 
 ## Main components

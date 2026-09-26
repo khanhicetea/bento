@@ -6,7 +6,6 @@ import {
   type AppRedisIdentity,
   type AppState,
   createEmptyState,
-  type CronJob,
   type DesiredState,
   type DomainOwner,
   type EntrypointMode,
@@ -21,12 +20,10 @@ import {
   type TemplateProvenance,
   type TlsMode,
   withAppRelations,
-  type Worker,
 } from "../domain/state.ts";
 import {
   asAbsoluteAppPath,
   asAppSlug,
-  asCronJobName,
   asDatabaseName,
   asDatabaseService,
   asDomainName,
@@ -37,14 +34,12 @@ import {
   asPostgresVersion,
   asProxySiteName,
   asUid,
-  asWorkerName,
 } from "../domain/types.ts";
 import { STATE_SCHEMA_VERSION } from "../version.ts";
 import { stateError, validationError } from "../domain/errors.ts";
 import {
   absolutePathSchema,
   appSlugSchema,
-  cronScheduleSchema,
   databaseServiceSchema,
   domainNameSchema,
   err,
@@ -270,29 +265,6 @@ const domainOwnerSchema = z.discriminatedUnion("kind", [
     primary: z.boolean(),
   }),
 ]);
-const cronJobSchema = strict({
-  name: nonEmptyStringSchema,
-  app: appSlugSchema,
-  schedule: cronScheduleSchema,
-  timezone: nonEmptyStringSchema.default("UTC"),
-  workdir: nonEmptyStringSchema,
-  command: stringArraySchema.min(1),
-  commandMode: z.enum(["argv", "shell"]).default("argv"),
-  output: z.enum(["log", "null", "inherit"]).default("log"),
-  enabled: z.boolean().default(true),
-  timeoutSec: positiveIntSchema.optional(),
-  lock: nonEmptyStringSchema.optional(),
-});
-const workerSchema = strict({
-  name: nonEmptyStringSchema,
-  app: appSlugSchema,
-  command: stringArraySchema.min(1),
-  workdir: nonEmptyStringSchema,
-  enabled: z.boolean().default(true),
-  autorestart: z.boolean().default(true),
-  stopsignal: nonEmptyStringSchema.default("TERM"),
-  stopwaitsecs: positiveIntSchema.default(10),
-});
 const defaultsSchema = strict({
   phpVersion: phpVersionSchema,
   database: z.discriminatedUnion("engine", [
@@ -335,8 +307,6 @@ const managedDatabaseSchema = z.discriminatedUnion("engine", [
 const commonState = {
   proxies: z.record(z.string(), proxySchema),
   domains: z.record(z.string(), domainOwnerSchema),
-  cronJobs: z.array(cronJobSchema),
-  workers: z.array(workerSchema),
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
 };
@@ -470,43 +440,6 @@ const desiredStateRawSchema = strict({
       });
     }
   }
-  for (const [collection, records] of [
-    ["cronJobs", state.cronJobs],
-    ["workers", state.workers],
-  ] as const) {
-    const identities = new Set<string>();
-    for (const [index, record] of records.entries()) {
-      const identity = `${record.app}:${record.name}`;
-      if (identities.has(identity)) {
-        ctx.addIssue({
-          code: "custom",
-          path: [collection, index, "name"],
-          message: `duplicate linked record ${identity}`,
-        });
-      }
-      identities.add(identity);
-    }
-  }
-  for (const [collection, records] of [
-    ["cronJobs", state.cronJobs],
-    ["workers", state.workers],
-  ] as const) {
-    for (const [index, record] of records.entries()) {
-      if (!state.apps[record.app]) {
-        ctx.addIssue({
-          code: "custom",
-          path: [collection, index, "app"],
-          message: `references unknown app ${record.app}`,
-        });
-      } else if (state.apps[record.app]?.kind === "process") {
-        ctx.addIssue({
-          code: "custom",
-          path: [collection, index, "app"],
-          message: "process app jobs are not supported yet",
-        });
-      }
-    }
-  }
 });
 
 function brandDatabase(db: z.infer<typeof databaseSchema>): AppDatabase {
@@ -614,33 +547,6 @@ function brandOwner(o: z.infer<typeof domainOwnerSchema>): DomainOwner {
     ? { kind: "app", slug: asAppSlug(o.slug), primary: o.primary }
     : { kind: "proxy", name: asProxySiteName(o.name), primary: o.primary };
 }
-function brandCron(j: z.infer<typeof cronJobSchema>): CronJob {
-  return {
-    name: asCronJobName(j.name),
-    app: asAppSlug(j.app),
-    schedule: j.schedule,
-    timezone: j.timezone,
-    workdir: j.workdir,
-    command: j.command,
-    commandMode: j.commandMode,
-    output: j.output,
-    enabled: j.enabled,
-    ...(j.timeoutSec !== undefined ? { timeoutSec: j.timeoutSec } : {}),
-    ...(j.lock ? { lock: j.lock } : {}),
-  };
-}
-function brandWorker(w: z.infer<typeof workerSchema>): Worker {
-  return {
-    name: asWorkerName(w.name),
-    app: asAppSlug(w.app),
-    command: w.command,
-    workdir: w.workdir,
-    enabled: w.enabled,
-    autorestart: w.autorestart,
-    stopsignal: w.stopsignal,
-    stopwaitsecs: w.stopwaitsecs,
-  };
-}
 function brandDefaults(d: z.infer<typeof defaultsSchema>): StackDefaults {
   return {
     phpVersion: asPhpVersion(d.phpVersion),
@@ -721,8 +627,6 @@ export function parseDesiredState(value: unknown): ParseResult<DesiredState> {
     ),
     proxies,
     domains,
-    cronJobs: raw.cronJobs.map(brandCron),
-    workers: raw.workers.map(brandWorker),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   });

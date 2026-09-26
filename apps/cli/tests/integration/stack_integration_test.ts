@@ -402,9 +402,6 @@ bunRuntime.test("F2 renderer delegates user jobs to private minicrond", async ()
     await bootstrapStack(h);
     assertEquals(await h.run("app", "create", "alpha", "--domain", "a.test", "--no-apply"), 0);
     assertEquals(await h.run("apply", "--render-only", "--skip-validate"), 0);
-    const state = await loadStateJson(h.stack);
-    assertEquals(state.cronJobs.length, 0);
-    assertEquals(state.workers.length, 0);
     assertEquals(await exists(gen(h, "runner/php85/cron/alpha.crontab")), false);
     assertEquals(await exists(gen(h, "runner/php85/services/scheduler-alpha/run")), false);
     assertEquals(await exists(gen(h, "runner/php85/services/minicrond-alpha/run")), true);

@@ -13,7 +13,7 @@ import { isBentoError, migrationError, stateError } from "../domain/errors.ts";
 import type { Platform } from "../platform/mod.ts";
 import { parseDesiredState, stateToJson } from "../schemas/state.ts";
 
-export const STATE_DATABASE_SCHEMA_VERSION = 3;
+export const STATE_DATABASE_SCHEMA_VERSION = 1;
 
 type Migration = {
   version: number;
@@ -158,37 +158,10 @@ type PositionValueRow = {
   value: string;
 };
 
-type CronRow = {
-  app_slug: string;
-  name: string;
-  schedule: string;
-  timezone: string;
-  workdir: string;
-  command_mode: "argv" | "shell";
-  output: "log" | "null" | "inherit";
-  timeout_sec: number | null;
-  lock_name: string | null;
-  enabled: number;
-  position: number;
-  command_json: string;
-};
-
-type WorkerRow = {
-  app_slug: string;
-  name: string;
-  workdir: string;
-  enabled: number;
-  autorestart: number;
-  stopsignal: string;
-  stopwaitsecs: number;
-  position: number;
-  command_json: string;
-};
-
 const migrations: Migration[] = [
   {
     version: 1,
-    name: "normalized-desired-state",
+    name: "minicrond-owned-user-jobs",
     sql: `
 CREATE TABLE stack_config (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -244,6 +217,15 @@ CREATE TABLE managed_database_services (
 
 CREATE TABLE applications (
   slug TEXT PRIMARY KEY,
+  runtime_kind TEXT NOT NULL DEFAULT 'php' CHECK (runtime_kind IN ('php', 'process')),
+  process_language TEXT CHECK (process_language IS NULL OR process_language IN ('node', 'bun', 'python')),
+  process_version TEXT,
+  process_image TEXT,
+  process_service TEXT,
+  process_internal_port INTEGER CHECK (process_internal_port IS NULL OR process_internal_port BETWEEN 1024 AND 65535),
+  process_command_json TEXT CHECK (process_command_json IS NULL OR (json_valid(process_command_json) AND json_type(process_command_json) = 'array')),
+  process_workdir TEXT,
+  process_health_path TEXT,
   enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
   uid INTEGER NOT NULL,
   gid INTEGER NOT NULL,
@@ -331,6 +313,7 @@ CREATE TABLE app_databases (
 
 CREATE TABLE proxy_sites (
   name TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   tls_kind TEXT NOT NULL CHECK (tls_kind IN ('self-ca', 'shared', 'acme', 'external')),
   tls_cert_path TEXT,
   tls_key_path TEXT,
@@ -363,66 +346,6 @@ CREATE UNIQUE INDEX one_primary_domain_per_proxy ON domains(proxy_name) WHERE ow
 CREATE UNIQUE INDEX app_domain_position ON domains(app_slug, owner_position) WHERE owner_kind = 'app';
 CREATE UNIQUE INDEX proxy_domain_position ON domains(proxy_name, owner_position) WHERE owner_kind = 'proxy';
 
-CREATE TABLE cron_jobs (
-  app_slug TEXT NOT NULL REFERENCES applications(slug) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  schedule TEXT NOT NULL,
-  timezone TEXT NOT NULL,
-  workdir TEXT NOT NULL,
-  command_mode TEXT NOT NULL CHECK (command_mode IN ('argv', 'shell')),
-  output TEXT NOT NULL CHECK (output IN ('log', 'null', 'inherit')),
-  timeout_sec INTEGER CHECK (timeout_sec IS NULL OR timeout_sec > 0),
-  lock_name TEXT,
-  enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
-  position INTEGER NOT NULL CHECK (position >= 0),
-  command_json TEXT NOT NULL CHECK (json_valid(command_json) AND json_type(command_json) = 'array'),
-  PRIMARY KEY (app_slug, name),
-  UNIQUE (position)
-);
-
-CREATE TABLE workers (
-  app_slug TEXT NOT NULL REFERENCES applications(slug) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  workdir TEXT NOT NULL,
-  enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
-  autorestart INTEGER NOT NULL CHECK (autorestart IN (0, 1)),
-  stopsignal TEXT NOT NULL,
-  stopwaitsecs INTEGER NOT NULL CHECK (stopwaitsecs > 0),
-  position INTEGER NOT NULL CHECK (position >= 0),
-  command_json TEXT NOT NULL CHECK (json_valid(command_json) AND json_type(command_json) = 'array'),
-  PRIMARY KEY (app_slug, name),
-  UNIQUE (position)
-);
-`,
-  },
-  {
-    version: 2,
-    name: "proxy-site-enablement",
-    sql: `
-ALTER TABLE proxy_sites
-  ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1));
-`,
-  },
-  {
-    version: 3,
-    name: "process-application-runtime",
-    sql: `
-ALTER TABLE applications
-  ADD COLUMN runtime_kind TEXT NOT NULL DEFAULT 'php' CHECK (runtime_kind IN ('php', 'process'));
-ALTER TABLE applications
-  ADD COLUMN process_language TEXT CHECK (process_language IS NULL OR process_language IN ('node', 'bun', 'python'));
-ALTER TABLE applications ADD COLUMN process_version TEXT;
-ALTER TABLE applications ADD COLUMN process_image TEXT;
-ALTER TABLE applications ADD COLUMN process_service TEXT;
-ALTER TABLE applications ADD COLUMN process_internal_port INTEGER CHECK (
-  process_internal_port IS NULL OR process_internal_port BETWEEN 1024 AND 65535
-);
-ALTER TABLE applications ADD COLUMN process_command_json TEXT CHECK (
-  process_command_json IS NULL OR (json_valid(process_command_json) AND json_type(process_command_json) = 'array')
-);
-ALTER TABLE applications ADD COLUMN process_workdir TEXT;
-ALTER TABLE applications ADD COLUMN process_health_path TEXT;
-UPDATE stack_config SET state_schema_version = 2;
 `,
   },
 ];
@@ -569,7 +492,7 @@ function validateAppliedMigrations(rows: { version: number; name: string }[]): v
     const expected = migrations[index];
     if (!expected || row.version !== expected.version || row.name !== expected.name) {
       throw migrationError(
-        `unsupported desired state database migration ${row.version} (${row.name})`,
+        `unsupported desired state database migration ${row.version} (${row.name}); this development schema cannot migrate an old state.db. Back up state.db and its WAL while the stack is stopped, move the old database aside, then run bento init to create a new stack. Recreate app scheduler definitions in each app's minicrond registry.`,
       );
     }
   }
@@ -765,36 +688,6 @@ function readState(database: Database, path: string): DesiredState {
       }),
   );
 
-  const cronJobs = database
-    .query<CronRow, []>("SELECT * FROM cron_jobs ORDER BY position")
-    .all()
-    .map((row) => ({
-      name: row.name,
-      app: row.app_slug,
-      schedule: row.schedule,
-      timezone: row.timezone,
-      workdir: row.workdir,
-      command: parseJsonArray(row.command_json),
-      commandMode: row.command_mode,
-      output: row.output,
-      ...(row.timeout_sec !== null ? { timeoutSec: row.timeout_sec } : {}),
-      ...(row.lock_name !== null ? { lock: row.lock_name } : {}),
-      enabled: asBoolean(row.enabled),
-    }));
-  const workers = database
-    .query<WorkerRow, []>("SELECT * FROM workers ORDER BY position")
-    .all()
-    .map((row) => ({
-      name: row.name,
-      app: row.app_slug,
-      command: parseJsonArray(row.command_json),
-      workdir: row.workdir,
-      enabled: asBoolean(row.enabled),
-      autorestart: asBoolean(row.autorestart),
-      stopsignal: row.stopsignal,
-      stopwaitsecs: row.stopwaitsecs,
-    }));
-
   const raw = {
     schemaVersion: config.state_schema_version,
     defaults: {
@@ -825,8 +718,6 @@ function readState(database: Database, path: string): DesiredState {
     apps,
     proxies,
     domains,
-    cronJobs,
-    workers,
     createdAt: config.created_at,
     updatedAt: config.updated_at,
   };
@@ -895,8 +786,6 @@ function bindingFromRow(
 function replaceState(database: Database, state: DesiredState): void {
   database.exec(`
     DELETE FROM domains;
-    DELETE FROM cron_jobs;
-    DELETE FROM workers;
     DELETE FROM applications;
     DELETE FROM proxy_sites;
     DELETE FROM stack_config;
@@ -955,49 +844,6 @@ function replaceState(database: Database, state: DesiredState): void {
     insertProxy(database, proxy);
   }
   insertDomains(database, state);
-
-  for (const [position, job] of state.cronJobs.entries()) {
-    run(
-      database,
-      `INSERT INTO cron_jobs (
-        app_slug, name, schedule, timezone, workdir, command_mode, output,
-        timeout_sec, lock_name, enabled, position, command_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        job.app,
-        job.name,
-        job.schedule,
-        job.timezone,
-        job.workdir,
-        job.commandMode,
-        job.output,
-        job.timeoutSec ?? null,
-        job.lock ?? null,
-        job.enabled,
-        position,
-        JSON.stringify(job.command),
-      ],
-    );
-  }
-  for (const [position, worker] of state.workers.entries()) {
-    run(
-      database,
-      `INSERT INTO workers (
-        app_slug, name, workdir, enabled, autorestart, stopsignal, stopwaitsecs, position, command_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        worker.app,
-        worker.name,
-        worker.workdir,
-        worker.enabled,
-        worker.autorestart,
-        worker.stopsignal,
-        worker.stopwaitsecs,
-        position,
-        JSON.stringify(worker.command),
-      ],
-    );
-  }
 }
 
 function insertApp(database: Database, app: AppState, state: DesiredState): void {

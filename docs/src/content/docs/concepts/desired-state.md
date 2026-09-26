@@ -162,7 +162,7 @@ Bento scopes reloads to the kind of change:
 
 - Web routing changes can target Nginx.
 - Pool changes can target PHP-FPM and Nginx.
-- Schedule or worker changes can target the matching PHP runner.
+- User schedule and worker changes belong to each app's minicrond registry and do not trigger a Bento apply.
 
 A standalone `apply` takes a safer, broader approach and plans Nginx plus all relevant FPM and runner roles. Preview shows this plan but does not stage, validate, or publish files.
 
