@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "#/platform/runtime.ts";
+import { docker } from "#/platform/docker.ts";
 /** Ephemeral rclone sidecar passthrough. */
 
 import { materializeDockerAssets } from "#/services/assets_materialize.ts";
@@ -32,13 +32,5 @@ async function cmdRclone(argv: CliArgs, ctx: CliContext): Promise<number> {
   await ctx.render.apply(state, { renderOnly: true, skipValidate: true });
   const command = await rcloneComposeCommand(ctx.platform, state, args);
   ctx.log.info(`running rclone ${args.join(" ")}`);
-  const [cmd, ...cmdArgs] = command;
-  const child = new RuntimeCommand(cmd!, {
-    args: cmdArgs,
-    cwd: ctx.stackRoot,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  return (await child.output()).code;
+  return await docker(ctx.platform).attach(command);
 }

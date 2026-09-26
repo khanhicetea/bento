@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "#/platform/runtime.ts";
+import { docker } from "#/platform/docker.ts";
 import {
   generateAccessReport,
   isNginxOnlyReloadPlan,
@@ -154,15 +154,7 @@ async function cmdLogsAccessReport(argv: ArgsWith<"app">, ctx: CliContext): Prom
     }
 
     ctx.log.info("attaching GoAccess terminal; press q to return");
-    const [cmd, ...args] = result.command;
-    const child = new RuntimeCommand(cmd!, {
-      args,
-      cwd: ctx.stackRoot,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    }).spawn();
-    return (await child.status).code;
+    return await docker(ctx.platform).attach(result.command);
   }
   ctx.log.info(`report written to ${result.reportPath}`);
   return 0;

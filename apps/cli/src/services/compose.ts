@@ -13,9 +13,11 @@ function stringifyYaml(value: unknown): string {
 }
 import { assertNever, isProcessApp, type DesiredState, type ProcessAppState } from "#/domain/state.ts";
 import type { Platform } from "#/platform/mod.ts";
+import { assertSafeComposeArgs, docker } from "#/platform/docker.ts";
 import { type GeneratedFile, withManagedMarker } from "#/services/generated_file.ts";
-import { safetyError } from "#/domain/errors.ts";
 import type { StackComposeEnvironment } from "#/services/stack_env.ts";
+
+export { assertSafeComposeArgs } from "#/platform/docker.ts";
 
 const DEFAULT_COMPOSE_ENVIRONMENT: StackComposeEnvironment = {
   projectName: "bento",
@@ -29,21 +31,6 @@ export type ComposeInvocation = {
   files: string[];
   projectDir: string;
 };
-
-/**
- * Refuse volume-destructive down operations on the supported path.
- */
-export function assertSafeComposeArgs(args: string[]): void {
-  const lower = args.map((a) => a.toLowerCase());
-  const isDown = lower.includes("down");
-  if (!isDown) return;
-  if (lower.includes("-v") || lower.includes("--volumes") || lower.includes("--rmi")) {
-    throw safetyError(
-      "refusing docker compose down with volume/image destruction",
-      "Remove -v/--volumes/--rmi. Durable MySQL/PostgreSQL/Redis volumes must not be deleted through Bento.",
-    );
-  }
-}
 
 export function assembleComposeDocuments(
   platform: Platform,
@@ -180,13 +167,7 @@ export async function resolveComposeFiles(platform: Platform, state: DesiredStat
 
 export async function composeArgs(platform: Platform, state: DesiredState, command: string[]): Promise<string[]> {
   assertSafeComposeArgs(command);
-  const files = await resolveComposeFiles(platform, state);
-  const args = ["docker", "compose", "--project-directory", platform.paths.paths.root];
-  for (const f of files) {
-    args.push("-f", join(platform.paths.paths.root, f));
-  }
-  args.push(...command);
-  return args;
+  return docker(platform).compose(await resolveComposeFiles(platform, state), command);
 }
 
 type ComposeLogging = {

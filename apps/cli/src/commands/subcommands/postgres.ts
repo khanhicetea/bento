@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "#/platform/runtime.ts";
+import { docker } from "#/platform/docker.ts";
 import { materializeAppHome } from "#/services/app.ts";
 import {
   addPostgresVersion,
@@ -200,18 +200,7 @@ async function cmdPostgresShell(argv: ArgsWith<"root" | "print">, ctx: CliContex
     return 0;
   }
 
-  return await executePostgresShell(ctx.platform, plan, async (command) => {
-    const [cmd, ...args] = command;
-    return (
-      await new RuntimeCommand(cmd!, {
-        args,
-        cwd: ctx.stackRoot,
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-      }).output()
-    ).code;
-  });
+  return await executePostgresShell(ctx.platform, plan, (command) => docker(ctx.platform).attach(command));
 }
 
 async function cmdPostgresSize(argv: CliArgs, ctx: CliContext): Promise<number> {

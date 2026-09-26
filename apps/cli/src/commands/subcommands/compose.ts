@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "#/platform/runtime.ts";
+import { docker } from "#/platform/docker.ts";
 import { assertSafeComposeArgs, composeArgs, resolveComposeFiles } from "#/services/compose.ts";
 import { materializeDockerAssets } from "#/services/assets_materialize.ts";
 import type { CliContext } from "#/commands/context.ts";
@@ -42,16 +42,7 @@ async function cmdCompose(argv: CliArgs, ctx: CliContext): Promise<number> {
     return 0;
   }
   ctx.log.info(`running: docker compose ${command.join(" ")}`);
-  const [cmd, ...cmdArgs] = full;
-  const child = new RuntimeCommand(cmd!, {
-    args: cmdArgs,
-    cwd: ctx.stackRoot,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const status = await child.output();
-  return status.code;
+  return await docker(ctx.platform).attach(full);
 }
 
 async function cmdComposeFiles(_argv: CliArgs, ctx: CliContext): Promise<number> {

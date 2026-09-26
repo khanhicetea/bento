@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "#/platform/runtime.ts";
+import { docker } from "#/platform/docker.ts";
 import { materializeAppHome } from "#/services/app.ts";
 import { databaseBindings } from "#/domain/state.ts";
 import {
@@ -246,17 +246,7 @@ async function cmdMysqlShell(argv: ArgsWith<"root" | "print">, ctx: CliContext):
   }
 
   try {
-    // Interactive attach — CLI layer may use RuntimeCommand with inherited stdio.
-    const [cmd, ...args] = plan.open.command;
-    const child = new RuntimeCommand(cmd!, {
-      args,
-      cwd: ctx.stackRoot,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    const status = await child.output();
-    return status.code;
+    return await docker(ctx.platform).attach(plan.open.command);
   } finally {
     if (plan.cleanup) {
       await ctx.platform.process

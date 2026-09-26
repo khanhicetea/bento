@@ -9,6 +9,7 @@ import { databaseBindings, postgresImage, postgresServiceName } from "#/domain/s
 import { asDatabaseName, asPostgresVersion } from "#/domain/types.ts";
 import { conflictError, notFoundError, safetyError, serviceError, validationError } from "#/domain/errors.ts";
 import type { Platform, RunResult } from "#/platform/mod.ts";
+import { docker } from "#/platform/docker.ts";
 import { parsePostgresVersion, unwrap } from "#/schemas/validators.ts";
 
 function postgresDatabase(app: AppState, service?: string) {
@@ -158,11 +159,7 @@ async function execPostgresSqlAs(
     "",
   ].join("\n");
 
-  return await platform.process.run(["docker", "compose", "exec", "-T", service, "sh", "-c", script], {
-    cwd: platform.paths.paths.root,
-    stdin,
-    timeoutMs: 60_000,
-  });
+  return await docker(platform).execScript(service, script, { stdin, timeoutMs: 60_000 });
 }
 
 /** SQL that creates an app role once and then enforces its non-privileged attributes. */
@@ -282,9 +279,10 @@ export async function tryBestEffortPostgresRole(
 /** True when the PostgreSQL server in the managed container accepts connections. */
 export async function isPostgresReachable(platform: Platform, service: string): Promise<boolean> {
   try {
-    const result = await platform.process.run(
-      ["docker", "compose", "exec", "-T", service, "pg_isready", "--username=postgres", "--dbname=postgres", "--quiet"],
-      { cwd: platform.paths.paths.root, timeoutMs: 8_000 },
+    const result = await docker(platform).exec(
+      service,
+      ["pg_isready", "--username=postgres", "--dbname=postgres", "--quiet"],
+      { timeoutMs: 8_000 },
     );
     return result.code === 0;
   } catch {
@@ -395,19 +393,11 @@ export function buildPostgresShellPlan(
       database,
       credentialPath,
       open: {
-        command: [
-          "docker",
-          "compose",
-          "exec",
-          interactive ? "-it" : "-T",
+        command: docker(platform).execCommand(
           identity.service,
-          "env",
-          `PGPASSFILE=${credentialPath}`,
-          "psql",
-          "--no-psqlrc",
-          "--username=postgres",
-          `--dbname=${database}`,
-        ],
+          ["env", `PGPASSFILE=${credentialPath}`, "psql", "--no-psqlrc", "--username=postgres", `--dbname=${database}`],
+          interactive,
+        ),
         interactive,
       },
     };
@@ -435,27 +425,19 @@ export function buildPostgresShellPlan(
     database,
     credentialPath,
     stage: {
-      command: ["docker", "compose", "exec", "-T", service, "sh", "-c", stageScript, "sh", credentialPath],
+      command: docker(platform).execCommand(service, ["sh", "-c", stageScript, "sh", credentialPath]),
       stdin: pgpass,
     },
     open: {
-      command: [
-        "docker",
-        "compose",
-        "exec",
-        interactive ? "-it" : "-T",
+      command: docker(platform).execCommand(
         service,
-        "env",
-        `PGPASSFILE=${credentialPath}`,
-        "psql",
-        "--no-psqlrc",
-        `--username=${user}`,
-        `--dbname=${database}`,
-      ],
+        ["env", `PGPASSFILE=${credentialPath}`, "psql", "--no-psqlrc", `--username=${user}`, `--dbname=${database}`],
+        interactive,
+      ),
       interactive,
     },
     cleanup: {
-      command: ["docker", "compose", "exec", "-T", service, "rm", "-f", credentialPath],
+      command: docker(platform).execCommand(service, ["rm", "-f", credentialPath]),
     },
   };
 }

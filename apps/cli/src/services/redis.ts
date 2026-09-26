@@ -6,6 +6,7 @@
 import type { AppRedisIdentity, AppState, DesiredState } from "#/domain/state.ts";
 import { notFoundError, serviceError } from "#/domain/errors.ts";
 import type { Platform } from "#/platform/mod.ts";
+import { docker } from "#/platform/docker.ts";
 
 export function redisConnectionEnv(app: AppState, sharedPassword?: string): Record<string, string> {
   const base: Record<string, string> = {
@@ -75,11 +76,7 @@ export async function applyAppRedisAcl(platform: Platform, app: AppState, redisA
   ].join("\n");
 
   const stdin = `${redisAuthPassword ?? ""}\n${password}\n`;
-  const result = await platform.process.run(["docker", "compose", "exec", "-T", "redis", "sh", "-c", applyScript], {
-    cwd: platform.paths.paths.root,
-    stdin,
-    timeoutMs: 15_000,
-  });
+  const result = await docker(platform).execScript("redis", applyScript, { stdin, timeoutMs: 15_000 });
   if (result.code !== 0) {
     throw serviceError(
       `Redis ACL apply failed for app ${app.slug}: ${(result.stderr || result.stdout || "unknown error").trim()}`,
@@ -108,10 +105,7 @@ export async function tryApplyAppRedisAcl(
 
 export async function isRedisReachable(platform: Platform): Promise<boolean> {
   try {
-    const result = await platform.process.run(["docker", "compose", "exec", "-T", "redis", "true"], {
-      cwd: platform.paths.paths.root,
-      timeoutMs: 8_000,
-    });
+    const result = await docker(platform).exec("redis", ["true"], { timeoutMs: 8_000 });
     return result.code === 0;
   } catch {
     return false;

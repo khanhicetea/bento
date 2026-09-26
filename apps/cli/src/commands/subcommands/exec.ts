@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "#/platform/runtime.ts";
+import { docker } from "#/platform/docker.ts";
 import { composeArgs } from "#/services/compose.ts";
 import { buildCliExec, cliRunComposeCommand } from "#/services/php.ts";
 import type { CliContext } from "#/commands/context.ts";
@@ -103,14 +103,5 @@ export async function runCliExec(
   }
 
   // Interactive attach / inherited stdio — do not capture pipes (breaks shells).
-  const [cmd, ...args] = compose;
-  const child = new RuntimeCommand(cmd!, {
-    args,
-    cwd: ctx.stackRoot,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const status = await child.output();
-  return status.code;
+  return await docker(ctx.platform).attach(compose);
 }

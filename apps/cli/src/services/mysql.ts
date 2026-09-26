@@ -10,6 +10,7 @@ import { asDatabaseName, asMysqlService, asMysqlVersion } from "#/domain/types.t
 import { conflictError, notFoundError, safetyError, serviceError, validationError } from "#/domain/errors.ts";
 import { compareMajorMinor, parseMysqlVersion, unwrap } from "#/schemas/validators.ts";
 import type { Platform, RunResult } from "#/platform/mod.ts";
+import { docker } from "#/platform/docker.ts";
 import { mysqlIdent, mysqlLikeEscape, mysqlStringLiteral } from "#/services/template.ts";
 
 function mysqlDatabase(app: AppState, service?: string) {
@@ -153,20 +154,13 @@ export async function execMysqlSql(
 
   const stdin = ["[client]", "user=root", `password=${password.replace(/\n/g, "")}`, "__END_CNF__", sql, ""].join("\n");
 
-  return await platform.process.run(["docker", "compose", "exec", "-T", service, "sh", "-c", script], {
-    cwd: platform.paths.paths.root,
-    stdin,
-    timeoutMs: 60_000,
-  });
+  return await docker(platform).execScript(service, script, { stdin, timeoutMs: 60_000 });
 }
 
 /** True when the MySQL service container accepts compose exec. */
 export async function isMysqlReachable(platform: Platform, service: string): Promise<boolean> {
   try {
-    const result = await platform.process.run(["docker", "compose", "exec", "-T", service, "true"], {
-      cwd: platform.paths.paths.root,
-      timeoutMs: 8_000,
-    });
+    const result = await docker(platform).exec(service, ["true"], { timeoutMs: 8_000 });
     return result.code === 0;
   } catch {
     return false;
@@ -354,10 +348,7 @@ export async function runBackup(
       "trap - EXIT",
     ].join("\n");
 
-    const result = await platform.process.run(["docker", "compose", "exec", "-T", t.service, "sh", "-c", script], {
-      cwd: platform.paths.paths.root,
-      timeoutMs: 30 * 60_000,
-    });
+    const result = await docker(platform).execScript(t.service, script, { timeoutMs: 30 * 60_000 });
 
     if (result.code !== 0) {
       await platform.fs.remove(partialPath).catch(() => {});
@@ -633,9 +624,7 @@ export function buildMysqlShellPlan(
       database,
       optionPath,
       open: {
-        command: interactive
-          ? ["docker", "compose", "exec", "-it", identity.service, ...openArgs]
-          : ["docker", "compose", "exec", "-T", identity.service, ...openArgs],
+        command: docker(platform).execCommand(identity.service, openArgs, interactive),
         interactive,
       },
     };
@@ -672,17 +661,15 @@ export function buildMysqlShellPlan(
     database,
     optionPath,
     stage: {
-      command: ["docker", "compose", "exec", "-T", service, "sh", "-c", stageScript],
+      command: docker(platform).execCommand(service, ["sh", "-c", stageScript]),
       stdin: cnf,
     },
     open: {
-      command: interactive
-        ? ["docker", "compose", "exec", "-it", service, ...openArgs]
-        : ["docker", "compose", "exec", "-T", service, ...openArgs],
+      command: docker(platform).execCommand(service, openArgs, interactive),
       interactive,
     },
     cleanup: {
-      command: ["docker", "compose", "exec", "-T", service, "rm", "-f", optionPath],
+      command: docker(platform).execCommand(service, ["rm", "-f", optionPath]),
     },
   };
 }
