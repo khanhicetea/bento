@@ -6,8 +6,8 @@
 import { z } from "zod";
 import semver from "semver";
 import { CronExpressionParser } from "cron-parser";
-import { validationError } from "../domain/errors.ts";
-import { FPM_PROFILES } from "../domain/types.ts";
+import { validationError } from "#/domain/errors.ts";
+import { FPM_PROFILES } from "#/domain/types.ts";
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
 

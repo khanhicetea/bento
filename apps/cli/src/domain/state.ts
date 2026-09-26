@@ -13,7 +13,7 @@ import type {
   PostgresVersion,
   ProxySiteName,
   Uid,
-} from "./types.ts";
+} from "#/domain/types.ts";
 import {
   asDatabaseService,
   asFpmProfile,
@@ -22,8 +22,8 @@ import {
   DEFAULT_FPM_PROFILE,
   DEFAULT_MYSQL_VERSION,
   DEFAULT_PHP_VERSION,
-} from "./types.ts";
-import { STATE_SCHEMA_VERSION } from "../version.ts";
+} from "#/domain/types.ts";
+import { STATE_SCHEMA_VERSION } from "#/version.ts";
 
 export type DatabaseEngine = "mysql" | "postgres" | "sqlite" | "litestream";
 export type SqliteBackupPolicy = {

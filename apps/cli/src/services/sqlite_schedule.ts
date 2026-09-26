@@ -1,5 +1,5 @@
-import type { AppDatabaseBinding, DesiredState, SqliteVacuumSchedule } from "../domain/state.ts";
-import type { Random } from "../platform/interfaces.ts";
+import type { AppDatabaseBinding, DesiredState, SqliteVacuumSchedule } from "#/domain/state.ts";
+import type { Random } from "#/platform/interfaces.ts";
 
 /** The local-time maintenance window is midnight through 04:59. */
 export const SQLITE_VACUUM_WINDOW_MINUTES = 5 * 60;

@@ -1,13 +1,13 @@
-import type { Platform } from "./interfaces.ts";
-import { createClock } from "./clock.ts";
-import { createRandom } from "./random.ts";
-import { createFileSystem } from "./fs.ts";
-import { createFileLock } from "./lock.ts";
-import { createProcessRunner } from "./process.ts";
-import { createAssetResolver } from "./assets.ts";
-import { createPathPolicy } from "./paths.ts";
+import type { Platform } from "#/platform/interfaces.ts";
+import { createClock } from "#/platform/clock.ts";
+import { createRandom } from "#/platform/random.ts";
+import { createFileSystem } from "#/platform/fs.ts";
+import { createFileLock } from "#/platform/lock.ts";
+import { createProcessRunner } from "#/platform/process.ts";
+import { createAssetResolver } from "#/platform/assets.ts";
+import { createPathPolicy } from "#/platform/paths.ts";
 
-export type { Platform } from "./interfaces.ts";
+export type { Platform } from "#/platform/interfaces.ts";
 export type {
   AssetResolver,
   Clock,
@@ -19,15 +19,19 @@ export type {
   RunOptions,
   RunResult,
   StackPaths,
-} from "./interfaces.ts";
+} from "#/platform/interfaces.ts";
 
-export { createClock, createFixedClock } from "./clock.ts";
-export { createRandom, createSeededRandom } from "./random.ts";
-export { createFileSystem } from "./fs.ts";
-export { createFileLock, createMemoryLock } from "./lock.ts";
-export { createProcessRunner, createRecordingProcessRunner } from "./process.ts";
-export { createAssetResolver, isCompiledDistribution, resolveAssetRoot } from "./assets.ts";
-export { containerAppHome, createPathPolicy, resolveStackPaths } from "./paths.ts";
+export { createClock, createFixedClock } from "#/platform/clock.ts";
+export { createRandom, createSeededRandom } from "#/platform/random.ts";
+export { createFileSystem } from "#/platform/fs.ts";
+export { createFileLock, createMemoryLock } from "#/platform/lock.ts";
+export { createProcessRunner, createRecordingProcessRunner } from "#/platform/process.ts";
+export {
+  createAssetResolver,
+  isCompiledDistribution,
+  resolveAssetRoot,
+} from "#/platform/assets.ts";
+export { containerAppHome, createPathPolicy, resolveStackPaths } from "#/platform/paths.ts";
 
 /** Build the default production platform for a stack root. */
 export function createPlatform(stackRoot: string, repoRoot?: string): Platform {

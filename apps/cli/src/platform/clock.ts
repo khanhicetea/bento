@@ -1,4 +1,4 @@
-import type { Clock } from "./interfaces.ts";
+import type { Clock } from "#/platform/interfaces.ts";
 
 export function createClock(): Clock {
   return {

@@ -2,10 +2,10 @@
  * Load operator-owned stack environment (.env) without putting secrets on argv.
  */
 
-import type { Platform } from "../platform/mod.ts";
-import { secretError, validationError } from "../domain/errors.ts";
-import { DEFAULT_ACME_URL } from "./tls.ts";
-import { loadCloudflareTunnelToken } from "./cloudflare_tunnel.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { secretError, validationError } from "#/domain/errors.ts";
+import { DEFAULT_ACME_URL } from "#/services/tls.ts";
+import { loadCloudflareTunnelToken } from "#/services/cloudflare_tunnel.ts";
 
 export const DEFAULT_COMPOSE_PROJECT_NAME = "bento";
 

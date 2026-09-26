@@ -4,19 +4,19 @@
  */
 
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import type { AppState, DesiredState, ManagedMysqlVersion } from "../domain/state.ts";
-import { databaseBindings, mysqlImage, mysqlServiceName } from "../domain/state.ts";
-import { asDatabaseName, asMysqlService, asMysqlVersion } from "../domain/types.ts";
+import type { AppState, DesiredState, ManagedMysqlVersion } from "#/domain/state.ts";
+import { databaseBindings, mysqlImage, mysqlServiceName } from "#/domain/state.ts";
+import { asDatabaseName, asMysqlService, asMysqlVersion } from "#/domain/types.ts";
 import {
   conflictError,
   notFoundError,
   safetyError,
   serviceError,
   validationError,
-} from "../domain/errors.ts";
-import { compareMajorMinor, parseMysqlVersion, unwrap } from "../schemas/validators.ts";
-import type { Platform, RunResult } from "../platform/mod.ts";
-import { mysqlIdent, mysqlLikeEscape, mysqlStringLiteral } from "./template.ts";
+} from "#/domain/errors.ts";
+import { compareMajorMinor, parseMysqlVersion, unwrap } from "#/schemas/validators.ts";
+import type { Platform, RunResult } from "#/platform/mod.ts";
+import { mysqlIdent, mysqlLikeEscape, mysqlStringLiteral } from "#/services/template.ts";
 
 function mysqlDatabase(app: AppState, service?: string) {
   const database = service

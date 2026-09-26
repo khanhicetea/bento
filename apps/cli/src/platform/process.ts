@@ -1,6 +1,6 @@
-import { RuntimeCommand } from "./runtime.ts";
-import type { ProcessRunner, RunOptions, RunResult } from "./interfaces.ts";
-import { platformError } from "../domain/errors.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
+import type { ProcessRunner, RunOptions, RunResult } from "#/platform/interfaces.ts";
+import { platformError } from "#/domain/errors.ts";
 
 export function createProcessRunner(): ProcessRunner {
   return {

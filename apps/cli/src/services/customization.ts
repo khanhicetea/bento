@@ -4,13 +4,13 @@
  */
 
 import { dirname, join } from "node:path";
-import { encodeHex } from "../platform/hex.ts";
-import type { DesiredState, TemplateProvenance } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
-import { notFoundError, validationError } from "../domain/errors.ts";
-import type { ReloadPlan } from "../domain/reload.ts";
-import { reloadPlanForDomainChange, reloadPlanForPoolChange } from "../domain/reload.ts";
-import type { Platform } from "../platform/mod.ts";
+import { encodeHex } from "#/platform/hex.ts";
+import type { DesiredState, TemplateProvenance } from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
+import { notFoundError, validationError } from "#/domain/errors.ts";
+import type { ReloadPlan } from "#/domain/reload.ts";
+import { reloadPlanForDomainChange, reloadPlanForPoolChange } from "#/domain/reload.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 export type TemplateKind = "vhost" | "pool";
 

@@ -6,9 +6,9 @@
  */
 
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { DesiredState, TlsMode } from "../domain/state.ts";
-import { validationError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
+import type { DesiredState, TlsMode } from "#/domain/state.ts";
+import { validationError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 export const DEFAULT_ACME_URL = "https://acme-v02.api.letsencrypt.org/directory";
 export const ACME_ISSUER = "bento_acme";

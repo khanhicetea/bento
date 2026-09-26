@@ -2,15 +2,15 @@
  * Generate complete candidate configuration from desired state.
  */
 
-import { isPhpApp, type AppState, type DesiredState, type ProxySite } from "../domain/state.ts";
-import type { Platform } from "../platform/mod.ts";
-import { FPM_PROFILES, SHARED_SOCKET_GID } from "../domain/types.ts";
-import { validationError } from "../domain/errors.ts";
-import { ASSET_VERSION } from "../version.ts";
-import { renderTemplate } from "./template.ts";
-import { type GeneratedFile, withManagedMarker } from "./render.ts";
-import { containerAppHome } from "../platform/paths.ts";
-import { assembleComposeDocuments } from "./compose.ts";
+import { isPhpApp, type AppState, type DesiredState, type ProxySite } from "#/domain/state.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { FPM_PROFILES, SHARED_SOCKET_GID } from "#/domain/types.ts";
+import { validationError } from "#/domain/errors.ts";
+import { ASSET_VERSION } from "#/version.ts";
+import { renderTemplate } from "#/services/template.ts";
+import { type GeneratedFile, withManagedMarker } from "#/services/render.ts";
+import { containerAppHome } from "#/platform/paths.ts";
+import { assembleComposeDocuments } from "#/services/compose.ts";
 import {
   loadAcmeEnvironment,
   loadHttp3Enabled,
@@ -18,20 +18,20 @@ import {
   loadPostgresRootPassword,
   loadStackComposeEnvironment,
   loadStackEnv,
-} from "./stack_env.ts";
+} from "#/services/stack_env.ts";
 import {
   renderAcmeIssuer,
   renderAcmeSslSnippet,
   renderSslCommonSnippet,
   resolveSslForSite,
-} from "./tls.ts";
-import { validateUpstreams } from "./proxy.ts";
-import { loadCloudflareTunnelToken } from "./cloudflare_tunnel.ts";
+} from "#/services/tls.ts";
+import { validateUpstreams } from "#/services/proxy.ts";
+import { loadCloudflareTunnelToken } from "#/services/cloudflare_tunnel.ts";
 import {
   appInternalJobs,
   minicrondBootstrapConfig,
   rootInternalJobs,
-} from "./minicrond_internal.ts";
+} from "#/services/minicrond_internal.ts";
 
 export async function generateAll(
   platform: Platform,

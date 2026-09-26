@@ -1,5 +1,5 @@
-import { validationError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
+import { validationError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]+$/;
 

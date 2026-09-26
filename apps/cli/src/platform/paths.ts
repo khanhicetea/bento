@@ -1,7 +1,7 @@
 import { join, normalize, resolve } from "node:path";
-import type { PathPolicy, StackPaths } from "./interfaces.ts";
-import { validationError } from "../domain/errors.ts";
-import { APP_HOME_ROOT } from "../domain/types.ts";
+import type { PathPolicy, StackPaths } from "#/platform/interfaces.ts";
+import { validationError } from "#/domain/errors.ts";
+import { APP_HOME_ROOT } from "#/domain/types.ts";
 
 export function resolveStackPaths(stackRoot: string): StackPaths {
   const root = resolve(stackRoot);

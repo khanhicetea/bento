@@ -1,6 +1,6 @@
-import type { CliContext } from "../commands/context.ts";
-import { composeArgs } from "../services/compose.ts";
-import { buildCliExec, cliRunComposeCommand } from "../services/php.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { buildCliExec, cliRunComposeCommand } from "#/services/php.ts";
 
 const MAX_TERMINAL_INPUT_BYTES = 64 * 1024;
 const DEFAULT_COLS = 80;

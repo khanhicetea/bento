@@ -1,9 +1,9 @@
-import { safetyError, validationError } from "../../domain/errors.ts";
-import { RuntimeCommand } from "../../platform/runtime.ts";
-import { minicrondComposeCommand } from "../../services/minicrond.ts";
-import { redact } from "../../ui/output.ts";
-import type { AppState, ProcessLanguage } from "../../domain/state.ts";
-import { isPhpApp, isProcessApp } from "../../domain/state.ts";
+import { safetyError, validationError } from "#/domain/errors.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
+import { minicrondComposeCommand } from "#/services/minicrond.ts";
+import { redact } from "#/ui/output.ts";
+import type { AppState, ProcessLanguage } from "#/domain/state.ts";
+import { isPhpApp, isProcessApp } from "#/domain/state.ts";
 import {
   applyAppDataPlane,
   capacityWarnings,
@@ -11,22 +11,22 @@ import {
   materializeAppHome,
   provisionApp,
   setAppEnabled,
-} from "../../services/app.ts";
-import { loadRedisPassword } from "../../services/stack_env.ts";
-import { composeArgs } from "../../services/compose.ts";
-import { emptyReloadPlan } from "../../domain/reload.ts";
+} from "#/services/app.ts";
+import { loadRedisPassword } from "#/services/stack_env.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { emptyReloadPlan } from "#/domain/reload.ts";
 import {
   isProcessAppHealthy,
   recreateRunningProcessApp,
   removeProcessAppContainer,
   startProcessApp,
   stopProcessApp,
-} from "../../services/process_app.ts";
-import { sqliteContainerPath } from "../../services/sqlite_paths.ts";
-import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "../../services/app_prune.ts";
-import { printTable } from "../../ui/output.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
+} from "#/services/process_app.ts";
+import { sqliteContainerPath } from "#/services/sqlite_paths.ts";
+import { executeAppPrune, planAppPrune, writeAppPruneManifest } from "#/services/app_prune.ts";
+import { printTable } from "#/ui/output.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
 import {
   bind,
   noApplyOption,
@@ -34,8 +34,8 @@ import {
   type RunState,
   wantsNoApply,
   type YargsBuilder,
-} from "../shared.ts";
-import { runCliExec } from "./exec.ts";
+} from "#/commands/shared.ts";
+import { runCliExec } from "#/commands/subcommands/exec.ts";
 
 export function registerAppCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("app", "Provision and inspect applications", (y: YargsBuilder) =>

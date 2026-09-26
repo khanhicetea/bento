@@ -1,8 +1,8 @@
 import { dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Subprocess } from "bun";
-import type { FileLock } from "./interfaces.ts";
-import { platformError } from "../domain/errors.ts";
+import type { FileLock } from "#/platform/interfaces.ts";
+import { platformError } from "#/domain/errors.ts";
 
 async function acquire(
   path: string,

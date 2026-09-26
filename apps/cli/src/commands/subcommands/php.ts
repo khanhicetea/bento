@@ -1,8 +1,14 @@
-import { addPhpVersion, listPhpVersions, removePhpVersion } from "../../services/php.ts";
-import { printTable } from "../../ui/output.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+import { addPhpVersion, listPhpVersions, removePhpVersion } from "#/services/php.ts";
+import { printTable } from "#/ui/output.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import {
+  bind,
+  noApplyOption,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "#/commands/shared.ts";
 
 export function registerPhpCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("php", "Manage PHP versions", (y: YargsBuilder) =>

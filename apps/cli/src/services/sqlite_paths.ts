@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { Platform } from "../platform/mod.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 export const SQLITE_CONTAINER_ROOT = "/sqlite";
 

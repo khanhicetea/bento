@@ -9,11 +9,11 @@
  */
 
 import { join } from "node:path";
-import type { AppState, DesiredState } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
-import { notFoundError } from "../domain/errors.ts";
-import { SHARED_SOCKET_GID } from "../domain/types.ts";
-import type { Platform } from "../platform/mod.ts";
+import type { AppState, DesiredState } from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
+import { notFoundError } from "#/domain/errors.ts";
+import { SHARED_SOCKET_GID } from "#/domain/types.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 function requireApp(state: DesiredState, slug: string): AppState {
   const app = state.apps[slug];

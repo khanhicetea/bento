@@ -1,8 +1,8 @@
 /** Targeted lifecycle helpers for dedicated Node.js, Bun, and Python app services. */
 
-import { isProcessApp, type AppState, type DesiredState } from "../domain/state.ts";
-import type { Platform, RunResult } from "../platform/mod.ts";
-import { composeArgs } from "./compose.ts";
+import { isProcessApp, type AppState, type DesiredState } from "#/domain/state.ts";
+import type { Platform, RunResult } from "#/platform/mod.ts";
+import { composeArgs } from "#/services/compose.ts";
 
 async function runCompose(
   platform: Platform,

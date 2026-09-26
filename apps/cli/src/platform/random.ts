@@ -1,4 +1,4 @@
-import type { Random } from "./interfaces.ts";
+import type { Random } from "#/platform/interfaces.ts";
 
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)

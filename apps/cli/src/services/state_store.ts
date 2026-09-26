@@ -1,22 +1,22 @@
 /** Load and save validated desired state in the private stack SQLite database. */
 
-import type { DesiredState } from "../domain/state.ts";
-import { createEmptyState } from "../domain/state.ts";
-import type { Platform } from "../platform/mod.ts";
-import { safetyError } from "../domain/errors.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { createEmptyState } from "#/domain/state.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { safetyError } from "#/domain/errors.ts";
 import {
   loadStateDatabase,
   migrateStateDatabase,
   saveStateDatabase,
   stateDatabaseInitialized,
   type MigrationResult,
-} from "./state_database.ts";
+} from "#/services/state_database.ts";
 import {
   DEFAULT_COMPOSE_PROJECT_NAME,
   parseDotEnv,
   validateComposeProjectName,
-} from "./stack_env.ts";
-import { initializeRcloneConfig } from "./rclone.ts";
+} from "#/services/stack_env.ts";
+import { initializeRcloneConfig } from "#/services/rclone.ts";
 
 export type StackInitOptions = {
   /** Stable stack identity; deliberately independent from the stack directory. */

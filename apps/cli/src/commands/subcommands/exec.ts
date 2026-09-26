@@ -1,9 +1,9 @@
-import { RuntimeCommand } from "../../platform/runtime.ts";
-import { composeArgs } from "../../services/compose.ts";
-import { buildCliExec, cliRunComposeCommand } from "../../services/php.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith } from "../args.ts";
-import { bind, type RunState, trailing, type YargsBuilder } from "../shared.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { buildCliExec, cliRunComposeCommand } from "#/services/php.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith } from "#/commands/args.ts";
+import { bind, type RunState, trailing, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerExecCommand(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(

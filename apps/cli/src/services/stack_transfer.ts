@@ -1,9 +1,9 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
-import type { DesiredState } from "../domain/state.ts";
-import { conflictError, platformError, safetyError, validationError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
-import { composeArgs } from "./compose.ts";
-import { loadStackEnv, updateStackEnv, validateComposeProjectName } from "./stack_env.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { conflictError, platformError, safetyError, validationError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { loadStackEnv, updateStackEnv, validateComposeProjectName } from "#/services/stack_env.ts";
 
 export const STACK_ARCHIVE = "stack.tar.gz";
 export const REDIS_ARCHIVE = "redis-data.tar.gz";
@@ -232,7 +232,7 @@ export async function importStack(
   );
 
   // Validate imported desired state and derive volume identities from imported .env.
-  const { StateStore } = await import("./state_store.ts");
+  const { StateStore } = await import("#/services/state_store.ts");
   const state = await new StateStore(platform).load();
   const envUpdates: Record<string, string> = {};
   if (options.projectName !== undefined) {
@@ -290,7 +290,7 @@ export async function importStack(
     }
 
     // Regenerate with the importing Bento version, then build/start the complete chain.
-    const { RenderService } = await import("./render.ts");
+    const { RenderService } = await import("#/services/render.ts");
     await new RenderService(platform).apply(state, {
       renderOnly: true,
       skipValidate: true,

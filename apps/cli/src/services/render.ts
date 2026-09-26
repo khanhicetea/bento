@@ -5,17 +5,17 @@
  */
 
 import { join, relative } from "node:path";
-import type { DesiredState } from "../domain/state.ts";
-import type { ReloadPlan } from "../domain/reload.ts";
-import { describeReloadPlan, emptyReloadPlan, reloadPlanIsEmpty } from "../domain/reload.ts";
-import type { Platform } from "../platform/mod.ts";
-import { platformError, renderError, safetyError } from "../domain/errors.ts";
-import { ASSET_VERSION } from "../version.ts";
-import { generateAll } from "./generate.ts";
-import { materializeDockerAssets } from "./assets_materialize.ts";
-import { composeArgs } from "./compose.ts";
-import { ensureAppLogDirs } from "./permissions.ts";
-import { ensureManagedTlsCertificates } from "./tls.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import type { ReloadPlan } from "#/domain/reload.ts";
+import { describeReloadPlan, emptyReloadPlan, reloadPlanIsEmpty } from "#/domain/reload.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { platformError, renderError, safetyError } from "#/domain/errors.ts";
+import { ASSET_VERSION } from "#/version.ts";
+import { generateAll } from "#/services/generate.ts";
+import { materializeDockerAssets } from "#/services/assets_materialize.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { ensureAppLogDirs } from "#/services/permissions.ts";
+import { ensureManagedTlsCertificates } from "#/services/tls.ts";
 
 export type GeneratedFile = {
   /** Path relative to generatedDir */

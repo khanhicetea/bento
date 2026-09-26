@@ -2,19 +2,19 @@
 
 import { basename, dirname, join, resolve } from "node:path";
 import pc from "picocolors";
-import type { DesiredState, TlsMode } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
-import type { Platform, RunOptions, RunResult } from "../platform/mod.ts";
-import { checkPermissions } from "./permissions.ts";
-import { composeArgs } from "./compose.ts";
-import { buildStatus, statusToJson } from "./status.ts";
-import { redact } from "../ui/output.ts";
+import type { DesiredState, TlsMode } from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
+import type { Platform, RunOptions, RunResult } from "#/platform/mod.ts";
+import { checkPermissions } from "#/services/permissions.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { buildStatus, statusToJson } from "#/services/status.ts";
+import { redact } from "#/ui/output.ts";
 import {
   DEFAULT_COMPOSE_PROJECT_NAME,
   loadRedisPassword,
   loadStackComposeEnvironment,
-} from "./stack_env.ts";
-import { sqliteContainerPath, sqliteHostPath } from "./sqlite_paths.ts";
+} from "#/services/stack_env.ts";
+import { sqliteContainerPath, sqliteHostPath } from "#/services/sqlite_paths.ts";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export type DoctorCheck = {

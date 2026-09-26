@@ -1,10 +1,10 @@
-import { isPhpApp, type AppState, type DesiredState } from "../domain/state.ts";
-import { validationError } from "../domain/errors.ts";
+import { isPhpApp, type AppState, type DesiredState } from "#/domain/state.ts";
+import { validationError } from "#/domain/errors.ts";
 import {
   formatSqliteVacuumSchedule,
   resolveSqliteVacuumSchedules,
   sqliteVacuumScheduleKey,
-} from "./sqlite_schedule.ts";
+} from "#/services/sqlite_schedule.ts";
 
 /** Only Bento-owned maintenance tasks belong in the bootstrap config. Never copy user jobs. */
 export const INTERNAL_JOB_PREFIX = "bento-internal-";

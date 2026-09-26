@@ -1,8 +1,8 @@
 import { lstat } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
-import type { DesiredState } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;

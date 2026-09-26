@@ -4,12 +4,18 @@ import {
   prepareCustomTemplate,
   returnToUpstreamTemplate,
   selectCustomTemplate,
-} from "../../services/customization.ts";
-import { printTable } from "../../ui/output.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import { openEditor } from "../editor.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+} from "#/services/customization.ts";
+import { printTable } from "#/ui/output.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import { openEditor } from "#/commands/editor.ts";
+import {
+  bind,
+  noApplyOption,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "#/commands/shared.ts";
 
 export function registerTemplateCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("template", "App vhost/pool template customization", (y: YargsBuilder) =>

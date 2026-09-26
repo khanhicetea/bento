@@ -1,10 +1,10 @@
-import type { DesiredState } from "../../domain/state.ts";
-import { composeArgs } from "../../services/compose.ts";
-import { loadStackComposeEnvironment, updateStackEnv } from "../../services/stack_env.ts";
-import { exportStack, importStack } from "../../services/stack_transfer.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import { bind, type RunState, type YargsBuilder } from "../shared.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { loadStackComposeEnvironment, updateStackEnv } from "#/services/stack_env.ts";
+import { exportStack, importStack } from "#/services/stack_transfer.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerStackCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(

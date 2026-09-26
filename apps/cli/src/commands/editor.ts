@@ -1,5 +1,5 @@
-import { RuntimeCommand } from "../platform/runtime.ts";
-import { isBentoError, platformError } from "../domain/errors.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
+import { isBentoError, platformError } from "#/domain/errors.ts";
 
 /** Open a file in the operator's editor and wait until it closes. */
 export async function openEditor(path: string): Promise<void> {

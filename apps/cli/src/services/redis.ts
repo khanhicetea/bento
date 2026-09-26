@@ -3,9 +3,9 @@
  * Secrets are never placed on host process argv.
  */
 
-import type { AppRedisIdentity, AppState, DesiredState } from "../domain/state.ts";
-import { notFoundError, serviceError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
+import type { AppRedisIdentity, AppState, DesiredState } from "#/domain/state.ts";
+import { notFoundError, serviceError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 export function redisConnectionEnv(app: AppState, sharedPassword?: string): Record<string, string> {
   const base: Record<string, string> = {

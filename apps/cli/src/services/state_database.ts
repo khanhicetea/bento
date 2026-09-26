@@ -7,11 +7,11 @@ import type {
   ProxySite,
   TemplateProvenance,
   TlsMode,
-} from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
-import { isBentoError, migrationError, stateError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
-import { parseDesiredState, stateToJson } from "../schemas/state.ts";
+} from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
+import { isBentoError, migrationError, stateError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { parseDesiredState, stateToJson } from "#/schemas/state.ts";
 
 export const STATE_DATABASE_SCHEMA_VERSION = 1;
 

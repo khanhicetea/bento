@@ -1,10 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { extname, join } from "node:path";
 import { RPCHandler } from "@orpc/server/fetch";
-import type { CliContext } from "../commands/context.ts";
-import { resolveAssetRoot } from "../platform/assets.ts";
-import { proxyMinicrond } from "./minicrond_proxy.ts";
-import { createWebRouter } from "./router.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { resolveAssetRoot } from "#/platform/assets.ts";
+import { proxyMinicrond } from "#/server/minicrond_proxy.ts";
+import { createWebRouter } from "#/server/router.ts";
 import {
   closeTerminalSession,
   handleTerminalMessage,
@@ -12,7 +12,7 @@ import {
   prepareTerminalSession,
   startTerminalSession,
   type TerminalSession,
-} from "./terminal.ts";
+} from "#/server/terminal.ts";
 // Bun's file loader embeds these assets in standalone builds.
 import webIndex from "../../../web/dist/index.html" with { type: "file" };
 // @ts-expect-error generated browser asset

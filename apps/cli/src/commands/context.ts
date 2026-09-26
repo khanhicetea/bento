@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
-import { describeReloadPlan } from "../domain/reload.ts";
-import { createPlatform, type Platform } from "../platform/mod.ts";
-import { StateStore } from "../services/state_store.ts";
-import { RenderService } from "../services/render.ts";
-import { createLogger, type Logger } from "../ui/output.ts";
+import { describeReloadPlan } from "#/domain/reload.ts";
+import { createPlatform, type Platform } from "#/platform/mod.ts";
+import { StateStore } from "#/services/state_store.ts";
+import { RenderService } from "#/services/render.ts";
+import { createLogger, type Logger } from "#/ui/output.ts";
 
 export type CliContext = {
   platform: Platform;

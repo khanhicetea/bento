@@ -7,9 +7,9 @@
  */
 
 import { dirname, join } from "node:path";
-import { platformError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
-import { encodeHex } from "../platform/hex.ts";
+import { platformError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { encodeHex } from "#/platform/hex.ts";
 
 export type MaterializeResult = {
   dockerRoot: string;

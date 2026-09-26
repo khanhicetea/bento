@@ -1,12 +1,12 @@
 /** Local SQLite maintenance and logical backup through the PHP runner image. */
 
 import { join } from "node:path";
-import type { DesiredState } from "../domain/state.ts";
-import { databaseBindings, isPhpApp } from "../domain/state.ts";
-import { notFoundError, serviceError, validationError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
-import { composeArgs } from "./compose.ts";
-import { sqliteContainerPath } from "./sqlite_paths.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { databaseBindings, isPhpApp } from "#/domain/state.ts";
+import { notFoundError, serviceError, validationError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { sqliteContainerPath } from "#/services/sqlite_paths.ts";
 
 export type SqliteBackupArtifact = {
   engine: "sqlite";

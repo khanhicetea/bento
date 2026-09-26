@@ -1,5 +1,5 @@
-import type { TlsMode } from "../domain/state.ts";
-import type { TemplateKind } from "../services/customization.ts";
+import type { TlsMode } from "#/domain/state.ts";
+import type { TemplateKind } from "#/services/customization.ts";
 
 type StringArgName =
   | "alias"

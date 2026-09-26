@@ -2,11 +2,11 @@
  * Reverse-proxy site management.
  */
 
-import type { DesiredState, ProxySite, TlsMode } from "../domain/state.ts";
-import { asDomainName, asProxySiteName } from "../domain/types.ts";
-import { conflictError, notFoundError, safetyError, validationError } from "../domain/errors.ts";
-import { parseAppSlug, parseDomainName, unwrap } from "../schemas/validators.ts";
-import { type ReloadPlan, reloadPlanForDomainChange } from "../domain/reload.ts";
+import type { DesiredState, ProxySite, TlsMode } from "#/domain/state.ts";
+import { asDomainName, asProxySiteName } from "#/domain/types.ts";
+import { conflictError, notFoundError, safetyError, validationError } from "#/domain/errors.ts";
+import { parseAppSlug, parseDomainName, unwrap } from "#/schemas/validators.ts";
+import { type ReloadPlan, reloadPlanForDomainChange } from "#/domain/reload.ts";
 
 export type CreateProxyInput = {
   name: string;

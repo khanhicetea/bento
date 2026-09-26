@@ -1,8 +1,8 @@
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeHex } from "./hex.ts";
-import type { AssetResolver, FileSystem } from "./interfaces.ts";
-import { platformError } from "../domain/errors.ts";
+import { encodeHex } from "#/platform/hex.ts";
+import type { AssetResolver, FileSystem } from "#/platform/interfaces.ts";
+import { platformError } from "#/domain/errors.ts";
 
 /**
  * Resolve immutable assets from repository (source mode) or embedded compile includes.

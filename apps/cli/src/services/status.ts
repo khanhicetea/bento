@@ -3,14 +3,14 @@
  * Secrets are never included in the report object (safe for --json).
  */
 
-import type { DesiredState, ManagedDatabaseService } from "../domain/state.ts";
-import { isPhpApp, isProcessApp } from "../domain/state.ts";
-import type { Platform } from "../platform/mod.ts";
-import { capacityWarnings } from "./app.ts";
-import { FPM_PROFILES } from "../domain/types.ts";
-import { composeArgs, resolveComposeFiles } from "./compose.ts";
-import { loadStackComposeEnvironment } from "./stack_env.ts";
-import { sqliteContainerPath } from "./sqlite_paths.ts";
+import type { DesiredState, ManagedDatabaseService } from "#/domain/state.ts";
+import { isPhpApp, isProcessApp } from "#/domain/state.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { capacityWarnings } from "#/services/app.ts";
+import { FPM_PROFILES } from "#/domain/types.ts";
+import { composeArgs, resolveComposeFiles } from "#/services/compose.ts";
+import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
+import { sqliteContainerPath } from "#/services/sqlite_paths.ts";
 
 export type RoleStatus = {
   name: string;

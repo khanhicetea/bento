@@ -1,9 +1,9 @@
 import type { Argv } from "yargs";
-import { isBentoError } from "../domain/errors.ts";
-import { BENTO_VERSION, BUN_TARGET_VERSION, versionBanner } from "../version.ts";
-import { redact } from "../ui/output.ts";
-import { type CliContext, contextFromArgv } from "./context.ts";
-import type { CliArgs } from "./args.ts";
+import { isBentoError } from "#/domain/errors.ts";
+import { BENTO_VERSION, BUN_TARGET_VERSION, versionBanner } from "#/version.ts";
+import { redact } from "#/ui/output.ts";
+import { type CliContext, contextFromArgv } from "#/commands/context.ts";
+import type { CliArgs } from "#/commands/args.ts";
 
 export type RunState = { code: number };
 export type YargsBuilder = any;

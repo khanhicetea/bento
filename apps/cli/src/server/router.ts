@@ -1,12 +1,12 @@
 import { implement } from "@orpc/server";
 import { webContract } from "@bento/shared";
-import type { CliContext } from "../commands/context.ts";
-import { createApplicationsRouter } from "./domains/applications/router.ts";
-import { createDataRouter } from "./domains/data/router.ts";
-import { createJobsRouter } from "./domains/jobs/router.ts";
-import { createOperationsRouter } from "./domains/operations/router.ts";
-import { createRoutingRouter } from "./domains/routing/router.ts";
-import { createSystemRouter } from "./domains/system/router.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { createApplicationsRouter } from "#/server/domains/applications/router.ts";
+import { createDataRouter } from "#/server/domains/data/router.ts";
+import { createJobsRouter } from "#/server/domains/jobs/router.ts";
+import { createOperationsRouter } from "#/server/domains/operations/router.ts";
+import { createRoutingRouter } from "#/server/domains/routing/router.ts";
+import { createSystemRouter } from "#/server/domains/system/router.ts";
 
 const os = implement(webContract);
 

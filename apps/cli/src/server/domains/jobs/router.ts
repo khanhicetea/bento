@@ -1,7 +1,7 @@
 import { implement } from "@orpc/server";
 import { jobsContract } from "@bento/shared";
-import type { CliContext } from "../../../commands/context.ts";
-import { isPhpApp } from "../../../domain/state.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { isPhpApp } from "#/domain/state.ts";
 
 const os = implement(jobsContract);
 

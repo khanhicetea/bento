@@ -20,7 +20,7 @@ import {
   type TemplateProvenance,
   type TlsMode,
   withAppRelations,
-} from "../domain/state.ts";
+} from "#/domain/state.ts";
 import {
   asAbsoluteAppPath,
   asAppSlug,
@@ -34,9 +34,9 @@ import {
   asPostgresVersion,
   asProxySiteName,
   asUid,
-} from "../domain/types.ts";
-import { STATE_SCHEMA_VERSION } from "../version.ts";
-import { stateError, validationError } from "../domain/errors.ts";
+} from "#/domain/types.ts";
+import { STATE_SCHEMA_VERSION } from "#/version.ts";
+import { stateError, validationError } from "#/domain/errors.ts";
 import {
   absolutePathSchema,
   appSlugSchema,
@@ -57,7 +57,7 @@ import {
   stringArraySchema,
   uidGidSchema,
   unwrap,
-} from "./validators.ts";
+} from "#/schemas/validators.ts";
 
 const strict = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
 const tlsModeSchema: z.ZodType<TlsMode> = z.discriminatedUnion("kind", [

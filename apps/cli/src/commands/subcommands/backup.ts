@@ -4,18 +4,18 @@ import {
   registerBackupSchedule,
   runScheduledBackup,
   unregisterBackupSchedule,
-} from "../../services/backup_schedule.ts";
+} from "#/services/backup_schedule.ts";
 import {
   type DatabaseBackupArtifact,
   type DatabaseBackupRequest,
   runDatabaseBackup,
   runDatabaseRestore,
-} from "../../services/database_backup.ts";
-import { readRcloneBackupTarget } from "../../services/rclone.ts";
-import { syncSqliteBackup } from "../../services/sqlite.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import { bind, type RunState, type YargsBuilder } from "../shared.ts";
+} from "#/services/database_backup.ts";
+import { readRcloneBackupTarget } from "#/services/rclone.ts";
+import { syncSqliteBackup } from "#/services/sqlite.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerBackupCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser

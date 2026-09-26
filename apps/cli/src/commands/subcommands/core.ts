@@ -1,18 +1,18 @@
-import { describeReloadPlan } from "../../domain/reload.ts";
-import { detectTemplateDrift, formatDriftWarnings } from "../../services/customization.ts";
-import { createSupportBundle, formatDoctor, runDoctor } from "../../services/doctor.ts";
-import { buildStatus, formatStatus, statusToJson } from "../../services/status.ts";
+import { describeReloadPlan } from "#/domain/reload.ts";
+import { detectTemplateDrift, formatDriftWarnings } from "#/services/customization.ts";
+import { createSupportBundle, formatDoctor, runDoctor } from "#/services/doctor.ts";
+import { buildStatus, formatStatus, statusToJson } from "#/services/status.ts";
 import {
   DEFAULT_SCHEDULE_WAIT_SEC,
   DEFAULT_TEST_STACK_NAME,
   formatTestStackReport,
   resolveTestStackOptions,
   runTestStack,
-} from "../../services/test_stack.ts";
-import { loadStackComposeEnvironment } from "../../services/stack_env.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import { bind, printVersion, type RunState, type YargsBuilder } from "../shared.ts";
+} from "#/services/test_stack.ts";
+import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import { bind, printVersion, type RunState, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerCoreCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser

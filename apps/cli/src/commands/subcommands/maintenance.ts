@@ -1,7 +1,7 @@
-import { registerHostMaintenance, runStackMaintenance } from "../../services/maintenance.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import { bind, type RunState, type YargsBuilder } from "../shared.ts";
+import { registerHostMaintenance, runStackMaintenance } from "#/services/maintenance.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerMaintenanceCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("maintenance", "Host/stack maintenance", (y: YargsBuilder) =>

@@ -1,13 +1,19 @@
-import { RuntimeCommand } from "../../platform/runtime.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
 import {
   generateAccessReport,
   isNginxOnlyReloadPlan,
   rotateAccessLog,
   setAppAccessLog,
-} from "../../services/access_log.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith } from "../args.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+} from "#/services/access_log.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith } from "#/commands/args.ts";
+import {
+  bind,
+  noApplyOption,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "#/commands/shared.ts";
 
 export function registerLogCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("logs", "Access log control and reports", (y: YargsBuilder) =>

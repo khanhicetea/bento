@@ -14,7 +14,7 @@ import type {
   ProcessAppState,
   ProcessLanguage,
   TlsMode,
-} from "../domain/state.ts";
+} from "#/domain/state.ts";
 import {
   defaultDeployConfig,
   defaultRedisIdentity,
@@ -22,7 +22,7 @@ import {
   primaryDatabase,
   processImage,
   processServiceName,
-} from "../domain/state.ts";
+} from "#/domain/state.ts";
 import {
   asAbsoluteAppPath,
   asAppSlug,
@@ -37,51 +37,55 @@ import {
   FPM_PROFILES,
   type FpmProfile,
   type PhpVersion,
-} from "../domain/types.ts";
-import { conflictError, notFoundError, safetyError, validationError } from "../domain/errors.ts";
+} from "#/domain/types.ts";
+import { conflictError, notFoundError, safetyError, validationError } from "#/domain/errors.ts";
 import {
   parseAppSlug,
   parseDomainName,
   parsePhpVersion,
   parseSafeRelativePath,
   unwrap,
-} from "../schemas/validators.ts";
-import type { Platform } from "../platform/mod.ts";
-import { containerAppHome } from "../platform/paths.ts";
+} from "#/schemas/validators.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { containerAppHome } from "#/platform/paths.ts";
 import {
   mergeReloadPlans,
   type ReloadPlan,
   reloadPlanForDomainChange,
   reloadPlanForPoolChange,
   reloadPlanForRunnerChange,
-} from "../domain/reload.ts";
-import { applyAppPermissionPolicy } from "./permissions.ts";
-import { applyAppMysqlGrants, isMysqlReachable, tryBestEffortMysqlAccount } from "./mysql.ts";
+} from "#/domain/reload.ts";
+import { applyAppPermissionPolicy } from "#/services/permissions.ts";
+import {
+  applyAppMysqlGrants,
+  isMysqlReachable,
+  tryBestEffortMysqlAccount,
+} from "#/services/mysql.ts";
 import {
   applyAppPostgresDatabase,
   isPostgresReachable,
   tryBestEffortPostgresRole,
-} from "./postgres.ts";
-import { tryApplyAppRedisAcl } from "./redis.ts";
+} from "#/services/postgres.ts";
+import { tryApplyAppRedisAcl } from "#/services/redis.ts";
 import {
   sqliteContainerPath,
   sqliteHostDir,
   sqliteHostPath,
   sqliteRelativePath,
-} from "./sqlite_paths.ts";
+} from "#/services/sqlite_paths.ts";
 import {
   randomSqliteVacuumSchedule,
   resolveSqliteVacuumSchedules,
   sqliteVacuumScheduleSlot,
-} from "./sqlite_schedule.ts";
+} from "#/services/sqlite_schedule.ts";
 import {
   loadMysqlRootPassword,
   loadPostgresRootPassword,
   loadRedisPassword,
   requireMysqlRootPassword,
   requirePostgresRootPassword,
-} from "./stack_env.ts";
-import { serviceError } from "../domain/errors.ts";
+} from "#/services/stack_env.ts";
+import { serviceError } from "#/domain/errors.ts";
 
 export type ProvisionAppInput = {
   slug: string;

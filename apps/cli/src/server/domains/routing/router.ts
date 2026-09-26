@@ -5,12 +5,12 @@ import {
   type RoutingProxy,
   type SaveRoutingProxyInput,
 } from "@bento/shared";
-import type { CliContext } from "../../../commands/context.ts";
-import { isBentoError, type BentoError } from "../../../domain/errors.ts";
-import type { ProxySite, TlsMode } from "../../../domain/state.ts";
-import { createProxy, deleteProxy, setProxyEnabled, updateProxy } from "../../../services/proxy.ts";
-import { loadStackComposeEnvironment } from "../../../services/stack_env.ts";
-import { redact } from "../../../ui/output.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { isBentoError, type BentoError } from "#/domain/errors.ts";
+import type { ProxySite, TlsMode } from "#/domain/state.ts";
+import { createProxy, deleteProxy, setProxyEnabled, updateProxy } from "#/services/proxy.ts";
+import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
+import { redact } from "#/ui/output.ts";
 
 const os = implement(routingContract);
 

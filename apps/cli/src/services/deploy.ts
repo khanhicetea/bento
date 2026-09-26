@@ -3,9 +3,9 @@
  */
 
 import { join } from "node:path";
-import { encodeHex } from "../platform/hex.ts";
-import type { AppState, DesiredState, QueuePolicy } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
+import { encodeHex } from "#/platform/hex.ts";
+import type { AppState, DesiredState, QueuePolicy } from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
 import {
   asDeployJobId,
   DEPLOY_DEFAULT_TIMEOUT_SEC,
@@ -14,10 +14,10 @@ import {
   DEPLOY_MAX_QUEUED,
   DEPLOY_RETENTION,
   type DeployJobId,
-} from "../domain/types.ts";
-import { conflictError, notFoundError, safetyError, validationError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
-import type { ReloadPlan } from "../domain/reload.ts";
+} from "#/domain/types.ts";
+import { conflictError, notFoundError, safetyError, validationError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import type { ReloadPlan } from "#/domain/reload.ts";
 
 export type DeployJobStatus = "queued" | "running" | "success" | "failed" | "skipped";
 

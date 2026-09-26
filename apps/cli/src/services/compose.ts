@@ -16,11 +16,11 @@ import {
   isProcessApp,
   type DesiredState,
   type ProcessAppState,
-} from "../domain/state.ts";
-import type { Platform } from "../platform/mod.ts";
-import { type GeneratedFile, withManagedMarker } from "./render.ts";
-import { safetyError } from "../domain/errors.ts";
-import type { StackComposeEnvironment } from "./stack_env.ts";
+} from "#/domain/state.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { type GeneratedFile, withManagedMarker } from "#/services/render.ts";
+import { safetyError } from "#/domain/errors.ts";
+import type { StackComposeEnvironment } from "#/services/stack_env.ts";
 
 const DEFAULT_COMPOSE_ENVIRONMENT: StackComposeEnvironment = {
   projectName: "bento",

@@ -1,9 +1,9 @@
-import { RuntimeCommand } from "../../platform/runtime.ts";
-import { assertSafeComposeArgs, composeArgs, resolveComposeFiles } from "../../services/compose.ts";
-import { materializeDockerAssets } from "../../services/assets_materialize.ts";
-import type { CliContext } from "../context.ts";
-import type { CliArgs } from "../args.ts";
-import { bind, type RunState, trailing, type YargsBuilder } from "../shared.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
+import { assertSafeComposeArgs, composeArgs, resolveComposeFiles } from "#/services/compose.ts";
+import { materializeDockerAssets } from "#/services/assets_materialize.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { CliArgs } from "#/commands/args.ts";
+import { bind, type RunState, trailing, type YargsBuilder } from "#/commands/shared.ts";
 
 export function registerComposeCommand(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(

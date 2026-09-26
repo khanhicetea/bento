@@ -1,14 +1,14 @@
 /** Destructive cleanup for durable data retained after app removal. */
 
 import { join } from "node:path";
-import type { AppState, DatabaseEngine, DesiredState } from "../domain/state.ts";
-import { conflictError, safetyError, serviceError, validationError } from "../domain/errors.ts";
-import type { Platform } from "../platform/mod.ts";
-import { parseAppSlug, unwrap } from "../schemas/validators.ts";
-import { execMysqlSql } from "./mysql.ts";
-import { execPostgresSql, postgresIdentifier, postgresLiteral } from "./postgres.ts";
-import { requireMysqlRootPassword, requirePostgresRootPassword } from "./stack_env.ts";
-import { mysqlIdent } from "./template.ts";
+import type { AppState, DatabaseEngine, DesiredState } from "#/domain/state.ts";
+import { conflictError, safetyError, serviceError, validationError } from "#/domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { parseAppSlug, unwrap } from "#/schemas/validators.ts";
+import { execMysqlSql } from "#/services/mysql.ts";
+import { execPostgresSql, postgresIdentifier, postgresLiteral } from "#/services/postgres.ts";
+import { requireMysqlRootPassword, requirePostgresRootPassword } from "#/services/stack_env.ts";
+import { mysqlIdent } from "#/services/template.ts";
 
 const MANIFEST = ".bento/prune.json";
 

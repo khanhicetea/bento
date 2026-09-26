@@ -7,11 +7,11 @@ import {
   type ApplicationList,
   type SaveApplicationInput,
 } from "@bento/shared";
-import type { CliContext } from "../../../commands/context.ts";
-import { isBentoError, type BentoError } from "../../../domain/errors.ts";
-import type { AppDatabaseBinding, AppState, DesiredState, TlsMode } from "../../../domain/state.ts";
-import { isProcessApp } from "../../../domain/state.ts";
-import { FPM_PROFILES } from "../../../domain/types.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { isBentoError, type BentoError } from "#/domain/errors.ts";
+import type { AppDatabaseBinding, AppState, DesiredState, TlsMode } from "#/domain/state.ts";
+import { isProcessApp } from "#/domain/state.ts";
+import { FPM_PROFILES } from "#/domain/types.ts";
 import {
   applyAppDataPlane,
   deleteApp,
@@ -19,21 +19,21 @@ import {
   materializeAppHome,
   provisionApp,
   setAppEnabled,
-} from "../../../services/app.ts";
-import { writeAppPruneManifest } from "../../../services/app_prune.ts";
-import { enableSqliteBackup, sqliteCompose } from "../../../services/sqlite.ts";
-import { loadRedisPassword } from "../../../services/stack_env.ts";
-import { redact } from "../../../ui/output.ts";
-import { composeArgs } from "../../../services/compose.ts";
+} from "#/services/app.ts";
+import { writeAppPruneManifest } from "#/services/app_prune.ts";
+import { enableSqliteBackup, sqliteCompose } from "#/services/sqlite.ts";
+import { loadRedisPassword } from "#/services/stack_env.ts";
+import { redact } from "#/ui/output.ts";
+import { composeArgs } from "#/services/compose.ts";
 import {
   isProcessAppHealthy,
   recreateRunningProcessApp as recreateProcessApp,
   removeProcessAppContainer,
   startProcessApp,
   stopProcessApp,
-} from "../../../services/process_app.ts";
-import { emptyReloadPlan } from "../../../domain/reload.ts";
-import { safetyError } from "../../../domain/errors.ts";
+} from "#/services/process_app.ts";
+import { emptyReloadPlan } from "#/domain/reload.ts";
+import { safetyError } from "#/domain/errors.ts";
 
 const os = implement(applicationsContract);
 

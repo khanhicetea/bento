@@ -1,7 +1,7 @@
-import type { DesiredState } from "../domain/state.ts";
-import { isPhpApp } from "../domain/state.ts";
-import { notFoundError, validationError } from "../domain/errors.ts";
-import { appSlugSchema } from "../schemas/validators.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { isPhpApp } from "#/domain/state.ts";
+import { notFoundError, validationError } from "#/domain/errors.ts";
+import { appSlugSchema } from "#/schemas/validators.ts";
 
 /** An app-scoped invocation of the *running* PHP runner's private Unix socket. */
 export function minicrondComposeCommand(

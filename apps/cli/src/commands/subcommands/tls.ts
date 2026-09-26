@@ -1,12 +1,18 @@
-import type { TlsMode } from "../../domain/state.ts";
+import type { TlsMode } from "#/domain/state.ts";
 import {
   exportPrivateCaCertificate,
   tlsOperatorDocs,
   validateExternalTlsPaths,
-} from "../../services/tls.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith } from "../args.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+} from "#/services/tls.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith } from "#/commands/args.ts";
+import {
+  bind,
+  noApplyOption,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "#/commands/shared.ts";
 
 export function registerTlsCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("tls", "TLS mode management", (y: YargsBuilder) =>

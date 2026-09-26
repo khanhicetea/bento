@@ -1,4 +1,4 @@
-import { materializeAppHome } from "../../services/app.ts";
+import { materializeAppHome } from "#/services/app.ts";
 import {
   deployWebhookInstructions,
   disableDeploy,
@@ -6,12 +6,18 @@ import {
   enableDeploy,
   loadQueue,
   rotateDeploySecret,
-} from "../../services/deploy.ts";
-import { printTable } from "../../ui/output.ts";
-import { loadStackComposeEnvironment } from "../../services/stack_env.ts";
-import type { CliContext } from "../context.ts";
-import type { ArgsWith } from "../args.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+} from "#/services/deploy.ts";
+import { printTable } from "#/ui/output.ts";
+import { loadStackComposeEnvironment } from "#/services/stack_env.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { ArgsWith } from "#/commands/args.ts";
+import {
+  bind,
+  noApplyOption,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "#/commands/shared.ts";
 
 export function registerDeployCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("deploy", "Webhook deploys for an app", (y: YargsBuilder) =>

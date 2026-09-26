@@ -6,16 +6,13 @@ import {
   type DatabaseRuntime,
   type DataOverview,
 } from "@bento/shared";
-import type { CliContext } from "../../../commands/context.ts";
-import type { AppDatabaseBinding } from "../../../domain/state.ts";
-import { runDatabaseBackup, runDatabaseRestore } from "../../../services/database_backup.ts";
-import { queryDatabaseSizes, queryProcesslist } from "../../../services/mysql.ts";
-import { queryPostgresActivity, queryPostgresDatabaseSizes } from "../../../services/postgres.ts";
-import {
-  requireMysqlRootPassword,
-  requirePostgresRootPassword,
-} from "../../../services/stack_env.ts";
-import { redact } from "../../../ui/output.ts";
+import type { CliContext } from "#/commands/context.ts";
+import type { AppDatabaseBinding } from "#/domain/state.ts";
+import { runDatabaseBackup, runDatabaseRestore } from "#/services/database_backup.ts";
+import { queryDatabaseSizes, queryProcesslist } from "#/services/mysql.ts";
+import { queryPostgresActivity, queryPostgresDatabaseSizes } from "#/services/postgres.ts";
+import { requireMysqlRootPassword, requirePostgresRootPassword } from "#/services/stack_env.ts";
+import { redact } from "#/ui/output.ts";
 
 const os = implement(dataContract);
 

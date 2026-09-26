@@ -4,8 +4,8 @@
  */
 
 import { join } from "node:path";
-import type { Platform } from "../platform/mod.ts";
-import { validationError } from "../domain/errors.ts";
+import type { Platform } from "#/platform/mod.ts";
+import { validationError } from "#/domain/errors.ts";
 
 /** Marker lines wrapping the managed crontab fragment. */
 export const CRON_BEGIN_MARKER = "# BEGIN BENTO MAINTENANCE";

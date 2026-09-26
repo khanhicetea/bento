@@ -12,8 +12,8 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import type { FileSystem } from "./interfaces.ts";
-import { platformError } from "../domain/errors.ts";
+import type { FileSystem } from "#/platform/interfaces.ts";
+import { platformError } from "#/domain/errors.ts";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

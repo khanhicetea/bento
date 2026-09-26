@@ -1,4 +1,4 @@
-import { RuntimeCommand } from "../platform/runtime.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
 import { chmod, chown, readFile, stat } from "node:fs/promises";
 /**
  * Real-stack end-to-end harness — multi-chain operator ops against live Docker.
@@ -20,24 +20,28 @@ import { chmod, chown, readFile, stat } from "node:fs/promises";
  */
 
 import { join, resolve } from "node:path";
-import type { Platform } from "../platform/mod.ts";
-import type { AppState, DesiredState } from "../domain/state.ts";
-import { StateStore } from "./state_store.ts";
-import { RenderService } from "./render.ts";
-import { applyAppDataPlane, materializeAppHome, provisionApp } from "./app.ts";
-import { materializeDockerAssets } from "./assets_materialize.ts";
-import { composeArgs } from "./compose.ts";
-import { createAppDatabaseLive, isMysqlReachable } from "./mysql.ts";
-import { addPostgresVersion, execPostgresAppSql, isPostgresReachable } from "./postgres.ts";
-import { isRedisReachable } from "./redis.ts";
-import { loadRedisPassword, requireMysqlRootPassword } from "./stack_env.ts";
-import { runDatabaseBackup, runDatabaseRestore } from "./database_backup.ts";
-import { buildStatus } from "./status.ts";
-import { exportStack } from "./stack_transfer.ts";
-import { parseDotEnv } from "./stack_env.ts";
-import { minicrondComposeCommand } from "./minicrond.ts";
-import { checkPermissions, repairPermissions } from "./permissions.ts";
-import { enableDeploy } from "./deploy.ts";
+import type { Platform } from "#/platform/mod.ts";
+import type { AppState, DesiredState } from "#/domain/state.ts";
+import { StateStore } from "#/services/state_store.ts";
+import { RenderService } from "#/services/render.ts";
+import { applyAppDataPlane, materializeAppHome, provisionApp } from "#/services/app.ts";
+import { materializeDockerAssets } from "#/services/assets_materialize.ts";
+import { composeArgs } from "#/services/compose.ts";
+import { createAppDatabaseLive, isMysqlReachable } from "#/services/mysql.ts";
+import {
+  addPostgresVersion,
+  execPostgresAppSql,
+  isPostgresReachable,
+} from "#/services/postgres.ts";
+import { isRedisReachable } from "#/services/redis.ts";
+import { loadRedisPassword, requireMysqlRootPassword } from "#/services/stack_env.ts";
+import { runDatabaseBackup, runDatabaseRestore } from "#/services/database_backup.ts";
+import { buildStatus } from "#/services/status.ts";
+import { exportStack } from "#/services/stack_transfer.ts";
+import { parseDotEnv } from "#/services/stack_env.ts";
+import { minicrondComposeCommand } from "#/services/minicrond.ts";
+import { checkPermissions, repairPermissions } from "#/services/permissions.ts";
+import { enableDeploy } from "#/services/deploy.ts";
 
 export const DEFAULT_TEST_STACK_NAME = "testbento";
 /** Default wait for once-per-minute cron to fire (user requirement: 61s). */
@@ -446,7 +450,7 @@ export async function runTestStack(opts: TestStackOptions): Promise<TestStackRep
   };
 
   // --- platform bootstrap ---------------------------------------------------
-  const { createPlatform } = await import("../platform/mod.ts");
+  const { createPlatform } = await import("#/platform/mod.ts");
   const platform = createPlatform(opts.stackRoot, opts.repoRoot);
   const store = new StateStore(platform);
   const render = new RenderService(platform);

@@ -4,11 +4,11 @@
  */
 
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { DesiredState } from "../domain/state.ts";
-import { notFoundError, serviceError, validationError } from "../domain/errors.ts";
-import type { ReloadPlan } from "../domain/reload.ts";
-import { reloadPlanForDomainChange } from "../domain/reload.ts";
-import type { Platform } from "../platform/mod.ts";
+import type { DesiredState } from "#/domain/state.ts";
+import { notFoundError, serviceError, validationError } from "#/domain/errors.ts";
+import type { ReloadPlan } from "#/domain/reload.ts";
+import { reloadPlanForDomainChange } from "#/domain/reload.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 export type AccessLogMutation = {
   state: DesiredState;

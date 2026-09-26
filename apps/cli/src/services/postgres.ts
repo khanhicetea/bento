@@ -4,18 +4,18 @@
  */
 
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import type { AppState, DesiredState, ManagedPostgresVersion } from "../domain/state.ts";
-import { databaseBindings, postgresImage, postgresServiceName } from "../domain/state.ts";
-import { asDatabaseName, asPostgresVersion } from "../domain/types.ts";
+import type { AppState, DesiredState, ManagedPostgresVersion } from "#/domain/state.ts";
+import { databaseBindings, postgresImage, postgresServiceName } from "#/domain/state.ts";
+import { asDatabaseName, asPostgresVersion } from "#/domain/types.ts";
 import {
   conflictError,
   notFoundError,
   safetyError,
   serviceError,
   validationError,
-} from "../domain/errors.ts";
-import type { Platform, RunResult } from "../platform/mod.ts";
-import { parsePostgresVersion, unwrap } from "../schemas/validators.ts";
+} from "#/domain/errors.ts";
+import type { Platform, RunResult } from "#/platform/mod.ts";
+import { parsePostgresVersion, unwrap } from "#/schemas/validators.ts";
 
 function postgresDatabase(app: AppState, service?: string) {
   const database = service

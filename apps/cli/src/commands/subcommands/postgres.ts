@@ -1,5 +1,5 @@
-import { RuntimeCommand } from "../../platform/runtime.ts";
-import { materializeAppHome } from "../../services/app.ts";
+import { RuntimeCommand } from "#/platform/runtime.ts";
+import { materializeAppHome } from "#/services/app.ts";
 import {
   addPostgresVersion,
   assertPostgresShellSecretsOffArgv,
@@ -11,14 +11,20 @@ import {
   queryPostgresDatabaseSizes,
   removePostgresVersion,
   resolvePostgresServices,
-} from "../../services/postgres.ts";
-import { databaseBindings } from "../../domain/state.ts";
-import { loadRedisPassword, requirePostgresRootPassword } from "../../services/stack_env.ts";
-import { recreateRunningProcessApp } from "../../services/process_app.ts";
-import { printTable } from "../../ui/output.ts";
-import type { ArgsWith, CliArgs } from "../args.ts";
-import type { CliContext } from "../context.ts";
-import { bind, noApplyOption, type RunState, wantsNoApply, type YargsBuilder } from "../shared.ts";
+} from "#/services/postgres.ts";
+import { databaseBindings } from "#/domain/state.ts";
+import { loadRedisPassword, requirePostgresRootPassword } from "#/services/stack_env.ts";
+import { recreateRunningProcessApp } from "#/services/process_app.ts";
+import { printTable } from "#/ui/output.ts";
+import type { ArgsWith, CliArgs } from "#/commands/args.ts";
+import type { CliContext } from "#/commands/context.ts";
+import {
+  bind,
+  noApplyOption,
+  type RunState,
+  wantsNoApply,
+  type YargsBuilder,
+} from "#/commands/shared.ts";
 
 export function registerPostgresCommands(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command("postgres", "Manage PostgreSQL (add-only versions)", (y: YargsBuilder) =>

@@ -1,7 +1,7 @@
-import type { ArgsWith } from "../args.ts";
-import type { CliContext } from "../context.ts";
-import { bind, type RunState, type YargsBuilder } from "../shared.ts";
-import { runWebServer } from "../../server/server.ts";
+import type { ArgsWith } from "#/commands/args.ts";
+import type { CliContext } from "#/commands/context.ts";
+import { bind, type RunState, type YargsBuilder } from "#/commands/shared.ts";
+import { runWebServer } from "#/server/server.ts";
 
 export function registerServeCommand(parser: YargsBuilder, state: RunState): YargsBuilder {
   return parser.command(

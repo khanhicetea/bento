@@ -4,7 +4,7 @@
  */
 
 import Mustache from "mustache";
-import { validationError } from "../domain/errors.ts";
+import { validationError } from "#/domain/errors.ts";
 
 export type TemplateContext = Record<string, unknown>;
 

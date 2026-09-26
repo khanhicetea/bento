@@ -7,30 +7,30 @@
 
 import yargs from "yargs";
 import type { Argv } from "yargs";
-import { isBentoError } from "../domain/errors.ts";
-import { DEFAULT_TEST_STACK_NAME } from "../services/test_stack.ts";
-import { redact } from "../ui/output.ts";
-import { defaultStackRoot } from "./context.ts";
-import { EarlyExit, printVersion, type RunState, type YargsBuilder } from "./shared.ts";
-import { registerAppCommands } from "./subcommands/app.ts";
-import { registerBackupCommands } from "./subcommands/backup.ts";
-import { registerComposeCommand } from "./subcommands/compose.ts";
-import { registerCoreCommands } from "./subcommands/core.ts";
-import { registerDeployCommands } from "./subcommands/deploy.ts";
-import { registerExecCommand } from "./subcommands/exec.ts";
-import { registerLogCommands } from "./subcommands/logs.ts";
-import { registerMaintenanceCommands } from "./subcommands/maintenance.ts";
-import { registerMysqlCommands } from "./subcommands/mysql.ts";
-import { registerPostgresCommands } from "./subcommands/postgres.ts";
-import { registerPermissionsCommands } from "./subcommands/permissions.ts";
-import { registerPhpCommands } from "./subcommands/php.ts";
-import { registerProxyCommands } from "./subcommands/proxy.ts";
-import { registerRcloneCommand } from "./subcommands/rclone.ts";
-import { registerServeCommand } from "./subcommands/serve.ts";
-import { registerStackCommands } from "./subcommands/stack.ts";
-import { registerSqliteCommands } from "./subcommands/sqlite.ts";
-import { registerTemplateCommands } from "./subcommands/template.ts";
-import { registerTlsCommands } from "./subcommands/tls.ts";
+import { isBentoError } from "#/domain/errors.ts";
+import { DEFAULT_TEST_STACK_NAME } from "#/services/test_stack.ts";
+import { redact } from "#/ui/output.ts";
+import { defaultStackRoot } from "#/commands/context.ts";
+import { EarlyExit, printVersion, type RunState, type YargsBuilder } from "#/commands/shared.ts";
+import { registerAppCommands } from "#/commands/subcommands/app.ts";
+import { registerBackupCommands } from "#/commands/subcommands/backup.ts";
+import { registerComposeCommand } from "#/commands/subcommands/compose.ts";
+import { registerCoreCommands } from "#/commands/subcommands/core.ts";
+import { registerDeployCommands } from "#/commands/subcommands/deploy.ts";
+import { registerExecCommand } from "#/commands/subcommands/exec.ts";
+import { registerLogCommands } from "#/commands/subcommands/logs.ts";
+import { registerMaintenanceCommands } from "#/commands/subcommands/maintenance.ts";
+import { registerMysqlCommands } from "#/commands/subcommands/mysql.ts";
+import { registerPostgresCommands } from "#/commands/subcommands/postgres.ts";
+import { registerPermissionsCommands } from "#/commands/subcommands/permissions.ts";
+import { registerPhpCommands } from "#/commands/subcommands/php.ts";
+import { registerProxyCommands } from "#/commands/subcommands/proxy.ts";
+import { registerRcloneCommand } from "#/commands/subcommands/rclone.ts";
+import { registerServeCommand } from "#/commands/subcommands/serve.ts";
+import { registerStackCommands } from "#/commands/subcommands/stack.ts";
+import { registerSqliteCommands } from "#/commands/subcommands/sqlite.ts";
+import { registerTemplateCommands } from "#/commands/subcommands/template.ts";
+import { registerTlsCommands } from "#/commands/subcommands/tls.ts";
 
 function withGlobals<T>(y: Argv<T>) {
   return y

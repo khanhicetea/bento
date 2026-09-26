@@ -2,12 +2,12 @@
  * Managed PHP version lifecycle.
  */
 
-import type { DesiredState, ManagedPhpVersion } from "../domain/state.ts";
-import { isPhpApp, phpImage, phpServiceName } from "../domain/state.ts";
-import { asPhpVersion, PHP_GLOBAL_PROCESS_CAP } from "../domain/types.ts";
-import { conflictError, notFoundError, safetyError, validationError } from "../domain/errors.ts";
-import { compareMajorMinor, parsePhpVersion, unwrap } from "../schemas/validators.ts";
-import type { Platform } from "../platform/mod.ts";
+import type { DesiredState, ManagedPhpVersion } from "#/domain/state.ts";
+import { isPhpApp, phpImage, phpServiceName } from "#/domain/state.ts";
+import { asPhpVersion, PHP_GLOBAL_PROCESS_CAP } from "#/domain/types.ts";
+import { conflictError, notFoundError, safetyError, validationError } from "#/domain/errors.ts";
+import { compareMajorMinor, parsePhpVersion, unwrap } from "#/schemas/validators.ts";
+import type { Platform } from "#/platform/mod.ts";
 
 export function addPhpVersion(
   state: DesiredState,
