@@ -75,20 +75,7 @@ bunRuntime.test("app shell remains scriptable and prune retains its direct exact
   const originalPrompt = globalThis.prompt;
   try {
     assertEquals(await runCli([...base, "init"]), 0);
-    assertEquals(
-      await runCli([
-        ...base,
-        "app",
-        "create",
-        "demo",
-        "--domain",
-        "demo.test",
-        "--database-engine",
-        "sqlite",
-        "--no-apply",
-      ]),
-      0,
-    );
+    assertEquals(await runCli([...base, "app", "create", "demo", "--domain", "demo.test", "--no-apply"]), 0);
     assertEquals(await runCli([...base, "app", "shell", "demo", "--print"]), 0);
     assertEquals(await runCli([...base, "app", "delete", "demo", "--confirm", "delete demo", "--no-apply"]), 0);
     let promptText = "";
