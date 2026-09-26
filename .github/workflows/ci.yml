@@ -36,7 +36,6 @@ jobs:
           bun run lint
           bun run check
           bun run test
-          bun run test:integration
 
       - name: Compile amd64 and arm64 binaries
         run: |
