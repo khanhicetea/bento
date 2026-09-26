@@ -22,6 +22,14 @@ import {
   unregisterBackupSchedule,
 } from "../../src/services/backup_schedule.ts";
 import { runDatabaseBackup } from "../../src/services/database_backup.ts";
+import {
+  finishOperation,
+  finishOperationStep,
+  operationRecordPath,
+  readOperationRecord,
+  startOperationStep,
+  startBackupOperation,
+} from "../../src/services/operation_journal.ts";
 import { applyBackupRetention } from "../../src/services/mysql.ts";
 import { addPostgresVersion } from "../../src/services/postgres.ts";
 import { provisionApp } from "../../src/services/app.ts";
@@ -116,6 +124,7 @@ bunRuntime.test("backup schedule service registers, reports, and unregisters thr
     assertEquals(status.installed, true);
     assertEquals(status.schedule, "15 3 * * *");
     assertEquals(status.lastRun, null);
+    assertEquals(status.lastOperation, null);
 
     assertEquals((await unregisterBackupSchedule(platform)).changed, true);
     assertEquals(crontab, "MAILTO=ops@example.test\n");
@@ -252,6 +261,12 @@ bunRuntime.test("scheduled backup persists bounded redacted last-run records wit
     assertEquals(failed?.exitCode, 1);
     assertEquals(failed?.error?.includes(secret), false);
     assertStringIncludes(failed?.error ?? "", "password=***");
+    const failedOperation = await readOperationRecord(platform, failed!.operationId!);
+    assertEquals(failedOperation.status, "failed");
+    assertEquals(failedOperation.steps[0]?.name, "backup");
+    assertEquals(failedOperation.steps[0]?.status, "failed");
+    assertEquals(failedOperation.steps[0]?.error?.includes(secret), false);
+    assertEquals((await platform.fs.stat(operationRecordPath(platform, failedOperation.id))).mode & 0o777, 0o600);
 
     const recordPath = backupScheduleLastRunPath(platform);
     assertEquals((await platform.fs.stat(recordPath)).mode & 0o777, 0o600);
@@ -262,10 +277,82 @@ bunRuntime.test("scheduled backup persists bounded redacted last-run records wit
     assertEquals(succeeded?.status, "succeeded");
     assertEquals(succeeded?.exitCode, 0);
     assertEquals(succeeded?.artifactCount, 0);
+    const succeededOperation = await readOperationRecord(platform, succeeded!.operationId!);
+    assertEquals(succeededOperation.status, "succeeded");
+    assertEquals(
+      succeededOperation.steps.map((step) => step.name),
+      ["backup"],
+    );
   } finally {
     await bunRuntime.remove(root, { recursive: true });
   }
 });
+
+bunRuntime.test(
+  "scheduled backup overlap does not replace active status; abandoned step is marked interrupted",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-backup-journal-" });
+    try {
+      const platform = testPlatform(root);
+      const operation = await startBackupOperation(platform, "scheduled-backup");
+      await startOperationStep(platform, operation, "backup");
+      const path = backupScheduleLastRunPath(platform);
+      await platform.fs.atomicWriteText(
+        path,
+        `${JSON.stringify({
+          version: 1,
+          operationId: operation.id,
+          status: "running",
+          startedAt: operation.startedAt,
+          finishedAt: null,
+          exitCode: null,
+          artifactCount: 0,
+          artifactBytes: 0,
+          artifacts: [],
+          omittedCount: 0,
+        })}\n`,
+        0o600,
+      );
+      const release = await platform.lock.tryExclusive(join(platform.paths.paths.lockDir, "scheduled-backup.lock"));
+      await assertRejects(() => runScheduledBackup(platform, createEmptyState()), Error, "another scheduled backup");
+      assertEquals((await getBackupScheduleStatus(platform)).lastRun?.status, "running");
+      await release!();
+      const interrupted = await getBackupScheduleStatus(platform);
+      assertEquals(interrupted.lastRun?.status, "interrupted");
+      assertEquals(interrupted.lastOperation?.status, "interrupted");
+      assertEquals((await readOperationRecord(platform, operation.id)).steps[0]?.status, "interrupted");
+      assertEquals((await readBackupScheduleLastRun(platform))?.status, "interrupted");
+      await runScheduledBackup(platform, createEmptyState());
+      assertEquals((await readOperationRecord(platform, operation.id)).status, "interrupted");
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
+
+bunRuntime.test(
+  "operation evidence distinguishes successful dump from failed upload without storing secrets",
+  async () => {
+    const root = await bunRuntime.makeTempDir({ prefix: "bento-backup-upload-evidence-" });
+    try {
+      const platform = testPlatform(root);
+      const operation = await startBackupOperation(platform, "scheduled-backup");
+      await startOperationStep(platform, operation, "backup");
+      await finishOperationStep(platform, operation);
+      await startOperationStep(platform, operation, "upload");
+      await finishOperation(platform, operation, new Error("password=hidden-value upload failed"));
+      const persisted = await readOperationRecord(platform, operation.id);
+      assertEquals(persisted.status, "failed");
+      assertEquals(
+        persisted.steps.map((step) => step.status),
+        ["succeeded", "failed"],
+      );
+      assertEquals(persisted.steps[1]?.error?.includes("hidden-value"), false);
+    } finally {
+      await bunRuntime.remove(root, { recursive: true });
+    }
+  },
+);
 
 bunRuntime.test("backup retention removes only allowlisted regular dump files", async () => {
   const root = await bunRuntime.makeTempDir({

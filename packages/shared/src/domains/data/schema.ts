@@ -56,6 +56,29 @@ export const databaseRuntimeSchema = databaseActivityBaseSchema.extend({
 
 export const databaseActivitySchema = databaseActivityBaseSchema;
 
+export const backupRunsSchema = z.object({
+  runs: z.array(
+    z.object({
+      id: z.string().regex(/^op_[a-f0-9]{16}$/),
+      status: z.enum(["running", "succeeded", "failed", "interrupted"]),
+      startedAt: z.string().datetime(),
+      finishedAt: z.string().datetime().nullable(),
+      progress: z
+        .object({ completed: z.number().int().nonnegative(), total: z.number().int().nonnegative() })
+        .optional(),
+      steps: z.array(
+        z.object({
+          name: z.enum(["backup", "upload"]),
+          status: z.enum(["running", "succeeded", "failed", "interrupted"]),
+          error: z.string().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export const startBackupResultSchema = z.object({ id: z.string().regex(/^op_[a-f0-9]{16}$/) });
+
 export const databaseBackupResultSchema = z.object({
   artifacts: z.array(z.object({ name: z.string(), database: z.string(), bytes: z.number().int().nonnegative() })),
 });

@@ -1,6 +1,8 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  backupRunsSchema,
+  startBackupResultSchema,
   databaseActivitySchema,
   databaseBackupResultSchema,
   databaseRestoreResultSchema,
@@ -13,6 +15,8 @@ const backupEngine = z.enum(["mysql", "postgres", "sqlite"]);
 
 export const dataContract = oc.router({
   overview: oc.input(z.object({}).optional()).output(dataOverviewSchema),
+  backupRuns: oc.input(z.object({}).optional()).output(backupRunsSchema),
+  startBackup: oc.input(z.object({ app: z.string().min(1).optional() })).output(startBackupResultSchema),
   runtime: oc.input(z.object({ service: z.string().min(1), engine: relationalEngine })).output(databaseRuntimeSchema),
   activity: oc.input(z.object({ service: z.string().min(1), engine: relationalEngine })).output(databaseActivitySchema),
   backup: oc

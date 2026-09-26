@@ -3,6 +3,7 @@ import { implement } from "@orpc/server";
 import { operationsContract, type OperationsOverview } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
 import { runDatabaseBackup } from "#/services/database_backup.ts";
+import { getBackupScheduleRunStatus } from "#/services/backup_schedule.ts";
 import { drainDeploy } from "#/services/deploy.ts";
 import { runDoctor } from "#/services/doctor.ts";
 import { runStackMaintenance } from "#/services/maintenance.ts";
@@ -14,6 +15,25 @@ const os = implement(operationsContract);
 export function createOperationsRouter(ctx: CliContext) {
   return os.router({
     overview: os.overview.handler(async () => await operationsOverview(ctx)),
+    backupRunStatus: os.backupRunStatus.handler(async () => {
+      const { lastRun, lastOperation } = await getBackupScheduleRunStatus(ctx.platform);
+      return {
+        lastRun: lastRun && {
+          operationId: lastRun.operationId,
+          status: lastRun.status,
+          startedAt: lastRun.startedAt,
+          finishedAt: lastRun.finishedAt,
+          artifactCount: lastRun.artifactCount,
+          artifactBytes: lastRun.artifactBytes,
+          error: lastRun.error,
+        },
+        lastOperation: lastOperation && {
+          id: lastOperation.id,
+          status: lastOperation.status,
+          steps: lastOperation.steps.map((step) => ({ name: step.name, status: step.status, error: step.error })),
+        },
+      };
+    }),
     stackAction: os.stackAction.handler(async ({ input }) => {
       await ctx.operations.stackAction(input.action, input.confirmation);
       return completed(`Stack ${input.action} completed`, ctx);

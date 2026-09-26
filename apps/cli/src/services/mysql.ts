@@ -522,11 +522,12 @@ export async function runRestore(platform: Platform, state: DesiredState, req: R
       ? `zstd -dc -- ${shellQuote(containerFile)}`
       : `cat -- ${shellQuote(containerFile)}`;
 
+  // CREATE DATABASE without IF NOT EXISTS refuses an existing target before importing SQL.
   // Create and import in the matching MySQL container. Both clients use the
   // generated root option file and local mysqld Unix socket.
   const createSql = req.replaceOriginal
     ? `DROP DATABASE IF EXISTS ${mysqlIdent(dbName)}; CREATE DATABASE ${mysqlIdent(dbName)};`
-    : `CREATE DATABASE IF NOT EXISTS ${mysqlIdent(dbName)};`;
+    : `CREATE DATABASE ${mysqlIdent(dbName)};`;
   const script = [
     "set -e",
     "set -o pipefail",

@@ -656,6 +656,8 @@ bunRuntime.test("F1 restore imports in-container from the writable backup bind",
     const call = process.calls[0]!;
     const script = call.command.at(-1) ?? "";
     assertEquals(script.includes("zstd -dc --"), true);
+    assertEquals(script.includes("CREATE DATABASE `alpha_restore`;"), true);
+    assertEquals(script.includes("CREATE DATABASE IF NOT EXISTS `alpha_restore`"), false);
     assertEquals(script.includes("/var/backups/bento/.restore/"), true);
     assertEquals(script.match(/--defaults-extra-file=\/etc\/bento\/mysql\/root\.cnf/g)?.length, 2);
     assertEquals(call.options?.stdin, undefined);

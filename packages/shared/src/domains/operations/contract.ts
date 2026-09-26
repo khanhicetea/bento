@@ -1,6 +1,7 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 import {
+  backupRunStatusSchema,
   cloudflareTunnelInputSchema,
   operationResultSchema,
   operationsBackupResultSchema,
@@ -13,6 +14,7 @@ import {
 
 export const operationsContract = oc.router({
   overview: oc.input(z.object({}).optional()).output(operationsOverviewSchema),
+  backupRunStatus: oc.input(z.object({}).optional()).output(backupRunStatusSchema),
   stackAction: oc.input(stackActionInputSchema).output(operationResultSchema),
   restartService: oc
     .input(z.object({ service: z.string().min(1).max(100), confirmation: z.string() }))

@@ -83,6 +83,38 @@ export const operationsDoctorSchema = z.object({
   }),
 });
 
+const backupOperationStatusSchema = z.enum(["running", "succeeded", "failed", "interrupted"]);
+
+export const backupRunStatusSchema = z.object({
+  lastRun: z
+    .object({
+      operationId: z
+        .string()
+        .regex(/^op_[a-f0-9]{16}$/)
+        .optional(),
+      status: backupOperationStatusSchema,
+      startedAt: z.string().datetime(),
+      finishedAt: z.string().datetime().nullable(),
+      artifactCount: z.number().int().nonnegative(),
+      artifactBytes: z.number().int().nonnegative(),
+      error: z.string().max(2048).optional(),
+    })
+    .nullable(),
+  lastOperation: z
+    .object({
+      id: z.string().regex(/^op_[a-f0-9]{16}$/),
+      status: backupOperationStatusSchema,
+      steps: z.array(
+        z.object({
+          name: z.enum(["backup", "upload"]),
+          status: backupOperationStatusSchema,
+          error: z.string().max(1024).optional(),
+        }),
+      ),
+    })
+    .nullable(),
+});
+
 export const operationsBackupResultSchema = operationResultSchema.extend({
   artifacts: z.array(
     z.object({

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 const navigation = [
   { href: "/applications", icon: "◫", label: "Applications" },
   { href: "/databases", icon: "▤", label: "Databases" },
+  { href: "/backups", icon: "◧", label: "Backups" },
   { href: "/routing", icon: "↗", label: "Routing & TLS" },
   { href: "/operations", icon: "✓", label: "Operations" },
 ] as const;

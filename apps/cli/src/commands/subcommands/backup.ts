@@ -186,10 +186,12 @@ async function cmdScheduleStatus(_argv: CliArgs, ctx: CliContext): Promise<numbe
     ctx.log.out(`schedule: ${status.schedule ?? "not registered"}`);
     ctx.log.out(`last run: ${status.lastRun?.status ?? "none"}`);
     if (status.lastRun) {
+      if (status.lastRun.operationId) ctx.log.out(`operation: ${status.lastRun.operationId}`);
       ctx.log.out(`started: ${status.lastRun.startedAt}`);
       ctx.log.out(`finished: ${status.lastRun.finishedAt ?? "unknown/interrupted"}`);
       ctx.log.out(`artifacts: ${status.lastRun.artifactCount} (${status.lastRun.artifactBytes} bytes)`);
       if (status.lastRun.error) ctx.log.out(`error: ${status.lastRun.error}`);
+      for (const step of status.lastOperation?.steps ?? []) ctx.log.out(`${step.name}: ${step.status}`);
     }
     ctx.log.out(`on-host backups: ${backupsDir}`);
     ctx.log.out(`rclone upload: ${rcloneTarget ? `${rcloneTarget.remote}:${rcloneTarget.prefix || "/"}` : "disabled"}`);

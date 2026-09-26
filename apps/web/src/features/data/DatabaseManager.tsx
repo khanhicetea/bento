@@ -63,7 +63,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
 
   function restoreBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!artifact || !app || !target) return;
+    if (!artifact || !app || !target || selectedBinding?.resources.includes(target)) return;
     restore.mutate({
       app,
       engine: service.engine,
@@ -338,7 +338,7 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                 <div>
                   <h4 className="m-0 text-base font-semibold">Restore a backup</h4>
                   <p className="m-0 mt-1 text-sm text-muted-foreground">
-                    Restore an artifact to a new or existing application database.
+                    Restore an artifact to an unused app-namespaced verification database.
                   </p>
                 </div>
               </div>
@@ -387,12 +387,15 @@ export function DatabaseManager({ service, data }: { service: Service; data: Dat
                   </label>
                 </div>
                 <Alert className="border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200">
-                  Restoring to an existing name overwrites that database. The target name is used as confirmation.
+                  Existing database names are refused. The source must belong to the selected app and service. A failed
+                  import may leave a partial new database; validate the result.
                 </Alert>
                 <Button
                   type="submit"
                   className="w-full bg-amber-500 text-amber-950 hover:bg-amber-500/90"
-                  disabled={!artifact || !app || !target || restore.isPending}
+                  disabled={
+                    !artifact || !app || !target || selectedBinding?.resources.includes(target) || restore.isPending
+                  }
                 >
                   {restore.isPending && <Spinner />}
                   Restore backup

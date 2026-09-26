@@ -3,12 +3,21 @@
 import { basename, isAbsolute, join } from "node:path";
 import { z } from "zod";
 import type { DesiredState } from "#/domain/state.ts";
-import { isBentoError, platformError, stateError, validationError } from "#/domain/errors.ts";
+import { conflictError, isBentoError, platformError, stateError, validationError } from "#/domain/errors.ts";
 import type { Platform } from "#/platform/mod.ts";
 import { parseCronSchedule } from "#/schemas/validators.ts";
 import { redact } from "#/ui/output.ts";
 import { type DatabaseBackupArtifact, runDatabaseBackup } from "#/services/database_backup.ts";
 import { readRcloneBackupTarget, saveRcloneBackupTarget, uploadBackupArtifacts } from "#/services/rclone.ts";
+import {
+  type OperationRecord,
+  finishOperation,
+  finishOperationStep,
+  interruptOperation,
+  readOperationRecord,
+  startOperationStep,
+  startBackupOperation,
+} from "#/services/operation_journal.ts";
 
 const MARKER_PREFIX = "BENTO BACKUP SCHEDULE";
 const RESULT_VERSION = 1;
@@ -26,7 +35,8 @@ export type BackupScheduleArtifactSummary = {
 
 export type BackupScheduleLastRun = {
   version: 1;
-  status: "running" | "succeeded" | "failed";
+  status: "running" | "succeeded" | "failed" | "interrupted";
+  operationId?: string;
   startedAt: string;
   finishedAt: string | null;
   exitCode: number | null;
@@ -41,6 +51,7 @@ export type BackupScheduleStatus = {
   installed: boolean;
   schedule: string | null;
   lastRun: BackupScheduleLastRun | null;
+  lastOperation: OperationRecord | null;
 };
 
 export type CrontabMergeResult = {
@@ -69,7 +80,11 @@ const artifactSchema = z
 const lastRunSchema = z
   .object({
     version: z.literal(RESULT_VERSION),
-    status: z.enum(["running", "succeeded", "failed"]),
+    status: z.enum(["running", "succeeded", "failed", "interrupted"]),
+    operationId: z
+      .string()
+      .regex(/^op_[a-f0-9]{16}$/)
+      .optional(),
     startedAt: z.string().datetime(),
     finishedAt: z.string().datetime().nullable(),
     exitCode: z.number().int().min(0).max(255).nullable(),
@@ -221,7 +236,18 @@ export async function getBackupScheduleStatus(platform: Platform): Promise<Backu
   return {
     installed: target !== undefined,
     schedule: target ? scheduleFromBlock(target) : null,
-    lastRun: await readBackupScheduleLastRun(platform),
+    ...(await getBackupScheduleRunStatus(platform)),
+  };
+}
+
+// Does not inspect the host crontab: the web server may run in a container without it.
+export async function getBackupScheduleRunStatus(
+  platform: Platform,
+): Promise<Pick<BackupScheduleStatus, "lastRun" | "lastOperation">> {
+  const lastRun = await reconcileInterruptedRun(platform);
+  return {
+    lastRun,
+    lastOperation: lastRun?.operationId ? await readOperationRecord(platform, lastRun.operationId) : null,
   };
 }
 
@@ -254,43 +280,98 @@ export async function readBackupScheduleLastRun(platform: Platform): Promise<Bac
   return parsed.data;
 }
 
-export async function runScheduledBackup(platform: Platform, state: DesiredState): Promise<DatabaseBackupArtifact[]> {
-  const startedAt = platform.clock.nowIso();
-  await writeLastRun(platform, {
-    version: RESULT_VERSION,
-    status: "running",
-    startedAt,
-    finishedAt: null,
-    exitCode: null,
-    artifactCount: 0,
-    artifactBytes: 0,
-    artifacts: [],
-    omittedCount: 0,
-  });
+function scheduleLockPath(platform: Platform): string {
+  return join(platform.paths.paths.lockDir, "scheduled-backup.lock");
+}
+
+async function reconcileInterruptedRun(platform: Platform): Promise<BackupScheduleLastRun | null> {
+  const last = await readBackupScheduleLastRun(platform);
+  if (last?.status !== "running") return last;
+  const release = await platform.lock.tryExclusive(scheduleLockPath(platform));
+  if (!release) return last;
   try {
-    const artifacts = await runDatabaseBackup(platform, state, {
-      scope: "all",
-    });
-    const rcloneTarget = await readRcloneBackupTarget(platform);
-    if (rcloneTarget) await uploadBackupArtifacts(platform, state, artifacts, rcloneTarget);
-    await writeLastRun(platform, terminalRecord(startedAt, platform.clock.nowIso(), artifacts));
-    return artifacts;
-  } catch (cause) {
-    const exitCode = isBentoError(cause) ? cause.exitCode : 1;
-    const message = boundedUtf8(redact(cause instanceof Error ? cause.message : String(cause)), ERROR_MAX_BYTES);
-    await writeLastRun(platform, {
-      version: RESULT_VERSION,
-      status: "failed",
-      startedAt,
+    // Re-read under the lock: a newer attempt may have started meanwhile.
+    const current = await readBackupScheduleLastRun(platform);
+    if (current?.status !== "running") return current;
+    if (current.operationId) {
+      const operation = await readOperationRecord(platform, current.operationId);
+      await interruptOperation(platform, operation);
+    }
+    const interrupted: BackupScheduleLastRun = {
+      ...current,
+      status: "interrupted",
       finishedAt: platform.clock.nowIso(),
-      exitCode,
-      artifactCount: 0,
-      artifactBytes: 0,
-      artifacts: [],
-      omittedCount: 0,
-      error: message,
-    });
-    throw cause;
+      exitCode: 1,
+      error: "Backup runner exited before completing; inspect local artifacts before retrying.",
+    };
+    await writeLastRun(platform, interrupted);
+    return interrupted;
+  } finally {
+    await release();
+  }
+}
+
+export async function runScheduledBackup(platform: Platform, state: DesiredState): Promise<DatabaseBackupArtifact[]> {
+  const release = await platform.lock.tryExclusive(scheduleLockPath(platform));
+  if (!release) throw conflictError("another scheduled backup is running", "Wait for it to finish, then retry.");
+  try {
+    const prior = await readBackupScheduleLastRun(platform);
+    if (prior?.status === "running") {
+      if (prior.operationId) await interruptOperation(platform, await readOperationRecord(platform, prior.operationId));
+      await writeLastRun(platform, {
+        ...prior,
+        status: "interrupted",
+        finishedAt: platform.clock.nowIso(),
+        exitCode: 1,
+        error: "Backup runner exited before completing; inspect local artifacts before retrying.",
+      });
+    }
+    const operation = await startBackupOperation(platform, "scheduled-backup");
+    const startedAt = operation.startedAt;
+    let artifacts: DatabaseBackupArtifact[] = [];
+    try {
+      await writeLastRun(platform, {
+        version: RESULT_VERSION,
+        operationId: operation.id,
+        status: "running",
+        startedAt,
+        finishedAt: null,
+        exitCode: null,
+        artifactCount: 0,
+        artifactBytes: 0,
+        artifacts: [],
+        omittedCount: 0,
+      });
+      await startOperationStep(platform, operation, "backup");
+      artifacts = await runDatabaseBackup(platform, state, { scope: "all" });
+      await finishOperationStep(platform, operation);
+      const rcloneTarget = await readRcloneBackupTarget(platform);
+      if (rcloneTarget && artifacts.length) {
+        await startOperationStep(platform, operation, "upload");
+        await uploadBackupArtifacts(platform, state, artifacts, rcloneTarget);
+        await finishOperationStep(platform, operation);
+      }
+      await finishOperation(platform, operation);
+      await writeLastRun(platform, {
+        ...terminalRecord(startedAt, platform.clock.nowIso(), artifacts),
+        operationId: operation.id,
+      });
+      return artifacts;
+    } catch (cause) {
+      const exitCode = isBentoError(cause) ? cause.exitCode : 1;
+      const message = boundedUtf8(redact(cause instanceof Error ? cause.message : String(cause)), ERROR_MAX_BYTES);
+      if (operation.status === "running") await finishOperation(platform, operation, cause);
+      await writeLastRun(platform, {
+        ...terminalRecord(startedAt, platform.clock.nowIso(), artifacts),
+        operationId: operation.id,
+        status: "failed",
+        exitCode,
+        error: message,
+      });
+      throw cause;
+    }
+  } finally {
+    await release();
   }
 }
 

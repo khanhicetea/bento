@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, CheckCircle2, FileText, Play, Rocket, RotateCw, Square, Stethoscope, Wrench } from "lucide-react";
+import { Link } from "wouter";
 import { useState } from "react";
 import { orpc } from "../../api/client.ts";
 import { ConfirmOperationDialog } from "./ConfirmOperationDialog.tsx";
@@ -33,19 +34,11 @@ export function OperationsControls({ stackName }: { stackName: string }) {
   };
   const stack = useMutation(orpc.operations.stackAction.mutationOptions({ onSuccess: completed }));
   const apply = useMutation(orpc.operations.apply.mutationOptions({ onSuccess: completed }));
-  const backup = useMutation(orpc.operations.backup.mutationOptions({ onSuccess: completed }));
   const doctor = useMutation(orpc.operations.doctor.mutationOptions());
   const maintenance = useMutation(orpc.operations.maintenance.mutationOptions({ onSuccess: completed }));
   const deploy = useMutation(orpc.operations.drainDeploy.mutationOptions({ onSuccess: completed }));
-  const busy =
-    stack.isPending ||
-    apply.isPending ||
-    backup.isPending ||
-    doctor.isPending ||
-    maintenance.isPending ||
-    deploy.isPending;
-  const error =
-    applicationsQuery.error ?? stack.error ?? apply.error ?? backup.error ?? maintenance.error ?? deploy.error;
+  const busy = stack.isPending || apply.isPending || doctor.isPending || maintenance.isPending || deploy.isPending;
+  const error = applicationsQuery.error ?? stack.error ?? apply.error ?? maintenance.error ?? deploy.error;
 
   function lifecycle(action: "start" | "stop" | "restart") {
     setNotice(null);
@@ -141,9 +134,11 @@ export function OperationsControls({ stackName }: { stackName: string }) {
               {apply.isPending ? <Spinner /> : <Wrench className="size-4" aria-hidden="true" />}
               {apply.isPending ? "Applying…" : "Render & apply"}
             </Button>
-            <Button variant="outline" disabled={busy} onClick={() => backup.mutate({})}>
-              {backup.isPending ? <Spinner /> : <Archive className="size-4" aria-hidden="true" />}
-              {backup.isPending ? "Backing up…" : "Back up databases"}
+            <Button variant="outline" asChild>
+              <Link href="/backups">
+                <Archive className="size-4" aria-hidden="true" />
+                Backups
+              </Link>
             </Button>
             <Button variant="outline" disabled={busy} onClick={() => maintenance.mutate({ retainDays: 14 })}>
               {maintenance.isPending ? <Spinner /> : <RotateCw className="size-4" aria-hidden="true" />}
@@ -204,19 +199,6 @@ export function OperationsControls({ stackName }: { stackName: string }) {
         </div>
       </div>
 
-      {backup.data?.artifacts.length ? (
-        <Alert className="mt-5">
-          <Archive aria-hidden="true" />
-          <div>
-            <strong className="font-medium">Backup complete</strong>
-            <span className="ml-1 text-muted-foreground">
-              {backup.data.artifacts
-                .map((artifact) => `${artifact.engine}:${artifact.database} (${formatBytes(artifact.bytes)})`)
-                .join(" · ")}
-            </span>
-          </div>
-        </Alert>
-      ) : null}
       <Dialog open={doctorOpen} onOpenChange={setDoctorOpen}>
         <DialogContent className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[1000px] gap-4 overflow-y-auto p-6 max-[640px]:p-4 sm:!max-w-[1000px]">
           <DialogHeader>
@@ -427,12 +409,6 @@ export function ServiceRestartButton({ service }: { service: string }) {
       )}
     </>
   );
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDate(value: string | number) {

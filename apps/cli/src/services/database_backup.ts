@@ -39,6 +39,7 @@ export async function runDatabaseBackup(
   platform: Platform,
   state: DesiredState,
   req: DatabaseBackupRequest,
+  onProgress?: (completed: number, total: number) => Promise<void>,
 ): Promise<DatabaseBackupArtifact[]> {
   const release = await platform.lock.tryExclusive(join(platform.paths.paths.lockDir, "database-backup.lock"));
   if (!release) {
@@ -51,6 +52,7 @@ export async function runDatabaseBackup(
     const targets = resolveTargets(state, req);
     const artifacts: DatabaseBackupArtifact[] = [];
     const compress = req.compress ?? "zstd";
+    if (onProgress) await onProgress(0, targets.length);
 
     // Retention is deliberately deferred until every engine adapter succeeds.
     // Earlier valid artifacts remain if a later target fails.
@@ -80,6 +82,7 @@ export async function runDatabaseBackup(
         default:
           assertNever(target.engine);
       }
+      if (onProgress) await onProgress(artifacts.length, targets.length);
     }
     await applyBackupRetention(platform, artifacts, 10);
     return artifacts;

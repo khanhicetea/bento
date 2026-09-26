@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createRouterClient } from "@orpc/server";
 import {
   addApplicationDatabaseInputSchema,
+  backupRunStatusSchema,
   applicationListSchema,
   removeApplicationInputSchema,
   saveApplicationInputSchema,
@@ -11,6 +12,9 @@ import {
   webContract,
 } from "@bento/shared";
 import { createApplicationsRouter, toApplication } from "../../src/server/domains/applications/router.ts";
+import { createOperationsRouter } from "../../src/server/domains/operations/router.ts";
+import { createDataRouter } from "../../src/server/domains/data/router.ts";
+import { runScheduledBackup } from "../../src/services/backup_schedule.ts";
 import { createEmptyState } from "../../src/domain/state.ts";
 import { provisionApp } from "../../src/services/app.ts";
 import { createPlatform } from "../../src/platform/mod.ts";
@@ -108,6 +112,92 @@ describe("web API contract", () => {
         schedulers: [{ app: "demo", path: "/apps/demo/" }],
       }),
     ).toThrow();
+  });
+
+  test("backup run status is available without host crontab access and follows the shared contract", async () => {
+    const root = await runtime.makeTempDir({ prefix: "bento-web-backup-status-" });
+    try {
+      const ctx = createContext({ stackRoot: root, repoRoot: runtime.cwd() });
+      const runner = createRecordingProcessRunner(() => {
+        throw new Error("web process must not access the host crontab");
+      });
+      ctx.platform.process = runner;
+      const client = createRouterClient(createOperationsRouter(ctx));
+      expect(backupRunStatusSchema.parse(await client.backupRunStatus({}))).toEqual({
+        lastRun: null,
+        lastOperation: null,
+      });
+      await runScheduledBackup(ctx.platform, createEmptyState());
+      const result = backupRunStatusSchema.parse(await client.backupRunStatus({}));
+      expect(result.lastRun?.status).toBe("succeeded");
+      expect(result.lastOperation?.steps).toEqual([{ name: "backup", status: "succeeded" }]);
+      expect(result.lastRun?.operationId).toBe(result.lastOperation?.id);
+      expect(runner.calls).toHaveLength(0);
+    } finally {
+      await runtime.remove(root, { recursive: true });
+    }
+  });
+
+  test("web restore refuses existing targets and artifacts from another binding before database side effects", async () => {
+    const root = await runtime.makeTempDir({ prefix: "bento-web-restore-guard-" });
+    try {
+      const ctx = createContext({ stackRoot: root, repoRoot: runtime.cwd() });
+      const state = await ctx.store.init();
+      const next = provisionApp(ctx.platform, state, { slug: "demo", domain: "demo.test", createDatabase: true }).state;
+      await ctx.store.save(next);
+      const dir = `${ctx.platform.paths.paths.backupsDir}/mysql84/demo`;
+      await ctx.platform.fs.mkdirp(dir);
+      await ctx.platform.fs.writeText(`${dir}/dump.sql.zst`, "SELECT 1;", 0o600);
+      const runner = createRecordingProcessRunner(() => {
+        throw new Error("database must not be touched");
+      });
+      ctx.platform.process = runner;
+      const client = createRouterClient(createDataRouter(ctx));
+      await expect(
+        client.restore({
+          app: "demo",
+          engine: "mysql",
+          artifact: "mysql84/demo/dump.sql.zst",
+          targetDatabase: "demo",
+          confirmation: "demo",
+        }),
+      ).rejects.toThrow("unused target");
+      await expect(
+        client.restore({
+          app: "demo",
+          engine: "mysql",
+          artifact: "mysql84/other/dump.sql.zst",
+          targetDatabase: "demo_verify",
+          confirmation: "demo_verify",
+        }),
+      ).rejects.toThrow("recorded database binding");
+      expect(runner.calls).toHaveLength(0);
+      const release = await ctx.platform.lock.tryExclusive(`${ctx.platform.paths.paths.lockDir}/database-backup.lock`);
+      try {
+        await expect(
+          client.restore({
+            app: "demo",
+            engine: "mysql",
+            artifact: "mysql84/demo/dump.sql.zst",
+            targetDatabase: "demo_verify",
+            confirmation: "demo_verify",
+          }),
+        ).rejects.toThrow("logical backup is running");
+      } finally {
+        await release!();
+      }
+      expect(runner.calls).toHaveLength(0);
+      const started = await client.startBackup({ app: "demo" });
+      expect(started.id).toMatch(/^op_[a-f0-9]{16}$/);
+      let backupStatus = (await client.backupRuns({})).runs.find((run) => run.id === started.id)?.status;
+      for (let n = 0; n < 30 && backupStatus === "running"; n++) {
+        await Bun.sleep(5);
+        backupStatus = (await client.backupRuns({})).runs.find((run) => run.id === started.id)?.status;
+      }
+      expect(backupStatus).toBe("failed");
+    } finally {
+      await runtime.remove(root, { recursive: true });
+    }
   });
 
   test("application deploy summary stays in its domain and never exposes argv secrets", () => {

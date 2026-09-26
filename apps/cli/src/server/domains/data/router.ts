@@ -3,9 +3,11 @@ import { implement } from "@orpc/server";
 import { dataContract, type DatabaseActivity, type DatabaseRuntime, type DataOverview } from "@bento/shared";
 import type { CliContext } from "#/commands/context.ts";
 import type { AppDatabaseBinding } from "#/domain/state.ts";
+import { validationError } from "#/domain/errors.ts";
 import { queryDatabaseSizes, queryProcesslist } from "#/services/mysql.ts";
 import { queryPostgresActivity, queryPostgresDatabaseSizes } from "#/services/postgres.ts";
 import { requireMysqlRootPassword, requirePostgresRootPassword } from "#/services/stack_env.ts";
+import { listWebBackupRuns, startWebBackup } from "#/services/web_backup.ts";
 import { redact } from "#/ui/output.ts";
 
 const os = implement(dataContract);
@@ -13,6 +15,21 @@ const os = implement(dataContract);
 export function createDataRouter(ctx: CliContext) {
   return os.router({
     overview: os.overview.handler(async () => await dataOverview(ctx)),
+    backupRuns: os.backupRuns.handler(async () => ({
+      runs: (await listWebBackupRuns(ctx.platform)).map((run) => ({
+        id: run.id,
+        status: run.status,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        progress: run.progress,
+        steps: run.steps.map((step) => ({ name: step.name, status: step.status, error: step.error })),
+      })),
+    })),
+    startBackup: os.startBackup.handler(async ({ input }) => {
+      const state = await ctx.store.load();
+      const operation = await startWebBackup(ctx.platform, state, input.app);
+      return { id: operation.id };
+    }),
     runtime: os.runtime.handler(async ({ input }) => await databaseRuntime(ctx, input)),
     activity: os.activity.handler(async ({ input }) => await databaseActivity(ctx, input)),
     backup: os.backup.handler(async ({ input }) => {
@@ -43,6 +60,21 @@ export function createDataRouter(ctx: CliContext) {
     restore: os.restore.handler(async ({ input }) => {
       if (input.confirmation !== input.targetDatabase)
         throw new Error("confirmation must exactly match the target database");
+      const state = await ctx.store.load();
+      const binding = state.apps[input.app]?.databases.find(
+        (item) =>
+          item.engine === input.engine &&
+          input.artifact.startsWith(`${item.service}/`) &&
+          item.databases.some((database) => input.artifact.startsWith(`${item.service}/${database.name}/`)),
+      );
+      if (!binding) {
+        throw validationError("backup source must belong to a recorded database binding of this app and engine");
+      }
+      if (binding.databases.some((database) => database.name === input.targetDatabase)) {
+        throw validationError(
+          "verification restore requires an unused target; production replacement is not available in the web UI",
+        );
+      }
       const file = await ctx.data.resolveBackupArtifact(input.artifact);
       await ctx.data.restore({
         file,
