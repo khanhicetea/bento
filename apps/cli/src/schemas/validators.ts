@@ -4,7 +4,6 @@
  */
 
 import { z } from "zod";
-import semver from "semver";
 import { CronExpressionParser } from "cron-parser";
 import { validationError } from "#/domain/errors.ts";
 import { FPM_PROFILES } from "#/domain/types.ts";
@@ -81,23 +80,27 @@ export const domainNameSchema = z
     }
   });
 
-/** PHP version like 8.3, 8.4, 8.5 — major.minor only, validated via semver coerce. */
+function isMajorMinorVersion(value: string): boolean {
+  if (!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(value)) return false;
+  try {
+    Bun.semver.order(`${value}.0`, `${value}.0`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** PHP version like 8.3, 8.4, 8.5 — major.minor only. */
 export const phpVersionSchema = z
   .string()
   .min(1, "must not be empty")
-  .refine(
-    (v) => /^\d+\.\d+$/.test(v) && semver.coerce(v) !== null,
-    "must look like major.minor (e.g. 8.5)",
-  );
+  .refine(isMajorMinorVersion, "must look like major.minor (e.g. 8.5)");
 
 /** MySQL version like 8.0, 8.4, 5.7 */
 export const mysqlVersionSchema = z
   .string()
   .min(1, "must not be empty")
-  .refine(
-    (v) => /^\d+\.\d+$/.test(v) && semver.coerce(v) !== null,
-    "must look like major.minor (e.g. 8.4)",
-  );
+  .refine(isMajorMinorVersion, "must look like major.minor (e.g. 8.4)");
 
 /** PostgreSQL managed versions use official major-only tags (for example 17). */
 export const postgresVersionSchema = z
@@ -250,12 +253,12 @@ export function parseUidGid(value: unknown, field: string): ParseResult<number> 
 }
 
 /**
- * Compare major.minor product versions (PHP/MySQL) using semver.
- * Values like "8.4" are coerced to 8.4.0 for ordering.
+ * Compare major.minor product versions (PHP/MySQL) using Bun's semver ordering.
+ * Normalize to three components so "8.4" compares as "8.4.0".
  */
 export function compareMajorMinor(a: string, b: string): number {
-  const ca = semver.coerce(a);
-  const cb = semver.coerce(b);
-  if (ca && cb) return semver.compare(ca, cb);
+  if (isMajorMinorVersion(a) && isMajorMinorVersion(b)) {
+    return Bun.semver.order(`${a}.0`, `${b}.0`);
+  }
   return a.localeCompare(b);
 }

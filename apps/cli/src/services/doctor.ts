@@ -1,7 +1,7 @@
 /** Comprehensive, non-mutating host and stack diagnostics. */
 
 import { basename, dirname, join, resolve } from "node:path";
-import pc from "picocolors";
+import { colors as pc } from "#/ui/colors.ts";
 import type { DesiredState, TlsMode } from "#/domain/state.ts";
 import { isPhpApp } from "#/domain/state.ts";
 import type { Platform, RunOptions, RunResult } from "#/platform/mod.ts";

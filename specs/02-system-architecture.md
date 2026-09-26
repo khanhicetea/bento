@@ -122,11 +122,11 @@ PHP apps are not Compose services: apps assigned to a PHP version share that ver
 | --------------------------- | ------------------------------------------------------------------------------------------------ |
 | Runtime/language            | Bun 1.4.0, strict TypeScript                                                                     |
 | CLI                         | yargs 18                                                                                         |
-| Layout/colors               | cliui 9, picocolors 1                                                                            |
+| Layout/colors               | cliui 9, Bun ANSI colors                                                                          |
 | Runtime validation          | zod 3                                                                                            |
 | Templates                   | mustache 4                                                                                       |
 | Cron parsing                | cron-parser 5                                                                                    |
-| Version ordering            | semver 7                                                                                         |
+| Version ordering            | Bun semver                                                                                       |
 | Standard helpers            | Node-compatible built-ins and focused npm packages                                               |
 | Dependency resolution       | centralized `package.json`, committed `bun.lock`                                                 |
 | Distribution                | `bun build --compile`, embedded `templates`, Linux amd64/arm64; optional control-plane container |

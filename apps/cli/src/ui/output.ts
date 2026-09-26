@@ -1,7 +1,7 @@
 /** Operator-facing output helpers (no secrets). */
 
 import cliui from "cliui";
-import pc from "picocolors";
+import { colors as pc } from "#/ui/colors.ts";
 
 export type Logger = {
   info: (msg: string) => void;

@@ -1,10 +1,12 @@
 import { runtime as bunRuntime, assertEquals, assertThrows } from "../runtime.ts";
 import {
+  compareMajorMinor,
   parseAbsolutePath,
   parseAppSlug,
   parseCronSchedule,
   parseDatabaseService,
   parseDomainName,
+  parseMysqlVersion,
   parsePhpVersion,
   parsePostgresVersion,
   parseSafeRelativePath,
@@ -63,6 +65,15 @@ bunRuntime.test("parseCronSchedule validates, canonicalizes, and rejects injecti
 bunRuntime.test("database version and service validators", () => {
   assertEquals(parsePhpVersion("8.5").ok, true);
   assertEquals(parsePhpVersion("8").ok, false);
+  assertEquals(parseMysqlVersion("8.4").ok, true);
+  for (const invalid of ["08.04", "8.04", "8.4.1", "8.4junk"]) {
+    assertEquals(parsePhpVersion(invalid).ok, false, invalid);
+    assertEquals(parseMysqlVersion(invalid).ok, false, invalid);
+  }
+  assertEquals(compareMajorMinor("8.4", "8.4"), 0);
+  assertEquals(compareMajorMinor("8.10", "8.9"), 1);
+  assertEquals(compareMajorMinor("8.3", "8.4"), -1);
+  assertEquals(compareMajorMinor("bad", "8.4"), "bad".localeCompare("8.4"));
   assertEquals(parsePostgresVersion("17").ok, true);
   for (const invalid of ["17.2", "latest", "v17", "0", ""]) {
     assertEquals(parsePostgresVersion(invalid).ok, false);
