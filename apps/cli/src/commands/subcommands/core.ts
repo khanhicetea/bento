@@ -180,7 +180,9 @@ export async function bootstrapStack(
 
   // Render before Compose so the first start sees the complete mounted config.
   await ctx.operations.apply({ renderOnly: true, skipValidate: true });
-  for (const args of [["config", "--quiet"], ["pull", "--ignore-buildable"], ["build"], ["up", "-d", "--no-build"]]) {
+  // Build local image tags first (including the shared PHP runner image). Compose up
+  // pulls missing upstream images without trying to pull Bento's local-only tags.
+  for (const args of [["config", "--quiet"], ["build"], ["up", "-d", "--no-build"]]) {
     ctx.log.info(`running: docker compose ${args.join(" ")}`);
     const code = await attach(await composeArgs(ctx.platform, state, args));
     if (code !== 0) return code;

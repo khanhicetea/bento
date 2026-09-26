@@ -46,12 +46,12 @@ test("bootstrap stops on Compose failure and does not execute reload", async () 
     return commands.length === 2 ? 23 : 0;
   });
   expect(code).toBe(23);
-  expect(commands.map((command) => command.at(-2))).toEqual(["config", "pull"]);
+  expect(commands.map((command) => command.at(-1))).toEqual(["--quiet", "build"]);
   expect(commands[0]).toContain("--project-directory");
   expect(commands[0]).toContain(ctx.stackRoot);
 });
 
-test("bootstrap pulls, builds, starts, then applies the reload plan", async () => {
+test("bootstrap builds local images before starting and pulling missing upstream images", async () => {
   const ctx = await context();
   await bootstrapStack(ctx, "test-stack", async () => 0);
   const calls: string[] = [];
@@ -69,9 +69,9 @@ test("bootstrap pulls, builds, starts, then applies the reload plan", async () =
   ).toBe(0);
   expect(compose.map((command) => command.find((arg) => ["config", "pull", "build", "up"].includes(arg)))).toEqual([
     "config",
-    "pull",
     "build",
     "up",
   ]);
+  expect(compose.at(-1)?.slice(-3)).toEqual(["up", "-d", "--no-build"]);
   expect(calls.at(-1)).toContain("exec");
 });
