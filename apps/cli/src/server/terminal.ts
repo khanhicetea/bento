@@ -27,7 +27,29 @@ export type TerminalSession = {
   closed: boolean;
 };
 
-export async function prepareTerminalSession(ctx: CliContext, app: string): Promise<TerminalSession> {
+export async function prepareTerminalSession(
+  ctx: CliContext,
+  target: { app: string } | { service: string },
+): Promise<TerminalSession> {
+  if ("service" in target) {
+    const state = await ctx.store.load();
+    const config = await ctx.platform.process.run(await composeArgs(ctx.platform, state, ["config", "--services"]), {
+      cwd: ctx.stackRoot,
+      timeoutMs: 15_000,
+    });
+    if (config.code !== 0 || !config.stdout.split("\n").some((name) => name.trim() === target.service)) {
+      throw new Error("Unknown service");
+    }
+    return {
+      command: await composeArgs(ctx.platform, state, ["exec", "--interactive", "--tty", target.service, "sh"]),
+      cwd: ctx.stackRoot,
+      app: target.service,
+      closed: false,
+      cleanup: async () => undefined,
+    };
+  }
+
+  const app = target.app;
   const state = await ctx.store.load();
   const plan = buildCliExec(ctx.platform, state, app, ["bash"]);
   const containerName = `bento-web-shell-${ctx.platform.random.hex(12)}`;

@@ -24,7 +24,7 @@ import { ApplicationDatabasesDialog } from "./ApplicationDatabasesDialog.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
 import { ApplicationPublicKeyDialog } from "./ApplicationPublicKeyDialog.tsx";
 import { orpc } from "../../api/client.ts";
-import { ApplicationTerminalDialog } from "./ApplicationTerminalDialog.tsx";
+import { TerminalDialog } from "../../components/TerminalDialog.tsx";
 import { RemoveApplicationDialog } from "./RemoveApplicationDialog.tsx";
 import { useApplications } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
@@ -289,9 +289,9 @@ export function ApplicationsPage() {
         />
       )}
       {terminalTarget && (
-        <ApplicationTerminalDialog
+        <TerminalDialog
           key={terminalTarget.slug}
-          application={terminalTarget}
+          target={{ app: terminalTarget.slug }}
           onClose={() => setTerminalTarget(null)}
         />
       )}

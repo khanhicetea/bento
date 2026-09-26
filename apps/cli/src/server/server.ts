@@ -184,20 +184,25 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
           if (Number(request.headers.get("content-length") ?? 0) > 4_096)
             return withSecurity(new Response("Request too large", { status: 413 }));
 
-          let app: string | undefined;
+          let target: { app: string } | { service: string } | undefined;
           try {
             const body = await readBoundedRequestText(request, 4_096);
             const input: unknown = body === null ? null : JSON.parse(body);
-            if (input && typeof input === "object" && "app" in input && typeof input.app === "string")
-              app = input.app.trim();
+            if (input && typeof input === "object" && !("app" in input && "service" in input)) {
+              if ("app" in input && typeof input.app === "string" && input.app.trim())
+                target = { app: input.app.trim() };
+              if ("service" in input && typeof input.service === "string" && input.service.trim())
+                target = { service: input.service.trim() };
+            }
           } catch {
             // The validation response below covers malformed JSON.
           }
-          if (!app) return withSecurity(Response.json({ error: "Application is required" }, { status: 400 }));
+          if (!target)
+            return withSecurity(Response.json({ error: "Application or service is required" }, { status: 400 }));
 
           pendingTerminalCount += 1;
           try {
-            const session = await prepareTerminalSession(ctx, app);
+            const session = await prepareTerminalSession(ctx, target);
             if (request.signal.aborted) {
               pendingTerminalCount -= 1;
               await closeTerminalSession(session);
@@ -216,9 +221,7 @@ export async function runWebServer(ctx: CliContext, options: ServeOptions): Prom
             );
           } catch {
             pendingTerminalCount -= 1;
-            return withSecurity(
-              Response.json({ error: "Unable to prepare shell for this application" }, { status: 400 }),
-            );
+            return withSecurity(Response.json({ error: "Unable to prepare shell for this target" }, { status: 400 }));
           }
         }
 

@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import type { CliContext } from "../../src/commands/context.ts";
+import { createEmptyState } from "../../src/domain/state.ts";
 import {
   closeTerminalSession,
   isSameOriginRequest,
   parseTerminalClientMessage,
+  prepareTerminalSession,
   startTerminalSession,
   type TerminalSession,
 } from "../../src/server/terminal.ts";
@@ -55,6 +58,31 @@ describe("web terminal boundary", () => {
       ),
     ).toBe(false);
     expect(isSameOriginRequest(new Request("http://127.0.0.1:8080/api/terminal"))).toBe(false);
+  });
+
+  test("service shells attach only to configured Compose services", async () => {
+    const commands: string[][] = [];
+    const ctx = {
+      stackRoot: "/tmp/bento-test-stack",
+      store: { load: async () => createEmptyState() },
+      platform: {
+        paths: { paths: { root: "/tmp/bento-test-stack" } },
+        fs: { exists: async () => false },
+        process: {
+          run: async (command: string[]) => {
+            commands.push(command);
+            return { code: 0, stdout: "nginx\nredis\n", stderr: "" };
+          },
+        },
+      },
+    } as unknown as CliContext;
+
+    const session = await prepareTerminalSession(ctx, { service: "redis" });
+    expect(commands[0]?.slice(-2)).toEqual(["config", "--services"]);
+    expect(session.command.slice(-5)).toEqual(["exec", "--interactive", "--tty", "redis", "sh"]);
+    expect(session.cwd).toBe(ctx.stackRoot);
+    await expect(prepareTerminalSession(ctx, { service: "redis;echo injected" })).rejects.toThrow("Unknown service");
+    expect(commands).toHaveLength(2);
   });
 
   test("streams PTY output and closes the transport with the session", async () => {

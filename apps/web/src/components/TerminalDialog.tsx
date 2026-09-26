@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { Application } from "@bento/shared";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { Button } from "@/components/ui/button";
@@ -14,7 +13,14 @@ import {
 
 type ConnectionState = "connecting" | "connected" | "closed" | "error";
 
-export function ApplicationTerminalDialog({ application, onClose }: { application: Application; onClose: () => void }) {
+export function TerminalDialog({
+  target,
+  onClose,
+}: {
+  target: { app: string } | { service: string };
+  onClose: () => void;
+}) {
+  const name = "app" in target ? target.app : target.service;
   const [terminalElement, setTerminalElement] = useState<HTMLDivElement | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [attempt, setAttempt] = useState(0);
@@ -47,7 +53,7 @@ export function ApplicationTerminalDialog({ application, onClose }: { applicatio
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
-    terminal.writeln(`\x1b[90mConnecting to ${application.slug}…\x1b[0m`);
+    terminal.writeln(`\x1b[90mConnecting to ${name}…\x1b[0m`);
 
     function postMessage(message: object) {
       const id = sessionId;
@@ -102,7 +108,7 @@ export function ApplicationTerminalDialog({ application, onClose }: { applicatio
         const createResponse = await fetch("/api/terminal", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ app: application.slug }),
+          body: JSON.stringify(target),
           signal: outputAbort.signal,
         });
         const createResult: unknown = await createResponse.json();
@@ -166,18 +172,20 @@ export function ApplicationTerminalDialog({ application, onClose }: { applicatio
       }
       terminal.dispose();
     };
-  }, [application.slug, attempt, terminalElement]);
+  }, [name, attempt, terminalElement]);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className="flex h-[min(82vh,760px)] w-[calc(100vw-2rem)] max-w-[1400px] flex-col gap-3 overflow-hidden p-0 sm:!max-w-[1400px]"
-        aria-describedby={`${application.slug}-terminal-description`}
+        aria-describedby={`${name}-terminal-description`}
       >
         <DialogHeader className="px-5 pt-5">
-          <DialogTitle>Shell · {application.slug}</DialogTitle>
-          <DialogDescription id={`${application.slug}-terminal-description`}>
-            Ephemeral app CLI as {application.slug}. Closing this dialog stops the container.
+          <DialogTitle>Shell · {name}</DialogTitle>
+          <DialogDescription id={`${name}-terminal-description`}>
+            {"app" in target
+              ? `Ephemeral app CLI as ${name}. Closing this dialog stops the container.`
+              : `Interactive shell in the running ${name} service. Closing this dialog disconnects the shell.`}
           </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 bg-[#09090b] p-3">

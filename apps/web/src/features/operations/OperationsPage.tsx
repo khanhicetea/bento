@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Activity,
   AlertCircle,
@@ -11,8 +11,10 @@ import {
   RefreshCw,
   Server,
   ServerCog,
+  SquareTerminal,
 } from "lucide-react";
 import { DomainError, DomainLoading, EmptyPanel, StackNotReady } from "../../components/DomainState.tsx";
+import { TerminalDialog } from "../../components/TerminalDialog.tsx";
 import { orpc } from "../../api/client.ts";
 import { OperationsControls, ServiceLogsButton, ServiceRestartButton } from "./OperationsControls.tsx";
 import { Alert } from "@/components/ui/alert";
@@ -270,6 +272,7 @@ function SectionHeading({
 }
 
 function RoleCard({ role }: { role: OperationsRole }) {
+  const [shellOpen, setShellOpen] = useState(false);
   const status = roleStatus(role.state);
   return (
     <article className="flex min-w-0 flex-col rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm">
@@ -304,11 +307,16 @@ function RoleCard({ role }: { role: OperationsRole }) {
       </p>
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
         <span className="text-xs text-muted-foreground">Service action</span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <ServiceLogsButton service={role.name} />
+          <Button variant="outline" size="sm" disabled={role.state !== "running"} onClick={() => setShellOpen(true)}>
+            <SquareTerminal className="size-3.5" aria-hidden="true" />
+            Shell
+          </Button>
           <ServiceRestartButton service={role.name} />
         </div>
       </div>
+      {shellOpen && <TerminalDialog target={{ service: role.name }} onClose={() => setShellOpen(false)} />}
     </article>
   );
 }
