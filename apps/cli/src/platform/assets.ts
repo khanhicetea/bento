@@ -1,4 +1,4 @@
-import { dirname, join, normalize } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { encodeHex } from "#/platform/hex.ts";
 import type { AssetResolver, FileSystem } from "#/platform/interfaces.ts";
@@ -15,10 +15,24 @@ import { platformError } from "#/domain/errors.ts";
 export function createAssetResolver(fs: FileSystem, repoRoot?: string): AssetResolver {
   const root = resolveAssetRoot(repoRoot);
 
+  function assertAssetPath(assetPath: string): void {
+    // Assets are relative names, not paths supplied by the host filesystem.
+    // Validate before both lookup and materialization so they agree on the destination.
+    if (
+      !assetPath ||
+      isAbsolute(assetPath) ||
+      assetPath.includes("\\") ||
+      assetPath.includes("\0") ||
+      assetPath.split("/").some((part) => !part || part === "." || part === "..")
+    ) {
+      throw platformError("invalid asset path");
+    }
+  }
+
   async function resolveAsset(assetPath: string): Promise<string> {
-    const clean = normalize(assetPath).replace(/^(\.\.(\/|\\|$))+/, "");
+    assertAssetPath(assetPath);
     // Prefer templates/ tree (source repo layout and compile --include=templates)
-    const candidates = [join(root, "templates", clean), join(root, clean)];
+    const candidates = [join(root, "templates", assetPath), join(root, assetPath)];
     for (const c of candidates) {
       if (await fs.exists(c)) return c;
     }

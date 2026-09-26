@@ -5,6 +5,7 @@ import {
   copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   rename,
@@ -40,8 +41,20 @@ export function createFileSystem(): FileSystem {
     async writeBytes(path, content, mode) {
       try {
         await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, content);
-        if (mode !== undefined) await chmod(path, mode);
+        if (mode === undefined) {
+          await writeFile(path, content);
+        } else {
+          // Open without truncating; restrict an existing file before replacing its bytes.
+          // Creation also uses the requested mode, so new secrets are never written as public files.
+          const handle = await open(path, "a", mode);
+          try {
+            await handle.chmod(mode);
+            await handle.truncate(0);
+            await handle.writeFile(content);
+          } finally {
+            await handle.close();
+          }
+        }
       } catch (cause) {
         throw platformError(`failed to write ${path}`, cause);
       }
@@ -143,7 +156,8 @@ export function createFileSystem(): FileSystem {
       await mkdir(dir, { recursive: true });
       const tmp = join(dir, `.${crypto.randomUUID()}.tmp`);
       try {
-        await writeFile(tmp, content);
+        // A new temp file must not expose secret bytes before chmod runs.
+        await writeFile(tmp, content, { mode });
         if (mode !== undefined) await chmod(tmp, mode);
         await rename(tmp, path);
       } catch (cause) {

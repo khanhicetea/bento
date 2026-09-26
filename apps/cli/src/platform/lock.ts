@@ -19,9 +19,29 @@ async function acquire(path: string, shared: boolean, nonblocking: boolean): Pro
     });
     if (!(child.stdout instanceof ReadableStream)) throw new Error("flock stdout unavailable");
     const reader = child.stdout.getReader();
-    const first = await reader.read();
-    reader.releaseLock();
-    if (first.done || !new TextDecoder().decode(first.value).startsWith("locked\n")) {
+    const marker = new TextEncoder().encode("locked\n");
+    let received = 0;
+    let valid = true;
+    try {
+      while (received < marker.length) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          valid = false;
+          break;
+        }
+        for (const byte of chunk.value) {
+          if (received >= marker.length || byte !== marker[received]) {
+            valid = false;
+            break;
+          }
+          received++;
+        }
+        if (!valid) break;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (!valid || received !== marker.length) {
       const code = await child.exited;
       if (nonblocking && code === 1) return null;
       const stderr = child.stderr instanceof ReadableStream ? await new Response(child.stderr).text() : "";
@@ -88,7 +108,10 @@ export function createMemoryLock(): FileLock {
         }
         await new Promise<void>((resolve) => waiters.push(resolve));
       }
+      let released = false;
       return async () => {
+        if (released) return;
+        released = true;
         exclusiveOwners.delete(path);
         notify();
       };
@@ -108,7 +131,10 @@ export function createMemoryLock(): FileLock {
     async shared(path) {
       while (exclusiveOwners.has(path)) await new Promise<void>((resolve) => waiters.push(resolve));
       sharedCounts.set(path, (sharedCounts.get(path) ?? 0) + 1);
+      let released = false;
       return async () => {
+        if (released) return;
+        released = true;
         const count = (sharedCounts.get(path) ?? 1) - 1;
         if (count <= 0) sharedCounts.delete(path);
         else sharedCounts.set(path, count);
