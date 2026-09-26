@@ -41,7 +41,7 @@ A successful backup process is not the same as recovery readiness.
 
 ### Proposed outcome
 
-Add a read-only recovery assessment and signed/checksummed artifact manifests, available through CLI, JSON, and TUI.
+Add a read-only recovery assessment and signed/checksummed artifact manifests, available through CLI, JSON, and the web UI.
 
 Suggested command surface:
 

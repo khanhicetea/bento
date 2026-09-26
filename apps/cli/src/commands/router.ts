@@ -66,14 +66,13 @@ function buildParser(state: RunState) {
   let parser = yargs()
     .scriptName("bento")
     .usage(
-      "bento — single-server PHP application operations\n\nUsage: $0 [options] <command> [args]\n\nTip: $0 tui opens the interactive wizard.",
+      "bento — single-server PHP application operations\n\nUsage: $0 [options] <command> [args]",
     )
     .strict()
     .help()
     .alias("h", "help")
     .version(false)
     .exitProcess(false)
-    .recommendCommands()
     .wrap(Math.min(100, yargs().terminalWidth()))
     .epilogue(
       "Environment:\n  BENTO_STACK_ROOT       Default stack root (mutable state)\n  NGINX_HOST_NETWORK     1 (default) for host mode; 0 for stack-private bridge mode\n  NGINX_HTTP_PORT        Optional bridge-mode HTTP host port\n  NGINX_HTTPS_PORT       Optional bridge-mode HTTPS host TCP/UDP port",
@@ -110,7 +109,7 @@ function buildParser(state: RunState) {
   parser = registerLogCommands(parser, state);
   parser = registerTemplateCommands(parser, state);
   parser = registerMaintenanceCommands(parser, state);
-  return parser.demandCommand(1, "Specify a command").recommendCommands();
+  return parser.demandCommand(1, "Specify a command");
 }
 
 export async function runCli(argv: string[]): Promise<number> {

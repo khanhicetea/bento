@@ -150,7 +150,7 @@ For a configuration error, read the validator diagnostic first. Check custom fil
 - Render does not continuously converge runtime state. External container or file changes remain until an operator action detects or replaces them.
 - Validation checks service configuration, not every application-level behavior. Verify HTTP, jobs, and data access after relevant changes.
 - Operator-owned templates and overlays are trusted input. Bento preserves them but cannot guarantee that they remain compatible with every upgrade.
-- Routine reads do not migrate database schemas. After an upgrade, run `bento migrate`; `bento serve` and `bento tui` run the same migration gate automatically before startup. Unknown future migrations are refused.
+- Routine reads do not migrate database schemas. After an upgrade, run `bento migrate`; `bento serve` runs the same migration gate automatically before startup. Unknown future migrations are refused.
 
 ## Advanced
 

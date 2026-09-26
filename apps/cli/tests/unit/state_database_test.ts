@@ -212,11 +212,11 @@ bunRuntime.test("state database never falls back to state.json", async () => {
   }
 });
 
-bunRuntime.test("tui runs migrations before interactive-terminal validation", async () => {
-  const root = await bunRuntime.makeTempDir({ prefix: "bento-tui-migrate-" });
+bunRuntime.test("explicit migrate command applies migrations for CLI-only stacks", async () => {
+  const root = await bunRuntime.makeTempDir({ prefix: "bento-cli-migrate-" });
   try {
-    const code = await runCli(["--stack", root, "--repo-root", bunRuntime.cwd(), "tui"]);
-    assertEquals(code, 2);
+    const code = await runCli(["--stack", root, "--repo-root", bunRuntime.cwd(), "migrate"]);
+    assertEquals(code, 0);
     using database = new Database(join(root, "state.db"), { readonly: true });
     const version = database
       .query<{ version: number }, []>("SELECT version FROM schema_migrations ORDER BY version DESC")

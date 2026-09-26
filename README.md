@@ -203,7 +203,7 @@ Choose the permanent Compose project name before initialization. The example use
 docker exec bento bento init --name production
 ```
 
-Initialization creates the private SQLite database `/var/lib/bento/state.db`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. Bento refuses to overwrite an initialized stack. Run `bento migrate` to apply pending database schema migrations; `bento serve` and `bento tui` do this automatically before startup.
+Initialization creates the private SQLite database `/var/lib/bento/state.db`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. Bento refuses to overwrite an initialized stack. Run `bento migrate` to apply pending database schema migrations; `bento serve` does this automatically before startup; CLI-only installations should run `bento migrate` after upgrading.
 
 #### Step 2: Review and change `.env`
 
@@ -263,7 +263,7 @@ Run any Bento CLI command with `docker exec bento bento ...`, for example:
 
 ```bash
 docker exec bento bento status
-docker exec -it bento bento tui
+docker exec -it bento bento app shell demo # attach to an app CLI (replace demo with your slug)
 ```
 
 Restart or remove only the control-plane container without deleting stack state or sibling services:
@@ -295,11 +295,15 @@ PHP runner (one per version) -> s6-overlay PID 1 -> per-app minicrond + root mai
 
 PHP apps share containers by version and isolate through UID/GID, pools, filesystem policy, DB grants, and optional Redis ACL. Managed Node.js, Bun, and Python HTTP process apps use one dedicated private service each while sharing stack Nginx and data services.
 
+## Interface change (first cleanup release)
+
+`bento tui` has been retired; it is now an unknown command. No state fields or migrations were removed. Use `bento serve` for the browser UI (loopback by default, tunnel for remote access), or scriptable commands: `app create|update`, `proxy create --upstream ...`, `template select|return|drift`, `backup`/`restore`, and `sqlite backup local|status|sync|verify|export`. Restores and SQLite exports do not silently replace a live database. CLI-only upgrades must run `bento migrate`; `serve` applies migrations at startup. `app shell`, editor invocation, and the direct exact `app prune` prompt remain available. See the data recovery guides before replacing production data.
+
 ## Command surface
 
 | Area         | Commands                                                                                                                                                                                                                                                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interactive  | `tui` (wizard: apps, reverse proxies with multiple upstreams, databases, and common ops); `serve [--host 127.0.0.1 --port 8080 --open]` (oRPC API + DaisyUI 5 web control plane)                                                                               |
+| Web UI       | `serve [--host 127.0.0.1 --port 8080 --open]` (oRPC API + DaisyUI 5 web control plane; loopback by default)                                                                                                  |
 | Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                            |
 | Diagnostics  | `doctor`, `support-bundle [output]` — validates runtime versions, network/storage/TLS/service health, permissions, volumes, overlays, and secret modes; bundles contain redacted diagnostics only                                                              |
 | Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — Docker harness covering MySQL and PostgreSQL PHP connectivity, PostgreSQL two-app isolation and backup/restore, mixed-engine status/raw export, app operations, and deploy; ACME skipped |
@@ -311,7 +315,7 @@ PHP apps share containers by version and isolate through UID/GID, pools, filesys
 | TLS          | `tls set --app\|--proxy --mode self-ca\|shared\|acme\|external`; `tls ca export --output PATH` (see TLS notes below)                                                                                                                                           |
 | Background   | `cron …` (`cron reload <app>`), `worker …` (`worker signal <app> <name> --signal HUP`)                                                                                                                                                                         |
 | Deploy       | `deploy enable\|disable\|rotate\|status\|drain\|instructions`                                                                                                                                                                                                  |
-| Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal (TUI: Applications → Access logs)                                                                                                              |
+| Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal                                                                                                              |
 | Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]`, `rclone -- <args>` — ephemeral PHP CLI or isolated rclone sidecar                                                                                                                                                  |
 | Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
 | Stack        | `stack ingress show`, `stack ingress set host\|bridge [--http-port N --https-port N]`; `stack export <directory>`, `stack import <directory> [--name NAME --ingress-mode bridge --http-port N --https-port N]`                                                 |
@@ -326,7 +330,7 @@ bento --stack /var/lib/bento serve                 # http://127.0.0.1:8080
 bento --stack /var/lib/bento serve --port 9090 --open
 ```
 
-`serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. Set `WEB_BASIC_AUTH='user:strong-password'` before startup to require HTTP Basic authentication. On a fixed local port in Bento’s root control-plane container, this also establishes an expiring HttpOnly Bento session and enables each app scheduler at `/scheduler/apps/<slug>/` on the same origin; the browser never receives a minicrond token or socket. These paths are not browser security boundaries: scheduler content with an XSS vulnerability could access Bento and other apps on this origin. Use only with trusted operators and scheduler content. Direct non-root source-mode servers leave browser scheduler access disabled because they cannot satisfy minicrond’s Unix peer authentication. Open the Bento listener URL (for example `http://127.0.0.1:<port>`). Without `WEB_BASIC_AUTH`, scheduler browser access remains disabled. Do not expose a non-loopback HTTP listener to an untrusted network; remote ingress still requires trusted TLS and authentication. The UI covers the TUI workflows plus the remaining browser-safe command catalog. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
+`serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. Set `WEB_BASIC_AUTH='user:strong-password'` before startup to require HTTP Basic authentication. On a fixed local port in Bento’s root control-plane container, this also establishes an expiring HttpOnly Bento session and enables each app scheduler at `/scheduler/apps/<slug>/` on the same origin; the browser never receives a minicrond token or socket. These paths are not browser security boundaries: scheduler content with an XSS vulnerability could access Bento and other apps on this origin. Use only with trusted operators and scheduler content. Direct non-root source-mode servers leave browser scheduler access disabled because they cannot satisfy minicrond’s Unix peer authentication. Open the Bento listener URL (for example `http://127.0.0.1:<port>`). Without `WEB_BASIC_AUTH`, scheduler browser access remains disabled. Do not expose a non-loopback HTTP listener to an untrusted network; remote ingress still requires trusted TLS and authentication. Use the web UI for browser-safe operations and scriptable CLI commands for database recovery, templates, and terminal-attached work. For example, `bento sqlite backup verify --app <app>` checks a remote replica, `bento restore` handles guarded relational restores, and `bento template select` edits a custom template. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
 
 The `/operations` page can set or replace a remotely managed Cloudflare Tunnel token. Bento stores it privately under `secrets/`, generates a token-only container environment, and force-recreates the `cloudflared` service in Nginx's network namespace; the service then appears under **Service roles**. Configure application public hostnames in Cloudflare with an origin such as `http://localhost:80`. A loopback `bento serve` origin is reachable this way in host ingress mode, but `WEB_BASIC_AUTH` does not provide transport encryption or trusted-proxy policy: require a trusted Cloudflare Access policy and TLS, and never expose its direct listener to an untrusted network. The local `*.localhost` scheduler gateway is not enabled for non-local listeners.
 

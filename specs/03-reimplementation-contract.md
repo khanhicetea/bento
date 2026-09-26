@@ -51,7 +51,7 @@ Technical choices are evaluated in this order:
 ### D-04 — Versioned strict SQLite desired state
 
 **Context:** Silent compatibility and hand-edited fragments cause ambiguous behavior.  
-**Decision:** Persist desired state in relational tables in private `state.db` using Bun SQLite, with command argument arrays stored as JSON fields on their parent rows. Keep the strict domain schema version distinct from numbered database schema migrations. Reject unsupported domain versions, unknown future database migrations, and invalid reconstructed state. `bento migrate` is the scripted migration entrypoint; `serve` and `tui` run it before startup.
+**Decision:** Persist desired state in relational tables in private `state.db` using Bun SQLite, with command argument arrays stored as JSON fields on their parent rows. Keep the strict domain schema version distinct from numbered database schema migrations. Reject unsupported domain versions, unknown future database migrations, and invalid reconstructed state. `bento migrate` is the scripted migration entrypoint; `serve` runs it before startup; CLI-only operators invoke `migrate` explicitly.
 **Benefits:** Relational integrity for entities and relationships, compact storage for atomic argument arrays, transactional whole-state updates, deterministic generation, and an auditable upgrade path.
 **Trade-offs:** Desired state is no longer hand-editable; incompatible domain changes still require a deliberate product migration.
 **Invariant:** Routine loads never rewrite invalid state; failed migrations leave no applied marker; Bento never falls back to `state.json`.

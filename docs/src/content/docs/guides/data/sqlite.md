@@ -166,7 +166,7 @@ bento sqlite backup export \
 
 Export runs Litestream's full integrity check and publishes the file with mode `0600`. It refuses to overwrite an existing destination and never changes the live app database.
 
-The **Manage SQLite** screen in `bento tui` also provides local compressed backups and the Litestream status, sync, verify, and export operations.
+Use `bento sqlite backup local` for compressed local backups and `bento sqlite backup status|sync|verify|export` for Litestream operations. `verify` restores to a temporary file; `export` writes a separate recovery file, not a live replacement.
 
 `bento backup --app demo` confirms remote synchronization for a `litestream` app and does not create a local logical dump. For a plain `sqlite` app it uses SQLite's online `.backup` API and publishes a compressed artifact under `backups/sqlite/demo/`.
 

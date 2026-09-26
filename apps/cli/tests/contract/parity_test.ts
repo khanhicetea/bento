@@ -74,6 +74,20 @@ async function runBin(
   };
 }
 
+bunRuntime.test("compiled CLI also rejects the retired tui command", async () => {
+  const bin = await resolveBentoBin();
+  if (!bin) {
+    assertEquals(bunRuntime.env.get("REQUIRE_BENTO_BIN"), undefined);
+    return;
+  }
+  const help = await runBin(bin, ["--help"]);
+  assertEquals(help.code, 0);
+  assertEquals(help.stderr.includes("tui"), false);
+  const retired = await runBin(bin, ["tui"]);
+  assertEquals(retired.code, 2);
+  assertEquals(retired.stderr.includes("Unknown argument: tui"), true);
+});
+
 async function collectFiles(root: string, base = ""): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   async function walk(dir: string, rel: string) {

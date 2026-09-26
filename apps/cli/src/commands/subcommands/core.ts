@@ -9,7 +9,6 @@ import {
   resolveTestStackOptions,
   runTestStack,
 } from "../../services/test_stack.ts";
-import { runWizard } from "../wizard.ts";
 import { loadStackComposeEnvironment } from "../../services/stack_env.ts";
 import type { CliContext } from "../context.ts";
 import type { ArgsWith, CliArgs } from "../args.ts";
@@ -25,12 +24,6 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
         printVersion();
         state.code = 0;
       },
-    )
-    .command(
-      "tui",
-      "Interactive wizard (numbered menus for common operations)",
-      () => {},
-      bind(state, cmdTui),
     )
     .command(
       "init",
@@ -126,11 +119,6 @@ export function registerCoreCommands(parser: YargsBuilder, state: RunState): Yar
           }),
       bind(state, cmdTestStack),
     );
-}
-
-async function cmdTui(_argv: CliArgs, ctx: CliContext): Promise<number> {
-  await ctx.store.migrate();
-  return await runWizard(ctx);
 }
 
 async function cmdMigrate(_argv: CliArgs, ctx: CliContext): Promise<number> {

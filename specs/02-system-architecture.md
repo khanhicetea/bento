@@ -51,7 +51,7 @@ The product is organized into these operator-facing areas:
 
 ### 3.1 Entrypoint and command adapters
 
-`apps/cli/src/main.ts` is the source and compiled entrypoint. `apps/cli/src/commands/router.ts` owns global yargs parsing, help, error mapping, and command registration. `apps/cli/src/commands/subcommands/` groups scriptable command handlers; `apps/cli/src/commands/wizard/` provides interactive convenience flows; `apps/cli/src/ui/` handles redacted presentation.
+`apps/cli/src/main.ts` is the source and compiled entrypoint. `apps/cli/src/commands/router.ts` owns global yargs parsing, help, error mapping, and command registration. `apps/cli/src/commands/subcommands/` groups scriptable command handlers; `apps/cli/src/ui/` handles redacted CLI presentation. `bento serve` exposes typed domain operations to the loopback-default web UI.
 
 Command adapters SHOULD parse/present and coordinate use cases. They SHOULD NOT own domain invariants or direct filesystem/process details.
 
@@ -291,7 +291,7 @@ Generated trees may contain client credentials despite being rebuildable and MUS
 7. Initialize private rclone config placeholder.
 8. Render/materialize when requested by the command flow.
 
-`bento migrate` explicitly applies pending database migrations for scripted CLI use. `bento serve` and `bento tui` run the same migration gate before entering the web/API server or interactive wizard. Migration markers and DDL commit together; future/unknown migration versions are refused. Bento never reads `state.json` as a fallback.
+`bento migrate` explicitly applies pending database migrations for scripted CLI use. `bento serve` runs the same migration gate before entering the web/API server. Migration markers and DDL commit together; future/unknown migration versions are refused. Bento never reads `state.json` as a fallback.
 
 ### 9.2 App provisioning
 

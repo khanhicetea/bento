@@ -9,23 +9,18 @@ async function read(path: string): Promise<string> {
   return await bunRuntime.readTextFile(new URL(`${base}${path}`, root));
 }
 
-bunRuntime.test(
-  "PostgreSQL is registered in the wizard with app and operator workflows",
-  async () => {
-    const [wizard, postgres, apps] = await Promise.all([
-      read("src/commands/wizard.ts"),
-      read("src/commands/wizard/postgres.ts"),
-      read("src/commands/wizard/apps.ts"),
-    ]);
-    assertMatch(wizard, /Manage PostgreSQL/);
-    assertMatch(postgres, /Open shell/);
-    assertMatch(postgres, /Logical backup/);
-    assertMatch(postgres, /Logical restore/);
-    assertMatch(apps, /databaseEngine === "postgres"/);
-    assertMatch(apps, /createPostgresAppDatabaseLive/);
-    assertMatch(apps, /Open PostgreSQL shell/);
-  },
-);
+bunRuntime.test("PostgreSQL CLI retains app and operator workflows", async () => {
+  const [postgres, backup, app] = await Promise.all([
+    read("src/commands/subcommands/postgres.ts"),
+    read("src/commands/subcommands/backup.ts"),
+    read("src/commands/subcommands/app.ts"),
+  ]);
+  assertMatch(postgres, /shell/);
+  assertMatch(postgres, /size/);
+  assertMatch(backup, /runDatabaseBackup/);
+  assertMatch(backup, /runDatabaseRestore/);
+  assertMatch(app, /createPostgresAppDatabaseLive|provisionApp/);
+});
 
 bunRuntime.test(
   "test-stack carries PostgreSQL connectivity, isolation, recovery, and transfer proof",

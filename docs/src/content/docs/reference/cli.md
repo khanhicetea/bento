@@ -29,7 +29,7 @@ Put global flags before the command. Use `--stack PATH` for a one-command overri
 
 | Area              | Commands                                               | Guide                                                                                                                 |
 | ----------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Bootstrap/control | `version`, `tui`, `init`, `migrate`, `render`, `apply` | [Start here](/start/first-stack/), [state database](/reference/state/)                                                |
+| Bootstrap/control | `version`, `init`, `migrate`, `render`, `apply`, `serve` | [Start here](/start/first-stack/), [state database](/reference/state/)                                                |
 | Diagnostics       | `status`, `doctor`, `support-bundle`, `test-stack`     | [Diagnostics](/guides/stacks/diagnostics/)                                                                            |
 | Apps/runtime      | `app`, `php`, `exec`                                   | [Apps](/guides/apps/manage/), [PHP](/guides/apps/php-runtimes/), [Node.js/Bun/Python](/guides/apps/process-runtimes/) |
 | Data              | `mysql`, `postgres`, `sqlite`, `backup`, `restore`     | [Relational backup and restore](/guides/data/backup-restore/), [SQLite](/guides/data/sqlite/)                         |

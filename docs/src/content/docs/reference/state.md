@@ -32,7 +32,7 @@ Apply pending database migrations after installing a new Bento binary:
 bento migrate
 ```
 
-Migrations are numbered and transactional. Their DDL and applied marker commit together. Bento refuses unknown future migration versions. `bento init` establishes the current schema before writing initial state, while `bento serve` and `bento tui` automatically run the migration gate before entering the server or wizard.
+Migrations are numbered and transactional. Their DDL and applied marker commit together. Bento refuses unknown future migration versions. `bento init` establishes the current schema before writing initial state, while `bento serve` automatically runs the migration gate before entering the server. Run `bento migrate` after upgrading a CLI-only installation.
 
 Routine state reads do not migrate the database. Bento does not import or fall back to `state.json`.
 

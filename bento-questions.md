@@ -134,7 +134,7 @@ Choose one supported default if the prototype wins. Avoid maintaining two full i
 
 **End-user view:** Use the web UI for discovery and routine work. Keep CLI commands for repeatable actions, emergencies, and SSH-only access.
 
-Retain useful existing wizard prompts, but freeze TUI feature expansion. Do not remove a working interface abruptly. Keep dangerous recovery or prune operations CLI-only where stronger operator interaction is appropriate.
+Decision for the first cleanup PR: retire the standalone wizard after auditing its CLI equivalents. Keep the direct `app prune` confirmation and dangerous recovery operations on the CLI; use `bento serve` for browser-safe workflows. No persisted TUI state is removed.
 
 The web UI remains a privileged administration surface. Keep loopback defaults. Authentication, trusted TLS, session handling, and request-origin checks are product work, not optional polish.
 

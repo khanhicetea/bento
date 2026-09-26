@@ -116,7 +116,7 @@ Bento MUST:
 
 ### 7.1 Bootstrap and operator interface
 
-Bento MUST provide scriptable CLI commands and MAY provide guided TUI flows for common operations. It MUST support initialization, render, apply, status, diagnostics, and a redacted support bundle.
+Bento MUST provide scriptable CLI commands and a loopback-default web control plane. It does not provide a standalone TUI. The CLI MUST support initialization, render, apply, status, diagnostics, and a redacted support bundle; terminal-attached operations and exact destructive confirmations remain CLI operations.
 
 Fresh initialization MUST create:
 

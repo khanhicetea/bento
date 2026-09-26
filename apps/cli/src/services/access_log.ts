@@ -192,7 +192,7 @@ export function buildGoAccessReportPlan(
   return { slug, logPath, reportPath, attach, command, dryRun };
 }
 
-/** Generate HTML, or return a dry-run/attached plan for the CLI or TUI. */
+/** Generate HTML, or return a dry-run/attached plan for the CLI. */
 export async function generateAccessReport(
   platform: Platform,
   state: DesiredState,
@@ -210,7 +210,7 @@ export async function generateAccessReport(
 
   if (!plan.attach) await platform.fs.mkdirp(dirname(plan.reportPath), 0o755);
 
-  // Attached mode must be started by the CLI/TUI with inherited stdio. The
+  // Attached mode must be started by the CLI with inherited stdio. The
   // platform runner intentionally captures output and would break GoAccess's UI.
   if (plan.dryRun || plan.attach) return plan;
 
