@@ -28,7 +28,7 @@ export function TerminalPanel({
       fontFamily: '"SFMono-Regular", Consolas, monospace',
       fontSize: 14,
       scrollback: 5_000,
-      theme: { background: "#09090b", foreground: "#fafafa", cursor: "#fafafa", selectionBackground: "#3f3f46" },
+      theme: { background: "#16140f", foreground: "#ede6d6", cursor: "#e2603f", selectionBackground: "#3a352e" },
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -70,12 +70,12 @@ export function TerminalPanel({
     };
   }, [element, appId, mode, attempt]);
   return (
-    <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="box">
+      <div className="cell flex flex-wrap items-center gap-2 py-2.5!">
         <StateBadge
           state={
             state === "connected"
-              ? "running"
+              ? "healthy"
               : state === "connecting"
                 ? "queued"
                 : state === "error"
@@ -85,27 +85,23 @@ export function TerminalPanel({
           label={state}
         />
         {exitCode !== null && <StateBadge state={exitCode === 0 ? "succeeded" : "failed"} label={`Exit ${exitCode}`} />}
-        {onModeChange && (
-          <>
-            <Button size="sm" variant={mode === "tool" ? "default" : "outline"} onClick={() => onModeChange("tool")}>
-              Tool shell
-            </Button>
-            <Button
-              size="sm"
-              variant={mode === "running" ? "default" : "outline"}
-              onClick={() => onModeChange("running")}
-            >
-              Running instance
-            </Button>
-          </>
-        )}
         {(state === "closed" || state === "error") && (
-          <Button size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+          <Button size="sm" variant="ghost" onClick={() => setAttempt((value) => value + 1)}>
             Reconnect
           </Button>
         )}
+        {onModeChange && (
+          <div className="seg ml-auto">
+            <button type="button" aria-pressed={mode === "tool"} onClick={() => onModeChange("tool")}>
+              Tool shell
+            </button>
+            <button type="button" aria-pressed={mode === "running"} onClick={() => onModeChange("running")}>
+              Live app
+            </button>
+          </div>
+        )}
       </div>
-      <div ref={setElement} className="h-[calc(100vh-18rem)] min-h-96 overflow-hidden rounded-lg bg-zinc-950 p-2" />
+      <div ref={setElement} className="console p-2!" />
     </div>
   );
 }

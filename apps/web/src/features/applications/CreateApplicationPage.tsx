@@ -1,10 +1,10 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Code2, Database, Globe, HardDrive, Lock, Plus, Server, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import { Field, Page, PageHeader } from "../../components/DomainState.tsx";
+import { Cell, Field, KeyValues, PageHeader } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "./useApplications.ts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,11 +29,11 @@ const reservedSlugs = new Set([
   "backup",
   "tool",
 ]);
-const stepLabels = ["Identity & runtime", "Runtime details", "Routing & data", "Review"];
+const stepLabels = ["Basics", "Runtime", "Routing & data", "Review"];
 
 function slugError(slug: string): string | null {
   if (!/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug) || slug.includes("--"))
-    return "Use 3–32 lowercase letters, digits, or single hyphens, starting with a letter.";
+    return "3–32 lowercase letters, digits or single hyphens; start with a letter.";
   if (reservedSlugs.has(slug)) return `“${slug}” is reserved.`;
   return null;
 }
@@ -76,9 +76,7 @@ export function CreateApplicationPage() {
   });
   const [ingress, setIngress] = useState<T.IngressMode>("managed");
   const [route, setRoute] = useState<T.Route>({ tls: "none", redirectHttps: false, accessLog: false });
-  const [domains, setDomains] = useState<string[]>([]);
-  const [domainDraft, setDomainDraft] = useState("");
-  const [domainError, setDomainError] = useState("");
+  const domains = useDomainDraft([]);
   const [binding, setBinding] = useState("sqlite");
   const [resources, setResources] = useState<T.Resources>({ memoryMb: 512, cpuMillis: 1000, pids: 256 });
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -91,7 +89,7 @@ export function CreateApplicationPage() {
       runtime,
       resources,
       ingress,
-      domains,
+      domains: domains.list,
       route,
       bindings: binding === "none" ? [] : [{ engine: engine as T.Engine, service }],
     });
@@ -115,7 +113,7 @@ export function CreateApplicationPage() {
         validRelativePath(http.workdir) &&
         (!http.readyPath || http.readyPath.startsWith("/"));
   const routingValid =
-    (ingress !== "managed" || domains.length > 0) &&
+    (ingress !== "managed" || domains.list.length > 0) &&
     (route.tls !== "external" || /^[a-z0-9][a-z0-9._-]{0,63}$/.test(route.certName ?? "")) &&
     resources.memoryMb >= 64 &&
     resources.memoryMb <= 262144 &&
@@ -125,23 +123,6 @@ export function CreateApplicationPage() {
     resources.pids <= 65536;
   const currentValid = step === 0 ? identityValid : step === 1 ? detailsValid : step === 2 ? routingValid : true;
 
-  function addDomain() {
-    const value = domainDraft.trim().toLowerCase().replace(/\.$/, "");
-    if (!value) return;
-    if (!validDomain(value)) {
-      setDomainError("Enter a valid DNS hostname such as app.example.com.");
-      return;
-    }
-    if (!domains.includes(value)) setDomains((current) => [...current, value]);
-    setDomainDraft("");
-    setDomainError("");
-  }
-  function domainKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" || event.key === ",") {
-      event.preventDefault();
-      addDomain();
-    }
-  }
   function submit(event: FormEvent) {
     event.preventDefault();
     if (step < 3) {
@@ -152,428 +133,443 @@ export function CreateApplicationPage() {
   }
 
   const toolchains = catalog.data?.toolchains ?? {};
+  const managed = ingress === "managed";
   return (
-    <Page>
-      <PageHeader
-        title="Create application"
-        description="Created stopped and unpublished. Next: start, verify, then publish."
-      />
-      <ol className="mb-6 grid grid-cols-2 gap-2 p-0 sm:grid-cols-4" aria-label="Creation progress">
+    <div className="mx-auto max-w-3xl">
+      <PageHeader back={{ href: "/apps", label: "Apps" }} title="New app" description={stepLabels[step]} />
+      <ol className="steps" aria-label={`Step ${step + 1} of ${stepLabels.length}`}>
         {stepLabels.map((label, index) => (
-          <li
-            key={label}
-            className={`flex items-center gap-2 rounded-lg border p-3 text-xs ${index === step ? "border-primary bg-primary/5 font-semibold" : index < step ? "text-success" : "text-muted-foreground"}`}
-            aria-current={index === step ? "step" : undefined}
-          >
-            <span className="grid size-5 shrink-0 place-items-center rounded-full border">
-              {index < step ? <Check className="size-3" /> : index + 1}
-            </span>
-            {label}
+          <li key={label} data-done={index <= step} aria-current={index === step ? "step" : undefined}>
+            <span className="sr-only">{label}</span>
           </li>
         ))}
       </ol>
-      <form onSubmit={submit} className="bento-create-form rounded-xl border bg-card p-5">
-        {step === 0 && (
-          <section className="grid gap-5">
-            <div>
-              <h2 className="m-0 text-lg font-semibold">Identity & runtime</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                The slug and runtime kind are permanent for this app incarnation.
-              </p>
-            </div>
-            <Field
-              label="Slug"
-              hint={slug ? `Home: /home/${slug}` : "3–32 lowercase letters, digits, or single hyphens."}
-            >
-              <Input
-                autoFocus
-                value={slug}
-                aria-invalid={slug.length > 0 && !!slugError(slug)}
-                onChange={(event) => setSlug(event.target.value.toLowerCase())}
-              />
-            </Field>
-            {slug.length > 0 && slugError(slug) && <Alert variant="destructive">{slugError(slug)}</Alert>}
-            <fieldset className="grid gap-3 sm:grid-cols-2">
-              <legend className="mb-2 text-sm font-medium">Runtime</legend>
-              {(
-                [
-                  ["php-fpm", "PHP-FPM", "PHP with local Nginx and managed pool profiles."],
-                  ["http-process", "HTTP process", "A direct argv process listening on an internal port."],
-                ] as const
-              ).map(([value, title, body]) => (
-                <label
-                  key={value}
-                  className={`cursor-pointer rounded-lg border p-4 ${kind === value ? "border-primary bg-primary/5" : ""}`}
-                >
-                  <input
-                    className="sr-only"
-                    type="radio"
+      <form onSubmit={submit}>
+        <div className="box">
+          {step === 0 && (
+            <>
+              <Cell title="Name">
+                <Field label="Slug" hint={slug && !slugError(slug) ? `/home/${slug}` : undefined}>
+                  <Input
+                    autoFocus
+                    placeholder="my-app"
+                    value={slug}
+                    aria-invalid={slug.length > 0 && !!slugError(slug)}
+                    onChange={(event) => setSlug(event.target.value.toLowerCase())}
+                  />
+                </Field>
+                {slug.length > 0 && slugError(slug) && <p className="note note--bad mt-2">{slugError(slug)}</p>}
+              </Cell>
+              <Cell title="Runtime">
+                <div className="choices">
+                  <Choice
                     name="runtime"
-                    value={value}
-                    checked={kind === value}
-                    onChange={() => setKind(value)}
+                    checked={kind === "php-fpm"}
+                    onChange={() => setKind("php-fpm")}
+                    icon={<Code2 className="size-4" />}
+                    title="PHP"
+                    detail="PHP-FPM + Nginx"
                   />
-                  <strong>{title}</strong>
-                  <span className="mt-1 block text-xs text-muted-foreground">{body}</span>
-                </label>
-              ))}
-            </fieldset>
-          </section>
-        )}
+                  <Choice
+                    name="runtime"
+                    checked={kind === "http-process"}
+                    onChange={() => setKind("http-process")}
+                    icon={<Server className="size-4" />}
+                    title="HTTP process"
+                    detail="Node, Bun, Python…"
+                  />
+                </div>
+              </Cell>
+            </>
+          )}
 
-        {step === 1 && (
-          <section className="grid gap-5">
-            <div>
-              <h2 className="m-0 text-lg font-semibold">Runtime details</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Configure how the application starts and becomes ready.
-              </p>
-            </div>
-            {kind === "php-fpm" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="PHP version">
-                  <NativeSelect
-                    value={php.version}
-                    onChange={(event) => setPhp({ ...php, version: event.target.value })}
-                  >
-                    {(catalog.data?.phpVersions ?? [php.version]).map((version) => (
-                      <option key={version}>{version}</option>
-                    ))}
-                  </NativeSelect>
-                </Field>
-                <Field label="Document root" hint="Relative to /home/&lt;slug&gt;/app.">
-                  <Input
-                    value={php.documentRoot}
-                    onChange={(event) => setPhp({ ...php, documentRoot: event.target.value })}
-                  />
-                </Field>
-                <Field label="Routing">
-                  <NativeSelect
-                    value={php.routing}
-                    onChange={(event) => setPhp({ ...php, routing: event.target.value })}
-                  >
-                    <option value="front-controller">Front controller</option>
-                    <option value="legacy">Legacy PHP files</option>
-                  </NativeSelect>
-                </Field>
-                <Field label="Pool profile">
-                  <NativeSelect value={php.pool} onChange={(event) => setPhp({ ...php, pool: event.target.value })}>
-                    {(catalog.data?.poolProfiles ?? [php.pool]).map((pool) => (
-                      <option key={pool}>{pool}</option>
-                    ))}
-                  </NativeSelect>
-                </Field>
-                <Field label="Upload limit (MB)">
-                  <Input
-                    type="number"
-                    min="1"
-                    max="4096"
-                    value={php.uploadLimitMb}
-                    onChange={(event) => setPhp({ ...php, uploadLimitMb: Number(event.target.value) })}
-                  />
-                </Field>
-                <Field label="Release symlink" hint="Optional relative path, such as current.">
-                  <Input
-                    value={php.releaseSymlink ?? ""}
-                    onChange={(event) => setPhp({ ...php, releaseSymlink: event.target.value || undefined })}
-                  />
-                </Field>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Toolchain">
-                    <NativeSelect
-                      value={http.toolchain}
-                      onChange={(event) => {
-                        const toolchain = event.target.value;
-                        setHttp({ ...http, toolchain, version: (toolchains[toolchain] ?? [""]).at(-1) ?? "" });
-                      }}
-                    >
-                      {Object.keys(toolchains).map((toolchain) => (
-                        <option key={toolchain}>{toolchain}</option>
-                      ))}
-                    </NativeSelect>
-                  </Field>
+          {step === 1 &&
+            (kind === "php-fpm" ? (
+              <Cell title="PHP">
+                <div className="grid-3">
                   <Field label="Version">
                     <NativeSelect
-                      value={http.version}
-                      onChange={(event) => setHttp({ ...http, version: event.target.value })}
+                      className="w-full"
+                      value={php.version}
+                      onChange={(event) => setPhp({ ...php, version: event.target.value })}
                     >
-                      {(toolchains[http.toolchain] ?? [http.version]).map((version) => (
+                      {(catalog.data?.phpVersions ?? [php.version]).map((version) => (
                         <option key={version}>{version}</option>
                       ))}
                     </NativeSelect>
                   </Field>
-                </div>
-                <ArgvEditor value={http.argv} onChange={(argv) => setHttp({ ...http, argv })} />
-                <div className="rounded-md bg-muted p-3 text-xs">
-                  <span className="text-muted-foreground">Preview: </span>
-                  <code>{http.argv.join(" ")}</code>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label="Working directory" hint="Relative to /home/&lt;slug&gt;/app.">
+                  <Field label="Pool">
+                    <NativeSelect
+                      className="w-full"
+                      value={php.pool}
+                      onChange={(event) => setPhp({ ...php, pool: event.target.value })}
+                    >
+                      {(catalog.data?.poolProfiles ?? [php.pool]).map((pool) => (
+                        <option key={pool}>{pool}</option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+                  <Field label="Routing">
+                    <NativeSelect
+                      className="w-full"
+                      value={php.routing}
+                      onChange={(event) => setPhp({ ...php, routing: event.target.value })}
+                    >
+                      <option value="front-controller">Front controller</option>
+                      <option value="legacy">Legacy .php files</option>
+                    </NativeSelect>
+                  </Field>
+                  <Field label="Document root">
                     <Input
-                      value={http.workdir}
-                      onChange={(event) => setHttp({ ...http, workdir: event.target.value })}
+                      value={php.documentRoot}
+                      onChange={(event) => setPhp({ ...php, documentRoot: event.target.value })}
                     />
                   </Field>
-                  <Field label="HTTP port">
+                  <Field label="Release symlink">
+                    <Input
+                      placeholder="optional"
+                      value={php.releaseSymlink ?? ""}
+                      onChange={(event) => setPhp({ ...php, releaseSymlink: event.target.value || undefined })}
+                    />
+                  </Field>
+                  <Field label="Upload limit (MB)">
                     <Input
                       type="number"
-                      min="1024"
-                      max="65535"
-                      value={http.port}
-                      onChange={(event) => setHttp({ ...http, port: Number(event.target.value) })}
-                    />
-                  </Field>
-                  <Field label="Readiness path">
-                    <Input
-                      placeholder="/"
-                      value={http.readyPath ?? ""}
-                      onChange={(event) => setHttp({ ...http, readyPath: event.target.value || undefined })}
-                    />
-                  </Field>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        {step === 2 && (
-          <section className="bento-create-step grid gap-5">
-            <div>
-              <h2 className="m-0 text-lg font-semibold">Routing, data & resources</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Choose route ownership and an initial add-only data binding.
-              </p>
-            </div>
-            <div className="bento-form-section">
-              <div className="bento-form-section__heading">
-                <h3>Routing</h3>
-                <p>Choose who owns the route, then add its domains and TLS settings.</p>
-              </div>
-              <fieldset className="grid gap-3 sm:grid-cols-3">
-                <legend className="mb-2 text-sm font-medium">Ingress</legend>
-                {(
-                  [
-                    ["managed", "Managed edge", "Bento owns publication, TLS, and route policy."],
-                    ["external", "External", "Tunnel or operator proxy owns the route."],
-                    ["none", "Private", "No public route is configured."],
-                  ] as const
-                ).map(([value, title, body]) => (
-                  <label
-                    key={value}
-                    className={`cursor-pointer rounded-lg border p-3 ${ingress === value ? "border-primary bg-primary/5" : ""}`}
-                  >
-                    <input
-                      className="sr-only"
-                      type="radio"
-                      name="ingress"
-                      checked={ingress === value}
-                      onChange={() => setIngress(value)}
-                    />
-                    <strong className="text-sm">{title}</strong>
-                    <span className="mt-1 block text-xs text-muted-foreground">{body}</span>
-                  </label>
-                ))}
-              </fieldset>
-              <DomainsInput
-                domains={domains}
-                draft={domainDraft}
-                error={domainError}
-                onDraft={setDomainDraft}
-                onKeyDown={domainKeyDown}
-                onAdd={addDomain}
-                onRemove={(domain) => setDomains((current) => current.filter((value) => value !== domain))}
-              />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="TLS">
-                  <NativeSelect
-                    value={route.tls}
-                    disabled={ingress !== "managed"}
-                    onChange={(event) => {
-                      const tls = event.target.value as T.TLSMode;
-                      setRoute({
-                        ...route,
-                        tls,
-                        certName: tls === "external" ? route.certName : undefined,
-                        redirectHttps: tls === "none" ? false : route.redirectHttps,
-                      });
-                    }}
-                  >
-                    <option value="none">None</option>
-                    <option value="self-signed">Self-signed</option>
-                    <option value="acme">ACME</option>
-                    <option value="external">External certificate</option>
-                  </NativeSelect>
-                </Field>
-                {route.tls === "external" && ingress === "managed" && (
-                  <Field label="Certificate name" hint="Existing directory under edge/certs/external.">
-                    <Input
-                      value={route.certName ?? ""}
-                      onChange={(event) => setRoute({ ...route, certName: event.target.value })}
-                    />
-                  </Field>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-5 text-sm">
-                <label className="flex items-center gap-2">
-                  <Checkbox
-                    checked={route.redirectHttps}
-                    disabled={route.tls === "none" || ingress !== "managed"}
-                    onCheckedChange={(checked) => setRoute({ ...route, redirectHttps: checked === true })}
-                  />
-                  Redirect HTTP to HTTPS
-                </label>
-                <label className="flex items-center gap-2">
-                  <Checkbox
-                    checked={route.accessLog}
-                    disabled={ingress !== "managed"}
-                    onCheckedChange={(checked) => setRoute({ ...route, accessLog: checked === true })}
-                  />
-                  Access log
-                </label>
-              </div>
-              {ingress === "managed" && domains.length === 0 && (
-                <Alert variant="destructive">Add at least one domain for managed ingress.</Alert>
-              )}
-            </div>
-            <div className="bento-form-section">
-              <div className="bento-form-section__heading">
-                <h3>Data</h3>
-                <p>Choose an initial add-only binding for this app.</p>
-              </div>
-              <Field
-                label="Initial data binding"
-                hint="More bindings can be added later; existing bindings cannot be removed."
-              >
-                <NativeSelect value={binding} onChange={(event) => setBinding(event.target.value)}>
-                  <option value="sqlite">SQLite (private file)</option>
-                  {(services.data?.services ?? [])
-                    .filter((service) => service.engine === "mysql" || service.engine === "postgres")
-                    .map((service) => (
-                      <option key={service.name} value={`${service.engine}:${service.name}`}>
-                        {service.engine} {service.version} ({service.name})
-                      </option>
-                    ))}
-                  <option value="none">No database</option>
-                </NativeSelect>
-              </Field>
-            </div>
-            <div className="bento-form-section">
-              <div className="bento-form-section__heading">
-                <h3>Resources</h3>
-                <p>Defaults work for most apps; adjust only when you need to.</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="justify-self-start"
-                onClick={() => setShowAdvanced((value) => !value)}
-                aria-expanded={showAdvanced}
-              >
-                {showAdvanced ? "Hide" : "Show"} advanced resources
-              </Button>
-              {showAdvanced && (
-                <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
-                  <Field label="Memory (MB)">
-                    <Input
-                      type="number"
-                      min="64"
-                      max="262144"
-                      value={resources.memoryMb}
-                      onChange={(event) => setResources({ ...resources, memoryMb: Number(event.target.value) })}
-                    />
-                  </Field>
-                  <Field label="CPU (millicores)">
-                    <Input
-                      type="number"
-                      min="50"
-                      max="256000"
-                      value={resources.cpuMillis}
-                      onChange={(event) => setResources({ ...resources, cpuMillis: Number(event.target.value) })}
-                    />
-                  </Field>
-                  <Field label="Process limit">
-                    <Input
-                      type="number"
-                      min="32"
-                      max="65536"
-                      value={resources.pids}
-                      onChange={(event) => setResources({ ...resources, pids: Number(event.target.value) })}
+                      min="1"
+                      max="4096"
+                      value={php.uploadLimitMb}
+                      onChange={(event) => setPhp({ ...php, uploadLimitMb: Number(event.target.value) })}
                     />
                   </Field>
                 </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {step === 3 && (
-          <section className="grid gap-5">
-            <div>
-              <h2 className="m-0 text-lg font-semibold">Review</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                The application is created stopped and unpublished. Start it, verify readiness, then publish.
-              </p>
-            </div>
-            <dl className="grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-2">
-              <Review label="Slug" value={slug} />
-              <Review label="Home" value={`/home/${slug}`} />
-              <Review
-                label="Runtime"
-                value={
-                  kind === "php-fpm"
-                    ? `PHP ${php.version} · ${php.pool}`
-                    : `${http.toolchain} ${http.version} · ${http.argv.join(" ")}`
-                }
-              />
-              <Review label="Ingress" value={`${ingress}${domains.length ? ` · ${domains.join(", ")}` : ""}`} />
-              <Review label="TLS" value={route.tls} />
-              <Review label="Data" value={binding === "none" ? "No initial binding" : binding} />
-              <Review
-                label="Resources"
-                value={`${resources.memoryMb} MB · ${resources.cpuMillis}m CPU · ${resources.pids} pids`}
-              />
-            </dl>
-            <Alert>Next steps: start → verify → publish. Creation never starts or publishes the app implicitly.</Alert>
-            {create.error && <Alert variant="destructive">{messageOf(create.error)}</Alert>}
-          </section>
-        )}
-
-        <div className="mt-6 flex justify-between gap-3 border-t pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => (step === 0 ? navigate("/apps") : setStep((value) => value - 1))}
-          >
-            <ChevronLeft />
-            {step === 0 ? "Cancel" : "Back"}
-          </Button>
-          <Button type="submit" disabled={!currentValid || create.isPending}>
-            {step === 3 ? (
-              "Create application"
+              </Cell>
             ) : (
               <>
-                Continue
-                <ChevronRight />
+                <Cell title="Toolchain">
+                  <div className="grid-2">
+                    <Field label="Toolchain">
+                      <NativeSelect
+                        className="w-full"
+                        value={http.toolchain}
+                        onChange={(event) => {
+                          const toolchain = event.target.value;
+                          setHttp({ ...http, toolchain, version: (toolchains[toolchain] ?? [""]).at(-1) ?? "" });
+                        }}
+                      >
+                        {Object.keys(toolchains).map((toolchain) => (
+                          <option key={toolchain}>{toolchain}</option>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                    <Field label="Version">
+                      <NativeSelect
+                        className="w-full"
+                        value={http.version}
+                        onChange={(event) => setHttp({ ...http, version: event.target.value })}
+                      >
+                        {(toolchains[http.toolchain] ?? [http.version]).map((version) => (
+                          <option key={version}>{version}</option>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                  </div>
+                </Cell>
+                <Cell title="Command">
+                  <ArgvEditor value={http.argv} onChange={(argv) => setHttp({ ...http, argv })} />
+                </Cell>
+                <Cell title="Serving">
+                  <div className="grid-3">
+                    <Field label="Port">
+                      <Input
+                        type="number"
+                        min="1024"
+                        max="65535"
+                        value={http.port}
+                        onChange={(event) => setHttp({ ...http, port: Number(event.target.value) })}
+                      />
+                    </Field>
+                    <Field label="Working dir">
+                      <Input
+                        value={http.workdir}
+                        placeholder="."
+                        onChange={(event) => setHttp({ ...http, workdir: event.target.value })}
+                      />
+                    </Field>
+                    <Field label="Ready path">
+                      <Input
+                        placeholder="/"
+                        value={http.readyPath ?? ""}
+                        onChange={(event) => setHttp({ ...http, readyPath: event.target.value || undefined })}
+                      />
+                    </Field>
+                  </div>
+                </Cell>
               </>
-            )}
-          </Button>
+            ))}
+
+          {step === 2 && (
+            <>
+              <Cell title="Access">
+                <div className="grid gap-4">
+                  <div className="choices">
+                    <Choice
+                      name="ingress"
+                      checked={managed}
+                      onChange={() => setIngress("managed")}
+                      icon={<Globe className="size-4" />}
+                      title="Public"
+                      detail="Bento edge + TLS"
+                    />
+                    <Choice
+                      name="ingress"
+                      checked={ingress === "external"}
+                      onChange={() => setIngress("external")}
+                      icon={<Server className="size-4" />}
+                      title="External"
+                      detail="Tunnel or own proxy"
+                    />
+                    <Choice
+                      name="ingress"
+                      checked={ingress === "none"}
+                      onChange={() => setIngress("none")}
+                      icon={<Lock className="size-4" />}
+                      title="Private"
+                      detail="No public route"
+                    />
+                  </div>
+                  <DomainsInput state={domains} />
+                  {managed && (
+                    <>
+                      <div className="grid-2">
+                        <Field label="TLS">
+                          <NativeSelect
+                            className="w-full"
+                            value={route.tls}
+                            onChange={(event) => {
+                              const tls = event.target.value as T.TLSMode;
+                              setRoute({
+                                ...route,
+                                tls,
+                                certName: tls === "external" ? route.certName : undefined,
+                                redirectHttps: tls === "none" ? false : route.redirectHttps,
+                              });
+                            }}
+                          >
+                            <option value="none">None</option>
+                            <option value="self-signed">Self-signed</option>
+                            <option value="acme">ACME</option>
+                            <option value="external">External cert</option>
+                          </NativeSelect>
+                        </Field>
+                        {route.tls === "external" && (
+                          <Field label="Certificate name">
+                            <Input
+                              value={route.certName ?? ""}
+                              onChange={(event) => setRoute({ ...route, certName: event.target.value })}
+                            />
+                          </Field>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-5">
+                        <label className="check">
+                          <Checkbox
+                            checked={route.redirectHttps}
+                            disabled={route.tls === "none"}
+                            onCheckedChange={(checked) => setRoute({ ...route, redirectHttps: checked === true })}
+                          />
+                          HTTPS redirect
+                        </label>
+                        <label className="check">
+                          <Checkbox
+                            checked={route.accessLog}
+                            onCheckedChange={(checked) => setRoute({ ...route, accessLog: checked === true })}
+                          />
+                          Access log
+                        </label>
+                      </div>
+                      {domains.list.length === 0 && <p className="note note--bad">Add at least one domain.</p>}
+                    </>
+                  )}
+                </div>
+              </Cell>
+              <Cell title="Data">
+                <div className="choices">
+                  <Choice
+                    name="binding"
+                    checked={binding === "sqlite"}
+                    onChange={() => setBinding("sqlite")}
+                    icon={<HardDrive className="size-4" />}
+                    title="SQLite"
+                    detail="Private file"
+                  />
+                  {(services.data?.services ?? [])
+                    .filter((service) => service.engine === "mysql" || service.engine === "postgres")
+                    .map((service) => {
+                      const value = `${service.engine}:${service.name}`;
+                      return (
+                        <Choice
+                          key={value}
+                          name="binding"
+                          checked={binding === value}
+                          onChange={() => setBinding(value)}
+                          icon={<Database className="size-4" />}
+                          title={`${service.engine === "postgres" ? "Postgres" : "MySQL"} ${service.version}`}
+                          detail={service.name}
+                        />
+                      );
+                    })}
+                  <Choice
+                    name="binding"
+                    checked={binding === "none"}
+                    onChange={() => setBinding("none")}
+                    icon={<X className="size-4" />}
+                    title="None"
+                    detail="Add later"
+                  />
+                </div>
+              </Cell>
+              <Cell
+                title="Limits"
+                action={
+                  <button
+                    type="button"
+                    className="note underline"
+                    aria-expanded={showAdvanced}
+                    onClick={() => setShowAdvanced((value) => !value)}
+                  >
+                    {showAdvanced ? "Hide" : "Edit"}
+                  </button>
+                }
+              >
+                {showAdvanced ? (
+                  <div className="grid-3">
+                    <Field label="Memory (MB)">
+                      <Input
+                        type="number"
+                        min="64"
+                        max="262144"
+                        value={resources.memoryMb}
+                        onChange={(event) => setResources({ ...resources, memoryMb: Number(event.target.value) })}
+                      />
+                    </Field>
+                    <Field label="CPU (millicores)">
+                      <Input
+                        type="number"
+                        min="50"
+                        max="256000"
+                        value={resources.cpuMillis}
+                        onChange={(event) => setResources({ ...resources, cpuMillis: Number(event.target.value) })}
+                      />
+                    </Field>
+                    <Field label="Processes">
+                      <Input
+                        type="number"
+                        min="32"
+                        max="65536"
+                        value={resources.pids}
+                        onChange={(event) => setResources({ ...resources, pids: Number(event.target.value) })}
+                      />
+                    </Field>
+                  </div>
+                ) : (
+                  <p className="note">
+                    {resources.memoryMb} MB · {resources.cpuMillis / 1000} CPU · {resources.pids} processes
+                  </p>
+                )}
+              </Cell>
+            </>
+          )}
+
+          {step === 3 && (
+            <Cell title="Review">
+              <KeyValues
+                items={[
+                  ["Slug", <strong>{slug}</strong>],
+                  ["Home", <code>/home/{slug}</code>],
+                  [
+                    "Runtime",
+                    kind === "php-fpm"
+                      ? `PHP ${php.version} · ${php.pool}`
+                      : `${http.toolchain} ${http.version} · ${http.argv.join(" ")}`,
+                  ],
+                  ["Access", `${ingress}${domains.list.length ? ` · ${domains.list.join(", ")}` : ""}`],
+                  ["TLS", route.tls],
+                  ["Data", binding === "none" ? "None" : binding],
+                  ["Limits", `${resources.memoryMb} MB · ${resources.cpuMillis}m CPU · ${resources.pids} pids`],
+                ]}
+              />
+              <p className="note mt-4">Created stopped and private. Start → check → publish.</p>
+              {create.error && (
+                <Alert variant="destructive" className="mt-3">
+                  {messageOf(create.error)}
+                </Alert>
+              )}
+            </Cell>
+          )}
+
+          <div className="cell cell--muted actions actions--between py-3!">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => (step === 0 ? navigate("/apps") : setStep((value) => value - 1))}
+            >
+              <ChevronLeft />
+              {step === 0 ? "Cancel" : "Back"}
+            </Button>
+            <Button type="submit" disabled={!currentValid || create.isPending}>
+              {step === 3 ? (
+                "Create app"
+              ) : (
+                <>
+                  Next
+                  <ChevronRight />
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </form>
-    </Page>
+    </div>
   );
 }
 
-function ArgvEditor({ value, onChange }: { value: string[]; onChange: (value: string[]) => void }) {
+function Choice({
+  name,
+  checked,
+  onChange,
+  icon,
+  title,
+  detail,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <label className="choice">
+      <input className="sr-only" type="radio" name={name} checked={checked} onChange={onChange} />
+      <strong>
+        {icon}
+        {title}
+      </strong>
+      <small>{detail}</small>
+    </label>
+  );
+}
+
+export function ArgvEditor({ value, onChange }: { value: string[]; onChange: (value: string[]) => void }) {
   return (
     <fieldset className="grid gap-2">
-      <legend className="mb-1 text-sm font-medium">Command arguments</legend>
+      <legend className="mb-2 text-sm font-semibold">
+        Command <span className="note font-normal">· run directly, no shell</span>
+      </legend>
       {value.map((argument, index) => (
         <div key={index} className="flex gap-2">
           <Input
+            className="font-mono"
             aria-label={`Argument ${index + 1}`}
             value={argument}
             onChange={(event) =>
@@ -582,8 +578,8 @@ function ArgvEditor({ value, onChange }: { value: string[]; onChange: (value: st
           />
           <Button
             type="button"
-            size="icon-sm"
-            variant="outline"
+            size="icon"
+            variant="ghost"
             aria-label={`Remove argument ${index + 1}`}
             disabled={value.length === 1}
             onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
@@ -595,77 +591,88 @@ function ArgvEditor({ value, onChange }: { value: string[]; onChange: (value: st
       <Button
         type="button"
         size="sm"
-        variant="outline"
+        variant="ghost"
         className="justify-self-start"
         onClick={() => onChange([...value, ""])}
       >
         <Plus />
-        Add argument
+        Argument
       </Button>
     </fieldset>
   );
 }
-function DomainsInput({
-  domains,
-  draft,
-  error,
-  onDraft,
-  onKeyDown,
-  onAdd,
-  onRemove,
-}: {
-  domains: string[];
-  draft: string;
-  error: string;
-  onDraft: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
-  onAdd: () => void;
-  onRemove: (domain: string) => void;
-}) {
+
+/** Local draft state for a domain chip input. */
+export function useDomainDraft(initial: string[]) {
+  const [list, setList] = useState(initial);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
+  function add() {
+    const value = draft.trim().toLowerCase().replace(/\.$/, "");
+    if (!value) return;
+    if (!validDomain(value)) {
+      setError("Not a valid hostname.");
+      return;
+    }
+    if (!list.includes(value)) setList((current) => [...current, value]);
+    setDraft("");
+    setError("");
+  }
+  return {
+    list,
+    draft,
+    error,
+    add,
+    setDraft,
+    remove: (domain: string) => setList((current) => current.filter((value) => value !== domain)),
+  };
+}
+
+export function DomainsInput({ state }: { state: ReturnType<typeof useDomainDraft> }) {
+  function keyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      state.add();
+    }
+  }
   return (
-    <Field label="Domains" hint="The first domain is primary. Press Enter or comma to add.">
-      <div className="rounded-md border border-input p-2">
-        <div className="mb-2 flex flex-wrap gap-1">
-          {domains.map((domain, index) => (
-            <span key={domain} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs">
-              <code>{domain}</code>
-              {index === 0 && <span className="text-muted-foreground">primary</span>}
-              <button type="button" aria-label={`Remove ${domain}`} onClick={() => onRemove(domain)}>
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-        </div>
+    <Field
+      label="Domains"
+      hint={state.error ? <span className="text-destructive">{state.error}</span> : "First is primary"}
+    >
+      <div className="grid gap-2">
+        {state.list.length > 0 && (
+          <div className="chips">
+            {state.list.map((domain, index) => (
+              <span key={domain} className="chip">
+                {domain}
+                {index === 0 && <b className="text-primary">•</b>}
+                <button type="button" aria-label={`Remove ${domain}`} onClick={() => state.remove(domain)}>
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
           <Input
-            className="border-0 shadow-none focus-visible:ring-0"
-            value={draft}
+            value={state.draft}
             placeholder="app.example.com"
-            onChange={(event) => onDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            onBlur={() => draft.trim() && onAdd()}
+            onChange={(event) => state.setDraft(event.target.value)}
+            onKeyDown={keyDown}
+            onBlur={() => state.draft.trim() && state.add()}
           />
           <Button
             type="button"
-            size="sm"
             variant="outline"
-            disabled={!draft.trim()}
+            disabled={!state.draft.trim()}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={onAdd}
+            onClick={state.add}
           >
             Add
           </Button>
         </div>
       </div>
-      {error && <span className="text-xs text-destructive">{error}</span>}
     </Field>
-  );
-}
-function Review({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="m-0 mt-1 break-words font-medium">{value}</dd>
-    </div>
   );
 }

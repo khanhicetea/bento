@@ -1,12 +1,21 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Database, ExternalLink, HardDrive, Plus, Terminal as TerminalIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
-import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
-import { CopyableCode, DomainError, DomainLoading, Field, Page, StateBadge } from "../../components/DomainState.tsx";
+import {
+  Cell,
+  CopyableCode,
+  DomainError,
+  DomainLoading,
+  Field,
+  KeyValues,
+  PageHeader,
+  StateBadge,
+} from "../../components/DomainState.tsx";
 import { TerminalPanel } from "../../components/TerminalDialog.tsx";
+import { keys } from "../../api/keys.ts";
 import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
@@ -38,66 +47,21 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
   const summary = list.data?.apps.find((app) => app.slug === slug);
   const query = useApplication(summary?.id ?? null);
   const [, navigate] = useLocation();
-  if (list.isPending || (summary && query.isPending))
-    return (
-      <Page>
-        <DomainLoading label="application" />
-      </Page>
-    );
-  if (list.error)
-    return (
-      <Page>
-        <DomainError message={messageOf(list.error)} onRetry={() => void list.refetch()} />
-      </Page>
-    );
-  if (!summary)
-    return (
-      <Page>
-        <DomainError message={`Application “${slug}” was not found.`} />
-      </Page>
-    );
-  if (query.error)
-    return (
-      <Page>
-        <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
-      </Page>
-    );
+  if (list.isPending || (summary && query.isPending)) return <DomainLoading label="app" />;
+  if (list.error) return <DomainError message={messageOf(list.error)} onRetry={() => void list.refetch()} />;
+  if (!summary) return <DomainError message={`App “${slug}” not found.`} />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   const app = query.data;
-  if (!app)
-    return (
-      <Page>
-        <DomainLoading label="application" />
-      </Page>
-    );
+  if (!app) return <DomainLoading label="app" />;
+  const base = `/apps/${encodeURIComponent(slug)}`;
   return (
-    <Page wide>
+    <>
       <AppHeader app={app} />
-      <label className="bento-detail-nav-mobile mb-5 grid gap-1.5 text-sm font-medium">
-        Section
-        <NativeSelect
-          value={tab}
-          onChange={(event) => {
-            const next = event.target.value as Tab;
-            navigate(
-              next === "overview" ? `/apps/${encodeURIComponent(slug)}` : `/apps/${encodeURIComponent(slug)}/${next}`,
-            );
-          }}
-        >
-          {tabs.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </NativeSelect>
-      </label>
-      <nav className="bento-detail-tabs mb-6 flex gap-1 overflow-x-auto border-b" aria-label="Application sections">
+      <nav className="seg mb-5" aria-label="App sections">
         {tabs.map(([value, label]) => (
           <Link
             key={value}
-            href={
-              value === "overview" ? `/apps/${encodeURIComponent(slug)}` : `/apps/${encodeURIComponent(slug)}/${value}`
-            }
-            className={`border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap no-underline ${tab === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            href={value === "overview" ? base : `${base}/${value}`}
             aria-current={tab === value ? "page" : undefined}
           >
             {label}
@@ -111,13 +75,13 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
         <TerminalPanel
           appId={app.id}
           mode={new URLSearchParams(window.location.search).get("mode") === "running" ? "running" : "tool"}
-          onModeChange={(mode) => navigate(`/apps/${encodeURIComponent(slug)}/terminal?mode=${mode}`)}
+          onModeChange={(mode) => navigate(`${base}/terminal?mode=${mode}`)}
         />
       )}
       {tab === "data" && <DataBindings app={app} />}
       {tab === "scheduler" && <Scheduler app={app} />}
       {tab === "settings" && <Settings app={app} onRemoved={() => navigate("/apps")} />}
-    </Page>
+    </>
   );
 }
 
@@ -128,63 +92,67 @@ function AppHeader({ app }: { app: T.App }) {
   const run = (verb: AppAction) => action.mutate({ id: app.id, action: verb }, { onSuccess: () => setConfirm(null) });
   const request = (verb: AppAction) =>
     verb === "stop" || verb === "restart" || verb === "unpublish" ? setConfirm(verb) : run(verb);
+  const busy = active.active || action.isPending;
+  const stopped = app.desiredRuntime === "stopped";
   return (
     <>
-      <header className="bento-app-header mb-4 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="m-0 text-2xl font-semibold">{app.slug}</h1>
+      <PageHeader
+        back={{ href: "/apps", label: "Apps" }}
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            {app.slug}
             <StateBadge state={app.observed.state} title={app.observed.message} />
-            {!app.observed.generationCurrent && <StateBadge state="pending" label="Generation pending" />}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              {app.toolchain} {app.version}
-            </span>
+            {!app.observed.generationCurrent && <StateBadge state="pending" label="Update pending" />}
+          </span>
+        }
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            {app.toolchain} {app.version}
             {app.primaryDomain && (
-              <a
-                className="inline-flex items-center gap-1"
-                href={`//${app.primaryDomain}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {app.primaryDomain}
-                <ExternalLink className="size-3" />
-              </a>
+              <>
+                <span aria-hidden="true">·</span>
+                <a
+                  className="inline-flex items-center gap-1"
+                  href={`//${app.primaryDomain}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {app.primaryDomain}
+                  <ExternalLink className="size-3" />
+                </a>
+              </>
             )}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            disabled={active.active || action.isPending}
-            onClick={() => request(app.desiredRuntime === "stopped" ? "start" : "stop")}
-          >
-            {app.desiredRuntime === "stopped" ? "Start" : "Stop"}
-          </Button>
-          <Button
-            variant="outline"
-            disabled={active.active || action.isPending || app.desiredRuntime === "stopped"}
-            onClick={() => request("restart")}
-          >
-            Restart
-          </Button>
-          {app.ingress === "managed" && (
+          </span>
+        }
+        actions={
+          <>
             <Button
-              variant="outline"
-              disabled={active.active || action.isPending || app.desiredRuntime === "stopped"}
-              onClick={() => request(app.publication === "published" ? "unpublish" : "publish")}
+              disabled={busy}
+              variant={stopped ? "default" : "outline"}
+              onClick={() => request(stopped ? "start" : "stop")}
             >
-              {app.publication === "published" ? "Unpublish" : "Publish"}
+              {stopped ? "Start" : "Stop"}
             </Button>
-          )}
-          <Button asChild variant="outline">
-            <Link href={`/apps/${encodeURIComponent(app.slug)}/terminal`}>
-              <TerminalIcon />
-              Terminal
-            </Link>
-          </Button>
-        </div>
-      </header>
+            <Button variant="outline" disabled={busy || stopped} onClick={() => request("restart")}>
+              Restart
+            </Button>
+            {app.ingress === "managed" && (
+              <Button
+                variant={app.publication === "published" || stopped ? "outline" : "default"}
+                disabled={busy || stopped}
+                onClick={() => request(app.publication === "published" ? "unpublish" : "publish")}
+              >
+                {app.publication === "published" ? "Unpublish" : "Publish"}
+              </Button>
+            )}
+            <Button asChild variant="ghost" size="icon" aria-label="Terminal">
+              <Link href={`/apps/${encodeURIComponent(app.slug)}/terminal`}>
+                <TerminalIcon />
+              </Link>
+            </Button>
+          </>
+        }
+      />
       {action.error && (
         <Alert variant="destructive" className="mb-4">
           {messageOf(action.error)}
@@ -193,15 +161,15 @@ function AppHeader({ app }: { app: T.App }) {
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title={`${confirm ?? "Change"} ${app.slug}?`}
+        title={`${confirm ? confirm[0]?.toUpperCase() + confirm.slice(1) : "Change"} ${app.slug}?`}
         description={
           confirm === "unpublish"
-            ? "This removes the managed public route."
+            ? "Its public route will be removed."
             : confirm === "stop"
-              ? "This stops the running app."
-              : "This replaces the running instance after a controlled stop."
+              ? "The app will stop serving."
+              : "The running instance will be replaced."
         }
-        confirmLabel={confirm ?? "Confirm"}
+        confirmLabel={confirm ? confirm[0]?.toUpperCase() + confirm.slice(1) : "Confirm"}
         pending={action.isPending}
         error={action.error}
         onConfirm={() => confirm && run(confirm)}
@@ -215,100 +183,112 @@ function OperationBanner({ app }: { app: T.App }) {
   if (!active.active) return null;
   const op = active.operations[0];
   return (
-    <Alert className="mb-4">
-      <StateBadge state={op?.state ?? "queued"} /> <strong className="ml-2">{op?.kind}</strong>{" "}
-      <span className="text-muted-foreground">— {op?.events?.at(-1)?.message ?? op?.phase ?? "Queued"}</span>
-      {op && (
-        <Button asChild className="ml-3" size="xs" variant="outline">
-          <Link href={`/activity/${op.id}`}>View operation</Link>
-        </Button>
-      )}
-    </Alert>
-  );
-}
-
-function Card({ title, children, danger = false }: { title: string; children: ReactNode; danger?: boolean }) {
-  return (
-    <section className={`bento-detail-cell rounded-xl border bg-card p-5 ${danger ? "border-destructive/40" : ""}`}>
-      <h2 className={`mt-0 text-base font-semibold ${danger ? "text-destructive" : ""}`}>{title}</h2>
-      {children}
-    </section>
-  );
-}
-function KeyValue({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-1 border-t py-2 text-sm first:border-0 sm:grid-cols-[9rem_1fr]">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0">{children}</span>
+    <div className="box mb-5">
+      <div className="cell flex flex-wrap items-center gap-3 py-3!">
+        <StateBadge state={op?.state ?? "queued"} label={op?.kind.replace("app.", "")} />
+        <span className="note min-w-0 flex-1 truncate">{op?.events?.at(-1)?.message ?? op?.phase ?? "Queued"}</span>
+        {op && (
+          <Button asChild size="xs" variant="ghost">
+            <Link href={`/activity/${op.id}`}>Details</Link>
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
 
 function Overview({ app }: { app: T.App }) {
   return (
-    <div className="bento-detail-grid grid gap-4 lg:grid-cols-2">
-      <Card title="Runtime">
-        <KeyValue label="Container">
-          {app.observed.containerId ? <CopyableCode value={app.observed.containerId} /> : "—"}
-        </KeyValue>
-        <KeyValue label="Started">
-          <span title={app.observed.startedAt}>{formatRelative(app.observed.startedAt)}</span>
-        </KeyValue>
-        <KeyValue label="Generation">
-          {app.configGeneration} · {app.observed.generationCurrent ? "current" : "pending"}
-        </KeyValue>
-        <KeyValue label="Command">
-          {app.runtime.http ? (
-            <code>{app.runtime.http.argv.join(" ")}</code>
-          ) : (
-            `PHP ${app.runtime.php?.version} · ${app.runtime.php?.pool}`
-          )}
-        </KeyValue>
-      </Card>
-      <Card title="Routing">
-        <KeyValue label="Ingress">
-          {app.ingressInfo.mode} · {app.publication}
-        </KeyValue>
-        <KeyValue label="Internal URL">
-          <CopyableCode value={app.ingressInfo.internalUrl} />
-        </KeyValue>
-        <KeyValue label="Domains">
-          {app.domains.length
-            ? app.domains.map((domain) => (
-                <div key={domain.name}>
-                  <code>{domain.name}</code>
-                  {domain.primary && " · primary"}
-                </div>
-              ))
-            : "None"}
-        </KeyValue>
-        <KeyValue label="TLS">
-          {app.route.tls}
-          {app.route.redirectHttps && " · redirect HTTPS"}
-        </KeyValue>
-      </Card>
-      <Card title="Resources">
-        <KeyValue label="Memory">{app.resources.memoryMb} MB</KeyValue>
-        <KeyValue label="CPU">{app.resources.cpuMillis} millicores</KeyValue>
-        <KeyValue label="Processes">{app.resources.pids}</KeyValue>
-      </Card>
-      <Card title="Redis">
-        <KeyValue label="User">
-          <code>{app.redisUser}</code>
-        </KeyValue>
-        <KeyValue label="Key prefix">
-          <code>{app.redisPrefix}*</code>
-        </KeyValue>
-      </Card>
-      {app.reconcile.failures > 0 && (
-        <Card title="Reconciliation" danger>
-          <p>
-            {app.reconcile.failures} failure(s){app.reconcile.blocked && " · blocked until explicit start or restart"}
-          </p>
-          <Alert variant="destructive">{app.reconcile.lastError}</Alert>
-        </Card>
-      )}
-    </div>
+    <>
+      <div className="box box--4">
+        <Cell>
+          <div className="metric">
+            <strong>
+              {app.resources.memoryMb}
+              <small> MB</small>
+            </strong>
+            <span>Memory</span>
+          </div>
+        </Cell>
+        <Cell>
+          <div className="metric">
+            <strong>{app.resources.cpuMillis / 1000}</strong>
+            <span>CPU cores</span>
+          </div>
+        </Cell>
+        <Cell>
+          <div className="metric">
+            <strong>{app.resources.pids}</strong>
+            <span>Processes</span>
+          </div>
+        </Cell>
+        <Cell>
+          <div className="metric">
+            <strong>{app.bindings.length}</strong>
+            <span>Data bindings</span>
+          </div>
+        </Cell>
+      </div>
+      <div className="box box--2">
+        <Cell title="Runtime">
+          <KeyValues
+            items={[
+              ["Container", app.observed.containerId ? <CopyableCode value={app.observed.containerId} /> : "—"],
+              ["Started", <span title={app.observed.startedAt}>{formatRelative(app.observed.startedAt)}</span>],
+              ["Generation", `${app.configGeneration}${app.observed.generationCurrent ? "" : " · pending"}`],
+              [
+                "Command",
+                app.runtime.http ? (
+                  <code>{app.runtime.http.argv.join(" ")}</code>
+                ) : (
+                  `PHP ${app.runtime.php?.version} · ${app.runtime.php?.pool}`
+                ),
+              ],
+            ]}
+          />
+        </Cell>
+        <Cell title="Routing">
+          <KeyValues
+            items={[
+              ["Ingress", `${app.ingressInfo.mode} · ${app.publication}`],
+              ["Internal", <CopyableCode value={app.ingressInfo.internalUrl} />],
+              [
+                "Domains",
+                app.domains.length ? (
+                  <span className="chips">
+                    {app.domains.map((domain) => (
+                      <span key={domain.name} className="chip">
+                        {domain.name}
+                        {domain.primary && <b className="text-primary">•</b>}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  "—"
+                ),
+              ],
+              ["TLS", `${app.route.tls}${app.route.redirectHttps ? " · HTTPS redirect" : ""}`],
+            ]}
+          />
+        </Cell>
+        <Cell title="Redis" className={app.reconcile.failures > 0 ? "" : "cell--wide"}>
+          <KeyValues
+            items={[
+              ["User", <code>{app.redisUser}</code>],
+              ["Prefix", <code>{app.redisPrefix}*</code>],
+            ]}
+          />
+        </Cell>
+        {app.reconcile.failures > 0 && (
+          <Cell title="Reconcile" className="cell--alert">
+            <p className="mb-2 text-sm">
+              {app.reconcile.failures} failure(s){app.reconcile.blocked && " · blocked until start or restart"}
+            </p>
+            <p className="note note--bad">{app.reconcile.lastError}</p>
+          </Cell>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -319,131 +299,86 @@ function DataBindings({ app }: { app: T.App }) {
     return api.apps.addBinding(app.id, { engine: value as T.Engine, service });
   });
   return (
-    <div className="bento-data-layout">
-      <div className="bento-data-intro">
-        <div>
-          <h2>Connected data</h2>
-          <p>Each binding belongs to this app. Databases and credentials stay private to its runtime.</p>
-        </div>
-        <span className="bento-data-intro__count">
-          {app.bindings.length} {app.bindings.length === 1 ? "binding" : "bindings"}
-        </span>
-      </div>
-      <div className="bento-data-note">
-        Bindings are add-only. Removing this app retains its data until you explicitly prune it.
-      </div>
-      <div className="bento-binding-grid">
-        {app.bindings.length === 0 && (
-          <div className="bento-binding bento-binding--empty">
-            <Database aria-hidden="true" />
-            <h3>No data bindings yet</h3>
-            <p>Choose a service below to connect this app.</p>
-          </div>
-        )}
-        {app.bindings.map((binding) => (
-          <BindingCard key={binding.id} appId={app.id} binding={binding} />
-        ))}
-      </div>
-      <section className="bento-binding-add" aria-labelledby="add-binding-title">
-        <div>
-          <h3 id="add-binding-title">Add a data binding</h3>
-          <p>Connect SQLite or an existing managed database service.</p>
-        </div>
-        <div className="bento-binding-add__controls">
-          <Field label="Data service">
-            <NativeSelect value={engine} onChange={(event) => setEngine(event.target.value)}>
-              <option value="sqlite">SQLite · private file</option>
+    <div className="box box--2">
+      {app.bindings.map((binding) => (
+        <BindingCard key={binding.id} appId={app.id} binding={binding} />
+      ))}
+      <Cell title="Add binding" className={`cell--muted ${app.bindings.length % 2 === 0 ? "cell--wide" : ""}`}>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-48 flex-1">
+            <NativeSelect
+              className="w-full"
+              value={engine}
+              onChange={(event) => setEngine(event.target.value)}
+              aria-label="Data service"
+            >
+              <option value="sqlite">SQLite file</option>
               <ServiceOptions />
             </NativeSelect>
-          </Field>
+          </div>
           <Button disabled={addBinding.isPending} onClick={() => addBinding.mutate(undefined)}>
-            <Plus className="size-4" />
-            Add binding
+            <Plus /> Add
           </Button>
         </div>
-        {addBinding.error && (
-          <Alert variant="destructive" className="mt-3">
-            {messageOf(addBinding.error)}
-          </Alert>
-        )}
-      </section>
+        <p className="note mt-3">Add-only. Data is kept if the app is removed.</p>
+        {addBinding.error && <p className="note note--bad mt-2">{messageOf(addBinding.error)}</p>}
+      </Cell>
     </div>
   );
 }
+
 function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) {
   const [name, setName] = useState("");
   const add = useOperationMutation(() => api.apps.addDatabase(appId, binding.id, name));
   const sqlite = binding.engine === "sqlite";
   return (
-    <section className="bento-binding" aria-label={`${binding.engine} data binding`}>
-      <div className="bento-binding__head">
-        <span className="bento-binding__icon">
-          {sqlite ? <HardDrive aria-hidden="true" /> : <Database aria-hidden="true" />}
-        </span>
-        <div>
-          <h3>{sqlite ? "SQLite file" : `${binding.engine === "postgres" ? "PostgreSQL" : "MySQL"} database`}</h3>
-          <p>{binding.service || "Private to this app"}</p>
+    <section className="cell grid content-start gap-4" aria-label={`${binding.engine} binding`}>
+      <div className="tile__top">
+        <span className="mono">{sqlite ? <HardDrive className="size-4" /> : <Database className="size-4" />}</span>
+        <div className="tile__name">
+          <strong>{sqlite ? "SQLite" : binding.engine === "postgres" ? "PostgreSQL" : "MySQL"}</strong>
+          <small>{binding.service || "Private file"}</small>
         </div>
-        <span className="bento-binding__kind">{binding.engine}</span>
       </div>
-      <div className="bento-binding__body">
-        {sqlite ? (
-          <div className="bento-binding__detail">
-            <span>File path</span>
-            {binding.sqlitePath ? <CopyableCode value={binding.sqlitePath} /> : <span>Unavailable</span>}
+      {sqlite ? (
+        <KeyValues items={[["Path", binding.sqlitePath ? <CopyableCode value={binding.sqlitePath} /> : "—"]]} />
+      ) : (
+        <>
+          <KeyValues items={[["User", <code>{binding.username || "—"}</code>]]} />
+          <div className="chips">
+            {binding.databases.length ? (
+              binding.databases.map((database) => (
+                <span key={database} className="chip">
+                  <Database className="size-3" aria-hidden="true" />
+                  {database}
+                </span>
+              ))
+            ) : (
+              <span className="note">No databases</span>
+            )}
           </div>
-        ) : (
-          <>
-            <div className="bento-binding__detail">
-              <span>Database user</span>
-              <code>{binding.username || "Unavailable"}</code>
-            </div>
-            <div className="bento-binding__databases">
-              <div>
-                <strong>Databases</strong>
-                <small>
-                  {binding.databases.length} {binding.databases.length === 1 ? "database" : "databases"}
-                </small>
-              </div>
-              {binding.databases.length ? (
-                <ul>
-                  {binding.databases.map((database) => (
-                    <li key={database}>
-                      <Database className="size-4" aria-hidden="true" />
-                      <code>{database}</code>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No databases in this binding yet.</p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      {!sqlite && (
-        <div className="bento-binding__footer">
-          <Field label="Add a database" hint="Adds a new database to this binding; existing databases remain.">
-            <Input placeholder="Database name" value={name} onChange={(event) => setName(event.target.value)} />
-          </Field>
-          <Button
-            variant="outline"
-            disabled={!name.trim() || add.isPending}
-            onClick={() => add.mutate(undefined, { onSuccess: () => setName("") })}
-          >
-            <Plus className="size-4" />
-            Add database
-          </Button>
-        </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="New database"
+              aria-label="New database name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <Button
+              variant="outline"
+              disabled={!name.trim() || add.isPending}
+              onClick={() => add.mutate(undefined, { onSuccess: () => setName("") })}
+            >
+              <Plus /> Add
+            </Button>
+          </div>
+        </>
       )}
-      {add.error && (
-        <Alert variant="destructive" className="m-4">
-          {messageOf(add.error)}
-        </Alert>
-      )}
+      {add.error && <p className="note note--bad">{messageOf(add.error)}</p>}
     </section>
   );
 }
+
 function ServiceOptions() {
   const query = useQuery({ queryKey: keys.services, queryFn: ({ signal }) => api.services.list(signal) });
   return (
@@ -452,94 +387,89 @@ function ServiceOptions() {
         .filter((service) => service.engine === "mysql" || service.engine === "postgres")
         .map((service) => (
           <option key={service.name} value={`${service.engine}:${service.name}`}>
-            {service.engine} {service.version} ({service.name})
+            {service.engine} {service.version} · {service.name}
           </option>
         ))}
     </>
   );
 }
+
 function Scheduler({ app }: { app: T.App }) {
-  if (app.desiredRuntime !== "running") return <Alert>Start the app to manage scheduler jobs and workers.</Alert>;
+  if (app.desiredRuntime !== "running")
+    return (
+      <div className="box">
+        <div className="cell empty">
+          <strong>App is stopped</strong>
+          <p>Start it to manage jobs.</p>
+        </div>
+      </div>
+    );
   return (
-    <div className="grid gap-3">
-      <Alert>
-        This trusted, same-origin scheduler view runs inside the app.{" "}
-        <a href={app.schedulerPath} target="_blank" rel="noreferrer">
-          Open in a new tab
-        </a>
-        .
-      </Alert>
-      <iframe
-        title={`${app.slug} scheduler`}
-        src={app.schedulerPath}
-        className="h-[calc(100vh-14rem)] min-h-96 w-full rounded-lg border"
-      />
+    <div className="box">
+      <div className="cell cell--flush">
+        <div className="flex justify-end border-b px-3 py-2">
+          <a className="note inline-flex items-center gap-1" href={app.schedulerPath} target="_blank" rel="noreferrer">
+            Open <ExternalLink className="size-3" />
+          </a>
+        </div>
+        <iframe
+          title={`${app.slug} scheduler`}
+          src={app.schedulerPath}
+          className="block h-[calc(100vh-16rem)] min-h-96 w-full"
+        />
+      </div>
     </div>
   );
 }
+
 function Settings({ app, onRemoved }: { app: T.App; onRemoved: () => void }) {
   const [mode, setMode] = useState("check");
   const [removeOpen, setRemoveOpen] = useState(false);
   const permissions = useOperationMutation(() => api.apps.permissions(app.id, mode));
   const remove = useOperationMutation((confirm: string) => api.apps.remove(app.id, confirm));
   return (
-    <div className="grid gap-4">
-      <ApplicationEditor app={app} embedded onClose={() => undefined} />
-      <Card title="Permissions">
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="Mode">
-            <NativeSelect value={mode} onChange={(event) => setMode(event.target.value)}>
-              <option value="check">Check</option>
-              <option value="dry-run">Dry run</option>
-              <option value="shallow">Shallow repair</option>
-              <option value="recursive">Recursive repair</option>
-            </NativeSelect>
-          </Field>
-          <Button variant="outline" disabled={permissions.isPending} onClick={() => permissions.mutate(undefined)}>
-            Run permissions task
+    <>
+      <ApplicationEditor app={app} />
+      <div className="box box--2">
+        <Cell title="Permissions">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-40 flex-1">
+              <Field label="Mode">
+                <NativeSelect className="w-full" value={mode} onChange={(event) => setMode(event.target.value)}>
+                  <option value="check">Check</option>
+                  <option value="dry-run">Dry run</option>
+                  <option value="shallow">Shallow repair</option>
+                  <option value="recursive">Recursive repair</option>
+                </NativeSelect>
+              </Field>
+            </div>
+            <Button variant="outline" disabled={permissions.isPending} onClick={() => permissions.mutate(undefined)}>
+              Run
+            </Button>
+          </div>
+          {permissions.error && <p className="note note--bad mt-2">{messageOf(permissions.error)}</p>}
+        </Cell>
+        <Cell title="Remove" className="cell--alert">
+          <p className="note mb-3">
+            Removes containers and routes, retires uid {app.uid}. Home and databases are kept until pruned.
+          </p>
+          <Button variant="destructive" onClick={() => setRemoveOpen(true)}>
+            Remove {app.slug}
           </Button>
-        </div>
-        {permissions.error && (
-          <Alert variant="destructive" className="mt-3">
-            {messageOf(permissions.error)}
-          </Alert>
-        )}
-      </Card>
-      <Card title="Remove application" danger>
-        <p className="text-sm">
-          Removes routes and containers and retires uid {app.uid}. Home, SQLite files, and relational databases remain
-          until separately pruned.
-        </p>
-        <Button variant="destructive" onClick={() => setRemoveOpen(true)}>
-          Remove {app.slug}
-        </Button>
-      </Card>
+        </Cell>
+      </div>
       <ConfirmDialog
         open={removeOpen}
         onOpenChange={setRemoveOpen}
         title={`Remove ${app.slug}?`}
-        description="This removes runtime resources but retains durable data for explicit pruning."
+        description="Runtime resources are removed. Durable data is retained for explicit pruning."
         phrase={`delete ${app.slug}`}
         destructive
-        confirmLabel="Remove application"
+        confirmLabel="Remove app"
         pending={remove.isPending}
         error={remove.error}
         onConfirm={(typed) => remove.mutate(typed, { onSuccess: onRemoved })}
       />
-    </div>
-  );
-}
-
-// Kept for compatibility with any stale imports; app detail is now URL-routed.
-export function ApplicationDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const app = useApplication(id);
-  if (!app.data) return <DomainLoading label="application" />;
-  return (
-    <div>
-      <Button variant="outline" onClick={onClose}>
-        Close
-      </Button>
-      <Overview app={app.data} />
-    </div>
+    </>
   );
 }

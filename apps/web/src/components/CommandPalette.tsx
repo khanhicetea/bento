@@ -1,18 +1,18 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { Activity, AppWindow, Archive, Boxes, Database, Network, Search, ServerCog } from "lucide-react";
+import { Activity, Archive, Boxes, Database, LayoutGrid, Network, Plus, Search, Server } from "lucide-react";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 const commands = [
-  { href: "/", label: "Overview", keywords: "dashboard health", icon: Boxes },
-  { href: "/apps", label: "Applications", keywords: "apps runtimes", icon: AppWindow },
-  { href: "/apps/new", label: "Create application", keywords: "new app", icon: AppWindow },
+  { href: "/", label: "Home", keywords: "overview dashboard health", icon: LayoutGrid },
+  { href: "/apps", label: "Apps", keywords: "applications runtimes", icon: Boxes },
+  { href: "/apps/new", label: "New app", keywords: "create application", icon: Plus },
   { href: "/data", label: "Data services", keywords: "mysql postgres redis database", icon: Database },
   { href: "/backups", label: "Backups", keywords: "artifacts restore schedule", icon: Archive },
   { href: "/ingress", label: "Ingress", keywords: "edge tunnel proxies routes", icon: Network },
   { href: "/activity", label: "Activity", keywords: "operations events", icon: Activity },
-  { href: "/system", label: "System", keywords: "docker retained theme", icon: ServerCog },
+  { href: "/system", label: "System", keywords: "docker retained theme", icon: Server },
 ] as const;
 
 export function CommandPalette() {
@@ -55,23 +55,10 @@ export function CommandPalette() {
   }
   return (
     <>
-      <button
-        type="button"
-        className="hidden h-9 items-center gap-2 rounded-md border px-3 text-sm text-muted-foreground hover:bg-accent sm:flex"
-        onClick={() => setOpen(true)}
-        aria-label="Open command palette"
-      >
+      <button type="button" className="search-btn" onClick={() => setOpen(true)} aria-label="Open command palette">
         <Search className="size-4" />
-        <span>Navigate</span>
-        <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs">⌘K</kbd>
-      </button>
-      <button
-        type="button"
-        className="inline-flex size-9 items-center justify-center rounded-md border sm:hidden"
-        onClick={() => setOpen(true)}
-        aria-label="Open command palette"
-      >
-        <Search className="size-4" />
+        <span>Search</span>
+        <kbd>⌘K</kbd>
       </button>
       <Dialog
         open={open}
@@ -93,7 +80,7 @@ export function CommandPalette() {
             <Input
               autoFocus
               className="h-12 border-0 px-0 shadow-none focus-visible:ring-0"
-              placeholder="Search pages…"
+              placeholder="Go to…"
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
@@ -110,7 +97,7 @@ export function CommandPalette() {
           </div>
           <div id="command-results" role="listbox" className="max-h-80 overflow-y-auto p-2">
             {matches.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">No matching pages.</p>
+              <p className="p-4 text-center text-sm text-muted-foreground">Nothing found</p>
             ) : (
               matches.map((command, index) => {
                 const Icon = command.icon;
@@ -122,7 +109,7 @@ export function CommandPalette() {
                     type="button"
                     role="option"
                     aria-selected={index === active}
-                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm ${index === active ? "bg-accent text-accent-foreground" : ""}`}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm ${index === active ? "bg-secondary" : ""}`}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => select(command.href)}
                   >
@@ -132,9 +119,6 @@ export function CommandPalette() {
                 );
               })
             )}
-          </div>
-          <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-            Use ↑ ↓ to choose · Enter to open · Esc to close
           </div>
         </DialogContent>
       </Dialog>

@@ -1,10 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, CircleAlert, Database, History, LoaderCircle, Network, Server } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, CircleAlert, LoaderCircle, Plus } from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import { DomainError, DomainLoading, Page, StateBadge } from "../../components/DomainState.tsx";
+import { Cell, DomainError, DomainLoading, PageHeader, StateBadge } from "../../components/DomainState.tsx";
 import { describeOp, formatRelative } from "../../lib/format.ts";
+import { isTerminal } from "../operations/OperationTracker.tsx";
+import { Button } from "@/components/ui/button";
+
+function greeting() {
+  const hour = new Date().getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
 
 export function OverviewPage() {
   const system = useQuery({ queryKey: keys.system, queryFn: ({ signal }) => api.system.status(signal) });
@@ -19,23 +26,16 @@ export function OverviewPage() {
   const tunnel = useQuery({ queryKey: keys.tunnel, queryFn: ({ signal }) => api.tunnel.get(signal) });
   const schedule = useQuery({ queryKey: keys.backups.schedule, queryFn: ({ signal }) => api.backups.schedule(signal) });
 
-  if (system.isPending || apps.isPending)
-    return (
-      <Page>
-        <DomainLoading label="overview" />
-      </Page>
-    );
+  if (system.isPending || apps.isPending) return <DomainLoading label="overview" />;
   if (system.error || apps.error)
     return (
-      <Page>
-        <DomainError
-          message={messageOf(system.error ?? apps.error)}
-          onRetry={() => {
-            void system.refetch();
-            void apps.refetch();
-          }}
-        />
-      </Page>
+      <DomainError
+        message={messageOf(system.error ?? apps.error)}
+        onRetry={() => {
+          void system.refetch();
+          void apps.refetch();
+        }}
+      />
     );
 
   const allApps = apps.data?.apps ?? [];
@@ -46,326 +46,221 @@ export function OverviewPage() {
       app.observed.state === "blocked" ||
       (app.desiredRuntime === "running" && app.observed.state === "stopped"),
   );
-  const recentFailed = (operations.data?.operations ?? []).filter(
+  const allOps = operations.data?.operations ?? [];
+  const recentFailed = allOps.filter(
     (op) => op.state === "failed" && Date.now() - Date.parse(op.createdAt) < 86_400_000,
   );
   const initializing = (services.data?.services ?? []).filter(
     (service) => !service.initialized || service.state === "starting",
   );
   const issues = attention.length + recentFailed.length + initializing.length + (system.data?.dockerError ? 1 : 0);
-  const checksUnavailable = [operations, services, edge, tunnel, schedule].some((query) => query.isError);
-  const checksPending = [operations, services, edge, tunnel, schedule].some((query) => query.isPending);
+  const checks = [operations, services, edge, tunnel, schedule];
+  const checksUnavailable = checks.some((query) => query.isError);
+  const checksPending = checks.some((query) => query.isPending);
   const running = allApps.filter((app) => app.observed.state === "healthy" || app.observed.state === "starting").length;
-  const recent = (operations.data?.operations ?? []).slice(0, 5);
+  const activeOps = allOps.filter((op) => !isTerminal(op.state)).length;
+  const recent = allOps.slice(0, 6);
+  const bad = issues > 0 || checksUnavailable;
+
+  const serviceState = (
+    query: { isPending: boolean; error: unknown },
+    enabled: boolean | undefined,
+    state: string | undefined,
+  ): [string, string | undefined] =>
+    query.isPending
+      ? ["queued", "Checking"]
+      : query.error
+        ? ["failed", "Unavailable"]
+        : enabled
+          ? [state || "queued", state ? undefined : "On"]
+          : ["absent", "Off"];
+
+  const stackServices: Array<[string, string, [string, string | undefined]]> = [
+    ["Docker", "/system", system.data?.dockerError ? ["failed", "Down"] : ["healthy", "Connected"]],
+    ["Edge", "/ingress", serviceState(edge, edge.data?.settings.enabled, edge.data?.state)],
+    ["Tunnel", "/ingress", serviceState(tunnel, tunnel.data?.enabled, tunnel.data?.state)],
+    ["Backups", "/backups", serviceState(schedule, schedule.data?.enabled, schedule.data?.lastState)],
+  ];
 
   return (
-    <Page wide>
-      <div className="overview-intro">
-        <div>
-          <h1>Good to see you.</h1>
-          <p>
-            Here’s what’s happening on <strong>{system.data?.stackName}</strong>.
-          </p>
-        </div>
-        <Link href="/apps/new" className="overview-create">
-          New application <ArrowRight className="size-4" aria-hidden="true" />
-        </Link>
-      </div>
-      <section
-        className={`overview-condition ${issues || checksUnavailable ? "overview-condition--attention" : ""}`}
-        aria-label="Stack condition"
-      >
-        <div className="overview-condition__icon">
-          {issues || checksUnavailable ? (
-            <CircleAlert aria-hidden="true" />
-          ) : checksPending ? (
-            <LoaderCircle aria-hidden="true" />
-          ) : (
-            <Check aria-hidden="true" />
-          )}
-        </div>
-        <div className="overview-condition__body">
-          <h2>
-            {issues
-              ? `${issues} ${issues === 1 ? "thing needs" : "things need"} attention`
-              : checksUnavailable
-                ? "Some checks are unavailable"
-                : checksPending
-                  ? "Checking your stack"
-                  : "Everything is on track"}
-          </h2>
-          <p>
-            {issues
-              ? checksUnavailable
-                ? "Review the items below; some other checks could not be completed."
-                : "Review the items below to see what needs your help."
-              : checksUnavailable
-                ? "We can’t confirm everything is healthy. Try refreshing the unavailable sections."
-                : checksPending
-                  ? "We’re still checking services and recent activity."
-                  : "No drift, recent failures, or initializing services found."}
-          </p>
-        </div>
-        <div className="overview-condition__counts">
-          <strong>
-            {running}
-            <span> / {allApps.length}</span>
-          </strong>
-          <small>apps running</small>
-        </div>
-      </section>
-      <div className="overview-grid">
-        <div className="overview-grid__primary">
-          <section className="overview-section overview-section--attention" aria-labelledby="attention-title">
-            <div className="overview-section__heading">
-              <div>
-                <h2 id="attention-title">Needs attention</h2>
-                <p>Only the things you may need to act on.</p>
-              </div>
-              <span className="overview-section__total">
-                {issues === 0 && (checksUnavailable || checksPending) ? "—" : issues}
-              </span>
-            </div>
-            {issues === 0 ? (
-              <div className="overview-clear">
-                {checksUnavailable ? (
-                  <CircleAlert className="size-5" aria-hidden="true" />
-                ) : checksPending ? (
-                  <LoaderCircle className="size-5" aria-hidden="true" />
-                ) : (
-                  <Check className="size-5" aria-hidden="true" />
-                )}
-                <span>
-                  {checksUnavailable
-                    ? "Some checks could not be loaded. Refresh to try again."
+    <>
+      <PageHeader
+        title={greeting()}
+        description={system.data?.stackName}
+        actions={
+          <Button asChild>
+            <Link href="/apps/new">
+              <Plus /> New app
+            </Link>
+          </Button>
+        }
+      />
+
+      <div className="box box--4">
+        <Cell className={`cell--span2 ${bad ? "cell--alert" : ""}`}>
+          <div className="hero">
+            <span className={`hero__seal ${bad ? "hero__seal--bad" : checksPending ? "hero__seal--wait" : ""}`}>
+              {bad ? (
+                <CircleAlert aria-hidden="true" />
+              ) : checksPending ? (
+                <LoaderCircle className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Check aria-hidden="true" />
+              )}
+            </span>
+            <div>
+              <h2>
+                {issues
+                  ? `${issues} to check`
+                  : checksUnavailable
+                    ? "Some checks failed"
                     : checksPending
-                      ? "Checking services and activity…"
-                      : "All clear. Nothing to resolve right now."}
-                </span>
-              </div>
-            ) : (
-              <div className="overview-list">
+                      ? "Checking…"
+                      : "All good"}
+              </h2>
+              <p>{issues ? "See below" : checksUnavailable ? "Refresh to retry" : "Nothing needs you"}</p>
+            </div>
+          </div>
+        </Cell>
+        <Cell>
+          <div className="metric">
+            <strong>
+              {running}
+              <small> / {allApps.length}</small>
+            </strong>
+            <span>Apps running</span>
+          </div>
+        </Cell>
+        <Cell>
+          <div className="metric">
+            <strong>{services.isPending ? "–" : (services.data?.services.length ?? 0)}</strong>
+            <span>Data services</span>
+          </div>
+        </Cell>
+      </div>
+
+      <div className="box box--main">
+        <div className="col">
+          {issues > 0 && (
+            <Cell title="Needs attention" className="cell--alert">
+              <div className="rows">
                 {system.data?.dockerError && (
-                  <Link href="/system" className="overview-list__item">
-                    <span className="overview-list__marker overview-list__marker--danger" />
-                    <span>
-                      <strong>Docker unavailable</strong>
-                      <small>{system.data.dockerError}</small>
-                    </span>
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
+                  <AttentionRow href="/system" title="Docker unavailable" detail={system.data.dockerError} />
                 )}
                 {attention.map((app) => (
-                  <Link key={app.id} href={`/apps/${encodeURIComponent(app.slug)}`} className="overview-list__item">
-                    <span className="overview-list__marker overview-list__marker--danger" />
-                    <span>
-                      <strong>{app.slug}</strong>
-                      <small>
-                        {app.observed.message || `Wanted ${app.desiredRuntime}, observed ${app.observed.state}`}
-                      </small>
-                    </span>
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                ))}
-                {recentFailed.map((op) => (
-                  <Link key={op.id} href={`/activity/${op.id}`} className="overview-list__item">
-                    <span className="overview-list__marker overview-list__marker--danger" />
-                    <span>
-                      <strong>{describeOp(op)}</strong>
-                      <small>{op.errorMessage || "Operation failed"}</small>
-                    </span>
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                ))}
-                {initializing.map((service) => (
-                  <Link key={service.name} href="/data" className="overview-list__item">
-                    <span className="overview-list__marker overview-list__marker--pending" />
-                    <span>
-                      <strong>{service.name}</strong>
-                      <small>Service initializing</small>
-                    </span>
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-          <section className="overview-section overview-section--apps" aria-labelledby="apps-title">
-            <div className="overview-section__heading">
-              <div>
-                <h2 id="apps-title">Applications</h2>
-                <p>Current state of your apps.</p>
-              </div>
-              <Link href="/apps" className="overview-section__link">
-                View all <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </div>
-            {allApps.length === 0 ? (
-              <div className="overview-clear">
-                No applications yet. <Link href="/apps/new">Create your first application</Link>
-              </div>
-            ) : (
-              <div className="overview-list">
-                {allApps.slice(0, 6).map((app) => (
-                  <Link
+                  <AttentionRow
                     key={app.id}
                     href={`/apps/${encodeURIComponent(app.slug)}`}
-                    className="overview-list__item overview-list__item--app"
-                  >
-                    <span className="overview-app__initial" aria-hidden="true">
-                      {app.slug.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span>
-                      <strong>{app.slug}</strong>
-                      <small>{app.primaryDomain || `${app.toolchain} ${app.version}`}</small>
-                    </span>
-                    <StateBadge
-                      state={
-                        app.desiredRuntime === "running" && app.observed.state === "stopped"
-                          ? "drift"
-                          : app.observed.state
-                      }
-                    />
-                    <ArrowRight className="size-4 overview-list__arrow" aria-hidden="true" />
-                  </Link>
+                    title={app.slug}
+                    detail={app.observed.message || `Wants ${app.desiredRuntime}, is ${app.observed.state}`}
+                  />
+                ))}
+                {recentFailed.map((op) => (
+                  <AttentionRow
+                    key={op.id}
+                    href={`/activity/${op.id}`}
+                    title={describeOp(op)}
+                    detail={op.errorMessage || "Failed"}
+                  />
+                ))}
+                {initializing.map((service) => (
+                  <AttentionRow key={service.name} href="/data" title={service.name} detail="Initializing" />
                 ))}
               </div>
+            </Cell>
+          )}
+          <Cell
+            title="Apps"
+            action={
+              <Link href="/apps">
+                All <ArrowRight className="size-3.5" />
+              </Link>
+            }
+          >
+            {allApps.length === 0 ? (
+              <div className="empty">
+                <strong>No apps yet</strong>
+                <Button asChild size="sm">
+                  <Link href="/apps/new">Create one</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="rows">
+                {allApps.slice(0, 7).map((app) => {
+                  const drift = app.desiredRuntime === "running" && app.observed.state === "stopped";
+                  return (
+                    <Link key={app.id} href={`/apps/${encodeURIComponent(app.slug)}`} className="row">
+                      <span className="mono">{app.slug.slice(0, 1).toUpperCase()}</span>
+                      <span className="row__main">
+                        <strong>{app.slug}</strong>
+                        <small>{app.primaryDomain || `${app.toolchain} ${app.version}`}</small>
+                      </span>
+                      <StateBadge state={drift ? "drift" : app.observed.state} />
+                    </Link>
+                  );
+                })}
+              </div>
             )}
-          </section>
+          </Cell>
         </div>
-        <div className="overview-grid__secondary">
-          <section className="overview-section overview-section--services" aria-labelledby="services-title">
-            <div className="overview-section__heading">
-              <div>
-                <h2 id="services-title">Stack services</h2>
-                <p>Connections and scheduled work.</p>
-              </div>
+        <div className="col">
+          <Cell title="Stack">
+            <div className="rows">
+              {stackServices.map(([name, href, [state, label]]) => (
+                <Link key={name} href={href} className="row">
+                  <span className="row__main">
+                    <strong>{name}</strong>
+                  </span>
+                  <StateBadge state={state} label={label} />
+                </Link>
+              ))}
             </div>
-            <div className="overview-service-list">
-              <Link href="/system">
-                <Server className="size-4" aria-hidden="true" />
-                <span>Docker</span>
-                <StateBadge
-                  state={system.data?.dockerError ? "failed" : "healthy"}
-                  label={system.data?.dockerError ? "Unavailable" : "Connected"}
-                />
+          </Cell>
+          <Cell
+            title="Activity"
+            action={
+              <Link href="/activity">
+                {activeOps > 0 ? `${activeOps} active` : "All"} <ArrowRight className="size-3.5" />
               </Link>
-              <Link href="/ingress">
-                <Network className="size-4" aria-hidden="true" />
-                <span>Managed edge</span>
-                <StateBadge
-                  state={
-                    edge.error
-                      ? "failed"
-                      : edge.isPending
-                        ? "queued"
-                        : edge.data?.settings.enabled
-                          ? edge.data.state
-                          : "absent"
-                  }
-                  label={
-                    edge.isPending
-                      ? "Checking"
-                      : edge.error
-                        ? "Unavailable"
-                        : edge.data?.settings.enabled
-                          ? undefined
-                          : "Disabled"
-                  }
-                />
-              </Link>
-              <Link href="/ingress">
-                <Network className="size-4" aria-hidden="true" />
-                <span>Tunnel</span>
-                <StateBadge
-                  state={
-                    tunnel.error
-                      ? "failed"
-                      : tunnel.isPending
-                        ? "queued"
-                        : tunnel.data?.enabled
-                          ? tunnel.data.state
-                          : "absent"
-                  }
-                  label={
-                    tunnel.isPending
-                      ? "Checking"
-                      : tunnel.error
-                        ? "Unavailable"
-                        : tunnel.data?.enabled
-                          ? undefined
-                          : "Disabled"
-                  }
-                />
-              </Link>
-              <Link href="/backups">
-                <History className="size-4" aria-hidden="true" />
-                <span>Backup schedule</span>
-                <StateBadge
-                  state={
-                    schedule.error
-                      ? "failed"
-                      : schedule.isPending
-                        ? "queued"
-                        : schedule.data?.enabled
-                          ? schedule.data.lastState || "queued"
-                          : "absent"
-                  }
-                  label={
-                    schedule.isPending
-                      ? "Checking"
-                      : schedule.error
-                        ? "Unavailable"
-                        : schedule.data?.enabled
-                          ? schedule.data.lastState || "Enabled"
-                          : "Disabled"
-                  }
-                />
-              </Link>
-              <Link href="/data">
-                <Database className="size-4" aria-hidden="true" />
-                <span>Data services</span>
-                <strong>
-                  {services.isPending ? "…" : services.error ? "Unavailable" : (services.data?.services.length ?? 0)}
-                </strong>
-              </Link>
-            </div>
-          </section>
-          <section className="overview-section overview-section--activity" aria-labelledby="activity-title">
-            <div className="overview-section__heading">
-              <div>
-                <h2 id="activity-title">Recent activity</h2>
-                <p>What changed on this stack.</p>
-              </div>
-              <Link href="/activity" className="overview-section__link">
-                View all <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </div>
+            }
+          >
             {operations.isPending ? (
               <DomainLoading label="activity" />
             ) : operations.error ? (
               <DomainError message={messageOf(operations.error)} onRetry={() => void operations.refetch()} />
             ) : recent.length === 0 ? (
-              <div className="overview-clear">No activity yet.</div>
+              <p className="note">Nothing yet</p>
             ) : (
-              <div className="overview-activity-list">
+              <div className="rows">
                 {recent.map((op) => (
-                  <Link key={op.id} href={`/activity/${op.id}`}>
+                  <Link key={op.id} href={`/activity/${op.id}`} className="row">
                     <span
-                      className={`overview-activity-list__dot ${op.state === "failed" ? "overview-activity-list__dot--error" : ""}`}
+                      className={`dot ${op.state === "failed" ? "dot--bad" : isTerminal(op.state) ? "" : "dot--wait"}`}
                     />
-                    <span>
+                    <span className="row__main">
                       <strong>{describeOp(op)}</strong>
-                      <small>{formatRelative(op.createdAt)}</small>
                     </span>
-                    <StateBadge state={op.state} />
+                    <span className="row__meta">{formatRelative(op.createdAt)}</span>
                   </Link>
                 ))}
               </div>
             )}
-          </section>
+          </Cell>
         </div>
       </div>
-    </Page>
+    </>
+  );
+}
+
+function AttentionRow({ href, title, detail }: { href: string; title: string; detail: string }) {
+  return (
+    <Link href={href} className="row">
+      <span className="dot dot--bad" />
+      <span className="row__main">
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </span>
+      <ChevronRight className="size-4" aria-hidden="true" />
+    </Link>
   );
 }

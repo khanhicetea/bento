@@ -1,24 +1,29 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, Search } from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
+  Cell,
   DomainError,
   DomainLoading,
   EmptyState,
-  Page,
+  KeyValues,
   PageHeader,
-  Panel,
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { describeOp, formatDuration, formatRelative } from "../../lib/format.ts";
 import { isTerminal } from "./OperationTracker.tsx";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const stateFilters: Array<[string, string]> = [
+  ["all", "All"],
+  ["running", "Running"],
+  ["succeeded", "Done"],
+  ["failed", "Failed"],
+];
 
 export function OperationsPage() {
   const query = useQuery({
@@ -30,74 +35,55 @@ export function OperationsPage() {
   const [search, setSearch] = useState("");
   const operations = (query.data?.operations ?? []).filter(
     (op) =>
-      (state === "all" || op.state === state) &&
+      (state === "all" || op.state === state || (state === "running" && op.state === "queued")) &&
       `${op.kind} ${op.targetId} ${op.origin}`.toLowerCase().includes(search.toLowerCase()),
   );
   return (
-    <Page wide>
-      <PageHeader title="Activity" description="Durable runtime operations and their event timelines." />
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Input
-          className="max-w-sm"
-          placeholder="Filter kind or target"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <NativeSelect className="w-40" value={state} onChange={(event) => setState(event.target.value)}>
-          <option value="all">All states</option>
-          {["queued", "running", "succeeded", "failed", "cancelled", "interrupted"].map((value) => (
-            <option key={value}>{value}</option>
+    <>
+      <PageHeader title="Activity" />
+      <div className="toolbar">
+        <label className="toolbar__search">
+          <Search aria-hidden="true" />
+          <span className="sr-only">Search activity</span>
+          <Input placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />
+        </label>
+        <div className="seg" role="group" aria-label="Filter by state">
+          {stateFilters.map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={state === value} onClick={() => setState(value)}>
+              {label}
+            </button>
           ))}
-        </NativeSelect>
+        </div>
       </div>
-      {query.isPending && <DomainLoading label="operations" />}
+      {query.isPending && <DomainLoading label="activity" />}
       {query.error && <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />}
       {query.data && (
-        <section className="overflow-hidden rounded-xl border bg-card">
-          {operations.length === 0 ? (
-            <EmptyState title="No matching operations" />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>State</TableHead>
-                    <TableHead>Operation</TableHead>
-                    <TableHead>Target</TableHead>
-                    <TableHead>Origin</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Duration</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {operations.map((op) => (
-                    <TableRow key={op.id}>
-                      <TableCell>
-                        <StateBadge state={op.state} />
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/activity/${op.id}`} className="font-medium hover:underline">
-                          {describeOp(op)}
-                        </Link>
-                        {op.errorMessage && (
-                          <div className="max-w-sm truncate text-xs text-destructive">{op.errorMessage}</div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs">{op.targetId}</code>
-                      </TableCell>
-                      <TableCell>{op.origin}</TableCell>
-                      <TableCell title={op.createdAt}>{formatRelative(op.createdAt)}</TableCell>
-                      <TableCell>{formatDuration(op.startedAt, op.finishedAt)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </section>
+        <div className="box">
+          <div className="cell">
+            {operations.length === 0 ? (
+              <EmptyState icon={<Activity />} title="Nothing here" />
+            ) : (
+              <div className="rows rows--lined">
+                {operations.map((op) => (
+                  <Link key={op.id} href={`/activity/${op.id}`} className="row">
+                    <span className="row__main">
+                      <strong>{describeOp(op)}</strong>
+                      <small className={op.errorMessage ? "text-destructive!" : ""}>
+                        {op.errorMessage || `${op.origin} · ${formatDuration(op.startedAt, op.finishedAt)}`}
+                      </small>
+                    </span>
+                    <span className="row__meta max-sm:hidden" title={op.createdAt}>
+                      {formatRelative(op.createdAt)}
+                    </span>
+                    <StateBadge state={op.state} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
-    </Page>
+    </>
   );
 }
 
@@ -112,61 +98,60 @@ export function OperationDetailPage({ id }: { id: string }) {
     mutationFn: () => api.operations.cancel(id),
     onSuccess: (op) => queryClient.setQueryData(keys.operations.detail(id), op),
   });
-  if (query.isPending)
-    return (
-      <Page>
-        <DomainLoading label="operation" />
-      </Page>
-    );
-  if (query.error)
-    return (
-      <Page>
-        <DomainError message={messageOf(query.error)} />
-      </Page>
-    );
+  if (query.isPending) return <DomainLoading label="operation" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} />;
   const op = query.data;
   return (
-    <Page>
-      <PageHeader title={describeOp(op)} description={`Operation ${op.id}`} actions={<StateBadge state={op.state} />} />
-      {op.guidance && (
-        <Alert className="mb-4">
-          <strong>Guidance:</strong> {op.guidance}
-        </Alert>
-      )}
-      {op.errorMessage && (
-        <Alert variant="destructive" className="mb-4">
-          {op.errorMessage}
-        </Alert>
-      )}
-      <Panel title="Timeline" description={`${op.origin} · ${formatDuration(op.startedAt, op.finishedAt)}`}>
-        {(op.events ?? []).length === 0 ? (
-          <EmptyState title="No events recorded yet" />
-        ) : (
-          <ol className="m-0 grid list-none gap-0 p-0">
-            {(op.events ?? []).map((event) => (
-              <li key={event.seq} className="grid grid-cols-[5rem_1fr] gap-3 border-l-2 py-2 pl-4 text-sm">
-                <time className="text-xs text-muted-foreground" title={event.at}>
-                  {event.at.slice(11, 19)}
-                </time>
-                <span>
-                  <strong className={event.level === "error" ? "text-destructive" : ""}>{event.level}</strong> ·{" "}
-                  {event.message}
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-        {!isTerminal(op.state) && (
-          <Button className="mt-4" variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
-            Request cancellation
-          </Button>
-        )}
-        {cancel.error && (
-          <Alert variant="destructive" className="mt-3">
-            {messageOf(cancel.error)}
-          </Alert>
-        )}
-      </Panel>
-    </Page>
+    <>
+      <PageHeader
+        back={{ href: "/activity", label: "Activity" }}
+        title={describeOp(op)}
+        actions={
+          !isTerminal(op.state) && (
+            <Button variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+              Cancel
+            </Button>
+          )
+        }
+      />
+      <div className="box box--main">
+        <Cell title="Timeline">
+          {(op.events ?? []).length === 0 ? (
+            <p className="note">No events yet</p>
+          ) : (
+            <ol className="timeline">
+              {(op.events ?? []).map((event) => (
+                <li key={event.seq} data-level={event.level}>
+                  <time title={event.at}>{event.at.slice(11, 19)}</time>
+                  <span className={event.level === "error" ? "text-destructive" : ""}>{event.message}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Cell>
+        <div className="col">
+          <Cell title="Details">
+            <KeyValues
+              items={[
+                ["State", <StateBadge state={op.state} />],
+                ["Origin", op.origin],
+                ["Duration", formatDuration(op.startedAt, op.finishedAt)],
+                ["Created", <span title={op.createdAt}>{formatRelative(op.createdAt)}</span>],
+                ["ID", <code className="note">{op.id}</code>],
+              ]}
+            />
+          </Cell>
+          {(op.errorMessage || op.guidance || cancel.error) && (
+            <Cell title="Notes" className={op.errorMessage || cancel.error ? "cell--alert" : ""}>
+              <div className="grid gap-2 text-sm">
+                {op.errorMessage && <p className="text-destructive">{op.errorMessage}</p>}
+                {cancel.error && <p className="text-destructive">{messageOf(cancel.error)}</p>}
+                {op.guidance && <p>{op.guidance}</p>}
+              </div>
+            </Cell>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

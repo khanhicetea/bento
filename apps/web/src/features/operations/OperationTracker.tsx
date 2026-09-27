@@ -75,7 +75,10 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
     <TrackContext value={track}>
       {children}
       {tracked.length > 0 && (
-        <div className="fixed right-4 bottom-4 z-50 grid w-[min(420px,calc(100vw-2rem))] gap-2" aria-live="polite">
+        <div
+          className="fixed right-4 bottom-20 z-50 md:bottom-4 grid w-[min(420px,calc(100vw-2rem))] gap-2"
+          aria-live="polite"
+        >
           {tracked.map((op, index) => (
             <TrackedOperation key={op.id} initial={op} visible={index < 5} onDismiss={() => dismiss(op.id)} />
           ))}
@@ -115,10 +118,10 @@ function TrackedOperation({
   }, [op.state, onDismiss]);
   if (!visible) return null;
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-lg">
+    <div className="flex items-start gap-3 rounded-2xl border border-border bg-card p-3.5 text-sm shadow-xl">
       <span className="mt-0.5">
         {!isTerminal(op.state) && <Spinner />}
-        {op.state === "succeeded" && <CheckCircle2 className="size-4 text-emerald-600" />}
+        {op.state === "succeeded" && <CheckCircle2 className="size-4 text-success" />}
         {isTerminal(op.state) && op.state !== "succeeded" && <CircleAlert className="size-4 text-destructive" />}
       </span>
       <div className="min-w-0 flex-1">

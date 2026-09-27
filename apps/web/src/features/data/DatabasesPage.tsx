@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Database, Plus } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import { DomainError, DomainLoading, Field, Page, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, PageHeader, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 
@@ -17,95 +17,106 @@ export function DatabasesPage() {
   const catalog = useCatalog();
   const [engine, setEngine] = useState<T.Engine>("mysql");
   const [version, setVersion] = useState("");
+  const [adding, setAdding] = useState(false);
   const versions = engine === "mysql" ? catalog.data?.mysqlVersions : catalog.data?.postgresVersions;
   const selectedVersion = version || versions?.at(-1) || "";
   const create = useOperationMutation(() => api.services.create({ engine, version: selectedVersion }));
   return (
-    <Page>
-      <PageHeader
-        section="Data services"
-        title="Data services"
-        description="Shared MySQL, PostgreSQL, and Redis on the private data network. Services are add-only; volumes are never removed or replaced automatically."
-      />
+    <>
+      <PageHeader title="Data" description="Shared databases on the private network. Volumes are never removed." />
       {q.isPending && <DomainLoading label="services" />}
       {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
       {q.data && (
-        <section className="bento-service-section" aria-labelledby="services-title">
-          <div className="bento-service-section__head">
-            <h2 id="services-title">Managed services</h2>
-            <span>
-              {q.data.services.length} {q.data.services.length === 1 ? "service" : "services"}
-            </span>
+        <div className="box">
+          <div className="tiles">
+            {q.data.services.map((s) => (
+              <article key={s.name} className="cell tile">
+                <div className="tile__top">
+                  <span className="mono mono--lg">
+                    <Database className="size-5" />
+                  </span>
+                  <div className="tile__name">
+                    <strong>{s.name}</strong>
+                    <small>
+                      {s.engine === "mysql" ? "MySQL" : "PostgreSQL"} {s.version}
+                    </small>
+                  </div>
+                  <StateBadge
+                    state={s.initialized ? s.state : "starting"}
+                    title={s.message}
+                    label={s.initialized ? undefined : "Initializing"}
+                  />
+                </div>
+                <dl className="facts facts--1">
+                  <div>
+                    <dt>Image</dt>
+                    <dd>
+                      <code>{s.image}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Volume</dt>
+                    <dd>
+                      <code>{s.volume}</code>
+                    </dd>
+                  </div>
+                </dl>
+                {s.message && s.state !== "healthy" && <p className="note note--bad">{s.message}</p>}
+              </article>
+            ))}
+            {adding ? (
+              <section className="cell cell--muted tile tile--add-form" aria-label="Add service">
+                <div className="cell__title mb-0!">
+                  <h2>Add service</h2>
+                </div>
+                <div className="grid-2">
+                  <NativeSelect
+                    className="w-full"
+                    aria-label="Engine"
+                    value={engine}
+                    onChange={(e) => {
+                      setEngine(e.target.value as T.Engine);
+                      setVersion("");
+                    }}
+                  >
+                    <option value="mysql">MySQL</option>
+                    <option value="postgres">PostgreSQL</option>
+                  </NativeSelect>
+                  <NativeSelect
+                    className="w-full"
+                    aria-label="Version"
+                    value={selectedVersion}
+                    disabled={!versions?.length}
+                    onChange={(e) => setVersion(e.target.value)}
+                  >
+                    {!versions?.length && <option value="">{catalog.isPending ? "Loading…" : "None"}</option>}
+                    {(versions ?? []).map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <div className="actions">
+                  <Button variant="ghost" onClick={() => setAdding(false)} disabled={create.isPending}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => create.mutate(undefined, { onSuccess: () => setAdding(false) })}
+                    disabled={!selectedVersion || create.isPending}
+                  >
+                    <Plus /> Add
+                  </Button>
+                </div>
+                {create.error && <p className="note note--bad">{messageOf(create.error)}</p>}
+              </section>
+            ) : (
+              <button type="button" className="cell tile tile--add" onClick={() => setAdding(true)}>
+                {q.data.services.length === 0 ? <Database aria-hidden="true" /> : <Plus aria-hidden="true" />}
+                {q.data.services.length === 0 ? "No services yet · Add one" : "Add service"}
+              </button>
+            )}
           </div>
-          {q.data.services.length === 0 ? (
-            <p className="bento-service-empty">No managed data services yet. Add a version below when you need one.</p>
-          ) : (
-            <div className="bento-service-grid">
-              {q.data.services.map((s) => (
-                <article key={s.name} className="bento-service-tile">
-                  <div className="bento-service-tile__head">
-                    <div>
-                      <h3>{s.name}</h3>
-                      <p>
-                        {s.engine} · version {s.version}
-                      </p>
-                    </div>
-                    <StateBadge state={s.state} />
-                  </div>
-                  <div className="bento-service-tile__foot">
-                    <span>Persistent volume</span>
-                    <code>{s.volume}</code>
-                  </div>
-                  {!s.initialized && <p className="bento-service-tile__pending">Initializing this service</p>}
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+        </div>
       )}
-      <section className="bento-service-add" aria-labelledby="service-add-title">
-        <div>
-          <h2 id="service-add-title">Add a managed version</h2>
-          <p>Initialization creates a new volume once; established services refuse to start on a missing volume.</p>
-        </div>
-        <div className="bento-service-add__form">
-          <Field label="Engine">
-            <NativeSelect
-              value={engine}
-              onChange={(e) => {
-                const next = e.target.value as T.Engine;
-                setEngine(next);
-                setVersion("");
-              }}
-            >
-              <option value="mysql">MySQL</option>
-              <option value="postgres">PostgreSQL</option>
-            </NativeSelect>
-          </Field>
-          <Field label="Version">
-            <NativeSelect
-              value={selectedVersion}
-              disabled={!versions?.length}
-              onChange={(e) => setVersion(e.target.value)}
-            >
-              {!versions?.length && (
-                <option value="">{catalog.isPending ? "Loading versions…" : "No versions available"}</option>
-              )}
-              {(versions ?? []).map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Button onClick={() => create.mutate(undefined)} disabled={!selectedVersion || create.isPending}>
-            Add service
-          </Button>
-        </div>
-        {create.error && (
-          <Alert variant="destructive" className="mt-3">
-            {messageOf(create.error)}
-          </Alert>
-        )}
-      </section>
-    </Page>
+    </>
   );
 }

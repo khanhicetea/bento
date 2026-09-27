@@ -38,48 +38,48 @@ export function LogsPanel({ appId }: { appId: string }) {
   }, [lines.length, follow, atBottom]);
   const visible = filter ? lines.filter((line) => line.line.toLowerCase().includes(filter.toLowerCase())) : lines;
   return (
-    <div className="grid gap-2">
-      <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 rounded-lg border bg-background p-2 text-xs">
-        <span className="text-muted-foreground">
-          {status} · {lines.length} lines
+    <div className="box">
+      <div className="cell flex flex-wrap items-center gap-2 py-2.5!">
+        <span
+          className={`dot ${status === "streaming" ? "" : status === "connecting" || status === "reconnecting" ? "dot--wait" : "dot--bad"}`}
+        />
+        <span className="note">
+          {status} · {lines.length}
         </span>
         <Input
-          className="h-8 min-w-40 flex-1"
-          placeholder="Filter logs"
+          className="h-9 min-w-40 flex-1 rounded-full"
+          placeholder="Filter"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
-        <Button
-          size="sm"
-          variant={follow ? "default" : "outline"}
-          onClick={() => {
-            setFollow((value) => !value);
-            setAtBottom(true);
-          }}
-        >
-          {follow ? "Following" : "Follow"}
-        </Button>
-        <Button
-          size="icon-sm"
-          variant={wrap ? "default" : "outline"}
-          aria-label="Toggle line wrapping"
-          onClick={() => setWrap((value) => !value)}
-        >
-          <WrapText />
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="outline"
+        <div className="seg">
+          <button
+            type="button"
+            aria-pressed={follow}
+            onClick={() => {
+              setFollow((value) => !value);
+              setAtBottom(true);
+            }}
+          >
+            Follow
+          </button>
+          <button type="button" aria-pressed={wrap} aria-label="Wrap lines" onClick={() => setWrap((value) => !value)}>
+            <WrapText className="size-4" />
+          </button>
+        </div>
+        <button
+          type="button"
+          className="icon-btn"
           aria-label="Copy visible logs"
           onClick={() =>
             void navigator.clipboard.writeText(visible.map((line) => `${line.ts} ${line.line}`).join("\n"))
           }
         >
           <Clipboard />
-        </Button>
-        <Button size="icon-sm" variant="outline" aria-label="Clear logs" onClick={() => setLines([])}>
+        </button>
+        <button type="button" className="icon-btn" aria-label="Clear logs" onClick={() => setLines([])}>
           <Trash2 />
-        </Button>
+        </button>
       </div>
       <pre
         ref={viewport}
@@ -87,25 +87,25 @@ export function LogsPanel({ appId }: { appId: string }) {
           const node = event.currentTarget;
           setAtBottom(node.scrollHeight - node.scrollTop - node.clientHeight < 40);
         }}
-        className={`m-0 h-[calc(100vh-15rem)] min-h-96 overflow-auto rounded-lg bg-zinc-950 p-3 text-xs text-zinc-100 ${wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+        className={`console ${wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
       >
         {visible.map((line, index) => (
           <div key={`${line.ts}-${index}`}>
-            <span className="text-zinc-500">{line.ts.slice(11, 19)} </span>
+            <span>{line.ts.slice(11, 19)} </span>
             {line.line}
           </div>
         ))}
       </pre>
       {follow && !atBottom && (
         <Button
-          className="fixed right-8 bottom-8"
+          className="fixed right-6 bottom-24 rounded-full shadow-lg md:bottom-8"
           onClick={() => {
             const node = viewport.current;
             if (node) node.scrollTop = node.scrollHeight;
             setAtBottom(true);
           }}
         >
-          Jump to latest
+          Latest ↓
         </Button>
       )}
     </div>

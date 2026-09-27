@@ -170,12 +170,21 @@ export interface AppSummary {
   provisioned: boolean;
   configGeneration: number /* int */;
   observed: Observed;
+  /**
+   * BindingSummary lists data bindings without credentials, for list views.
+   */
+  bindingSummary: BindingSummary[];
+  resources: Resources;
+}
+export interface BindingSummary {
+  engine: Engine;
+  service?: string;
+  databases: number /* int */;
 }
 export interface App extends AppSummary {
   gid: number /* int */;
   home: string;
   runtime: RuntimeSpec;
-  resources: Resources;
   route: Route;
   domains: Domain[];
   bindings: Binding[];
