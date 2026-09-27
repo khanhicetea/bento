@@ -8,7 +8,7 @@ sidebar:
 ## Services
 
 `bento services` lists MySQL, PostgreSQL, and Redis. Add a managed version with
-`bento service add --engine postgres --version 17` (MySQL 8.0/8.4, PostgreSQL 16/17). Each version has one container
+`bento service add --engine postgres --version 17` (MySQL 8.0/8.4/9.4, PostgreSQL 14–18; 17 and 18 use the [pglayers](https://github.com/pglayers/pglayers) full profile with pgvector, PostGIS, pg_cron, timescaledb and more preinstalled). Each version has one container
 and one named volume on the private data network. Services are never removed by Bento, and an established service with
 a missing volume is **blocked** instead of started empty — restore the volume from an export or backup.
 

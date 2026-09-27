@@ -557,6 +557,9 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 					"instance exited with code %d during startup:\n%s", obs.ExitCode, tail)
 			}
 		}
+		if r.Cancelled(ctx) {
+			return ErrCancelled
+		}
 		if time.Now().After(deadline) {
 			return Fail("not-ready", "The instance keeps running; inspect logs and readiness configuration. Publication was not changed.",
 				"app did not become ready within %s: %s", c.ReadyTimeout, last)

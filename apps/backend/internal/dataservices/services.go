@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,6 +88,11 @@ func (m *Manager) volumeTarget(s domain.DataService) string {
 	case domain.EngineMySQL:
 		return "/var/lib/mysql"
 	case domain.EnginePostgres:
+		// PostgreSQL 18+ images keep PGDATA in a major-versioned subdirectory
+		// and refuse a volume mounted at the legacy /var/lib/postgresql/data.
+		if major, err := strconv.Atoi(s.Version); err == nil && major >= 18 {
+			return "/var/lib/postgresql"
+		}
 		return "/var/lib/postgresql/data"
 	default:
 		return "/data"

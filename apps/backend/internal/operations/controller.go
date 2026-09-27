@@ -339,6 +339,12 @@ func (r *Run) Phase(ctx context.Context, phase string) error {
 	return nil
 }
 
+// Cancelled reports whether cancellation was requested. Handlers may call it
+// inside long waits that have no pending effects, such as readiness polling.
+func (r *Run) Cancelled(ctx context.Context) bool {
+	return store.CancelRequested(ctx, r.c.Store.DB(), r.Op.ID)
+}
+
 func (r *Run) Info(ctx context.Context, format string, args ...any) {
 	_ = store.AppendEvent(ctx, r.c.Store.DB(), r.Op.ID, "info", fmt.Sprintf(format, args...))
 	r.c.notify(r.Op.ID)

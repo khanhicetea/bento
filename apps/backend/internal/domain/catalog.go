@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Curated toolchains. A toolchain is a command environment inside a shared
@@ -10,6 +11,10 @@ import (
 // digest where the release has been verified; the resolved image ID of every
 // built managed image is additionally recorded in state.
 var PHPVersions = map[string]string{
+	"7.4": "php:7.4-fpm-bullseye",
+	"8.0": "php:8.0-fpm-bullseye",
+	"8.1": "php:8.1-fpm-bookworm",
+	"8.2": "php:8.2-fpm-bookworm",
 	"8.3": "php:8.3-fpm-bookworm",
 	"8.4": "php:8.4-fpm-bookworm@sha256:43e1ac38217031dbbecae60e84ccf8593722031559178d199bf56adb0145d5d0",
 	"8.5": "php:8.5-fpm-bookworm",
@@ -32,6 +37,17 @@ var HTTPToolchains = map[string]map[string]string{
 }
 
 const DebianBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+
+// RuntimeDebianBase returns the Debian base whose release matches a runtime
+// key's base image. End-of-life bullseye releases reuse the PHP base itself:
+// the current debian:bullseye-slim carries security updates that
+// archive.debian.org cannot satisfy, while the PHP image's packages resolve.
+func (k ImageKey) RuntimeDebianBase() string {
+	if ref, err := k.BaseImage(); err == nil && strings.Contains(ref, "-bullseye") {
+		return ref
+	}
+	return DebianBase
+}
 
 // Supervision and scheduler artifacts downloaded (and checksum-verified) while
 // building managed runtime images.
@@ -59,11 +75,19 @@ const (
 var MySQLVersions = map[string]string{
 	"8.0": "mysql:8.0",
 	"8.4": "mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d",
+	"9.4": "mysql:9.4@sha256:135bc87cce147c3d28cecb9ad270b814cb52805af7ddeea83bfcaf157d05a6b2",
 }
 
+// PostgreSQL 17+ use the pglayers "full" profile (official postgres base plus
+// prebuilt extensions such as pgvector, PostGIS, pg_cron, and timescaledb, with
+// shared_preload_libraries preconfigured). pglayers does not publish 14-16, so
+// those use the official image with its bundled contrib extensions.
 var PostgresVersions = map[string]string{
-	"16": "postgres:16-bookworm",
-	"17": "postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652",
+	"14": "postgres:14-bookworm@sha256:dcc2ca942d8518144f387a0c2630188427835f984caaed0418b986928e761809",
+	"15": "postgres:15-bookworm@sha256:539ceaaae49b3a7c8a04467cf00cc6788d8e3f1675df41860d86eebc4c40524f",
+	"16": "postgres:16-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67",
+	"17": "ghcr.io/pglayers/pglayers-full:17@sha256:b7969f13473358d72a34c23391449f7065090a1ecc455cba75913287e975044c",
+	"18": "ghcr.io/pglayers/pglayers-full:18@sha256:c71d1b7bd757dfb6049a85a1cdaaf5610675c215549ccfa31351133189f335e0",
 }
 
 // PoolProfile is a named FPM capacity profile for the app's single pool.

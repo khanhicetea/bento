@@ -23,7 +23,7 @@ and reconciliation pause.
 
 ## Highlights
 
-- **One container per app**, built from shared managed images (PHP 8.3–8.5 with local Nginx, Node.js 20–24, Bun,
+- **One container per app**, built from shared managed images (PHP 7.4–8.5 with local Nginx, Node.js 20–24, Bun,
   Python). Non-root from PID 1, read-only root filesystem, all capabilities dropped, no host ports, no Docker socket.
 - **Stable identity.** Every app incarnation has a random ID and a never-reused UID/GID. Removing an app keeps its home
   and databases until you explicitly prune them.

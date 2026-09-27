@@ -36,7 +36,7 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	if err != nil {
 		return ImageSpec{}, err
 	}
-	args := map[string]string{"DEBIAN_BASE": domain.DebianBase}
+	args := map[string]string{"DEBIAN_BASE": key.RuntimeDebianBase()}
 	for k, v := range domain.RuntimeArtifacts {
 		args[k] = v
 	}

@@ -4,4 +4,10 @@ exec 2>&1
 # shellcheck source=/dev/null
 source /usr/local/lib/bento/env.bash
 mkdir -p /tmp/nginx /run/nginx
-exec nginx -e stderr -c /etc/bento/nginx.conf -g 'daemon off;'
+# -e (nginx >= 1.19.5) keeps the pre-config error log off the read-only root;
+# older nginx on end-of-life bases only has the config's error_log.
+early_log=()
+if nginx -h 2>&1 | grep -q -- '-e filename'; then
+  early_log=(-e stderr)
+fi
+exec nginx "${early_log[@]}" -c /etc/bento/nginx.conf -g 'daemon off;'

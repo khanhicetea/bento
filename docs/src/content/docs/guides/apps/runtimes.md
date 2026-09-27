@@ -12,7 +12,7 @@ sidebar:
   "pool": "small", "uploadLimitMb": 64, "readyPath": "/up", "releaseSymlink": "current" } }
 ```
 
-- Versions: 8.3, 8.4, 8.5. Pool profiles: `tiny`, `small`, `medium`, `large`, `xlarge`, `ondemand`.
+- Versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5 (7.4 and 8.0 are end-of-life, bullseye-based). Images include bash completion, git, grep, jq, and vim. Pool profiles: `tiny`, `small`, `medium`, `large`, `xlarge`, `ondemand`.
 - `front-controller` executes only `index.php` (with `PATH_INFO`); `legacy` executes any `.php` file under the root.
 - App code lives at `/home/<slug>/app`. `documentRoot` is relative to that directory.
 - Local Nginx listens on port 8080 inside the container, serves static files, denies dotfiles (except
