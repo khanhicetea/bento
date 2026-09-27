@@ -1,12 +1,11 @@
-import { useState, type FormEvent, type ReactNode } from "react";
-import type { Application, ApplicationList, SaveApplicationInput } from "@bento/shared";
-import { Database, Globe2, Save, Server, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api, messageOf, type T } from "../../api/client.ts";
+import { keys } from "../../api/keys.ts";
+import { Field } from "../../components/DomainState.tsx";
+import { useCatalog, useOperationMutation } from "./useApplications.ts";
 import { Alert } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -15,413 +14,273 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Spinner } from "@/components/ui/spinner";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 
-type ApplicationEditorProps = {
-  application: Application | null;
-  settings: ApplicationList;
-  error: string | null;
-  saving: boolean;
-  onClose: () => void;
-  onSave: (input: SaveApplicationInput) => Promise<Application>;
-};
+type Props = { app: T.App | null; onClose: () => void };
 
-export function ApplicationEditor({ application, settings, error, saving, onClose, onSave }: ApplicationEditorProps) {
-  const primaryDatabase = application?.databases[0];
-  const initialDatabase = primaryDatabase
-    ? databaseSelection(primaryDatabase.engine, primaryDatabase.service)
-    : databaseSelection(settings.defaults?.databaseEngine ?? "sqlite", settings.defaults?.databaseService);
-  const [database, setDatabase] = useState(initialDatabase);
-  const [tls, setTls] = useState(application?.tls ?? "shared");
-  const [kind, setKind] = useState<Application["kind"]>(application?.kind ?? "php");
-  const relationalDatabase = database.startsWith("mysql:") || database.startsWith("postgres:");
-  const creating = application === null;
+/** Create or edit an app. The runtime kind is fixed per app incarnation. */
+export function ApplicationEditor({ app, onClose }: Props) {
+  const catalog = useCatalog();
+  const editing = app !== null;
+  const [slug, setSlug] = useState(app?.slug ?? "");
+  const [kind, setKind] = useState<T.RuntimeKind>(app?.runtime.kind ?? "php-fpm");
+  const [php, setPhp] = useState<T.PHPRuntime>(
+    app?.runtime.php ?? {
+      version: "8.4",
+      documentRoot: "public",
+      routing: "front-controller",
+      pool: "small",
+      uploadLimitMb: 64,
+    },
+  );
+  const [http, setHttp] = useState<T.HTTPRuntime>(
+    app?.runtime.http ?? { toolchain: "node", version: "24", argv: ["node", "server.js"], workdir: "", port: 3000 },
+  );
+  const [argvText, setArgvText] = useState(JSON.stringify(http.argv));
+  const [domains, setDomains] = useState((app?.domains ?? []).map((d) => d.name).join("\n"));
+  const [ingress, setIngress] = useState<T.IngressMode>(app?.ingress ?? "managed");
+  const [route, setRoute] = useState<T.Route>(app?.route ?? { tls: "none", redirectHttps: false, accessLog: false });
+  const [resources, setResources] = useState<T.Resources>(
+    app?.resources ?? { memoryMb: 512, cpuMillis: 1000, pids: 256 },
+  );
+  const [binding, setBinding] = useState("sqlite");
+  const [argvError, setArgvError] = useState<string | null>(null);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const [databaseEngine, databaseService] = database.split(":") as [
-      SaveApplicationInput["databaseEngine"],
-      string | undefined,
-    ];
-    const databaseName = String(form.get("databaseName") ?? "").trim();
-    const input: SaveApplicationInput = {
-      slug: String(form.get("slug") ?? "").trim(),
-      kind,
-      domain: String(form.get("domain") ?? "").trim(),
-      aliases: String(form.get("aliases") ?? "")
-        .split(",")
-        .map((alias) => alias.trim())
-        .filter(Boolean),
-      ...(kind === "php"
-        ? {
-            documentRoot: String(form.get("documentRoot") ?? "").trim(),
-            entrypointMode: String(form.get("entrypointMode")) as SaveApplicationInput["entrypointMode"],
-            phpVersion: String(form.get("phpVersion")),
-            fpmProfile: String(form.get("fpmProfile")),
-          }
-        : {
-            processLanguage: String(form.get("processLanguage")) as SaveApplicationInput["processLanguage"],
-            processVersion: String(form.get("processVersion") ?? "").trim(),
-            processCommand: String(form.get("processCommand") ?? "")
-              .split("\n")
-              .map((argument) => argument.trim())
-              .filter(Boolean),
-            processWorkdir: String(form.get("processWorkdir") ?? "").trim() || undefined,
-            processPort: Number(form.get("processPort") ?? 8080),
-            processHealthPath: String(form.get("processHealthPath") ?? "").trim() || undefined,
-          }),
-      tls,
-      tlsCertificatePath: tls === "external" ? String(form.get("tlsCertificatePath") ?? "").trim() : undefined,
-      tlsKeyPath: tls === "external" ? String(form.get("tlsKeyPath") ?? "").trim() : undefined,
-      accessLog: form.get("accessLog") === "on",
-      databaseEngine,
-      databaseService,
-      createDatabase: relationalDatabase && form.get("createDatabase") === "on",
-      databaseName: relationalDatabase && form.get("createDatabase") === "on" ? databaseName || undefined : undefined,
-    };
-
-    try {
-      await onSave(input);
-      onClose();
-    } catch {
-      // The TanStack mutation exposes the sanitized oRPC error in the dialog.
+  const save = useOperationMutation(async () => {
+    const runtime: T.RuntimeSpec =
+      kind === "php-fpm" ? { kind, php } : { kind, http: { ...http, argv: JSON.parse(argvText) as string[] } };
+    const domainList = domains.split(/[\s,]+/).filter(Boolean);
+    if (editing) {
+      return api.apps.update(app.id, {
+        expectedGeneration: app.configGeneration,
+        runtime,
+        resources,
+        ingress,
+        domains: domainList,
+        route,
+      });
     }
+    const [engine, service] = binding.split(":");
+    return api.apps.create({
+      slug,
+      runtime,
+      resources,
+      ingress,
+      domains: domainList,
+      route,
+      bindings: binding === "none" ? [] : [{ engine: engine as T.Engine, service }],
+    });
+  });
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (kind === "http-process") {
+      try {
+        const parsed: unknown = JSON.parse(argvText);
+        if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every((a) => typeof a === "string"))
+          throw new Error();
+      } catch {
+        setArgvError('argv must be a JSON array of strings, for example ["node","server.js"]');
+        return;
+      }
+    }
+    setArgvError(null);
+    save.mutate(undefined, { onSuccess: onClose });
   }
 
+  const toolchains = catalog.data?.toolchains ?? {};
   return (
-    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent
-        className="w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] max-w-[1080px] gap-0 overflow-y-auto p-0 sm:!max-w-[1080px]"
-        showCloseButton={!saving}
-      >
-        <div className="border-b border-border bg-muted/30 px-8 py-6 pr-16 max-[700px]:px-4 max-[700px]:py-5">
-          <DialogHeader className="gap-3">
-            <div className="flex items-center gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                <Server className="size-5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <DialogTitle className="text-xl">
-                  {creating ? "Create application" : `Edit ${application.slug}`}
-                </DialogTitle>
-                <DialogDescription className="mt-1">
-                  Configure identity, runtime, data, and delivery settings in one place.
-                </DialogDescription>
-              </div>
-            </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+        <form onSubmit={submit} className="grid gap-4">
+          <DialogHeader>
+            <DialogTitle>{editing ? `Edit ${app.slug}` : "New application"}</DialogTitle>
+            <DialogDescription>
+              {editing
+                ? "Boot-affecting changes recreate a running instance; frontend and scheduler changes reload in place. Stopped apps stay stopped."
+                : "The app is provisioned stopped and unpublished. Start it, verify it, then publish."}
+            </DialogDescription>
           </DialogHeader>
-        </div>
-
-        <form onSubmit={(event) => void submit(event)}>
-          <fieldset
-            disabled={saving}
-            className="space-y-5 px-8 py-6 max-[700px]:space-y-4 max-[700px]:px-4 max-[700px]:py-5"
-          >
-            {error && <Alert variant="destructive">{error}</Alert>}
-
-            <section className="rounded-2xl border border-border bg-card p-5 shadow-sm max-[700px]:p-4">
-              <SectionHeading
-                icon={<Globe2 className="size-4" />}
-                title="Application identity"
-                description="The name and domains operators use to reach this application."
-              />
-              <div className="mt-5 grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
-                <label>
-                  <FieldLabel>Slug</FieldLabel>
-                  <Input
-                    className="w-full"
-                    name="slug"
-                    required
-                    maxLength={63}
-                    pattern="[a-z0-9][a-z0-9-]*"
-                    defaultValue={application?.slug ?? ""}
-                    readOnly={!creating}
-                  />
-                  <FieldHint>Lowercase letters, numbers, and hyphens.</FieldHint>
-                </label>
-                <label>
-                  <FieldLabel>Primary domain</FieldLabel>
-                  <Input
-                    className="w-full"
-                    name="domain"
-                    required
-                    defaultValue={application?.domain ?? ""}
-                    placeholder="app.example.com"
-                  />
-                  <FieldHint>This is the public address for the application.</FieldHint>
-                </label>
-                <label className="col-span-full">
-                  <FieldLabel>
-                    Aliases <span className="font-normal text-muted-foreground">(comma-separated)</span>
-                  </FieldLabel>
-                  <Input
-                    className="w-full"
-                    name="aliases"
-                    defaultValue={application?.aliases.join(", ") ?? ""}
-                    placeholder="www.example.com, alternate.example.com"
-                  />
-                  <FieldHint>Optional domains that should point to the same application.</FieldHint>
-                </label>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-border bg-card p-5 shadow-sm max-[700px]:p-4">
-              <SectionHeading
-                icon={<Server className="size-4" />}
-                title="Runtime and routing"
-                description="Choose a PHP pool or a supervised Node.js, Bun, or Python HTTP process."
-              />
-              <div className="mt-5 grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
-                <label className="col-span-full">
-                  <FieldLabel>Runtime kind</FieldLabel>
-                  <NativeSelect
-                    className="w-full"
-                    value={kind}
-                    disabled={!creating}
-                    onChange={(event) => setKind(event.target.value as Application["kind"])}
-                  >
-                    <NativeSelectOption value="php">PHP-FPM application</NativeSelectOption>
-                    <NativeSelectOption value="process">Node.js, Bun, or Python process</NativeSelectOption>
-                  </NativeSelect>
-                  {!creating && <FieldHint>Runtime kind cannot be changed in place.</FieldHint>}
-                </label>
-                {kind === "php" ? (
-                  <>
-                    <label>
-                      <FieldLabel>PHP version</FieldLabel>
-                      <NativeSelect
-                        className="w-full"
-                        name="phpVersion"
-                        required
-                        defaultValue={application?.phpVersion ?? settings.defaults?.phpVersion}
-                      >
-                        {settings.phpVersions.map((version) => (
-                          <NativeSelectOption key={version} value={version}>
-                            PHP {version}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </label>
-                    <label>
-                      <FieldLabel>FPM capacity</FieldLabel>
-                      <NativeSelect
-                        className="w-full"
-                        name="fpmProfile"
-                        required
-                        defaultValue={application?.fpmProfile ?? settings.defaults?.fpmProfile}
-                      >
-                        {settings.fpmProfiles.map((profile) => (
-                          <NativeSelectOption key={profile} value={profile}>
-                            {profile}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </label>
-                    <label>
-                      <FieldLabel>Document root</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="documentRoot"
-                        required
-                        defaultValue={application?.documentRoot ?? "public"}
-                      />
-                      <FieldHint>Directory served by the web runtime.</FieldHint>
-                    </label>
-                    <label>
-                      <FieldLabel>Routing mode</FieldLabel>
-                      <NativeSelect
-                        className="w-full"
-                        name="entrypointMode"
-                        defaultValue={application?.entrypointMode ?? "front-controller"}
-                      >
-                        <NativeSelectOption value="front-controller">Front controller</NativeSelectOption>
-                        <NativeSelectOption value="legacy">Direct PHP files (legacy)</NativeSelectOption>
-                      </NativeSelect>
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label>
-                      <FieldLabel>Toolchain</FieldLabel>
-                      <NativeSelect
-                        className="w-full"
-                        name="processLanguage"
-                        defaultValue={application?.processRuntime?.language ?? "node"}
-                      >
-                        <NativeSelectOption value="node">Node.js</NativeSelectOption>
-                        <NativeSelectOption value="bun">Bun</NativeSelectOption>
-                        <NativeSelectOption value="python">Python</NativeSelectOption>
-                      </NativeSelect>
-                    </label>
-                    <label>
-                      <FieldLabel>Exact runtime version</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="processVersion"
-                        required
-                        defaultValue={application?.processRuntime?.version ?? ""}
-                        placeholder="24 or 3.13.1"
-                      />
-                    </label>
-                    <label className="col-span-full">
-                      <FieldLabel>Start argv</FieldLabel>
-                      <Textarea
-                        className="min-h-28 w-full font-mono"
-                        name="processCommand"
-                        required
-                        defaultValue={application?.processRuntime?.command.join("\n") ?? ""}
-                        placeholder={"node\ndist/server.js"}
-                      />
-                      <FieldHint>One literal argument per line; no implicit shell.</FieldHint>
-                    </label>
-                    <label>
-                      <FieldLabel>Working directory</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="processWorkdir"
-                        defaultValue={application?.processRuntime?.workdir ?? ""}
-                        placeholder="Defaults to /home/&lt;slug&gt;/code"
-                      />
-                    </label>
-                    <label>
-                      <FieldLabel>Private HTTP port</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="processPort"
-                        type="number"
-                        min={1024}
-                        max={65535}
-                        required
-                        defaultValue={application?.processRuntime?.internalPort ?? 8080}
-                      />
-                    </label>
-                    <label className="col-span-full">
-                      <FieldLabel>HTTP health path</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="processHealthPath"
-                        defaultValue={application?.processRuntime?.healthPath ?? ""}
-                        placeholder="Optional, for example /health"
-                      />
-                      <FieldHint>Without a path Bento checks TCP readiness.</FieldHint>
-                    </label>
-                  </>
-                )}
-              </div>
-            </section>
-
-            {creating && (
-              <section className="rounded-2xl border border-border bg-card p-5 shadow-sm max-[700px]:p-4">
-                <SectionHeading
-                  icon={<Database className="size-4" />}
-                  title="Initial database binding"
-                  description="Create the first storage binding while provisioning the application."
+          <div className="grid grid-cols-2 gap-4 max-[640px]:grid-cols-1">
+            <Field label="Slug" hint="Permanent; names the home /home/<slug>.">
+              <Input value={slug} disabled={editing} onChange={(e) => setSlug(e.target.value)} required />
+            </Field>
+            <Field label="Runtime">
+              <NativeSelect value={kind} disabled={editing} onChange={(e) => setKind(e.target.value as T.RuntimeKind)}>
+                <option value="php-fpm">PHP-FPM (local Nginx)</option>
+                <option value="http-process">HTTP process</option>
+              </NativeSelect>
+            </Field>
+          </div>
+          {kind === "php-fpm" ? (
+            <div className="grid grid-cols-2 gap-4 max-[640px]:grid-cols-1">
+              <Field label="PHP version">
+                <NativeSelect value={php.version} onChange={(e) => setPhp({ ...php, version: e.target.value })}>
+                  {(catalog.data?.phpVersions ?? [php.version]).map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Document root" hint="Relative to the home.">
+                <Input value={php.documentRoot} onChange={(e) => setPhp({ ...php, documentRoot: e.target.value })} />
+              </Field>
+              <Field label="Routing">
+                <NativeSelect value={php.routing} onChange={(e) => setPhp({ ...php, routing: e.target.value })}>
+                  <option value="front-controller">Front controller (index.php only)</option>
+                  <option value="legacy">Legacy (any .php under the root)</option>
+                </NativeSelect>
+              </Field>
+              <Field label="Pool profile">
+                <NativeSelect value={php.pool} onChange={(e) => setPhp({ ...php, pool: e.target.value })}>
+                  {(catalog.data?.poolProfiles ?? [php.pool]).map((p) => (
+                    <option key={p}>{p}</option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Upload limit (MB)">
+                <Input
+                  type="number"
+                  value={php.uploadLimitMb}
+                  onChange={(e) => setPhp({ ...php, uploadLimitMb: Number(e.target.value) })}
                 />
-                <div className="mt-5 grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
-                  <label className="col-span-full">
-                    <FieldLabel>Engine or managed service</FieldLabel>
-                    <NativeSelect
-                      className="w-full"
-                      value={database}
-                      onChange={(event) => setDatabase(event.target.value)}
-                    >
-                      {settings.databaseServices.map((service) => (
-                        <NativeSelectOption
-                          key={`${service.engine}:${service.service}`}
-                          value={databaseSelection(service.engine, service.service)}
-                        >
-                          {service.engine === "mysql" ? "MySQL" : "PostgreSQL"} {service.version} ({service.service})
-                        </NativeSelectOption>
-                      ))}
-                      <NativeSelectOption value="sqlite">SQLite</NativeSelectOption>
-                    </NativeSelect>
-                  </label>
-                  {relationalDatabase && (
-                    <>
-                      <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-3">
-                        <Checkbox name="createDatabase" defaultChecked={creating} className="mt-0.5" />
-                        <span className="text-sm">
-                          <span className="font-medium">Create database</span>
-                          <small className="mt-1 block text-xs text-muted-foreground">
-                            Existing bindings and durable databases are never removed here.
-                          </small>
-                        </span>
-                      </label>
-                      <label>
-                        <FieldLabel>Database name</FieldLabel>
-                        <Input
-                          className="w-full"
-                          name="databaseName"
-                          defaultValue={creating ? "" : primaryDatabase?.names[0]}
-                          placeholder="Defaults to the application slug"
-                        />
-                      </label>
-                    </>
-                  )}
-                </div>
-              </section>
-            )}
-
-            <section className="rounded-2xl border border-border bg-card p-5 shadow-sm max-[700px]:p-4">
-              <SectionHeading
-                icon={<ShieldCheck className="size-4" />}
-                title="TLS and logs"
-                description="Protect traffic and decide which request information is retained."
+              </Field>
+              <Field label="Release symlink" hint="Optional, e.g. current (deliberately traversed).">
+                <Input
+                  value={php.releaseSymlink ?? ""}
+                  onChange={(e) => setPhp({ ...php, releaseSymlink: e.target.value || undefined })}
+                />
+              </Field>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 max-[640px]:grid-cols-1">
+              <Field label="Toolchain">
+                <NativeSelect
+                  value={http.toolchain}
+                  onChange={(e) =>
+                    setHttp({
+                      ...http,
+                      toolchain: e.target.value,
+                      version: (toolchains[e.target.value] ?? [""]).at(-1) ?? "",
+                    })
+                  }
+                >
+                  {Object.keys(toolchains).map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Version">
+                <NativeSelect value={http.version} onChange={(e) => setHttp({ ...http, version: e.target.value })}>
+                  {(toolchains[http.toolchain] ?? [http.version]).map((v) => (
+                    <option key={v}>{v}</option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Command argv (JSON)" hint="Executed directly, never through a shell.">
+                <Input value={argvText} onChange={(e) => setArgvText(e.target.value)} />
+              </Field>
+              <Field label="Working directory" hint="Relative to the home.">
+                <Input value={http.workdir} onChange={(e) => setHttp({ ...http, workdir: e.target.value })} />
+              </Field>
+              <Field label="HTTP port" hint="Listen on 0.0.0.0 inside the container.">
+                <Input
+                  type="number"
+                  value={http.port}
+                  onChange={(e) => setHttp({ ...http, port: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label="Readiness path">
+                <Input
+                  value={http.readyPath ?? ""}
+                  placeholder="/"
+                  onChange={(e) => setHttp({ ...http, readyPath: e.target.value || undefined })}
+                />
+              </Field>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-4 max-[640px]:grid-cols-1">
+            <Field label="Memory (MB)">
+              <Input
+                type="number"
+                value={resources.memoryMb}
+                onChange={(e) => setResources({ ...resources, memoryMb: Number(e.target.value) })}
               />
-              <div className="mt-5 grid grid-cols-2 gap-4 max-[700px]:grid-cols-1">
-                <label>
-                  <FieldLabel>TLS mode</FieldLabel>
-                  <NativeSelect
-                    className="w-full"
-                    value={tls}
-                    onChange={(event) => setTls(event.target.value as Application["tls"])}
-                  >
-                    <NativeSelectOption value="shared">Shared starter certificate</NativeSelectOption>
-                    <NativeSelectOption value="self-ca">Stack private CA</NativeSelectOption>
-                    <NativeSelectOption value="acme">ACME</NativeSelectOption>
-                    <NativeSelectOption value="external">External certificate</NativeSelectOption>
-                  </NativeSelect>
-                </label>
-                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
-                  <Checkbox name="accessLog" defaultChecked={application?.accessLog ?? false} />
-                  <span className="text-sm font-medium">Enable access logs</span>
-                </label>
-                {tls === "external" && (
-                  <>
-                    <label>
-                      <FieldLabel>Certificate path</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="tlsCertificatePath"
-                        required
-                        defaultValue={application?.tlsCertificatePath ?? ""}
-                        placeholder="/etc/ssl/certs/app.crt"
-                      />
-                    </label>
-                    <label>
-                      <FieldLabel>Private key path</FieldLabel>
-                      <Input
-                        className="w-full"
-                        name="tlsKeyPath"
-                        required
-                        defaultValue={application?.tlsKeyPath ?? ""}
-                        placeholder="/etc/ssl/private/app.key"
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-            </section>
-          </fieldset>
-
-          <DialogFooter className="border-t border-border bg-muted/30 px-8 py-4 max-[700px]:px-4">
-            <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
+            </Field>
+            <Field label="CPU (millicores)">
+              <Input
+                type="number"
+                value={resources.cpuMillis}
+                onChange={(e) => setResources({ ...resources, cpuMillis: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Process limit">
+              <Input
+                type="number"
+                value={resources.pids}
+                onChange={(e) => setResources({ ...resources, pids: Number(e.target.value) })}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4 max-[640px]:grid-cols-1">
+            <Field label="Ingress" hint="Only managed routes are controlled by Bento.">
+              <NativeSelect value={ingress} onChange={(e) => setIngress(e.target.value as T.IngressMode)}>
+                <option value="managed">Managed edge</option>
+                <option value="external">External (tunnel or proxy, operator-owned)</option>
+                <option value="none">None (private only)</option>
+              </NativeSelect>
+            </Field>
+            <Field label="TLS">
+              <NativeSelect
+                value={route.tls}
+                onChange={(e) => setRoute({ ...route, tls: e.target.value as T.TLSMode })}
+              >
+                <option value="none">None</option>
+                <option value="self-signed">Self-signed boot certificate</option>
+                <option value="acme">ACME (Let's Encrypt)</option>
+                <option value="external">External certificate</option>
+              </NativeSelect>
+            </Field>
+          </div>
+          {route.tls === "external" && (
+            <Field label="Certificate name" hint="Files at edge/certs/external/<name>/fullchain.pem and privkey.pem.">
+              <Input value={route.certName ?? ""} onChange={(e) => setRoute({ ...route, certName: e.target.value })} />
+            </Field>
+          )}
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={route.redirectHttps}
+                disabled={route.tls === "none"}
+                onChange={(e) => setRoute({ ...route, redirectHttps: e.target.checked })}
+              />
+              Redirect HTTP to HTTPS
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={route.accessLog}
+                onChange={(e) => setRoute({ ...route, accessLog: e.target.checked })}
+              />
+              Access log
+            </label>
+          </div>
+          <Field label="Domains" hint="One per line; the first is primary.">
+            <textarea
+              className="min-h-20 rounded-md border border-input bg-transparent p-2 text-sm"
+              value={domains}
+              onChange={(e) => setDomains(e.target.value)}
+            />
+          </Field>
+          {!editing && <InitialBinding value={binding} onChange={setBinding} />}
+          {(argvError || save.error) && <Alert variant="destructive">{argvError ?? messageOf(save.error)}</Alert>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={saving} type="submit">
-              {saving ? <Spinner /> : <Save className="size-4" aria-hidden="true" />}
-              {creating ? "Create and apply" : "Save and apply"}
+            <Button type="submit" disabled={save.isPending}>
+              {editing ? "Save changes" : "Create application"}
             </Button>
           </DialogFooter>
         </form>
@@ -430,26 +289,24 @@ export function ApplicationEditor({ application, settings, error, saving, onClos
   );
 }
 
-function SectionHeading({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
+function InitialBinding({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const services = useServicesForBinding();
   return (
-    <div className="flex items-start gap-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-primary">{icon}</span>
-      <div>
-        <h3 className="m-0 text-base font-semibold">{title}</h3>
-        <p className="m-0 mt-1 text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
+    <Field label="Initial data binding" hint="Bindings are add-only; more can be added later.">
+      <NativeSelect value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="sqlite">SQLite (private file)</option>
+        {services.map((s) => (
+          <option key={s.name} value={`${s.engine}:${s.name}`}>
+            {s.engine} {s.version} ({s.name})
+          </option>
+        ))}
+        <option value="none">No database</option>
+      </NativeSelect>
+    </Field>
   );
 }
 
-function FieldLabel({ children }: { children: ReactNode }) {
-  return <span className="mb-1.5 block text-sm font-medium">{children}</span>;
-}
-
-function FieldHint({ children }: { children: ReactNode }) {
-  return <small className="mt-1.5 block text-xs text-muted-foreground">{children}</small>;
-}
-
-function databaseSelection(engine: string, service?: string): string {
-  return service ? `${engine}:${service}` : engine;
+function useServicesForBinding() {
+  const q = useQuery({ queryKey: keys.services, queryFn: ({ signal }) => api.services.list(signal) });
+  return (q.data?.services ?? []).filter((s) => s.engine === "mysql" || s.engine === "postgres");
 }

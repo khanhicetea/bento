@@ -4,34 +4,23 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/*",
-    "packages/*",
+    "apps/web",
     "docs"
   ],
   "engines": {
     "bun": ">=1.4.0 <1.5.0"
   },
   "scripts": {
-    "fmt": "bunx prettier --write apps/cli/src apps/cli/tests apps/web/src apps/web/index.html packages/shared/src package.json apps/*/package.json packages/*/package.json docs/package.json tsconfig.json apps/*/tsconfig.json eslint.config.js .prettierrc.json",
-    "fmt:check": "bunx prettier --check apps/cli/src apps/cli/tests apps/web/src apps/web/index.html packages/shared/src package.json apps/*/package.json packages/*/package.json docs/package.json tsconfig.json apps/*/tsconfig.json eslint.config.js .prettierrc.json",
-    "lint": "bunx eslint apps/cli/src apps/cli/tests apps/web/src packages/shared/src",
-    "check": "bunx tsc --noEmit --project apps/cli/tsconfig.json && bunx tsc --noEmit --project apps/web/tsconfig.json",
-    "test": "bun run web:build && bun test apps/cli/tests/unit apps/cli/tests/contract",
-    "test:integration": "bun test apps/cli/tests/integration --timeout 120000",
-    "test:stack": "bun run apps/cli/src/main.ts test-stack",
-    "test:all": "bun run test && bun run test:integration",
-    "test:parity": "bun run compile && BENTO_BIN=$PWD/dist/bento REQUIRE_BENTO_BIN=1 bun test apps/cli/tests/contract/parity_test.ts --timeout 120000",
-    "smoke:compiled": "bun run compile && dist/bento version && dist/bento --stack ${BENTO_SMOKE_STACK:-/tmp/bento-smoke-$$} init && dist/bento --stack ${BENTO_SMOKE_STACK:-/tmp/bento-smoke-$$} render && dist/bento --stack ${BENTO_SMOKE_STACK:-/tmp/bento-smoke-$$} status",
-    "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run test && bun run test:integration",
-    "run": "bun run apps/cli/src/main.ts",
-    "serve": "bun run web:build && bun run apps/cli/src/main.ts serve",
+    "fmt": "bunx prettier --write apps/web/src apps/web/index.html package.json apps/web/package.json docs/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
+    "fmt:check": "bunx prettier --check apps/web/src apps/web/index.html package.json apps/web/package.json docs/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
+    "lint": "bunx eslint apps/web/src",
+    "check": "bunx tsc --noEmit --project apps/web/tsconfig.json",
     "web:build": "bun run --cwd apps/web build",
-    "compile": "bun run --cwd apps/cli compile",
-    "compile:amd64": "bun run --cwd apps/cli compile:amd64",
-    "compile:arm64": "bun run --cwd apps/cli compile:arm64",
-    "container:build": "docker build --tag bento:local .",
     "docs:dev": "bun run --cwd docs dev",
-    "docs:build": "bun run --cwd docs build"
+    "docs:build": "bun run --cwd docs build",
+    "backend:build": "make -C apps/backend build",
+    "backend:test": "make -C apps/backend test",
+    "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run web:build && make -C apps/backend ci"
   },
   "devDependencies": {
     "@eslint/js": "9.34.0",

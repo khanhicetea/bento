@@ -1,55 +1,25 @@
 ---
-title: CLI reference
-description: Find a Bento command group and jump to the guide that explains how to use it safely.
+title: CLI
+description: Command reference.
 ---
 
-# CLI reference
-
-Use this page to find the right command group. For complete current syntax, run `bento --help` and `bento <group> --help` on your installed version.
-
-## Global interface
-
 ```text
-bento [--json] <command> [args]
+bento [--stack ROOT] [--json] [--no-wait] <command>
+
+serve [--listen 127.0.0.1:7780] [--origin URL]...
+init --name NAME [--mysql V] [--postgres V] [--uid-first N --uid-last N] [--password-stdin]
+import --from DIR [--name NAME] [--uid-first N --uid-last N]
+version | status | auth set-password
+apps | app show|create|update|start|stop|restart|publish|unpublish|remove|bind|add-db|logs|exec|shell|minicrond|permissions
+ops [--target ID] | op ID | op cancel ID
+services | service add --engine E --version V
+edge | edge set --json FILE | tunnel | tunnel set-token | tunnel disable
+proxies | proxy set --json FILE | proxy remove NAME
+retired | retired prune APP_ID
+backup run|list|runs|restore|schedule
+export --to DIR
 ```
 
-| Option/environment | Purpose                                                          |
-| ------------------ | ---------------------------------------------------------------- |
-| `BENTO_STACK_ROOT` | Select the mutable stack root; default `./bento`                 |
-| `--stack PATH`     | Override the stack root for one command                          |
-| `--json`           | Machine-readable output where supported                          |
-| `--repo-root`      | Test/source-mode repository override; not routine production use |
-| `--help`           | Current command help                                             |
-
-Set `BENTO_STACK_ROOT` once in the operator or script environment. The examples assume it is set.
-
-Put global flags before the command. Use `--stack PATH` for a one-command override. When you batch state changes with `--no-apply`, finish the batch with `bento apply`.
-
-## Command map
-
-| Area              | Commands                                               | Guide                                                                                                                 |
-| ----------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Bootstrap/control | `version`, `init`, `migrate`, `render`, `apply`, `serve` | [Start here](/start/first-stack/), [state database](/reference/state/)                                                |
-| Diagnostics       | `status`, `doctor`, `support-bundle`, `test-stack`     | [Diagnostics](/guides/stacks/diagnostics/)                                                                            |
-| Apps/runtime      | `app`, `php`, `exec`                                   | [Apps](/guides/apps/manage/), [PHP](/guides/apps/php-runtimes/), [Node.js/Bun/Python](/guides/apps/process-runtimes/) |
-| Data              | `mysql`, `postgres`, `sqlite`, `backup`, `restore`     | [Relational backup and restore](/guides/data/backup-restore/), [SQLite](/guides/data/sqlite/)                         |
-| Traffic           | `proxy`, `tls`, `logs`                                 | [Reverse proxy](/guides/apps/reverse-proxy/), [TLS](/guides/apps/domains-tls/)                                        |
-| Background        | `deploy`, `app minicrond`                             | [Deploy](/guides/apps/deploy/), [jobs](/guides/apps/schedules-workers/)                                               |
-| Stack             | `compose`, `stack`, `maintenance`                      | [Stack management](/guides/stacks/manage/)                                                                            |
-| Safety/custom     | `permissions`, `template`                              | [Permissions](/guides/apps/permissions/), [templates](/guides/customization/templates/)                               |
-
-`app delete`/`remove` and `proxy delete`/`remove` need exact confirmation. `app prune` is interactive and permanently deletes listed retained parts only after typing `delete`. `compose` takes Docker Compose arguments after `--` and refuses volume-destructive `down -v` forms.
-
-## Output and exits
-
-Human output favors operational summaries; JSON is available only where advertised. Secrets are redacted from routine output. Nonzero exit means the requested operation or check did not complete cleanly; read structured error/recovery fields where present rather than matching human prose.
-
-## Help convention
-
-```sh
-bento app --help
-bento app create --help
-bento compose --help
-```
-
-Source contributors may substitute `bun run apps/cli/src/main.ts --`; production examples use the compiled `bento` binary.
+`serve`, `init`, and `import` operate on the stack root directly and take the stack lock. All other commands talk to
+the running backend through `run/bento.sock` (root only). Exit codes: 0 success, 2 usage, 3 rejected request,
+1 other failures. Mutations use an idempotency key, so a retried request cannot run twice.

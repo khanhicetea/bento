@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/local/bin/bento-finish php-fpm "$1" "$2"

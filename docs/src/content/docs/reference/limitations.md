@@ -1,47 +1,14 @@
 ---
 title: Limitations
-description: Check what Bento does not support before you design or change a stack.
+description: Known limits of the current release.
 ---
 
-# Limitations
-
-Bento runs several PHP and trusted Node.js/Bun/Python HTTP apps on one operator-owned Linux host. It deliberately leaves the following problems and workflows out of scope.
-
-## Platform and availability
-
-- No multi-host scheduling, clustering, high availability, autoscaling, or Kubernetes.
-- The local browser UI is unauthenticated and loopback-safe by default; there is no authenticated public management API, hosted remote control plane, or resident Bento daemon.
-- Nginx is the only supported public service. Managed process apps are limited to explicit Node.js, Bun, and Python HTTP commands; other languages remain reverse-proxy targets.
-- Bento does not promise zero-downtime application deploys, database transfer, restore, or stack export.
-
-## Isolation and capacity
-
-- PHP apps share containers by version; process apps use dedicated services, but neither model is hostile multi-tenant isolation.
-- No one-container-per-PHP-app model, complete stack per app, or guaranteed per-app CPU/memory quotas.
-- Runner replicas must remain one per PHP version to avoid duplicate jobs.
-
-## Data and deletion
-
-- `compose down -v`, managed MySQL/PostgreSQL service removal, and automatic volume deletion are blocked.
-- App desired-state removal retains data; permanent prune is interactive, lists known parts, and requires literal `delete` with no bypass.
-- No automatic migration between database engines/services or automatic database password rotation.
-- Restore is not object-level atomic and can leave a partial destination.
-- Logical dumps are created on-host. Scheduled batches can upload new artifacts through an operator-configured rclone sidecar, but Bento does not manage remote retention or prove provider durability.
-- SQLite continuous backup supports S3-compatible replication, temporary verification, and export to a separate database file, but no public production replacement-restore command.
-- Stack export/import currently excludes the stack-root `sqlite/` directory.
-- Raw PostgreSQL transfer requires compatible major/image versions; major upgrades use logical dump/restore.
-
-## Deployment and customization
-
-- Bento provides signed queue orchestration for PHP apps and an operator-owned hook, not a fixed Git checkout, release-directory, rollback, or migration strategy.
-- Process-app schedules, workers, and signed webhook deploy are initially unsupported; arbitrary repository auto-detection, buildpacks, and custom project images are not managed.
-- App template and Compose overlay input is trusted and can violate Bento invariants.
-- Access-log analytics is ad hoc, not a hosted real-time analytics service.
-
-## Networking and TLS
-
-- Normally one host-mode stack owns ports 80/443. Additional stacks require bridge mode, distinct publications, or internal-only ingress.
-- ACME depends on public DNS and reachable port 80; Bento cannot fix upstream firewall/NAT/DNS errors.
-- External certificate renewal and trust-store distribution remain operator responsibilities.
-
-Choose separate hosts or a stronger orchestration/isolation platform when these boundaries do not fit. See [What is Bento?](/start/overview/) and [technical decisions](/advanced/technical-decisions/).
+- One host; no replicas, autoscaling, or zero-downtime replacement. Restart and config changes interrupt the app.
+- Apps on the same stack network can reach each other's listeners.
+- Not a sandbox for hostile tenants. Curated runtime images only.
+- The management API is loopback-only; remote access needs your own secure tunnel.
+- Verified end to end on linux/amd64 with PHP 8.4 and Node.js 24. arm64 builds, other runtime versions, live
+  Cloudflare Tunnel, ACME, HTTP/3, and rclone uploads have not yet been exercised.
+- No built-in deployment pipeline: deploy code into the app home yourself, then restart.
+- App Nginx and FPM configuration is generated; customization is limited to edge drop-ins. Access logs go to the
+  container's bounded log; there are no access-log reports.

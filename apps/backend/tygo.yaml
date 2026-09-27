@@ -1,0 +1,6 @@
+# Generates the frontend REST types from Go DTOs. Run: make generate-types
+# (go tool tygo generate --config tygo.yaml). Never edit the output by hand.
+packages:
+  - path: github.com/khanhicetea/bento/apps/backend/internal/api/dto
+    output_path: ../web/src/api/generated/types.ts
+    enum_style: union

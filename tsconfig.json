@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "exclude": ["dist", "docs", "bento", "specs", "**/dist", "**/node_modules"]
+  "exclude": ["dist", "docs", "bento", "**/dist", "**/node_modules"]
 }

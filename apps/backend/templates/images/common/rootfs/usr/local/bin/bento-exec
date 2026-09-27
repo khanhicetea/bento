@@ -1,0 +1,21 @@
+#!/bin/bash
+# Entrypoint for ephemeral tooling and operator exec. Loads the app environment,
+# enters a working directory contained in the app home, and executes argv. It
+# never starts daemons and never takes the persistent-instance lock.
+set -euo pipefail
+if [[ "$(id -u)" == 0 ]]; then
+  echo "bento-exec: refusing to run app tooling as root" >&2
+  exit 64
+fi
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+workdir="${BENTO_EXEC_WORKDIR:-$HOME}"
+case "$workdir" in
+  "$HOME"|"$HOME"/*) ;;
+  *) echo "bento-exec: working directory escapes the app home" >&2; exit 64 ;;
+esac
+cd "$workdir"
+if [[ $# -eq 0 ]]; then
+  set -- bash -l
+fi
+exec "$@"

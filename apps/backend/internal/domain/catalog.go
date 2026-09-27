@@ -1,0 +1,139 @@
+package domain
+
+import (
+	"fmt"
+	"sort"
+)
+
+// Curated toolchains. A toolchain is a command environment inside a shared
+// managed image, not a separate lifecycle engine. Base references are pinned by
+// digest where the release has been verified; the resolved image ID of every
+// built managed image is additionally recorded in state.
+var PHPVersions = map[string]string{
+	"8.3": "php:8.3-fpm-bookworm",
+	"8.4": "php:8.4-fpm-bookworm@sha256:43e1ac38217031dbbecae60e84ccf8593722031559178d199bf56adb0145d5d0",
+	"8.5": "php:8.5-fpm-bookworm",
+}
+
+var HTTPToolchains = map[string]map[string]string{
+	"node": {
+		"20": "node:20-bookworm-slim",
+		"22": "node:22-bookworm-slim",
+		"24": "node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6",
+	},
+	"bun": {
+		"1.2": "oven/bun:1.2-debian",
+		"1.3": "oven/bun:1.3-debian",
+	},
+	"python": {
+		"3.12": "python:3.12-slim-bookworm",
+		"3.13": "python:3.13-slim-bookworm",
+	},
+}
+
+const DebianBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+
+// Supervision and scheduler artifacts downloaded (and checksum-verified) while
+// building managed runtime images.
+var RuntimeArtifacts = map[string]string{
+	"S6_OVERLAY_VERSION":       "3.2.3.2",
+	"S6_OVERLAY_NOARCH_SHA256": "5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12",
+	"S6_OVERLAY_AMD64_SHA256":  "e6befcc96a437a3831386ecfc51808c5d3e939dc5fe3c02ae9284599e8aa2408",
+	"S6_OVERLAY_ARM64_SHA256":  "b17f17a82e7a515c682a91edaf2ffdabb73f891981b6c1fd712115693a2f8b4c",
+	"MINICROND_VERSION":        "0.2.6",
+	"MINICROND_AMD64_SHA256":   "1ed3f11c592e1daf17adaae3b10f7de833498e2e8a7b99f53a2e1cd285acfd24",
+	"MINICROND_ARM64_SHA256":   "95bfb5fccf5a45812416db65240c329e90af364db84d0b7f89148d3feefc030b",
+	"COMPOSER_VERSION":         "2.10.3",
+	"COMPOSER_SHA256":          "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6",
+}
+
+// Pulled infrastructure images.
+const (
+	EdgeImage    = "nginx:stable-trixie@sha256:b972f831f200b19ef0767938224f9711e74cd783718738cd7405d5cabf75c442"
+	TunnelImage  = "cloudflare/cloudflared:2025.9.1@sha256:4604b477520dc8322af5427da68b44f0bf814938e9d2e4814f2249ee4b03ffdf"
+	RcloneImage  = "rclone/rclone:1.71.1@sha256:d5971950c2b370fb04dd3292541b5bda6d9103143fd7e345aeb435a399388afc"
+	RedisImage   = "redis:8.2-bookworm@sha256:164c759a0c342ee69d08fc99219382b0fd682181465c0df2e0e6911f4c85d73c"
+	RedisVersion = "8.2"
+)
+
+var MySQLVersions = map[string]string{
+	"8.0": "mysql:8.0",
+	"8.4": "mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d",
+}
+
+var PostgresVersions = map[string]string{
+	"16": "postgres:16-bookworm",
+	"17": "postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652",
+}
+
+// PoolProfile is a named FPM capacity profile for the app's single pool.
+type PoolProfile struct {
+	Manager            string
+	MaxChildren        int
+	StartServers       int
+	MinSpare           int
+	MaxSpare           int
+	ProcessIdleTimeout string
+}
+
+var PoolProfiles = map[string]PoolProfile{
+	"tiny":     {Manager: "dynamic", MaxChildren: 5, StartServers: 1, MinSpare: 1, MaxSpare: 3},
+	"small":    {Manager: "dynamic", MaxChildren: 10, StartServers: 2, MinSpare: 1, MaxSpare: 5},
+	"medium":   {Manager: "dynamic", MaxChildren: 25, StartServers: 4, MinSpare: 2, MaxSpare: 10},
+	"large":    {Manager: "dynamic", MaxChildren: 50, StartServers: 8, MinSpare: 4, MaxSpare: 20},
+	"xlarge":   {Manager: "dynamic", MaxChildren: 100, StartServers: 16, MinSpare: 8, MaxSpare: 40},
+	"ondemand": {Manager: "ondemand", MaxChildren: 10, ProcessIdleTimeout: "10s"},
+}
+
+// Default resource profiles, selected from the phase-1 measurements recorded
+// in apps/backend/docs/evidence.md.
+func DefaultResources(kind RuntimeKind) Resources {
+	if kind == RuntimePHP {
+		return Resources{MemoryMB: 512, CPUMillis: 1000, PIDs: 256}
+	}
+	return Resources{MemoryMB: 512, CPUMillis: 1000, PIDs: 256}
+}
+
+// ImageKey identifies one shared managed runtime image.
+type ImageKey struct {
+	Kind      RuntimeKind
+	Toolchain string // "php" for PHP
+	Version   string
+}
+
+func (k ImageKey) String() string { return fmt.Sprintf("%s-%s", k.Toolchain, k.Version) }
+
+func (r Runtime) ImageKey() ImageKey {
+	if r.Kind == RuntimePHP && r.PHP != nil {
+		return ImageKey{Kind: RuntimePHP, Toolchain: "php", Version: r.PHP.Version}
+	}
+	if r.HTTP != nil {
+		return ImageKey{Kind: RuntimeHTTP, Toolchain: r.HTTP.Toolchain, Version: r.HTTP.Version}
+	}
+	return ImageKey{}
+}
+
+// BaseImage returns the pinned base reference for a runtime image key.
+func (k ImageKey) BaseImage() (string, error) {
+	if k.Kind == RuntimePHP {
+		if ref, ok := PHPVersions[k.Version]; ok {
+			return ref, nil
+		}
+		return "", fmt.Errorf("unsupported PHP version %q", k.Version)
+	}
+	if versions, ok := HTTPToolchains[k.Toolchain]; ok {
+		if ref, ok := versions[k.Version]; ok {
+			return ref, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported toolchain %s %s", k.Toolchain, k.Version)
+}
+
+func SortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

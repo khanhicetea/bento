@@ -1,0 +1,20 @@
+#!/bin/bash
+# Readiness probe run inside the app container. Verifies the scheduler daemon
+# answers on its private socket and the kind-specific HTTP frontend responds.
+set -uo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+fail() { echo "not ready: $*"; exit 1; }
+sock="$MINICRON_DATA/minicron.sock"
+[[ -S "$sock" ]] || fail "scheduler socket missing"
+curl -fsS -o /dev/null --max-time 3 --unix-socket "$sock" "http://minicrond${BASE_PATH%/}/healthz" \
+  || fail "scheduler health check failed"
+if [[ "${BENTO_RUNTIME_KIND:-}" == php-fpm ]]; then
+  curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:8081/fpm-ping" || fail "php-fpm ping failed"
+fi
+code=$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' \
+  "http://127.0.0.1:${BENTO_HTTP_PORT}${BENTO_READY_PATH:-/}") || fail "http endpoint unreachable"
+if [[ "$code" == 000 || "$code" -ge 500 ]]; then
+  fail "http endpoint returned $code"
+fi
+echo ready

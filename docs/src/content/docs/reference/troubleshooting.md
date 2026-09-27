@@ -1,46 +1,16 @@
 ---
 title: Troubleshooting
-description: Match a symptom to safe checks without destroying evidence or data.
+description: Common failures and what to do.
 ---
 
-# Troubleshooting
-
-Confirm the target stack and preserve evidence before you change data:
-
-```sh
-bento status
-bento doctor
-bento compose -- ps
-```
-
-| Symptom | Checks and destination |
-| --- | --- |
-| Docker unavailable/permission denied | Start Docker; verify socket access and Compose v2. See [requirements](/start/requirements/). |
-| Port already in use | Run `stack ingress show`; identify the listener; use distinct bridge ports for additional stacks. |
-| Docker cannot create a network | Check address-pool exhaustion and stale unused networks; do not remove active stack networks. |
-| Nginx validation fails | Inspect the reported file/context; fix `custom/` or desired state, never `generated/`. Previous config is restored before reload. |
-| App gives 404/403 | Check domain ownership, enabled state, document root, files, and [permissions](/guides/apps/permissions/). |
-| App/proxy gives 502 | Check PHP/service health and the upstream address in the correct [network namespace](/concepts/networking/). |
-| DNS/ACME pending | Ensure every A/AAAA record reaches this host and public TCP port 80 reaches Nginx. See [TLS](/guides/apps/domains-tls/). |
-| MySQL/PostgreSQL unhealthy | Inspect service logs and `.env` credential consistency; do not "fix" initialized volumes by changing passwords casually. |
-| Cron/worker/deploy not running | Check app enabled state, selected PHP runner, `app minicrond <slug> -- status`, workdir, hook, and runner logs. |
-| Backup missing | Check database reachability and free space. Failed/empty dumps are not published; scheduled copies remain on-host. |
-| Restore failed | Destination may be partial. Preserve logs, inspect/drop only the target with authorization, and retry from a verified dump. |
-| Import failed | Use an empty root, complete archives, no destination volumes, and compatible architecture/database images. |
-
-## Collect evidence
-
-```sh
-bento compose -- logs --tail 200 <service>
-bento support-bundle /tmp/bento-support.tar.gz
-```
-
-Support bundles redact known secrets but remain sensitive. Inspect before sharing. Use `--json` with `status`/`doctor` for automation.
-
-## Safe recovery rules
-
-While troubleshooting, do not edit generated files, run `compose down -v`, delete unknown volumes, or prune an app.
-
-If apply validation fails, fix the input and retry. If a reload signal fails after validation, the valid new files stay live. Restore service health, then retry the apply or reload.
-
-For architecture-level failure semantics, see [render and apply](/advanced/render-apply/) and [storage recovery](/advanced/storage-recovery/).
+- **`not-ready`** — the app did not pass readiness. Check `bento app logs`, the readiness path, and that the process
+  listens on `0.0.0.0:$PORT`. The container keeps running; publication did not change.
+- **`instance-exited`** — the operation includes the last log lines. Fix the app and start again.
+- **`durable-state-missing`** / **`volume-missing`** — Bento refuses to recreate without data. Restore the home, SQLite
+  directory, or volume, then run `bento app start`.
+- **`blocked`** — five reconciliation attempts failed, or unknown/duplicate containers use Bento's names or labels.
+  Inspect `bento op <id>`, resolve the cause, then start or restart explicitly to reset the budget.
+- **`home-retained`** — a home from a removed app exists. Prune it (`bento retired prune`) or restore explicitly.
+- **`edge-validation-failed`** — a route or custom drop-in is invalid; the live edge is unchanged.
+- **Backend won't start** — another backend or offline command holds `locks/controller.lock`, or `bento.db` is from an
+  unsupported version. Bento never rewrites or re-initializes unknown state.

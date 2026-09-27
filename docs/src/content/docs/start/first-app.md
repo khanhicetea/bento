@@ -1,209 +1,33 @@
 ---
-title: Add your first application
-description: Add a PHP app with MySQL, test it locally, and prepare DNS and TLS.
+title: Your first app
+description: Create, deploy, start, and publish a PHP app.
+sidebar:
+  order: 3
 ---
 
-# Add your first application
-
-Add an app named `demo` to the running `production` stack. You will create its MySQL database and test the generated page through Nginx.
-
-This first path uses MySQL. You can choose PostgreSQL for another app later.
-
-<!-- DIAGRAM PLACEHOLDER
-Asset: /diagrams/first-app-request-path.svg
-Alt: A local request for demo.example.com moving through Nginx to the demo PHP-FPM pool and MySQL database.
-Show: Include the curl --resolve test on the left, Nginx in the center, the demo Unix socket and PHP pool next, and mysql84 on the private network. Label the code directory and credentials file below the app. Keep public DNS outside the active local-test path.
--->
-
-## Before you begin
-
-- Complete the [first-stack procedure](/start/first-stack/).
-- Keep the stack root at `/var/lib/bento` and ports 80 and 443 assigned to its host-mode Nginx.
-- Choose a domain you control. The examples use the reserved placeholder `demo.example.com`; replace it before configuring public DNS or ACME.
-- Ensure `curl` is installed for the routing check.
-- Ensure the operator can assign the app's numeric UID/GID on the app home, or can run a later permission repair with elevated privileges.
-
-## Ensure the services are ready
-
-Start any stopped roles and wait for their health checks:
-
-```sh
-bento compose -- up -d --wait
+```bash
+export BENTO_STACK_ROOT=/srv/bento/prod
+cat > shop.json <<'JSON'
+{
+  "slug": "shop",
+  "runtime": { "kind": "php-fpm",
+    "php": { "version": "8.4", "documentRoot": "public", "routing": "front-controller", "pool": "small", "uploadLimitMb": 64 } },
+  "domains": ["shop.example.com"],
+  "route": { "tls": "acme", "redirectHttps": true, "accessLog": false },
+  "bindings": [{ "engine": "mysql", "service": "mysql84" }]
+}
+JSON
+bento app create --json shop.json
 ```
 
-Confirm that `mysql84`, `php85`, and `nginx` are running or healthy:
+The app now has a UID, a home at `/home/shop` inside its container (`homes/shop` in the stack root), a MySQL user and
+database, and a Redis ACL user. It is **stopped and unpublished**.
 
-```sh
-bento compose -- ps
-```
+1. **Deploy code** as the app user: `bento app shell shop` opens a shell in a throwaway tooling container with the
+   app's identity, home, and credentials in the environment. Run `git clone`, `composer install`, and so on.
+2. **Start:** `bento app start shop`. Bento waits until FPM, local Nginx, the scheduler, and a real HTTP request all
+   succeed.
+3. **Enable the edge** once per stack (see [Edge](/guides/ingress/edge/)), then **publish:** `bento app publish shop`.
 
-MySQL must be reachable before an explicit database request. Bento fails closed rather than recording a database that it could not create.
-
-## Create the app and database
-
-Create `demo` with front-controller routing, the `public` document root, and a MySQL 8.4 database named `demo`:
-
-```sh
-bento app create demo \
-  --domain demo.example.com \
-  --docroot public \
-  --front \
-  --database-engine mysql \
-  --mysql 8.4 \
-  --database demo \
-  --db
-```
-
-Before it saves desired state, the command creates and grants access to the live database. It then creates the app home and a stable Ed25519 deploy key, renders and validates configuration, and reloads the affected services.
-
-It also writes a starter page at:
-
-```text
-/var/lib/bento/homes/demo/code/public/index.php
-```
-
-The app slug `demo` becomes a stable identity reused for its UID/GID, home, PHP pool and socket, database account, Redis prefix, and jobs. Do not treat the slug as a casual rename.
-
-Check the initial filesystem policy:
-
-```sh
-bento permissions check demo
-```
-
-If provisioning reported or routing later reveals ownership errors, run an explicitly recursive repair while the new app tree is still small:
-
-```sh
-sudo /usr/local/bin/bento \
-  permissions repair demo --recursive
-```
-
-Do not make recursive repair a routine startup action after the code tree grows.
-
-## Inspect the result
-
-Show the app with secrets redacted:
-
-```sh
-bento app show demo
-```
-
-Confirm that it reports:
-
-- `demo.example.com` as the primary domain;
-- PHP service `php85`;
-- document root `public` and front-controller routing;
-- MySQL service `mysql84` with database `demo`;
-- shared starter TLS.
-
-Check the stack-wide view as well:
-
-```sh
-bento status
-```
-
-The app and domain should appear under their respective sections.
-
-## Register the deploy key when needed
-
-Bento creates one deploy key per app and preserves it on later updates. Print only its public half through the app's ephemeral CLI identity:
-
-```sh
-bento exec demo -- \
-  cat /home/demo/.ssh/id_ed25519.pub
-```
-
-Add that public key as a read-only deploy key in your Git provider before cloning a private repository.
-
-:::danger
-Never copy, print, or upload `/home/demo/.ssh/id_ed25519`. It is the private key. Protect it with the rest of the app home and include it in your recovery plan.
-:::
-
-You do not need to register the key for a public repository or for the generated placeholder.
-
-## Verify routing before DNS
-
-Test the local HTTP route while forcing the correct hostname to loopback:
-
-```sh
-curl --resolve demo.example.com:80:127.0.0.1 http://demo.example.com/
-```
-
-The response should contain:
-
-```text
-bento app demo
-```
-
-This proves the local Nginx-to-PHP path without waiting for DNS. It does not prove that the host is reachable from the internet.
-
-## Prepare the real application
-
-The durable code directory is `/var/lib/bento/homes/demo/code/`. PHP containers see it as `/home/demo/code/`.
-
-Replace the starter page with your application through a deployment process that runs as the app user. Keep the document root at `/home/demo/code/public`, or update the app if your framework uses another layout.
-
-Bento writes database and Redis connection metadata to the private app file:
-
-```text
-/home/demo/credentials/app.env
-```
-
-Adapt those values into your framework's configuration without committing the credential file or printing its secrets. You can verify database access interactively as the app account:
-
-```sh
-bento mysql shell --app demo --database demo
-```
-
-Exit the MySQL client with `quit` after the connection succeeds.
-
-## Configure DNS and TLS
-
-For public traffic, replace `demo.example.com` in the app configuration with your actual domain if necessary, then create DNS A and/or AAAA records pointing to this host. Verify resolution from outside your private network before enabling ACME.
-
-The initial `shared` TLS mode uses a starter self-signed certificate and does not provide public domain validation. For public ACME certificates, first set `ACME_EMAIL` in the stack's private `/var/lib/bento/.env`, confirm that every app domain resolves to this host, and confirm that public TCP port 80 reaches Nginx. Then run:
-
-```sh
-bento tls set --app demo --mode acme
-```
-
-:::caution
-Do not enable ACME before DNS and public port 80 are correct. Issuance will fail, and repeated attempts can encounter certificate-authority rate limits.
-:::
-
-## Troubleshooting
-
-**App creation says MySQL is unavailable:** run `compose -- ps` and inspect `mysql84` logs. Wait for MySQL to become healthy, then rerun the same `app create ... --db` command. The failed explicit request does not record the database or app state.
-
-```sh
-bento compose -- logs --tail 100 mysql84
-```
-
-**The domain is already owned:** choose another domain or inspect its current owner with `status`. Bento refuses duplicate app and proxy domains.
-
-**The local request returns `502 Bad Gateway`:** inspect `php85` and Nginx logs, then run `doctor`. Confirm that the app pool was generated and the PHP role is running.
-
-```sh
-bento compose -- logs --tail 100 php85 nginx
-```
-
-**The request returns another site or a default response:** include the exact app hostname in `--resolve` and confirm that `app show demo` contains the same primary domain.
-
-**The public key command fails:** confirm that the `php85-cli` image can be created and that the app home contains `.ssh/id_ed25519.pub`. Re-running app provisioning preserves an existing valid key pair.
-
-## Advanced
-
-Without `--db`, Bento may create the database account on a best-effort basis and defer that work while MySQL is unavailable. The first-app path uses `--db` so database creation is explicit and transactional with respect to desired-state recording.
-
-An app can keep several add-only database bindings across MySQL, PostgreSQL, and SQLite. The first binding remains the default for compatibility.
-
-To add PostgreSQL, first add a supported major version. Then run `app update` with `--database-engine postgres --postgres <major> --db`. For private file databases and optional S3 replication, follow the [SQLite guide](/guides/data/sqlite/).
-
-Adding a binding never moves or converts existing data.
-
-The generated credential file is application metadata, not automatic framework configuration. Bento does not infer how Laravel, Symfony, WordPress, or another application loads environment variables.
-
-## Next steps
-
-- Return to the [documentation home](/) for current guides on TLS, deployment, and backups.
-- [Review the stack startup and diagnostics flow](/start/first-stack/).
-- [Review DNS, firewall, and host requirements](/start/requirements/).
+Database credentials are environment variables inside the app: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`,
+`DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` for the first binding, `BENTO_DB_<n>_*` for all bindings, and `REDIS_*`.

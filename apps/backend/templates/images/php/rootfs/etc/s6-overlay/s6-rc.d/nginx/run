@@ -1,0 +1,7 @@
+#!/bin/bash
+# App-local Nginx: static files and FastCGI to the private FPM socket on :8080.
+exec 2>&1
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+mkdir -p /tmp/nginx /run/nginx
+exec nginx -e stderr -c /etc/bento/nginx.conf -g 'daemon off;'

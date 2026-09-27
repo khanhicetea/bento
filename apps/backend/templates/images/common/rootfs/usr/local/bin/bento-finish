@@ -1,0 +1,23 @@
+#!/bin/bash
+# Shared s6 finish handler: bounded backoff and an explicit failure threshold.
+# A critical component that fails BENTO_FAIL_THRESHOLD times within
+# BENTO_FAIL_WINDOW seconds halts the container, so Docker observes the failure
+# (and its restart policy applies its own backoff) instead of s6 looping forever.
+service="$1" code="${2:-0}" signal="${3:-0}"
+threshold="${BENTO_FAIL_THRESHOLD:-5}" window="${BENTO_FAIL_WINDOW:-120}"
+# Exit by signal 15 is an orderly stop, not a failure.
+if [[ "$code" == 0 || ( "$code" == 256 && "$signal" == 15 ) ]]; then
+  exit 0
+fi
+now=$(date +%s)
+log=/run/bento/failures
+echo "$now $service" >> "$log"
+recent=$(awk -v now="$now" -v w="$window" -v s="$service" '$2 == s && now - $1 <= w' "$log" | wc -l)
+echo "bento: $service exited (code=$code signal=$signal); $recent failure(s) in ${window}s" >&2
+if (( recent >= threshold )); then
+  echo "bento: $service exceeded failure threshold; stopping container" >&2
+  /run/s6/basedir/bin/halt
+  exit 125
+fi
+# Bounded backoff before s6 restarts the service (s6 kills finish after 5s).
+sleep "$(( recent < 4 ? recent : 4 ))"

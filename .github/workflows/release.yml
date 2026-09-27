@@ -1,0 +1,41 @@
+name: release-binaries
+
+on:
+  push:
+    tags:
+      - "*"
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Linux binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.0"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - name: Gates
+        run: |
+          bun install --frozen-lockfile
+          bun run fmt:check && bun run lint && bun run check
+          sudo --preserve-env=PATH,HOME,GOPATH,GOCACHE,GOMODCACHE make -C apps/backend ci
+      - name: Cross-build amd64 and arm64 with the embedded UI
+        run: make -C apps/backend release VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+          files: |
+            dist/bento-linux-amd64
+            dist/bento-linux-arm64
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true

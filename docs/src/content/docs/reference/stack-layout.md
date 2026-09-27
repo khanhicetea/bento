@@ -1,46 +1,20 @@
 ---
 title: Stack layout
-description: Look up who owns each stack path and whether you must protect or can rebuild it.
+description: Files and directories in a stack root.
 ---
 
-# Stack layout
+| Path | Contents |
+| --- | --- |
+| `bento.db` | Intent, identities, UID ledger, operations, sessions (`0600`). |
+| `homes/<slug>/` | App homes (owned by the app UID). Durable. |
+| `sqlite/<id>/` | SQLite binding directories. Durable. |
+| `apps/<appId>/config/` | Generated per-app config and credentials, mounted read-only at `/etc/bento`. |
+| `apps/<appId>/identity/` | Generated `passwd`/`group`. |
+| `services/<name>/` | Data-service secrets (`0400`) and Redis configuration. |
+| `edge/conf/{live,previous}` | Edge Nginx generations. `edge/custom/` holds your drop-ins; `edge/certs/` certificates; `edge/acme/` ACME state. |
+| `cloudflared/token` | Tunnel token (`0440`). |
+| `backups/<slug>/` | Backup artifacts. |
+| `rclone/rclone.conf` | rclone remote configuration (yours). |
+| `run/`, `locks/`, `cache/`, `staging/` | Runtime coordination; not durable. |
 
-Use this table before you edit, delete, copy, or back up a stack path. Every path is relative to the selected stack root, such as `/var/lib/bento`.
-
-| Path | Ownership/lifecycle | Sensitive or durable |
-| --- | --- | --- |
-| `.env` | Operator stack config/secrets | Sensitive, source-of-truth |
-| `state.db` | Validated Bun SQLite desired state | Sensitive, mode `0600`, source-of-truth |
-| `generated/` | Bento-managed complete render | Disposable; may contain generated client credentials |
-| `custom/` | Operator drop-ins/templates | Durable custom input |
-| `overlays/` | Ordered operator Compose input | Durable custom input |
-| `homes/<app>/` | App code, credentials, SSH, logs, deploy state | Durable and sensitive |
-| `certs/` | Boot, private-CA, external and ACME material | Durable; private keys sensitive |
-| `backups/<service>/` | MySQL/PostgreSQL logical dumps | Durable and sensitive; scheduled rclone uploads preserve paths below this directory |
-| `rclone/rclone.conf` | Operator rclone remote credentials/configuration | Sensitive; mode `0600`, mounted only into the ephemeral rclone sidecar |
-| `sqlite/<app-slug>_<10-random-hex-chars>/<app-slug>.sqlite` | Private SQLite database and WAL/SHM sidecars | Durable and sensitive |
-| `logs/` | Nginx logs and reports | Durable operational data; potentially personal/sensitive |
-| `runtime/` | FPM sockets and volatile runner locks | Ephemeral |
-| `locks/` | Host render serialization | Ephemeral/recovery coordination |
-| `.asset-cache/` | Digest-addressed compiled assets | Rebuildable cache |
-| `docker/`, `helpers/` | Materialized immutable runtime assets | Rebuildable; do not customize |
-
-MySQL, PostgreSQL, and Redis contents live in Compose named volumes outside the ordinary stack-root tree. SQLite files live under the stack-root `sqlite/` directory. Named-volume resources are prefixed by stable `COMPOSE_PROJECT_NAME` identity at the Docker layer. Never infer backup completeness from a filesystem copy alone.
-
-## Generated subtrees
-
-`generated/compose/`, `nginx/`, `php/`, `runner/`, `mysql/`, `postgres/` and `secrets/` are derived from desired state, the stack `.env`, and templates. Render uses same-filesystem staging and a journal. Edits are overwritten and can break recovery assumptions. Generated secrets remain sensitive and use mode `0600`.
-
-## App home in containers
-
-Host `homes/demo/` maps to `/home/demo`. Nginx sees homes read-only; PHP FPM, runner, and ephemeral CLI roles use app identity and the required writable mounts. FPM sockets appear under host `runtime/php-fpm/<php-service>/` and map differently inside Nginx and PHP.
-
-## Backup boundary
-
-Protect `.env`, `state.db`, `homes/`, `sqlite/`, `certs/`, custom input, and verified logical dumps off-host. For SQLite, use [online logical backup](/guides/data/sqlite/); do not copy a live database and its WAL/SHM files as an assumed-consistent backup. Use [stack export](/guides/stacks/export-import/) when you need compatible raw MySQL, PostgreSQL, and Redis volumes too.
-
-## Related pages
-
-- [Stacks and identity](/concepts/stacks/)
-- [Desired state](/concepts/desired-state/)
-- [Storage and recovery](/advanced/storage-recovery/)
+Database and Redis data live in Docker volumes named `bento-<stack>-<service>-data`.

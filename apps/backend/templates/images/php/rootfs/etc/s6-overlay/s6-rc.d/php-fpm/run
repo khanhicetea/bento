@@ -1,0 +1,7 @@
+#!/bin/bash
+# One app-owned FPM pool; master and workers run as the app UID (no root master).
+exec 2>&1
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+mkdir -p /run/php "$HOME/tmp/sessions"
+exec php-fpm --nodaemonize --force-stderr --fpm-config /etc/bento/php-fpm.conf

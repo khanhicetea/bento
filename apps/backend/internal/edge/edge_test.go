@@ -1,0 +1,50 @@
+package edge
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+)
+
+func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
+	mk := func(id, slug string, ingress domain.IngressMode, pub domain.Publication) domain.App {
+		return domain.App{ID: id, Slug: slug, Ingress: ingress, Publication: pub,
+			Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}},
+			Domains: []domain.DomainLink{{Name: slug + ".example.com", Primary: true}}, Route: domain.Route{TLS: domain.TLSACME, RedirectHTTPS: true}}
+	}
+	files, err := Render(Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443, HTTP3: true, ACMEURL: "https://acme.test/dir"},
+		Apps: []domain.App{
+			mk("a1", "pub", domain.IngressManaged, domain.Published),
+			mk("a2", "unpub", domain.IngressManaged, domain.Unpublished),
+			mk("a3", "ext", domain.IngressExternal, domain.Unpublished),
+		},
+		Running: map[string]bool{"a1": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected main + 1 site, got %d", len(files))
+	}
+	site := string(files["sites/app-pub.conf"])
+	for _, want := range []string{
+		"set $bento_upstream http://app-a1:3000;", "proxy_pass $bento_upstream;",
+		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $scheme;",
+		"acme_certificate bento_acme;", "return 301 https://$host$request_uri;", "listen 443 quic;",
+	} {
+		if !strings.Contains(site, want) {
+			t.Errorf("site missing %q", want)
+		}
+	}
+	main := string(files["nginx.conf"])
+	if !strings.Contains(main, "resolver 127.0.0.11 valid=10s") || !strings.Contains(main, "include sites/*.conf;") {
+		t.Fatal("main config must re-resolve and use relative includes")
+	}
+	for _, f := range files {
+		if strings.Contains(string(f), "/home/") || strings.Contains(string(f), "fastcgi_pass") {
+			t.Fatal("edge must never reference app homes or FPM")
+		}
+	}
+}

@@ -1,0 +1,24 @@
+#!/bin/bash
+# PID 1 wrapper for a persistent Bento app instance.
+#
+# Holds an exclusive lock on the app home for the lifetime of the container so
+# that a second persistent instance (for example one started outside the
+# controller) refuses to start instead of duplicating schedulers and workers.
+# The lock descriptor is inherited by s6-overlay's /init and stays open until
+# the container exits.
+set -euo pipefail
+if [[ "$(id -u)" == 0 ]]; then
+  echo "bento-init: refusing to run an app instance as root" >&2
+  exit 64
+fi
+: "${HOME:?HOME is required}"
+state="$HOME/.local/state/bento"
+mkdir -p "$state"
+exec 9>>"$state/instance.lock"
+if ! flock -n 9; then
+  echo "bento-init: another instance of this app is already running (instance lock held)" >&2
+  exit 75
+fi
+mkdir -p /run/bento
+: > /run/bento/failures
+exec /init "$@"

@@ -1,0 +1,14 @@
+#!/bin/bash
+# Primary HTTP process: explicit argv (NUL-separated, never shell-evaluated),
+# listening on 0.0.0.0:$BENTO_HTTP_PORT inside the app network namespace.
+exec 2>&1
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+export PORT="$BENTO_HTTP_PORT" HOST=0.0.0.0
+cd "${BENTO_WORKDIR:-$HOME}" || exit 64
+mapfile -d '' -t argv < /etc/bento/app.argv
+if [[ ${#argv[@]} -eq 0 ]]; then
+  echo "bento: app argv is empty" >&2
+  exit 64
+fi
+exec "${argv[@]}"

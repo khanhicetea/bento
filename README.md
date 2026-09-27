@@ -1,547 +1,99 @@
 # Bento
 
-Bento is a self-hosted operations layer for running multiple isolated PHP applications, supervised Node.js/Bun/Python HTTP projects, and reverse-proxied services on one Linux server using Docker Compose.
+Bento is a self-hosted control plane for running PHP apps and Node.js HTTP apps on one Linux host with Docker.
+Each app gets its own persistent container, Linux identity, home directory, scheduler, and data bindings. Bento keeps
+your intent in SQLite and converges Docker toward it through the Docker Engine API.
 
 ![Bento logo](./bento-logo-3d.png)
 
-This repository is a **Bun 1.4 / TypeScript** reimplementation of the Bento host control plane. It preserves the product model described in [`specs/`](specs/):
-
-- one operator-owned Linux host
-- Nginx as the only public service: host network by default, stack-private bridge mode as a multi-stack opt-in
-- per-app Linux identity, home, PHP-FPM pool, and Unix socket
-- version-shared PHP FPM / singleton runner / ephemeral CLI roles
-- private MySQL and PostgreSQL services (per managed version), SQLite files, and Redis, with multiple database bindings per app
-- desired-state rendering with staged, validated, recoverable apply
-- schedules, workers, webhook deploys, backups, and diagnostics
-
-## Requirements
-
-- Bun **1.4.0** (pinned 1.4.x line — see `apps/cli/src/version.ts` `BUN_TARGET_VERSION` and release notes)
-- Linux with Docker Engine + Docker Compose v2 (data plane)
-- Source development uses `bun install --frozen-lockfile`; compiled releases need no runtime or package installation
-
-With mise, run `mise install` from the repository root to select the pinned Bun version in `mise.toml`. For a personal stack root, create an ignored `mise.local.toml`:
-
-```toml
-[env]
-BENTO_STACK_ROOT = "{{ env.HOME }}/.local/share/bento/dev"
-```
-
-Mise shell activation exports the variable while you are in this checkout. `mise exec -- bun --version` also loads the project tool and environment for a single command. Keep the stack root outside the repository.
-
-Install or switch the runtime with the official installer / package pin, for example:
-
-```bash
-curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.0"
-bun --version   # should report 1.4.0
-```
-
-## Quick start (source mode)
-
-```bash
-# pin/check runtime
-bun --version   # expect 1.4.x (CI uses 1.4.0)
-
-# format, lint, typecheck, test
-bun run fmt
-bun run lint
-bun run check
-bun run test
-bun run test:integration   # soft-skips Docker-only steps when daemon is down
-bun run test:stack         # real Docker stack harness (default name: testbento)
-
-# select an external stack root (mise.local.toml can supply it), then initialize and render
-export BENTO_STACK_ROOT="${BENTO_STACK_ROOT:-$HOME/.local/share/bento/dev}"
-bun run apps/cli/src/main.ts init --name my-stack
-bun run apps/cli/src/main.ts render
-bun run apps/cli/src/main.ts status
-
-# create a default MySQL application
-bun run apps/cli/src/main.ts app create demo \
-  --domain demo.example.test \
-  --docroot public \
-  --db
-
-# An Ed25519 deploy key is created once under homes/demo/.ssh/ (mounted as /home/demo/.ssh/).
-# Register id_ed25519.pub with the Git host before cloning a private repository.
-
-# create a staged Node.js HTTP process app (one literal argv value per --start)
-bun run apps/cli/src/main.ts app create api \
-  --domain api.example.test \
-  --runtime node \
-  --runtime-version 24 \
-  --start node --start server.js \
-  --health-path /health
-# Check out/install the project under homes/api/code, then start it privately.
-bun run apps/cli/src/main.ts app start api
-# Publish Nginx/TLS only after the private container is running and healthy.
-bun run apps/cli/src/main.ts app enable api
-
-# add PostgreSQL as another database kind on the same application
-bun run apps/cli/src/main.ts postgres add 17
-bun run apps/cli/src/main.ts app update demo \
-  --domain demo.example.test \
-  --database-engine postgres \
-  --postgres 17 \
-  --db
-
-# apply (validate + scoped reload when services are up)
-bun run apps/cli/src/main.ts apply
-```
-
-Stack roots are **external** mutable state (desired state, homes, certs, backups, generated output). Immutable templates ship with the repository or compiled binary. The stable stack name is explicit and is not derived from the stack directory; it becomes `COMPOSE_PROJECT_NAME` and prefixes Compose containers, networks, and named volumes. `bento` remains the compatible default when `--name` is omitted.
-
-### Multiple stacks and Nginx ports
-
-Nginx uses host networking by default (`NGINX_HOST_NETWORK=1`), preserving direct host ports 80/443 and HTTP/3 behavior. Because only one host-network process can own those ports, additional stacks should opt into the stack-private bridge network and select distinct publications:
-
-```bash
-export BENTO_STACK_ROOT=/srv/bento/customer-b
-bento init --name customer-b
-bento stack ingress set bridge \
-  --http-port 8080 --https-port 8443
-bento compose -- up -d --build
-
-# Inspect effective settings
-bento stack ingress show
-```
-
-Bridge mode keeps Nginx on that stack's private network. Blank `NGINX_HTTP_PORT` / `NGINX_HTTPS_PORT` values mean internal-only; advanced operators may instead publish addresses or ports in an operator-owned `overlays/*.yml` file. HTTPS publishes TCP and, when `HTTP3=true`, UDP on the selected port. `host.docker.internal` maps to the host gateway in bridge mode; `127.0.0.1` means the Nginx container itself.
-
-## Compile and distribution parity
-
-```bash
-mkdir -p dist
-bun run compile          # native host arch
-bun run compile:amd64    # Linux x86_64 (release)
-bun run compile:arm64    # Linux aarch64 (release)
-```
-
-The compiled `bento` executable needs no Bun/Python/Node on the target host. Immutable templates are embedded with `--asset=templates` and materialize into a digest-addressed cache under the stack root (`.asset-cache/<digest>/`) before publishing stable Compose paths (`docker/`, `helpers/`). Mutable operator state always lives under an explicit external stack root — never next to the binary.
-
-```bash
-export BENTO_STACK_ROOT=/var/lib/bento
-./dist/bento init --name production
-./dist/bento render
-./dist/bento status
-./dist/bento version   # reports bento version + pinned Bun target (1.4.x)
-```
-
-### Parity smoke (F-29 / F-30)
-
-Source mode and the compiled binary must produce byte-equivalent generated files, equal state transitions/exit codes, and equivalent normalized diagnostics for identical inputs:
-
-```bash
-bun run test:parity      # compile + require binary parity suite
-# or, with an existing binary:
-BENTO_BIN=$PWD/dist/bento bun run test
-```
-
-The checked-in release workflow (`.github/workflows/ci.yml`) runs for tags and published releases. It performs a frozen install, formatting, linting, type checking, unit/contract tests, and integration tests before compiling Linux amd64/arm64 artifacts. Smoke and parity tasks remain additional local gates.
-
-Pin Bun **1.4.0** for source and compile. Dependencies are resolved exactly through the committed `bun.lock`; use `bun install --frozen-lockfile` in CI and release builds.
-
-## Run Bento as a Docker container
-
-This path is for an operator who already installed Docker Engine and wants both the Bento CLI and web control plane in one container. The image includes the compiled Bento binary, embedded web UI, Docker CLI, Compose v2, and Buildx. It controls the host Docker daemon through `/var/run/docker.sock`; it does not run Docker-in-Docker.
-
-### 1. Check the host
-
-Docker must be running, and ports 80 and 443 must be available for Bento's default host-mode Nginx stack. Docker access grants effective root control of the host.
-
-```bash
-docker version
-docker info >/dev/null
-```
-
-Choose a specific release image. The example uses `0.1.0`; replace it if you are installing another published release. Developers testing an image built from this checkout can use `bento:local` instead.
-
-```bash
-export BENTO_IMAGE=ghcr.io/khanhicetea/bento:0.1.0
-# For a local test image instead: export BENTO_IMAGE=bento:local
-```
-
-### 2. Create durable stack storage
-
-Everything under the stack root is mutable operator state and must survive replacement of the control-plane container:
-
-```bash
-sudo install -d -m 0750 /var/lib/bento
-```
-
-The host path and container path must be identical (`/var/lib/bento` in this example). Generated Compose bind mounts are evaluated by the host Docker daemon, so mounting the stack at a different container path will break sibling stack containers.
-
-### 3. Start the Bento control plane
-
-The container image refuses to serve the UI without `WEB_BASIC_AUTH`. Read a strong `user:password` into your shell without putting it on the Docker command line (your platform's secret environment setting is another option):
-
-```bash
-read -r -s -p 'Bento WEB_BASIC_AUTH (user:password): ' WEB_BASIC_AUTH; echo
-export WEB_BASIC_AUTH
-docker run -d --name bento --restart unless-stopped \
-  -e BENTO_STACK_ROOT=/var/lib/bento \
-  -e WEB_BASIC_AUTH \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /var/lib/bento:/var/lib/bento \
-  -p 127.0.0.1:8080:8080 "$BENTO_IMAGE"
-```
-
-Check startup:
-
-```bash
-docker logs bento
-docker exec bento bento version
-```
-
-A new stack initially shows **Stack not ready** in the browser. That is expected: initialization and service startup are explicit safety steps.
-
-### 4. Bootstrap the stack in three steps
-
-#### Step 1: Initialize
-
-Choose the permanent Compose project name before initialization. The example uses `production`:
-
-```bash
-docker exec bento bento bootstrap --name production
-```
-
-The first `bootstrap` invocation only initializes; it does not contact Docker. Initialization creates the private SQLite database `/var/lib/bento/state.db`, `/var/lib/bento/.env`, generated credentials, and the initial stack directories. `bento init` refuses to overwrite an initialized stack. Run `bento migrate` to apply pending database schema migrations; `bento serve` does this automatically before startup; CLI-only installations should run `bento migrate` after upgrading.
-
-#### Step 2: Review and change `.env`
-
-Edit the file directly on the Docker host:
-
-```bash
-sudoedit /var/lib/bento/.env
-```
-
-Set the ingress, ACME, HTTP/3, or other environment options required for this host. Keep generated passwords secret. Do not change `COMPOSE_PROJECT_NAME` after initialization because it identifies the stack's containers, networks, and durable volumes.
-
-#### Step 3: Render, validate, start, and apply
-
-Run `bootstrap` again with the same stack root:
-
-```bash
-docker exec bento bento bootstrap
-```
-
-This checks required `.env` values, renders configuration, validates the Compose model, pulls and builds images, starts Nginx/PHP/MySQL/Redis, then validates the running configuration and applies the reload plan. It stops at the first failure; fix the issue and retry the second invocation. No generated passwords are printed. Default host-mode Nginx binds host ports 80 and 443. The first build can take several minutes.
-
-Do not use `docker compose down -v`; that can destroy durable database volumes, and Bento blocks it through its supported Compose wrapper.
-
-### 5. Verify the stack
-
-```bash
-docker exec bento bento status
-docker exec bento bento compose -- ps
-docker exec bento bento doctor
-```
-
-If a service fails, inspect its logs. This example selects `nginx`; replace it with a reported name such as `php85`, `mysql84`, or `redis`:
-
-```bash
-docker exec bento bento compose -- logs --tail 100 nginx
-```
-
-### 6. Open the web UI
-
-On the Docker host, open:
-
 ```text
-http://bento.localhost:8080
+browser UI / bento CLI
+        │  REST + WebSocket/SSE (loopback only, authenticated)
+        ▼
+bento serve ── SQLite intent + operation journal + reconciler ── Docker Engine API
+        │
+        ├─ app-<id>        one per app: s6 → (Nginx + PHP-FPM | your HTTP process) + minicrond, all as the app UID
+        ├─ edge (optional) shared Nginx: domains, TLS/ACME, HTTP/3, routes to published apps
+        ├─ cloudflared     optional tunnel, may target apps directly
+        └─ MySQL / PostgreSQL / Redis on a private internal network
 ```
 
-`WEB_BASIC_AUTH` protects the control plane and enables authenticated app scheduler paths. The listener is still intentionally published only on host loopback. For access from your workstation, use an SSH tunnel rather than publishing port 8080 on every interface:
+The backend is not in the request path. If it stops, apps, the edge, and schedules keep running; only management
+and reconciliation pause.
+
+## Highlights
+
+- **One container per app**, built from shared managed images (PHP 8.3–8.5 with local Nginx, Node.js 20–24, Bun,
+  Python). Non-root from PID 1, read-only root filesystem, all capabilities dropped, no host ports, no Docker socket.
+- **Stable identity.** Every app incarnation has a random ID and a never-reused UID/GID. Removing an app keeps its home
+  and databases until you explicitly prune them.
+- **Explicit lifecycle.** Create → start (waits for real readiness) → publish (managed edge only). Stop survives backend
+  and host restarts. Deleted containers are recreated only when the app's durable data is intact.
+- **Ingress your way.** Bento's edge, Cloudflare Tunnel straight to `http://app-<id>:<port>`, or your own proxy on the
+  app network. Only edge routes are Bento-controlled, and the UI says so.
+- **Per-app scheduler.** [minicrond](https://github.com/khanhicetea/minicrond) runs inside each app. Its UI is served
+  through an authenticated same-origin gateway and a UID-matched relay, never with a token handed to the browser.
+- **Data.** Add-only MySQL/PostgreSQL/SQLite bindings, per-app Redis ACL users, logical backups with atomic
+  publication and retention, exact-confirmed restores, and consistent stack export/import.
+
+## Install
+
+Requirements: Linux amd64 or arm64, Docker Engine with API ≥ 1.44, root (the backend owns app homes and runs the
+scheduler relay).
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 user@docker-host
+install -m 0755 bento-linux-amd64 /usr/local/bin/bento
+bento --stack /srv/bento/prod init --name prod --mysql 8.4   # or --postgres 17
+install -m 0644 deploy/systemd/bento@.service /etc/systemd/system/
+systemctl enable --now bento@prod
+bento --stack /srv/bento/prod auth set-password
+ssh -L 7780:127.0.0.1:7780 your-host    # then open http://127.0.0.1:7780
 ```
 
-Then open `http://bento.localhost:8080` on the workstation. Browsers resolve `*.localhost` to loopback, allowing each scheduler to use a separate origin while sharing the tunnel.
+`BENTO_STACK_ROOT` can replace `--stack`. There is no global "current stack". Directories that are not Bento stacks
+are refused and left untouched.
 
-### Routine container operations
-
-Run any Bento CLI command with `docker exec bento bento ...`, for example:
+## First app
 
 ```bash
-docker exec bento bento status
-docker exec -it bento bento app shell demo # attach to an app CLI (replace demo with your slug)
+export BENTO_STACK_ROOT=/srv/bento/prod
+cat > shop.json <<'EOF'
+{"slug":"shop","runtime":{"kind":"php-fpm","php":{"version":"8.4","documentRoot":"public","routing":"front-controller","pool":"small","uploadLimitMb":64}},
+ "domains":["shop.example.com"],"route":{"tls":"acme","redirectHttps":true,"accessLog":false},
+ "bindings":[{"engine":"mysql","service":"mysql84"}]}
+EOF
+bento app create --json shop.json      # provisioned, stopped, unpublished
+bento app shell shop                    # deploy code as the app user (git, composer, npm)
+bento app start shop                    # waits for FPM, local Nginx, scheduler, and HTTP readiness
+echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":false,"acmeEmail":"you@example.com","acmeUrl":""}' \
+  | bento edge set --json -
+bento app publish shop
 ```
 
-Restart or remove only the control-plane container without deleting stack state or sibling services:
+Credentials reach the app as environment variables (`DB_*`, `BENTO_DB_<n>_*`, `REDIS_*`), never through the API.
+
+## Development
 
 ```bash
-docker restart bento
-docker rm -f bento
+mise install                               # pinned toolchains
+bun install --frozen-lockfile
+bun run fmt:check && bun run lint && bun run check && bun run web:build
+sudo make -C apps/backend ci               # gofmt, vet, race tests, tygo drift check, build
+sudo make -C apps/backend test-integration # real Docker, disposable stack roots
+make -C apps/backend release               # embeds the UI; static linux/amd64 + linux/arm64 binaries in dist/
 ```
 
-To upgrade, pull a specific newer image, remove the old `bento` control-plane container, and repeat the `docker run` command with the new image. Keep `/var/lib/bento` mounted at the same absolute path. The `serve` startup applies pending `state.db` schema migrations; for CLI-only installations, run `bento migrate` before other post-upgrade commands.
+API types for the UI are generated from Go DTOs with `make -C apps/backend generate-types`.
 
-Mounting `/var/run/docker.sock` grants the Bento container effective root control of the Docker host. Only trusted administrators may access it. The credential is visible to operators with Docker inspect access; use host-loopback publication and SSH tunneling rather than exposing the UI to an untrusted network. Host-crontab registration (`backup schedule register`) is not supported from this container; configure a host-managed scheduler to invoke `docker exec bento bento backup schedule run` instead.
+## Documentation
 
-When deploying alongside Dokploy, Coolify, or another Docker-based proxy, use a separate Bento stack identity and bridge ingress rather than letting its default Nginx compete for host ports 80/443. See the [container platform deployment guide](docs/src/content/docs/start/container-platforms.md) for mounts, bootstrap, routing, and backup boundaries. Bento manages its own Compose project, not the platform's application services.
+- [Backend developer docs](apps/backend/README.md)
+- [Architecture](apps/backend/docs/architecture.md)
+- [Verification record and known gaps](apps/backend/docs/evidence.md)
+- Operator guides: `docs/` (`bun run docs:dev`)
 
-## Architecture (short)
+## Limits
 
-```text
-Operator CLI (Bun/TS)
-   -> desired state (normalized tables in state.db)
-   -> complete candidate generation
-   -> lock / stage / promote / validate / reload
-
-Internet -> Nginx (host default / bridge opt-in) -> per-app PHP-FPM sockets
-                                                   -> private MySQL / PostgreSQL services
-                                                   -> private Redis
-
-PHP runner (one per version) -> s6-overlay PID 1 -> per-app minicrond + root maintenance minicrond
-                             -> local deploy drain -> hook -> app FPM OPcache reset
-```
-
-PHP apps share containers by version and isolate through UID/GID, pools, filesystem policy, DB grants, and optional Redis ACL. Managed Node.js, Bun, and Python HTTP process apps use one dedicated private service each while sharing stack Nginx and data services.
-
-## Interface change (first cleanup release)
-
-`bento tui` has been retired; it is now an unknown command. Use `bento serve` for the browser UI (loopback by default, tunnel for remote access), or scriptable commands: `app create|update`, `proxy create --upstream ...`, `template select|return|drift`, `backup`/`restore`, and `sqlite backup <app>`. Restores do not silently replace a live database. CLI-only upgrades must run `bento migrate`; `serve` applies migrations at startup. `app shell`, editor invocation, and the direct exact `app prune` prompt remain available. See the data recovery guides before replacing production data.
-
-## Command surface
-
-| Area         | Commands                                                                                                                                                                                                                                                       |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Web UI       | `serve [--host 127.0.0.1 --port 8080 --open]` (oRPC API + DaisyUI 5 web control plane; loopback by default)                                                                                                  |
-| Bootstrap    | `init`, `render`, `apply`, `status`                                                                                                                                                                                                                            |
-| Diagnostics  | `doctor`, `support-bundle [output]` — validates runtime versions, network/storage/TLS/service health, permissions, volumes, overlays, and secret modes; bundles contain redacted diagnostics only                                                              |
-| Live proof   | `test-stack [name]` (or `--test-stack [name]`, default `testbento`) — Docker harness covering MySQL and PostgreSQL PHP connectivity, PostgreSQL two-app isolation and backup/restore, mixed-engine status/raw export, app operations, and deploy; ACME skipped |
-| Apps         | `app create\|list\|show\|update\|start\|stop\|enable\|disable\|delete\|remove\|prune\|shell`; `start`/`stop` manage private process-app containers; removal requires `--confirm "delete <slug>"` and retains durable data                                      |
-| PHP          | `php add\|remove\|list`                                                                                                                                                                                                                                        |
-| MySQL        | `mysql add\|list\|db\|shell\|size\|processlist` (version removal blocked; password rotation unsupported)                                                                                                                                                       |
-| PostgreSQL   | `postgres add\|list\|db\|shell\|size\|processlist` (official major tags such as `17`; version/service removal blocked); apps select it with `--database-engine postgres --postgres 17`                                                                         |
-| Proxy        | `proxy create\|list\|delete\|remove` (repeat `--upstream URL`; deletion requires `--confirm "delete <name>"`)                                                                                                                                                  |
-| TLS          | `tls set --app\|--proxy --mode self-ca\|shared\|acme\|external`; `tls ca export --output PATH` (see TLS notes below)                                                                                                                                           |
-| Background   | `app minicrond <slug> -- <args...>` (app jobs and workers)                                                                                                                                                                         |
-| Deploy       | `deploy enable\|disable\|rotate\|status\|drain\|instructions`                                                                                                                                                                                                  |
-| Access logs  | `logs access enable\|disable\|rotate\|report --app <app>`; add `--attach` for the interactive GoAccess terminal                                                                                                              |
-| Exec / shell | `app shell <app>`, `exec <app> [-- <cmd>]`, `rclone -- <args>` — ephemeral PHP CLI or isolated rclone sidecar                                                                                                                                                  |
-| Compose      | `compose files`, `compose -- <args>` (refuses `down -v`)                                                                                                                                                                                                       |
-| Stack        | `stack ingress show`, `stack ingress set host\|bridge [--http-port N --https-port N]`; `stack export <directory>`, `stack import <directory> [--name NAME --ingress-mode bridge --http-port N --https-port N]`                                                 |
-| Safety       | `permissions check\|repair [--shallow\|--recursive] [--dry-run]`, `backup [--all]`, `backup schedule register\|status\|unregister\|run`, `restore`                                                                                                             |
-
-PostgreSQL is a first-class database kind alongside MySQL and SQLite. Managed private services can be added and listed with `postgres add <major>` / `postgres list`; calling `app update` with a new database kind links another binding without replacing existing data. Routine administration is available through `mysql db|shell|size|processlist`, `postgres db|shell|size|processlist`, and `sqlite`. Top-level backup enumerates all linked bindings; restore accepts `--engine mysql|postgres` when a mixed relational app would otherwise be ambiguous. Fresh state uses schema v1: apps persist `databases[]`, while authoritative domain records link domains to apps or proxies and mark one link primary. Other domain schema versions are rejected; there is no domain-state upgrade command. PostgreSQL uses official major tags such as `17` (`postgres17`).
-
-### Web control plane
-
-```bash
-bento --stack /var/lib/bento serve                 # http://127.0.0.1:8080
-bento --stack /var/lib/bento serve --port 9090 --open
-```
-
-`serve` hosts a typed oRPC API at `/rpc` and a responsive DaisyUI 5 management UI. It defaults to loopback; use an SSH tunnel for remote administration. Set `WEB_BASIC_AUTH='user:strong-password'` before startup to require HTTP Basic authentication. On a fixed local port in Bento’s root control-plane container, this also establishes an expiring HttpOnly Bento session and enables each app scheduler at `/scheduler/apps/<slug>/` on the same origin; the browser never receives a minicrond token or socket. These paths are not browser security boundaries: scheduler content with an XSS vulnerability could access Bento and other apps on this origin. Use only with trusted operators and scheduler content. Direct non-root source-mode servers leave browser scheduler access disabled because they cannot satisfy minicrond’s Unix peer authentication. Open the Bento listener URL (for example `http://127.0.0.1:<port>`). Without `WEB_BASIC_AUTH`, scheduler browser access remains disabled. Do not expose a non-loopback HTTP listener to an untrusted network; remote ingress still requires trusted TLS and authentication. Use the web UI for browser-safe operations and scriptable CLI commands for database recovery, templates, and terminal-attached work. For example, `bento sqlite backup <app>` creates a consistent SQLite artifact, `bento restore` handles guarded relational restores, and `bento template select` edits a custom template. Terminal-attached actions are represented by safe `--print` plans or non-interactive `exec` commands. DaisyUI 5 is loaded from jsDelivr; Bento's own layout CSS and JavaScript are included in source and compiled builds.
-
-The `/operations` page can set or replace a remotely managed Cloudflare Tunnel token. Bento stores it privately under `secrets/`, generates a token-only container environment, and force-recreates the `cloudflared` service in Nginx's network namespace; the service then appears under **Service roles**. Configure application public hostnames in Cloudflare with an origin such as `http://localhost:80`. A loopback `bento serve` origin is reachable this way in host ingress mode, but `WEB_BASIC_AUTH` does not provide transport encryption or trusted-proxy policy: require a trusted Cloudflare Access policy and TLS, and never expose its direct listener to an untrusted network. The local `*.localhost` scheduler gateway is not enabled for non-local listeners.
-
-### Logical database backup and restore
-
-```bash
-# Plain SQLite uses the online .backup API and gzip/zstd compression.
-bento sqlite backup reports --gzip
-
-# Every binding linked to the app is included; --all spans every app.
-bento backup --app reports --gzip
-bento backup --all
-
-# Restore to a new namespaced database for verification.
-bento restore --file /var/lib/bento/backups/postgres17/reports-....sql.gz \
-  --app reports --engine postgres --target reports_verify
-
-# Register the current stack for a daily 03:15 host-cron run.
-bento backup schedule register \
-  --schedule "15 3 * * *" --bin /usr/local/bin/bento
-bento backup schedule status
-
-# Run the same scheduled all-database operation immediately, or remove registration.
-bento backup schedule run
-bento backup schedule unregister
-```
-
-Scheduled backups write logical dumps beneath the selected stack's `backups/` directory. To upload each newly created dump, configure a remote interactively with the isolated sidecar, then attach it to the schedule:
-
-```bash
-bento rclone -- config
-bento backup schedule register \
-  --schedule "15 3 * * *" --bin /usr/local/bin/bento \
-  --rclone-remote archive --rclone-prefix bento/production
-```
-
-`rclone/rclone.conf` is created privately at stack initialization and is bind-mounted only into the profile-only rclone sidecar; backups are mounted read-only at `/backups`. The scheduled upload preserves the paths below `backups/`. Without an rclone target, dumps remain on-host only; configure and verify another off-host copy before treating them as disaster recovery.
-
-Registration manages only the stack-qualified Bento block in the current user's host crontab and preserves unrelated entries. `status` reports registration, upload target, and a bounded, redacted last-run record; `unregister` leaves existing dumps and that record in place. Overlapping logical backup batches are rejected rather than queued.
-
-MySQL uses matching `mysqldump`; PostgreSQL uses matching-major `pg_dump --no-owner --no-acl`. Dumps are written privately, checked for successful non-empty output, and atomically published. Retention runs only after the requested batch succeeds. Restore is not object-level atomic and can leave a partial destination after an import failure. Replacing an existing database requires exact target-name confirmation. Use logical backup/restore—not raw volume transfer—for PostgreSQL major upgrades.
-
-### Full stack export and import
-
-The stack transfer commands are intentionally CLI-only. Stack identity comes from the explicit `COMPOSE_PROJECT_NAME` in the stack `.env`, independently from the selected stack root. A same-machine clone should select an empty destination root and override both identity and ingress before import starts the stack:
-
-```bash
-export BENTO_STACK_ROOT=/srv/bento/clone
-bento stack import /srv/exports/bento-2026-07-21 \
-  --name clone --ingress-mode bridge --http-port 18080 --https-port 18443
-```
-
-```bash
-# Source host: destination must be empty and outside the stack root.
-export BENTO_STACK_ROOT=/var/lib/bento
-bento stack export /srv/exports/bento-2026-07-21
-
-# Produces:
-#   stack.tar.gz          (state, homes, credentials, certificates, config, logs, backups, sqlite/)
-#   mysql84-data.tar.gz      (one archive per managed MySQL volume)
-#   mysql80-data.tar.gz      (example when another MySQL version is configured)
-#   postgres17-data.tar.gz   (one archive per managed PostgreSQL volume)
-#   redis-data.tar.gz        (the Redis volume)
-
-# Destination host: select an empty/nonexistent destination root.
-export BENTO_STACK_ROOT=/var/lib/bento
-bento stack import /srv/exports/bento-2026-07-21
-```
-
-Export verifies the named volumes, stops only the running MySQL, PostgreSQL, and Redis data services needed for a consistent raw copy, and restarts exactly those services afterward. The root archive mechanically includes `sqlite/`, but does not stop SQLite writers or guarantee that a live SQLite/WAL copy is consistent; use a logical SQLite `.backup` for recovery assurance. Every volume archive uses its logical Compose volume name, and import maps it back using imported `state.db`. Ephemeral `runtime/`, `locks/`, and `.asset-cache/` are omitted. Import rejects missing, corrupt, unsafe, or unexpected archives and all existing destination data volumes, restores only newly created volumes, re-renders configuration, and runs Compose with `up -d --build`. Use matching CPU architecture and database image versions. In particular, raw PostgreSQL transfer requires a compatible PostgreSQL major/image version; use logical `backup`/`restore` for major upgrades. The archives contain secrets and private keys; encrypt and protect them when moving off-host.
-
-### Runner service supervision
-
-Runner containers use **s6-overlay 3.2.3.2** as PID 1. One private socket-only minicrond runs under each enabled PHP app's numeric UID/GID; a separate root instance handles log rotation. Bento renders its internal tasks as config-owned jobs; minicrond syncs them before scheduling (and refuses to start on registry name collisions). If upgrading a stack with previously imported `bento-internal-*` jobs, remove those jobs via the old daemon before upgrading; Bento will not delete registry-owned definitions automatically. Manage user jobs and workers with `bento app minicrond <slug> -- <args>`, not the retired `bento cron`/`bento worker` commands. This development baseline uses domain schema 1 and database migration 1: old `state.db` versions and migration histories are refused, not upgraded. Stop the stack, make a SQLite-consistent backup of `state.db` and its WAL, move the old database aside, and initialize a fresh development stack before recreating definitions in each app's minicrond registry. Never delete the original database until recovery is verified. When authenticated scheduler access is enabled, the web page proxies each app’s minicrond UI through `/scheduler/apps/<slug>/` on the Bento origin and that app’s private socket.
-
-Every Compose service uses Docker's `local` logging driver with a shared 10 MiB / 3-file rotation policy. Each PHP runner also has a separate s6-supervised root minicrond daemon. Its internal logrotate entries run hourly, rotate app and captured worker logs at 10 MiB, and keep two rotations. Root rotation is separate from unprivileged app daemons because PHP-FPM slow logs can be root-owned. Rotation uses `copytruncate`, so minicrond, PHP-FPM, workers, and application processes do not need reopen signals or restarts (with the usual small copy/truncate race window). The scheduler registry and log buffers live under each app's private `homes/<slug>/.local/share/minicron`; root maintenance uses `maintenance/minicrond/<runner>`. A live `stack.tar.gz` is not a consistent snapshot of these SQLite databases and WAL files: stop the runners for stack transfer or take a SQLite-consistent backup.
-
-The app-scoped scheduler CLI runs inside its PHP runner as the app UID:
-
-```sh
-bento app minicrond demo -- status
-bento app minicrond demo -- list
-```
-
-Rebuild the PHP image and recreate its runner once after upgrading (`bento render`, `bento compose -- build php85`, `bento compose -- up -d --force-recreate php85-runner`, then `bento apply`). Subsequent user job and worker changes go straight to minicrond's registry without a Bento apply.
-
-### TLS modes (F-12)
-
-| Mode       | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `self-ca`  | Bento manages one stack-private CA under `certs/private-ca/` and signs a separate SAN certificate for each app/proxy domain and its aliases. Certificates renew on apply when near expiry or when domains change. HTTPS redirect on. Clients must trust the exported CA.                                                                                                                                                                                     |
-| `shared`   | One shared self-signed starter cert under `certs/boot.{crt,key}` (created on materialize / Nginx entrypoint). This is the default and has **no** HTTP→HTTPS redirect. It is convenient for startup but does not provide domain-name validation.                                                                                                                                                                                                              |
-| `acme`     | Nginx's native `ngx_http_acme_module` automatically obtains and renews certificates using one shared `bento_acme` issuer. Configure `ACME_EMAIL` and `ACME_URL` in the stack `.env` (`ACME_URL` defaults to Let's Encrypt production). State persists under `certs/acme-state/`; no Certbot command is needed. HTTPS redirect is enabled. **DNS A/AAAA for every site domain must point at this host and public port 80 must be reachable before issuance.** |
-| `external` | Operator-managed cert+key under stack `certs/` (paths validated; private key must not be world-readable, mode `0600`). HTTPS redirect on.                                                                                                                                                                                                                                                                                                                    |
-
-TLS changes reload **Nginx only** (PHP/runners stay up).
-
-Export and install the private CA's **public certificate** (never copy `ca.key`):
-
-```sh
-bento tls ca export --output ./bento-ca.crt
-
-# Debian/Ubuntu target
-sudo install -m 0644 bento-ca.crt /usr/local/share/ca-certificates/bento-ca.crt
-sudo update-ca-certificates
-
-# RHEL/Fedora target
-sudo install -m 0644 bento-ca.crt /etc/pki/ca-trust/source/anchors/bento-ca.crt
-sudo update-ca-trust
-```
-
-Applications on the target server may need their own CA bundle reload or service restart after trust-store changes. Back up `certs/private-ca/` securely: losing `ca.key` prevents renewal, while replacing the CA requires redistributing trust.
-
-### Permissions (product §6.9)
-
-- `permissions check <app>` — policy issues without changes
-- `permissions repair <app> --dry-run` — print planned fixes
-- `permissions repair <app>` / `--shallow` — fix core dirs only (default repair path)
-- `permissions repair <app> --recursive` — bounded walk; **never follows symlink targets**
-- App create may apply recursive policy while the home tree is still small; routine startup/apply paths use shallow repairs only.
-
-The stack root comes from `BENTO_STACK_ROOT` and defaults to `./bento`; `--stack PATH` is available as a one-command override. The other global flag is `--json`. Command parsing and help use **yargs**; table layout uses **cliui**; colorized operator output uses **picocolors**. Desired-state and CLI input validation use **zod**; cron schedules use **cron-parser**; PHP/MySQL version ordering uses **semver**; config templates use **mustache**. Platform helpers use Node-compatible built-ins; YAML uses `js-yaml`, and tests use Bun's native runner.
-
-## Specs and acceptance
-
-Product, architecture, and reimplementation contract live in:
-
-1. [`specs/01-product-spec.md`](specs/01-product-spec.md)
-2. [`specs/02-system-architecture.md`](specs/02-system-architecture.md)
-3. [`specs/03-reimplementation-contract.md`](specs/03-reimplementation-contract.md)
-
-Unit, contract, and integration tests cover state validation, domain uniqueness, render rollback, compose safety, guarded app/proxy removal, app disable/enable lifecycle, deploy HMAC/queue policies, CLI smoke flows, multi-app isolation, TLS/routing modes, and corrupt-boundary rejection.
-
-## Explicit non-goals (Phase G)
-
-Bento intentionally does **not** provide:
-
-- multi-host / Kubernetes / hosted remote control plane / authenticated public management API
-- one container per PHP app or one complete stack per app (process apps use a dedicated runtime service, but still share the host and stack data plane)
-- unconfirmed destructive deletion of app homes or databases (`app prune` is CLI-only, lists every known part, and requires typing the literal `delete`)
-- automated MySQL or PostgreSQL version/volume deletion (`mysql remove`, `postgres remove`, and `compose down -v` are blocked)
-- automatic relational-database password rotation (the operator must coordinate the database, Bento state/credentials, and dependent applications)
-- managed off-host storage or retention guarantees (scheduled backups can upload through the operator-configured rclone sidecar)
-- a hard-coded Git deploy workflow (webhook orchestration + operator `deploy.sh` only)
-- a Python runtime dependency
-- per-app CPU/memory quotas inside shared PHP containers
-
-See [`specs/01-product-spec.md`](specs/01-product-spec.md) §8 and `apps/cli/tests/unit/phase_g_test.ts`.
-
-## Project layout
-
-```text
-apps/
-  cli/
-    src/                  # CLI, server, domain, and services
-    templates/            # immutable nginx/php/helpers assets
-    tests/                # unit, contract, and integration suites
-  web/
-    src/                  # browser control plane
-packages/
-  shared/                 # typed oRPC contract shared by CLI and web
-specs/                    # product specifications
-.github/workflows/ci.yml  # tag/release binary builds
-```
-
-## Nginx performance and sideload configuration
-
-Bento ships conservative production defaults for connection reuse, buffered access logs, gzip, static assets, cache-stampede protection, upstream failover, and WebSocket upgrades. Dynamic PHP and proxy responses remain **uncached** by default because Bento cannot infer application authentication or cache semantics.
-
-Do not edit `generated/nginx/`; it is replaced on render. Put additive configuration under the operator-owned `custom/nginx/` tree instead. Bento creates the directory structure when needed and preserves everything placed inside it:
-
-| Path                                             | Nginx context and load order            |
-| ------------------------------------------------ | --------------------------------------- |
-| `main.d/*.conf`                                  | main context                            |
-| `events.d/*.conf`                                | end of `events`                         |
-| `http.d/*.conf`                                  | `http`, before generated sites          |
-| `sites.d/*.conf`                                 | `http`, after generated sites           |
-| `apps/<slug>/server.d/*.conf`                    | both app HTTP and HTTPS server blocks   |
-| `apps/<slug>/http.d/*.conf`, `https.d/*.conf`    | one app protocol only                   |
-| `proxies/<name>/upstream.d/*.conf`               | the named proxy `upstream` block        |
-| `proxies/<name>/server.d/*.conf`                 | both proxy HTTP and HTTPS server blocks |
-| `proxies/<name>/http.d/*.conf`, `https.d/*.conf` | one proxy protocol only                 |
-
-Drop-ins are loaded lexically, so prefix files with `10-`, `20-`, and so on when order matters. They are mounted read-only into Nginx. Directives must be valid in the context shown, and redefining a generated singleton directive can make `nginx -t` fail.
-
-For example, `custom/nginx/apps/shop/server.d/20-health.conf` can add a location without forking the generated vhost:
-
-```nginx
-location = /healthz {
-  access_log off;
-  return 204;
-}
-```
-
-Run `bento apply` after changes; Bento validates the candidate before reloading. For changes to managed locations rather than additive directives, use `bento template select --app <slug> --kind vhost` to create a complete app-owned vhost template. Returning to the upstream template preserves that custom source.
-
-## Security notes
-
-- Only Nginx is public in the base topology.
-- Database and webhook secrets are not printed in ordinary status output.
-- MySQL and PostgreSQL administrator passwords are generated once when `init` first creates the stack `.env`; each app database password is generated once during initial provisioning.
-- Set `HTTP3=true` in the stack `.env` and render to enable HTTP/3/QUIC listeners and `Alt-Svc` headers; it is disabled by default. Bridge-mode HTTPS publication includes matching UDP when enabled.
-- Bento does not rotate MySQL/PostgreSQL app passwords or reset existing account passwords during reconciliation. Operators must coordinate any password change manually across the database, Bento state/credentials, and dependent applications.
-- Database administrator and app passwords are not passed on host process argv for admin SQL.
-- Deploy HMAC secrets live in desired state / FastCGI params, not app-writable secret files.
-- Bun dependencies are pinned by `package.json` and `bun.lock`.
-
-## License
-
-Operator-owned deployments: you own the server, state, app files, volumes, certificates, and backups.
+Single host, no clustering or zero-downtime replacement. Apps sharing the app network can reach each other's
+listeners; database grants and Redis ACLs are the data boundary, not network isolation. This is not a hostile-tenant
+sandbox. The management API is loopback-only and must not be exposed without a separately reviewed remote-access design.

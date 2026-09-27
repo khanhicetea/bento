@@ -1,0 +1,31 @@
+# Bento backend for one stack root. Instance name = stack directory under
+# /srv/bento, e.g. `systemctl enable --now bento@prod` serves /srv/bento/prod.
+#
+# The backend needs Docker access (effectively host-administrative) and root
+# to own app homes and run the per-app UID-matched scheduler relay. It
+# listens on loopback only. Stopping it never stops apps, ingress, or
+# schedulers; it only suspends management and reconciliation.
+[Unit]
+Description=Bento control plane (stack %i)
+Documentation=https://github.com/khanhicetea/bento
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=BENTO_STACK_ROOT=/srv/bento/%i
+Environment=BENTO_LISTEN=127.0.0.1:7780
+EnvironmentFile=-/etc/bento/%i.env
+ExecStart=/usr/local/bin/bento serve --listen ${BENTO_LISTEN}
+# Graceful shutdown: stop accepting work and drain the current operation.
+KillSignal=SIGTERM
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=false
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

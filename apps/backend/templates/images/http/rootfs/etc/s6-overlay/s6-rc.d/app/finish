@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/local/bin/bento-finish app "$1" "$2"

@@ -1,0 +1,10 @@
+#!/bin/bash
+# App-UID scheduler: owns user jobs/workers and Bento config-owned internal tasks.
+exec 2>&1
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+umask 077
+mkdir -p "$MINICRON_DATA"
+chmod 700 "$MINICRON_DATA"
+cd "$HOME"
+exec /usr/local/bin/minicrond daemon
