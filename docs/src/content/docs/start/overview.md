@@ -23,5 +23,5 @@ databases — and Bento creates and supervises one Docker container for it.
 ## Not a fit
 
 Multi-host clusters, autoscaling, zero-downtime rollouts, hostile tenants, Git-push deployment pipelines, or an
-internet-facing management API. Bento does not build your code: you deploy code into the app's home yourself (for
+internet-facing management API. Bento does not build your code: you deploy code into `/home/<slug>/app` yourself (for
 example with `git` in `bento app shell`).

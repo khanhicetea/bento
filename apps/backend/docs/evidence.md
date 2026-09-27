@@ -49,8 +49,9 @@ make release                                                              # embe
 
 Stack with two PHP 8.4 apps (MySQL + SQLite, PostgreSQL) and one Node 24 app (SQLite):
 
-- Create leaves apps stopped and unpublished. Start waits for in-container readiness (scheduler, FPM, local HTTP) and
-  a direct HTTP probe over the app network.
+- Create leaves apps stopped and unpublished and provisions the app-owned code directory at `/home/<slug>/app`.
+  PHP document roots and HTTP-process working directories resolve from that directory. Start waits for in-container
+  readiness (scheduler, FPM, local HTTP) and a direct HTTP probe over the app network.
 - Front-controller routing with `PATH_INFO`, legacy multi-file routing, dotfiles denied, symlinks escaping the document
   root refused. An app writing outside its Redis prefix is denied.
 - Restarting the backend restarted no container and submitted no reconcile operations.

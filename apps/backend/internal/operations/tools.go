@@ -83,9 +83,9 @@ func (c *Controller) RunningInstance(ctx context.Context, app domain.App) (strin
 }
 
 // ExecRequestFor builds an exec as the app identity through the tooling
-// entrypoint, with a working directory contained in the home.
+// entrypoint, with a working directory contained in the code directory.
 func ExecRequestFor(app domain.App, argv []string, workdir string) (docker.ExecRequest, error) {
-	wd := app.ContainerHome()
+	wd := app.ContainerCode()
 	if workdir != "" {
 		rel, err := domain.CleanRelative(workdir)
 		if err != nil {

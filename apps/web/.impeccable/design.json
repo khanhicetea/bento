@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-27T13:22:21Z",
+  "title": "Design System: Bento Compartment System",
+  "extensions": {
+    "shadows": [],
+    "motion": [
+      {
+        "name": "navigation-state",
+        "value": "160ms ease-out",
+        "purpose": "Route hover and active changes."
+      },
+      {
+        "name": "mobile-drawer",
+        "value": "180ms ease-out",
+        "purpose": "Mobile drawer opening and closing; reduced motion is respected."
+      }
+    ],
+    "breakpoints": [
+      { "name": "overview-stack", "value": "1100px" },
+      { "name": "application-columns", "value": "1200px" },
+      { "name": "single-column", "value": "768px" },
+      { "name": "narrow-mobile", "value": "540px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Working Tray",
+      "kind": "card",
+      "refersTo": "tray",
+      "description": "A structural dark seam groups adjacent task cells.",
+      "html": "<div class=\"ds-tray\"><div class=\"ds-tray-cell\">Needs attention</div><div class=\"ds-tray-cell\">Stack services</div></div>",
+      "css": ".ds-tray{display:grid;grid-template-columns:1.5fr 1fr;gap:0.55rem;padding:0.55rem;border-radius:1rem;background:var(--tray-frame,#385348);font:600 0.875rem 'Noto Sans',system-ui,sans-serif}.ds-tray-cell{min-height:5rem;padding:1rem;border-radius:0.65rem;background:var(--tray-cell,#fffdfa);color:var(--foreground,#22352f)}"
+    },
+    {
+      "name": "Application Cell",
+      "kind": "card",
+      "refersTo": "compartment",
+      "description": "One app's identity, status, facts, and actions in one place.",
+      "html": "<article class=\"ds-app\"><span class=\"ds-app-state\">Healthy</span><h3>garden</h3><p>garden.example.com</p><div class=\"ds-app-fact\"><span>Runtime</span><strong>PHP 8.4</strong></div><button>Restart</button></article>",
+      "css": ".ds-app{min-height:15rem;display:flex;flex-direction:column;padding:1.25rem;border-radius:0.65rem;background:var(--tray-cell,#fffdfa);color:var(--foreground,#22352f);font:0.875rem 'Noto Sans',system-ui,sans-serif}.ds-app h3{margin:2rem 0 0;font-size:1.3rem}.ds-app p{margin:0.2rem 0 1rem;color:var(--muted-foreground,#53665d)}.ds-app-state{align-self:flex-end;padding:0.2rem 0.5rem;border-radius:0.35rem;background:#ddefe3;color:#18583d;font-size:0.75rem}.ds-app-fact{display:flex;justify-content:space-between;gap:1rem;padding:0.75rem 0;border-top:1px solid var(--border,#dce5da)}.ds-app button{align-self:flex-start;margin-top:auto;padding:0.5rem 1rem;border:0;border-radius:0.5rem;background:var(--primary,#294d3f);color:#fff;cursor:pointer}.ds-app button:hover{filter:brightness(1.1)}.ds-app button:focus-visible{outline:2px solid var(--ring,#3e7760);outline-offset:2px}"
+    },
+    {
+      "name": "Binding Cell",
+      "kind": "card",
+      "refersTo": "compartment",
+      "description": "Structured data identity and individual database names, never a CSV line.",
+      "html": "<section class=\"ds-binding\"><h3>MySQL database</h3><p>mysql84</p><div class=\"ds-binding-label\">Database user</div><code>garden_db</code><div class=\"ds-binding-label\">Databases</div><div class=\"ds-binding-chip\">garden_app</div></section>",
+      "css": ".ds-binding{padding:1.25rem;border-radius:0.65rem;background:var(--tray-cell,#fffdfa);color:var(--foreground,#22352f);font:0.875rem 'Noto Sans',system-ui,sans-serif}.ds-binding h3{margin:0;font-size:1rem}.ds-binding p{margin:0.2rem 0 1rem;color:var(--muted-foreground,#53665d)}.ds-binding-label{margin:0.7rem 0 0.3rem;color:var(--muted-foreground,#53665d);font-size:0.75rem}.ds-binding-chip{display:inline-flex;padding:0.35rem 0.6rem;border-radius:0.4rem;background:var(--secondary,#e4ede3)}"
+    },
+    {
+      "name": "Form Group",
+      "kind": "card",
+      "refersTo": "form-group",
+      "description": "One related decision in a soft compartment, with aligned controls.",
+      "html": "<section class=\"ds-form-group\"><h3>Routing</h3><p>Choose who owns the route.</p><label>Ingress<select><option>Managed edge</option></select></label></section>",
+      "css": ".ds-form-group{display:grid;gap:1rem;padding:1.3rem;border-radius:0.7rem;background:var(--tray-soft,#f1f5ed);color:var(--foreground,#22352f);font:0.875rem 'Noto Sans',system-ui,sans-serif}.ds-form-group h3{margin:0;font-size:1rem}.ds-form-group p{margin:0.2rem 0 0;color:var(--muted-foreground,#53665d)}.ds-form-group label{display:grid;gap:0.4rem}.ds-form-group select{width:100%;height:2.75rem;padding:0 0.75rem;border:1px solid var(--input,#ccd8cb);border-radius:0.55rem;background:var(--card,#fff);color:var(--foreground,#22352f)}.ds-form-group select:focus-visible{outline:2px solid var(--ring,#3e7760);outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact pine action; disabled and pending states stay beside the affected resource.",
+      "html": "<button class=\"ds-primary\">Add binding</button>",
+      "css": ".ds-primary{min-height:2.5rem;padding:0.5rem 1rem;border:0;border-radius:0.5rem;background:var(--primary,#294d3f);color:var(--primary-foreground,#fff);font:600 0.875rem 'Noto Sans',system-ui,sans-serif;cursor:pointer}.ds-primary:hover{filter:brightness(1.1)}.ds-primary:focus-visible{outline:2px solid var(--ring,#3e7760);outline-offset:2px}.ds-primary:disabled{opacity:0.5;cursor:not-allowed}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A full-track input that shares height with selects.",
+      "html": "<input class=\"ds-input\" aria-label=\"Database name\" placeholder=\"Database name\">",
+      "css": ".ds-input{width:100%;min-height:2.75rem;padding:0.25rem 0.75rem;border:1px solid var(--input,#ccd8cb);border-radius:0.55rem;background:var(--card,#fff);color:var(--foreground,#22352f);font:0.875rem 'Noto Sans',system-ui,sans-serif}.ds-input:focus-visible{outline:2px solid var(--ring,#3e7760);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Working Bento",
+    "overview": "Bento is a functional way of arranging work, not a food illustration. A visible tray frame divides the workspace into distinct compartments. Cell size follows the importance of the content: stack condition and exceptions lead; applications each own a box; data bindings reveal the actual service, user, databases, and path without collapsing into a text line. In forms, compartments group fields by the decision being made. The visual is calm and friendly, but its geometry does the organizing.",
+    "keyCharacteristics": [
+      "The dark tray seam groups neighboring cells without adding decorative shadows.",
+      "One resource per application or binding cell, with its state and actions inside the same cell.",
+      "Form groups contain one related decision: identity, runtime, routing, data, or resources.",
+      "Color and icon reinforce a textual state; neither substitutes for it."
+    ],
+    "rules": [
+      {
+        "name": "The Compartment Rule",
+        "body": "A colored rectangle earns its place by containing a complete task or resource, not by displaying a lone metric.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do let the compartment arrangement reveal what belongs together and what deserves attention.",
+      "Do keep an action and its pending/error state beside the resource it affects.",
+      "Do keep destructive confirmations, retained-data descriptions, and add-only binding behavior exact."
+    ],
+    "donts": [
+      "Don't substitute a flat applications table or CSV-like database line for resource compartments.",
+      "Don't use a thick frame on every individual control, or decorative bento food imagery.",
+      "Don't mix unrelated fields or let select widths depend on their option text."
+    ]
+  }
+}

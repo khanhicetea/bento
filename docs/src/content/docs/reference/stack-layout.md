@@ -6,7 +6,7 @@ description: Files and directories in a stack root.
 | Path | Contents |
 | --- | --- |
 | `bento.db` | Intent, identities, UID ledger, operations, sessions (`0600`). |
-| `homes/<slug>/` | App homes (owned by the app UID). Durable. |
+| `homes/<slug>/` | App homes (owned by the app UID). Durable. Source code lives in `homes/<slug>/app/`. |
 | `sqlite/<id>/` | SQLite binding directories. Durable. |
 | `apps/<appId>/config/` | Generated per-app config and credentials, mounted read-only at `/etc/bento`. |
 | `apps/<appId>/identity/` | Generated `passwd`/`group`. |

@@ -66,6 +66,9 @@ type App struct {
 // ContainerHome is the home path inside containers.
 func (a App) ContainerHome() string { return "/home/" + a.Slug }
 
+// ContainerCode is the fixed source-code directory inside containers.
+func (a App) ContainerCode() string { return a.ContainerHome() + "/app" }
+
 // HTTPPort is the private HTTP port the app listens on inside its namespace.
 func (a App) HTTPPort() int {
 	if a.Runtime.Kind == RuntimePHP {
@@ -109,8 +112,8 @@ type PHPRuntime struct {
 	Routing      string `json:"routing"`
 	Pool         string `json:"pool"`
 	ReadyPath    string `json:"readyPath,omitempty"`
-	// ReleaseSymlink optionally names a symlink below the home (for example
-	// "current") that the document root may traverse deliberately.
+	// ReleaseSymlink optionally names a symlink below the code directory (for
+	// example "current") that the document root may traverse deliberately.
 	ReleaseSymlink string `json:"releaseSymlink,omitempty"`
 	UploadLimitMB  int    `json:"uploadLimitMb"`
 }

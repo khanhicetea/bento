@@ -23,37 +23,42 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <form
-        onSubmit={submit}
-        className="grid w-full max-w-sm gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
-      >
-        <div className="flex items-center gap-3">
-          <img src="/bento-logo-3d.png" alt="" className="size-10 rounded-xl" />
-          <div>
-            <h1 className="m-0 text-lg font-semibold">Bento control plane</h1>
-            <p className="m-0 text-xs text-muted-foreground">Operator sign-in</p>
-          </div>
+    <main className="login-layout">
+      <div className="login-aside">
+        <div className="login-aside__brand">
+          <img src="/bento-logo-3d.png" alt="" />
+          bento.
         </div>
-        <label className="grid gap-1.5 text-sm">
-          Password
-          <Input
-            type="password"
-            autoComplete="current-password"
-            autoFocus
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        {login.error && <Alert variant="destructive">{messageOf(login.error)}</Alert>}
-        <Button type="submit" disabled={login.isPending || password === ""}>
-          Sign in
-        </Button>
-        <p className="m-0 text-xs text-muted-foreground">
-          Set the password on the host with <code>bento auth set-password</code>. This management UI is intended only
-          for the loopback listener, not an untrusted network.
-        </p>
-      </form>
+        <div>
+          <h1>Your stack, in good hands.</h1>
+          <p>One place to see what’s running, what changed, and what needs you.</p>
+        </div>
+        <small>Single-host control plane</small>
+      </div>
+      <div className="login-main">
+        <form onSubmit={submit} className="login-form">
+          <h2>Welcome back</h2>
+          <p className="login-form__description">Sign in to manage your stack.</p>
+          <label className="grid gap-2 text-sm font-medium">
+            Password
+            <Input
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          {login.error && <Alert variant="destructive">{messageOf(login.error)}</Alert>}
+          <Button type="submit" className="w-full" disabled={login.isPending || password === ""}>
+            {login.isPending ? "Signing in…" : "Sign in"}
+          </Button>
+          <p className="login-form__help">
+            Set your password on the host with <code>bento auth set-password</code>. This management UI is for the
+            loopback listener only; do not expose it on an untrusted network.
+          </p>
+        </form>
+      </div>
     </main>
   );
 }

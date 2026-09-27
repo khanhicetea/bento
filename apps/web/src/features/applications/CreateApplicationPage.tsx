@@ -172,7 +172,7 @@ export function CreateApplicationPage() {
           </li>
         ))}
       </ol>
-      <form onSubmit={submit} className="rounded-xl border bg-card p-5 shadow-sm">
+      <form onSubmit={submit} className="bento-create-form rounded-xl border bg-card p-5">
         {step === 0 && (
           <section className="grid gap-5">
             <div>
@@ -241,7 +241,7 @@ export function CreateApplicationPage() {
                     ))}
                   </NativeSelect>
                 </Field>
-                <Field label="Document root">
+                <Field label="Document root" hint="Relative to /home/&lt;slug&gt;/app.">
                   <Input
                     value={php.documentRoot}
                     onChange={(event) => setPhp({ ...php, documentRoot: event.target.value })}
@@ -312,7 +312,7 @@ export function CreateApplicationPage() {
                   <code>{http.argv.join(" ")}</code>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label="Working directory">
+                  <Field label="Working directory" hint="Relative to /home/&lt;slug&gt;/app.">
                     <Input
                       value={http.workdir}
                       onChange={(event) => setHttp({ ...http, workdir: event.target.value })}
@@ -341,76 +341,109 @@ export function CreateApplicationPage() {
         )}
 
         {step === 2 && (
-          <section className="grid gap-5">
+          <section className="bento-create-step grid gap-5">
             <div>
               <h2 className="m-0 text-lg font-semibold">Routing, data & resources</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Choose route ownership and an initial add-only data binding.
               </p>
             </div>
-            <fieldset className="grid gap-3 sm:grid-cols-3">
-              <legend className="mb-2 text-sm font-medium">Ingress</legend>
-              {(
-                [
-                  ["managed", "Managed edge", "Bento owns publication, TLS, and route policy."],
-                  ["external", "External", "Tunnel or operator proxy owns the route."],
-                  ["none", "Private", "No public route is configured."],
-                ] as const
-              ).map(([value, title, body]) => (
-                <label
-                  key={value}
-                  className={`cursor-pointer rounded-lg border p-3 ${ingress === value ? "border-primary bg-primary/5" : ""}`}
-                >
-                  <input
-                    className="sr-only"
-                    type="radio"
-                    name="ingress"
-                    checked={ingress === value}
-                    onChange={() => setIngress(value)}
-                  />
-                  <strong className="text-sm">{title}</strong>
-                  <span className="mt-1 block text-xs text-muted-foreground">{body}</span>
-                </label>
-              ))}
-            </fieldset>
-            <DomainsInput
-              domains={domains}
-              draft={domainDraft}
-              error={domainError}
-              onDraft={setDomainDraft}
-              onKeyDown={domainKeyDown}
-              onAdd={addDomain}
-              onRemove={(domain) => setDomains((current) => current.filter((value) => value !== domain))}
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="TLS">
-                <NativeSelect
-                  value={route.tls}
-                  disabled={ingress !== "managed"}
-                  onChange={(event) => {
-                    const tls = event.target.value as T.TLSMode;
-                    setRoute({
-                      ...route,
-                      tls,
-                      certName: tls === "external" ? route.certName : undefined,
-                      redirectHttps: tls === "none" ? false : route.redirectHttps,
-                    });
-                  }}
-                >
-                  <option value="none">None</option>
-                  <option value="self-signed">Self-signed</option>
-                  <option value="acme">ACME</option>
-                  <option value="external">External certificate</option>
-                </NativeSelect>
-              </Field>
-              {route.tls === "external" && ingress === "managed" && (
-                <Field label="Certificate name" hint="Existing directory under edge/certs/external.">
-                  <Input
-                    value={route.certName ?? ""}
-                    onChange={(event) => setRoute({ ...route, certName: event.target.value })}
-                  />
+            <div className="bento-form-section">
+              <div className="bento-form-section__heading">
+                <h3>Routing</h3>
+                <p>Choose who owns the route, then add its domains and TLS settings.</p>
+              </div>
+              <fieldset className="grid gap-3 sm:grid-cols-3">
+                <legend className="mb-2 text-sm font-medium">Ingress</legend>
+                {(
+                  [
+                    ["managed", "Managed edge", "Bento owns publication, TLS, and route policy."],
+                    ["external", "External", "Tunnel or operator proxy owns the route."],
+                    ["none", "Private", "No public route is configured."],
+                  ] as const
+                ).map(([value, title, body]) => (
+                  <label
+                    key={value}
+                    className={`cursor-pointer rounded-lg border p-3 ${ingress === value ? "border-primary bg-primary/5" : ""}`}
+                  >
+                    <input
+                      className="sr-only"
+                      type="radio"
+                      name="ingress"
+                      checked={ingress === value}
+                      onChange={() => setIngress(value)}
+                    />
+                    <strong className="text-sm">{title}</strong>
+                    <span className="mt-1 block text-xs text-muted-foreground">{body}</span>
+                  </label>
+                ))}
+              </fieldset>
+              <DomainsInput
+                domains={domains}
+                draft={domainDraft}
+                error={domainError}
+                onDraft={setDomainDraft}
+                onKeyDown={domainKeyDown}
+                onAdd={addDomain}
+                onRemove={(domain) => setDomains((current) => current.filter((value) => value !== domain))}
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="TLS">
+                  <NativeSelect
+                    value={route.tls}
+                    disabled={ingress !== "managed"}
+                    onChange={(event) => {
+                      const tls = event.target.value as T.TLSMode;
+                      setRoute({
+                        ...route,
+                        tls,
+                        certName: tls === "external" ? route.certName : undefined,
+                        redirectHttps: tls === "none" ? false : route.redirectHttps,
+                      });
+                    }}
+                  >
+                    <option value="none">None</option>
+                    <option value="self-signed">Self-signed</option>
+                    <option value="acme">ACME</option>
+                    <option value="external">External certificate</option>
+                  </NativeSelect>
                 </Field>
+                {route.tls === "external" && ingress === "managed" && (
+                  <Field label="Certificate name" hint="Existing directory under edge/certs/external.">
+                    <Input
+                      value={route.certName ?? ""}
+                      onChange={(event) => setRoute({ ...route, certName: event.target.value })}
+                    />
+                  </Field>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-5 text-sm">
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={route.redirectHttps}
+                    disabled={route.tls === "none" || ingress !== "managed"}
+                    onCheckedChange={(checked) => setRoute({ ...route, redirectHttps: checked === true })}
+                  />
+                  Redirect HTTP to HTTPS
+                </label>
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={route.accessLog}
+                    disabled={ingress !== "managed"}
+                    onCheckedChange={(checked) => setRoute({ ...route, accessLog: checked === true })}
+                  />
+                  Access log
+                </label>
+              </div>
+              {ingress === "managed" && domains.length === 0 && (
+                <Alert variant="destructive">Add at least one domain for managed ingress.</Alert>
               )}
+            </div>
+            <div className="bento-form-section">
+              <div className="bento-form-section__heading">
+                <h3>Data</h3>
+                <p>Choose an initial add-only binding for this app.</p>
+              </div>
               <Field
                 label="Initial data binding"
                 hint="More bindings can be added later; existing bindings cannot be removed."
@@ -428,67 +461,52 @@ export function CreateApplicationPage() {
                 </NativeSelect>
               </Field>
             </div>
-            <div className="flex flex-wrap gap-5 text-sm">
-              <label className="flex items-center gap-2">
-                <Checkbox
-                  checked={route.redirectHttps}
-                  disabled={route.tls === "none" || ingress !== "managed"}
-                  onCheckedChange={(checked) => setRoute({ ...route, redirectHttps: checked === true })}
-                />
-                Redirect HTTP to HTTPS
-              </label>
-              <label className="flex items-center gap-2">
-                <Checkbox
-                  checked={route.accessLog}
-                  disabled={ingress !== "managed"}
-                  onCheckedChange={(checked) => setRoute({ ...route, accessLog: checked === true })}
-                />
-                Access log
-              </label>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="justify-self-start"
-              onClick={() => setShowAdvanced((value) => !value)}
-              aria-expanded={showAdvanced}
-            >
-              {showAdvanced ? "Hide" : "Show"} advanced resources
-            </Button>
-            {showAdvanced && (
-              <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
-                <Field label="Memory (MB)">
-                  <Input
-                    type="number"
-                    min="64"
-                    max="262144"
-                    value={resources.memoryMb}
-                    onChange={(event) => setResources({ ...resources, memoryMb: Number(event.target.value) })}
-                  />
-                </Field>
-                <Field label="CPU (millicores)">
-                  <Input
-                    type="number"
-                    min="50"
-                    max="256000"
-                    value={resources.cpuMillis}
-                    onChange={(event) => setResources({ ...resources, cpuMillis: Number(event.target.value) })}
-                  />
-                </Field>
-                <Field label="Process limit">
-                  <Input
-                    type="number"
-                    min="32"
-                    max="65536"
-                    value={resources.pids}
-                    onChange={(event) => setResources({ ...resources, pids: Number(event.target.value) })}
-                  />
-                </Field>
+            <div className="bento-form-section">
+              <div className="bento-form-section__heading">
+                <h3>Resources</h3>
+                <p>Defaults work for most apps; adjust only when you need to.</p>
               </div>
-            )}
-            {ingress === "managed" && domains.length === 0 && (
-              <Alert variant="destructive">Add at least one domain for managed ingress.</Alert>
-            )}
+              <Button
+                type="button"
+                variant="outline"
+                className="justify-self-start"
+                onClick={() => setShowAdvanced((value) => !value)}
+                aria-expanded={showAdvanced}
+              >
+                {showAdvanced ? "Hide" : "Show"} advanced resources
+              </Button>
+              {showAdvanced && (
+                <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
+                  <Field label="Memory (MB)">
+                    <Input
+                      type="number"
+                      min="64"
+                      max="262144"
+                      value={resources.memoryMb}
+                      onChange={(event) => setResources({ ...resources, memoryMb: Number(event.target.value) })}
+                    />
+                  </Field>
+                  <Field label="CPU (millicores)">
+                    <Input
+                      type="number"
+                      min="50"
+                      max="256000"
+                      value={resources.cpuMillis}
+                      onChange={(event) => setResources({ ...resources, cpuMillis: Number(event.target.value) })}
+                    />
+                  </Field>
+                  <Field label="Process limit">
+                    <Input
+                      type="number"
+                      min="32"
+                      max="65536"
+                      value={resources.pids}
+                      onChange={(event) => setResources({ ...resources, pids: Number(event.target.value) })}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
           </section>
         )}
 

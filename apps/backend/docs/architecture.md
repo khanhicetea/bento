@@ -91,8 +91,8 @@ Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remo
 
 ### App lifecycle internals (`apps.go`)
 
-- **provision:** `ensureHome` creates `homes/<slug>` (`0750`, app-owned) with a root-owned
-  `.bento-identity.json` sidecar, or verifies an existing one belongs to this incarnation (a foreign home is refused,
+- **provision:** `ensureHome` creates `homes/<slug>` (`0750`, app-owned), its `app/` code directory, and a root-owned
+  `.bento-identity.json` sidecar, or verifies an existing home belongs to this incarnation (a foreign home is refused,
   never re-owned); creates SQLite dirs; provisions relational grants and Redis ACLs; materializes config; marks the
   app provisioned and the ledger row active. Idempotent.
 - **ensureInstance:** verify durable state → ensure networks → `materialize` (resolve image, write config) → plan
@@ -165,8 +165,9 @@ The whole directory is mounted (not individual files) so atomic renames inside i
 
 `AppContainerSpec` sets: `User uid:gid`, read-only root, `CapDrop: ALL`, `no-new-privileges`, tmpfs `/run`
 (uid-owned, **exec**, 64 MiB — s6-overlay needs to execute from it) and `/tmp`, Engine-API memory/CPU/PID limits,
-`local` log driver (10 MB × 3), health check running `bento-ready`, restart `unless-stopped` (or `no`), and endpoints
-on both stack networks. Mounts: own home, config dir, identity files, own SQLite dirs. Nothing else.
+`local` log driver (10 MB × 3), health check running `bento-ready`, restart `unless-stopped` (or `no`), working
+directory `/home/<slug>/app`, and endpoints on both stack networks. Mounts: own home, config dir, identity files, own
+SQLite dirs. Nothing else.
 
 `Fingerprint` hashes every boot-static, **non-secret** input (image ID, user, env, mounts, tmpfs, resources, networks,
 hashes of `runtime.env`/argv/identity files, the credentials generation counter, and `specVersion`) into the

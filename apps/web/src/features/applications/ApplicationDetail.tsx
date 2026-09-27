@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Terminal as TerminalIcon } from "lucide-react";
+import { Database, ExternalLink, HardDrive, Plus, Terminal as TerminalIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
@@ -72,7 +72,25 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
   return (
     <Page wide>
       <AppHeader app={app} />
-      <nav className="mb-6 flex gap-1 overflow-x-auto border-b" aria-label="Application sections">
+      <label className="bento-detail-nav-mobile mb-5 grid gap-1.5 text-sm font-medium">
+        Section
+        <NativeSelect
+          value={tab}
+          onChange={(event) => {
+            const next = event.target.value as Tab;
+            navigate(
+              next === "overview" ? `/apps/${encodeURIComponent(slug)}` : `/apps/${encodeURIComponent(slug)}/${next}`,
+            );
+          }}
+        >
+          {tabs.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </NativeSelect>
+      </label>
+      <nav className="bento-detail-tabs mb-6 flex gap-1 overflow-x-auto border-b" aria-label="Application sections">
         {tabs.map(([value, label]) => (
           <Link
             key={value}
@@ -112,7 +130,7 @@ function AppHeader({ app }: { app: T.App }) {
     verb === "stop" || verb === "restart" || verb === "unpublish" ? setConfirm(verb) : run(verb);
   return (
     <>
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
+      <header className="bento-app-header mb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="m-0 text-2xl font-semibold">{app.slug}</h1>
@@ -211,7 +229,7 @@ function OperationBanner({ app }: { app: T.App }) {
 
 function Card({ title, children, danger = false }: { title: string; children: ReactNode; danger?: boolean }) {
   return (
-    <section className={`rounded-xl border bg-card p-5 ${danger ? "border-destructive/40" : ""}`}>
+    <section className={`bento-detail-cell rounded-xl border bg-card p-5 ${danger ? "border-destructive/40" : ""}`}>
       <h2 className={`mt-0 text-base font-semibold ${danger ? "text-destructive" : ""}`}>{title}</h2>
       {children}
     </section>
@@ -228,7 +246,7 @@ function KeyValue({ label, children }: { label: string; children: ReactNode }) {
 
 function Overview({ app }: { app: T.App }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="bento-detail-grid grid gap-4 lg:grid-cols-2">
       <Card title="Runtime">
         <KeyValue label="Container">
           {app.observed.containerId ? <CopyableCode value={app.observed.containerId} /> : "—"}
@@ -301,20 +319,45 @@ function DataBindings({ app }: { app: T.App }) {
     return api.apps.addBinding(app.id, { engine: value as T.Engine, service });
   });
   return (
-    <div className="grid gap-4">
-      <Alert>Bindings are add-only. Credentials are delivered privately to the app and are never displayed here.</Alert>
-      {app.bindings.map((binding) => (
-        <BindingCard key={binding.id} appId={app.id} binding={binding} />
-      ))}
-      <Card title="Add binding">
-        <div className="flex flex-wrap items-end gap-2">
+    <div className="bento-data-layout">
+      <div className="bento-data-intro">
+        <div>
+          <h2>Connected data</h2>
+          <p>Each binding belongs to this app. Databases and credentials stay private to its runtime.</p>
+        </div>
+        <span className="bento-data-intro__count">
+          {app.bindings.length} {app.bindings.length === 1 ? "binding" : "bindings"}
+        </span>
+      </div>
+      <div className="bento-data-note">
+        Bindings are add-only. Removing this app retains its data until you explicitly prune it.
+      </div>
+      <div className="bento-binding-grid">
+        {app.bindings.length === 0 && (
+          <div className="bento-binding bento-binding--empty">
+            <Database aria-hidden="true" />
+            <h3>No data bindings yet</h3>
+            <p>Choose a service below to connect this app.</p>
+          </div>
+        )}
+        {app.bindings.map((binding) => (
+          <BindingCard key={binding.id} appId={app.id} binding={binding} />
+        ))}
+      </div>
+      <section className="bento-binding-add" aria-labelledby="add-binding-title">
+        <div>
+          <h3 id="add-binding-title">Add a data binding</h3>
+          <p>Connect SQLite or an existing managed database service.</p>
+        </div>
+        <div className="bento-binding-add__controls">
           <Field label="Data service">
             <NativeSelect value={engine} onChange={(event) => setEngine(event.target.value)}>
-              <option value="sqlite">SQLite</option>
+              <option value="sqlite">SQLite · private file</option>
               <ServiceOptions />
             </NativeSelect>
           </Field>
-          <Button variant="outline" disabled={addBinding.isPending} onClick={() => addBinding.mutate(undefined)}>
+          <Button disabled={addBinding.isPending} onClick={() => addBinding.mutate(undefined)}>
+            <Plus className="size-4" />
             Add binding
           </Button>
         </div>
@@ -323,43 +366,82 @@ function DataBindings({ app }: { app: T.App }) {
             {messageOf(addBinding.error)}
           </Alert>
         )}
-      </Card>
+      </section>
     </div>
   );
 }
 function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) {
   const [name, setName] = useState("");
   const add = useOperationMutation(() => api.apps.addDatabase(appId, binding.id, name));
+  const sqlite = binding.engine === "sqlite";
   return (
-    <Card title={`${binding.engine}${binding.service ? ` · ${binding.service}` : ""}`}>
-      <p className="text-xs text-muted-foreground">
-        <code>{binding.id}</code>
-      </p>
-      {binding.engine === "sqlite" ? (
-        <CopyableCode value={binding.sqlitePath ?? ""} />
-      ) : (
-        <>
-          <p className="text-sm">
-            User <code>{binding.username}</code> · databases {binding.databases.join(", ") || "none"}
-          </p>
-          <div className="flex max-w-md gap-2">
-            <Input placeholder="Database suffix" value={name} onChange={(event) => setName(event.target.value)} />
-            <Button
-              variant="outline"
-              disabled={!name || add.isPending}
-              onClick={() => add.mutate(undefined, { onSuccess: () => setName("") })}
-            >
-              Add database
-            </Button>
+    <section className="bento-binding" aria-label={`${binding.engine} data binding`}>
+      <div className="bento-binding__head">
+        <span className="bento-binding__icon">
+          {sqlite ? <HardDrive aria-hidden="true" /> : <Database aria-hidden="true" />}
+        </span>
+        <div>
+          <h3>{sqlite ? "SQLite file" : `${binding.engine === "postgres" ? "PostgreSQL" : "MySQL"} database`}</h3>
+          <p>{binding.service || "Private to this app"}</p>
+        </div>
+        <span className="bento-binding__kind">{binding.engine}</span>
+      </div>
+      <div className="bento-binding__body">
+        {sqlite ? (
+          <div className="bento-binding__detail">
+            <span>File path</span>
+            {binding.sqlitePath ? <CopyableCode value={binding.sqlitePath} /> : <span>Unavailable</span>}
           </div>
-          {add.error && (
-            <Alert variant="destructive" className="mt-3">
-              {messageOf(add.error)}
-            </Alert>
-          )}
-        </>
+        ) : (
+          <>
+            <div className="bento-binding__detail">
+              <span>Database user</span>
+              <code>{binding.username || "Unavailable"}</code>
+            </div>
+            <div className="bento-binding__databases">
+              <div>
+                <strong>Databases</strong>
+                <small>
+                  {binding.databases.length} {binding.databases.length === 1 ? "database" : "databases"}
+                </small>
+              </div>
+              {binding.databases.length ? (
+                <ul>
+                  {binding.databases.map((database) => (
+                    <li key={database}>
+                      <Database className="size-4" aria-hidden="true" />
+                      <code>{database}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No databases in this binding yet.</p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      {!sqlite && (
+        <div className="bento-binding__footer">
+          <Field label="Add a database" hint="Adds a new database to this binding; existing databases remain.">
+            <Input placeholder="Database name" value={name} onChange={(event) => setName(event.target.value)} />
+          </Field>
+          <Button
+            variant="outline"
+            disabled={!name.trim() || add.isPending}
+            onClick={() => add.mutate(undefined, { onSuccess: () => setName("") })}
+          >
+            <Plus className="size-4" />
+            Add database
+          </Button>
+        </div>
       )}
-    </Card>
+      {add.error && (
+        <Alert variant="destructive" className="m-4">
+          {messageOf(add.error)}
+        </Alert>
+      )}
+    </section>
   );
 }
 function ServiceOptions() {

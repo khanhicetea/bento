@@ -10,8 +10,9 @@ sidebar:
 - **UID/GID:** allocated from the stack's range, recorded in a ledger, and **never reused** within the stack, even
   after removal or prune.
 
-The home carries a small `.bento-identity.json` (stack, app ID, UID). Bento refuses to use a home that belongs to a
-different incarnation and never re-owns such a directory automatically.
+The home carries a small `.bento-identity.json` (stack, app ID, UID). Application source code lives in its `app/`
+subdirectory (`/home/<slug>/app` in containers). Bento refuses to use a home that belongs to a different incarnation
+and never re-owns such a directory automatically.
 
 ## Removal and prune
 

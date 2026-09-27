@@ -540,7 +540,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 	case "exec":
 		fs, rest := sub("app exec", args[2:])
 		running := fs.Bool("running", false, "exec into the running instance")
-		workdir := fs.String("workdir", "", "working directory relative to the home")
+		workdir := fs.String("workdir", "", "working directory relative to the app code directory")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}

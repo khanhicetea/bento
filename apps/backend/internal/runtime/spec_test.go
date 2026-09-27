@@ -39,7 +39,7 @@ func inputs(t *testing.T, app domain.App) AppInputs {
 func TestPersistentSpecSecurityInvariants(t *testing.T) {
 	spec, gen := AppContainerSpec(inputs(t, testApp()), true)
 	h, c := spec.HostConfig, spec.Config
-	if c.User != "10000:10000" || !h.ReadonlyRootfs || len(h.CapDrop) != 1 || h.CapDrop[0] != "ALL" || len(h.CapAdd) != 0 || h.Privileged {
+	if c.User != "10000:10000" || c.WorkingDir != "/home/shop/app" || !h.ReadonlyRootfs || len(h.CapDrop) != 1 || h.CapDrop[0] != "ALL" || len(h.CapAdd) != 0 || h.Privileged {
 		t.Fatalf("identity/privilege invariants violated: %+v", h)
 	}
 	if len(h.PortBindings) != 0 || h.NetworkMode != "" && h.NetworkMode != "bridge" {
@@ -96,7 +96,7 @@ func TestPersistentSpecSecurityInvariants(t *testing.T) {
 
 func TestToolSpecStartsNoDaemons(t *testing.T) {
 	spec := ToolContainerSpec(inputs(t, testApp()), "op1", time.Hour)
-	if spec.Config.Entrypoint[0] != "/usr/local/bin/bento-exec" || spec.Config.Labels[LabelRole] != "tool" {
+	if spec.Config.Entrypoint[0] != "/usr/local/bin/bento-exec" || spec.Config.Labels[LabelRole] != "tool" || spec.Config.WorkingDir != "/home/shop/app" {
 		t.Fatal("tool must use the exec entrypoint, never /init")
 	}
 	if spec.HostConfig.RestartPolicy.Name != "no" || !spec.HostConfig.ReadonlyRootfs {
@@ -155,7 +155,10 @@ func TestRenderedConfig(t *testing.T) {
 	if strings.Contains(files["runtime.env"], "secret") {
 		t.Fatal("runtime.env must not contain secrets")
 	}
-	if !strings.Contains(files["nginx.conf"], "set_real_ip_from 10.200.0.2") || !strings.Contains(files["nginx.conf"], "disable_symlinks on from=/home/shop") {
+	if !strings.Contains(files["runtime.env"], "BENTO_WORKDIR=/home/shop/app") {
+		t.Fatal("runtime workdir must be the fixed code directory")
+	}
+	if !strings.Contains(files["nginx.conf"], "set_real_ip_from 10.200.0.2") || !strings.Contains(files["nginx.conf"], "root /home/shop/app/public") || !strings.Contains(files["nginx.conf"], "disable_symlinks on from=/home/shop/app") {
 		t.Fatal("nginx trust/symlink policy")
 	}
 	if !strings.Contains(files["nginx.conf"], `location ~ /\.(?!well-known`) {
@@ -171,6 +174,23 @@ func TestRenderedConfig(t *testing.T) {
 	if !strings.Contains(passwd, "app10000:x:10000:10000") || !strings.HasPrefix(passwd, "root:x:0:0") {
 		t.Fatalf("identity files must preserve image entries and avoid name collisions: %s", passwd)
 	}
+}
+
+func TestHTTPWorkdirIsRelativeToCodeDirectory(t *testing.T) {
+	app := testApp()
+	app.Runtime = domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{
+		Toolchain: "node", Version: "24", Argv: []string{"node", "server.js"}, Workdir: "services/api", Port: 3000,
+	}}
+	cfg, _, _, err := RenderAppConfig(app, AppContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range cfg {
+		if f.name == "runtime.env" && strings.Contains(string(f.data), "BENTO_WORKDIR=/home/shop/app/services/api") {
+			return
+		}
+	}
+	t.Fatal("HTTP workdir was not resolved from the fixed code directory")
 }
 
 func TestBuildContextDeterministic(t *testing.T) {

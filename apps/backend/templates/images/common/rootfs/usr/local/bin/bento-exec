@@ -1,6 +1,6 @@
 #!/bin/bash
 # Entrypoint for ephemeral tooling and operator exec. Loads the app environment,
-# enters a working directory contained in the app home, and executes argv. It
+# enters the app code directory (or a contained requested workdir), and executes argv. It
 # never starts daemons and never takes the persistent-instance lock.
 set -euo pipefail
 if [[ "$(id -u)" == 0 ]]; then
@@ -9,7 +9,7 @@ if [[ "$(id -u)" == 0 ]]; then
 fi
 # shellcheck source=/dev/null
 source /usr/local/lib/bento/env.bash
-workdir="${BENTO_EXEC_WORKDIR:-$HOME}"
+workdir="${BENTO_EXEC_WORKDIR:-$HOME/app}"
 case "$workdir" in
   "$HOME"|"$HOME"/*) ;;
   *) echo "bento-exec: working directory escapes the app home" >&2; exit 64 ;;

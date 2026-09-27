@@ -63,7 +63,7 @@ type file struct {
 // RenderAppConfig renders every per-app generated file in memory, without
 // touching the filesystem. The caller validates and then promotes them.
 func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []file, m Materialized, err error) {
-	home := app.ContainerHome()
+	code := app.ContainerCode()
 	env := orderedEnv{}
 	env.add("BENTO_APP_ID", app.ID)
 	env.add("BENTO_APP_SLUG", app.Slug)
@@ -74,9 +74,9 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 	env.add("BENTO_TRUSTED_PROXIES", strings.Join(ctx.TrustedProxies, ","))
 	env.add("TZ", "UTC")
 	if app.Runtime.HTTP != nil {
-		env.add("BENTO_WORKDIR", joinHome(home, app.Runtime.HTTP.Workdir))
+		env.add("BENTO_WORKDIR", joinPath(code, app.Runtime.HTTP.Workdir))
 	} else {
-		env.add("BENTO_WORKDIR", home)
+		env.add("BENTO_WORKDIR", code)
 	}
 	runtimeEnv := env.bytes()
 	config = append(config, file{"runtime.env", runtimeEnv, 0o440})
@@ -226,11 +226,11 @@ func (e *orderedEnv) add(k, v string) {
 
 func (e *orderedEnv) bytes() []byte { return e.buf.Bytes() }
 
-func joinHome(home, rel string) string {
+func joinPath(base, rel string) string {
 	if rel == "" {
-		return home
+		return base
 	}
-	return path.Join(home, rel)
+	return path.Join(base, rel)
 }
 
 // CredentialsEnv renders protected connection metadata for all bindings. The
@@ -319,12 +319,13 @@ func renderScheduler(app domain.App) ([]byte, error) {
 func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool []byte, err error) {
 	p := app.Runtime.PHP
 	home := app.ContainerHome()
-	docRoot := joinHome(home, p.DocumentRoot)
-	symlinkFrom := home
+	code := app.ContainerCode()
+	docRoot := joinPath(code, p.DocumentRoot)
+	symlinkFrom := code
 	if p.ReleaseSymlink != "" {
 		// Components up to and including the release symlink are not checked;
 		// everything below it (the rest of the document root) is.
-		symlinkFrom = path.Join(home, p.ReleaseSymlink)
+		symlinkFrom = path.Join(code, p.ReleaseSymlink)
 		rel := strings.TrimPrefix(p.DocumentRoot, p.ReleaseSymlink)
 		if p.DocumentRoot != p.ReleaseSymlink && !strings.HasPrefix(p.DocumentRoot, p.ReleaseSymlink+"/") {
 			return nil, nil, nil, fmt.Errorf("document root must be inside the release symlink %q", p.ReleaseSymlink)

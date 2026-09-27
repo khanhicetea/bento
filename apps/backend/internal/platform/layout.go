@@ -49,6 +49,7 @@ func (l Layout) StagingDir() string     { return filepath.Join(l.Root, "staging"
 
 func (l Layout) Secret(name string) string  { return filepath.Join(l.Root, "secrets", name) }
 func (l Layout) AppHome(slug string) string { return filepath.Join(l.Root, "homes", slug) }
+func (l Layout) AppCode(slug string) string { return filepath.Join(l.AppHome(slug), "app") }
 func (l Layout) AppDir(appID string) string { return filepath.Join(l.Root, "apps", appID) }
 func (l Layout) SQLiteFileDir(id string) string {
 	return filepath.Join(l.Root, "sqlite", id)

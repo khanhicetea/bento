@@ -63,7 +63,7 @@ cat > shop.json <<'EOF'
  "bindings":[{"engine":"mysql","service":"mysql84"}]}
 EOF
 bento app create --json shop.json      # provisioned, stopped, unpublished
-bento app shell shop                    # deploy code as the app user (git, composer, npm)
+bento app shell shop                    # starts in /home/shop/app; run: git clone <repository> .
 bento app start shop                    # waits for FPM, local Nginx, scheduler, and HTTP readiness
 echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":false,"acmeEmail":"you@example.com","acmeUrl":""}' \
   | bento edge set --json -

@@ -161,9 +161,9 @@ func TestIntegrationAppLifecycle(t *testing.T) {
 	php := domain.Runtime{Kind: domain.RuntimePHP, PHP: &domain.PHPRuntime{Version: "8.4", DocumentRoot: "public", Routing: "front-controller", Pool: "tiny", UploadLimitMB: 16}}
 	node := domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}, Port: 3000}}
 	a1, a2, h := e.create("one", php), e.create("two", php), e.create("web", node)
-	writeFile(t, filepath.Join(e.layout.AppHome("one"), "public/index.php"), "<?php echo 'one:'.posix_getuid();", a1.UID)
-	writeFile(t, filepath.Join(e.layout.AppHome("two"), "public/index.php"), "<?php echo 'two:'.posix_getuid();", a2.UID)
-	writeFile(t, filepath.Join(e.layout.AppHome("web"), "s.js"),
+	writeFile(t, filepath.Join(e.layout.AppCode("one"), "public/index.php"), "<?php echo 'one:'.posix_getuid();", a1.UID)
+	writeFile(t, filepath.Join(e.layout.AppCode("two"), "public/index.php"), "<?php echo 'two:'.posix_getuid();", a2.UID)
+	writeFile(t, filepath.Join(e.layout.AppCode("web"), "s.js"),
 		"require('http').createServer((q,s)=>s.end('web:'+process.getuid())).listen(3000,'0.0.0.0')", h.UID)
 	for _, a := range []domain.App{a1, a2, h} {
 		e.wait(e.c.StartApp(ctx, a.ID, ""))

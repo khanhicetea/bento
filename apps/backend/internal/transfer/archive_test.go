@@ -61,9 +61,9 @@ func TestExtractRejectsUnsafeEntries(t *testing.T) {
 
 func TestArchiveRoundTripPreservesModesAndSkips(t *testing.T) {
 	src := t.TempDir()
-	os.MkdirAll(filepath.Join(src, "homes/app/public"), 0o750)
-	os.WriteFile(filepath.Join(src, "homes/app/public/index.php"), []byte("<?php"), 0o640)
-	os.Symlink("public", filepath.Join(src, "homes/app/current"))
+	os.MkdirAll(filepath.Join(src, "homes/app/app/public"), 0o750)
+	os.WriteFile(filepath.Join(src, "homes/app/app/public/index.php"), []byte("<?php"), 0o640)
+	os.Symlink("public", filepath.Join(src, "homes/app/app/current"))
 	os.WriteFile(filepath.Join(src, "bento.db"), []byte("live"), 0o600)
 	var buf bytes.Buffer
 	if err := ArchiveRoot(src, &buf, map[string]bool{"bento.db": true}); err != nil {
@@ -73,11 +73,11 @@ func TestArchiveRoundTripPreservesModesAndSkips(t *testing.T) {
 	if err := ExtractRoot(&buf, dst); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dst, "homes/app/public/index.php"))
+	info, err := os.Stat(filepath.Join(dst, "homes/app/app/public/index.php"))
 	if err != nil || info.Mode().Perm() != 0o640 {
 		t.Fatalf("mode not preserved: %v %v", info, err)
 	}
-	if l, _ := os.Readlink(filepath.Join(dst, "homes/app/current")); l != "public" {
+	if l, _ := os.Readlink(filepath.Join(dst, "homes/app/app/current")); l != "public" {
 		t.Fatal("symlink not preserved")
 	}
 	if _, err := os.Stat(filepath.Join(dst, "bento.db")); err == nil {

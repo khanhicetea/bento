@@ -111,11 +111,11 @@ func (c *Controller) ensureHome(app domain.App) error {
 	case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
 		return Fail("home-unsafe", "Replace the path with a real directory or restore it from backup.", "app home %s is not a real directory", home)
 	default:
-		if err := c.verifyHome(app); err != nil {
+		if err := c.verifyHomeIdentity(app); err != nil {
 			return err
 		}
 	}
-	for _, sub := range []string{"tmp", "tmp/sessions", ".local", ".local/share", ".local/state", "logs"} {
+	for _, sub := range []string{"app", "tmp", "tmp/sessions", ".local", ".local/share", ".local/state", "logs"} {
 		p := filepath.Join(home, sub)
 		if _, err := os.Lstat(p); os.IsNotExist(err) {
 			if err := platform.EnsureDir(p, 0o750, owner); err != nil {
@@ -123,11 +123,51 @@ func (c *Controller) ensureHome(app domain.App) error {
 			}
 		}
 	}
-	return nil
+	return c.verifyCodeDir(app)
 }
 
 // verifyHome checks that required durable state exists and matches identity.
 func (c *Controller) verifyHome(app domain.App) error {
+	if err := c.verifyHomeIdentity(app); err != nil {
+		return err
+	}
+	if err := c.verifyCodeDir(app); err != nil {
+		return err
+	}
+	for _, b := range app.Bindings {
+		if b.Engine != domain.EngineSQLite {
+			continue
+		}
+		dir := c.Layout.SQLiteFileDir(b.SQLiteFileID)
+		o, mode, err := platform.StatOwner(dir)
+		if err != nil {
+			return Fail("durable-state-missing", "Restore the SQLite directory from backup.", "sqlite binding directory %s is missing", dir)
+		}
+		if !mode.IsDir() || o.UID != app.UID {
+			return Fail("durable-state-invalid", "Repair permissions or restore the directory.", "sqlite binding directory %s has unexpected type or owner", dir)
+		}
+	}
+	return nil
+}
+
+func (c *Controller) verifyCodeDir(app domain.App) error {
+	code := c.Layout.AppCode(app.Slug)
+	owner, mode, err := platform.StatOwner(code)
+	if os.IsNotExist(err) {
+		return Fail("durable-state-missing", "Restore the app code directory from backup; Bento will not create an empty replacement for an established app.",
+			"app code directory %s is missing", code)
+	}
+	if err != nil {
+		return err
+	}
+	if !mode.IsDir() || owner.UID != app.UID {
+		return Fail("home-unsafe", "Replace the app code path with a real directory owned by the app UID.",
+			"app code directory %s has unexpected type or owner", code)
+	}
+	return nil
+}
+
+func (c *Controller) verifyHomeIdentity(app domain.App) error {
 	home := c.Layout.AppHome(app.Slug)
 	info, err := os.Lstat(home)
 	if os.IsNotExist(err) {
@@ -156,19 +196,6 @@ func (c *Controller) verifyHome(app domain.App) error {
 	}
 	if owner.UID != app.UID {
 		return Fail("home-owner", "Run a permission check/repair for the app.", "app home is owned by uid %d, expected %d", owner.UID, app.UID)
-	}
-	for _, b := range app.Bindings {
-		if b.Engine != domain.EngineSQLite {
-			continue
-		}
-		dir := c.Layout.SQLiteFileDir(b.SQLiteFileID)
-		o, mode, err := platform.StatOwner(dir)
-		if err != nil {
-			return Fail("durable-state-missing", "Restore the SQLite directory from backup.", "sqlite binding directory %s is missing", dir)
-		}
-		if !mode.IsDir() || o.UID != app.UID {
-			return Fail("durable-state-invalid", "Repair permissions or restore the directory.", "sqlite binding directory %s has unexpected type or owner", dir)
-		}
 	}
 	return nil
 }
@@ -734,7 +761,7 @@ func (c *Controller) appExec(ctx context.Context, app domain.App, id string, arg
 	defer cancel()
 	return c.Engine.Exec(cctx, id, docker.ExecRequest{
 		User: strconv.Itoa(app.UID) + ":" + strconv.Itoa(app.GID), Cmd: append([]string{"/usr/local/bin/bento-exec"}, argv...), OutputLimit: 16 << 10,
-		Env: []string{"BENTO_EXEC_WORKDIR=" + app.ContainerHome()},
+		Env: []string{"BENTO_EXEC_WORKDIR=" + app.ContainerCode()},
 	})
 }
 

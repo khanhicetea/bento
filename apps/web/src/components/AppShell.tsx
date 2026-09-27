@@ -1,10 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type PropsWithChildren } from "react";
-import { Activity, AppWindow, Archive, Boxes, Database, Menu, Moon, Network, ServerCog, Sun, X } from "lucide-react";
+import {
+  Activity,
+  AppWindow,
+  Archive,
+  Boxes,
+  Database,
+  Menu,
+  Moon,
+  Network,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ServerCog,
+  Sun,
+  X,
+} from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api } from "../api/client.ts";
-import { CommandPalette } from "./CommandPalette.tsx";
 import { keys } from "../api/keys.ts";
+import { CommandPalette } from "./CommandPalette.tsx";
 import { isTerminal } from "../features/operations/OperationTracker.tsx";
 import { useLogout } from "../features/session/useSession.ts";
 import { Button } from "@/components/ui/button";
@@ -28,7 +42,7 @@ function applyTheme(theme: Theme) {
   try {
     localStorage.setItem("bento-theme", theme);
   } catch {
-    /* storage can be unavailable */
+    /* Storage may be unavailable. */
   }
 }
 
@@ -41,7 +55,7 @@ export function AppShell({ children }: PropsWithChildren) {
       const value = localStorage.getItem("bento-theme");
       if (value === "light" || value === "dark" || value === "system") return value;
     } catch {
-      /* use default */
+      /* Use the system setting. */
     }
     return "system";
   });
@@ -72,36 +86,30 @@ export function AppShell({ children }: PropsWithChildren) {
   }, [menuOpen]);
 
   const activeOps = (operations.data?.operations ?? []).filter((op) => !isTerminal(op.state)).length;
-  const dockerOk = system.isSuccess && !system.data.dockerError;
+  const dockerState = system.isPending
+    ? "Checking Docker"
+    : system.isError || system.data?.dockerError
+      ? "Docker unavailable"
+      : "Docker connected";
   const crumbs =
     location
       .split("?")[0]
       ?.split("/")
       .filter(Boolean)
       .map((part) => decodeURIComponent(part)) ?? [];
+
   return (
-    <div
-      className="min-h-screen md:grid"
-      style={{ gridTemplateColumns: collapsed ? "4.5rem minmax(0,1fr)" : "15rem minmax(0,1fr)" }}
-    >
+    <div className={`station-layout ${collapsed ? "station-layout--compact" : ""}`}>
       {menuOpen && (
-        <button
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          aria-label="Close navigation"
-          onClick={() => setMenuOpen(false)}
-        />
+        <button className="station-scrim md:hidden" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />
       )}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r bg-sidebar transition-transform md:sticky md:top-0 md:h-screen md:w-auto ${menuOpen ? "visible translate-x-0" : "invisible -translate-x-full md:visible md:translate-x-0"}`}
-      >
-        <div className="flex h-16 items-center gap-3 border-b px-4">
-          <Link
-            href="/"
-            className="flex min-w-0 flex-1 items-center gap-3 text-inherit no-underline"
-            onClick={() => setMenuOpen(false)}
-          >
-            <img src="/bento-logo-3d.png" alt="" className="size-9 rounded-lg" />
-            {!collapsed && <strong>Bento</strong>}
+      <aside className={`station-rail ${menuOpen ? "station-rail--open" : ""}`} aria-label="Bento navigation">
+        <div className="station-brand">
+          <Link href="/" className="station-brand__link" onClick={() => setMenuOpen(false)} aria-label="Bento overview">
+            <img src="/bento-logo-3d.png" alt="" className="station-brand__mark" />
+            <span className="station-brand__name">
+              bento<span className="station-brand__period">.</span>
+            </span>
           </Link>
           <Button
             className="md:hidden"
@@ -113,7 +121,8 @@ export function AppShell({ children }: PropsWithChildren) {
             <X />
           </Button>
         </div>
-        <nav className="grid gap-1 p-2" aria-label="Main navigation">
+        <p className="station-rail__caption">Your stack, at a glance</p>
+        <nav className="station-nav" aria-label="Main navigation">
           {navigation.map((item) => {
             const active =
               item.href === "/" ? location === "/" : location === item.href || location.startsWith(`${item.href}/`);
@@ -123,41 +132,59 @@ export function AppShell({ children }: PropsWithChildren) {
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
+                aria-current={active ? "page" : undefined}
                 onClick={() => setMenuOpen(false)}
-                className={`flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium no-underline ${active ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent"}`}
+                className={`station-nav__item ${active ? "station-nav__item--active" : ""}`}
               >
-                <Icon className="size-4 shrink-0" />
-                {!collapsed && item.label}
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                <span>{item.label}</span>
+                {item.href === "/activity" && activeOps > 0 && <span className="station-nav__count">{activeOps}</span>}
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto border-t p-3">
-          <div className="flex items-center gap-2 text-xs" title={system.data?.dockerError ?? ""}>
-            <span className={`size-2.5 shrink-0 rounded-full ${dockerOk ? "bg-success" : "bg-destructive"}`} />
-            {!collapsed && (
-              <span className="min-w-0 truncate">
-                {dockerOk ? `Docker ${system.data.dockerVersion}` : "Docker unavailable"}
-              </span>
-            )}
-          </div>
-          {!collapsed && (
-            <div className="mt-1 truncate text-xs text-muted-foreground">
-              {system.data ? `Stack ${system.data.stackName}` : "Loading stack…"}
-            </div>
-          )}
-          <Button
-            className="mt-3 hidden w-full md:inline-flex"
-            size="sm"
-            variant="ghost"
+        <div className="station-rail__bottom">
+          <Link
+            href="/system"
+            title={system.data?.dockerError ?? dockerState}
+            className="station-connection"
+            onClick={() => setMenuOpen(false)}
+          >
+            <span
+              className={`station-connection__light ${system.isPending ? "station-connection__light--pending" : system.isError || system.data?.dockerError ? "station-connection__light--error" : ""}`}
+            />
+            <span className="station-connection__copy min-w-0">
+              <strong>{dockerState}</strong>
+              <small>{system.data ? system.data.stackName : "Stack status"}</small>
+            </span>
+          </Link>
+          <button
+            className="station-collapse"
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={() => setCollapsed((value) => !value)}
           >
-            {collapsed ? <Menu /> : "Collapse sidebar"}
+            {collapsed ? (
+              <PanelLeftOpen className="size-4" />
+            ) : (
+              <>
+                <PanelLeftClose className="size-4" /> <span>Collapse sidebar</span>
+              </>
+            )}
+          </button>
+          <Button
+            className="station-signout-mobile md:hidden"
+            variant="ghost"
+            size="sm"
+            onClick={() => logout.mutate()}
+            disabled={logout.isPending}
+          >
+            Sign out
           </Button>
         </div>
       </aside>
-      <div className="min-w-0">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur md:px-6">
+      <div className="station-workspace">
+        <header className="station-topbar">
           <Button
             className="md:hidden"
             size="icon-sm"
@@ -167,52 +194,55 @@ export function AppShell({ children }: PropsWithChildren) {
           >
             <Menu />
           </Button>
-          <nav className="min-w-0 flex-1 truncate text-sm text-muted-foreground" aria-label="Breadcrumb">
-            <Link href="/" className="text-inherit no-underline">
-              Bento
-            </Link>
-            {crumbs.map((crumb) => (
-              <span key={crumb}>
-                {" "}
-                / <span className="capitalize text-foreground">{crumb}</span>
-              </span>
-            ))}
-          </nav>
-          <CommandPalette />
-          <Link
-            href="/activity"
-            className="relative inline-flex size-9 items-center justify-center rounded-md border text-foreground"
-            aria-label={`${activeOps} active operations`}
-          >
-            <Activity className="size-4" />
-            {activeOps > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-info px-1 text-center text-xs text-white">
-                {activeOps}
-              </span>
-            )}
-          </Link>
-          <label className="relative">
-            <span className="sr-only">Theme</span>
-            {theme === "dark" ? (
-              <Moon className="pointer-events-none absolute top-2.5 left-2 size-4" />
+          <nav className="station-breadcrumb" aria-label="Breadcrumb">
+            <span className="station-breadcrumb__mobile">{crumbs.at(-1)?.replaceAll("-", " ") || "Overview"}</span>
+            <Link href="/">Bento</Link>
+            {crumbs.length === 0 ? (
+              <span className="station-breadcrumb__current"> / Overview</span>
             ) : (
-              <Sun className="pointer-events-none absolute top-2.5 left-2 size-4" />
+              crumbs.map((crumb, index) => (
+                <span
+                  key={`${index}-${crumb}`}
+                  className={index === crumbs.length - 1 ? "station-breadcrumb__current" : ""}
+                >
+                  {" "}
+                  / {crumb.replaceAll("-", " ")}
+                </span>
+              ))
             )}
-            <NativeSelect
-              className="w-24 pl-8"
-              value={theme}
-              onChange={(event) => setTheme(event.target.value as Theme)}
+          </nav>
+          <div className="station-topbar__tools">
+            <CommandPalette />
+            <Link
+              href="/activity"
+              className="station-activity"
+              aria-label={activeOps ? `${activeOps} active operations` : "View activity"}
+              title={activeOps ? `${activeOps} active operations` : "View activity"}
             >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </NativeSelect>
-          </label>
-          <Button variant="outline" size="sm" onClick={() => logout.mutate()} disabled={logout.isPending}>
-            Sign out
-          </Button>
+              <Activity className="size-4" aria-hidden="true" />
+              {activeOps > 0 && <span className="station-activity__count">{activeOps}</span>}
+            </Link>
+            <label className="station-theme">
+              <span className="sr-only">Theme</span>
+              {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
+              <NativeSelect value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </NativeSelect>
+            </label>
+            <Button
+              className="station-signout-desktop"
+              variant="outline"
+              size="sm"
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
+            >
+              Sign out
+            </Button>
+          </div>
         </header>
-        <main>{children}</main>
+        <main id="main-content">{children}</main>
       </div>
     </div>
   );

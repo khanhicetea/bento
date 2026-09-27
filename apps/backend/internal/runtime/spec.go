@@ -106,7 +106,7 @@ type fingerprintInput struct {
 }
 
 // specVersion changes when the planner itself changes container shape.
-const specVersion = 1
+const specVersion = 2
 
 // Fingerprint returns the non-secret configuration fingerprint recorded in
 // the io.bento.generation label.
@@ -146,7 +146,7 @@ func AppContainerSpec(in AppInputs, running bool) (docker.ContainerSpec, string)
 		User:        userSpec(app),
 		Hostname:    app.Slug,
 		Env:         appEnv(app),
-		WorkingDir:  app.ContainerHome(),
+		WorkingDir:  app.ContainerCode(),
 		StopTimeout: &stop,
 		Labels: in.Names.Labels(RoleRuntime, map[string]string{
 			LabelAppID: app.ID, LabelGeneration: gen, LabelImageKey: app.Runtime.ImageKey().String(),
@@ -187,7 +187,7 @@ func ToolContainerSpec(in AppInputs, opID string, maxLifetime time.Duration) doc
 		User:       userSpec(app),
 		Hostname:   app.Slug + "-tool",
 		Env:        appEnv(app),
-		WorkingDir: app.ContainerHome(),
+		WorkingDir: app.ContainerCode(),
 		Entrypoint: []string{"/usr/local/bin/bento-exec"},
 		Cmd:        []string{"sleep", strconv.Itoa(int(maxLifetime.Seconds()))},
 		Labels:     in.Names.Labels(RoleTool, map[string]string{LabelAppID: app.ID, LabelOperation: opID}),

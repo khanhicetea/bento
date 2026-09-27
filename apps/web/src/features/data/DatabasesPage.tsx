@@ -2,15 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import {
-  DomainError,
-  DomainLoading,
-  Field,
-  Page,
-  PageHeader,
-  Panel,
-  StateBadge,
-} from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, Field, Page, PageHeader, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -38,41 +30,45 @@ export function DatabasesPage() {
       {q.isPending && <DomainLoading label="services" />}
       {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
       {q.data && (
-        <Panel title="Services">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground uppercase">
-              <tr>
-                {["Name", "Engine", "Version", "State", "Volume"].map((h) => (
-                  <th key={h} className="py-2">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
+        <section className="bento-service-section" aria-labelledby="services-title">
+          <div className="bento-service-section__head">
+            <h2 id="services-title">Managed services</h2>
+            <span>
+              {q.data.services.length} {q.data.services.length === 1 ? "service" : "services"}
+            </span>
+          </div>
+          {q.data.services.length === 0 ? (
+            <p className="bento-service-empty">No managed data services yet. Add a version below when you need one.</p>
+          ) : (
+            <div className="bento-service-grid">
               {q.data.services.map((s) => (
-                <tr key={s.name} className="border-t border-border">
-                  <td className="py-2 font-medium">{s.name}</td>
-                  <td>{s.engine}</td>
-                  <td>{s.version}</td>
-                  <td>
-                    <StateBadge state={s.state} />{" "}
-                    {!s.initialized && <span className="text-xs text-muted-foreground">initializing</span>}
-                  </td>
-                  <td className="text-xs">
+                <article key={s.name} className="bento-service-tile">
+                  <div className="bento-service-tile__head">
+                    <div>
+                      <h3>{s.name}</h3>
+                      <p>
+                        {s.engine} · version {s.version}
+                      </p>
+                    </div>
+                    <StateBadge state={s.state} />
+                  </div>
+                  <div className="bento-service-tile__foot">
+                    <span>Persistent volume</span>
                     <code>{s.volume}</code>
-                  </td>
-                </tr>
+                  </div>
+                  {!s.initialized && <p className="bento-service-tile__pending">Initializing this service</p>}
+                </article>
               ))}
-            </tbody>
-          </table>
-        </Panel>
+            </div>
+          )}
+        </section>
       )}
-      <Panel
-        title="Add a managed version"
-        description="Initialization creates a new volume once; established services refuse to start on a missing volume."
-      >
-        <div className="flex flex-wrap items-end gap-3">
+      <section className="bento-service-add" aria-labelledby="service-add-title">
+        <div>
+          <h2 id="service-add-title">Add a managed version</h2>
+          <p>Initialization creates a new volume once; established services refuse to start on a missing volume.</p>
+        </div>
+        <div className="bento-service-add__form">
           <Field label="Engine">
             <NativeSelect
               value={engine}
@@ -87,13 +83,20 @@ export function DatabasesPage() {
             </NativeSelect>
           </Field>
           <Field label="Version">
-            <NativeSelect value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>
-              {(versions ?? (selectedVersion ? [selectedVersion] : [])).map((v) => (
+            <NativeSelect
+              value={selectedVersion}
+              disabled={!versions?.length}
+              onChange={(e) => setVersion(e.target.value)}
+            >
+              {!versions?.length && (
+                <option value="">{catalog.isPending ? "Loading versions…" : "No versions available"}</option>
+              )}
+              {(versions ?? []).map((v) => (
                 <option key={v}>{v}</option>
               ))}
             </NativeSelect>
           </Field>
-          <Button onClick={() => create.mutate(undefined)} disabled={create.isPending}>
+          <Button onClick={() => create.mutate(undefined)} disabled={!selectedVersion || create.isPending}>
             Add service
           </Button>
         </div>
@@ -102,7 +105,7 @@ export function DatabasesPage() {
             {messageOf(create.error)}
           </Alert>
         )}
-      </Panel>
+      </section>
     </Page>
   );
 }

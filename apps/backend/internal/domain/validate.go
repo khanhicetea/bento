@@ -82,17 +82,17 @@ func NormalizeDomain(name string) (string, error) {
 	return d, nil
 }
 
-// CleanRelative validates a path relative to the app home.
+// CleanRelative validates a path relative to an app-controlled base directory.
 func CleanRelative(p string) (string, error) {
 	if p == "" || p == "." {
 		return "", nil
 	}
 	if strings.HasPrefix(p, "/") || strings.ContainsRune(p, 0) {
-		return "", fmt.Errorf("must be a relative path inside the app home")
+		return "", fmt.Errorf("must be a relative path inside the app code directory")
 	}
 	c := path.Clean(p)
 	if c == ".." || strings.HasPrefix(c, "../") {
-		return "", fmt.Errorf("must stay inside the app home")
+		return "", fmt.Errorf("must stay inside the app code directory")
 	}
 	if c == "." {
 		return "", nil
@@ -164,7 +164,7 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 		if p.ReleaseSymlink != "" {
 			rs, err := CleanRelative(p.ReleaseSymlink)
 			if err != nil || rs == "" || strings.Contains(rs, "/") {
-				errs.Add("runtime.php.releaseSymlink", "must be a single path component inside the home")
+				errs.Add("runtime.php.releaseSymlink", "must be a single path component inside the app code directory")
 			}
 		}
 		if p.UploadLimitMB == 0 {

@@ -134,6 +134,10 @@ func TestCreateIsStoppedUnpublishedAndDoesNotStart(t *testing.T) {
 	if err != nil || owner.UID != app.UID {
 		t.Fatalf("home owner %v %v", owner, err)
 	}
+	codeOwner, mode, err := platform.StatOwner(h.layout.AppCode("shop"))
+	if err != nil || !mode.IsDir() || codeOwner.UID != app.UID {
+		t.Fatalf("code directory owner %v mode %v err %v", codeOwner, mode, err)
+	}
 }
 
 func TestStartStopRestartSemantics(t *testing.T) {
@@ -290,6 +294,26 @@ func TestMissingHomeBlocksRecreation(t *testing.T) {
 	op, _, _ = h.c.Submit(ctx, Submission{Kind: KindAppReconcile, TargetKind: "app", TargetID: app.ID, Origin: "reconciler"})
 	if got := h.wait(op); got.State != store.OpSucceeded {
 		t.Fatalf("recovery with intact data failed: %s", got.ErrorMessage)
+	}
+}
+
+func TestMissingCodeDirectoryBlocksStart(t *testing.T) {
+	h := newHarness(t)
+	app := h.createApp("shop")
+	if err := os.Remove(h.layout.AppCode("shop")); err != nil {
+		t.Fatal(err)
+	}
+
+	op, err := h.c.StartApp(context.Background(), app.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := h.wait(op)
+	if got.State != store.OpFailed || got.ErrorCode != "durable-state-missing" {
+		t.Fatalf("expected durable-state-missing, got %s %s", got.ErrorCode, got.ErrorMessage)
+	}
+	if h.fake.CallCount("Create") != 0 {
+		t.Fatal("must not create an instance with a missing code directory")
 	}
 }
 

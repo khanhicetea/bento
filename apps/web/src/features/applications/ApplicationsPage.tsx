@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppWindow, ExternalLink, Search } from "lucide-react";
+import { AppWindow, ArrowUpRight, ExternalLink, Search } from "lucide-react";
 import { Link } from "wouter";
 import { messageOf, type T } from "../../api/client.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -9,9 +9,14 @@ import { useAppAction, useApplicationList, type AppAction } from "./useApplicati
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Filter = "all" | "running" | "stopped" | "attention";
+const filters: Array<[Filter, string]> = [
+  ["all", "All apps"],
+  ["running", "Running"],
+  ["stopped", "Stopped"],
+  ["attention", "Needs attention"],
+];
 
 export function ApplicationsPage() {
   const list = useApplicationList();
@@ -20,66 +25,65 @@ export function ApplicationsPage() {
   const needle = query.trim().toLowerCase();
   const apps = (list.data?.apps ?? []).filter((app) => {
     const matchesText = `${app.slug} ${app.primaryDomain}`.toLowerCase().includes(needle);
-    const drift =
-      app.desiredRuntime !==
-      (app.observed.state === "healthy" || app.observed.state === "starting" ? "running" : "stopped");
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "running" && app.desiredRuntime === "running" && !drift) ||
-      (filter === "stopped" && app.desiredRuntime === "stopped" && !drift) ||
-      (filter === "attention" &&
-        (drift ||
-          app.observed.state === "blocked" ||
-          app.observed.state === "failed" ||
-          app.observed.state === "unhealthy"));
-    return matchesText && matchesFilter;
+    const observedRunning = app.observed.state === "healthy" || app.observed.state === "starting";
+    const drift = app.desiredRuntime !== (observedRunning ? "running" : "stopped");
+    const needsAttention = drift || ["blocked", "failed", "unhealthy"].includes(app.observed.state);
+    return (
+      matchesText &&
+      (filter === "all" ||
+        (filter === "running" && observedRunning && !needsAttention) ||
+        (filter === "stopped" && app.desiredRuntime === "stopped" && !needsAttention) ||
+        (filter === "attention" && needsAttention))
+    );
   });
   return (
     <Page wide>
       <PageHeader
         title="Applications"
-        description="Runtime, routing, and current activity at a glance."
+        description="A place for every app. See what’s running and what needs you."
         actions={
           <Button asChild>
             <Link href="/apps/new">New application</Link>
           </Button>
         }
       />
+      <div className="bento-filterbar">
+        <label className="bento-filterbar__search">
+          <Search className="size-4" aria-hidden="true" />
+          <span className="sr-only">Search applications</span>
+          <Input placeholder="Find an app or domain" value={query} onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <div className="bento-filterbar__tabs" role="group" aria-label="Filter applications">
+          {filters.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={filter === value ? "is-selected" : ""}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {list.data && (
+          <span className="bento-filterbar__count">
+            {apps.length} {apps.length === 1 ? "app" : "apps"}
+          </span>
+        )}
+      </div>
       {list.isPending && <DomainLoading label="applications" />}
       {list.error && <DomainError message={messageOf(list.error)} onRetry={() => void list.refetch()} />}
-      {list.data && (
-        <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 border-b p-3">
-            <div className="relative min-w-56 flex-1 sm:max-w-sm">
-              <Search className="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Search slug or domain"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-wrap gap-1" aria-label="Filter applications">
-              {(["all", "running", "stopped", "attention"] as const).map((value) => (
-                <Button
-                  key={value}
-                  size="sm"
-                  variant={filter === value ? "default" : "outline"}
-                  onClick={() => setFilter(value)}
-                >
-                  {value === "attention" ? "Needs attention" : value[0]?.toUpperCase() + value.slice(1)}
-                </Button>
-              ))}
-            </div>
-          </div>
-          {apps.length === 0 ? (
+      {list.data &&
+        (apps.length === 0 ? (
+          <div className="bento-empty">
             <EmptyState
               icon={<AppWindow className="size-8" />}
-              title={list.data.apps.length === 0 ? "No applications yet" : "No matching applications"}
+              title={list.data.apps.length === 0 ? "Your tray is ready" : "No matching applications"}
               body={
                 list.data.apps.length === 0
-                  ? "Create an application to provision its isolated runtime."
-                  : "Adjust the search or status filter."
+                  ? "Create your first app to give it a place here."
+                  : "Try another search or choose a different filter."
               }
               action={
                 list.data.apps.length === 0 ? (
@@ -89,36 +93,19 @@ export function ApplicationsPage() {
                 ) : undefined
               }
             />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Runtime</TableHead>
-                    <TableHead>Ingress</TableHead>
-                    <TableHead>Activity</TableHead>
-                    <TableHead>
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {apps.map((app) => (
-                    <ApplicationRow key={app.id} app={app} />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </section>
-      )}
+          </div>
+        ) : (
+          <div className="bento-app-grid">
+            {apps.map((app) => (
+              <ApplicationTile key={app.id} app={app} />
+            ))}
+          </div>
+        ))}
     </Page>
   );
 }
 
-function ApplicationRow({ app }: { app: T.AppSummary }) {
+function ApplicationTile({ app }: { app: T.AppSummary }) {
   const action = useAppAction();
   const active = useActiveOperations(app.id);
   const [confirm, setConfirm] = useState<AppAction | null>(null);
@@ -126,103 +113,112 @@ function ApplicationRow({ app }: { app: T.AppSummary }) {
   const drift = app.desiredRuntime !== (observedRunning ? "running" : "stopped");
   const status = drift ? "drift" : app.observed.state;
   const run = (verb: AppAction) => action.mutate({ id: app.id, action: verb }, { onSuccess: () => setConfirm(null) });
-  const requiresConfirm = (verb: AppAction) => verb === "stop" || verb === "restart" || verb === "unpublish";
-  const request = (verb: AppAction) => (requiresConfirm(verb) ? setConfirm(verb) : run(verb));
+  const request = (verb: AppAction) =>
+    verb === "stop" || verb === "restart" || verb === "unpublish" ? setConfirm(verb) : run(verb);
+  const disabled = active.active || action.isPending;
   return (
-    <>
-      <TableRow>
-        <TableCell>
-          <Link
-            className="font-semibold text-foreground hover:underline"
-            href={`/apps/${encodeURIComponent(app.slug)}`}
-          >
-            {app.slug}
-          </Link>
-          {app.primaryDomain && (
-            <a
-              className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-              href={`//${app.primaryDomain}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {app.primaryDomain}
-              <ExternalLink className="size-3" />
-            </a>
-          )}
-        </TableCell>
-        <TableCell>
-          <StateBadge
-            state={status}
-            title={app.observed.message}
-            label={drift ? `Drift: wants ${app.desiredRuntime}, is ${app.observed.state}` : undefined}
-          />
-        </TableCell>
-        <TableCell>
-          <span className="font-mono text-xs">
+    <article
+      className={`bento-app-tile ${drift || ["blocked", "failed", "unhealthy"].includes(app.observed.state) ? "bento-app-tile--attention" : ""}`}
+      aria-label={`${app.slug} application`}
+    >
+      <div className="bento-app-tile__top">
+        <span className="bento-app-tile__mark" aria-hidden="true">
+          {app.slug.slice(0, 1).toUpperCase()}
+        </span>
+        <StateBadge
+          state={status}
+          title={app.observed.message}
+          label={drift ? `Drift · wants ${app.desiredRuntime}` : undefined}
+        />
+      </div>
+      <div className="bento-app-tile__identity">
+        <Link href={`/apps/${encodeURIComponent(app.slug)}`} className="bento-app-tile__name">
+          {app.slug}
+          <ArrowUpRight className="size-5" aria-hidden="true" />
+        </Link>
+        {app.primaryDomain ? (
+          <a href={`//${app.primaryDomain}`} target="_blank" rel="noreferrer" className="bento-app-tile__domain">
+            {app.primaryDomain}
+            <ExternalLink className="size-3" aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="bento-app-tile__domain">Private app</span>
+        )}
+      </div>
+      <dl className="bento-app-tile__facts">
+        <div>
+          <dt>Runtime</dt>
+          <dd>
             {app.toolchain} {app.version}
-          </span>
-        </TableCell>
-        <TableCell>
-          {app.ingress === "managed"
-            ? `${app.publication === "published" ? "Published" : "Unpublished"} · managed`
-            : app.ingress === "none"
-              ? "Private"
-              : "External"}
-        </TableCell>
-        <TableCell>
-          {active.active ? (
-            <StateBadge state="running" label={active.operations[0]?.kind.replace("app.", "") ?? "Working"} />
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </TableCell>
-        <TableCell>
-          <div className="flex justify-end gap-1">
-            <Button
-              size="xs"
-              disabled={active.active || action.isPending}
-              onClick={() => request(app.desiredRuntime === "stopped" ? "start" : "restart")}
-            >
-              {app.desiredRuntime === "stopped" ? "Start" : "Restart"}
-            </Button>
-            {app.desiredRuntime === "running" && (
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={active.active || action.isPending}
-                onClick={() => request("stop")}
-              >
-                Stop
-              </Button>
-            )}
-            {app.ingress === "managed" && app.desiredRuntime === "running" && (
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={active.active || action.isPending}
-                onClick={() => request(app.publication === "published" ? "unpublish" : "publish")}
-              >
-                {app.publication === "published" ? "Unpublish" : "Publish"}
-              </Button>
-            )}
-          </div>
-          {action.error && (
-            <Alert variant="destructive" className="mt-2 max-w-xs">
-              {messageOf(action.error)}
-            </Alert>
-          )}
-        </TableCell>
-      </TableRow>
+          </dd>
+        </div>
+        <div>
+          <dt>Access</dt>
+          <dd>
+            {app.ingress === "managed"
+              ? app.publication === "published"
+                ? "Published · managed"
+                : "Unpublished · managed"
+              : app.ingress === "none"
+                ? "Private"
+                : "External"}
+          </dd>
+        </div>
+      </dl>
+      {active.active && (
+        <div className="bento-app-tile__progress">
+          <StateBadge state="running" label={active.operations[0]?.kind.replace("app.", "") ?? "Working"} />
+          <Link href={`/activity/${active.operations[0]?.id ?? ""}`}>View progress</Link>
+        </div>
+      )}
+      {app.observed.message && status !== "healthy" && (
+        <p className="bento-app-tile__message">{app.observed.message}</p>
+      )}
+      <div className="bento-app-tile__actions">
+        <Button
+          size="sm"
+          disabled={disabled}
+          onClick={() => request(app.desiredRuntime === "stopped" ? "start" : "restart")}
+        >
+          {app.desiredRuntime === "stopped" ? "Start" : "Restart"}
+        </Button>
+        {app.desiredRuntime === "running" && (
+          <Button size="sm" variant="outline" disabled={disabled} onClick={() => request("stop")}>
+            Stop
+          </Button>
+        )}
+        {app.ingress === "managed" && app.desiredRuntime === "running" && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => request(app.publication === "published" ? "unpublish" : "publish")}
+          >
+            {app.publication === "published" ? "Unpublish" : "Publish"}
+          </Button>
+        )}
+      </div>
+      {action.error && (
+        <Alert variant="destructive" className="mt-3">
+          {messageOf(action.error)}
+        </Alert>
+      )}
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => !open && setConfirm(null)}
         title={`${confirm ? confirm[0]?.toUpperCase() + confirm.slice(1) : "Change"} ${app.slug}?`}
-        description={`${confirm === "stop" ? "This stops the running application." : confirm === "unpublish" ? "This removes its managed public route." : "This replaces the running instance after a controlled stop."}`}
+        description={
+          confirm === "stop"
+            ? "This stops the running application."
+            : confirm === "unpublish"
+              ? "This removes its managed public route."
+              : "This replaces the running instance after a controlled stop."
+        }
         confirmLabel={confirm ? confirm[0]?.toUpperCase() + confirm.slice(1) : "Confirm"}
         pending={action.isPending}
         error={action.error}
         onConfirm={() => confirm && run(confirm)}
       />
-    </>
+    </article>
   );
 }
