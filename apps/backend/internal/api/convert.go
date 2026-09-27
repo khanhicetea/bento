@@ -144,7 +144,10 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 		ID: app.ID, Slug: app.Slug, UID: app.UID, Kind: dto.RuntimeKind(app.Runtime.Kind), Toolchain: key.Toolchain, Version: key.Version,
 		DesiredRuntime: dto.DesiredRuntime(app.DesiredRuntime), Ingress: dto.IngressMode(app.Ingress), Publication: dto.Publication(app.Publication),
 		PrimaryDomain: app.PrimaryDomain(), Provisioned: app.Provisioned, ConfigGeneration: int(app.ConfigGeneration),
-		Observed: observedToDTO(app, obs, planned, rec),
+		Observed: observedToDTO(app, obs, planned, rec), BindingSummary: []dto.BindingSummary{}, Resources: dto.Resources(app.Resources),
+	}
+	for _, b := range app.Bindings {
+		sum.BindingSummary = append(sum.BindingSummary, dto.BindingSummary{Engine: dto.Engine(b.Engine), Service: b.Service, Databases: len(b.Databases)})
 	}
 	out := dto.App{AppSummary: sum}
 	if !detail {
@@ -153,7 +156,6 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.GID = app.GID
 	out.Home = app.ContainerHome()
 	out.Runtime = runtimeToDTO(app.Runtime)
-	out.Resources = dto.Resources(app.Resources)
 	out.Route = routeToDTO(app.Route)
 	out.Domains = domainsToDTO(app.Domains)
 	out.Bindings = []dto.Binding{}

@@ -275,7 +275,8 @@ func TestWireFidelity(t *testing.T) {
 	if err != nil {
 		t.Skip("generated types not present")
 	}
-	app := dto.App{AppSummary: dto.AppSummary{ID: "a1", Slug: "s", Observed: dto.Observed{State: dto.ObservedStateHealthy}},
+	app := dto.App{AppSummary: dto.AppSummary{ID: "a1", Slug: "s", Observed: dto.Observed{State: dto.ObservedStateHealthy},
+		BindingSummary: []dto.BindingSummary{{Engine: dto.EngineSQLite}}},
 		Domains: []dto.Domain{}, Bindings: []dto.Binding{{ID: "b", Engine: dto.EngineSQLite, Databases: []string{}}}}
 	raw, _ := json.Marshal(app)
 	var m map[string]any

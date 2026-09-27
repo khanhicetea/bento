@@ -212,6 +212,15 @@ type AppSummary struct {
 	Provisioned      bool           `json:"provisioned"`
 	ConfigGeneration int            `json:"configGeneration"`
 	Observed         Observed       `json:"observed"`
+	// BindingSummary lists data bindings without credentials, for list views.
+	BindingSummary []BindingSummary `json:"bindingSummary"`
+	Resources      Resources        `json:"resources"`
+}
+
+type BindingSummary struct {
+	Engine    Engine `json:"engine"`
+	Service   string `json:"service,omitempty"`
+	Databases int    `json:"databases"`
 }
 
 type App struct {
@@ -219,7 +228,6 @@ type App struct {
 	GID           int         `json:"gid"`
 	Home          string      `json:"home"`
 	Runtime       RuntimeSpec `json:"runtime"`
-	Resources     Resources   `json:"resources"`
 	Route         Route       `json:"route"`
 	Domains       []Domain    `json:"domains"`
 	Bindings      []Binding   `json:"bindings"`
