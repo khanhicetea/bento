@@ -106,8 +106,22 @@ through the per-app relay.
 The compiled binary, run from `/` with `PATH=/nonexistent`, served the API, the CLI, and the embedded UI. With the
 backend stopped, edge traffic and scheduled jobs continued.
 
+## Git deploy (live Docker, disposable root, PHP 8.4 image)
+
+- A public HTTPS repository cloned into an empty `app/` through a tooling container as the app uid; files are owned
+  by uid 10000 and the deployed commit was recorded. A redeploy of the running app reset a modified tracked file,
+  kept an untracked `.env`, and reloaded only the app process: for PHP the FPM master, local Nginx, and minicrond
+  kept their PIDs while FPM workers were renewed (SIGUSR2); for a Node HTTP process only the `app` s6 service was
+  restarted. The container start time was unchanged in both cases and the app returned to ready.
+- Switching the source to the SSH URL of the same repository repointed `origin` instead of refusing it; a checkout
+  of a different repository is refused (`git-origin-mismatch`).
+- Over SSH the generated ed25519 deploy key was offered, GitHub's host key was pinned (hashed) in the app's
+  `~/.ssh/known_hosts`, and the unregistered key was reported as `git-access-denied` with the public key in the
+  guidance. No operation record or backend log contained private key material, and no tooling container remained.
+
 ## Not yet verified
 
+- A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).
 - arm64 execution; PHP 8.3/8.5, Bun, and Python runtime images.
 - Live Cloudflare Tunnel, ACME issuance, HTTP/3, external certificates, rclone upload, scheduled backup firing,
   SQLite restore, and stop persistence across an actual host reboot (verified by restart-policy inspection only).

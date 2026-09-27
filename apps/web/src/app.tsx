@@ -31,6 +31,7 @@ export function App() {
           <Route path="/apps/:slug/scheduler">
             {(params) => <ApplicationPage slug={params.slug} tab="scheduler" />}
           </Route>
+          <Route path="/apps/:slug/deploy">{(params) => <ApplicationPage slug={params.slug} tab="deploy" />}</Route>
           <Route path="/apps/:slug/settings">{(params) => <ApplicationPage slug={params.slug} tab="settings" />}</Route>
           <Route path="/apps/:slug">{(params) => <ApplicationPage slug={params.slug} />}</Route>
           <Route path="/data" component={DatabasesPage} />

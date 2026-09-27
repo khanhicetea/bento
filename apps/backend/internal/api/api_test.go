@@ -313,3 +313,65 @@ func TestSPAFallbackDoesNotMaskMissingAssets(t *testing.T) {
 		t.Fatalf("missing asset -> %d", resp.StatusCode)
 	}
 }
+
+func TestGitSourceEndpoints(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"]}`)
+	var acc dto.Accepted
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+
+	resp, out := c.do("GET", "/api/v1/apps/shop/git", "", nil)
+	if resp.StatusCode != 200 || !strings.Contains(out, `"configured":false`) {
+		t.Fatalf("unconfigured get -> %d %s", resp.StatusCode, out)
+	}
+	resp, _ = c.write("POST", "/api/v1/apps/shop/deploy", `{}`)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("deploy without source -> %d", resp.StatusCode)
+	}
+	// CSRF is required for key generation.
+	resp, _ = c.do("PUT", "/api/v1/apps/shop/git", `{"repoUrl":"git@github.com:o/r.git","branch":"main"}`, map[string]string{"Origin": origin})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("put without csrf -> %d", resp.StatusCode)
+	}
+	for _, bad := range []string{
+		`{"repoUrl":"https://u:tok@github.com/o/r.git","branch":"main"}`,
+		`{"repoUrl":"--upload-pack=touch /tmp/x","branch":"main"}`,
+		`{"repoUrl":"ext::sh -c touch% /tmp/x","branch":"main"}`,
+		`{"repoUrl":"git@github.com:o/r.git","branch":"--orphan"}`,
+		`{"repoUrl":"git@github.com:o/r.git","branch":"a..b"}`,
+		`{"repoUrl":"git@github.com:o/r.git","branch":"main","extra":1}`,
+	} {
+		resp, out := c.write("PUT", "/api/v1/apps/shop/git", bad)
+		if resp.StatusCode != http.StatusUnprocessableEntity && resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s -> %d %s", bad, resp.StatusCode, out)
+		}
+	}
+	resp, out = c.write("PUT", "/api/v1/apps/shop/git", `{"repoUrl":"git@github.com:o/r.git","branch":"main"}`)
+	var g dto.GitSource
+	json.Unmarshal([]byte(out), &g)
+	if resp.StatusCode != 200 || !g.Configured || !g.UsesSSH || !strings.HasPrefix(g.PublicKey, "ssh-ed25519 ") || g.Fingerprint == "" {
+		t.Fatalf("put -> %d %s", resp.StatusCode, out)
+	}
+	stored, _, _ := store.GetGitSource(context.Background(), h.Store.DB(), acc.Operation.TargetID)
+	keyBody := strings.Split(stored.PrivateKey, "\n")[1]
+	for _, p := range []string{"/api/v1/apps/shop/git", "/api/v1/apps/shop", "/api/v1/operations"} {
+		_, out := c.do("GET", p, "", nil)
+		if strings.Contains(out, "PRIVATE KEY") || strings.Contains(out, keyBody) {
+			t.Fatalf("%s leaked the deploy private key", p)
+		}
+	}
+	resp, out = c.write("POST", "/api/v1/apps/shop/deploy", `{}`)
+	if resp.StatusCode != http.StatusAccepted || resp.Header.Get("Location") == "" {
+		t.Fatalf("deploy -> %d %s", resp.StatusCode, out)
+	}
+	resp, _ = c.write("DELETE", "/api/v1/apps/shop/git", "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("delete -> %d", resp.StatusCode)
+	}
+	resp, _ = c.write("DELETE", "/api/v1/apps/shop/git", "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("second delete -> %d", resp.StatusCode)
+	}
+}

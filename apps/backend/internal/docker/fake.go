@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -253,7 +254,9 @@ func (f *Fake) Exec(_ context.Context, id string, req ExecRequest) (ExecResult, 
 		return ExecResult{}, err
 	}
 	if req.Stdin != nil {
-		_, _ = io.Copy(io.Discard, req.Stdin)
+		// Drain like a real exec; hooks see the bytes that were sent.
+		b, _ := io.ReadAll(req.Stdin)
+		req.Stdin = bytes.NewReader(b)
 	}
 	if hook != nil {
 		return hook(id, req), nil

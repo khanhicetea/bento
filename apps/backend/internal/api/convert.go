@@ -196,3 +196,14 @@ func proxyToDTO(p domain.Proxy) dto.Proxy {
 	return dto.Proxy{ID: p.ID, Name: p.Name, Upstreams: nonNil(p.Upstreams), Domains: domainsToDTO(p.Domains), Route: routeToDTO(p.Route),
 		Enabled: p.Enabled, CreatedAt: platform.FormatTime(p.CreatedAt), UpdatedAt: platform.FormatTime(p.UpdatedAt)}
 }
+
+func gitSourceToDTO(g domain.GitSource, configured bool) dto.GitSource {
+	if !configured {
+		return dto.GitSource{}
+	}
+	return dto.GitSource{
+		Configured: true, RepoURL: g.RepoURL, Branch: g.Branch, UsesSSH: g.UsesSSH(),
+		PublicKey: g.PublicKey, Fingerprint: g.Fingerprint, KeyCreatedAt: platform.FormatTime(g.KeyCreatedAt),
+		DeployedCommit: g.DeployedCommit, DeployedAt: platform.FormatTime(g.DeployedAt),
+	}
+}

@@ -232,6 +232,26 @@ export interface AddDatabaseRequest {
 export interface PermissionsRequest {
   mode: string;
 }
+/**
+ * GitSource is an app's repository source. The deploy private key is never
+ * part of the wire contract; only its public half and fingerprint are shown.
+ */
+export interface GitSource {
+  configured: boolean;
+  repoUrl: string;
+  branch: string;
+  usesSsh: boolean;
+  publicKey: string;
+  fingerprint: string;
+  keyCreatedAt: string;
+  deployedCommit: string;
+  deployedAt: string;
+}
+export interface GitSourceRequest {
+  repoUrl: string;
+  branch: string;
+  rotateKey?: boolean;
+}
 export interface OperationEvent {
   seq: number /* int */;
   at: string;

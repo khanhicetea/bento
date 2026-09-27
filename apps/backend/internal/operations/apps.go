@@ -68,6 +68,7 @@ func (c *Controller) registerHandlers() {
 		KindBackupRestore: c.handleBackupRestore,
 		KindStackExport:   c.handleStackExport,
 		KindPermissions:   c.handlePermissions,
+		KindAppDeploy:     c.handleDeploy,
 	}
 }
 

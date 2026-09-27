@@ -102,6 +102,10 @@ export const api = {
       } satisfies T.AddDatabaseRequest),
     permissions: (id: string, mode: string) =>
       mutate("POST", `/api/v1/apps/${enc(id)}/permissions`, { mode } satisfies T.PermissionsRequest),
+    git: (id: string, signal?: AbortSignal) => get<T.GitSource>(`/api/v1/apps/${enc(id)}/git`, signal),
+    setGit: (id: string, body: T.GitSourceRequest) => request<T.GitSource>("PUT", `/api/v1/apps/${enc(id)}/git`, body),
+    removeGit: (id: string) => request<T.GitSource>("DELETE", `/api/v1/apps/${enc(id)}/git`),
+    deploy: (id: string) => mutate("POST", `/api/v1/apps/${enc(id)}/deploy`),
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
     terminalUrl: (id: string, mode: "tool" | "running", cols: number, rows: number) => {

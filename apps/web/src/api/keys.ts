@@ -7,6 +7,7 @@ export const keys = {
     all: ["apps"] as const,
     list: () => ["apps", "list"] as const,
     detail: (id: string) => ["apps", "detail", id] as const,
+    git: (id: string) => ["apps", "git", id] as const,
   },
   operations: {
     all: ["operations"] as const,

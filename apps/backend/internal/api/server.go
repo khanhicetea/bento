@@ -62,6 +62,10 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/apps/{id}/bindings", s.handleAddBinding)
 	api("POST /api/v1/apps/{id}/bindings/{bid}/databases", s.handleAddDatabase)
 	api("POST /api/v1/apps/{id}/permissions", s.handlePermissions)
+	api("GET /api/v1/apps/{id}/git", s.handleGetGitSource)
+	api("PUT /api/v1/apps/{id}/git", s.handlePutGitSource)
+	api("DELETE /api/v1/apps/{id}/git", s.handleDeleteGitSource)
+	api("POST /api/v1/apps/{id}/deploy", s.lifecycle(s.C.DeployApp))
 	api("GET /api/v1/apps/{id}/readiness", s.handleReadiness)
 	api("GET /api/v1/apps/{id}/logs", s.handleAppLogs)
 	api("POST /api/v1/apps/{id}/exec", s.handleExec)
@@ -453,6 +457,49 @@ func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleGetGitSource(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	g, found, err := store.GetGitSource(r.Context(), s.Store.DB(), app.ID)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, gitSourceToDTO(g, found))
+}
+
+func (s *Server) handlePutGitSource(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	var req dto.GitSourceRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	g, err := s.C.SetGitSource(r.Context(), app.ID, operations.GitSourceInput{RepoURL: req.RepoURL, Branch: req.Branch, RotateKey: req.RotateKey})
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, gitSourceToDTO(g, true))
+}
+
+func (s *Server) handleDeleteGitSource(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	if err := s.C.RemoveGitSource(r.Context(), app.ID); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, gitSourceToDTO(domain.GitSource{}, false))
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {

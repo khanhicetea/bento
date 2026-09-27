@@ -283,6 +283,28 @@ type PermissionsRequest struct {
 	Mode string `json:"mode"`
 }
 
+// ---- git source ----
+
+// GitSource is an app's repository source. The deploy private key is never
+// part of the wire contract; only its public half and fingerprint are shown.
+type GitSource struct {
+	Configured     bool   `json:"configured"`
+	RepoURL        string `json:"repoUrl"`
+	Branch         string `json:"branch"`
+	UsesSSH        bool   `json:"usesSsh"`
+	PublicKey      string `json:"publicKey"`
+	Fingerprint    string `json:"fingerprint"`
+	KeyCreatedAt   string `json:"keyCreatedAt"`
+	DeployedCommit string `json:"deployedCommit"`
+	DeployedAt     string `json:"deployedAt"`
+}
+
+type GitSourceRequest struct {
+	RepoURL   string `json:"repoUrl"`
+	Branch    string `json:"branch"`
+	RotateKey bool   `json:"rotateKey,omitempty"`
+}
+
 // ---- operations ----
 
 type OperationEvent struct {

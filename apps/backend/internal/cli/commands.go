@@ -53,6 +53,8 @@ Client (requires the running backend):
   app shell SLUG [--running]
   app minicrond SLUG -- ARGS...
   app permissions SLUG --mode check|dry-run|shallow|recursive
+  app git SLUG [--repo URL --branch B [--rotate-key] | --remove]   shows the deploy key to add to the repo
+  app deploy SLUG                                     clones or resets to the branch, reloads the app process
   ops [--target ID] | op ID | op cancel ID
   services | service add --engine mysql|postgres --version V
   edge | edge set --json FILE
@@ -526,6 +528,50 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		}
 		acc, err := c.Mutate(ctx, "POST", base+"/permissions", dto.PermissionsRequest{Mode: *mode}, r.wait, r.out)
 		if err == nil {
+			printJSON(acc.Operation.Result)
+		}
+		return err
+	case "git":
+		fs, rest := sub("app git", args[2:])
+		repo := fs.String("repo", "", "git@host:owner/repo.git, ssh://..., or https://... (public only)")
+		branch := fs.String("branch", "main", "branch to deploy")
+		rotate := fs.Bool("rotate-key", false, "replace the deploy key")
+		remove := fs.Bool("remove", false, "forget the git source and destroy its deploy key")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		var g dto.GitSource
+		var err error
+		switch {
+		case *remove:
+			err = c.Do(ctx, "DELETE", base+"/git", map[string]any{}, &g, nil)
+		case *repo != "":
+			err = c.Do(ctx, "PUT", base+"/git", dto.GitSourceRequest{RepoURL: *repo, Branch: *branch, RotateKey: *rotate}, &g, nil)
+		default:
+			err = c.Do(ctx, "GET", base+"/git", nil, &g, nil)
+		}
+		if err != nil {
+			return err
+		}
+		if r.json {
+			printJSON(g)
+			return nil
+		}
+		if !g.Configured {
+			fmt.Fprintf(r.out, "no git source (set one with `bento app git %s --repo URL --branch main`)\n", slug)
+			return nil
+		}
+		fmt.Fprintf(r.out, "repo:     %s\nbranch:   %s\n", g.RepoURL, g.Branch)
+		if g.DeployedCommit != "" {
+			fmt.Fprintf(r.out, "deployed: %s at %s\n", g.DeployedCommit, g.DeployedAt)
+		}
+		if g.UsesSSH {
+			fmt.Fprintf(r.out, "\nAdd this read-only deploy key to the repository (GitHub: Settings > Deploy keys):\n\n%s\n\nfingerprint: %s\n", g.PublicKey, g.Fingerprint)
+		}
+		return nil
+	case "deploy":
+		acc, err := c.Mutate(ctx, "POST", base+"/deploy", map[string]any{}, r.wait, r.out)
+		if err == nil && r.wait {
 			printJSON(acc.Operation.Result)
 		}
 		return err

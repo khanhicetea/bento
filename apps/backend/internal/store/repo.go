@@ -686,3 +686,26 @@ func MarkPruned(ctx context.Context, q Q, appID string) error {
 	_, err := q.ExecContext(ctx, "UPDATE retired_apps SET pruned_at=? WHERE app_id=?", now(), appID)
 	return err
 }
+
+func DeleteSetting(ctx context.Context, q Q, key string) error {
+	_, err := q.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	return err
+}
+
+func gitSourceKey(appID string) string { return "git_source:" + appID }
+
+// GetGitSource returns the app's repository source; ok is false when none is
+// configured.
+func GetGitSource(ctx context.Context, q Q, appID string) (domain.GitSource, bool, error) {
+	var g domain.GitSource
+	ok, err := GetSetting(ctx, q, gitSourceKey(appID), &g)
+	return g, ok, err
+}
+
+func PutGitSource(ctx context.Context, q Q, appID string, g domain.GitSource) error {
+	return PutSetting(ctx, q, gitSourceKey(appID), g)
+}
+
+func DeleteGitSource(ctx context.Context, q Q, appID string) error {
+	return DeleteSetting(ctx, q, gitSourceKey(appID))
+}
