@@ -2,43 +2,30 @@ import { useEffect, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { api } from "../api/client.ts";
+import { StateBadge } from "./DomainState.tsx";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type ConnectionState = "connecting" | "connected" | "closed" | "error";
 
-/**
- * Interactive terminal over an authenticated WebSocket. Binary frames carry
- * terminal bytes; text frames carry JSON control (resize out, exit in).
- */
-export function TerminalDialog({
+export function TerminalPanel({
   appId,
-  title,
   mode,
-  onClose,
+  onModeChange,
 }: {
   appId: string;
-  title: string;
   mode: "tool" | "running";
-  onClose: () => void;
+  onModeChange?: (mode: "tool" | "running") => void;
 }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
-
   useEffect(() => {
     if (!element) return;
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+      fontFamily: '"SFMono-Regular", Consolas, monospace',
       fontSize: 14,
       scrollback: 5_000,
       theme: { background: "#09090b", foreground: "#fafafa", cursor: "#fafafa", selectionBackground: "#3f3f46" },
@@ -57,11 +44,9 @@ export function TerminalDialog({
       if (typeof event.data === "string") {
         const message = JSON.parse(event.data) as { type: string; code?: number };
         if (message.type === "exit") setExitCode(message.code ?? -1);
-        return;
-      }
-      terminal.write(new Uint8Array(event.data));
+      } else terminal.write(new Uint8Array(event.data));
     };
-    socket.onclose = () => setState((s) => (s === "error" ? s : "closed"));
+    socket.onclose = () => setState((value) => (value === "error" ? value : "closed"));
     socket.onerror = () => setState("error");
     const input = terminal.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
@@ -72,9 +57,8 @@ export function TerminalDialog({
       } catch {
         return;
       }
-      if (socket.readyState === WebSocket.OPEN) {
+      if (socket.readyState === WebSocket.OPEN)
         socket.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }));
-      }
     });
     resize.observe(element);
     terminal.focus();
@@ -85,30 +69,68 @@ export function TerminalDialog({
       terminal.dispose();
     };
   }, [element, appId, mode, attempt]);
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <StateBadge
+          state={
+            state === "connected"
+              ? "running"
+              : state === "connecting"
+                ? "queued"
+                : state === "error"
+                  ? "failed"
+                  : "stopped"
+          }
+          label={state}
+        />
+        {exitCode !== null && <StateBadge state={exitCode === 0 ? "succeeded" : "failed"} label={`Exit ${exitCode}`} />}
+        {onModeChange && (
+          <>
+            <Button size="sm" variant={mode === "tool" ? "default" : "outline"} onClick={() => onModeChange("tool")}>
+              Tool shell
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === "running" ? "default" : "outline"}
+              onClick={() => onModeChange("running")}
+            >
+              Running instance
+            </Button>
+          </>
+        )}
+        {(state === "closed" || state === "error") && (
+          <Button size="sm" variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+            Reconnect
+          </Button>
+        )}
+      </div>
+      <div ref={setElement} className="h-[calc(100vh-18rem)] min-h-96 overflow-hidden rounded-lg bg-zinc-950 p-2" />
+    </div>
+  );
+}
 
+export function TerminalDialog({
+  appId,
+  title,
+  mode,
+  onClose,
+}: {
+  appId: string;
+  title: string;
+  mode: "tool" | "running";
+  onClose: () => void;
+}) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>
-            {title} — {mode === "tool" ? "tooling shell" : "running instance"}
-          </DialogTitle>
+          <DialogTitle>{title} — terminal</DialogTitle>
           <DialogDescription>
-            Runs as the app identity.{" "}
-            {mode === "tool" ? "A scoped ephemeral container; no daemons start." : "Exec into the running instance."}{" "}
-            Status: {state}
-            {exitCode !== null && ` · exited ${exitCode}`}
+            Runs as the app identity. Tool shells are ephemeral and start no daemons.
           </DialogDescription>
         </DialogHeader>
-        <div ref={setElement} className="h-[60vh] overflow-hidden rounded-md bg-[#09090b] p-2" />
-        <DialogFooter>
-          {(state === "closed" || state === "error") && (
-            <Button variant="outline" onClick={() => setAttempt((n) => n + 1)}>
-              Reconnect
-            </Button>
-          )}
-          <Button onClick={onClose}>Close</Button>
-        </DialogFooter>
+        <TerminalPanel appId={appId} mode={mode} />
       </DialogContent>
     </Dialog>
   );

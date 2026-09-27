@@ -50,7 +50,8 @@ export function LoginPage() {
           Sign in
         </Button>
         <p className="m-0 text-xs text-muted-foreground">
-          Set the password on the host with <code>bento auth set-password</code>.
+          Set the password on the host with <code>bento auth set-password</code>. This management UI is intended only
+          for the loopback listener, not an untrusted network.
         </p>
       </form>
     </main>

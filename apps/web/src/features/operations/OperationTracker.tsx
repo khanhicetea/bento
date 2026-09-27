@@ -1,8 +1,10 @@
-import { createContext, use, useState, type PropsWithChildren } from "react";
+import { createContext, use, useEffect, useState, type PropsWithChildren } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
+import { Link } from "wouter";
 import { api, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
+import { describeOp } from "../../lib/format.ts";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -62,9 +64,7 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
     // Acceptance itself changes intent (for example desired state).
     void queryClient.invalidateQueries({ queryKey: keys.operations.lists });
     if (accepted.operation.targetKind === "app") void queryClient.invalidateQueries({ queryKey: keys.apps.all });
-    setTracked((current) =>
-      [accepted.operation, ...current.filter((op) => op.id !== accepted.operation.id)].slice(0, 5),
-    );
+    setTracked((current) => [accepted.operation, ...current.filter((op) => op.id !== accepted.operation.id)]);
   }
 
   function dismiss(id: string) {
@@ -76,8 +76,8 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
       {children}
       {tracked.length > 0 && (
         <div className="fixed right-4 bottom-4 z-50 grid w-[min(420px,calc(100vw-2rem))] gap-2" aria-live="polite">
-          {tracked.map((op) => (
-            <TrackedOperation key={op.id} initial={op} onDismiss={() => dismiss(op.id)} />
+          {tracked.map((op, index) => (
+            <TrackedOperation key={op.id} initial={op} visible={index < 5} onDismiss={() => dismiss(op.id)} />
           ))}
         </div>
       )}
@@ -85,7 +85,15 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
   );
 }
 
-function TrackedOperation({ initial, onDismiss }: { initial: T.Operation; onDismiss: () => void }) {
+function TrackedOperation({
+  initial,
+  visible,
+  onDismiss,
+}: {
+  initial: T.Operation;
+  visible: boolean;
+  onDismiss: () => void;
+}) {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: keys.operations.detail(initial.id),
@@ -100,6 +108,12 @@ function TrackedOperation({ initial, onDismiss }: { initial: T.Operation; onDism
   const op = query.data;
   const lastEvent = op.events?.at(-1)?.message;
   const failed = op.state === "failed" || op.state === "interrupted";
+  useEffect(() => {
+    if (op.state !== "succeeded") return;
+    const timer = window.setTimeout(onDismiss, 6_000);
+    return () => window.clearTimeout(timer);
+  }, [op.state, onDismiss]);
+  if (!visible) return null;
   return (
     <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-lg">
       <span className="mt-0.5">
@@ -109,16 +123,21 @@ function TrackedOperation({ initial, onDismiss }: { initial: T.Operation; onDism
       </span>
       <div className="min-w-0 flex-1">
         <div className="font-medium">
-          {op.kind} <span className="text-muted-foreground">· {op.state}</span>
+          <Link href={`/activity/${op.id}`} className="hover:underline">
+            {describeOp(op)}
+          </Link>{" "}
+          <span className="text-muted-foreground">· {op.state}</span>
         </div>
         <div className="truncate text-xs text-muted-foreground">
           {failed ? op.errorMessage : (lastEvent ?? op.phase ?? "queued")}
         </div>
         {failed && op.guidance && <div className="mt-1 text-xs">{op.guidance}</div>}
       </div>
-      <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss}>
-        <X />
-      </Button>
+      {isTerminal(op.state) && (
+        <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss}>
+          <X />
+        </Button>
+      )}
     </div>
   );
 }

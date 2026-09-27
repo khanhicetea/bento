@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
+import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
 import {
   DomainError,
   DomainLoading,
-  EmptyPanel,
+  EmptyState,
   Field,
   Page,
   PageHeader,
@@ -18,125 +19,180 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
+type Tab = "edge" | "tunnel" | "proxies";
 export function RoutingPage() {
+  const [tab, setTab] = useState<Tab>("edge");
   return (
     <Page>
-      <PageHeader
-        section="Ingress"
-        title="Ingress"
-        description="The managed edge is optional. Apps can also be reached directly by cloudflared or an operator-owned proxy on the app network; those routes are operator-owned."
-      />
-      <EdgePanel />
-      <TunnelPanel />
-      <ProxiesPanel />
+      <PageHeader title="Ingress" description="Managed edge, Cloudflare Tunnel, and operator-owned reverse proxies." />
+      <div className="mb-6 flex gap-1 border-b" role="tablist">
+        {(["edge", "tunnel", "proxies"] as const).map((value) => (
+          <Button
+            key={value}
+            role="tab"
+            aria-selected={tab === value}
+            variant={tab === value ? "default" : "ghost"}
+            onClick={() => setTab(value)}
+          >
+            {value[0]?.toUpperCase() + value.slice(1)}
+          </Button>
+        ))}
+      </div>
+      {tab === "edge" && <EdgePanel />}
+      {tab === "tunnel" && <TunnelPanel />}
+      {tab === "proxies" && <ProxiesPanel />}
     </Page>
   );
 }
-
 function EdgePanel() {
-  const q = useQuery({ queryKey: keys.edge, queryFn: ({ signal }) => api.edge.get(signal) });
-  if (q.isPending) return <DomainLoading label="edge" />;
-  if (q.error) return <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />;
-  return <EdgeForm key={JSON.stringify(q.data.settings)} status={q.data} />;
+  const query = useQuery({ queryKey: keys.edge, queryFn: ({ signal }) => api.edge.get(signal) });
+  if (query.isPending) return <DomainLoading label="edge" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  return <EdgeForm status={query.data} />;
 }
-
 function EdgeForm({ status }: { status: T.EdgeStatus }) {
-  const [s, setS] = useState<T.EdgeSettings>(status.settings);
-  const save = useOperationMutation(() => api.edge.set(s));
+  const [settings, setSettings] = useState(status.settings);
+  const save = useOperationMutation(() => api.edge.set(settings));
+  const dirty = JSON.stringify(settings) !== JSON.stringify(status.settings);
   return (
-    <Panel
-      title="Managed edge (Nginx)"
-      description="Publishes the chosen HTTP/HTTPS host ports and routes published apps by network alias. Bypassing it also bypasses its TLS policy, redirects, limits, and logs."
-      actions={<StateBadge state={status.state} />}
-    >
-      <div className="grid grid-cols-4 gap-4 max-[900px]:grid-cols-2">
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={s.enabled} onChange={(e) => setS({ ...s, enabled: e.target.checked })} />{" "}
-          Enabled
-        </label>
-        <Field label="Bind address">
-          <Input value={s.bind} onChange={(e) => setS({ ...s, bind: e.target.value })} />
-        </Field>
-        <Field label="HTTP port">
-          <Input type="number" value={s.httpPort} onChange={(e) => setS({ ...s, httpPort: Number(e.target.value) })} />
-        </Field>
-        <Field label="HTTPS port">
-          <Input
-            type="number"
-            value={s.httpsPort}
-            onChange={(e) => setS({ ...s, httpsPort: Number(e.target.value) })}
-          />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={s.http3} onChange={(e) => setS({ ...s, http3: e.target.checked })} /> HTTP/3
-          (UDP)
-        </label>
-        <Field label="ACME email">
-          <Input value={s.acmeEmail} onChange={(e) => setS({ ...s, acmeEmail: e.target.value })} />
-        </Field>
-        <Field label="ACME directory">
-          <Input value={s.acmeUrl} onChange={(e) => setS({ ...s, acmeUrl: e.target.value })} />
-        </Field>
-      </div>
-      <div className="mt-4 flex items-center gap-3">
-        <Button onClick={() => save.mutate(undefined)} disabled={save.isPending}>
-          Apply edge settings
-        </Button>
-        <span className="text-xs text-muted-foreground">Active routes: {status.routes.join(", ") || "none"}</span>
-      </div>
-      {save.error && (
-        <Alert variant="destructive" className="mt-3">
-          {messageOf(save.error)}
-        </Alert>
-      )}
-    </Panel>
+    <>
+      <Panel
+        title="Managed edge"
+        description="Listener and ACME settings. Saving validates a candidate configuration before reload."
+        actions={<StateBadge state={status.state} />}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={settings.enabled}
+              onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })}
+            />{" "}
+            Enabled
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={settings.http3}
+              onChange={(event) => setSettings({ ...settings, http3: event.target.checked })}
+            />{" "}
+            HTTP/3 (UDP)
+          </label>
+          <Field label="Bind address">
+            <Input value={settings.bind} onChange={(event) => setSettings({ ...settings, bind: event.target.value })} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="HTTP port">
+              <Input
+                type="number"
+                value={settings.httpPort}
+                onChange={(event) => setSettings({ ...settings, httpPort: Number(event.target.value) })}
+              />
+            </Field>
+            <Field label="HTTPS port">
+              <Input
+                type="number"
+                value={settings.httpsPort}
+                onChange={(event) => setSettings({ ...settings, httpsPort: Number(event.target.value) })}
+              />
+            </Field>
+          </div>
+          <Field label="ACME email">
+            <Input
+              value={settings.acmeEmail}
+              onChange={(event) => setSettings({ ...settings, acmeEmail: event.target.value })}
+            />
+          </Field>
+          <Field label="ACME directory">
+            <Input
+              value={settings.acmeUrl}
+              onChange={(event) => setSettings({ ...settings, acmeUrl: event.target.value })}
+            />
+          </Field>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
+            Save settings
+          </Button>
+          {dirty && <span className="text-xs text-warning">Unsaved changes</span>}
+        </div>
+        {save.error && (
+          <Alert variant="destructive" className="mt-3">
+            {messageOf(save.error)}
+          </Alert>
+        )}
+      </Panel>
+      <Panel title="Active routes">
+        {status.routes.length === 0 ? (
+          <EmptyState title="No active managed routes" />
+        ) : (
+          <div className="grid gap-2">
+            {status.routes.map((route) => (
+              <code key={route} className="rounded bg-muted p-2 text-xs">
+                {route}
+              </code>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </>
   );
 }
-
 function TunnelPanel() {
-  const q = useQuery({ queryKey: keys.tunnel, queryFn: ({ signal }) => api.tunnel.get(signal) });
+  const query = useQuery({ queryKey: keys.tunnel, queryFn: ({ signal }) => api.tunnel.get(signal) });
   const [token, setToken] = useState("");
-  const set = useOperationMutation((value: string) => api.tunnel.setToken(value));
+  const [disableOpen, setDisableOpen] = useState(false);
+  const mutation = useOperationMutation((value: string) => api.tunnel.setToken(value));
   return (
     <Panel
       title="Cloudflare Tunnel"
-      description={q.data?.note}
-      actions={q.data && <StateBadge state={q.data.enabled ? q.data.state : "absent"} />}
+      description={query.data?.note}
+      actions={query.data && <StateBadge state={query.data.enabled ? query.data.state : "absent"} />}
     >
       <div className="flex flex-wrap items-end gap-2">
-        <Field
-          label="Replace token"
-          hint="Stored in a private file; never returned. Replacing it recreates only the tunnel container."
-        >
+        <Field label="Replace token" hint="Stored privately and never returned by the API.">
           <Input
-            type="password"
             className="w-96 max-w-full"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
+            type="password"
             autoComplete="off"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
           />
         </Field>
-        <Button disabled={!token || set.isPending} onClick={() => set.mutate(token, { onSuccess: () => setToken("") })}>
+        <Button
+          disabled={!token || mutation.isPending}
+          onClick={() => mutation.mutate(token, { onSuccess: () => setToken("") })}
+        >
           Save token
         </Button>
-        {q.data?.enabled && (
-          <Button variant="outline" onClick={() => set.mutate("")}>
-            Disable tunnel
+        {query.data?.enabled && (
+          <Button variant="outline" onClick={() => setDisableOpen(true)}>
+            Disable tunnel…
           </Button>
         )}
       </div>
-      {set.error && (
+      {mutation.error && (
         <Alert variant="destructive" className="mt-3">
-          {messageOf(set.error)}
+          {messageOf(mutation.error)}
         </Alert>
       )}
+      <ConfirmDialog
+        open={disableOpen}
+        onOpenChange={setDisableOpen}
+        title="Disable Cloudflare Tunnel?"
+        description="This removes tunnel connectivity. Operator-owned routes may become unreachable."
+        confirmLabel="Disable tunnel"
+        pending={mutation.isPending}
+        error={mutation.error}
+        onConfirm={() => mutation.mutate("", { onSuccess: () => setDisableOpen(false) })}
+      />
     </Panel>
   );
 }
-
 function ProxiesPanel() {
-  const q = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
+  const query = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
   const [form, setForm] = useState({ name: "", upstreams: "", domains: "", tls: "none" as T.TLSMode });
+  const [removeTarget, setRemoveTarget] = useState<T.Proxy | null>(null);
   const save = useOperationMutation(() =>
     api.proxies.upsert({
       name: form.name,
@@ -146,55 +202,91 @@ function ProxiesPanel() {
       enabled: true,
     }),
   );
-  const remove = useOperationMutation((name: string) => api.proxies.remove(name, `delete ${name}`));
+  const remove = useOperationMutation((confirm: string) => api.proxies.remove(removeTarget?.name ?? "", confirm));
+  function edit(proxy: T.Proxy) {
+    setForm({
+      name: proxy.name,
+      upstreams: proxy.upstreams.join(" "),
+      domains: proxy.domains.map((domain) => domain.name).join(" "),
+      tls: proxy.route.tls,
+    });
+  }
   return (
     <Panel title="Reverse proxies" description="Edge routes to upstreams outside Bento's lifecycle.">
-      {(q.data?.proxies ?? []).length === 0 ? (
-        <EmptyPanel>No reverse proxies.</EmptyPanel>
+      {(query.data?.proxies ?? []).length === 0 ? (
+        <EmptyState title="No reverse proxies" />
       ) : (
-        <div className="mb-4 grid gap-2">
-          {q.data?.proxies.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+        <div className="mb-5 grid gap-2">
+          {query.data?.proxies.map((proxy) => (
+            <div
+              key={proxy.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"
+            >
               <span>
-                <strong>{p.name}</strong> · {p.domains.map((d) => d.name).join(", ")} → {p.upstreams.join(", ")}
+                <strong>{proxy.name}</strong> · {proxy.domains.map((domain) => domain.name).join(", ")} →{" "}
+                {proxy.upstreams.join(", ")}
               </span>
-              <Button size="xs" variant="destructive" onClick={() => remove.mutate(p.name)}>
-                Remove
-              </Button>
+              <span className="flex gap-1">
+                <Button size="xs" variant="outline" onClick={() => edit(proxy)}>
+                  Edit
+                </Button>
+                <Button size="xs" variant="destructive" onClick={() => setRemoveTarget(proxy)}>
+                  Remove…
+                </Button>
+              </span>
             </div>
           ))}
         </div>
       )}
-      <div className="grid grid-cols-4 items-end gap-3 max-[900px]:grid-cols-1">
+      <div className="grid items-end gap-3 sm:grid-cols-2">
         <Field label="Name">
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
         </Field>
         <Field label="Upstream URLs">
           <Input
-            value={form.upstreams}
             placeholder="http://10.0.0.5:8080"
-            onChange={(e) => setForm({ ...form, upstreams: e.target.value })}
+            value={form.upstreams}
+            onChange={(event) => setForm({ ...form, upstreams: event.target.value })}
           />
         </Field>
         <Field label="Domains">
-          <Input value={form.domains} onChange={(e) => setForm({ ...form, domains: e.target.value })} />
+          <Input value={form.domains} onChange={(event) => setForm({ ...form, domains: event.target.value })} />
         </Field>
         <Field label="TLS">
-          <NativeSelect value={form.tls} onChange={(e) => setForm({ ...form, tls: e.target.value as T.TLSMode })}>
+          <NativeSelect
+            value={form.tls}
+            onChange={(event) => setForm({ ...form, tls: event.target.value as T.TLSMode })}
+          >
             <option value="none">None</option>
             <option value="self-signed">Self-signed</option>
             <option value="acme">ACME</option>
           </NativeSelect>
         </Field>
       </div>
-      <Button className="mt-3" onClick={() => save.mutate(undefined)} disabled={save.isPending || !form.name}>
+      <Button
+        className="mt-3"
+        disabled={!form.name || !form.upstreams.trim() || save.isPending}
+        onClick={() => save.mutate(undefined)}
+      >
         Save proxy
       </Button>
-      {(save.error || remove.error) && (
+      {save.error && (
         <Alert variant="destructive" className="mt-3">
-          {messageOf(save.error ?? remove.error)}
+          {messageOf(save.error)}
         </Alert>
       )}
+      <ConfirmDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => !open && setRemoveTarget(null)}
+        title={`Remove proxy ${removeTarget?.name ?? ""}?`}
+        description="This permanently removes its managed edge routes."
+        phrase={removeTarget ? `delete ${removeTarget.name}` : ""}
+        destructive
+        confirmLabel="Remove proxy"
+        pending={remove.isPending}
+        error={remove.error}
+        onConfirm={(typed) => remove.mutate(typed, { onSuccess: () => setRemoveTarget(null) })}
+      />
     </Panel>
   );
 }

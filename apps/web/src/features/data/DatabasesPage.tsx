@@ -24,9 +24,10 @@ export function DatabasesPage() {
   });
   const catalog = useCatalog();
   const [engine, setEngine] = useState<T.Engine>("mysql");
-  const [version, setVersion] = useState("8.4");
-  const create = useOperationMutation(() => api.services.create({ engine, version }));
+  const [version, setVersion] = useState("");
   const versions = engine === "mysql" ? catalog.data?.mysqlVersions : catalog.data?.postgresVersions;
+  const selectedVersion = version || versions?.at(-1) || "";
+  const create = useOperationMutation(() => api.services.create({ engine, version: selectedVersion }));
   return (
     <Page>
       <PageHeader
@@ -78,7 +79,7 @@ export function DatabasesPage() {
               onChange={(e) => {
                 const next = e.target.value as T.Engine;
                 setEngine(next);
-                setVersion(next === "mysql" ? "8.4" : "17");
+                setVersion("");
               }}
             >
               <option value="mysql">MySQL</option>
@@ -86,8 +87,8 @@ export function DatabasesPage() {
             </NativeSelect>
           </Field>
           <Field label="Version">
-            <NativeSelect value={version} onChange={(e) => setVersion(e.target.value)}>
-              {(versions ?? [version]).map((v) => (
+            <NativeSelect value={selectedVersion} onChange={(e) => setVersion(e.target.value)}>
+              {(versions ?? (selectedVersion ? [selectedVersion] : [])).map((v) => (
                 <option key={v}>{v}</option>
               ))}
             </NativeSelect>

@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#173d32" />
+    <script>
+      (() => {
+        try {
+          const theme = localStorage.getItem("bento-theme") || "system";
+          const dark =
+            theme === "dark" ||
+            (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.dataset.theme = theme;
+        } catch (_) {}
+      })();
+    </script>
     <title>Bento Control Plane</title>
     <link href="/app.css" rel="stylesheet" />
   </head>
