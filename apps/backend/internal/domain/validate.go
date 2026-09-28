@@ -126,6 +126,37 @@ func ValidateCertName(name string) error {
 	return nil
 }
 
+var envKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// reservedEnvKeys are set by Bento or the image and cannot be overridden.
+var reservedEnvKeys = map[string]bool{
+	"HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "PATH": true, "TZ": true,
+	"BASE_PATH": true, "MINICRON_DATA": true, "MINICRON_CONFIG": true,
+}
+
+// ValidateEnv checks operator-defined app environment variables.
+func ValidateEnv(env []EnvVar, errs *ValidationErrors) {
+	if len(env) > 256 {
+		errs.Add("env", "at most 256 variables")
+	}
+	seen := map[string]bool{}
+	for i, e := range env {
+		field := fmt.Sprintf("env[%d]", i)
+		switch {
+		case !envKeyRegexp.MatchString(e.Key) || len(e.Key) > 128:
+			errs.Add(field, "key %q must match [A-Za-z_][A-Za-z0-9_]* (max 128)", e.Key)
+		case strings.HasPrefix(e.Key, "BENTO_") || reservedEnvKeys[e.Key]:
+			errs.Add(field, "key %s is reserved", e.Key)
+		case seen[e.Key]:
+			errs.Add(field, "duplicate key %s", e.Key)
+		}
+		seen[e.Key] = true
+		if len(e.Value) > 8192 || strings.ContainsAny(e.Value, "\x00\r\n") {
+			errs.Add(field, "value of %s must be a single line (max 8192 bytes)", e.Key)
+		}
+	}
+}
+
 // ValidateRuntime checks the runtime union and variant-specific constraints.
 func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 	switch r.Kind {

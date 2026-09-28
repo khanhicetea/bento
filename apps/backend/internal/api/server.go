@@ -341,6 +341,13 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		rt := routeFromDTO(req.Route)
 		in.Route = &rt
 	}
+	if req.Env != nil {
+		env := make([]domain.EnvVar, 0, len(*req.Env))
+		for _, e := range *req.Env {
+			env = append(env, domain.EnvVar(e))
+		}
+		in.Env = &env
+	}
 	updated, op, err := s.C.UpdateApp(r.Context(), app.ID, in, idem)
 	if err != nil {
 		writeError(w, s.Log, err)

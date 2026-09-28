@@ -1,6 +1,6 @@
 .bento-stack/
-bento/
-testbento/
+/bento/
+/testbento/
 /dist/
 **/dist/
 *.partial

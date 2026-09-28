@@ -82,3 +82,24 @@ func TestValidateRouteAndUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidateEnv(t *testing.T) {
+	var ok ValidationErrors
+	ValidateEnv([]EnvVar{{"APP_ENV", "production"}, {"_X1", ""}}, &ok)
+	if ok.Err() != nil {
+		t.Fatalf("valid env rejected: %v", ok.Err())
+	}
+	for _, bad := range [][]EnvVar{
+		{{"1BAD", "x"}},
+		{{"BENTO_APP_ID", "x"}},
+		{{"HOME", "x"}},
+		{{"A", "1"}, {"A", "2"}},
+		{{"A", "line\nbreak"}},
+	} {
+		var errs ValidationErrors
+		ValidateEnv(bad, &errs)
+		if errs.Err() == nil {
+			t.Fatalf("expected rejection for %v", bad)
+		}
+	}
+}

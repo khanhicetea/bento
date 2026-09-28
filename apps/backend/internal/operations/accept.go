@@ -191,6 +191,7 @@ type UpdateAppInput struct {
 	Ingress            *domain.IngressMode
 	Domains            *[]string
 	Route              *domain.Route
+	Env                *[]domain.EnvVar
 }
 
 // UpdateApp persists a configuration change and queues its scoped
@@ -218,6 +219,9 @@ func (c *Controller) UpdateApp(ctx context.Context, id string, in UpdateAppInput
 	if in.Route != nil {
 		domain.ValidateRoute(in.Route, "route", &errs)
 	}
+	if in.Env != nil {
+		domain.ValidateEnv(*in.Env, &errs)
+	}
 	var links []domain.DomainLink
 	if in.Domains != nil {
 		links = normalizeDomains(*in.Domains, &errs)
@@ -236,7 +240,12 @@ func (c *Controller) UpdateApp(ctx context.Context, id string, in UpdateAppInput
 				return fmt.Errorf("%w: app configuration generation is %d, not %d", ErrPrecondition, cur.ConfigGeneration, in.ExpectedGeneration)
 			}
 			if in.Runtime != nil {
+				env := cur.Runtime.Env
 				cur.Runtime = *in.Runtime
+				cur.Runtime.Env = env
+			}
+			if in.Env != nil {
+				cur.Runtime.Env = *in.Env
 			}
 			if in.Resources != nil {
 				cur.Resources = *in.Resources

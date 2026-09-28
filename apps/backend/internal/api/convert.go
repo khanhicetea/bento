@@ -157,6 +157,10 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.Home = app.ContainerHome()
 	out.Runtime = runtimeToDTO(app.Runtime)
 	out.Route = routeToDTO(app.Route)
+	out.Env = []dto.EnvVar{}
+	for _, e := range app.Runtime.Env {
+		out.Env = append(out.Env, dto.EnvVar(e))
+	}
 	out.Domains = domainsToDTO(app.Domains)
 	out.Bindings = []dto.Binding{}
 	for _, b := range app.Bindings {

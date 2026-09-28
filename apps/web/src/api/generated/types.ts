@@ -187,6 +187,7 @@ export interface App extends AppSummary {
   home: string;
   runtime: RuntimeSpec;
   route: Route;
+  env: EnvVar[];
   domains: Domain[];
   bindings: Binding[];
   redisPrefix: string;
@@ -220,6 +221,18 @@ export interface UpdateAppRequest {
   ingress?: IngressMode;
   domains?: string[];
   route?: Route;
+  /**
+   * Env, when present, replaces the app's environment variables.
+   */
+  env?: EnvVar[];
+}
+/**
+ * EnvVar is one operator-defined environment variable exposed to the app
+ * process. Values are operator configuration and are shown back verbatim.
+ */
+export interface EnvVar {
+  key: string;
+  value: string;
 }
 /**
  * ConfirmRequest carries an exact destructive confirmation phrase.

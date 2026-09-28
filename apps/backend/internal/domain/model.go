@@ -121,6 +121,15 @@ type Runtime struct {
 	Kind RuntimeKind  `json:"kind"`
 	PHP  *PHPRuntime  `json:"php,omitempty"`
 	HTTP *HTTPRuntime `json:"http,omitempty"`
+	// Env is operator-defined environment exposed to the app process. It is
+	// persisted with the runtime but edited independently of it.
+	Env []EnvVar `json:"env,omitempty"`
+}
+
+// EnvVar is one operator-defined app environment variable.
+type EnvVar struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type PHPRuntime struct {

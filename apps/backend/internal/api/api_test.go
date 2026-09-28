@@ -280,7 +280,7 @@ func TestWireFidelity(t *testing.T) {
 	}
 	app := dto.App{AppSummary: dto.AppSummary{ID: "a1", Slug: "s", Observed: dto.Observed{State: dto.ObservedStateHealthy},
 		BindingSummary: []dto.BindingSummary{{Engine: dto.EngineSQLite}}},
-		Domains: []dto.Domain{}, Bindings: []dto.Binding{{ID: "b", Engine: dto.EngineSQLite, Databases: []string{}}}}
+		Env: []dto.EnvVar{}, Domains: []dto.Domain{}, Bindings: []dto.Binding{{ID: "b", Engine: dto.EngineSQLite, Databases: []string{}}}}
 	raw, _ := json.Marshal(app)
 	var m map[string]any
 	json.Unmarshal(raw, &m)

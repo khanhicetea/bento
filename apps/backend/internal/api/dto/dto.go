@@ -230,6 +230,7 @@ type App struct {
 	Home          string      `json:"home"`
 	Runtime       RuntimeSpec `json:"runtime"`
 	Route         Route       `json:"route"`
+	Env           []EnvVar    `json:"env"`
 	Domains       []Domain    `json:"domains"`
 	Bindings      []Binding   `json:"bindings"`
 	RedisPrefix   string      `json:"redisPrefix"`
@@ -269,6 +270,15 @@ type UpdateAppRequest struct {
 	Ingress            *IngressMode `json:"ingress,omitempty"`
 	Domains            *[]string    `json:"domains,omitempty"`
 	Route              *Route       `json:"route,omitempty"`
+	// Env, when present, replaces the app's environment variables.
+	Env *[]EnvVar `json:"env,omitempty"`
+}
+
+// EnvVar is one operator-defined environment variable exposed to the app
+// process. Values are operator configuration and are shown back verbatim.
+type EnvVar struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // ConfirmRequest carries an exact destructive confirmation phrase.

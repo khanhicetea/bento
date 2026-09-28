@@ -3,6 +3,7 @@ import { api, messageOf, type T } from "../../api/client.ts";
 import { Cell, Field } from "../../components/DomainState.tsx";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { ArgvEditor, DomainsInput, useDomainDraft } from "./CreateApplicationPage.tsx";
+import { EnvEditor, useEnvDraft } from "./EnvEditor.tsx";
 import { useCatalog, useOperationMutation } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +32,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
   const [ingress, setIngress] = useState<T.IngressMode>(app.ingress);
   const [route, setRoute] = useState<T.Route>(app.route);
   const [resources, setResources] = useState<T.Resources>(app.resources);
+  const env = useEnvDraft(app.env);
 
   const save = useOperationMutation(() =>
     api.apps.update(app.id, {
@@ -40,6 +42,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
       ingress,
       domains: domains.list,
       route,
+      env: env.value(),
     }),
   );
   const argvValid = kind !== "http-process" || (http.argv.length > 0 && http.argv.every((arg) => arg.trim() !== ""));
@@ -253,6 +256,9 @@ export function ApplicationEditor({ app }: { app: T.App }) {
               />
             </Field>
           </div>
+        </Cell>
+        <Cell title="Environment" className="cell--wide">
+          <EnvEditor state={env} />
         </Cell>
         <div className="cell cell--wide cell--muted flex flex-wrap items-center justify-between gap-3 py-3!">
           <span className="note">
