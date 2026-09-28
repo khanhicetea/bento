@@ -64,6 +64,59 @@ func TestChownTreeNeverFollowsSymlinks(t *testing.T) {
 	}
 }
 
+func TestChownTreeDirSymlinkNotDescended(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root")
+	}
+	outside := t.TempDir()
+	target := filepath.Join(outside, "victim")
+	os.WriteFile(target, []byte("x"), 0o600)
+	os.Mkdir(filepath.Join(outside, "vdir"), 0o700)
+	os.WriteFile(filepath.Join(outside, "vdir", "f"), []byte("y"), 0o600)
+
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "a/b"), 0o755)
+	os.WriteFile(filepath.Join(root, "a/b/file"), []byte("z"), 0o644)
+	os.Symlink(target, filepath.Join(root, "a/filelink"))
+	os.Symlink(filepath.Join(outside, "vdir"), filepath.Join(root, "a/dirlink"))
+	skipped := filepath.Join(root, "a/b/file")
+
+	want := Owner{12345, 12346}
+	issues, err := ChownTree(root, want, true, 0)
+	if err != nil || len(issues) != 6 {
+		t.Fatalf("dry run: %v %v", issues, err)
+	}
+	if o, _, _ := StatOwner(filepath.Join(root, "a")); o == want {
+		t.Fatal("dry run changed owner")
+	}
+	if _, err := ChownTree(root, want, false, 0, skipped); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{root, filepath.Join(root, "a"), filepath.Join(root, "a/b"),
+		filepath.Join(root, "a/filelink"), filepath.Join(root, "a/dirlink")} {
+		if o, _, _ := StatOwner(p); o != want {
+			t.Fatalf("%s owner %v", p, o)
+		}
+	}
+	for _, p := range []string{target, filepath.Join(outside, "vdir"), filepath.Join(outside, "vdir", "f"), skipped} {
+		if o, _, _ := StatOwner(p); o != RootOwner {
+			t.Fatalf("%s owner changed to %v", p, o)
+		}
+	}
+	if _, err := ChownTree(root, RootOwner, false, 3); err == nil {
+		t.Fatal("maxEntries not enforced")
+	}
+}
+
+func TestChownTreeRefusesSymlinkRoot(t *testing.T) {
+	d := t.TempDir()
+	os.Mkdir(filepath.Join(d, "real"), 0o755)
+	os.Symlink(filepath.Join(d, "real"), filepath.Join(d, "link"))
+	if _, err := ChownTree(filepath.Join(d, "link"), Owner{os.Getuid(), os.Getgid()}, false, 0); err == nil {
+		t.Fatal("symlink root followed")
+	}
+}
+
 func TestAtomicWriteReplacesSymlinkNotTarget(t *testing.T) {
 	d := t.TempDir()
 	victim := filepath.Join(d, "victim")

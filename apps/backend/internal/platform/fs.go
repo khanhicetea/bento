@@ -7,8 +7,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // Owner is a numeric uid/gid pair. Root is {0,0}.
@@ -46,10 +49,21 @@ func EnsureDir(dir string, mode os.FileMode, owner Owner) error {
 	default:
 		return err
 	}
-	if err := os.Lchown(dir, owner.UID, owner.GID); err != nil {
-		return err
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, unix.ELOOP) {
+			return fmt.Errorf("%w: %s", ErrSymlink, dir)
+		}
+		return &os.PathError{Op: "open", Path: dir, Err: err}
 	}
-	return os.Chmod(dir, mode)
+	defer unix.Close(fd)
+	if err := unix.Fchown(fd, owner.UID, owner.GID); err != nil {
+		return &os.PathError{Op: "fchown", Path: dir, Err: err}
+	}
+	if err := unix.Fchmod(fd, uint32(mode.Perm())); err != nil {
+		return &os.PathError{Op: "fchmod", Path: dir, Err: err}
+	}
+	return nil
 }
 
 // AtomicWrite writes data to a private temporary file in the same directory,
@@ -158,46 +172,122 @@ type PermissionIssue struct {
 	Reason string
 }
 
-// ChownTree changes ownership of every entry below root with lchown and never
-// follows symbolic links (links themselves are re-owned, their targets are not).
-// When dryRun is set it only reports entries that would change. maxEntries
-// bounds the walk.
+// ChownTree changes ownership of every entry below root and never follows
+// symbolic links (links themselves are re-owned, their targets are not). The
+// walk holds a directory file descriptor for each level and resolves every
+// entry relative to it with AT_SYMLINK_NOFOLLOW / O_NOFOLLOW, so a directory
+// swapped for a symlink during the walk cannot redirect it outside root. A
+// symlink at root itself is refused. When dryRun is set it only reports
+// entries that would change. maxEntries bounds the walk. skip lists full
+// paths whose own ownership is left untouched (a skipped directory is still
+// descended).
 func ChownTree(root string, owner Owner, dryRun bool, maxEntries int, skip ...string) ([]PermissionIssue, error) {
-	var issues []PermissionIssue
-	count := 0
-	skipSet := map[string]bool{}
+	w := &chownWalker{owner: owner, dryRun: dryRun, maxEntries: maxEntries, skip: map[string]bool{}}
 	for _, s := range skip {
-		skipSet[s] = true
+		w.skip[s] = true
 	}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	fd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, unix.ELOOP) {
+			return nil, fmt.Errorf("%w: %s", ErrSymlink, root)
+		}
+		return nil, &os.PathError{Op: "open", Path: root, Err: err}
+	}
+	defer unix.Close(fd)
+	if !w.skip[root] {
+		var st unix.Stat_t
+		if err := unix.Fstat(fd, &st); err != nil {
+			return nil, &os.PathError{Op: "fstat", Path: root, Err: err}
+		}
+		if err := w.visit(root, &st, func() error { return unix.Fchown(fd, owner.UID, owner.GID) }); err != nil {
+			return w.issues, err
+		}
+	}
+	err = w.walkDir(fd, root)
+	return w.issues, err
+}
+
+type chownWalker struct {
+	owner      Owner
+	dryRun     bool
+	maxEntries int
+	count      int
+	skip       map[string]bool
+	issues     []PermissionIssue
+}
+
+func (w *chownWalker) visit(path string, st *unix.Stat_t, chown func() error) error {
+	w.count++
+	if w.maxEntries > 0 && w.count > w.maxEntries {
+		return fmt.Errorf("permission walk exceeded %d entries", w.maxEntries)
+	}
+	if int(st.Uid) == w.owner.UID && int(st.Gid) == w.owner.GID {
+		return nil
+	}
+	w.issues = append(w.issues, PermissionIssue{Path: path, Reason: fmt.Sprintf("owner %d:%d", st.Uid, st.Gid)})
+	if w.dryRun {
+		return nil
+	}
+	if err := chown(); err != nil {
+		return &os.PathError{Op: "chown", Path: path, Err: err}
+	}
+	return nil
+}
+
+// walkDir processes the entries of the directory open at dirfd (whose
+// display path is dirPath). It does not take ownership of dirfd.
+func (w *chownWalker) walkDir(dirfd int, dirPath string) error {
+	names, err := readDirNames(dirfd)
+	if err != nil {
+		return &os.PathError{Op: "readdir", Path: dirPath, Err: err}
+	}
+	for _, name := range names {
+		path := filepath.Join(dirPath, name)
+		var st unix.Stat_t
+		if err := unix.Fstatat(dirfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return &os.PathError{Op: "fstatat", Path: path, Err: err}
+		}
+		if !w.skip[path] {
+			if err := w.visit(path, &st, func() error {
+				return unix.Fchownat(dirfd, name, w.owner.UID, w.owner.GID, unix.AT_SYMLINK_NOFOLLOW)
+			}); err != nil {
+				return err
+			}
+		}
+		if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+			continue
+		}
+		child, err := unix.Openat(dirfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+				return fmt.Errorf("%w: %s changed during walk", ErrSymlink, path)
+			}
+			return &os.PathError{Op: "openat", Path: path, Err: err}
+		}
+		err = w.walkDir(child, path)
+		unix.Close(child)
 		if err != nil {
 			return err
 		}
-		if skipSet[path] {
-			return nil
-		}
-		count++
-		if maxEntries > 0 && count > maxEntries {
-			return fmt.Errorf("permission walk exceeded %d entries", maxEntries)
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		st, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			return nil
-		}
-		if int(st.Uid) == owner.UID && int(st.Gid) == owner.GID {
-			return nil
-		}
-		issues = append(issues, PermissionIssue{Path: path, Reason: fmt.Sprintf("owner %d:%d", st.Uid, st.Gid)})
-		if dryRun {
-			return nil
-		}
-		return os.Lchown(path, owner.UID, owner.GID)
-	})
-	return issues, err
+	}
+	return nil
+}
+
+// readDirNames lists dirfd's entries (sorted, without . and ..) using a
+// duplicate descriptor so dirfd's own offset and lifetime are untouched.
+func readDirNames(dirfd int) ([]string, error) {
+	dup, err := unix.Openat(dirfd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(dup), ".")
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // StatOwner returns the numeric owner of path without following a final symlink.
