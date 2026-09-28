@@ -29,6 +29,8 @@ jobs:
           bun install --frozen-lockfile
           bun run fmt:check && bun run lint && bun run check
           sudo --preserve-env=PATH,HOME,GOPATH,GOCACHE,GOMODCACHE make -C apps/backend ci
+          # ci ran as root; hand dist/ and build caches back to the runner user.
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE" "$(go env GOCACHE)" "$(go env GOMODCACHE)"
       - name: Cross-build amd64 and arm64 with the embedded UI
         run: make -C apps/backend release VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
       - uses: softprops/action-gh-release@v2
