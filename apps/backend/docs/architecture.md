@@ -296,7 +296,12 @@ only what it created.
   `resize`/`exit`; 30 min idle, 4 h max).
 - `gateway.go`: `/scheduler/apps/<slug>/…` — session required on every request, exact origin + fetch metadata for
   writes, app must be desired running, auth/cookie/forwarding headers stripped, `Set-Cookie` dropped, frame headers set
-  to same-origin, streaming via `FlushInterval: -1`, bodies capped at 10 MB.
+  to same-origin, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin` pinned, streaming
+  via `FlushInterval: -1`, bodies capped at 10 MB. `Origin: null` is always refused. Known gap (audit C2): scheduler
+  content still runs on the management origin, so a compromised app's `minicrond` UI can act with the operator
+  session. A CSP `sandbox` without `allow-same-origin` is not applied because the opaque origin would drop the
+  `SameSite=Strict` session cookie (and fail the origin check) on the scheduler UI's own API calls; closing the gap
+  needs a separate origin or a per-app, cookie-less capability token for the gateway.
 - SPA serving: existing files are served; client routes fall back to `index.html`; asset-like paths 404.
 
 ## Database browser: `api/dbadmin.go`, `operations/dbadmin.go`

@@ -42,18 +42,8 @@ func (s *Server) schedulerGateway() http.Handler {
 			ResponseHeaderTimeout:  30 * time.Second,
 			MaxResponseHeaderBytes: 64 << 10,
 		},
-		FlushInterval: -1,
-		ModifyResponse: func(resp *http.Response) error {
-			h := resp.Header
-			h.Del("Set-Cookie")
-			h.Del("X-Frame-Options")
-			h.Set("X-Frame-Options", "SAMEORIGIN")
-			h.Set("Content-Security-Policy", "frame-ancestors 'self'")
-			if strings.Contains(resp.Request.URL.Path, "/api/") && h.Get("Cache-Control") == "" {
-				h.Set("Cache-Control", "no-store")
-			}
-			return nil
-		},
+		FlushInterval:  -1,
+		ModifyResponse: hardenSchedulerResponse,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			s.Log.Warn("scheduler gateway", "err", err)
 			http.Error(w, "scheduler unavailable: the app must be running", http.StatusBadGateway)
@@ -102,4 +92,22 @@ func (s *Server) schedulerGateway() http.Handler {
 		ctx := context.WithValue(r.Context(), gatewayAppKey{}, app)
 		proxy.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// hardenSchedulerResponse strips app-controlled cookies and framing headers
+// and pins the headers Bento owns on every scheduler response. The content
+// still runs on the management origin: a CSP sandbox would give it an opaque
+// origin, which drops the SameSite=Strict session cookie from the scheduler
+// UI's own API calls and breaks it (see docs/architecture.md, audit C2).
+func hardenSchedulerResponse(resp *http.Response) error {
+	h := resp.Header
+	h.Del("Set-Cookie")
+	h.Set("X-Frame-Options", "SAMEORIGIN")
+	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cross-Origin-Resource-Policy", "same-origin")
+	if resp.Request != nil && strings.Contains(resp.Request.URL.Path, "/api/") && h.Get("Cache-Control") == "" {
+		h.Set("Cache-Control", "no-store")
+	}
+	return nil
 }
