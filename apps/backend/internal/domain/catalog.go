@@ -74,8 +74,15 @@ const (
 	AdminerImage = "adminer:5.5.1@sha256:6c19fd07aaf25361fbc1541a7015c86cf670b830951cfb0d47869f34ec0ef2cf"
 )
 
+// MySQL database defaults for newly created app databases and for restores
+// whose dump does not declare a character set.
+const (
+	MySQLDefaultCharset   = "utf8mb4"
+	MySQLDefaultCollation = "utf8mb4_0900_ai_ci"
+)
+
 var MySQLVersions = map[string]string{
-	"8.0": "mysql:8.0",
+	"8.0": "mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b", // EOL upstream; kept for existing volumes, 8.0 -> 8.4 in-place upgrade is supported
 	"8.4": "mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d",
 	"9.4": "mysql:9.4@sha256:135bc87cce147c3d28cecb9ad270b814cb52805af7ddeea83bfcaf157d05a6b2",
 }

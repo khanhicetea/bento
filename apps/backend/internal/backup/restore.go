@@ -1,11 +1,13 @@
 package backup
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
@@ -28,13 +30,15 @@ func (d Deps) RestoreRelational(ctx context.Context, app domain.App, b domain.Bi
 	var stderr strings.Builder
 	switch svc.Engine {
 	case domain.EngineMySQL:
-		reset := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-			database, database, database, b.Username)
+		peek := bufio.NewReaderSize(src, dumpPeekBytes)
+		head, _ := peek.Peek(dumpPeekBytes)
+		reset := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
+			database, database, mysqlCharsetClause(head), database, b.Username)
 		if _, err := d.Data.SQL(ctx, svc, id, "", reset); err != nil {
 			return err
 		}
 		res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{
-			Cmd: []string{"mysql", "--defaults-extra-file=/run/bento-secrets/client.cnf", database}, Stdin: src,
+			Cmd: []string{"mysql", "--defaults-extra-file=/run/bento-secrets/client.cnf", database}, Stdin: peek,
 			Stdout: io.Discard, Stderr: &limitWriter{w: &stderr, n: 4096},
 		})
 		if err != nil {
@@ -115,4 +119,36 @@ func (d Deps) RestoreSQLite(app domain.App, b domain.Binding, artifactPath strin
 		_ = os.Remove(target + sfx)
 	}
 	return os.Rename(partial, target)
+}
+
+// dumpPeekBytes is how much of a MySQL dump is inspected for its charset.
+const dumpPeekBytes = 64 << 10
+
+var (
+	reCreateDBCharset = regexp.MustCompile(`(?i)CREATE DATABASE[^;]*?CHARACTER SET\s*=?\s*([a-z0-9_]+)(?:[^;]*?COLLATE\s*=?\s*([a-z0-9_]+))?`)
+	reSetNames        = regexp.MustCompile(`(?i)SET NAMES\s+'?([a-z0-9_]+)'?(?:\s+COLLATE\s+'?([a-z0-9_]+)'?)?`)
+)
+
+// mysqlCharsetClause returns the CHARACTER SET/COLLATE clause for a restored
+// database: the dump's CREATE DATABASE line wins, then its first SET NAMES,
+// then the Bento default. Only identifier characters are ever accepted.
+func mysqlCharsetClause(head []byte) string {
+	for _, re := range []*regexp.Regexp{reCreateDBCharset, reSetNames} {
+		m := re.FindSubmatch(head)
+		if m == nil {
+			continue
+		}
+		cs, coll := strings.ToLower(string(m[1])), strings.ToLower(string(m[2]))
+		if cs == "binary" {
+			break
+		}
+		if coll == "" && cs == domain.MySQLDefaultCharset {
+			coll = domain.MySQLDefaultCollation
+		}
+		if coll == "" {
+			return "CHARACTER SET " + cs
+		}
+		return "CHARACTER SET " + cs + " COLLATE " + coll
+	}
+	return "CHARACTER SET " + domain.MySQLDefaultCharset + " COLLATE " + domain.MySQLDefaultCollation
 }

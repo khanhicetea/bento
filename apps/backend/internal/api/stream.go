@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -108,10 +109,13 @@ func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 		pw.CloseWithError(err)
 	}()
 	red := redactor(app)
-	sc := bufio.NewScanner(io.LimitReader(pr, logMaxBytes))
-	sc.Buffer(make([]byte, 64<<10), 256<<10)
-	for sc.Scan() {
-		line := red.Replace(sc.Text())
+	br := bufio.NewReaderSize(io.LimitReader(pr, logMaxBytes), 64<<10)
+	for {
+		raw, err := readBoundedLine(br, logLineMax)
+		if err != nil && raw == "" {
+			break
+		}
+		line := red.Replace(raw)
 		ts, msg, _ := strings.Cut(line, " ")
 		if err := sseEvent(w, "log", ts, map[string]string{"ts": ts, "line": msg}); err != nil {
 			return
@@ -218,7 +222,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.ExecResult{ExitCode: res.ExitCode, Stdout: string(res.Stdout), Stderr: string(res.Stderr), Truncated: res.Truncated})
+	writeJSON(w, http.StatusOK, redactedExecResult(app, res.ExitCode, res.Stdout, res.Stderr, res.Truncated))
 }
 
 // handleSchedulerCommand runs `minicrond <argv>` inside the selected running
@@ -256,5 +260,44 @@ func (s *Server) handleSchedulerCommand(w http.ResponseWriter, r *http.Request) 
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.ExecResult{ExitCode: res.ExitCode, Stdout: string(res.Stdout), Stderr: string(res.Stderr), Truncated: res.Truncated})
+	writeJSON(w, http.StatusOK, redactedExecResult(app, res.ExitCode, res.Stdout, res.Stderr, res.Truncated))
+}
+
+// logLineMax bounds one streamed log line; longer lines are truncated with
+// logTruncMarker and the remainder is discarded so the stream continues.
+const (
+	logLineMax     = 256 << 10
+	logTruncMarker = " …[truncated]"
+)
+
+// readBoundedLine reads one newline-terminated line (without the newline),
+// keeping at most max bytes. A non-nil error with an empty result means the
+// stream ended; a final unterminated line is returned with io.EOF.
+func readBoundedLine(br *bufio.Reader, limit int) (string, error) {
+	var buf []byte
+	truncated := false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		chunk = bytes.TrimSuffix(chunk, []byte("\n"))
+		if room := limit - len(buf); len(chunk) > room {
+			buf = append(buf, chunk[:max(room, 0)]...)
+			truncated = true
+		} else {
+			buf = append(buf, chunk...)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		line := strings.TrimSuffix(string(buf), "\r")
+		if truncated {
+			line += logTruncMarker
+		}
+		return line, err
+	}
+}
+
+// redactedExecResult applies the app's log redaction to exec output.
+func redactedExecResult(app domain.App, code int, stdout, stderr []byte, truncated bool) dto.ExecResult {
+	red := redactor(app)
+	return dto.ExecResult{ExitCode: code, Stdout: red.Replace(string(stdout)), Stderr: red.Replace(string(stderr)), Truncated: truncated}
 }

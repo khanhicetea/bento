@@ -295,7 +295,8 @@ func (m *Manager) mysqlDatabase(ctx context.Context, s domain.DataService, id, u
 		}
 	}
 	_, err = m.SQL(ctx, s, id, "", fmt.Sprintf(
-		"CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n", db, db, user))
+		"CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s COLLATE %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
+		db, domain.MySQLDefaultCharset, domain.MySQLDefaultCollation, db, user))
 	return err
 }
 
