@@ -31,6 +31,7 @@ const (
 	RoleCache    Role = "cache"
 	RoleTunnel   Role = "tunnel"
 	RoleBackup   Role = "backup"
+	RoleDBAdmin  Role = "dbadmin"
 	RoleNetwork  Role = "network"
 	RoleVolume   Role = "volume"
 )
@@ -59,8 +60,9 @@ func (n Names) AppContainer(appID string) string { return n.prefix() + "-app-" +
 func (n Names) ToolContainer(appID, opID string) string {
 	return n.prefix() + "-tool-" + appID + "-" + opID
 }
-func (n Names) EdgeContainer() string   { return n.prefix() + "-edge" }
-func (n Names) TunnelContainer() string { return n.prefix() + "-cloudflared" }
+func (n Names) EdgeContainer() string    { return n.prefix() + "-edge" }
+func (n Names) TunnelContainer() string  { return n.prefix() + "-cloudflared" }
+func (n Names) DBAdminContainer() string { return n.prefix() + "-dbadmin" }
 func (n Names) ServiceContainer(service string) string {
 	return n.prefix() + "-" + service
 }

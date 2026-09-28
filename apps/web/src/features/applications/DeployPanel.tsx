@@ -218,7 +218,7 @@ function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
               <span>
                 <CopyableCode value={hook.path} />{" "}
                 <span className="note">
-                  — set a public base URL in <Link href="/ingress">Ingress → Public URL</Link> to see the full URL
+                  — set a utils base URL in <Link href="/ingress">Ingress → Utils</Link> to see the full URL
                 </span>
               </span>
             ),

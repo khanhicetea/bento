@@ -14,14 +14,16 @@ const MaxWebhookBodyBytes = 8 << 20
 
 var hookIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-// PublicHandler serves the public listener, which operators expose to the
+// UtilsHandler serves the utils listener, which operators expose to the
 // internet (edge, host nginx, Cloudflare Tunnel). It has no session, CSRF,
-// UI, or management routes: every route must authenticate itself. Today that
-// is only /_webhook/*, authenticated by a per-app secret, which can at most
-// queue a deploy of the configured branch.
-func (s *Server) PublicHandler() http.Handler {
+// UI, or management routes: every route must authenticate itself.
+// /_webhook/* is authenticated by a per-app secret and can at most queue a
+// deploy of the configured branch; /_dbadmin/* by a single-use ticket issued
+// to an operator session (see dbadmin.go).
+func (s *Server) UtilsHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+domain.WebhookPathPrefix+"deploy/{hook}", s.handleDeployWebhook)
+	mux.Handle(dbadminPathPrefix, s.dbadminGateway())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeHookJSON(w, http.StatusNotFound, map[string]string{"result": "not-found"})
 	})

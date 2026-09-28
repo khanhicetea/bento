@@ -61,9 +61,9 @@ type Route struct {
 	HTTP3               bool
 	HTTPSPortSuffix     string
 	HTTPSAdvertisedPort int
-	// PublicUpstream is the backend's public listener (host:port) that
+	// UtilsUpstream is the backend's utils listener (host:port) that
 	// /_webhook/* is proxied to; "" leaves the path to the upstream.
-	PublicUpstream string
+	UtilsUpstream string
 }
 
 // Input is everything needed to render one edge generation.
@@ -73,8 +73,8 @@ type Input struct {
 	Proxies  []domain.Proxy
 	// Running reports which published apps currently have a running instance.
 	Running map[string]bool
-	// PublicUpstream is the backend's public listener on the apps network.
-	PublicUpstream string
+	// UtilsUpstream is the backend's utils listener on the apps network.
+	UtilsUpstream string
 }
 
 // Render produces the full candidate file set, keyed by relative path.
@@ -91,7 +91,7 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute("app", "app-"+a.Slug, a.Domains, a.Route, s, suffix)
-		r.PublicUpstream = in.PublicUpstream
+		r.UtilsUpstream = in.UtilsUpstream
 		r.AppUpstream = fmt.Sprintf("%s:%d", runtime.AppAlias(a.ID), a.HTTPPort())
 		r.UpstreamName = "bento_app_" + strings.ReplaceAll(a.Slug, "-", "_")
 		r.UpstreamScheme = "http"
@@ -109,7 +109,7 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute("proxy", "proxy-"+p.Name, p.Domains, p.Route, s, suffix)
-		r.PublicUpstream = in.PublicUpstream
+		r.UtilsUpstream = in.UtilsUpstream
 		r.UpstreamName = "bento_proxy_" + strings.ReplaceAll(p.Name, "-", "_")
 		scheme, uri := "http", ""
 		for _, u := range p.Upstreams {

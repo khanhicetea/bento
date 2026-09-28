@@ -70,6 +70,8 @@ const (
 	RcloneImage  = "rclone/rclone:1.71.1@sha256:d5971950c2b370fb04dd3292541b5bda6d9103143fd7e345aeb435a399388afc"
 	RedisImage   = "redis:8.2-bookworm@sha256:164c759a0c342ee69d08fc99219382b0fd682181465c0df2e0e6911f4c85d73c"
 	RedisVersion = "8.2"
+	// AdminerImage serves the database browser (one shared container).
+	AdminerImage = "adminer:5.5.1@sha256:6c19fd07aaf25361fbc1541a7015c86cf670b830951cfb0d47869f34ec0ef2cf"
 )
 
 var MySQLVersions = map[string]string{

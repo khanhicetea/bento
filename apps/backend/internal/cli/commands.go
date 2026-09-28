@@ -33,8 +33,8 @@ Usage: bento [--stack ROOT] <command> [arguments]
 The stack root comes from --stack or BENTO_STACK_ROOT (no global default).
 
 Backend:
-  serve [--listen 127.0.0.1:7780] [--origin URL]... [--public-listen ADDR|apps:PORT|off]...
-                                                      run the resident backend (public routes: /_webhook/*)
+  serve [--listen 127.0.0.1:7780] [--origin URL]... [--utils-listen ADDR|apps:PORT|off]...
+                                                      run the resident backend (utils routes: /_webhook/*, /_dbadmin/*)
   init --name NAME [--mysql 8.4] [--postgres 17] [--uid-first N --uid-last N] [--password-stdin]
   import --from DIR [--name NEWNAME] [--uid-first N --uid-last N]
                                                       stage an export into an empty root
@@ -181,13 +181,13 @@ func (r *runner) run(args []string) error {
 	case "serve":
 		fs, rest := sub("serve", args[1:])
 		listen := fs.String("listen", "127.0.0.1:7780", "loopback listen address")
-		var origins, public multiFlag
+		var origins, utils multiFlag
 		fs.Var(&origins, "origin", "additional exact browser origin (repeatable)")
-		fs.Var(&public, "public-listen", "public routes listener: IP:PORT, apps:PORT (apps network gateway), or off (repeatable; default 127.0.0.1:7781 and apps:7781)")
+		fs.Var(&utils, "utils-listen", "utils routes listener: IP:PORT, apps:PORT (apps network gateway), or off (repeatable; default 127.0.0.1:7781 and apps:7781)")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, PublicListen: public, Version: r.version})
+		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, UtilsListen: utils, Version: r.version})
 	case "init":
 		fs, rest := sub("init", args[1:])
 		name := fs.String("name", "", "stack name")

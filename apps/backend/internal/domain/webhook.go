@@ -19,15 +19,21 @@ const WebhookPathPrefix = "/_webhook/"
 // WebhookDeployPath is the deploy webhook path for a hook id.
 func WebhookDeployPath(hookID string) string { return WebhookPathPrefix + "deploy/" + hookID }
 
-// PublicSettings describe how the backend's public listener is reached from
+// UtilsSettings describe how the backend's utils listener is reached from
 // the internet. BaseURL (scheme://host[:port]) is used to show full webhook
 // URLs; Bento does not route it, the operator's ingress does.
-type PublicSettings struct {
+type UtilsSettings struct {
 	BaseURL string `json:"baseUrl"`
 }
 
-// ValidatePublicBaseURL normalizes and checks a public base URL; "" clears it.
-func ValidatePublicBaseURL(raw string, errs *ValidationErrors) string {
+// DBAdminSettings toggle the shared database browser (Adminer) container.
+// Operators reach it through the utils listener with a one-time ticket.
+type DBAdminSettings struct {
+	Enabled bool `json:"enabled"`
+}
+
+// ValidateUtilsBaseURL normalizes and checks a utils base URL; "" clears it.
+func ValidateUtilsBaseURL(raw string, errs *ValidationErrors) string {
 	raw = strings.TrimSuffix(strings.TrimSpace(raw), "/")
 	if raw == "" {
 		return ""

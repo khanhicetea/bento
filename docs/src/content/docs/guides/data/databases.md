@@ -25,6 +25,8 @@ kept from a removed app). PostgreSQL databases are owned by the app role with pu
 
 A running app is recreated after a binding change so its environment includes the new credentials.
 
+To inspect or edit a binding's data from the UI, use the [database browser](/guides/data/database-browser/).
+
 ## Redis
 
 Every app has its own ACL user restricted to keys and channels under `<slug>:` and without admin or dangerous

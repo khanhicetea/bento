@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Database, ExternalLink, HardDrive, Plus, Terminal as TerminalIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
@@ -336,6 +336,7 @@ function DataBindings({ app }: { app: T.App }) {
 function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) {
   const [name, setName] = useState("");
   const add = useOperationMutation(() => api.apps.addDatabase(appId, binding.id, name));
+  const browse = useBrowseBinding(appId, binding.id);
   const sqlite = binding.engine === "sqlite";
   return (
     <section className="cell grid content-start gap-4" aria-label={`${binding.engine} binding`}>
@@ -345,6 +346,18 @@ function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) 
           <strong>{sqlite ? "SQLite" : binding.engine === "postgres" ? "PostgreSQL" : "MySQL"}</strong>
           <small>{binding.service || "Private file"}</small>
         </div>
+        {!sqlite && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={!binding.databases.length || browse.isPending}
+            title="Open this binding in the database browser (new tab)"
+            onClick={() => browse.open()}
+          >
+            <ExternalLink /> Browse
+          </Button>
+        )}
       </div>
       {sqlite ? (
         <KeyValues items={[["Path", binding.sqlitePath ? <CopyableCode value={binding.sqlitePath} /> : "—"]]} />
@@ -381,8 +394,41 @@ function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) 
         </>
       )}
       {add.error && <p className="note note--bad">{messageOf(add.error)}</p>}
+      {browse.error && <p className="note note--bad">{messageOf(browse.error)}</p>}
     </section>
   );
+}
+
+/**
+ * Opens a binding in the database browser. The tab is opened synchronously
+ * (popup blockers) and pointed at the single-use ticket once it is issued.
+ */
+function useBrowseBinding(appId: string, bindingId: string) {
+  const mutation = useMutation({
+    mutationFn: async (tab: Window | null) => {
+      try {
+        const ticket = await api.dbadmin.ticket(appId, bindingId);
+        const base =
+          ticket.baseUrl || (ticket.loopbackPort ? `http://${location.hostname}:${ticket.loopbackPort}` : "");
+        if (!base) throw new Error("The utils listener is off; start bento serve with --utils-listen.");
+        const url = new URL(ticket.path, base).toString();
+        if (tab) tab.location.href = url;
+        else window.open(url, "_blank", "noopener");
+      } catch (error) {
+        tab?.close();
+        throw error;
+      }
+    },
+  });
+  return {
+    isPending: mutation.isPending,
+    error: mutation.error,
+    open: () => {
+      const tab = window.open("", "_blank");
+      if (tab) tab.opener = null;
+      mutation.mutate(tab);
+    },
+  };
 }
 
 function ServiceOptions() {

@@ -21,7 +21,8 @@ export const keys = {
   services: ["services"] as const,
   edge: ["edge"] as const,
   tunnel: ["tunnel"] as const,
-  public: ["public"] as const,
+  utils: ["utils"] as const,
+  dbadmin: ["dbadmin"] as const,
   proxies: ["proxies"] as const,
   retired: ["retired"] as const,
   backups: {

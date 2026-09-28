@@ -6,7 +6,7 @@ description: Command reference.
 ```text
 bento [--stack ROOT] [--json] [--no-wait] <command>
 
-serve [--listen 127.0.0.1:7780] [--origin URL]... [--public-listen IP:PORT|apps:PORT|off]...
+serve [--listen 127.0.0.1:7780] [--origin URL]... [--utils-listen IP:PORT|apps:PORT|off]...
 init --name NAME [--mysql V] [--postgres V] [--uid-first N --uid-last N] [--password-stdin]
 import --from DIR [--name NAME] [--uid-first N --uid-last N]
 version | status | auth set-password

@@ -329,6 +329,23 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 			}
 		}
 	}
+	ds, err := r.C.DBAdminSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if ds.Enabled {
+		t := r.get("dbadmin", 0)
+		if r.settle(ctx, t) {
+			if busy, _ := store.ActiveForTarget(ctx, db, "dbadmin"); !busy {
+				need, err := r.C.DBAdminDrift(ctx)
+				if err != nil {
+					t.LastError = err.Error()
+				} else if need {
+					r.submit(ctx, t, operations.KindDBAdminApply, "dbadmin", "dbadmin")
+				}
+			}
+		}
+	}
 	return nil
 }
 

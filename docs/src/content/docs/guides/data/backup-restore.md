@@ -2,7 +2,7 @@
 title: Backup and restore
 description: Logical backups, schedule, rclone upload, and restore.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 ```bash

@@ -20,8 +20,8 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 			mk("a2", "unpub", domain.IngressManaged, domain.Unpublished),
 			mk("a3", "ext", domain.IngressExternal, domain.Unpublished),
 		},
-		Running:        map[string]bool{"a1": true},
-		PublicUpstream: "10.200.0.1:7781",
+		Running:       map[string]bool{"a1": true},
+		UtilsUpstream: "10.200.0.1:7781",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 	}
 }
 
-func TestRenderWithoutPublicListenerLeavesWebhookPathToUpstream(t *testing.T) {
+func TestRenderWithoutUtilsListenerLeavesWebhookPathToUpstream(t *testing.T) {
 	files, err := Render(Input{
 		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
 		Proxies: []domain.Proxy{{Name: "p", Enabled: true, Upstreams: []string{"http://10.0.0.9:8080"},
@@ -61,7 +61,7 @@ func TestRenderWithoutPublicListenerLeavesWebhookPathToUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(files["sites/proxy-p.conf"]), "_webhook") {
-		t.Fatal("without a public listener on the apps network the edge must not reserve /_webhook/")
+		t.Fatal("without a utils listener on the apps network the edge must not reserve /_webhook/")
 	}
 }
 

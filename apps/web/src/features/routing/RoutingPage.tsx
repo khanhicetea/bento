@@ -20,8 +20,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "edge" | "tunnel" | "proxies" | "public";
-const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", proxies: "Proxies", public: "Public URL" };
+type Tab = "edge" | "tunnel" | "proxies" | "utils";
+const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", proxies: "Proxies", utils: "Utils" };
 
 export function RoutingPage() {
   const [tab, setTab] = useState<Tab>("edge");
@@ -29,7 +29,7 @@ export function RoutingPage() {
     <>
       <PageHeader title="Ingress" />
       <div className="seg mb-5" role="tablist" aria-label="Ingress sections">
-        {(["edge", "tunnel", "proxies", "public"] as const).map((value) => (
+        {(["edge", "tunnel", "proxies", "utils"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
             {tabLabels[value]}
           </button>
@@ -38,7 +38,7 @@ export function RoutingPage() {
       {tab === "edge" && <EdgePanel />}
       {tab === "tunnel" && <TunnelPanel />}
       {tab === "proxies" && <ProxiesPanel />}
-      {tab === "public" && <PublicPanel />}
+      {tab === "utils" && <UtilsPanel />}
     </>
   );
 }
@@ -136,27 +136,27 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
   );
 }
 
-function PublicPanel() {
-  const query = useQuery({ queryKey: keys.public, queryFn: ({ signal }) => api.public.get(signal) });
-  if (query.isPending) return <DomainLoading label="public URL" />;
+function UtilsPanel() {
+  const query = useQuery({ queryKey: keys.utils, queryFn: ({ signal }) => api.utils.get(signal) });
+  if (query.isPending) return <DomainLoading label="utils listener" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
-  return <PublicForm settings={query.data} />;
+  return <UtilsForm settings={query.data} />;
 }
 
-function PublicForm({ settings }: { settings: T.PublicSettings }) {
+function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
   const queryClient = useQueryClient();
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const save = useMutation({
-    mutationFn: () => api.public.set({ baseUrl: baseUrl.trim() }),
+    mutationFn: () => api.utils.set({ baseUrl: baseUrl.trim() }),
     onSuccess: (next) => {
-      queryClient.setQueryData(keys.public, next);
+      queryClient.setQueryData(keys.utils, next);
       setBaseUrl(next.baseUrl);
       void queryClient.invalidateQueries({ queryKey: keys.apps.webhooks });
     },
   });
   return (
     <div className="box box--2">
-      <Cell title="Public base URL">
+      <Cell title="Utils base URL">
         <form
           className="grid gap-3"
           onSubmit={(event) => {
@@ -166,11 +166,11 @@ function PublicForm({ settings }: { settings: T.PublicSettings }) {
         >
           <Field
             label="Base URL"
-            hint="Where your ingress exposes Bento's public routes (/_webhook/*). Used to show full webhook URLs."
+            hint="Where your ingress exposes Bento's utils routes (/_webhook/*, /_dbadmin/*). Used for full webhook URLs and database browser links."
           >
             <Input
               value={baseUrl}
-              placeholder="https://hooks.example.com"
+              placeholder="https://utils.example.com"
               spellCheck={false}
               onChange={(event) => setBaseUrl(event.target.value)}
             />
@@ -183,9 +183,10 @@ function PublicForm({ settings }: { settings: T.PublicSettings }) {
           {save.error && <p className="note note--bad">{messageOf(save.error)}</p>}
         </form>
       </Cell>
-      <Cell title="Public listener" className="cell--muted">
+      <Cell title="Utils listener" className="cell--muted">
         <p className="note mb-3">
-          Route <code>/_webhook/*</code> on that host to one of these. The edge does it automatically for its domains.
+          Route <code>/_webhook/*</code> and <code>/_dbadmin/*</code> on that host to one of these. The edge forwards{" "}
+          <code>/_webhook/*</code> automatically for its domains.
         </p>
         {settings.targets.length ? (
           <KeyValues
@@ -195,10 +196,46 @@ function PublicForm({ settings }: { settings: T.PublicSettings }) {
             ])}
           />
         ) : (
-          <p className="note">The public listener is off (bento serve --public-listen off).</p>
+          <p className="note">The utils listener is off (bento serve --utils-listen off).</p>
         )}
       </Cell>
+      <DBAdminCell />
     </div>
+  );
+}
+
+function DBAdminCell() {
+  const query = useQuery({ queryKey: keys.dbadmin, queryFn: ({ signal }) => api.dbadmin.get(signal) });
+  const toggle = useOperationMutation((enabled: boolean) => api.dbadmin.set(enabled));
+  const enabled = query.data?.enabled ?? false;
+  return (
+    <Cell
+      title="Database browser"
+      className="cell--wide"
+      action={query.data && <StateBadge state={enabled ? query.data.state : "absent"} />}
+    >
+      {query.error ? (
+        <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
+      ) : (
+        <div className="grid gap-3">
+          <p className="note">
+            One shared Adminer container on the data network. Each MySQL or PostgreSQL binding gets a{" "}
+            <strong>Browse</strong> link that opens it on the utils listener with a single-use ticket, signed in as the
+            app's own database user. It holds no credentials; Bento injects them per request.
+          </p>
+          <div>
+            <Button
+              variant={enabled ? "outline" : "default"}
+              disabled={query.isPending || toggle.isPending}
+              onClick={() => toggle.mutate(!enabled)}
+            >
+              {enabled ? "Disable" : "Enable"}
+            </Button>
+          </div>
+          {toggle.error && <p className="note note--bad">{messageOf(toggle.error)}</p>}
+        </div>
+      )}
+    </Cell>
   );
 }
 

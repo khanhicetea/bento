@@ -13,52 +13,52 @@ import (
 	"time"
 )
 
-// PublicAppsHost is the --public-listen host that means "the host's address
+// UtilsAppsHost is the --utils-listen host that means "the host's address
 // on the stack's apps network", where the edge and cloudflared can reach it.
-const PublicAppsHost = "apps"
+const UtilsAppsHost = "apps"
 
-// DefaultPublicListen serves public routes to host proxies (loopback) and to
+// DefaultUtilsListen serves utils routes to host proxies (loopback) and to
 // the edge and tunnel containers (apps network gateway).
-var DefaultPublicListen = []string{"127.0.0.1:7781", PublicAppsHost + ":7781"}
+var DefaultUtilsListen = []string{"127.0.0.1:7781", UtilsAppsHost + ":7781"}
 
-type publicAddr struct {
-	host string // an IP, or PublicAppsHost
+type utilsAddr struct {
+	host string // an IP, or UtilsAppsHost
 	port int
 }
 
-func (a publicAddr) String() string { return net.JoinHostPort(a.host, strconv.Itoa(a.port)) }
+func (a utilsAddr) String() string { return net.JoinHostPort(a.host, strconv.Itoa(a.port)) }
 
-// ParsePublicListen validates --public-listen values. Unlike the management
-// listener, any address is allowed: the public listener serves only routes
-// that authenticate themselves (webhooks). "off" disables it.
-func ParsePublicListen(values []string) ([]publicAddr, error) {
+// ParseUtilsListen validates --utils-listen values. Unlike the management
+// listener, any address is allowed: the utils listener serves only routes
+// that authenticate themselves (webhooks, ticketed DB browser). "off" disables it.
+func ParseUtilsListen(values []string) ([]utilsAddr, error) {
 	if len(values) == 1 && values[0] == "off" {
 		return nil, nil
 	}
 	seen := map[string]bool{}
-	var out []publicAddr
+	var out []utilsAddr
 	for _, v := range values {
 		host, portStr, err := net.SplitHostPort(v)
 		if err != nil {
-			return nil, fmt.Errorf("invalid public listen address %q (expected HOST:PORT, apps:PORT, or off)", v)
+			return nil, fmt.Errorf("invalid utils listen address %q (expected HOST:PORT, apps:PORT, or off)", v)
 		}
 		port, err := strconv.Atoi(portStr)
 		if err != nil || port < 1 || port > 65535 {
-			return nil, fmt.Errorf("invalid public listen port %q", portStr)
+			return nil, fmt.Errorf("invalid utils listen port %q", portStr)
 		}
 		if host == "localhost" {
 			host = "127.0.0.1"
 		}
-		if host != PublicAppsHost {
+		if host != UtilsAppsHost {
 			ip := net.ParseIP(host)
 			if ip == nil {
-				return nil, fmt.Errorf("public listen host %q must be an IP address or %q", host, PublicAppsHost)
+				return nil, fmt.Errorf("utils listen host %q must be an IP address or %q", host, UtilsAppsHost)
 			}
 			host = ip.String()
 		}
-		a := publicAddr{host: host, port: port}
+		a := utilsAddr{host: host, port: port}
 		if seen[a.String()] {
-			return nil, fmt.Errorf("duplicate public listen address %q", v)
+			return nil, fmt.Errorf("duplicate utils listen address %q", v)
 		}
 		seen[a.String()] = true
 		out = append(out, a)
@@ -67,19 +67,19 @@ func ParsePublicListen(values []string) ([]publicAddr, error) {
 }
 
 // appsPort returns the port requested on the apps network gateway, or 0.
-func appsPort(addrs []publicAddr) int {
+func appsPort(addrs []utilsAddr) int {
 	for _, a := range addrs {
-		if a.host == PublicAppsHost {
+		if a.host == UtilsAppsHost {
 			return a.port
 		}
 	}
 	return 0
 }
 
-// publicListeners runs the public HTTP listeners. Fixed addresses bind at
+// utilsListeners runs the utils HTTP listeners. Fixed addresses bind at
 // start (failure is fatal); the apps-network address follows the network plan
 // and binds once the bridge exists, because the network is created lazily.
-type publicListeners struct {
+type utilsListeners struct {
 	handler  http.Handler
 	log      *slog.Logger
 	gateway  func(context.Context) (string, error)
@@ -91,17 +91,17 @@ type publicListeners struct {
 	appsWarn  string
 }
 
-func newPublicServer(h http.Handler) *http.Server {
+func newUtilsServer(h http.Handler) *http.Server {
 	return &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 32 << 10}
 }
 
-func (p *publicListeners) serve(addr string, errc chan<- error) error {
+func (p *utilsListeners) serve(addr string, errc chan<- error) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	srv := newPublicServer(p.handler)
+	srv := newUtilsServer(p.handler)
 	p.mu.Lock()
 	p.servers[addr] = srv
 	p.mu.Unlock()
@@ -113,20 +113,20 @@ func (p *publicListeners) serve(addr string, errc chan<- error) error {
 	return nil
 }
 
-func (p *publicListeners) startFixed(addrs []publicAddr, errc chan<- error) error {
+func (p *utilsListeners) startFixed(addrs []utilsAddr, errc chan<- error) error {
 	for _, a := range addrs {
-		if a.host == PublicAppsHost {
+		if a.host == UtilsAppsHost {
 			continue
 		}
 		if err := p.serve(a.String(), errc); err != nil {
-			return fmt.Errorf("public listener: %w", err)
+			return fmt.Errorf("utils listener: %w", err)
 		}
 	}
 	return nil
 }
 
 // followApps keeps the apps-network listener bound to the current gateway.
-func (p *publicListeners) followApps(ctx context.Context) {
+func (p *utilsListeners) followApps(ctx context.Context) {
 	if p.appsPort == 0 {
 		return
 	}
@@ -144,10 +144,10 @@ func (p *publicListeners) followApps(ctx context.Context) {
 	}
 }
 
-func (p *publicListeners) syncApps(ctx context.Context) {
+func (p *utilsListeners) syncApps(ctx context.Context) {
 	gw, err := p.gateway(ctx)
 	if err != nil {
-		p.log.Warn("public listener: read network plan", "err", err)
+		p.log.Warn("utils listener: read network plan", "err", err)
 		return
 	}
 	want := ""
@@ -162,7 +162,7 @@ func (p *publicListeners) syncApps(ctx context.Context) {
 	}
 	if bound != "" {
 		p.close(bound)
-		p.log.Info("public listener closed", "addr", bound)
+		p.log.Info("utils listener closed", "addr", bound)
 	}
 	p.mu.Lock()
 	p.appsBound = ""
@@ -172,7 +172,7 @@ func (p *publicListeners) syncApps(ctx context.Context) {
 	}
 	if err := p.serve(want, nil); err != nil {
 		if p.appsWarn != want {
-			p.log.Warn("public listener: cannot bind the apps network gateway yet", "addr", want, "err", err)
+			p.log.Warn("utils listener: cannot bind the apps network gateway yet", "addr", want, "err", err)
 			p.appsWarn = want
 		}
 		return
@@ -180,10 +180,10 @@ func (p *publicListeners) syncApps(ctx context.Context) {
 	p.mu.Lock()
 	p.appsBound = want
 	p.mu.Unlock()
-	p.log.Info("public listener ready", "addr", want)
+	p.log.Info("utils listener ready", "addr", want)
 }
 
-func (p *publicListeners) close(addr string) {
+func (p *utilsListeners) close(addr string) {
 	p.mu.Lock()
 	srv := p.servers[addr]
 	delete(p.servers, addr)
@@ -196,7 +196,7 @@ func (p *publicListeners) close(addr string) {
 }
 
 // Addrs lists the addresses currently served.
-func (p *publicListeners) Addrs() []string {
+func (p *utilsListeners) Addrs() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	out := []string{}
@@ -207,7 +207,7 @@ func (p *publicListeners) Addrs() []string {
 	return out
 }
 
-func (p *publicListeners) shutdown(ctx context.Context) {
+func (p *utilsListeners) shutdown(ctx context.Context) {
 	p.mu.Lock()
 	servers := p.servers
 	p.servers = map[string]*http.Server{}

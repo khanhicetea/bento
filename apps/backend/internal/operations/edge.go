@@ -203,15 +203,15 @@ func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns N
 			}
 		}
 	}
-	public := ""
-	if c.PublicAppsPort > 0 {
+	upstream := ""
+	if c.UtilsAppsPort > 0 {
 		if gw := ns.AppsGateway(); gw != "" {
-			public = net.JoinHostPort(gw, strconv.Itoa(c.PublicAppsPort))
+			upstream = net.JoinHostPort(gw, strconv.Itoa(c.UtilsAppsPort))
 		} else if warn != nil {
 			warn("apps network gateway not found on this host; /_webhook/* is not forwarded by the edge")
 		}
 	}
-	return edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, PublicUpstream: public})
+	return edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, UtilsUpstream: upstream})
 }
 
 // EdgeConfigDrift reports whether the live edge generation differs from what

@@ -42,6 +42,7 @@ func (l Layout) EdgeCertsDir() string   { return filepath.Join(l.Root, "edge", "
 func (l Layout) EdgeACMEDir() string    { return filepath.Join(l.Root, "edge", "acme") }
 func (l Layout) EdgeCustomDir() string  { return filepath.Join(l.Root, "edge", "custom") }
 func (l Layout) TunnelDir() string      { return filepath.Join(l.Root, "cloudflared") }
+func (l Layout) DBAdminDir() string     { return filepath.Join(l.Root, "dbadmin") }
 func (l Layout) BackupsDir() string     { return filepath.Join(l.Root, "backups") }
 func (l Layout) RcloneDir() string      { return filepath.Join(l.Root, "rclone") }
 func (l Layout) CacheDir() string       { return filepath.Join(l.Root, "cache") }

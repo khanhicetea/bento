@@ -41,6 +41,9 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
     case "tunnel":
       void queryClient.invalidateQueries({ queryKey: keys.tunnel });
       break;
+    case "dbadmin":
+      void queryClient.invalidateQueries({ queryKey: keys.dbadmin });
+      break;
     case "backup":
       void queryClient.invalidateQueries({ queryKey: keys.backups.all });
       break;

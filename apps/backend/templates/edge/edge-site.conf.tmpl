@@ -44,8 +44,8 @@ upstream {{.UpstreamName}} {
 {{- end}}
   client_max_body_size {{.MaxBodyMB}}m;
   include /etc/bento-edge-custom/routes/{{.Name}}/*.conf;
-{{- if .PublicUpstream}}
-  # Bento's public routes (webhooks) go to the backend's public listener,
+{{- if .UtilsUpstream}}
+  # Bento's utils routes (webhooks) go to the backend's utils listener,
   # never to the upstream.
   location ^~ /_webhook/ {
     client_max_body_size 8m;
@@ -59,7 +59,7 @@ upstream {{.UpstreamName}} {
     proxy_connect_timeout 3s;
     proxy_send_timeout 30s;
     proxy_read_timeout 30s;
-    proxy_pass http://{{.PublicUpstream}};
+    proxy_pass http://{{.UtilsUpstream}};
   }
 {{- end}}
 {{- if and .AppUpstream .StaticCache}}

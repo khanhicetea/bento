@@ -33,11 +33,12 @@ type Server struct {
 	AllowedOrigins []string
 	WebUI          fs.FS
 	Relay          *scheduler.RelayManager
-	// PublicAddrs lists the public listener addresses being served.
-	PublicAddrs func() []string
+	// UtilsAddrs lists the utils listener addresses being served.
+	UtilsAddrs func() []string
 
 	limiter   loginLimiter
 	terminals terminalRegistry
+	dbadmin   dbadminGate
 }
 
 // Handler builds the route table. local marks the Unix control socket.
@@ -65,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/apps/{id}/unpublish", s.lifecycle(s.C.UnpublishApp))
 	api("POST /api/v1/apps/{id}/bindings", s.handleAddBinding)
 	api("POST /api/v1/apps/{id}/bindings/{bid}/databases", s.handleAddDatabase)
+	api("POST /api/v1/apps/{id}/bindings/{bid}/dbadmin", s.handleDBAdminTicket)
 	api("POST /api/v1/apps/{id}/permissions", s.handlePermissions)
 	api("GET /api/v1/apps/{id}/git", s.handleGetGitSource)
 	api("PUT /api/v1/apps/{id}/git", s.handlePutGitSource)
@@ -92,8 +94,10 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/v1/edge", s.handlePutEdge)
 	api("GET /api/v1/tunnel", s.handleGetTunnel)
 	api("PUT /api/v1/tunnel/token", s.handlePutTunnel)
-	api("GET /api/v1/public", s.handleGetPublic)
-	api("PUT /api/v1/public", s.handlePutPublic)
+	api("GET /api/v1/utils", s.handleGetUtils)
+	api("PUT /api/v1/utils", s.handlePutUtils)
+	api("GET /api/v1/dbadmin", s.handleGetDBAdmin)
+	api("PUT /api/v1/dbadmin", s.handlePutDBAdmin)
 	api("GET /api/v1/proxies", s.handleListProxies)
 	api("POST /api/v1/proxies", s.handleUpsertProxy)
 	api("DELETE /api/v1/proxies/{name}", s.handleDeleteProxy)
@@ -522,7 +526,7 @@ func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, webhookToDTO(hook, found, s.webhookBase(r, app), s.publicTargets()))
+	writeJSON(w, http.StatusOK, webhookToDTO(hook, found, s.webhookBase(r, app), s.utilsTargets()))
 }
 
 // handleEnableWebhook creates the webhook or rotates its secret. It is the
@@ -543,7 +547,7 @@ func (s *Server) handleEnableWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, dto.WebhookSecret{Webhook: webhookToDTO(hook, true, s.webhookBase(r, app), s.publicTargets()), Secret: hook.Secret})
+	writeJSON(w, http.StatusOK, dto.WebhookSecret{Webhook: webhookToDTO(hook, true, s.webhookBase(r, app), s.utilsTargets()), Secret: hook.Secret})
 }
 
 func (s *Server) handleDisableWebhook(w http.ResponseWriter, r *http.Request) {
@@ -555,40 +559,40 @@ func (s *Server) handleDisableWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, webhookToDTO(domain.Webhook{}, false, "", s.publicTargets()))
+	writeJSON(w, http.StatusOK, webhookToDTO(domain.Webhook{}, false, "", s.utilsTargets()))
 }
 
-func (s *Server) handleGetPublic(w http.ResponseWriter, r *http.Request) {
-	ps, err := s.C.PublicSettings(r.Context())
+func (s *Server) handleGetUtils(w http.ResponseWriter, r *http.Request) {
+	ps, err := s.C.UtilsSettings(r.Context())
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.PublicSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.publicTargets())})
+	writeJSON(w, http.StatusOK, dto.UtilsSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.utilsTargets())})
 }
 
-func (s *Server) handlePutPublic(w http.ResponseWriter, r *http.Request) {
-	var req dto.PublicSettingsRequest
+func (s *Server) handlePutUtils(w http.ResponseWriter, r *http.Request) {
+	var req dto.UtilsSettingsRequest
 	if err := decode(w, r, &req); err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	ps, err := s.C.SetPublicSettings(r.Context(), domain.PublicSettings{BaseURL: req.BaseURL})
+	ps, err := s.C.SetUtilsSettings(r.Context(), domain.UtilsSettings{BaseURL: req.BaseURL})
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.PublicSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.publicTargets())})
+	writeJSON(w, http.StatusOK, dto.UtilsSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.utilsTargets())})
 }
 
-// webhookBase is the configured public base URL; failing that, the origin of
+// webhookBase is the configured utils base URL; failing that, the origin of
 // the app's primary domain when the edge forwards /_webhook/* to Bento; else "".
 func (s *Server) webhookBase(r *http.Request, app domain.App) string {
-	if ps, err := s.C.PublicSettings(r.Context()); err == nil && ps.BaseURL != "" {
+	if ps, err := s.C.UtilsSettings(r.Context()); err == nil && ps.BaseURL != "" {
 		return ps.BaseURL
 	}
 	es, err := s.C.EdgeSettings(r.Context())
-	if err != nil || !es.Enabled || s.C.PublicAppsPort == 0 || app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
+	if err != nil || !es.Enabled || s.C.UtilsAppsPort == 0 || app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
 		return ""
 	}
 	for _, d := range app.Domains {
@@ -603,13 +607,13 @@ func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 	return ""
 }
 
-// publicTargets are the public listener origins a proxy can forward to.
-func (s *Server) publicTargets() []string {
-	if s.PublicAddrs == nil {
+// utilsTargets are the utils listener origins a proxy can forward to.
+func (s *Server) utilsTargets() []string {
+	if s.UtilsAddrs == nil {
 		return nil
 	}
 	var out []string
-	for _, a := range s.PublicAddrs() {
+	for _, a := range s.UtilsAddrs() {
 		out = append(out, "http://"+a)
 	}
 	return out

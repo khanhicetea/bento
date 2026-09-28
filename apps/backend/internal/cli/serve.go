@@ -32,9 +32,9 @@ type ServeOptions struct {
 	Root    string
 	Listen  string
 	Origins []string
-	// PublicListen are the public listener addresses (see ParsePublicListen).
-	PublicListen []string
-	Version      string
+	// UtilsListen are the utils listener addresses (see ParseUtilsListen).
+	UtilsListen []string
+	Version     string
 }
 
 // ValidateListen requires a loopback address. Non-loopback exposure is
@@ -93,11 +93,11 @@ func Serve(opts ServeOptions) error {
 		}
 		origins = append(origins, strings.TrimSuffix(o, "/"))
 	}
-	publicListen := opts.PublicListen
-	if len(publicListen) == 0 {
-		publicListen = DefaultPublicListen
+	utilsListen := opts.UtilsListen
+	if len(utilsListen) == 0 {
+		utilsListen = DefaultUtilsListen
 	}
-	publicAddrs, err := ParsePublicListen(publicListen)
+	utilsAddrs, err := ParseUtilsListen(utilsListen)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func Serve(opts ServeOptions) error {
 		log.Info("docker engine", "version", v.ServerVersion, "api", v.APIVersion, "arch", v.Arch)
 	}
 	ctrl, err := operations.NewController(operations.Deps{Store: st, Engine: engine, Layout: layout, HostIDs: platform.FileHostIDs{}, Log: log,
-		PublicAppsPort: appsPort(publicAddrs)})
+		UtilsAppsPort: appsPort(utilsAddrs)})
 	if err != nil {
 		return err
 	}
@@ -157,11 +157,11 @@ func Serve(opts ServeOptions) error {
 			}
 		}
 	}()
-	public := &publicListeners{log: log, gateway: ctrl.AppsGateway, appsPort: appsPort(publicAddrs), servers: map[string]*http.Server{}}
+	utils := &utilsListeners{log: log, gateway: ctrl.AppsGateway, appsPort: appsPort(utilsAddrs), servers: map[string]*http.Server{}}
 	srv := &api.Server{C: ctrl, R: rec, Store: st, Layout: layout, Log: log, Version: opts.Version, StartedAt: time.Now(),
-		AllowedOrigins: origins, WebUI: webui.FS(), Relay: relay, PublicAddrs: public.Addrs}
+		AllowedOrigins: origins, WebUI: webui.FS(), Relay: relay, UtilsAddrs: utils.Addrs}
 	handler := srv.Handler()
-	public.handler = srv.PublicHandler()
+	utils.handler = srv.UtilsHandler()
 
 	tcp, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
@@ -180,13 +180,14 @@ func Serve(opts ServeOptions) error {
 	errc := make(chan error, 4)
 	go func() { errc <- web.Serve(tcp) }()
 	go func() { errc <- local.Serve(unixLn) }()
-	// The public listener serves only self-authenticating routes (webhooks),
-	// never the UI or management API, so it may be proxied from the internet.
-	if err := public.startFixed(publicAddrs, errc); err != nil {
+	// The utils listener serves only self-authenticating routes (webhooks and
+	// the ticketed database browser), never the UI or management API, so it
+	// may be proxied from the internet.
+	if err := utils.startFixed(utilsAddrs, errc); err != nil {
 		return err
 	}
-	go public.followApps(ctx)
-	log.Info("bento backend ready", "stack", ctrl.Stack.Name, "root", layout.Root, "listen", tcp.Addr().String(), "control", layout.ControlSocket(), "public", publicListen, "ui", webui.Built())
+	go utils.followApps(ctx)
+	log.Info("bento backend ready", "stack", ctrl.Stack.Name, "root", layout.Root, "listen", tcp.Addr().String(), "control", layout.ControlSocket(), "utils", utilsListen, "ui", webui.Built())
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
@@ -203,7 +204,7 @@ func Serve(opts ServeOptions) error {
 	defer scancel()
 	_ = web.Shutdown(sctx)
 	_ = local.Shutdown(sctx)
-	public.shutdown(sctx)
+	utils.shutdown(sctx)
 	ctrl.Shutdown(60 * time.Second)
 	cancel()
 	relay.Reap(true)

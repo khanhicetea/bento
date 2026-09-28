@@ -16,9 +16,9 @@ This document explains how the Go backend is put together and why.
    - TCP on a **loopback-only** address (`cli.ValidateListen` rejects anything else) for the browser;
    - `run/bento.sock` (`0600`) for the CLI, wrapped by `Server.LocalOnly`, which admits only peers whose
      `SO_PEERCRED` uid is 0 or the backend's own uid.
-   - **public** TCP listeners (`--public-listen`, default `127.0.0.1:7781` and `apps:7781`) serving
-     `Server.PublicHandler` only: self-authenticating routes under `/_webhook/*` and nothing else (no UI, session,
-     or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
+   - **utils** TCP listeners (`--utils-listen`, default `127.0.0.1:7781` and `apps:7781`) serving
+     `Server.UtilsHandler` only: self-authenticating routes under `/_webhook/*` and the ticketed database browser
+     under `/_dbadmin/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
      read from the host's interfaces because Docker picks it, usually `.128`) once the bridge exists and follows the
      network plan, so the edge and cloudflared
      can reach it; the loopback address is for host proxies. Operators may bind any address because nothing on
@@ -227,10 +227,10 @@ The edge (`edge` package + `operations/edge.go`):
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
-When the public listener binds the apps network, every managed route (app or proxy) reserves
+When the utils listener binds the apps network, every managed route (app or proxy) reserves
 `location ^~ /_webhook/`, proxied to `http://<apps-gateway>:<port>` with an 8 MiB body limit; it never reaches the
 upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
-Tunnel path rule, an operator proxy) forwards `/_webhook/*` to a public listener itself.
+Tunnel path rule, an operator proxy) forwards `/_webhook/*` to a utils listener itself. `/_dbadmin/*` is never reserved on app routes.
 
 ### Git deploy and webhooks
 
@@ -248,8 +248,8 @@ enable/rotate response. `Controller.HandleWebhook` verifies `X-Hub-Signature-256
 `Authorization: Bearer`; an unknown hook and a bad credential both return 404 and are not recorded. Only a push to the
 configured branch deploys, and the payload never chooses what is fetched. A queued deploy absorbs further pushes
 (`coalesced`); a provider delivery id is the idempotency key (`duplicate`). The last 20 authenticated deliveries are
-kept with their result, the verifying credential, and the pusher. The `public` setting's `baseUrl` (pure display
-intent, `PUT /api/v1/public`) builds full webhook URLs; without it the app's primary domain is used when the edge
+kept with their result, the verifying credential, and the pusher. The `utils` setting's `baseUrl` (pure display
+intent, `PUT /api/v1/utils`) builds full webhook URLs and database browser links; without it the app's primary domain is used when the edge
 forwards webhooks. Removing the git source or the app destroys the webhook.
 
 ## Data services and backups
@@ -299,6 +299,24 @@ only what it created.
   to same-origin, streaming via `FlushInterval: -1`, bodies capped at 10 MB.
 - SPA serving: existing files are served; client routes fall back to `index.html`; asset-like paths 404.
 
+## Database browser: `api/dbadmin.go`, `operations/dbadmin.go`
+
+`dbadmin.apply` (setting `dbadmin`, `PUT /api/v1/dbadmin`) runs one pinned `adminer` container
+(`bento-<stack>-dbadmin`, role `dbadmin`) on the data network only: user `100:101`, read-only root, no capabilities,
+`/tmp` tmpfs, and one read-only mount of `<root>/dbadmin` (`0750 root:101`) holding `router.php` (embedded from
+`templates/dbadmin`) and a generated `gateway-token` (`0440`). The generation label hashes the router, image, and a
+version; the reconciler recreates a missing, stopped, or outdated container while enabled.
+
+`POST /api/v1/apps/{id}/bindings/{bid}/dbadmin` (browser session only) issues a one-minute single-use ticket held in
+memory by token hash. `GET /_dbadmin/t/<ticket>` on the utils listener redeems it for a grant cookie
+(`bento_dbadmin`, HttpOnly, SameSite=Lax, path `/_dbadmin/b/<bid>/`, 30 minutes idle) and redirects. Each
+`/_dbadmin/b/<bid>/…` request checks the grant, `GetLiveSession` for the issuing session, same-origin fetch metadata
+on writes, the setting, and the binding; then it proxies to the container's data-network address (the host reaches
+the bridge), forwarding only `adminer_*` cookies and adding `X-Bento-*` headers (driver, service host, user,
+base64 password, databases, gateway token). `router.php` checks the token, forces those values into Adminer on every
+request, and keeps only a placeholder password in Adminer's session. Response cookies are re-scoped to the binding
+path. Tickets and grants do not survive a backend restart.
+
 ## Scheduler relay: `scheduler`
 
 minicrond authorizes Unix-socket callers by peer UID. For each app, `RelayManager.start` (root):
@@ -324,5 +342,10 @@ changes its own UID and never execs into containers per request. Relays idle for
 - Exact confirmations are enforced server-side in `accept.go`, not only in the CLI/UI.
 - Missing durable data blocks; nothing is ever silently re-created empty.
 - The management API is loopback-only and requires a session or a peer-verified local socket.
-- The public listener serves only routes that authenticate themselves (today: deploy webhooks, by a per-app secret,
-  which can at most queue a deploy of the configured branch). Never add UI, session, or management routes to it.
+- The utils listener serves only routes that authenticate themselves: deploy webhooks (per-app secret; can at most
+  queue a deploy of the configured branch) and the database browser (single-use ticket from a session + CSRF call,
+  then a binding-scoped grant re-checked against the live session on every request). Never add UI, login, or
+  management routes to it.
+- The Adminer container holds no credentials, joins only the data network, and refuses requests without the
+  gateway token. The gateway injects one binding's app-user credentials per request; URL parameters cannot select
+  another server, driver, user, or database.

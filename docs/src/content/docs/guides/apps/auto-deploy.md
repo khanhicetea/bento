@@ -9,7 +9,7 @@ Auto deploy runs the same deploy as `bento app deploy` whenever your git host re
 fetch the branch head, run `~/deploy.sh` if present, then reload the app.
 
 ```text
-git push ──► git host ──POST /_webhook/deploy/<id>──► your ingress ──► Bento public listener
+git push ──► git host ──POST /_webhook/deploy/<id>──► your ingress ──► Bento utils listener
                                                                           │ verify secret
                                                                           │ push to configured branch?
                                                                           ▼
@@ -39,7 +39,7 @@ The URL path is not a secret and may appear in logs; every request must also pro
 
 ## 3. Expose `/_webhook/*`
 
-Webhooks are served by Bento's **public listener**, a port separate from the management UI that serves nothing but
+Webhooks are served by Bento's **utils listener**, a port separate from the management UI that serves nothing but
 routes that authenticate themselves. `bento serve` listens by default on:
 
 | Address | Reachable from |
@@ -47,7 +47,7 @@ routes that authenticate themselves. `bento serve` listens by default on:
 | `127.0.0.1:7781` | the host (nginx, Caddy on the host) |
 | `apps:7781` — the host's address on the stack's apps network, e.g. `10.200.0.128:7781` | the edge, cloudflared, other containers |
 
-See them under **Ingress → Public URL**. Route the path with the ingress you already use:
+See them under **Ingress → Utils**. Route the path with the ingress you already use:
 
 **Managed edge** — nothing to do: every domain the edge routes forwards `/_webhook/*` to Bento.
 
@@ -71,10 +71,10 @@ location /_webhook/ {
 cloudflared runs in a container, so it cannot use `127.0.0.1`. If a host firewall (for example ufw) drops traffic
 from containers to the host, allow it: `ufw allow from 10.200.0.0/24 to any port 7781 proto tcp`.
 
-Then set **Ingress → Public URL** to the origin you exposed (for example `https://hooks.example.com`). Bento only uses
+Then set **Ingress → Utils** to the origin you exposed (for example `https://hooks.example.com`). Bento only uses
 it to show the full webhook URL; routing stays yours.
 
-To change the listener, start the backend with `--public-listen` (repeatable; `IP:PORT`, `apps:PORT`, or `off`).
+To change the listener, start the backend with `--utils-listen` (repeatable; `IP:PORT`, `apps:PORT`, or `off`).
 
 ## 4. Configure the git host
 
@@ -120,7 +120,7 @@ From the CLI: `bento app webhook shop` lists deliveries, and `bento op <operatio
 
 | Symptom | Check |
 | --- | --- |
-| Git host reports timeout or 502 | the path does not reach the public listener: check the ingress rule and, for tunnel/edge, the host firewall |
+| Git host reports timeout or 502 | the path does not reach the utils listener: check the ingress rule and, for tunnel/edge, the host firewall |
 | Git host reports `404` | wrong URL, wrong secret, webhook disabled, or the path was sent to the app instead of Bento |
 | Delivery shows **ignored-ref** | the push was to a different branch than `bento app git shop` shows |
 | Delivery **deployed** but the operation failed | expand it: the git error or the failing `deploy.sh` line is in the log |
@@ -131,6 +131,7 @@ From the CLI: `bento app webhook shop` lists deliveries, and `bento op <operatio
 - The secret is 256 random bits, stored in Bento's database, and returned only by enable/rotate.
 - GitHub, Gitea, Forgejo, and Bitbucket sign the body (HMAC-SHA256); GitLab and bearer requests send the secret
   itself, so expose the URL over HTTPS only.
-- The public listener never serves the UI or management API. The worst a valid request can do is queue a deploy of
-  the configured branch.
+- The utils listener never serves the UI or management API. The worst a valid webhook request can do is queue a
+  deploy of the configured branch. Its only other route, the [database browser](/guides/data/database-browser/),
+  requires a single-use ticket issued to a signed-in operator.
 - Disabling the webhook, removing the git source, or removing the app destroys the URL and secret.

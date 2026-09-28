@@ -40,6 +40,7 @@ const (
 	KindServiceEnsure = "service.reconcile"
 	KindEdgeApply     = "edge.apply"
 	KindTunnelApply   = "tunnel.apply"
+	KindDBAdminApply  = "dbadmin.apply"
 	KindBackupRun     = "backup.run"
 	KindBackupRestore = "backup.restore"
 	KindStackExport   = "stack.export"
@@ -64,6 +65,7 @@ func (c *Controller) registerHandlers() {
 		KindServiceEnsure: c.handleServiceEnsure,
 		KindEdgeApply:     c.handleEdgeApply,
 		KindTunnelApply:   c.handleTunnelApply,
+		KindDBAdminApply:  c.handleDBAdminApply,
 		KindBackupRun:     c.handleBackupRun,
 		KindBackupRestore: c.handleBackupRestore,
 		KindStackExport:   c.handleStackExport,

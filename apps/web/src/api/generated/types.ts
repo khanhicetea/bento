@@ -254,18 +254,40 @@ export interface GitSourceRequest {
   rotateKey?: boolean;
 }
 /**
- * PublicSettings: BaseURL is where the operator's ingress exposes the public
+ * UtilsSettings: BaseURL is where the operator's ingress exposes the utils
  * listener (for example https://hooks.example.com); webhook URLs use it.
  */
-export interface PublicSettings {
+export interface UtilsSettings {
   baseUrl: string;
   /**
-   * Targets are the addresses the public listener serves (read-only).
+   * Targets are the addresses the utils listener serves (read-only).
    */
   targets: string[];
 }
-export interface PublicSettingsRequest {
+export interface UtilsSettingsRequest {
   baseUrl: string;
+}
+/**
+ * DBAdminStatus reports the shared database browser (Adminer) container.
+ */
+export interface DBAdminStatus {
+  enabled: boolean;
+  state: ObservedState;
+}
+export interface DBAdminSettingsRequest {
+  enabled: boolean;
+}
+/**
+ * DBAdminTicket opens one binding in the database browser. Path is a
+ * single-use path on the utils listener that expires at ExpiresAt; open it
+ * under BaseURL (the utils base URL) or, when that is empty, on the current
+ * host at LoopbackPort (0 when the utils listener has no loopback address).
+ */
+export interface DBAdminTicket {
+  path: string;
+  baseUrl: string;
+  loopbackPort: number /* int */;
+  expiresAt: string;
 }
 /**
  * Webhook is an app's deploy webhook. The secret is never part of this shape;
@@ -278,12 +300,12 @@ export interface Webhook {
    */
   path: string;
   /**
-   * URL uses the public base URL, else the app's primary domain when the
+   * URL uses the utils base URL, else the app's primary domain when the
    * edge forwards webhooks to Bento, else "".
    */
   url: string;
   /**
-   * Targets are the backend's public listeners; point a host proxy or a
+   * Targets are the backend's utils listeners; point a host proxy or a
    * Cloudflare Tunnel path rule for /_webhook/* at one of them.
    */
   targets: string[];

@@ -44,7 +44,7 @@ func (n NetworkSettings) TrustedProxies() []string {
 // AppsGateway is the host's address on the apps network bridge. Docker picks
 // it (with the dynamic range in the upper /25 it is usually .128), so it is
 // read from the host's interfaces rather than computed; "" until the bridge
-// exists. The backend's public listener binds here so the edge and
+// exists. The backend's utils listener binds here so the edge and
 // cloudflared can reach it; it is not routed from outside the host.
 func (n NetworkSettings) AppsGateway() string {
 	p, err := netip.ParsePrefix(n.AppsSubnet)

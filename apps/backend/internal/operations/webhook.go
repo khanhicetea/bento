@@ -13,23 +13,23 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
-const publicSettingKey = "public"
+const utilsSettingKey = "utils"
 
-func (c *Controller) PublicSettings(ctx context.Context) (domain.PublicSettings, error) {
-	var s domain.PublicSettings
-	_, err := store.GetSetting(ctx, c.Store.DB(), publicSettingKey, &s)
+func (c *Controller) UtilsSettings(ctx context.Context) (domain.UtilsSettings, error) {
+	var s domain.UtilsSettings
+	_, err := store.GetSetting(ctx, c.Store.DB(), utilsSettingKey, &s)
 	return s, err
 }
 
-// SetPublicSettings persists how the public listener is reached. It is pure
+// SetUtilsSettings persists how the utils listener is reached. It is pure
 // display intent: nothing is routed or reloaded.
-func (c *Controller) SetPublicSettings(ctx context.Context, in domain.PublicSettings) (domain.PublicSettings, error) {
+func (c *Controller) SetUtilsSettings(ctx context.Context, in domain.UtilsSettings) (domain.UtilsSettings, error) {
 	var errs domain.ValidationErrors
-	in.BaseURL = domain.ValidatePublicBaseURL(in.BaseURL, &errs)
+	in.BaseURL = domain.ValidateUtilsBaseURL(in.BaseURL, &errs)
 	if err := errs.Err(); err != nil {
-		return domain.PublicSettings{}, err
+		return domain.UtilsSettings{}, err
 	}
-	return in, store.PutSetting(ctx, c.Store.DB(), publicSettingKey, in)
+	return in, store.PutSetting(ctx, c.Store.DB(), utilsSettingKey, in)
 }
 
 // EnableWebhook creates the app's deploy webhook, or rotates its secret while

@@ -135,11 +135,27 @@ backend stopped, edge traffic and scheduled jobs continued.
   `BENTO_COMMIT`, `BENTO_PREVIOUS_COMMIT`, and `BENTO_WEBHOOK_PROVIDER`; its output appeared in the operation
   events. A script exiting 3 failed the deploy as `deploy-script-failed` with its stderr, without a reload or record.
 
+## Database browser (live Docker 29.8.1, disposable root, utils listener on 127.0.0.1:17781)
+
+- `dbadmin.apply` pulled `adminer:5.5.1` (pinned digest) and started `bento-dbt-dbadmin` on the data network only;
+  `<root>/dbadmin` was `0750 root:101` with `0440` files. The host reached the container on the internal data bridge.
+- A ticket for a MySQL 8.4 binding redeemed once (303 + grant cookie on `/_dbadmin/b/<bid>/`); a second redeem got
+  401. The redirect landed on the binding's database and Adminer's `SELECT CURRENT_USER()` returned `u<appId>@%`.
+  A PostgreSQL 17 binding opened its own database (`ns=public`) as the app role.
+- The MySQL grant got 401 on the PostgreSQL binding path; `db=mysql` got 403; `?pgsql=…&username=postgres` and
+  `?server=10.0.0.1&username=root` still showed the binding's own server and database. POSTs without Origin or with
+  `Sec-Fetch-Site: cross-site` got 403. Direct requests to the container, with or without a forged
+  `X-Bento-Gateway-Token`, got 403. Logging out made the grant return 401.
+- Adminer static assets loaded through the gateway; a manually stopped container was restarted by `dbadmin.apply`
+  from the reconciler; disabling removed the container, and grants then got 503 and new tickets 412.
+- Not verified: the Browse button in a real browser (popup handling, cookies across a public base URL over HTTPS),
+  large imports/exports near the 80 MB / 15 minute limits, and access through cloudflared or the edge.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).
 - Deliveries sent by real git hosts (GitHub/GitLab/Gitea/Bitbucket); requests were simulated with curl. A real
-  cloudflared path rule to the public listener (only a plain container on the apps network was used), and hosts whose
+  cloudflared path rule to the utils listener (only a plain container on the apps network was used), and hosts whose
   firewall filters container-to-host traffic.
 - arm64 execution; PHP 8.3/8.5, Bun, and Python runtime images.
 - Live Cloudflare Tunnel, ACME issuance, HTTP/3, external certificates, rclone upload, scheduled backup firing,

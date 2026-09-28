@@ -133,9 +133,15 @@ export const api = {
     get: (signal?: AbortSignal) => get<T.EdgeStatus>("/api/v1/edge", signal),
     set: (body: T.EdgeSettings) => mutate("PUT", "/api/v1/edge", body),
   },
-  public: {
-    get: (signal?: AbortSignal) => get<T.PublicSettings>("/api/v1/public", signal),
-    set: (body: T.PublicSettingsRequest) => request<T.PublicSettings>("PUT", "/api/v1/public", body),
+  utils: {
+    get: (signal?: AbortSignal) => get<T.UtilsSettings>("/api/v1/utils", signal),
+    set: (body: T.UtilsSettingsRequest) => request<T.UtilsSettings>("PUT", "/api/v1/utils", body),
+  },
+  dbadmin: {
+    get: (signal?: AbortSignal) => get<T.DBAdminStatus>("/api/v1/dbadmin", signal),
+    set: (enabled: boolean) => mutate("PUT", "/api/v1/dbadmin", { enabled } satisfies T.DBAdminSettingsRequest),
+    ticket: (appId: string, bindingId: string) =>
+      request<T.DBAdminTicket>("POST", `/api/v1/apps/${enc(appId)}/bindings/${enc(bindingId)}/dbadmin`, {}),
   },
   tunnel: {
     get: (signal?: AbortSignal) => get<T.TunnelStatus>("/api/v1/tunnel", signal),
