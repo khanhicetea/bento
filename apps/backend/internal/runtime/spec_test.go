@@ -220,11 +220,22 @@ func TestAppConfigDriftDetectsTemplateOutputChanges(t *testing.T) {
 	if drift, err := AppConfigDrift(app, ctx); err != nil || !drift {
 		t.Fatalf("missing config must drift: %v %v", drift, err)
 	}
-	if _, err := WriteAppConfig(app, ctx); err != nil {
+	_, ch, err := WriteAppConfigChanges(app, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if drift, err := AppConfigDrift(app, ctx); err != nil || !drift {
+		t.Fatalf("written but never applied config must drift: %v %v", drift, err)
+	}
+	if err := ch.MarkAllApplied(); err != nil {
 		t.Fatal(err)
 	}
 	if drift, err := AppConfigDrift(app, ctx); err != nil || drift {
-		t.Fatalf("freshly written config must not drift: %v %v", drift, err)
+		t.Fatalf("written and applied config must not drift: %v %v", drift, err)
+	}
+	// A second write (e.g. a tool container) sees nothing pending.
+	if _, ch2, err := WriteAppConfigChanges(app, ctx); err != nil || ch2.Frontend || ch2.Pool || ch2.Scheduler {
+		t.Fatalf("applied config must report no scoped changes: %+v %v", ch2, err)
 	}
 	path := filepath.Join(ctx.Layout.AppConfigDir(app.ID), "nginx.conf")
 	if err := os.WriteFile(path, []byte("# rendered by an older template\n"), 0o440); err != nil {
