@@ -84,7 +84,8 @@ func (l Layout) RelaySocket(appID string) string {
 }
 
 // HomeSidecar records stack/app identity for consistency checks. It is not an
-// unforgeable credential.
+// unforgeable credential: it sits in an app-writable directory, so it must
+// never be used for authorization, only for fail-closed consistency checks.
 func (l Layout) HomeSidecar(slug string) string {
 	return filepath.Join(l.Root, "homes", slug, ".bento-identity.json")
 }

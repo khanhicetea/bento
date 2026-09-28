@@ -174,7 +174,7 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 		if err != nil {
 			return nil, err
 		}
-		if ins != nil && ins.State.Running {
+		if ins != nil && ins.State != nil && ins.State.Running {
 			if err := c.Engine.Stop(ctx, ins.ID, 60*time.Second); err != nil {
 				return nil, err
 			}

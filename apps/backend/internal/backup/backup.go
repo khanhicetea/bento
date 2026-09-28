@@ -9,6 +9,7 @@
 package backup
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -131,7 +132,26 @@ func (c closerFunc) Close() error { return c() }
 
 var safeName = regexp.MustCompile(`[^a-z0-9_.-]`)
 
-// publish atomically renames a verified, non-empty partial.
+// Artifact timestamp layouts. New artifacts use millisecond resolution;
+// the legacy one-second layout is still parsed for existing files.
+const (
+	stampLayout       = "20060102T150405.000Z"
+	legacyStampLayout = "20060102T150405Z"
+)
+
+var artifactPattern = regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}(?:\.\d{3})?Z)\.(sql|db)(\.zst|\.gz)?$`)
+
+func parseStamp(s string) time.Time {
+	if ts, err := time.Parse(stampLayout, s); err == nil {
+		return ts
+	}
+	ts, _ := time.Parse(legacyStampLayout, s)
+	return ts
+}
+
+// publish atomically links a verified, non-empty partial to its final name.
+// It refuses to overwrite an existing artifact (link fails with EEXIST,
+// unlike rename which silently replaces).
 func publish(partial, final string) (int64, error) {
 	info, err := os.Stat(partial)
 	if err != nil {
@@ -141,8 +161,14 @@ func publish(partial, final string) (int64, error) {
 		os.Remove(partial)
 		return 0, errors.New("dump produced an empty artifact; not published")
 	}
-	if err := os.Rename(partial, final); err != nil {
+	if err := os.Link(partial, final); err != nil {
 		os.Remove(partial)
+		if errors.Is(err, os.ErrExist) {
+			return 0, fmt.Errorf("artifact %s already exists; refusing to overwrite", filepath.Base(final))
+		}
+		return 0, err
+	}
+	if err := os.Remove(partial); err != nil {
 		return 0, err
 	}
 	return info.Size(), nil
@@ -167,7 +193,7 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 		return Artifact{}, err
 	}
 	now := time.Now().UTC()
-	stamp := now.Format("20060102T150405Z")
+	stamp := now.Format(stampLayout)
 	var final string
 	switch t.Binding.Engine {
 	case domain.EngineMySQL, domain.EnginePostgres:
@@ -227,14 +253,89 @@ func (d Deps) dumpRelational(ctx context.Context, t Target, w io.Writer) error {
 		cmd = []string{"pg_dump", "-U", "postgres", "-d", t.Database, "--no-owner", "--no-privileges", "--format=plain"}
 	}
 	var stderr strings.Builder
-	res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{Cmd: cmd, Stdout: w, Stderr: &limitWriter{w: &stderr, n: 4096}})
+	out := w
+	var df *definerFilter
+	if svc.Engine == domain.EngineMySQL {
+		// The pinned mysqldump has no --skip-definer; strip DEFINER clauses
+		// in-stream so a restore does not depend on the source account.
+		df = &definerFilter{w: w}
+		out = df
+	}
+	res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{Cmd: cmd, Stdout: out, Stderr: &limitWriter{w: &stderr, n: 4096}})
 	if err != nil {
 		return err
 	}
 	if res.ExitCode != 0 {
 		return fmt.Errorf("%s dump of %s failed (exit %d): %s", svc.Engine, t.Database, res.ExitCode, strings.TrimSpace(stderr.String()))
 	}
+	if df != nil {
+		return df.Flush()
+	}
 	return nil
+}
+
+var definerClause = regexp.MustCompile("\\s*DEFINER\\s*=\\s*(?:`(?:[^`]|``)*`|'(?:[^']|'')*'|[A-Za-z0-9_.%-]+)@(?:`(?:[^`]|``)*`|'(?:[^']|'')*'|[A-Za-z0-9_.%-]+)")
+
+// definerFilter strips DEFINER=user@host clauses from a mysqldump stream.
+// Data lines (INSERT) are passed through unbuffered; other lines are
+// buffered to the newline and rewritten.
+type definerFilter struct {
+	w           io.Writer
+	line        []byte
+	passthrough bool
+}
+
+var insertPrefix = []byte("INSERT INTO ")
+
+func (f *definerFilter) Write(p []byte) (int, error) {
+	n := len(p)
+	for len(p) > 0 {
+		if f.passthrough {
+			i := bytes.IndexByte(p, '\n')
+			chunk := p
+			if i >= 0 {
+				chunk = p[:i+1]
+				f.passthrough = false
+			}
+			if _, err := f.w.Write(chunk); err != nil {
+				return 0, err
+			}
+			p = p[len(chunk):]
+			continue
+		}
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			f.line = append(f.line, p...)
+			p = nil
+		} else {
+			f.line = append(f.line, p[:i+1]...)
+			p = p[i+1:]
+		}
+		if len(f.line) >= len(insertPrefix) && bytes.HasPrefix(f.line, insertPrefix) && (i < 0) {
+			if _, err := f.w.Write(f.line); err != nil {
+				return 0, err
+			}
+			f.line = f.line[:0]
+			f.passthrough = true
+			continue
+		}
+		if i >= 0 {
+			if err := f.Flush(); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return n, nil
+}
+
+// Flush writes any buffered partial line.
+func (f *definerFilter) Flush() error {
+	if len(f.line) == 0 {
+		return nil
+	}
+	_, err := f.w.Write(definerClause.ReplaceAll(f.line, nil))
+	f.line = f.line[:0]
+	return err
 }
 
 type limitWriter struct {
@@ -316,12 +417,9 @@ func (d Deps) dumpSQLite(ctx context.Context, t Target, w io.Writer) error {
 	return err
 }
 
-var artifactName = regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}Z)\.(sql|db)(\.zst|\.gz)?$`)
-
 // ListArtifacts enumerates published artifacts (partials excluded).
 func ListArtifacts(backupsDir string) ([]Artifact, error) {
 	var out []Artifact
-	pattern := artifactName
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -338,7 +436,7 @@ func ListArtifacts(backupsDir string) ([]Artifact, error) {
 			continue
 		}
 		for _, f := range files {
-			m := pattern.FindStringSubmatch(f.Name())
+			m := artifactPattern.FindStringSubmatch(f.Name())
 			if m == nil || !f.Type().IsRegular() {
 				continue
 			}
@@ -346,7 +444,7 @@ func ListArtifacts(backupsDir string) ([]Artifact, error) {
 			if err != nil {
 				continue
 			}
-			ts, _ := time.Parse("20060102T150405Z", m[3])
+			ts := parseStamp(m[3])
 			out = append(out, Artifact{Path: app.Name() + "/" + f.Name(), AppSlug: app.Name(), Engine: domain.Engine(m[1]),
 				Database: m[2], SizeBytes: info.Size(), CreatedAt: ts})
 		}
@@ -411,7 +509,7 @@ func ResolveArtifact(backupsDir, rel string) (string, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		return "", fmt.Errorf("artifact not found")
 	}
-	if strings.HasPrefix(filepath.Base(clean), ".") || !artifactName.MatchString(filepath.Base(clean)) {
+	if strings.HasPrefix(filepath.Base(clean), ".") || !artifactPattern.MatchString(filepath.Base(clean)) {
 		return "", fmt.Errorf("artifact not found")
 	}
 	return clean, nil

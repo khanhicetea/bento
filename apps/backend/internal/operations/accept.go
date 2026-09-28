@@ -545,12 +545,28 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 		return store.Operation{}, err
 	}
 	path := c.Layout.TunnelDir() + "/token"
+	owner := platform.Owner{UID: 0, GID: TunnelUID}
+	// The handler reads the token file, so it must be in place before the
+	// operation can run. Capture the previous file so a rejected Submit
+	// leaves the on-disk token consistent with the persisted settings.
+	prev, prevErr := os.ReadFile(path)
+	hadPrev := prevErr == nil
+	if prevErr != nil && !errors.Is(prevErr, os.ErrNotExist) {
+		return store.Operation{}, fmt.Errorf("read existing tunnel token: %w", prevErr)
+	}
+	rollback := func() {
+		if hadPrev {
+			_ = platform.AtomicWrite(path, prev, 0o440, owner)
+		} else {
+			_ = os.Remove(path)
+		}
+	}
 	if enabled {
-		if err := platform.AtomicWrite(path, []byte(token), 0o440, platform.Owner{UID: 0, GID: TunnelUID}); err != nil {
+		if err := platform.AtomicWrite(path, []byte(token), 0o440, owner); err != nil {
 			return store.Operation{}, err
 		}
-	} else {
-		_ = os.Remove(path)
+	} else if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return store.Operation{}, err
 	}
 	op, _, err := c.Submit(ctx, Submission{
 		Kind: KindTunnelApply, TargetKind: "tunnel", TargetID: "tunnel", IdempotencyKey: idem,
@@ -565,6 +581,9 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 			return store.PutSetting(ctx, q, tunnelSettingKey, s)
 		},
 	})
+	if err != nil {
+		rollback()
+	}
 	return op, err
 }
 

@@ -86,6 +86,13 @@ func (c *Controller) loadApp(ctx context.Context, id string) (domain.App, error)
 }
 
 // HomeSidecar records identity for consistency checks. It is not a credential.
+//
+// SECURITY: the file is root-owned 0444 but lives inside the app home, a
+// directory the app UID owns, so the app can unlink and replace it. It must
+// never be used for authorization or to grant access. Its only permitted use
+// is fail-closed: a mismatch or absence makes Bento refuse to adopt or start
+// a home; a match never grants anything the store (the source of truth for
+// app ID, UID, and stack) does not already allow.
 type HomeSidecar struct {
 	StackID   string `json:"stackId"`
 	AppID     string `json:"appId"`

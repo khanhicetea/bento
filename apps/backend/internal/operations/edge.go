@@ -411,7 +411,7 @@ func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 	spec := c.tunnelSpec(s, ns)
 	if ins != nil {
 		if ins.Config.Labels[runtime.LabelGeneration] == spec.Config.Labels[runtime.LabelGeneration] {
-			if !ins.State.Running {
+			if ins.State == nil || !ins.State.Running {
 				return c.Engine.Start(ctx, ins.ID)
 			}
 			return nil

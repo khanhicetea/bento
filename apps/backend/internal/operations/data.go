@@ -160,7 +160,7 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 			return "", Fail("unexpected-mounts", "Inspect the service container.", "service container %s does not mount volume %s", spec.Name, svc.Volume)
 		}
 		id = ins.ID
-		if !ins.State.Running {
+		if ins.State == nil || !ins.State.Running {
 			if err := c.Engine.Start(ctx, id); err != nil {
 				return "", err
 			}
