@@ -1254,6 +1254,75 @@ a.row:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Webhook deliveries ---------- */
+
+.delivery-timeline {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 2px solid var(--border);
+}
+.delivery-timeline > li {
+  position: relative;
+  padding-left: 0.75rem;
+}
+.delivery-timeline > li::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 0.85rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 2px solid var(--input);
+}
+.delivery-timeline > li[data-result="deployed"]::before,
+.delivery-timeline > li[data-result="ping"]::before {
+  border-color: var(--primary);
+}
+.delivery-timeline > li[data-result="refused"]::before {
+  border-color: var(--destructive);
+}
+.delivery-timeline__head {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.25rem;
+  text-align: left;
+  font-size: 0.85rem;
+  border-radius: 0.4rem;
+}
+.delivery-timeline__head:hover {
+  background: var(--muted);
+}
+.delivery-timeline__head svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted-foreground);
+}
+.delivery-timeline__title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.delivery-timeline__body {
+  padding: 0.25rem 0 0.75rem 1.5rem;
+}
+@media (max-width: 640px) {
+  .delivery-timeline__head {
+    grid-template-columns: 1rem minmax(0, 1fr) auto;
+  }
+  .delivery-timeline__head time {
+    display: none;
+  }
+}
+
 /* ---------- Console ---------- */
 
 .console {

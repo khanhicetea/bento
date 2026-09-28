@@ -13,6 +13,25 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
+const publicSettingKey = "public"
+
+func (c *Controller) PublicSettings(ctx context.Context) (domain.PublicSettings, error) {
+	var s domain.PublicSettings
+	_, err := store.GetSetting(ctx, c.Store.DB(), publicSettingKey, &s)
+	return s, err
+}
+
+// SetPublicSettings persists how the public listener is reached. It is pure
+// display intent: nothing is routed or reloaded.
+func (c *Controller) SetPublicSettings(ctx context.Context, in domain.PublicSettings) (domain.PublicSettings, error) {
+	var errs domain.ValidationErrors
+	in.BaseURL = domain.ValidatePublicBaseURL(in.BaseURL, &errs)
+	if err := errs.Err(); err != nil {
+		return domain.PublicSettings{}, err
+	}
+	return in, store.PutSetting(ctx, c.Store.DB(), publicSettingKey, in)
+}
+
 // EnableWebhook creates the app's deploy webhook, or rotates its secret while
 // keeping the URL. The returned secret is the only time it is disclosed.
 func (c *Controller) EnableWebhook(ctx context.Context, id string) (domain.Webhook, error) {
@@ -81,7 +100,8 @@ func (c *Controller) HandleWebhook(ctx context.Context, hookID string, h domain.
 	if err != nil {
 		return WebhookOutcome{}, err
 	}
-	if !domain.VerifyWebhook(h, body, w.Secret) {
+	auth := domain.VerifyWebhook(h, body, w.Secret)
+	if auth == "" {
 		return denied, nil
 	}
 	app, err := store.GetApp(ctx, c.Store.DB(), appID)
@@ -102,7 +122,8 @@ func (c *Controller) HandleWebhook(ctx context.Context, hookID string, h domain.
 	webhookMu.Lock()
 	defer webhookMu.Unlock()
 	ev := domain.ParseWebhook(h, body, g.Branch)
-	d := domain.WebhookDelivery{At: time.Now().UTC(), Provider: ev.Provider, Event: ev.Event, DeliveryID: ev.DeliveryID, Ref: ev.Ref, Commit: ev.Commit}
+	d := domain.WebhookDelivery{At: time.Now().UTC(), Provider: ev.Provider, Event: ev.Event, DeliveryID: ev.DeliveryID, Ref: ev.Ref, Commit: ev.Commit,
+		Pusher: ev.Pusher, Auth: auth}
 	out := WebhookOutcome{Status: http.StatusAccepted}
 	switch {
 	case ev.Kind == domain.WebhookPing:

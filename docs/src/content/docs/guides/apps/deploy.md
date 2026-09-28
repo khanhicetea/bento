@@ -1,6 +1,6 @@
 ---
-title: Git deploy and webhooks
-description: Deploy from a repository, run a deploy script, and deploy on push.
+title: Git deploy
+description: Deploy from a repository and run a deploy script.
 sidebar:
   order: 5
 ---
@@ -37,52 +37,6 @@ It receives:
 | `BENTO_BRANCH`, `BENTO_REPO_URL`, `BENTO_OPERATION_ID` | the configured source and the operation |
 | `BENTO_WEBHOOK_PROVIDER`, `_EVENT`, `_DELIVERY`, `_REF`, `_COMMIT`, `_PUSHER` | webhook deploys only, as reported by the git host |
 
-```sh
-#!/bin/sh
-set -e
-if [ -z "$BENTO_PREVIOUS_COMMIT" ] || ! git diff --quiet "$BENTO_PREVIOUS_COMMIT" "$BENTO_COMMIT" -- composer.lock; then
-  composer install --no-dev --optimize-autoloader
-fi
-php artisan migrate --force
-```
-
-## Deploy on push
-
-```bash
-bento app webhook shop --enable    # prints the URL path and the secret (shown once)
-bento app webhook shop             # URL, where to expose it, recent deliveries
-bento app webhook shop --rotate    # new secret, same URL
-bento app webhook shop --disable
-```
-
-Configure the git host with the URL and secret:
-
-| Host | Setting |
-| --- | --- |
-| GitHub, Gitea, Forgejo, Bitbucket | webhook secret (HMAC-SHA256), content type `application/json`, push events |
-| GitLab | secret token, push events |
-| CI or `curl` | `curl -X POST -H "Authorization: Bearer $SECRET" https://example.com/_webhook/deploy/<id>` |
-
-Only a push to the configured branch deploys, and the deploy always fetches the branch head. Pushes that arrive while a
-deploy is already queued join it. Unknown URLs and wrong secrets get the same `404`.
-
-### Exposing `/_webhook/*`
-
-Webhooks are served by Bento's **public listener**, a separate port from the management UI that serves nothing but
-self-authenticating routes. By default it listens on `127.0.0.1:7781` and on the host's address on the stack's apps
-network (`apps:7781`, shown by `bento app webhook` and in the app's Deploy tab). Route the path to it with whatever
-ingress the app uses:
-
-- **Managed edge:** automatic on every domain the edge routes.
-- **Host nginx or Caddy:**
-
-  ```nginx
-  location /_webhook/ { proxy_pass http://127.0.0.1:7781; client_max_body_size 8m; }
-  ```
-
-- **Cloudflare Tunnel:** add a public hostname rule for the app's hostname with path `^/_webhook/` pointing at the
-  apps-network address shown by `bento app webhook` (for example `http://10.200.0.128:7781`), ordered before the rule
-  for the app itself.
-
-If a host firewall drops traffic from containers to the host, allow the apps subnet to reach that port. Change or
-disable the listener with `bento serve --public-listen ADDR` (repeatable; `IP:PORT`, `apps:PORT`, or `off`).
+Ready-made scripts for PHP apps (in-place and release-directory layouts) are in
+[Deploy script recipes](/guides/apps/deploy-scripts/). To deploy on every push, see
+[Auto deploy](/guides/apps/auto-deploy/).

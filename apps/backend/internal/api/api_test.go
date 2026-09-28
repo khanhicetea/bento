@@ -412,6 +412,20 @@ func TestWebhookEndpoints(t *testing.T) {
 		}
 	}
 
+	for _, bad := range []string{`{"baseUrl":"ftp://x"}`, `{"baseUrl":"https://h.example.com/path"}`, `{"baseUrl":"https://u:p@h.example.com"}`} {
+		if resp, out := c.write("PUT", "/api/v1/public", bad); resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("%s -> %d %s", bad, resp.StatusCode, out)
+		}
+	}
+	if resp, out := c.write("PUT", "/api/v1/public", `{"baseUrl":"https://hooks.example.com/"}`); resp.StatusCode != 200 ||
+		!strings.Contains(out, `"baseUrl":"https://hooks.example.com"`) {
+		t.Fatalf("set public base -> %d %s", resp.StatusCode, out)
+	}
+	_, out = c.do("GET", "/api/v1/apps/shop/webhook", "", nil)
+	if !strings.Contains(out, `"url":"https://hooks.example.com`+hook.Path+`"`) {
+		t.Fatalf("webhook URL must use the public base URL: %s", out)
+	}
+
 	hooks := httptest.NewServer(c.api.PublicHandler())
 	t.Cleanup(hooks.Close)
 	post := func(path, body string, hdr map[string]string) (int, string) {

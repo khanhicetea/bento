@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -17,6 +18,31 @@ const WebhookPathPrefix = "/_webhook/"
 
 // WebhookDeployPath is the deploy webhook path for a hook id.
 func WebhookDeployPath(hookID string) string { return WebhookPathPrefix + "deploy/" + hookID }
+
+// PublicSettings describe how the backend's public listener is reached from
+// the internet. BaseURL (scheme://host[:port]) is used to show full webhook
+// URLs; Bento does not route it, the operator's ingress does.
+type PublicSettings struct {
+	BaseURL string `json:"baseUrl"`
+}
+
+// ValidatePublicBaseURL normalizes and checks a public base URL; "" clears it.
+func ValidatePublicBaseURL(raw string, errs *ValidationErrors) string {
+	raw = strings.TrimSuffix(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "":
+		errs.Add("baseUrl", "must be https://host[:port]")
+	case u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/"):
+		errs.Add("baseUrl", "must be only a scheme, host, and optional port")
+	case len(raw) > 300:
+		errs.Add("baseUrl", "is too long")
+	}
+	return raw
+}
 
 // MaxWebhookDeliveries bounds the recorded delivery history per app.
 const MaxWebhookDeliveries = 20
@@ -40,7 +66,9 @@ type WebhookDelivery struct {
 	DeliveryID  string    `json:"deliveryId,omitempty"`
 	Ref         string    `json:"ref,omitempty"`
 	Commit      string    `json:"commit,omitempty"`
-	Result      string    `json:"result"` // deployed, coalesced, ignored-ref, ignored-event, ping, refused
+	Pusher      string    `json:"pusher,omitempty"`
+	Auth        string    `json:"auth,omitempty"` // which credential verified it
+	Result      string    `json:"result"`         // deployed, coalesced, ignored-ref, ignored-event, ping, refused
 	Detail      string    `json:"detail,omitempty"`
 	OperationID string    `json:"operationId,omitempty"`
 }
@@ -69,10 +97,11 @@ const (
 // VerifyWebhook authenticates a request against secret using the first
 // credential header present: an HMAC-SHA256 body signature (GitHub, Gitea,
 // Forgejo, Bitbucket), a shared token (GitLab), or a bearer token (generic).
-// The secret is never accepted in the URL.
-func VerifyWebhook(h Headers, body []byte, secret string) bool {
+// The secret is never accepted in the URL. It returns the credential that
+// verified the request, or "" when none did.
+func VerifyWebhook(h Headers, body []byte, secret string) string {
 	if secret == "" {
-		return false
+		return ""
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
@@ -84,21 +113,27 @@ func VerifyWebhook(h Headers, body []byte, secret string) bool {
 	token := func(v string) bool {
 		return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(v)), []byte(secret)) == 1
 	}
+	ok := func(scheme string, valid bool) string {
+		if valid {
+			return scheme
+		}
+		return ""
+	}
 	switch {
 	case h.Get("X-Hub-Signature-256") != "":
-		return sig(h.Get("X-Hub-Signature-256"))
+		return ok("X-Hub-Signature-256 (HMAC-SHA256)", sig(h.Get("X-Hub-Signature-256")))
 	case h.Get("X-Forgejo-Signature") != "":
-		return sig(h.Get("X-Forgejo-Signature"))
+		return ok("X-Forgejo-Signature (HMAC-SHA256)", sig(h.Get("X-Forgejo-Signature")))
 	case h.Get("X-Gitea-Signature") != "":
-		return sig(h.Get("X-Gitea-Signature"))
+		return ok("X-Gitea-Signature (HMAC-SHA256)", sig(h.Get("X-Gitea-Signature")))
 	case strings.HasPrefix(h.Get("X-Hub-Signature"), "sha256="):
-		return sig(h.Get("X-Hub-Signature"))
+		return ok("X-Hub-Signature (HMAC-SHA256)", sig(h.Get("X-Hub-Signature")))
 	case h.Get("X-Gitlab-Token") != "":
-		return token(h.Get("X-Gitlab-Token"))
+		return ok("X-Gitlab-Token", token(h.Get("X-Gitlab-Token")))
 	case strings.HasPrefix(h.Get("Authorization"), "Bearer "):
-		return token(strings.TrimPrefix(h.Get("Authorization"), "Bearer "))
+		return ok("Bearer token", token(strings.TrimPrefix(h.Get("Authorization"), "Bearer ")))
 	}
-	return false
+	return ""
 }
 
 // WebhookEventKind classifies a delivery.

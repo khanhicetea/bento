@@ -8,6 +8,7 @@ export const keys = {
     list: () => ["apps", "list"] as const,
     detail: (id: string) => ["apps", "detail", id] as const,
     git: (id: string) => ["apps", "git", id] as const,
+    webhooks: ["apps", "webhook"] as const,
     webhook: (id: string) => ["apps", "webhook", id] as const,
   },
   operations: {
@@ -19,6 +20,7 @@ export const keys = {
   services: ["services"] as const,
   edge: ["edge"] as const,
   tunnel: ["tunnel"] as const,
+  public: ["public"] as const,
   proxies: ["proxies"] as const,
   retired: ["retired"] as const,
   backups: {

@@ -305,6 +305,20 @@ type GitSourceRequest struct {
 	RotateKey bool   `json:"rotateKey,omitempty"`
 }
 
+// ---- public listener ----
+
+// PublicSettings: BaseURL is where the operator's ingress exposes the public
+// listener (for example https://hooks.example.com); webhook URLs use it.
+type PublicSettings struct {
+	BaseURL string `json:"baseUrl"`
+	// Targets are the addresses the public listener serves (read-only).
+	Targets []string `json:"targets"`
+}
+
+type PublicSettingsRequest struct {
+	BaseURL string `json:"baseUrl"`
+}
+
 // ---- deploy webhook ----
 
 // Webhook is an app's deploy webhook. The secret is never part of this shape;
@@ -313,7 +327,8 @@ type Webhook struct {
 	Enabled bool `json:"enabled"`
 	// Path is served on every edge-routed domain.
 	Path string `json:"path"`
-	// URL uses the app's primary domain when the edge routes it, else "".
+	// URL uses the public base URL, else the app's primary domain when the
+	// edge forwards webhooks to Bento, else "".
 	URL string `json:"url"`
 	// Targets are the backend's public listeners; point a host proxy or a
 	// Cloudflare Tunnel path rule for /_webhook/* at one of them.
@@ -329,6 +344,8 @@ type WebhookDelivery struct {
 	DeliveryID  string `json:"deliveryId"`
 	Ref         string `json:"ref"`
 	Commit      string `json:"commit"`
+	Pusher      string `json:"pusher"`
+	Auth        string `json:"auth"`
 	Result      string `json:"result"`
 	Detail      string `json:"detail"`
 	OperationID string `json:"operationId"`

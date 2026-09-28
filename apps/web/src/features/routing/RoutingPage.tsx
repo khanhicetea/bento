@@ -1,18 +1,27 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Pencil, Trash2 } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
-import { Cell, DomainError, DomainLoading, Field, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import {
+  Cell,
+  CopyableCode,
+  DomainError,
+  DomainLoading,
+  Field,
+  KeyValues,
+  PageHeader,
+  StateBadge,
+} from "../../components/DomainState.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "edge" | "tunnel" | "proxies";
-const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", proxies: "Proxies" };
+type Tab = "edge" | "tunnel" | "proxies" | "public";
+const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", proxies: "Proxies", public: "Public URL" };
 
 export function RoutingPage() {
   const [tab, setTab] = useState<Tab>("edge");
@@ -20,7 +29,7 @@ export function RoutingPage() {
     <>
       <PageHeader title="Ingress" />
       <div className="seg mb-5" role="tablist" aria-label="Ingress sections">
-        {(["edge", "tunnel", "proxies"] as const).map((value) => (
+        {(["edge", "tunnel", "proxies", "public"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
             {tabLabels[value]}
           </button>
@@ -29,6 +38,7 @@ export function RoutingPage() {
       {tab === "edge" && <EdgePanel />}
       {tab === "tunnel" && <TunnelPanel />}
       {tab === "proxies" && <ProxiesPanel />}
+      {tab === "public" && <PublicPanel />}
     </>
   );
 }
@@ -120,6 +130,72 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
               </code>
             ))}
           </div>
+        )}
+      </Cell>
+    </div>
+  );
+}
+
+function PublicPanel() {
+  const query = useQuery({ queryKey: keys.public, queryFn: ({ signal }) => api.public.get(signal) });
+  if (query.isPending) return <DomainLoading label="public URL" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  return <PublicForm settings={query.data} />;
+}
+
+function PublicForm({ settings }: { settings: T.PublicSettings }) {
+  const queryClient = useQueryClient();
+  const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
+  const save = useMutation({
+    mutationFn: () => api.public.set({ baseUrl: baseUrl.trim() }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(keys.public, next);
+      setBaseUrl(next.baseUrl);
+      void queryClient.invalidateQueries({ queryKey: keys.apps.webhooks });
+    },
+  });
+  return (
+    <div className="box box--2">
+      <Cell title="Public base URL">
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save.mutate();
+          }}
+        >
+          <Field
+            label="Base URL"
+            hint="Where your ingress exposes Bento's public routes (/_webhook/*). Used to show full webhook URLs."
+          >
+            <Input
+              value={baseUrl}
+              placeholder="https://hooks.example.com"
+              spellCheck={false}
+              onChange={(event) => setBaseUrl(event.target.value)}
+            />
+          </Field>
+          <div>
+            <Button type="submit" disabled={baseUrl.trim() === settings.baseUrl || save.isPending}>
+              Save
+            </Button>
+          </div>
+          {save.error && <p className="note note--bad">{messageOf(save.error)}</p>}
+        </form>
+      </Cell>
+      <Cell title="Public listener" className="cell--muted">
+        <p className="note mb-3">
+          Route <code>/_webhook/*</code> on that host to one of these. The edge does it automatically for its domains.
+        </p>
+        {settings.targets.length ? (
+          <KeyValues
+            items={settings.targets.map((target): [string, React.ReactNode] => [
+              target.includes("127.0.0.1") || target.includes("[::1]") ? "Host proxy" : "Tunnel / containers",
+              <CopyableCode value={target} />,
+            ])}
+          />
+        ) : (
+          <p className="note">The public listener is off (bento serve --public-listen off).</p>
         )}
       </Cell>
     </div>

@@ -89,6 +89,8 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/v1/edge", s.handlePutEdge)
 	api("GET /api/v1/tunnel", s.handleGetTunnel)
 	api("PUT /api/v1/tunnel/token", s.handlePutTunnel)
+	api("GET /api/v1/public", s.handleGetPublic)
+	api("PUT /api/v1/public", s.handlePutPublic)
 	api("GET /api/v1/proxies", s.handleListProxies)
 	api("POST /api/v1/proxies", s.handleUpsertProxy)
 	api("DELETE /api/v1/proxies/{name}", s.handleDeleteProxy)
@@ -553,10 +555,35 @@ func (s *Server) handleDisableWebhook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, webhookToDTO(domain.Webhook{}, false, "", s.publicTargets()))
 }
 
-// webhookBase is the public origin of the app's primary domain when the edge
-// routes it and forwards /_webhook/*, or "" when the operator exposes the
-// public listener another way.
+func (s *Server) handleGetPublic(w http.ResponseWriter, r *http.Request) {
+	ps, err := s.C.PublicSettings(r.Context())
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.PublicSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.publicTargets())})
+}
+
+func (s *Server) handlePutPublic(w http.ResponseWriter, r *http.Request) {
+	var req dto.PublicSettingsRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	ps, err := s.C.SetPublicSettings(r.Context(), domain.PublicSettings{BaseURL: req.BaseURL})
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.PublicSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.publicTargets())})
+}
+
+// webhookBase is the configured public base URL; failing that, the origin of
+// the app's primary domain when the edge forwards /_webhook/* to Bento; else "".
 func (s *Server) webhookBase(r *http.Request, app domain.App) string {
+	if ps, err := s.C.PublicSettings(r.Context()); err == nil && ps.BaseURL != "" {
+		return ps.BaseURL
+	}
 	es, err := s.C.EdgeSettings(r.Context())
 	if err != nil || !es.Enabled || s.C.PublicAppsPort == 0 || app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
 		return ""

@@ -248,7 +248,9 @@ enable/rotate response. `Controller.HandleWebhook` verifies `X-Hub-Signature-256
 `Authorization: Bearer`; an unknown hook and a bad credential both return 404 and are not recorded. Only a push to the
 configured branch deploys, and the payload never chooses what is fetched. A queued deploy absorbs further pushes
 (`coalesced`); a provider delivery id is the idempotency key (`duplicate`). The last 20 authenticated deliveries are
-kept with their result. Removing the git source or the app destroys the webhook.
+kept with their result, the verifying credential, and the pusher. The `public` setting's `baseUrl` (pure display
+intent, `PUT /api/v1/public`) builds full webhook URLs; without it the app's primary domain is used when the edge
+forwards webhooks. Removing the git source or the app destroys the webhook.
 
 ## Data services and backups
 

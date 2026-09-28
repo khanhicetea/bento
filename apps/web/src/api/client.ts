@@ -131,6 +131,10 @@ export const api = {
     get: (signal?: AbortSignal) => get<T.EdgeStatus>("/api/v1/edge", signal),
     set: (body: T.EdgeSettings) => mutate("PUT", "/api/v1/edge", body),
   },
+  public: {
+    get: (signal?: AbortSignal) => get<T.PublicSettings>("/api/v1/public", signal),
+    set: (body: T.PublicSettingsRequest) => request<T.PublicSettings>("PUT", "/api/v1/public", body),
+  },
   tunnel: {
     get: (signal?: AbortSignal) => get<T.TunnelStatus>("/api/v1/tunnel", signal),
     setToken: (token: string) => mutate("PUT", "/api/v1/tunnel/token", { token } satisfies T.SetTunnelTokenRequest),

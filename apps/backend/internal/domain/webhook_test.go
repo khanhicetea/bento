@@ -46,11 +46,14 @@ func TestVerifyWebhookSchemes(t *testing.T) {
 		{"signature wins", hdr("X-Hub-Signature-256", "sha256=00", "X-Gitlab-Token", hookSecret), false},
 	}
 	for _, tc := range cases {
-		if got := VerifyWebhook(tc.h, []byte(body), hookSecret); got != tc.ok {
+		if got := VerifyWebhook(tc.h, []byte(body), hookSecret) != ""; got != tc.ok {
 			t.Errorf("%s: got %v", tc.name, got)
 		}
 	}
-	if VerifyWebhook(hdr("Authorization", "Bearer "), []byte(body), "") {
+	if got := VerifyWebhook(hdr("X-Gitlab-Token", hookSecret), []byte(body), hookSecret); got != "X-Gitlab-Token" {
+		t.Fatalf("the verifying credential must be reported, got %q", got)
+	}
+	if VerifyWebhook(hdr("Authorization", "Bearer "), []byte(body), "") != "" {
 		t.Fatal("an empty secret must never verify")
 	}
 }

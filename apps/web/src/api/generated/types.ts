@@ -253,6 +253,20 @@ export interface GitSourceRequest {
   rotateKey?: boolean;
 }
 /**
+ * PublicSettings: BaseURL is where the operator's ingress exposes the public
+ * listener (for example https://hooks.example.com); webhook URLs use it.
+ */
+export interface PublicSettings {
+  baseUrl: string;
+  /**
+   * Targets are the addresses the public listener serves (read-only).
+   */
+  targets: string[];
+}
+export interface PublicSettingsRequest {
+  baseUrl: string;
+}
+/**
  * Webhook is an app's deploy webhook. The secret is never part of this shape;
  * it is returned once, in WebhookSecret, by the call that generates it.
  */
@@ -263,7 +277,8 @@ export interface Webhook {
    */
   path: string;
   /**
-   * URL uses the app's primary domain when the edge routes it, else "".
+   * URL uses the public base URL, else the app's primary domain when the
+   * edge forwards webhooks to Bento, else "".
    */
   url: string;
   /**
@@ -281,6 +296,8 @@ export interface WebhookDelivery {
   deliveryId: string;
   ref: string;
   commit: string;
+  pusher: string;
+  auth: string;
   result: string;
   detail: string;
   operationId: string;

@@ -219,7 +219,7 @@ func webhookToDTO(w domain.Webhook, enabled bool, url string, targets []string) 
 	}
 	for _, d := range w.Deliveries {
 		out.Deliveries = append(out.Deliveries, dto.WebhookDelivery{At: platform.FormatTime(d.At), Provider: d.Provider, Event: d.Event,
-			DeliveryID: d.DeliveryID, Ref: d.Ref, Commit: d.Commit, Result: d.Result, Detail: d.Detail, OperationID: d.OperationID})
+			DeliveryID: d.DeliveryID, Ref: d.Ref, Commit: d.Commit, Pusher: d.Pusher, Auth: d.Auth, Result: d.Result, Detail: d.Detail, OperationID: d.OperationID})
 	}
 	return out
 }

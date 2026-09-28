@@ -1,11 +1,21 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, KeyRound, Rocket, Webhook } from "lucide-react";
+import { ChevronDown, ChevronRight, GitBranch, KeyRound, Rocket, Webhook } from "lucide-react";
+import { Link } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
-import { Cell, CopyableCode, DomainError, DomainLoading, Field, KeyValues } from "../../components/DomainState.tsx";
-import { formatRelative } from "../../lib/format.ts";
+import {
+  Cell,
+  CopyableCode,
+  DomainError,
+  DomainLoading,
+  Field,
+  KeyValues,
+  StateBadge,
+} from "../../components/DomainState.tsx";
+import { formatDuration, formatRelative } from "../../lib/format.ts";
+import { isTerminal } from "../operations/OperationTracker.tsx";
 import { useOperationMutation } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,20 +216,11 @@ function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
               <CopyableCode value={hook.url} />
             ) : (
               <span>
-                <CopyableCode value={hook.path} /> on any domain whose <code>/_webhook/*</code> reaches Bento
+                <CopyableCode value={hook.path} />{" "}
+                <span className="note">
+                  — set a public base URL in <Link href="/ingress">Ingress → Public URL</Link> to see the full URL
+                </span>
               </span>
-            ),
-          ],
-          [
-            "Expose via",
-            hook.targets.length ? (
-              <span className="grid gap-1">
-                {hook.targets.map((target) => (
-                  <CopyableCode key={target} value={target} />
-                ))}
-              </span>
-            ) : (
-              "public listener is off"
             ),
           ],
           ["Content type", <code>application/json</code>],
@@ -229,10 +230,6 @@ function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
           ],
         ]}
       />
-      <p className="note my-2">
-        Edge-routed domains forward <code>/_webhook/*</code> automatically. Otherwise route that path to Bento yourself:
-        the loopback address from host nginx, the apps-network address from a Cloudflare Tunnel path rule.
-      </p>
       {secret && (
         <p className="note my-2 font-medium">
           Copy the secret now; it is not shown again. Use it as the webhook secret (GitHub, Gitea, Forgejo, Bitbucket),
@@ -247,28 +244,7 @@ function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
           Disable
         </Button>
       </div>
-      {hook.deliveries.length > 0 && (
-        <ul className="note mt-3 grid gap-1">
-          {hook.deliveries.map((d) => (
-            <li key={`${d.at}-${d.deliveryId}-${d.result}`} title={d.detail}>
-              {formatRelative(d.at)} · {d.provider} {d.event}
-              {d.ref && (
-                <>
-                  {" "}
-                  <code>{d.ref.replace(/^refs\/heads\//, "")}</code>
-                </>
-              )}{" "}
-              → <strong>{d.result}</strong>
-              {d.operationId && (
-                <>
-                  {" "}
-                  <code>{d.operationId}</code>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <DeliveryTimeline deliveries={hook.deliveries} />
       <ConfirmDialog
         open={rotateOpen}
         onOpenChange={setRotateOpen}
@@ -291,6 +267,124 @@ function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
         onConfirm={() => disable.mutate()}
       />
     </Cell>
+  );
+}
+
+const deliveryTone: Record<string, string> = {
+  deployed: "succeeded",
+  coalesced: "queued",
+  duplicate: "queued",
+  ping: "succeeded",
+  refused: "failed",
+};
+
+function DeliveryTimeline({ deliveries }: { deliveries: T.WebhookDelivery[] }) {
+  const [open, setOpen] = useState("");
+  if (deliveries.length === 0) {
+    return (
+      <p className="note mt-4">No deliveries yet. Push to the branch or send a test delivery from the git host.</p>
+    );
+  }
+  return (
+    <div className="mt-4">
+      <h4 className="note mb-2 font-medium">Recent deliveries</h4>
+      <ol className="delivery-timeline">
+        {deliveries.map((d) => {
+          const id = `${d.at}-${d.deliveryId}-${d.result}`;
+          const expanded = open === id;
+          return (
+            <li key={id} data-result={d.result}>
+              <button
+                type="button"
+                className="delivery-timeline__head"
+                aria-expanded={expanded}
+                onClick={() => setOpen(expanded ? "" : id)}
+              >
+                {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+                <span className="delivery-timeline__title">
+                  <strong>
+                    {d.provider} {d.event}
+                  </strong>
+                  {d.ref && <code>{d.ref.replace(/^refs\/heads\//, "")}</code>}
+                  {d.commit && <code className="note">{d.commit.slice(0, 7)}</code>}
+                </span>
+                <time className="note" title={d.at}>
+                  {formatRelative(d.at)}
+                </time>
+                <StateBadge state={deliveryTone[d.result] ?? "stopped"} label={d.result} />
+              </button>
+              {expanded && <DeliveryTrace delivery={d} />}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function DeliveryTrace({ delivery: d }: { delivery: T.WebhookDelivery }) {
+  return (
+    <div className="delivery-timeline__body">
+      <ol className="timeline">
+        <li>
+          <time title={d.at}>{d.at.slice(11, 19)}</time>
+          <span>
+            Received from {d.provider}
+            {d.deliveryId && (
+              <>
+                {" "}
+                (delivery <code>{d.deliveryId}</code>)
+              </>
+            )}
+            {d.pusher && <> — pushed by {d.pusher}</>}
+          </span>
+        </li>
+        {d.auth && (
+          <li>
+            <time />
+            <span>Verified with {d.auth}</span>
+          </li>
+        )}
+        <li data-level={d.result === "refused" ? "error" : undefined}>
+          <time />
+          <span>
+            <strong>{d.result}</strong>
+            {d.detail && <> — {d.detail}</>}
+          </span>
+        </li>
+      </ol>
+      {d.operationId && <OperationTrace id={d.operationId} />}
+    </div>
+  );
+}
+
+function OperationTrace({ id }: { id: string }) {
+  const query = useQuery({
+    queryKey: keys.operations.detail(id),
+    queryFn: ({ signal }) => api.operations.get(id, signal),
+    refetchInterval: (current) => (isTerminal(current.state.data?.state) ? false : 1_000),
+  });
+  if (query.isPending) return <DomainLoading label="deploy log" />;
+  if (query.error) return <p className="note note--bad">{messageOf(query.error)}</p>;
+  const op = query.data;
+  return (
+    <div className="mt-2 border-l-2 pl-3">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <StateBadge state={op.state} />
+        <Link href={`/activity/${op.id}`} className="note">
+          <code>{op.id}</code> · {formatDuration(op.startedAt, op.finishedAt)}
+        </Link>
+      </div>
+      <ol className="timeline">
+        {(op.events ?? []).map((event) => (
+          <li key={event.seq} data-level={event.level}>
+            <time title={event.at}>{event.at.slice(11, 19)}</time>
+            <span className={event.level === "error" ? "text-destructive" : ""}>{event.message}</span>
+          </li>
+        ))}
+      </ol>
+      {op.guidance && op.errorMessage && <p className="note mt-1">{op.guidance}</p>}
+    </div>
   );
 }
 
