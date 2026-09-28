@@ -67,6 +67,18 @@ func (l Layout) AppIdentityDir(appID string) string {
 	return filepath.Join(l.Root, "apps", appID, "identity")
 }
 
+// AppStateDir holds root-only backend bookkeeping for one app. It is never
+// mounted into any container.
+func (l Layout) AppStateDir(appID string) string {
+	return filepath.Join(l.Root, "apps", appID, "state")
+}
+
+// AppAppliedConfig records the generated config last applied to the running
+// instance, per scoped-reload scope.
+func (l Layout) AppAppliedConfig(appID string) string {
+	return filepath.Join(l.AppStateDir(appID), "applied.json")
+}
+
 func (l Layout) RelaySocket(appID string) string {
 	return filepath.Join(l.Root, "run", "relay", appID+".sock")
 }

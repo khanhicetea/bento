@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -118,23 +119,51 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 	return config, identity, m, nil
 }
 
-// Changes reports which generated files changed on the last write, and holds
-// their previous bytes so a failed validation can restore them.
+// Changes reports which scoped-reload scopes differ from what the running
+// instance last applied (not merely what changed on this write), plus whether
+// boot-static files changed on this write. It holds the applied bytes so a
+// failed validation can restore them, and the rendered bytes so a successful
+// reload can be recorded.
 type Changes struct {
 	Frontend  bool
 	Pool      bool
 	Scheduler bool
 	Boot      bool
 	previous  map[string][]byte
+	applied   AppliedConfig
+	rendered  map[string]AppliedScope
+	layout    platform.Layout
+	appID     string
 	dir       string
 	owner     platform.Owner
 }
 
-// Restore puts back the previous bytes of the named files.
+// Changed reports whether a scope differs from the applied state.
+func (c Changes) Changed(scope string) bool {
+	switch scope {
+	case ScopeFrontend:
+		return c.Frontend
+	case ScopePool:
+		return c.Pool
+	case ScopeScheduler:
+		return c.Scheduler
+	}
+	return false
+}
+
+// Restore puts back the previous bytes of the named files. For scope files
+// the last applied bytes win over the bytes seen before this write.
 func (c Changes) Restore(names ...string) error {
 	for _, n := range names {
 		prev, ok := c.previous[n]
-		if !ok {
+		for _, s := range Scopes {
+			if sc, found := c.applied.Scopes[s]; found {
+				if b, has := sc.Files[n]; has {
+					prev, ok = b, true
+				}
+			}
+		}
+		if !ok || c.dir == "" {
 			continue
 		}
 		if prev == nil {
@@ -148,6 +177,55 @@ func (c Changes) Restore(names ...string) error {
 	return nil
 }
 
+// RestoreUnapplied restores every changed scope that has not been recorded
+// as applied, so no validated-but-unreloaded or rejected bytes stay on disk.
+func (c Changes) RestoreUnapplied(except ...string) error {
+	var errs []error
+	for _, s := range Scopes {
+		if !c.Changed(s) || contains(except, s) {
+			continue
+		}
+		errs = append(errs, c.Restore(ScopeFiles(s)...))
+	}
+	return errors.Join(errs...)
+}
+
+// MarkApplied records the rendered bytes of the given scopes as loaded by the
+// running instance. Only reload and instance start paths call it.
+func (c *Changes) MarkApplied(scopes ...string) error {
+	if c.appID == "" || c.rendered == nil {
+		return nil
+	}
+	if c.applied.Scopes == nil {
+		c.applied.Scopes = map[string]AppliedScope{}
+	}
+	for _, s := range scopes {
+		c.applied.Scopes[s] = c.rendered[s]
+		switch s {
+		case ScopeFrontend:
+			c.Frontend = false
+		case ScopePool:
+			c.Pool = false
+		case ScopeScheduler:
+			c.Scheduler = false
+		}
+	}
+	return writeApplied(c.layout.AppStateDir(c.appID), c.layout.AppAppliedConfig(c.appID), c.applied)
+}
+
+// MarkAllApplied records every scope as applied: a freshly (re)started
+// instance loads all generated config at boot.
+func (c *Changes) MarkAllApplied() error { return c.MarkApplied(Scopes...) }
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
 // FrontendFiles, PoolFiles and SchedulerFiles name scoped-reload inputs.
 var (
 	FrontendFiles  = []string{"nginx.conf", "fastcgi.conf"}
@@ -158,9 +236,21 @@ var (
 // AppConfigDrift reports whether any rendered config file differs from the
 // bytes on disk. Identity files are boot-static and covered by Fingerprint.
 func AppConfigDrift(app domain.App, ctx AppContext) (bool, error) {
-	config, _, _, err := RenderAppConfig(app, ctx)
+	config, _, m, err := RenderAppConfig(app, ctx)
 	if err != nil {
 		return false, err
+	}
+	// A scope rendered differently from what the instance applied is drift
+	// even when the disk already holds the new bytes (written by a tool or
+	// backup container, or left by an earlier interrupted write).
+	if a, ok, err := readApplied(ctx.Layout.AppAppliedConfig(app.ID)); err != nil {
+		return false, err
+	} else if ok {
+		for _, s := range Scopes {
+			if a.Scopes[s].Hash != renderedScopeHash(m, s) {
+				return true, nil
+			}
+		}
 	}
 	cfgDir := ctx.Layout.AppConfigDir(app.ID)
 	for _, f := range config {
@@ -195,6 +285,19 @@ func WriteAppConfigChanges(app domain.App, ctx AppContext) (Materialized, Change
 		return m, ch, err
 	}
 	ch.dir, ch.owner = cfgDir, owner
+	applied, err := loadOrInitApplied(ctx, app.ID)
+	if err != nil {
+		return m, ch, err
+	}
+	ch.applied, ch.layout, ch.appID = applied, ctx.Layout, app.ID
+	ch.rendered = map[string]AppliedScope{}
+	for _, sc := range Scopes {
+		files := map[string][]byte{}
+		for _, n := range ScopeFiles(sc) {
+			files[n] = nil
+		}
+		ch.rendered[sc] = AppliedScope{Hash: renderedScopeHash(m, sc), Files: files}
+	}
 	for _, f := range config {
 		path := filepath.Join(cfgDir, f.name)
 		prev, rerr := os.ReadFile(path)
@@ -209,17 +312,18 @@ func WriteAppConfigChanges(app domain.App, ctx AppContext) (Materialized, Change
 			continue
 		}
 		ch.previous[f.name] = prev
-		switch f.name {
-		case "nginx.conf", "fastcgi.conf":
-			ch.Frontend = true
-		case "php-fpm.conf":
-			ch.Pool = true
-		case "minicrond.toml":
-			ch.Scheduler = true
-		default:
+		if scopeOf(f.name) == "" {
 			ch.Boot = true
 		}
 	}
+	for _, f := range config {
+		if sc := scopeOf(f.name); sc != "" {
+			ch.rendered[sc].Files[f.name] = f.data
+		}
+	}
+	ch.Frontend = applied.Scopes[ScopeFrontend].Hash != ch.rendered[ScopeFrontend].Hash
+	ch.Pool = applied.Scopes[ScopePool].Hash != ch.rendered[ScopePool].Hash
+	ch.Scheduler = applied.Scopes[ScopeScheduler].Hash != ch.rendered[ScopeScheduler].Hash
 	idDir := ctx.Layout.AppIdentityDir(app.ID)
 	if err := platform.EnsureDir(idDir, 0o755, platform.RootOwner); err != nil {
 		return m, ch, err
@@ -232,6 +336,15 @@ func WriteAppConfigChanges(app domain.App, ctx AppContext) (Materialized, Change
 		ch.Boot = ch.Boot || changed
 	}
 	return m, ch, nil
+}
+
+func scopeOf(name string) string {
+	for _, s := range Scopes {
+		if contains(ScopeFiles(s), name) {
+			return s
+		}
+	}
+	return ""
 }
 
 type orderedEnv struct{ buf bytes.Buffer }

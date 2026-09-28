@@ -411,11 +411,17 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 	if err := r.Phase(ctx, "prepare"); err != nil {
 		return "", "", err
 	}
-	in, _, err := c.materialize(ctx, r, app)
+	in, ch, err := c.materialize(ctx, r, app)
 	if err != nil {
 		return "", "", err
 	}
 	spec, gen := runtime.AppContainerSpec(in, true)
+	// A started instance loads every generated file at boot.
+	markApplied := func() {
+		if err := ch.MarkAllApplied(); err != nil {
+			r.Warn(ctx, "record applied config: %v", err)
+		}
+	}
 	obs, err := c.observe(ctx, app)
 	if err != nil {
 		return "", "", err
@@ -444,17 +450,28 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 				}
 				obs.Running = false
 			}
-			if !obs.Running {
-				if err := c.Engine.Start(ctx, obs.ContainerID); err != nil {
-					return "", "", Fail("start-failed", "Inspect the app logs.", "start: %v", err)
-				}
+			if obs.Running {
+				return obs.ContainerID, gen, nil
 			}
-			return obs.ContainerID, gen, nil
+			err := c.Engine.Start(ctx, obs.ContainerID)
+			if err == nil {
+				markApplied()
+				return obs.ContainerID, gen, nil
+			}
+			if !isMissingNetwork(err) {
+				return "", "", Fail("start-failed", "Inspect the app logs.", "start: %v", err)
+			}
+			// The stopped container references a network that no longer
+			// exists (e.g. after `docker network prune`); it can never start.
+			// The networks were just re-ensured, so recreate the instance.
+			r.Warn(ctx, "instance references a missing network (%v); recreating it", err)
+			obs.Running = false
+		} else {
+			r.Info(ctx, "configuration generation changed (%s -> %s); replacing instance", short(obs.Generation), short(gen))
 		}
 		if err := r.Phase(ctx, "replace"); err != nil {
 			return "", "", err
 		}
-		r.Info(ctx, "configuration generation changed (%s -> %s); replacing instance", short(obs.Generation), short(gen))
 		if obs.Running {
 			if err := c.Engine.Stop(ctx, obs.ContainerID, runtime.StopTimeout); err != nil {
 				return "", "", Fail("stop-failed", "Retry; the previous instance is still in place.", "stop previous instance: %v", err)
@@ -478,7 +495,15 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 	if err := c.Engine.Start(ctx, id); err != nil {
 		return id, gen, Fail("start-failed", "Inspect the app logs.", "start: %v", err)
 	}
+	markApplied()
 	return id, gen, nil
+}
+
+// isMissingNetwork recognizes a start failure caused by an endpoint whose
+// network was deleted underneath a stopped container.
+func isMissingNetwork(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "network") && (strings.Contains(msg, "not found") || docker.IsNotFound(err))
 }
 
 func short(s string) string {
@@ -777,20 +802,27 @@ func (c *Controller) appExec(ctx context.Context, app domain.App, id string, arg
 func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, id string, ch runtime.Changes) error {
 	steps := []struct {
 		changed  bool
-		files    []string
+		scope    string
 		name     string
 		validate []string
 		reload   []string
 	}{
-		{ch.Frontend, runtime.FrontendFiles, "local nginx", []string{"nginx", "-t", "-q", "-e", "stderr", "-c", "/etc/bento/nginx.conf"},
+		{ch.Frontend, runtime.ScopeFrontend, "local nginx", []string{"nginx", "-t", "-q", "-e", "stderr", "-c", "/etc/bento/nginx.conf"},
 			[]string{"nginx", "-e", "stderr", "-c", "/etc/bento/nginx.conf", "-s", "reload"}},
-		{ch.Pool, runtime.PoolFiles, "php-fpm", []string{"php-fpm", "-t", "--fpm-config", "/etc/bento/php-fpm.conf"},
+		{ch.Pool, runtime.ScopePool, "php-fpm", []string{"php-fpm", "-t", "--fpm-config", "/etc/bento/php-fpm.conf"},
 			[]string{"/package/admin/s6/command/s6-svc", "-r", "/run/service/php-fpm"}},
-		{ch.Scheduler, runtime.SchedulerFiles, "scheduler", []string{"minicrond", "validate", "/etc/bento/minicrond.toml"},
+		{ch.Scheduler, runtime.ScopeScheduler, "scheduler", []string{"minicrond", "validate", "/etc/bento/minicrond.toml"},
 			[]string{"minicrond", "reload"}},
 	}
 	for _, s := range steps {
-		if !s.changed || app.Runtime.Kind != domain.RuntimePHP && s.name != "scheduler" {
+		if !s.changed {
+			continue
+		}
+		if app.Runtime.Kind != domain.RuntimePHP && s.scope != runtime.ScopeScheduler {
+			// No process consumes this scope; nothing to reload.
+			if err := ch.MarkApplied(s.scope); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := r.Phase(ctx, "reload "+s.name); err != nil {
@@ -798,7 +830,9 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 		}
 		res, err := c.appExec(ctx, app, id, s.validate...)
 		if err != nil || res.ExitCode != 0 {
-			_ = ch.Restore(s.files...)
+			// Restore every scope not yet applied, not only this one, so no
+			// unapplied bytes are silently absorbed by a later write.
+			_ = ch.RestoreUnapplied()
 			detail := ""
 			if err == nil {
 				detail = strings.TrimSpace(string(res.Stderr) + string(res.Stdout))
@@ -810,8 +844,12 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 		}
 		res, err = c.appExec(ctx, app, id, s.reload...)
 		if err != nil || res.ExitCode != 0 {
+			// Not recorded as applied: the next update or reconcile retries.
 			return Fail("reload-failed", "The validated configuration is in place; retry the update or restart the app.",
 				"%s reload failed: %v %s", s.name, err, strings.TrimSpace(string(res.Stderr)))
+		}
+		if err := ch.MarkApplied(s.scope); err != nil {
+			return err
 		}
 		r.Info(ctx, "%s reloaded", s.name)
 	}
