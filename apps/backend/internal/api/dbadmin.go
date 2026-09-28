@@ -33,14 +33,14 @@ const (
 	dbadminTicketTTL  = time.Minute
 	dbadminGrantIdle  = 30 * time.Minute
 	dbadminCookie     = "bento_dbadmin"
-	dbadminPathPrefix = "/_dbadmin/"
+	dbadminPathPrefix = "/_bento/dbadmin/"
 	dbadminMaxBody    = 80 << 20
 	dbadminDeadline   = 15 * time.Minute
 )
 
 var (
-	dbadminTicketPath  = regexp.MustCompile(`^/_dbadmin/t/([A-Za-z0-9_-]{43})$`)
-	dbadminBindingPath = regexp.MustCompile(`^/_dbadmin/b/([a-z0-9][a-z0-9_-]{1,63})(/.*)?$`)
+	dbadminTicketPath  = regexp.MustCompile(`^/_bento/dbadmin/t/([A-Za-z0-9_-]{43})$`)
+	dbadminBindingPath = regexp.MustCompile(`^/_bento/dbadmin/b/([a-z0-9][a-z0-9_-]{1,63})(/.*)?$`)
 )
 
 type dbadminPass struct {

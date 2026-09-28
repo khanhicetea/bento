@@ -404,7 +404,7 @@ func TestWebhookEndpoints(t *testing.T) {
 	resp, out := c.write("POST", "/api/v1/apps/shop/webhook", `{}`)
 	var hook dto.WebhookSecret
 	json.Unmarshal([]byte(out), &hook)
-	if resp.StatusCode != 200 || !hook.Enabled || len(hook.Secret) != 64 || !strings.HasPrefix(hook.Path, "/_webhook/deploy/") ||
+	if resp.StatusCode != 200 || !hook.Enabled || len(hook.Secret) != 64 || !strings.HasPrefix(hook.Path, "/_bento/webhook/deploy/") ||
 		resp.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("enable -> %d %s", resp.StatusCode, out)
 	}
@@ -450,7 +450,7 @@ func TestWebhookEndpoints(t *testing.T) {
 			t.Errorf("utils listener served %s -> %d", p, code)
 		}
 	}
-	if code, _ := post("/_webhook/deploy/NOT-A-HOOK", `{}`, bearer); code != http.StatusNotFound {
+	if code, _ := post("/_bento/webhook/deploy/NOT-A-HOOK", `{}`, bearer); code != http.StatusNotFound {
 		t.Fatalf("malformed hook id -> %d", code)
 	}
 	if code, _ := post(hook.Path+"?secret="+hook.Secret, `{}`, nil); code != http.StatusNotFound {
@@ -560,7 +560,7 @@ func TestDBAdminTicketGateway(t *testing.T) {
 
 	_, path := ticketPath("bmysql")
 	resp := get(path, nil)
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/_dbadmin/b/bmysql/" {
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/_bento/dbadmin/b/bmysql/" {
 		t.Fatalf("redeem -> %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	var grant *http.Cookie
@@ -569,20 +569,20 @@ func TestDBAdminTicketGateway(t *testing.T) {
 			grant = ck
 		}
 	}
-	if grant == nil || !grant.HttpOnly || grant.Path != "/_dbadmin/b/bmysql/" {
+	if grant == nil || !grant.HttpOnly || grant.Path != "/_bento/dbadmin/b/bmysql/" {
 		t.Fatalf("grant cookie %+v", grant)
 	}
 	if resp := get(path, nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("ticket reuse -> %d", resp.StatusCode)
 	}
-	if resp := get("/_dbadmin/b/bpg/", nil, grant); resp.StatusCode != http.StatusUnauthorized {
+	if resp := get("/_bento/dbadmin/b/bpg/", nil, grant); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("grant used for another binding -> %d", resp.StatusCode)
 	}
-	if resp := get("/_dbadmin/b/bmysql/", nil); resp.StatusCode != http.StatusUnauthorized {
+	if resp := get("/_bento/dbadmin/b/bmysql/", nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("no grant -> %d", resp.StatusCode)
 	}
 
-	resp = get("/_dbadmin/b/bmysql/?db=shop", map[string]string{"X-Bento-Password": "spoof", "X-Bento-Server": "evil"},
+	resp = get("/_bento/dbadmin/b/bmysql/?db=shop", map[string]string{"X-Bento-Password": "spoof", "X-Bento-Server": "evil"},
 		grant, &http.Cookie{Name: "adminer_sid", Value: "s1"}, c.cookie)
 	if resp.StatusCode != 200 {
 		t.Fatalf("proxied -> %d", resp.StatusCode)
@@ -595,7 +595,7 @@ func TestDBAdminTicketGateway(t *testing.T) {
 		t.Fatalf("forwarded cookies %q", ck)
 	}
 	sc := resp.Header.Values("Set-Cookie")
-	if len(sc) != 1 || !strings.Contains(sc[0], "adminer_sid=s1") || !strings.Contains(sc[0], "Path=/_dbadmin/b/bmysql/") {
+	if len(sc) != 1 || !strings.Contains(sc[0], "adminer_sid=s1") || !strings.Contains(sc[0], "Path=/_bento/dbadmin/b/bmysql/") {
 		t.Fatalf("response cookies %v", sc)
 	}
 	if resp.Header.Get("X-Frame-Options") != "DENY" || resp.Header.Get("Referrer-Policy") != "no-referrer" {
@@ -603,7 +603,7 @@ func TestDBAdminTicketGateway(t *testing.T) {
 	}
 
 	post := func(hdr map[string]string) int {
-		req, _ := http.NewRequest("POST", utils.URL+"/_dbadmin/b/bmysql/?sql=", strings.NewReader("query=1"))
+		req, _ := http.NewRequest("POST", utils.URL+"/_bento/dbadmin/b/bmysql/?sql=", strings.NewReader("query=1"))
 		req.AddCookie(grant)
 		for k, v := range hdr {
 			req.Header.Set(k, v)
@@ -630,7 +630,7 @@ func TestDBAdminTicketGateway(t *testing.T) {
 
 	// Logout ends every grant issued to the session.
 	c.do("DELETE", "/api/v1/session", "", nil)
-	if resp := get("/_dbadmin/b/bmysql/", nil, grant); resp.StatusCode != http.StatusUnauthorized {
+	if resp := get("/_bento/dbadmin/b/bmysql/", nil, grant); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("grant survived logout -> %d", resp.StatusCode)
 	}
 }

@@ -9,7 +9,7 @@ Every MySQL or PostgreSQL binding in **Apps → _app_ → Data** has a **Browse*
 databases in [Adminer](https://www.adminer.org/) in a new tab, signed in as the app's own database user.
 
 ```text
-Bento UI ──ticket──► new tab: <utils>/_dbadmin/t/<ticket> ──► grant cookie ──► /_dbadmin/b/<binding>/
+Bento UI ──ticket──► new tab: <utils>/_bento/dbadmin/t/<ticket> ──► grant cookie ──► /_bento/dbadmin/b/<binding>/
                                                              Bento injects the binding's credentials
                                                              ──► shared Adminer container (data network)
 ```
@@ -25,11 +25,11 @@ credentials. Disabling it removes the container.
 The browser runs on the **utils listener** (the same port as [deploy webhooks](/guides/apps/auto-deploy/)), not on
 the management UI's origin:
 
-- With **Ingress → Utils → Base URL** set, links open there (for example `https://utils.example.com/_dbadmin/…`).
-  Route `/_dbadmin/*` on that host to the utils listener, as you did for `/_webhook/*`:
+- With **Ingress → Utils → Base URL** set, links open there (for example `https://utils.example.com/_bento/dbadmin/…`).
+  Route `/_bento/dbadmin/*` on that host to the utils listener, as you did for `/_bento/webhook/*`:
 
   ```nginx
-  location /_dbadmin/ {
+  location /_bento/dbadmin/ {
     proxy_pass http://127.0.0.1:7781;
     proxy_set_header X-Forwarded-Proto $scheme;
     client_max_body_size 80m;
@@ -41,12 +41,12 @@ the management UI's origin:
   (`http://127.0.0.1:7781/…`). If you reach the UI through an SSH tunnel, forward that port too:
   `ssh -L 7780:127.0.0.1:7780 -L 7781:127.0.0.1:7781 host`.
 
-The managed edge does **not** forward `/_dbadmin/*` on app domains.
+The managed edge does **not** forward `/_bento/dbadmin/*` on app domains.
 
 ## Access model
 
 - **Browse** asks the management API (session + CSRF) for a single-use ticket that expires after one minute.
-- Opening the ticket sets an HttpOnly grant cookie scoped to `/_dbadmin/b/<binding>/`. A grant opens only that
+- Opening the ticket sets an HttpOnly grant cookie scoped to `/_bento/dbadmin/b/<binding>/`. A grant opens only that
   binding. It expires after 30 idle minutes, and immediately when you sign out, change the operator password, or
   the backend restarts; click **Browse** again.
 - On every request Bento re-checks the grant, your session, and the binding, then forwards the binding's host,

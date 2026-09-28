@@ -208,7 +208,7 @@ func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns N
 		if gw := ns.AppsGateway(); gw != "" {
 			upstream = net.JoinHostPort(gw, strconv.Itoa(c.UtilsAppsPort))
 		} else if warn != nil {
-			warn("apps network gateway not found on this host; /_webhook/* is not forwarded by the edge")
+			warn("apps network gateway not found on this host; /_bento/webhook/* is not forwarded by the edge")
 		}
 	}
 	return edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, UtilsUpstream: upstream})

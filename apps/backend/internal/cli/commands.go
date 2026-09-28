@@ -34,7 +34,7 @@ The stack root comes from --stack or BENTO_STACK_ROOT (no global default).
 
 Backend:
   serve [--listen 127.0.0.1:7780] [--origin URL]... [--utils-listen ADDR|apps:PORT|off]...
-                                                      run the resident backend (utils routes: /_webhook/*, /_dbadmin/*)
+                                                      run the resident backend (utils routes: /_bento/webhook/*, /_bento/dbadmin/*)
   init --name NAME [--mysql 8.4] [--postgres 17] [--uid-first N --uid-last N] [--password-stdin]
   import --from DIR [--name NEWNAME] [--uid-first N --uid-last N]
                                                       stage an export into an empty root
@@ -614,10 +614,10 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		if hook.URL != "" {
 			fmt.Fprintf(r.out, "url:    %s\n", hook.URL)
 		} else {
-			fmt.Fprintf(r.out, "path:   %s  (on any domain whose /_webhook/* reaches Bento)\n", hook.Path)
+			fmt.Fprintf(r.out, "path:   %s  (on any domain whose /_bento/webhook/* reaches Bento)\n", hook.Path)
 		}
 		if len(hook.Targets) > 0 {
-			fmt.Fprintf(r.out, "expose: /_webhook/* -> %s  (host nginx, Cloudflare Tunnel path rule)\n", strings.Join(hook.Targets, " or "))
+			fmt.Fprintf(r.out, "expose: /_bento/webhook/* -> %s  (host nginx, Cloudflare Tunnel path rule)\n", strings.Join(hook.Targets, " or "))
 		}
 		if hook.Secret != "" {
 			fmt.Fprintf(r.out, "secret: %s\n\nThis secret is shown only once. Use it as the webhook secret (GitHub, Gitea, Forgejo,\n"+

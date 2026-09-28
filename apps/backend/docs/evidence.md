@@ -124,7 +124,7 @@ backend stopped, edge traffic and scheduled jobs continued.
 - With the default `--public-listen`, the backend served `127.0.0.1:7781` at start and bound the apps bridge address
   once the network existed. Docker had put that address at `10.200.2.128`, not `.1` (the dynamic range is the upper
   `/25`), so it is read from the host's interfaces.
-- A bearer-authenticated `POST /_webhook/deploy/<id>` queued an `app.deploy` through each of: loopback (the
+- A bearer-authenticated `POST /_bento/webhook/deploy/<id>` queued an `app.deploy` through each of: loopback (the
   host-nginx path), the edge on a routed proxy domain (`proxy_pass http://10.200.2.128:7781`), and a throwaway
   container on the apps network calling the bridge address (the cloudflared path). `/`, `/api/v1/session` on the
   public port got 404; a bad secret got 404.
@@ -139,7 +139,7 @@ backend stopped, edge traffic and scheduled jobs continued.
 
 - `dbadmin.apply` pulled `adminer:5.5.1` (pinned digest) and started `bento-dbt-dbadmin` on the data network only;
   `<root>/dbadmin` was `0750 root:101` with `0440` files. The host reached the container on the internal data bridge.
-- A ticket for a MySQL 8.4 binding redeemed once (303 + grant cookie on `/_dbadmin/b/<bid>/`); a second redeem got
+- A ticket for a MySQL 8.4 binding redeemed once (303 + grant cookie on `/_bento/dbadmin/b/<bid>/`); a second redeem got
   401. The redirect landed on the binding's database and Adminer's `SELECT CURRENT_USER()` returned `u<appId>@%`.
   A PostgreSQL 17 binding opened its own database (`ns=public`) as the app role.
 - The MySQL grant got 401 on the PostgreSQL binding path; `db=mysql` got 403; `?pgsql=…&username=postgres` and

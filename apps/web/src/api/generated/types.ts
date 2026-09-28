@@ -306,7 +306,7 @@ export interface Webhook {
   url: string;
   /**
    * Targets are the backend's utils listeners; point a host proxy or a
-   * Cloudflare Tunnel path rule for /_webhook/* at one of them.
+   * Cloudflare Tunnel path rule for /_bento/webhook/* at one of them.
    */
   targets: string[];
   secretCreatedAt: string;

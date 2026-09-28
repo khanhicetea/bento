@@ -9,7 +9,7 @@ Auto deploy runs the same deploy as `bento app deploy` whenever your git host re
 fetch the branch head, run `~/deploy.sh` if present, then reload the app.
 
 ```text
-git push ──► git host ──POST /_webhook/deploy/<id>──► your ingress ──► Bento utils listener
+git push ──► git host ──POST /_bento/webhook/deploy/<id>──► your ingress ──► Bento utils listener
                                                                           │ verify secret
                                                                           │ push to configured branch?
                                                                           ▼
@@ -28,7 +28,7 @@ bento app webhook shop --enable
 ```
 
 ```text
-url:    https://hooks.example.com/_webhook/deploy/f371135742d0b9169e93273dbeeacdf3
+url:    https://hooks.example.com/_bento/webhook/deploy/f371135742d0b9169e93273dbeeacdf3
 secret: c312c9c4…                     # shown only once
 ```
 
@@ -37,7 +37,7 @@ rotate it (`--rotate`), which keeps the URL.
 
 The URL path is not a secret and may appear in logs; every request must also prove the secret.
 
-## 3. Expose `/_webhook/*`
+## 3. Expose `/_bento/webhook/*`
 
 Webhooks are served by Bento's **utils listener**, a port separate from the management UI that serves nothing but
 routes that authenticate themselves. `bento serve` listens by default on:
@@ -49,12 +49,12 @@ routes that authenticate themselves. `bento serve` listens by default on:
 
 See them under **Ingress → Utils**. Route the path with the ingress you already use:
 
-**Managed edge** — nothing to do: every domain the edge routes forwards `/_webhook/*` to Bento.
+**Managed edge** — nothing to do: every domain the edge routes forwards `/_bento/webhook/*` to Bento.
 
 **Host nginx or Caddy**
 
 ```nginx
-location /_webhook/ {
+location /_bento/webhook/ {
   proxy_pass http://127.0.0.1:7781;
   client_max_body_size 8m;
 }
@@ -65,7 +65,7 @@ location /_webhook/ {
 | Field | Value |
 | --- | --- |
 | Hostname | `shop.example.com` (or a dedicated `hooks.example.com`) |
-| Path | `^/_webhook/` |
+| Path | `^/_bento/webhook/` |
 | Service | `HTTP` · the apps-network address, e.g. `10.200.0.128:7781` |
 
 cloudflared runs in a container, so it cannot use `127.0.0.1`. If a host firewall (for example ufw) drops traffic

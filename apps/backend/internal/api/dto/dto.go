@@ -355,7 +355,7 @@ type Webhook struct {
 	// edge forwards webhooks to Bento, else "".
 	URL string `json:"url"`
 	// Targets are the backend's utils listeners; point a host proxy or a
-	// Cloudflare Tunnel path rule for /_webhook/* at one of them.
+	// Cloudflare Tunnel path rule for /_bento/webhook/* at one of them.
 	Targets         []string          `json:"targets"`
 	SecretCreatedAt string            `json:"secretCreatedAt"`
 	Deliveries      []WebhookDelivery `json:"deliveries"`

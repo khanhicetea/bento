@@ -586,7 +586,7 @@ func (s *Server) handlePutUtils(w http.ResponseWriter, r *http.Request) {
 }
 
 // webhookBase is the configured utils base URL; failing that, the origin of
-// the app's primary domain when the edge forwards /_webhook/* to Bento; else "".
+// the app's primary domain when the edge forwards /_bento/webhook/* to Bento; else "".
 func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 	if ps, err := s.C.UtilsSettings(r.Context()); err == nil && ps.BaseURL != "" {
 		return ps.BaseURL

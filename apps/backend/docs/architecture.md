@@ -17,8 +17,8 @@ This document explains how the Go backend is put together and why.
    - `run/bento.sock` (`0600`) for the CLI, wrapped by `Server.LocalOnly`, which admits only peers whose
      `SO_PEERCRED` uid is 0 or the backend's own uid.
    - **utils** TCP listeners (`--utils-listen`, default `127.0.0.1:7781` and `apps:7781`) serving
-     `Server.UtilsHandler` only: self-authenticating routes under `/_webhook/*` and the ticketed database browser
-     under `/_dbadmin/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
+     `Server.UtilsHandler` only: self-authenticating routes under `/_bento/webhook/*` and the ticketed database browser
+     under `/_bento/dbadmin/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
      read from the host's interfaces because Docker picks it, usually `.128`) once the bridge exists and follows the
      network plan, so the edge and cloudflared
      can reach it; the loopback address is for host proxies. Operators may bind any address because nothing on
@@ -228,9 +228,9 @@ The edge (`edge` package + `operations/edge.go`):
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
 When the utils listener binds the apps network, every managed route (app or proxy) reserves
-`location ^~ /_webhook/`, proxied to `http://<apps-gateway>:<port>` with an 8 MiB body limit; it never reaches the
+`location ^~ /_bento/webhook/`, proxied to `http://<apps-gateway>:<port>` with an 8 MiB body limit; it never reaches the
 upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
-Tunnel path rule, an operator proxy) forwards `/_webhook/*` to a utils listener itself. `/_dbadmin/*` is never reserved on app routes.
+Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils listener itself. `/_bento/dbadmin/*` is never reserved on app routes.
 
 ### Git deploy and webhooks
 
@@ -308,9 +308,9 @@ only what it created.
 version; the reconciler recreates a missing, stopped, or outdated container while enabled.
 
 `POST /api/v1/apps/{id}/bindings/{bid}/dbadmin` (browser session only) issues a one-minute single-use ticket held in
-memory by token hash. `GET /_dbadmin/t/<ticket>` on the utils listener redeems it for a grant cookie
-(`bento_dbadmin`, HttpOnly, SameSite=Lax, path `/_dbadmin/b/<bid>/`, 30 minutes idle) and redirects. Each
-`/_dbadmin/b/<bid>/…` request checks the grant, `GetLiveSession` for the issuing session, same-origin fetch metadata
+memory by token hash. `GET /_bento/dbadmin/t/<ticket>` on the utils listener redeems it for a grant cookie
+(`bento_dbadmin`, HttpOnly, SameSite=Lax, path `/_bento/dbadmin/b/<bid>/`, 30 minutes idle) and redirects. Each
+`/_bento/dbadmin/b/<bid>/…` request checks the grant, `GetLiveSession` for the issuing session, same-origin fetch metadata
 on writes, the setting, and the binding; then it proxies to the container's data-network address (the host reaches
 the bridge), forwarding only `adminer_*` cookies and adding `X-Bento-*` headers (driver, service host, user,
 base64 password, databases, gateway token). `router.php` checks the token, forces those values into Adminer on every

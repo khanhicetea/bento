@@ -51,7 +51,7 @@ type Deps struct {
 	PollInterval time.Duration
 	// UtilsAppsPort is the port of the backend's utils listener on the apps
 	// network gateway (0 when not listening there). The edge proxies
-	// /_webhook/* to it.
+	// /_bento/webhook/* to it.
 	UtilsAppsPort int
 }
 

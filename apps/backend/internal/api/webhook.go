@@ -17,8 +17,8 @@ var hookIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 // UtilsHandler serves the utils listener, which operators expose to the
 // internet (edge, host nginx, Cloudflare Tunnel). It has no session, CSRF,
 // UI, or management routes: every route must authenticate itself.
-// /_webhook/* is authenticated by a per-app secret and can at most queue a
-// deploy of the configured branch; /_dbadmin/* by a single-use ticket issued
+// /_bento/webhook/* is authenticated by a per-app secret and can at most queue a
+// deploy of the configured branch; /_bento/dbadmin/* by a single-use ticket issued
 // to an operator session (see dbadmin.go).
 func (s *Server) UtilsHandler() http.Handler {
 	mux := http.NewServeMux()

@@ -14,7 +14,7 @@ import (
 
 // WebhookPathPrefix is the edge path reserved on every managed route for
 // inbound webhooks; the edge forwards it to the backend's hooks socket.
-const WebhookPathPrefix = "/_webhook/"
+const WebhookPathPrefix = "/_bento/webhook/"
 
 // WebhookDeployPath is the deploy webhook path for a hook id.
 func WebhookDeployPath(hookID string) string { return WebhookPathPrefix + "deploy/" + hookID }

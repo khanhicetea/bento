@@ -62,7 +62,7 @@ type Route struct {
 	HTTPSPortSuffix     string
 	HTTPSAdvertisedPort int
 	// UtilsUpstream is the backend's utils listener (host:port) that
-	// /_webhook/* is proxied to; "" leaves the path to the upstream.
+	// /_bento/webhook/* is proxied to; "" leaves the path to the upstream.
 	UtilsUpstream string
 }
 

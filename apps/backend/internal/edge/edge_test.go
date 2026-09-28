@@ -34,7 +34,7 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 		"upstream bento_app_pub {", "server app-a1:3000 resolve;", "keepalive 16;", "proxy_pass http://bento_app_pub;",
 		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $scheme;",
 		"acme_certificate bento_acme;", "return 301 https://$host$request_uri;", "listen 443 quic;",
-		"location ^~ /_webhook/ {", "proxy_pass http://10.200.0.1:7781;",
+		"location ^~ /_bento/webhook/ {", "proxy_pass http://10.200.0.1:7781;",
 	} {
 		if !strings.Contains(site, want) {
 			t.Errorf("site missing %q", want)
@@ -60,8 +60,8 @@ func TestRenderWithoutUtilsListenerLeavesWebhookPathToUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(files["sites/proxy-p.conf"]), "_webhook") {
-		t.Fatal("without a utils listener on the apps network the edge must not reserve /_webhook/")
+	if strings.Contains(string(files["sites/proxy-p.conf"]), "/_bento/") {
+		t.Fatal("without a utils listener on the apps network the edge must not reserve /_bento/webhook/")
 	}
 }
 
