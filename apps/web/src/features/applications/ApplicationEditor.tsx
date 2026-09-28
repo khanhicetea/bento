@@ -215,6 +215,16 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                 />
                 Access log
               </label>
+              <label
+                className="check"
+                title="Cache static file responses (css, js, images, fonts) at the edge for 10 minutes. Only enable if those URLs never return per-user content."
+              >
+                <Checkbox
+                  checked={route.staticCache ?? false}
+                  onCheckedChange={(checked) => setRoute({ ...route, staticCache: checked === true })}
+                />
+                Edge static cache
+              </label>
             </div>
             {managed && domains.list.length === 0 && <p className="note note--bad">Managed ingress needs a domain.</p>}
           </div>

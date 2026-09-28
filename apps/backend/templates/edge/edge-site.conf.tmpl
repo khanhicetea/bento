@@ -1,4 +1,16 @@
 # {{.Kind}} {{.Name}}{{if .Unavailable}} (published; app currently unavailable){{end}}
+{{- if .AppUpstream}}
+# The alias is re-resolved through Docker DNS (resolve), so a replaced app
+# container is picked up while idle connections are still reused.
+upstream {{.UpstreamName}} {
+  zone {{.UpstreamName}} 64k;
+  server {{.AppUpstream}} resolve;
+  keepalive 16;
+  # Below the app-local nginx's 30s keepalive_timeout so the edge never reuses
+  # a connection the app is closing.
+  keepalive_timeout 25s;
+}
+{{- end}}
 {{- if .ProxyUpstreams}}
 upstream {{.UpstreamName}} {
 {{- range .ProxyUpstreams}}
@@ -6,6 +18,24 @@ upstream {{.UpstreamName}} {
 {{- end}}
   keepalive 32;
 }
+{{- end}}
+{{- define "bento-proxy"}}
+    proxy_http_version 1.1;
+    # Security-relevant forwarding headers are overwritten, never appended.
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header Forwarded "";
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    proxy_request_buffering off;
+    proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}}{{.UpstreamURI}};
 {{- end}}
 {{- define "bento-location"}}
   set $bento_route "{{.Name}}";
@@ -32,28 +62,28 @@ upstream {{.UpstreamName}} {
     proxy_pass http://{{.PublicUpstream}};
   }
 {{- end}}
-  location / {
-    proxy_http_version 1.1;
-    # Security-relevant forwarding headers are overwritten, never appended.
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-Port $server_port;
-    proxy_set_header Forwarded "";
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_connect_timeout 5s;
-    proxy_send_timeout 300s;
-    proxy_read_timeout 300s;
-    proxy_request_buffering off;
-{{- if .AppUpstream}}
-    set $bento_upstream {{.AppUpstream}};
-    proxy_pass $bento_upstream;
-{{- else}}
-    proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}}{{.UpstreamURI}};
+{{- if and .AppUpstream .StaticCache}}
+  # Static-extension responses are served from the edge cache. Opting in
+  # asserts they are not per-user (PHP apps serve them from disk, never PHP).
+  location ~* \.(?:css|js|mjs|map|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot|webmanifest)$ {
+    proxy_cache bento_static;
+    proxy_cache_key "{{.Name}}$host$request_uri";
+    # Edge TTL is short and independent of the app's 30d browser Expires so a
+    # deploy that changes an unversioned asset is picked up within minutes.
+    proxy_ignore_headers Cache-Control Expires;
+    proxy_cache_valid 200 10m;
+    proxy_cache_valid 404 1m;
+    proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+    proxy_cache_background_update on;
+    proxy_cache_lock on;
+    proxy_cache_bypass $http_authorization;
+    proxy_no_cache $http_authorization;
+    add_header X-Bento-Cache $upstream_cache_status always;
+{{- template "bento-proxy" .}}
+  }
 {{- end}}
+  location / {
+{{- template "bento-proxy" .}}
   }
 {{- end}}
 

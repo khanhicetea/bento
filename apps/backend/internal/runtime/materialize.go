@@ -337,7 +337,7 @@ func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool []byte, 
 		"Slug": app.Slug, "AppID": app.ID, "UID": app.UID, "Home": home,
 		"Port": domain.PHPFrontendPort, "DocumentRoot": docRoot, "SymlinkFrom": symlinkFrom,
 		"Routing": p.Routing, "UploadLimitMB": p.UploadLimitMB, "AccessLog": app.Route.AccessLog,
-		"TrustedProxies": ctx.TrustedProxies, "Workers": 2, "Pool": profile,
+		"TrustedProxies": ctx.TrustedProxies, "Workers": 1, "Pool": profile,
 		"OpenBasedir": openBasedir(app),
 	}
 	if frontend, err = assets.Render("app-nginx.conf.tmpl", data); err != nil {

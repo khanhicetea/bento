@@ -14,7 +14,12 @@ http {
   server_tokens off;
   sendfile on;
   tcp_nopush on;
+  # Must stay above the edge upstream keepalive_timeout (25s).
   keepalive_timeout 30s;
+  # Short validity: release-symlink deploys must be seen within seconds.
+  open_file_cache max=2000 inactive=30s;
+  open_file_cache_valid 10s;
+  open_file_cache_errors on;
   client_body_timeout 60s;
   client_header_timeout 15s;
   send_timeout 60s;

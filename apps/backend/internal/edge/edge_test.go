@@ -31,7 +31,7 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 	}
 	site := string(files["sites/app-pub.conf"])
 	for _, want := range []string{
-		"set $bento_upstream http://app-a1:3000;", "proxy_pass $bento_upstream;",
+		"upstream bento_app_pub {", "server app-a1:3000 resolve;", "keepalive 16;", "proxy_pass http://bento_app_pub;",
 		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $scheme;",
 		"acme_certificate bento_acme;", "return 301 https://$host$request_uri;", "listen 443 quic;",
 		"location ^~ /_webhook/ {", "proxy_pass http://10.200.0.1:7781;",
@@ -62,5 +62,36 @@ func TestRenderWithoutPublicListenerLeavesWebhookPathToUpstream(t *testing.T) {
 	}
 	if strings.Contains(string(files["sites/proxy-p.conf"]), "_webhook") {
 		t.Fatal("without a public listener on the apps network the edge must not reserve /_webhook/")
+	}
+}
+
+func TestRenderStaticCacheOnlyForOptedInApps(t *testing.T) {
+	app := func(slug string, php bool, cache bool) domain.App {
+		a := domain.App{ID: slug, Slug: slug, Ingress: domain.IngressManaged, Publication: domain.Published,
+			Domains: []domain.DomainLink{{Name: slug + ".example.com", Primary: true}},
+			Route:   domain.Route{TLS: domain.TLSNone, StaticCache: cache}}
+		if php {
+			a.Runtime.Kind = domain.RuntimePHP
+		}
+		return a
+	}
+	files, err := Render(Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
+		Apps:     []domain.App{app("on", true, true), app("off", true, false), app("http", false, true)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(files["nginx.conf"]), "keys_zone=bento_static:") {
+		t.Fatal("main config must define the static cache zone")
+	}
+	if !strings.Contains(string(files["sites/app-on.conf"]), "proxy_cache bento_static;") {
+		t.Fatal("opted-in PHP app must cache static assets")
+	}
+	if !strings.Contains(string(files["sites/app-http.conf"]), "proxy_cache bento_static;") {
+		t.Fatal("opted-in HTTP app must cache static assets")
+	}
+	if strings.Contains(string(files["sites/app-off.conf"]), "proxy_cache") {
+		t.Fatal("app without opt-in must not cache")
 	}
 }

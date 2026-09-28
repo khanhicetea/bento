@@ -170,6 +170,9 @@ type Route struct {
 	CertName      string  `json:"certName,omitempty"`
 	RedirectHTTPS bool    `json:"redirectHttps"`
 	AccessLog     bool    `json:"accessLog"`
+	// StaticCache lets the edge cache an app's static-extension responses
+	// (apps only). The operator asserts those responses are not per-user.
+	StaticCache bool `json:"staticCache,omitempty"`
 }
 
 type RedisIdentity struct {

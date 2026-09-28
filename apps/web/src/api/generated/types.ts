@@ -115,6 +115,7 @@ export interface Route {
   certName?: string;
   redirectHttps: boolean;
   accessLog: boolean;
+  staticCache?: boolean;
 }
 export interface Domain {
   name: string;

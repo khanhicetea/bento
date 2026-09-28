@@ -40,15 +40,17 @@ const (
 
 // Route is one managed edge route.
 type Route struct {
-	Kind                string
-	Name                string
-	ServerNames         string
-	TLS                 bool
-	ACME                bool
-	CertFile            string
-	KeyFile             string
-	Redirect            bool
-	AccessLog           bool
+	Kind        string
+	Name        string
+	ServerNames string
+	TLS         bool
+	ACME        bool
+	CertFile    string
+	KeyFile     string
+	Redirect    bool
+	AccessLog   bool
+	StaticCache bool
+	// AppUpstream is the app container alias host:port, re-resolved at runtime.
 	AppUpstream         string
 	ProxyUpstreams      []string
 	UpstreamName        string
@@ -90,11 +92,14 @@ func Render(in Input) (map[string][]byte, error) {
 		}
 		r := baseRoute("app", "app-"+a.Slug, a.Domains, a.Route, s, suffix)
 		r.PublicUpstream = in.PublicUpstream
-		r.AppUpstream = fmt.Sprintf("http://%s:%d", runtime.AppAlias(a.ID), a.HTTPPort())
+		r.AppUpstream = fmt.Sprintf("%s:%d", runtime.AppAlias(a.ID), a.HTTPPort())
+		r.UpstreamName = "bento_app_" + strings.ReplaceAll(a.Slug, "-", "_")
+		r.UpstreamScheme = "http"
 		r.MaxBodyMB = 64
 		if a.Runtime.PHP != nil && a.Runtime.PHP.UploadLimitMB > 0 {
 			r.MaxBodyMB = a.Runtime.PHP.UploadLimitMB
 		}
+		r.StaticCache = a.Route.StaticCache
 		r.Unavailable = !in.Running[a.ID]
 		anyACME = anyACME || r.ACME
 		routes = append(routes, r)

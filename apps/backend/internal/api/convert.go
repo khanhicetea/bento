@@ -51,11 +51,11 @@ func routeFromDTO(r *dto.Route) domain.Route {
 	if r == nil {
 		return domain.Route{TLS: domain.TLSNone}
 	}
-	return domain.Route{TLS: domain.TLSMode(r.TLS), CertName: r.CertName, RedirectHTTPS: r.RedirectHTTPS, AccessLog: r.AccessLog}
+	return domain.Route{TLS: domain.TLSMode(r.TLS), CertName: r.CertName, RedirectHTTPS: r.RedirectHTTPS, AccessLog: r.AccessLog, StaticCache: r.StaticCache}
 }
 
 func routeToDTO(r domain.Route) dto.Route {
-	return dto.Route{TLS: dto.TLSMode(r.TLS), CertName: r.CertName, RedirectHTTPS: r.RedirectHTTPS, AccessLog: r.AccessLog}
+	return dto.Route{TLS: dto.TLSMode(r.TLS), CertName: r.CertName, RedirectHTTPS: r.RedirectHTTPS, AccessLog: r.AccessLog, StaticCache: r.StaticCache}
 }
 
 func domainsToDTO(ds []domain.DomainLink) []dto.Domain {

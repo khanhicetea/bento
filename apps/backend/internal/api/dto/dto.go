@@ -155,6 +155,7 @@ type Route struct {
 	CertName      string  `json:"certName,omitempty"`
 	RedirectHTTPS bool    `json:"redirectHttps"`
 	AccessLog     bool    `json:"accessLog"`
+	StaticCache   bool    `json:"staticCache,omitempty"`
 }
 
 type Domain struct {

@@ -5,6 +5,9 @@
 load_module /usr/lib/nginx/modules/ngx_http_acme_module.so;
 {{- end}}
 worker_processes auto;
+# Each proxied request holds two descriptors; the default 1024 caps the edge
+# far below worker_connections.
+worker_rlimit_nofile 65535;
 worker_shutdown_timeout 10s;
 error_log stderr warn;
 pid /run/nginx.pid;
@@ -63,12 +66,22 @@ http {
   ssl_prefer_server_ciphers off;
   ssl_session_timeout 1d;
   ssl_session_cache shared:SSL:20m;
+  # Session resumption uses the shared cache; never-rotated ticket keys would
+  # weaken forward secrecy.
+  ssl_session_tickets off;
+  ssl_buffer_size 4k;
 
   gzip on;
   gzip_vary on;
   gzip_min_length 1024;
   gzip_comp_level 5;
-  gzip_types text/plain text/css text/javascript text/xml application/json application/javascript application/xml image/svg+xml;
+  gzip_types text/plain text/css text/javascript text/xml application/json application/javascript application/xml image/svg+xml
+             application/manifest+json application/wasm font/ttf font/otf application/vnd.ms-fontobject;
+
+  # Shared cache for app static assets (per-app opt-in). Lives on the edge's
+  # tmpfs, so it is bounded, never persisted, and emptied on edge restart.
+  proxy_cache_path /var/cache/nginx/static levels=1:2 keys_zone=bento_static:16m
+                   max_size=192m inactive=60m use_temp_path=off;
 
   include /etc/bento-edge-custom/http.d/*.conf;
 
