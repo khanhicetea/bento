@@ -22,6 +22,7 @@ export const keys = {
   services: ["services"] as const,
   reconcile: ["reconcile"] as const,
   edge: ["edge"] as const,
+  edgeMetrics: ["edge", "metrics"] as const,
   tunnel: ["tunnel"] as const,
   utils: ["utils"] as const,
   dbadmin: ["dbadmin"] as const,

@@ -440,6 +440,24 @@ export interface EdgeStatus {
   state: ObservedState;
   routes: string[];
 }
+/**
+ * EdgeMetrics is a snapshot of the edge's nginx stub_status counters.
+ * Rates are computed against the previous sample taken by the backend and are
+ * zero on the first sample or after an edge restart.
+ */
+export interface EdgeMetrics {
+  sampledAt: string;
+  active: number /* int64 */;
+  reading: number /* int64 */;
+  writing: number /* int64 */;
+  waiting: number /* int64 */;
+  accepts: number /* int64 */;
+  handled: number /* int64 */;
+  requests: number /* int64 */;
+  dropped: number /* int64 */;
+  requestsPerSecond: number /* float64 */;
+  acceptsPerSecond: number /* float64 */;
+}
 export interface TunnelStatus {
   enabled: boolean;
   tokenGeneration: number /* int */;

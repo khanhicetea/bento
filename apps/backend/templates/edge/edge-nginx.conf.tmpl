@@ -98,6 +98,15 @@ http {
 
   include /etc/bento-edge-custom/http.d/*.conf;
 
+  # Connection counters for the control plane, read via docker exec. Never
+  # reachable from outside the container.
+  server {
+    listen 127.0.0.1:{{.StubStatusPort}};
+    set $bento_route "-";
+    location = /stub_status { stub_status; }
+    location / { return 404; }
+  }
+
   # Unknown Host/SNI is rejected.
   server {
     listen 80 default_server;

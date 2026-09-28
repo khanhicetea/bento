@@ -498,6 +498,23 @@ type EdgeStatus struct {
 	Routes   []string      `json:"routes"`
 }
 
+// EdgeMetrics is a snapshot of the edge's nginx stub_status counters.
+// Rates are computed against the previous sample taken by the backend and are
+// zero on the first sample or after an edge restart.
+type EdgeMetrics struct {
+	SampledAt         string  `json:"sampledAt"`
+	Active            int64   `json:"active"`
+	Reading           int64   `json:"reading"`
+	Writing           int64   `json:"writing"`
+	Waiting           int64   `json:"waiting"`
+	Accepts           int64   `json:"accepts"`
+	Handled           int64   `json:"handled"`
+	Requests          int64   `json:"requests"`
+	Dropped           int64   `json:"dropped"`
+	RequestsPerSecond float64 `json:"requestsPerSecond"`
+	AcceptsPerSecond  float64 `json:"acceptsPerSecond"`
+}
+
 type TunnelStatus struct {
 	Enabled         bool          `json:"enabled"`
 	TokenGeneration int           `json:"tokenGeneration"`

@@ -56,7 +56,106 @@ function EdgePanel() {
   const query = useQuery({ queryKey: keys.edge, queryFn: ({ signal }) => api.edge.get(signal) });
   if (query.isPending) return <DomainLoading label="edge" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
-  return <EdgeForm status={query.data} />;
+  return (
+    <>
+      <EdgeForm status={query.data} />
+      {query.data.state === "healthy" && <EdgeMetricsCell />}
+    </>
+  );
+}
+
+function EdgeMetricsCell() {
+  const query = useQuery({
+    queryKey: keys.edgeMetrics,
+    queryFn: ({ signal }) => api.edge.metrics(signal),
+    refetchInterval: 5_000,
+  });
+  const m = query.data;
+  return (
+    <div className="box">
+      <Cell
+        title="Traffic"
+        action={
+          m && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              Live · 5s
+            </span>
+          )
+        }
+      >
+        {query.error ? (
+          <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
+        ) : !m ? (
+          <DomainLoading label="edge metrics" />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <MetricCard
+              label="Requests / s"
+              value={m.requestsPerSecond.toFixed(1)}
+              hint={`${compact(m.requests)} total`}
+            />
+            <MetricCard label="Connections" value={m.active} hint={`${m.acceptsPerSecond.toFixed(1)} new / s`} />
+            <MetricCard
+              label="Connection states"
+              value={`${m.reading} · ${m.writing} · ${m.waiting}`}
+              hint="reading · writing · idle"
+            >
+              <StateBar reading={m.reading} writing={m.writing} waiting={m.waiting} />
+            </MetricCard>
+            <MetricCard
+              label="Dropped"
+              value={compact(m.dropped)}
+              hint={m.dropped > 0 ? "worker_connections limit hit" : `${compact(m.handled)} handled`}
+              tone={m.dropped > 0 ? "bad" : "good"}
+            />
+          </div>
+        )}
+      </Cell>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  hint,
+  tone,
+  children,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint: string;
+  tone?: "good" | "bad";
+  children?: React.ReactNode;
+}) {
+  const valueColor =
+    tone === "bad" ? "text-destructive" : tone === "good" ? "text-emerald-600 dark:text-emerald-400" : "";
+  return (
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border bg-muted/40 p-3">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className={`truncate text-2xl font-semibold tabular-nums ${valueColor}`}>{value}</span>
+      {children}
+      <span className="truncate text-xs text-muted-foreground">{hint}</span>
+    </div>
+  );
+}
+
+function StateBar({ reading, writing, waiting }: { reading: number; writing: number; waiting: number }) {
+  const total = reading + writing + waiting || 1;
+  const part = (n: number, color: string) => <span className={color} style={{ width: `${(n / total) * 100}%` }} />;
+  return (
+    <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+      {part(reading, "bg-sky-500")}
+      {part(writing, "bg-amber-500")}
+      {part(waiting, "bg-muted-foreground/40")}
+    </div>
+  );
+}
+
+const compactFormat = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
+function compact(n: number) {
+  return compactFormat.format(n);
 }
 
 function EdgeForm({ status }: { status: T.EdgeStatus }) {

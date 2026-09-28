@@ -133,6 +133,7 @@ export const api = {
   edge: {
     get: (signal?: AbortSignal) => get<T.EdgeStatus>("/api/v1/edge", signal),
     set: (body: T.EdgeSettings) => mutate("PUT", "/api/v1/edge", body),
+    metrics: (signal?: AbortSignal) => get<T.EdgeMetrics>("/api/v1/edge/metrics", signal),
   },
   utils: {
     get: (signal?: AbortSignal) => get<T.UtilsSettings>("/api/v1/utils", signal),

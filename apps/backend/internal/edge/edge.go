@@ -36,6 +36,9 @@ const (
 	// endpoint the edge can reach and serves nothing but webhook deliveries.
 	HooksMount = "/var/lib/bento-hooks"
 	LiveConf   = ConfMount + "/live/nginx.conf"
+	// StubStatusPort is the edge's loopback-only stub_status listener. It sits
+	// in an uncommon high range so operator drop-ins are unlikely to collide.
+	StubStatusPort = 57319
 )
 
 // Route is one managed edge route.
@@ -127,7 +130,7 @@ func Render(in Input) (map[string][]byte, error) {
 	files := map[string][]byte{}
 	main, err := assets.Render("edge-nginx.conf.tmpl", map[string]any{
 		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3,
-		"UtilsUpstream": in.UtilsUpstream,
+		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
 	})
 	if err != nil {
 		return nil, err

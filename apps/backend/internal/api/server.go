@@ -42,6 +42,7 @@ type Server struct {
 	terminals terminalRegistry
 	dbadmin   dbadminGate
 	scheduler dbadminGate // same ticket/grant mechanics; bindingID holds the app slug
+	edgeStats edgeSampler
 }
 
 // Handler builds the route table. local marks the Unix control socket.
@@ -99,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 
 	api("GET /api/v1/edge", s.handleGetEdge)
 	api("PUT /api/v1/edge", s.handlePutEdge)
+	api("GET /api/v1/edge/metrics", s.handleEdgeMetrics)
 	api("GET /api/v1/tunnel", s.handleGetTunnel)
 	api("PUT /api/v1/tunnel/token", s.handlePutTunnel)
 	api("GET /api/v1/utils", s.handleGetUtils)
