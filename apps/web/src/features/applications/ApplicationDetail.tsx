@@ -21,6 +21,7 @@ import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
 import { DeployPanel } from "./DeployPanel.tsx";
 import { LogsPanel } from "./LogsPanel.tsx";
+import { MonitoringPanel } from "./MonitoringPanel.tsx";
 import {
   useAppAction,
   useApplication,
@@ -33,10 +34,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "overview" | "deploy" | "logs" | "terminal" | "data" | "scheduler" | "settings";
+type Tab = "overview" | "deploy" | "monitoring" | "logs" | "terminal" | "data" | "scheduler" | "settings";
 const tabs: Array<[Tab, string]> = [
   ["overview", "Overview"],
   ["deploy", "Deploy"],
+  ["monitoring", "Monitoring"],
   ["logs", "Logs"],
   ["terminal", "Terminal"],
   ["data", "Data"],
@@ -73,6 +75,7 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
       <OperationBanner app={app} />
       {tab === "overview" && <Overview app={app} />}
       {tab === "deploy" && <DeployPanel app={app} />}
+      {tab === "monitoring" && <MonitoringPanel app={app} />}
       {tab === "logs" && <LogsPanel appId={app.id} />}
       {tab === "terminal" && (
         <TerminalPanel

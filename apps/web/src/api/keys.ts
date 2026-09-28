@@ -10,6 +10,7 @@ export const keys = {
     git: (id: string) => ["apps", "git", id] as const,
     webhooks: ["apps", "webhook"] as const,
     webhook: (id: string) => ["apps", "webhook", id] as const,
+    metrics: (id: string) => ["apps", "metrics", id] as const,
   },
   operations: {
     all: ["operations"] as const,

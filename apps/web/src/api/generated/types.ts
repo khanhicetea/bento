@@ -540,3 +540,32 @@ export interface ExecResult {
 export interface SchedulerCommandRequest {
   argv: string[];
 }
+export interface AppProcess {
+  pid: string;
+  ppid: string;
+  user: string;
+  cpuPercent: number /* float64 */;
+  memPercent: number /* float64 */;
+  rssBytes: number /* int64 */;
+  elapsed: string;
+  command: string;
+}
+/**
+ * AppMetrics is a point-in-time resource sample of the persistent instance.
+ * Running is false (and the rest zero) when no instance is running.
+ */
+export interface AppMetrics {
+  running: boolean;
+  sampledAt: string;
+  cpuPercent: number /* float64 */;
+  onlineCpus: number /* int */;
+  memoryBytes: number /* int64 */;
+  memoryLimit: number /* int64 */;
+  networkRx: number /* int64 */;
+  networkTx: number /* int64 */;
+  blockRead: number /* int64 */;
+  blockWrite: number /* int64 */;
+  pids: number /* int */;
+  processes: AppProcess[];
+  processTotal: number /* int */;
+}

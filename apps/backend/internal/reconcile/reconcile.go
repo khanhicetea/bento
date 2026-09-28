@@ -265,6 +265,13 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 				}
 				// Unhealthy readiness alone never triggers recreation.
 				need = !ok || gen != obs.Generation
+				if !need {
+					// Template-only changes are applied by scoped reloads.
+					if need, err = r.C.AppConfigDrift(ctx, app); err != nil {
+						t.LastError = err.Error()
+						continue
+					}
+				}
 			}
 		}
 		if need {
@@ -291,7 +298,14 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				if ins == nil || ins.State == nil || !ins.State.Running {
+				need := ins == nil || ins.State == nil || !ins.State.Running
+				if !need {
+					// Re-rendered routes or templates differ from the live generation.
+					if need, err = r.C.EdgeConfigDrift(ctx); err != nil {
+						t.LastError = err.Error()
+					}
+				}
+				if need {
 					r.submit(ctx, t, operations.KindEdgeApply, "edge", "edge")
 				}
 			}

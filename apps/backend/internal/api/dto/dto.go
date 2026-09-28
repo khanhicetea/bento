@@ -624,3 +624,34 @@ type ExecResult struct {
 type SchedulerCommandRequest struct {
 	Argv []string `json:"argv"`
 }
+
+// ---- monitoring ----
+
+type AppProcess struct {
+	PID        string  `json:"pid"`
+	PPID       string  `json:"ppid"`
+	User       string  `json:"user"`
+	CPUPercent float64 `json:"cpuPercent"`
+	MemPercent float64 `json:"memPercent"`
+	RSSBytes   int64   `json:"rssBytes"`
+	Elapsed    string  `json:"elapsed"`
+	Command    string  `json:"command"`
+}
+
+// AppMetrics is a point-in-time resource sample of the persistent instance.
+// Running is false (and the rest zero) when no instance is running.
+type AppMetrics struct {
+	Running      bool         `json:"running"`
+	SampledAt    string       `json:"sampledAt"`
+	CPUPercent   float64      `json:"cpuPercent"`
+	OnlineCPUs   int          `json:"onlineCpus"`
+	MemoryBytes  int64        `json:"memoryBytes"`
+	MemoryLimit  int64        `json:"memoryLimit"`
+	NetworkRx    int64        `json:"networkRx"`
+	NetworkTx    int64        `json:"networkTx"`
+	BlockRead    int64        `json:"blockRead"`
+	BlockWrite   int64        `json:"blockWrite"`
+	PIDs         int          `json:"pids"`
+	Processes    []AppProcess `json:"processes"`
+	ProcessTotal int          `json:"processTotal"`
+}

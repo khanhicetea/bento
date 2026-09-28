@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +208,29 @@ func TestBuildContextDeterministic(t *testing.T) {
 	k2, _ := PlanImage(domain.ImageKey{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"})
 	if k1.Tag() == k2.Tag() || !strings.HasPrefix(k1.Tag(), "bento-runtime/php:8.4-") {
 		t.Fatal(k1.Tag(), k2.Tag())
+	}
+}
+
+func TestAppConfigDriftDetectsTemplateOutputChanges(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("config files are written root-owned")
+	}
+	app := testApp()
+	ctx := AppContext{Layout: platform.Layout{Root: t.TempDir()}, ImagePasswd: []byte("root:x:0:0::/root:/bin/bash\n"), ImageGroup: []byte("root:x:0:\n")}
+	if drift, err := AppConfigDrift(app, ctx); err != nil || !drift {
+		t.Fatalf("missing config must drift: %v %v", drift, err)
+	}
+	if _, err := WriteAppConfig(app, ctx); err != nil {
+		t.Fatal(err)
+	}
+	if drift, err := AppConfigDrift(app, ctx); err != nil || drift {
+		t.Fatalf("freshly written config must not drift: %v %v", drift, err)
+	}
+	path := filepath.Join(ctx.Layout.AppConfigDir(app.ID), "nginx.conf")
+	if err := os.WriteFile(path, []byte("# rendered by an older template\n"), 0o440); err != nil {
+		t.Fatal(err)
+	}
+	if drift, err := AppConfigDrift(app, ctx); err != nil || !drift {
+		t.Fatalf("stale frontend config must drift: %v %v", drift, err)
 	}
 }

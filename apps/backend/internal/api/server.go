@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/apps/{id}/webhook", s.handleEnableWebhook)
 	api("DELETE /api/v1/apps/{id}/webhook", s.handleDisableWebhook)
 	api("GET /api/v1/apps/{id}/readiness", s.handleReadiness)
+	api("GET /api/v1/apps/{id}/metrics", s.handleAppMetrics)
 	api("GET /api/v1/apps/{id}/logs", s.handleAppLogs)
 	api("POST /api/v1/apps/{id}/exec", s.handleExec)
 	api("POST /api/v1/apps/{id}/scheduler/command", s.handleSchedulerCommand)
@@ -925,4 +927,58 @@ func (s *Server) handlePrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.accepted(w, op, nil)
+}
+
+// metricsMaxProcesses bounds the response; the UI renders them as a tree.
+const metricsMaxProcesses = 200
+
+func (s *Server) handleAppMetrics(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	name := s.C.Names.AppContainer(app.ID)
+	out := dto.AppMetrics{Processes: []dto.AppProcess{}}
+	st, err := s.C.Engine.Stats(ctx, name)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	if st == nil {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	procs, err := s.C.Engine.Top(ctx, name)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	out.Running = true
+	out.SampledAt = platform.FormatTime(st.SampledAt)
+	out.CPUPercent = st.CPUPercent
+	out.OnlineCPUs = int(st.OnlineCPUs)
+	out.MemoryBytes = int64(st.MemoryUsage)
+	out.MemoryLimit = int64(st.MemoryLimit)
+	out.NetworkRx, out.NetworkTx = int64(st.NetworkRx), int64(st.NetworkTx)
+	out.BlockRead, out.BlockWrite = int64(st.BlockRead), int64(st.BlockWrite)
+	out.PIDs = int(st.PIDs)
+	out.ProcessTotal = len(procs)
+	sort.SliceStable(procs, func(i, j int) bool {
+		if procs[i].CPUPercent != procs[j].CPUPercent {
+			return procs[i].CPUPercent > procs[j].CPUPercent
+		}
+		return procs[i].RSSKiB > procs[j].RSSKiB
+	})
+	if len(procs) > metricsMaxProcesses {
+		procs = procs[:metricsMaxProcesses]
+	}
+	for _, p := range procs {
+		out.Processes = append(out.Processes, dto.AppProcess{
+			PID: p.PID, PPID: p.PPID, User: p.User, CPUPercent: p.CPUPercent, MemPercent: p.MemPercent,
+			RSSBytes: int64(p.RSSKiB) * 1024, Elapsed: p.Elapsed, Command: p.Command,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }

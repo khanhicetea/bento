@@ -1039,6 +1039,25 @@ func (c *Controller) handleReconcile(ctx context.Context, r *Run) (any, error) {
 	if app.DesiredRuntime == domain.DesiredStopped {
 		return nil, c.stopInstance(ctx, r, app)
 	}
+	// A running instance whose shape is current only needs its generated
+	// config refreshed: apply template changes through validated scoped
+	// reloads instead of recreating.
+	obs, err := c.observe(ctx, app)
+	if err != nil {
+		return nil, err
+	}
+	if obs.Exists && obs.Running && len(obs.Duplicates) == 0 {
+		in, ch, err := c.materialize(ctx, r, app)
+		if err != nil {
+			return nil, err
+		}
+		if _, gen := runtime.AppContainerSpec(in, true); obs.Generation == gen {
+			if err := c.scopedReloads(ctx, r, app, obs.ContainerID, ch); err != nil {
+				return nil, err
+			}
+			return map[string]any{"reloaded": map[string]bool{"frontend": ch.Frontend, "pool": ch.Pool, "scheduler": ch.Scheduler}}, nil
+		}
+	}
 	id, gen, err := c.ensureInstance(ctx, r, app, false)
 	if err != nil {
 		return nil, err
@@ -1118,6 +1137,28 @@ func (c *Controller) PlannedGeneration(ctx context.Context, app domain.App) (str
 		return "", false, err
 	}
 	return runtime.Fingerprint(runtime.AppInputs{App: app, Names: c.Names, Layout: c.Layout, ImageID: imageID, Materialized: m}), true, nil
+}
+
+// AppConfigDrift reports whether generated config on disk differs from what
+// the embedded templates render now. It never writes.
+func (c *Controller) AppConfigDrift(ctx context.Context, app domain.App) (bool, error) {
+	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
+	if err != nil {
+		return false, err
+	}
+	imageID, ok, err := c.Engine.ImageID(ctx, spec.Tag())
+	if err != nil || !ok {
+		return !ok, err
+	}
+	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
+	if err != nil {
+		return false, err
+	}
+	ns, err := c.NetworkPlan(ctx)
+	if err != nil {
+		return false, err
+	}
+	return runtime.AppConfigDrift(app, runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group})
 }
 
 // Observe exposes observed state to status readers.

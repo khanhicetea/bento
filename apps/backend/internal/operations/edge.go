@@ -183,6 +183,55 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 	return nil
 }
 
+// renderEdge renders the complete edge configuration from current desired
+// state without touching the filesystem or Docker objects.
+func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns NetworkSettings, warn func(string)) (map[string][]byte, error) {
+	apps, err := store.ListApps(ctx, c.Store.DB())
+	if err != nil {
+		return nil, err
+	}
+	proxies, err := store.ListProxies(ctx, c.Store.DB())
+	if err != nil {
+		return nil, err
+	}
+	runningApps := map[string]bool{}
+	for _, a := range apps {
+		if a.Publication == domain.Published {
+			obs, err := c.observe(ctx, a)
+			if err == nil && obs.Running {
+				runningApps[a.ID] = true
+			}
+		}
+	}
+	public := ""
+	if c.PublicAppsPort > 0 {
+		if gw := ns.AppsGateway(); gw != "" {
+			public = net.JoinHostPort(gw, strconv.Itoa(c.PublicAppsPort))
+		} else if warn != nil {
+			warn("apps network gateway not found on this host; /_webhook/* is not forwarded by the edge")
+		}
+	}
+	return edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, PublicUpstream: public})
+}
+
+// EdgeConfigDrift reports whether the live edge generation differs from what
+// current desired state and the embedded templates render.
+func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
+	s, err := c.EdgeSettings(ctx)
+	if err != nil || !s.Enabled {
+		return false, err
+	}
+	ns, err := c.NetworkPlan(ctx)
+	if err != nil {
+		return false, err
+	}
+	files, err := c.renderEdge(ctx, s, ns, nil)
+	if err != nil {
+		return false, err
+	}
+	return !c.edgeGenerations().Same(files), nil
+}
+
 // applyEdge renders routes from current desired state and activates them.
 // Validation failure leaves the live generation untouched and sends no reload.
 func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
@@ -211,32 +260,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	if err != nil {
 		return err
 	}
-	apps, err := store.ListApps(ctx, c.Store.DB())
-	if err != nil {
-		return err
-	}
-	proxies, err := store.ListProxies(ctx, c.Store.DB())
-	if err != nil {
-		return err
-	}
-	runningApps := map[string]bool{}
-	for _, a := range apps {
-		if a.Publication == domain.Published {
-			obs, err := c.observe(ctx, a)
-			if err == nil && obs.Running {
-				runningApps[a.ID] = true
-			}
-		}
-	}
-	public := ""
-	if c.PublicAppsPort > 0 {
-		if gw := ns.AppsGateway(); gw != "" {
-			public = net.JoinHostPort(gw, strconv.Itoa(c.PublicAppsPort))
-		} else {
-			r.Warn(ctx, "apps network gateway not found on this host; /_webhook/* is not forwarded by the edge")
-		}
-	}
-	files, err := edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, PublicUpstream: public})
+	files, err := c.renderEdge(ctx, s, ns, func(msg string) { r.Warn(ctx, "%s", msg) })
 	if err != nil {
 		return err
 	}

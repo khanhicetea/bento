@@ -344,3 +344,21 @@ func (f *Fake) CallCount(prefix string) int {
 	}
 	return n
 }
+
+func (f *Fake) Stats(_ context.Context, id string) (*Stats, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c := f.find(id); c == nil || !c.Running {
+		return nil, nil
+	}
+	return &Stats{OnlineCPUs: 1, PIDs: 1, SampledAt: time.Now()}, nil
+}
+
+func (f *Fake) Top(_ context.Context, id string) ([]Process, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c := f.find(id); c == nil || !c.Running {
+		return nil, nil
+	}
+	return []Process{{PID: "1", PPID: "0", User: "root", Command: "init"}}, nil
+}

@@ -155,6 +155,23 @@ var (
 	SchedulerFiles = []string{"minicrond.toml"}
 )
 
+// AppConfigDrift reports whether any rendered config file differs from the
+// bytes on disk. Identity files are boot-static and covered by Fingerprint.
+func AppConfigDrift(app domain.App, ctx AppContext) (bool, error) {
+	config, _, _, err := RenderAppConfig(app, ctx)
+	if err != nil {
+		return false, err
+	}
+	cfgDir := ctx.Layout.AppConfigDir(app.ID)
+	for _, f := range config {
+		cur, err := os.ReadFile(filepath.Join(cfgDir, f.name))
+		if err != nil || !bytes.Equal(cur, f.data) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // WriteAppConfig promotes rendered files: the config directory is owned by
 // root with the app's group so the app can read but never modify it.
 func WriteAppConfig(app domain.App, ctx AppContext) (Materialized, error) {

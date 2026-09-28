@@ -15,6 +15,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,6 +129,8 @@ type Engine interface {
 	// VolumeRemove is used only to undo volumes created by a failed import.
 	VolumeRemove(ctx context.Context, name string) error
 	CopyFrom(ctx context.Context, id, path string) (io.ReadCloser, error)
+	Stats(ctx context.Context, id string) (*Stats, error)
+	Top(ctx context.Context, id string) ([]Process, error)
 }
 
 // SDK implements Engine with the moby client.
@@ -609,4 +612,115 @@ func (s *SDK) CopyFrom(ctx context.Context, id, path string) (io.ReadCloser, err
 		return nil, err
 	}
 	return res.Content, nil
+}
+
+// Stats is a single resource-usage sample for a container.
+type Stats struct {
+	CPUPercent  float64
+	OnlineCPUs  uint32
+	MemoryUsage uint64
+	MemoryLimit uint64
+	NetworkRx   uint64
+	NetworkTx   uint64
+	BlockRead   uint64
+	BlockWrite  uint64
+	PIDs        uint64
+	SampledAt   time.Time
+}
+
+// Process is one row of a container's process table.
+type Process struct {
+	PID        string
+	PPID       string
+	User       string
+	CPUPercent float64
+	MemPercent float64
+	RSSKiB     uint64
+	Elapsed    string
+	Command    string
+}
+
+// Stats takes a two-point sample (about one second) so CPU usage is a real
+// rate. Returns nil when the container is missing or not running.
+func (s *SDK) Stats(ctx context.Context, id string) (*Stats, error) {
+	res, err := s.c.ContainerStats(ctx, id, client.ContainerStatsOptions{IncludePreviousSample: true})
+	if IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	var raw container.StatsResponse
+	if err := json.NewDecoder(res.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+	if raw.Read.IsZero() || raw.PidsStats.Current == 0 {
+		return nil, nil
+	}
+	return statsFrom(raw), nil
+}
+
+func statsFrom(raw container.StatsResponse) *Stats {
+	st := &Stats{
+		OnlineCPUs: raw.CPUStats.OnlineCPUs, MemoryLimit: raw.MemoryStats.Limit,
+		PIDs: raw.PidsStats.Current, SampledAt: raw.Read,
+	}
+	if st.OnlineCPUs == 0 {
+		st.OnlineCPUs = uint32(len(raw.CPUStats.CPUUsage.PercpuUsage))
+	}
+	cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage) - float64(raw.PreCPUStats.CPUUsage.TotalUsage)
+	sysDelta := float64(raw.CPUStats.SystemUsage) - float64(raw.PreCPUStats.SystemUsage)
+	if cpuDelta > 0 && sysDelta > 0 {
+		st.CPUPercent = cpuDelta / sysDelta * float64(st.OnlineCPUs) * 100
+	}
+	// Match `docker stats`: exclude reclaimable page cache.
+	mem := raw.MemoryStats.Usage
+	cache := raw.MemoryStats.Stats["inactive_file"]
+	if cache == 0 {
+		cache = raw.MemoryStats.Stats["total_inactive_file"]
+	}
+	if cache < mem {
+		mem -= cache
+	}
+	st.MemoryUsage = mem
+	for _, n := range raw.Networks {
+		st.NetworkRx += n.RxBytes
+		st.NetworkTx += n.TxBytes
+	}
+	for _, e := range raw.BlkioStats.IoServiceBytesRecursive {
+		switch strings.ToLower(e.Op) {
+		case "read":
+			st.BlockRead += e.Value
+		case "write":
+			st.BlockWrite += e.Value
+		}
+	}
+	return st
+}
+
+var topColumns = []string{"pid", "ppid", "user", "pcpu", "pmem", "rss", "etime", "args"}
+
+// Top lists the container's processes. Returns nil when the container is
+// missing or not running.
+func (s *SDK) Top(ctx context.Context, id string) ([]Process, error) {
+	res, err := s.c.ContainerTop(ctx, id, client.ContainerTopOptions{Arguments: []string{"-o", strings.Join(topColumns, ",")}})
+	if IsNotFound(err) || (err != nil && strings.Contains(err.Error(), "is not running")) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Process, 0, len(res.Processes))
+	for _, row := range res.Processes {
+		if len(row) < len(topColumns) {
+			continue
+		}
+		p := Process{PID: row[0], PPID: row[1], User: row[2], Elapsed: row[6], Command: strings.Join(row[7:], " ")}
+		p.CPUPercent, _ = strconv.ParseFloat(row[3], 64)
+		p.MemPercent, _ = strconv.ParseFloat(row[4], 64)
+		p.RSSKiB, _ = strconv.ParseUint(row[5], 10, 64)
+		out = append(out, p)
+	}
+	return out, nil
 }

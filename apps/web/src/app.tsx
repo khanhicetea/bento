@@ -25,6 +25,9 @@ export function App() {
           <Route path="/" component={OverviewPage} />
           <Route path="/apps" component={ApplicationsPage} />
           <Route path="/apps/new" component={CreateApplicationPage} />
+          <Route path="/apps/:slug/monitoring">
+            {(params) => <ApplicationPage slug={params.slug} tab="monitoring" />}
+          </Route>
           <Route path="/apps/:slug/logs">{(params) => <ApplicationPage slug={params.slug} tab="logs" />}</Route>
           <Route path="/apps/:slug/terminal">{(params) => <ApplicationPage slug={params.slug} tab="terminal" />}</Route>
           <Route path="/apps/:slug/data">{(params) => <ApplicationPage slug={params.slug} tab="data" />}</Route>
