@@ -92,6 +92,23 @@ type VolumeInfo struct {
 	Labels     map[string]string
 }
 
+type ImageSummary struct {
+	ID      string
+	Tags    []string
+	Size    int64
+	Created int64
+	Labels  map[string]string
+}
+
+type NetworkSummary struct {
+	ID       string
+	Name     string
+	Driver   string
+	Internal bool
+	Labels   map[string]string
+	Subnets  []netip.Prefix
+}
+
 type VersionInfo struct {
 	ServerVersion string
 	APIVersion    string
@@ -128,6 +145,13 @@ type Engine interface {
 	VolumeInspect(ctx context.Context, name string) (*VolumeInfo, error)
 	// VolumeRemove is used only to undo volumes created by a failed import.
 	VolumeRemove(ctx context.Context, name string) error
+	// Host-wide read-only listings for the System inventory view.
+	ListImages(ctx context.Context) ([]ImageSummary, error)
+	ListVolumes(ctx context.Context) ([]VolumeInfo, error)
+	ListNetworks(ctx context.Context) ([]NetworkSummary, error)
+	// RemoveImage deletes an image without force: the Engine refuses while
+	// any container references it.
+	RemoveImage(ctx context.Context, id string, tags []string) error
 	CopyFrom(ctx context.Context, id, path string) (io.ReadCloser, error)
 	Stats(ctx context.Context, id string) (*Stats, error)
 	Top(ctx context.Context, id string) ([]Process, error)
@@ -604,6 +628,63 @@ func (s *SDK) VolumeInspect(ctx context.Context, name string) (*VolumeInfo, erro
 func (s *SDK) VolumeRemove(ctx context.Context, name string) error {
 	_, err := s.c.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
 	return err
+}
+
+func (s *SDK) ListImages(ctx context.Context) ([]ImageSummary, error) {
+	res, err := s.c.ImageList(ctx, client.ImageListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ImageSummary, 0, len(res.Items))
+	for _, i := range res.Items {
+		out = append(out, ImageSummary{ID: i.ID, Tags: i.RepoTags, Size: i.Size, Created: i.Created, Labels: i.Labels})
+	}
+	return out, nil
+}
+
+func (s *SDK) RemoveImage(ctx context.Context, id string, tags []string) error {
+	// Removing by ID fails for multi-tag images without force, so untag each
+	// reference; the last one deletes the image.
+	refs := tags
+	if len(refs) == 0 {
+		refs = []string{id}
+	}
+	for _, ref := range refs {
+		if _, err := s.c.ImageRemove(ctx, ref, client.ImageRemoveOptions{PruneChildren: true}); err != nil && !IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SDK) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
+	res, err := s.c.VolumeList(ctx, client.VolumeListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VolumeInfo, 0, len(res.Items))
+	for _, v := range res.Items {
+		out = append(out, volumeInfo(v))
+	}
+	return out, nil
+}
+
+func (s *SDK) ListNetworks(ctx context.Context) ([]NetworkSummary, error) {
+	res, err := s.c.NetworkList(ctx, client.NetworkListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]NetworkSummary, 0, len(res.Items))
+	for _, n := range res.Items {
+		ns := NetworkSummary{ID: n.ID, Name: n.Name, Driver: n.Driver, Internal: n.Internal, Labels: n.Labels}
+		for _, c := range n.IPAM.Config {
+			if c.Subnet.IsValid() {
+				ns.Subnets = append(ns.Subnets, c.Subnet)
+			}
+		}
+		out = append(out, ns)
+	}
+	return out, nil
 }
 
 func (s *SDK) CopyFrom(ctx context.Context, id, path string) (io.ReadCloser, error) {

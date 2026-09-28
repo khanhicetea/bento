@@ -2,6 +2,7 @@
 export const keys = {
   session: ["session"] as const,
   system: ["system"] as const,
+  dockerInventory: ["system", "docker"] as const,
   catalog: ["catalog"] as const,
   apps: {
     all: ["apps"] as const,

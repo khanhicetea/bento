@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,8 @@ type Fake struct {
 	Networks   map[string]NetworkInfo
 	Volumes    map[string]VolumeInfo
 	Images     map[string]string
+	// ImageLabels holds labels by image ID (set by BuildImage).
+	ImageLabels map[string]map[string]string
 	// ExecHook answers Exec calls; default exits 0.
 	ExecHook func(id string, req ExecRequest) ExecResult
 	// FailOn makes the named method return an error once (fault injection).
@@ -41,7 +44,7 @@ type FakeContainer struct {
 }
 
 func NewFake() *Fake {
-	return &Fake{Containers: map[string]*FakeContainer{}, Networks: map[string]NetworkInfo{}, Volumes: map[string]VolumeInfo{}, Images: map[string]string{}}
+	return &Fake{Containers: map[string]*FakeContainer{}, Networks: map[string]NetworkInfo{}, Volumes: map[string]VolumeInfo{}, Images: map[string]string{}, ImageLabels: map[string]map[string]string{}}
 }
 
 func (f *Fake) record(call string) error {
@@ -84,7 +87,7 @@ func (f *Fake) PullImage(_ context.Context, ref string, _ func(string)) error {
 	return nil
 }
 
-func (f *Fake) BuildImage(_ context.Context, tag string, r io.Reader, _, _ map[string]string, _ func(string)) (string, error) {
+func (f *Fake) BuildImage(_ context.Context, tag string, r io.Reader, _, labels map[string]string, _ func(string)) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.record("BuildImage " + tag); err != nil {
@@ -93,6 +96,7 @@ func (f *Fake) BuildImage(_ context.Context, tag string, r io.Reader, _, _ map[s
 	_, _ = io.Copy(io.Discard, r)
 	id := "sha256:built-" + tag
 	f.Images[tag] = id
+	f.ImageLabels[id] = labels
 	return id, nil
 }
 
@@ -168,7 +172,19 @@ outer:
 		if c.Running {
 			state = container.StateRunning
 		}
-		out = append(out, container.Summary{ID: c.ID, Names: []string{"/" + c.Name}, Labels: c.Spec.Config.Labels, State: state})
+		sum := container.Summary{ID: c.ID, Names: []string{"/" + c.Name}, Image: c.Spec.Config.Image, ImageID: f.Images[c.Spec.Config.Image],
+			Labels: c.Spec.Config.Labels, State: state, NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{}}}
+		if c.Spec.HostConfig != nil {
+			for _, m := range c.Spec.HostConfig.Mounts {
+				sum.Mounts = append(sum.Mounts, container.MountPoint{Type: m.Type, Name: m.Source, Source: m.Source, Destination: m.Target})
+			}
+		}
+		if c.Spec.Networking != nil {
+			for name := range c.Spec.Networking.EndpointsConfig {
+				sum.NetworkSettings.Networks[name] = &network.EndpointSettings{}
+			}
+		}
+		out = append(out, sum)
 	}
 	return out, nil
 }
@@ -308,6 +324,73 @@ func (f *Fake) VolumeRemove(_ context.Context, name string) error {
 	defer f.mu.Unlock()
 	delete(f.Volumes, name)
 	return f.record("VolumeRemove " + name)
+}
+
+func (f *Fake) ListImages(context.Context) ([]ImageSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	idx := map[string]int{}
+	var out []ImageSummary
+	for _, ref := range sortedKeys(f.Images) {
+		id := f.Images[ref]
+		if i, ok := idx[id]; ok {
+			out[i].Tags = append(out[i].Tags, ref)
+			continue
+		}
+		idx[id] = len(out)
+		out = append(out, ImageSummary{ID: id, Tags: []string{ref}, Labels: f.ImageLabels[id]})
+	}
+	return out, nil
+}
+
+func (f *Fake) RemoveImage(_ context.Context, id string, _ []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.record("RemoveImage " + id); err != nil {
+		return err
+	}
+	for _, c := range f.Containers {
+		if f.Images[c.Spec.Config.Image] == id {
+			return fmt.Errorf("conflict: image %s is being used by container %s", id, c.ID)
+		}
+	}
+	for ref, got := range f.Images {
+		if got == id {
+			delete(f.Images, ref)
+		}
+	}
+	delete(f.ImageLabels, id)
+	return nil
+}
+
+func (f *Fake) ListVolumes(context.Context) ([]VolumeInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]VolumeInfo, 0, len(f.Volumes))
+	for _, k := range sortedKeys(f.Volumes) {
+		out = append(out, f.Volumes[k])
+	}
+	return out, nil
+}
+
+func (f *Fake) ListNetworks(context.Context) ([]NetworkSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]NetworkSummary, 0, len(f.Networks))
+	for _, k := range sortedKeys(f.Networks) {
+		n := f.Networks[k]
+		out = append(out, NetworkSummary{ID: n.ID, Name: n.Name, Driver: "bridge", Internal: n.Internal, Labels: n.Labels, Subnets: n.Subnets})
+	}
+	return out, nil
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (f *Fake) CopyFrom(context.Context, string, string) (io.ReadCloser, error) {

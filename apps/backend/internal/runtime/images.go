@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,6 +99,31 @@ func (m *ImageManager) Ensure(ctx context.Context, key domain.ImageKey, progress
 		return "", spec, err
 	}
 	return id, spec, nil
+}
+
+// ErrImageNotPrunable reports an image that is missing, not Bento-built, or
+// referenced by a container.
+var ErrImageNotPrunable = errors.New("image is not prunable")
+
+// Remove deletes an unused Bento-built image. It re-verifies under the build
+// lock so it cannot race a concurrent Ensure; the Engine additionally refuses
+// removal while any container references the image.
+func (m *ImageManager) Remove(ctx context.Context, id string) (docker.ImageSummary, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	containers, err := m.Engine.List(ctx, nil)
+	if err != nil {
+		return docker.ImageSummary{}, err
+	}
+	images, err := m.Engine.ListImages(ctx)
+	if err != nil {
+		return docker.ImageSummary{}, err
+	}
+	img, ok := PrunableImage(containers, images, id)
+	if !ok {
+		return img, ErrImageNotPrunable
+	}
+	return img, m.Engine.RemoveImage(ctx, img.ID, img.Tags)
 }
 
 type identityCache struct {

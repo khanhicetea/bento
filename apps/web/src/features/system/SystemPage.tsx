@@ -17,15 +17,40 @@ import { formatRelative } from "../../lib/format.ts";
 import { DataServices } from "../data/DatabasesPage.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
+import { DockerInventory, type DockerKind } from "./DockerInventory.tsx";
+
+type Tab = "overview" | DockerKind;
+const tabLabels: Record<Tab, string> = {
+  overview: "Overview",
+  images: "Images",
+  volumes: "Volumes",
+  networks: "Networks",
+};
 
 export function SystemPage() {
+  const [tab, setTab] = useState<Tab>("overview");
+  return (
+    <>
+      <PageHeader title="System" />
+      <div className="seg mb-5" role="tablist" aria-label="System sections">
+        {(["overview", "images", "volumes", "networks"] as const).map((value) => (
+          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
+            {tabLabels[value]}
+          </button>
+        ))}
+      </div>
+      {tab === "overview" ? <Overview /> : <DockerInventory kind={tab} />}
+    </>
+  );
+}
+
+function Overview() {
   const system = useQuery({ queryKey: keys.system, queryFn: ({ signal }) => api.system.status(signal) });
   if (system.isPending) return <DomainLoading label="system" />;
   if (system.error) return <DomainError message={messageOf(system.error)} onRetry={() => void system.refetch()} />;
   const status = system.data;
   return (
     <>
-      <PageHeader title="System" />
       <div className="box box--3">
         <Cell>
           <div className="metric">

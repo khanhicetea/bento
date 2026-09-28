@@ -71,6 +71,7 @@ func (c *Controller) registerHandlers() {
 		KindStackExport:   c.handleStackExport,
 		KindPermissions:   c.handlePermissions,
 		KindAppDeploy:     c.handleDeploy,
+		KindImagePrune:    c.handleImagePrune,
 	}
 }
 

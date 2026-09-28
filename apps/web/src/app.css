@@ -652,6 +652,9 @@ a.row:hover {
   flex-shrink: 0;
   color: var(--muted-foreground);
 }
+.row--muted {
+  opacity: 0.5;
+}
 .rows--lined .row + .row {
   border-top: 1px solid var(--border);
   border-radius: 0;

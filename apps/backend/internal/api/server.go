@@ -18,6 +18,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/reconcile"
+	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/scheduler"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
@@ -51,6 +52,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/session", s.handleLogout)
 
 	api("GET /api/v1/system", s.handleSystem)
+	api("GET /api/v1/system/docker", s.handleDockerInventory)
+	api("POST /api/v1/system/docker/images/{digest}/prune", s.handleImagePrune)
 	api("GET /api/v1/catalog", s.handleCatalog)
 	api("PUT /api/v1/auth/password", s.handleSetPassword)
 
@@ -200,6 +203,87 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	queued, _ := store.ListOperations(ctx, s.Store.DB(), store.OpFilter{States: []store.OpState{store.OpQueued, store.OpRunning}, Limit: 500})
 	st.QueuedOps = len(queued)
 	writeJSON(w, http.StatusOK, st)
+}
+
+func (s *Server) handleDockerInventory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	containers, err := s.C.Engine.List(ctx, nil)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	images, err := s.C.Engine.ListImages(ctx)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	volumes, err := s.C.Engine.ListVolumes(ctx)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	networks, err := s.C.Engine.ListNetworks(ctx)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	apps, err := store.ListApps(ctx, s.Store.DB())
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	slugs := make(map[string]string, len(apps))
+	for _, a := range apps {
+		slugs[a.ID] = a.Slug
+	}
+	inv := s.C.Names.ClassifyInventory(containers, images, volumes, networks, slugs)
+	out := dto.DockerInventory{Images: []dto.DockerImage{}, Volumes: []dto.DockerVolume{}, Networks: []dto.DockerNetwork{}}
+	for _, i := range inv.Images {
+		if i.Ownership == runtime.OwnedForeign {
+			continue
+		}
+		out.Images = append(out.Images, dto.DockerImage{ID: i.ID, Tags: nonNil(i.Tags), SizeBytes: i.Size,
+			CreatedAt: platform.FormatTime(time.Unix(i.Created, 0)), Built: i.Built,
+			Ownership: dto.DockerOwnership(i.Ownership), UsedBy: nonNil(i.UsedBy), Prunable: i.Prunable})
+	}
+	for _, v := range inv.Volumes {
+		if v.Ownership == runtime.OwnedForeign {
+			continue
+		}
+		out.Volumes = append(out.Volumes, dto.DockerVolume{Name: v.Name, Service: v.Service,
+			Ownership: dto.DockerOwnership(v.Ownership), UsedBy: nonNil(v.UsedBy)})
+	}
+	for _, n := range inv.Networks {
+		if n.Ownership == runtime.OwnedForeign {
+			continue
+		}
+		subnets := []string{}
+		for _, p := range n.Subnets {
+			subnets = append(subnets, p.String())
+		}
+		out.Networks = append(out.Networks, dto.DockerNetwork{ID: n.ID, Name: n.Name, Driver: n.Driver, Internal: n.Internal,
+			Subnets: subnets, Ownership: dto.DockerOwnership(n.Ownership), UsedBy: nonNil(n.UsedBy)})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleImagePrune(w http.ResponseWriter, r *http.Request) {
+	var req dto.ConfirmRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.PruneImage(r.Context(), r.PathValue("digest"), req.Confirm, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
 }
 
 func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/reconcile"
 	"github.com/khanhicetea/bento/apps/backend/internal/scheduler"
@@ -632,5 +633,48 @@ func TestDBAdminTicketGateway(t *testing.T) {
 	c.do("DELETE", "/api/v1/session", "", nil)
 	if resp := get("/_bento/dbadmin/b/bmysql/", nil, grant); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("grant survived logout -> %d", resp.StatusCode)
+	}
+}
+
+func TestDockerInventory(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	h.Fake.Images["nginx:latest"] = "sha256:nginx"
+	h.Fake.Images["bento/old:1"] = "sha256:" + strings.Repeat("a", 64)
+	h.Fake.ImageLabels["sha256:"+strings.Repeat("a", 64)] = map[string]string{"io.bento.managed": "true"}
+	h.Fake.Volumes["mine"] = docker.VolumeInfo{Name: "mine", Labels: h.C.Names.Labels("volume", map[string]string{"io.bento.service": "pg"})}
+	h.Fake.Volumes["theirs"] = docker.VolumeInfo{Name: "theirs"}
+	inventory := func() dto.DockerInventory {
+		resp, body := c.do("GET", "/api/v1/system/docker", "", nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status %d: %s", resp.StatusCode, body)
+		}
+		var inv dto.DockerInventory
+		if err := json.Unmarshal([]byte(body), &inv); err != nil {
+			t.Fatal(err)
+		}
+		return inv
+	}
+	inv := inventory()
+	if len(inv.Images) != 1 || !inv.Images[0].Prunable || inv.Images[0].UsedBy == nil {
+		t.Fatalf("unrelated images must be hidden: %+v", inv.Images)
+	}
+	if len(inv.Volumes) != 1 || inv.Volumes[0].Name != "mine" || inv.Volumes[0].Ownership != dto.DockerOwnershipStack {
+		t.Fatalf("volumes: %+v", inv.Volumes)
+	}
+
+	digest := strings.Repeat("a", 64)
+	if resp, body := c.write("POST", "/api/v1/system/docker/images/"+digest+"/prune", `{"confirm":"yes"}`); resp.StatusCode < 400 {
+		t.Fatalf("weak confirmation accepted: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := c.write("POST", "/api/v1/system/docker/images/"+digest+"/prune", `{"confirm":"delete"}`); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("prune: %d %s", resp.StatusCode, body)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for h.Fake.CallCount("RemoveImage") == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if h.Fake.CallCount("RemoveImage") != 1 {
+		t.Fatal("image was not removed")
 	}
 }

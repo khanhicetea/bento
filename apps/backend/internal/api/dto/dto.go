@@ -620,6 +620,50 @@ type SystemStatus struct {
 	QueuedOps     int    `json:"queuedOps"`
 }
 
+// DockerOwnership attributes a Docker resource to this or another Bento stack.
+// Resources unrelated to Bento are never returned.
+type DockerOwnership string
+
+const (
+	DockerOwnershipStack      DockerOwnership = "stack"
+	DockerOwnershipOtherStack DockerOwnership = "other-stack"
+)
+
+type DockerImage struct {
+	ID        string          `json:"id"`
+	Tags      []string        `json:"tags"`
+	SizeBytes int64           `json:"sizeBytes"`
+	CreatedAt string          `json:"createdAt"`
+	Built     bool            `json:"built"`
+	Ownership DockerOwnership `json:"ownership"`
+	UsedBy    []string        `json:"usedBy"`
+	// Prunable: Bento-built and referenced by no container.
+	Prunable bool `json:"prunable"`
+}
+
+type DockerVolume struct {
+	Name      string          `json:"name"`
+	Service   string          `json:"service,omitempty"`
+	Ownership DockerOwnership `json:"ownership"`
+	UsedBy    []string        `json:"usedBy"`
+}
+
+type DockerNetwork struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Driver    string          `json:"driver"`
+	Internal  bool            `json:"internal"`
+	Subnets   []string        `json:"subnets"`
+	Ownership DockerOwnership `json:"ownership"`
+	UsedBy    []string        `json:"usedBy"`
+}
+
+type DockerInventory struct {
+	Images   []DockerImage   `json:"images"`
+	Volumes  []DockerVolume  `json:"volumes"`
+	Networks []DockerNetwork `json:"networks"`
+}
+
 type Session struct {
 	Authenticated bool   `json:"authenticated"`
 	CSRFToken     string `json:"csrfToken,omitempty"`

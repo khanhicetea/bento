@@ -542,6 +542,46 @@ export interface SystemStatus {
   runningApps: number /* int */;
   queuedOps: number /* int */;
 }
+/**
+ * DockerOwnership attributes a Docker resource to this or another Bento stack.
+ * Resources unrelated to Bento are never returned.
+ */
+export const DockerOwnershipStack = "stack";
+export const DockerOwnershipOtherStack = "other-stack";
+export type DockerOwnership = typeof DockerOwnershipStack | typeof DockerOwnershipOtherStack;
+export interface DockerImage {
+  id: string;
+  tags: string[];
+  sizeBytes: number /* int64 */;
+  createdAt: string;
+  built: boolean;
+  ownership: DockerOwnership;
+  usedBy: string[];
+  /**
+   * Prunable: Bento-built and referenced by no container.
+   */
+  prunable: boolean;
+}
+export interface DockerVolume {
+  name: string;
+  service?: string;
+  ownership: DockerOwnership;
+  usedBy: string[];
+}
+export interface DockerNetwork {
+  id: string;
+  name: string;
+  driver: string;
+  internal: boolean;
+  subnets: string[];
+  ownership: DockerOwnership;
+  usedBy: string[];
+}
+export interface DockerInventory {
+  images: DockerImage[];
+  volumes: DockerVolume[];
+  networks: DockerNetwork[];
+}
 export interface Session {
   authenticated: boolean;
   csrfToken?: string;
