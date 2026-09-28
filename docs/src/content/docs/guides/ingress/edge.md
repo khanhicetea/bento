@@ -29,4 +29,9 @@ where the route name is `app-<slug>` or `proxy-<name>`).
 
 ## Reverse proxies
 
-`bento proxy set --json proxy.json` with `{"name":"grafana","upstreams":["http://10.0.0.5:3000"],"domains":["grafana.example.com"],"route":{"tls":"acme","redirectHttps":true,"accessLog":false},"enabled":true}`.
+`bento proxy set --json proxy.json` with `{"name":"grafana","upstreams":["http://10.0.0.5:3000"],"domains":["grafana.example.com"],"route":{"tls":"acme","redirectHttps":true,"accessLog":false,"staticCache":false},"enabled":true}`.
+
+Each proxy gets its own `upstream` block with pooled keepalive connections. `"staticCache": true` caches public
+static files (css, js, images, fonts) in the edge's in-memory cache. Unlike app routes, a proxy's cache honors the
+upstream's own headers: responses marked `private`, `no-store`, or `no-cache`, and responses that set cookies, are
+never stored, and upstream freshness (`max-age`) wins over the 10-minute default.

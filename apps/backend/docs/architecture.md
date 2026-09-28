@@ -229,7 +229,8 @@ The edge (`edge` package + `operations/edge.go`):
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
 When the utils listener binds the apps network, every managed route (app or proxy) reserves
-`location ^~ /_bento/webhook/`, proxied to `http://<apps-gateway>:<port>` with an 8 MiB body limit; it never reaches the
+`location ^~ /_bento/webhook/`, proxied through the shared `bento_utils` upstream (`<apps-gateway>:<port>`,
+`keepalive 2`) with an 8 MiB body limit; it never reaches the
 upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
 Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils listener itself. `/_bento/dbadmin/*` and `/_bento/scheduler/*` are never reserved on app routes.
 

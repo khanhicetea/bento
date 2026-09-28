@@ -119,6 +119,7 @@ func Render(in Input) (map[string][]byte, error) {
 		}
 		r.UpstreamScheme, r.UpstreamURI = scheme, uri
 		r.MaxBodyMB = 64
+		r.StaticCache = p.Route.StaticCache
 		anyACME = anyACME || r.ACME
 		routes = append(routes, r)
 	}
@@ -126,6 +127,7 @@ func Render(in Input) (map[string][]byte, error) {
 	files := map[string][]byte{}
 	main, err := assets.Render("edge-nginx.conf.tmpl", map[string]any{
 		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3,
+		"UtilsUpstream": in.UtilsUpstream,
 	})
 	if err != nil {
 		return nil, err

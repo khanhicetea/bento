@@ -35,7 +35,6 @@ upstream {{.UpstreamName}} {
     proxy_send_timeout 300s;
     proxy_read_timeout 300s;
     proxy_request_buffering off;
-    proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}}{{.UpstreamURI}};
 {{- end}}
 {{- define "bento-location"}}
   set $bento_route "{{.Name}}";
@@ -59,18 +58,24 @@ upstream {{.UpstreamName}} {
     proxy_connect_timeout 3s;
     proxy_send_timeout 30s;
     proxy_read_timeout 30s;
-    proxy_pass http://{{.UtilsUpstream}};
+    proxy_pass http://bento_utils;
   }
 {{- end}}
-{{- if and .AppUpstream .StaticCache}}
+{{- if .StaticCache}}
   # Static-extension responses are served from the edge cache. Opting in
   # asserts they are not per-user (PHP apps serve them from disk, never PHP).
   location ~* \.(?:css|js|mjs|map|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot|webmanifest)$ {
     proxy_cache bento_static;
     proxy_cache_key "{{.Name}}$host$request_uri";
+{{- if .AppUpstream}}
     # Edge TTL is short and independent of the app's 30d browser Expires so a
     # deploy that changes an unversioned asset is picked up within minutes.
     proxy_ignore_headers Cache-Control Expires;
+{{- else}}
+    # External upstreams are trusted only for what they mark cacheable:
+    # Cache-Control private/no-store/no-cache and Set-Cookie responses are
+    # never stored; the 10m default applies when no freshness is given.
+{{- end}}
     proxy_cache_valid 200 10m;
     proxy_cache_valid 404 1m;
     proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
@@ -80,10 +85,17 @@ upstream {{.UpstreamName}} {
     proxy_no_cache $http_authorization;
     add_header X-Bento-Cache $upstream_cache_status always;
 {{- template "bento-proxy" .}}
+{{- if .UpstreamURI}}
+    # A regex location cannot give proxy_pass a URI; map "/" onto the
+    # upstream path exactly as location / does.
+    rewrite ^/(.*)$ {{.UpstreamURI}}$1 break;
+{{- end}}
+    proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}};
   }
 {{- end}}
   location / {
 {{- template "bento-proxy" .}}
+    proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}}{{.UpstreamURI}};
   }
 {{- end}}
 

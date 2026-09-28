@@ -83,6 +83,19 @@ http {
   proxy_cache_path /var/cache/nginx/static levels=1:2 keys_zone=bento_static:16m
                    max_size=192m inactive=60m use_temp_path=off;
 
+{{- if .UtilsUpstream}}
+
+  # Backend utils listener for /_bento/webhook/*. Webhooks are rare, so a
+  # couple of idle connections is enough to skip most TCP handshakes.
+  upstream bento_utils {
+    server {{.UtilsUpstream}};
+    keepalive 2;
+    # Below the utils listener's 60s idle timeout so a closing connection is
+    # never reused.
+    keepalive_timeout 50s;
+  }
+{{- end}}
+
   include /etc/bento-edge-custom/http.d/*.conf;
 
   # Unknown Host/SNI is rejected.

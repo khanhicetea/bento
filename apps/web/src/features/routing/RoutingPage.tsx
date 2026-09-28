@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Pencil, Trash2 } from "lucide-react";
+import { ExternalLink, Globe, Lock, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -15,8 +15,17 @@ import {
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
@@ -292,108 +301,54 @@ function TunnelPanel() {
   );
 }
 
+type ProxyForm = { name: string; upstreams: string; domains: string; route: T.Route; enabled: boolean };
+const blankProxy: ProxyForm = {
+  name: "",
+  upstreams: "",
+  domains: "",
+  route: { tls: "none", redirectHttps: false, accessLog: false, staticCache: false },
+  enabled: true,
+};
+const tlsLabels: Record<T.TLSMode, string> = {
+  none: "HTTP only",
+  "self-signed": "Self-signed",
+  acme: "ACME",
+  external: "External cert",
+};
+
 function ProxiesPanel() {
   const query = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
-  const [form, setForm] = useState({ name: "", upstreams: "", domains: "", tls: "none" as T.TLSMode });
+  // null: dialog closed; "new" | proxy name: adding or editing.
+  const [editing, setEditing] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<T.Proxy | null>(null);
-  const save = useOperationMutation(() =>
-    api.proxies.upsert({
-      name: form.name,
-      upstreams: form.upstreams.split(/\s+/).filter(Boolean),
-      domains: form.domains.split(/[\s,]+/).filter(Boolean),
-      route: { tls: form.tls, redirectHttps: false, accessLog: false },
-      enabled: true,
-    }),
-  );
   const remove = useOperationMutation((confirm: string) => api.proxies.remove(removeTarget?.name ?? "", confirm));
-  function edit(proxy: T.Proxy) {
-    setForm({
-      name: proxy.name,
-      upstreams: proxy.upstreams.join(" "),
-      domains: proxy.domains.map((domain) => domain.name).join(" "),
-      tls: proxy.route.tls,
-    });
-  }
-  const proxies = query.data?.proxies ?? [];
+  if (query.isPending) return <DomainLoading label="proxies" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  const proxies = query.data.proxies;
+  const current = proxies.find((proxy) => proxy.name === editing);
   return (
-    <div className="box box--main">
-      <Cell title="Proxies">
-        {query.error ? (
-          <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
-        ) : proxies.length === 0 ? (
-          <p className="note">None yet</p>
-        ) : (
-          <div className="rows rows--lined">
-            {proxies.map((proxy) => (
-              <div key={proxy.id} className="row">
-                <span className="row__main">
-                  <strong>{proxy.name}</strong>
-                  <small className="flex items-center gap-1">
-                    {proxy.domains.map((domain) => domain.name).join(", ") || "—"}
-                    <ArrowRight className="size-3 shrink-0" />
-                    {proxy.upstreams.join(", ")}
-                  </small>
-                </span>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label={`Edit ${proxy.name}`}
-                  onClick={() => edit(proxy)}
-                >
-                  <Pencil />
-                </button>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label={`Remove ${proxy.name}`}
-                  onClick={() => setRemoveTarget(proxy)}
-                >
-                  <Trash2 />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Cell>
-      <Cell title="Add or update" className="cell--muted">
-        <div className="grid gap-3">
-          <Field label="Name">
-            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          </Field>
-          <Field label="Upstreams">
-            <Input
-              placeholder="http://10.0.0.5:8080"
-              value={form.upstreams}
-              onChange={(event) => setForm({ ...form, upstreams: event.target.value })}
+    <>
+      <div className="box">
+        <div className="tiles">
+          {proxies.map((proxy) => (
+            <ProxyTile
+              key={proxy.id}
+              proxy={proxy}
+              onEdit={() => setEditing(proxy.name)}
+              onRemove={() => setRemoveTarget(proxy)}
             />
-          </Field>
-          <Field label="Domains">
-            <Input
-              placeholder="a.example.com b.example.com"
-              value={form.domains}
-              onChange={(event) => setForm({ ...form, domains: event.target.value })}
-            />
-          </Field>
-          <Field label="TLS">
-            <NativeSelect
-              className="w-full"
-              value={form.tls}
-              onChange={(event) => setForm({ ...form, tls: event.target.value as T.TLSMode })}
-            >
-              <option value="none">None</option>
-              <option value="self-signed">Self-signed</option>
-              <option value="acme">ACME</option>
-            </NativeSelect>
-          </Field>
-          <Button
-            disabled={!form.name || !form.upstreams.trim() || save.isPending}
-            onClick={() => save.mutate(undefined)}
-          >
-            Save proxy
-          </Button>
-          {save.error && <p className="note note--bad">{messageOf(save.error)}</p>}
+          ))}
+          <button type="button" className="cell tile tile--add" onClick={() => setEditing("new")}>
+            {proxies.length === 0 ? <Waypoints aria-hidden="true" /> : <Plus aria-hidden="true" />}
+            {proxies.length === 0 ? "No proxies yet · Add one" : "Add proxy"}
+          </button>
         </div>
-      </Cell>
+      </div>
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          {editing !== null && <ProxyDialogBody key={editing} proxy={current} onDone={() => setEditing(null)} />}
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={removeTarget !== null}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
@@ -406,6 +361,211 @@ function ProxiesPanel() {
         error={remove.error}
         onConfirm={(typed) => remove.mutate(typed, { onSuccess: () => setRemoveTarget(null) })}
       />
-    </div>
+    </>
+  );
+}
+
+function ProxyTile({ proxy, onEdit, onRemove }: { proxy: T.Proxy; onEdit: () => void; onRemove: () => void }) {
+  const primary = proxy.domains.find((domain) => domain.primary) ?? proxy.domains[0];
+  const scheme = proxy.route.tls === "none" ? "http" : "https";
+  const options = [
+    proxy.route.redirectHttps && "HTTPS redirect",
+    proxy.route.staticCache && "Static cache",
+    proxy.route.accessLog && "Access log",
+  ].filter(Boolean);
+  return (
+    <article className="cell tile" aria-label={proxy.name}>
+      <div className="tile__top">
+        <span className="mono mono--lg" aria-hidden="true">
+          {proxy.name.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="tile__name">
+          <strong>{proxy.name}</strong>
+          <small>
+            {primary ? (
+              <a href={`${scheme}://${primary.name}`} target="_blank" rel="noreferrer">
+                {primary.name} <ExternalLink className="inline size-3" aria-hidden="true" />
+              </a>
+            ) : (
+              "No domain"
+            )}
+          </small>
+        </div>
+        <StateBadge state={proxy.enabled ? "published" : "stopped"} label={proxy.enabled ? "Enabled" : "Disabled"} />
+      </div>
+      <dl className="facts">
+        <div className="facts__wide">
+          <dt>Upstreams</dt>
+          <dd>
+            <span className="chips">
+              {proxy.upstreams.map((upstream) => (
+                <code key={upstream} className="chip">
+                  {upstream}
+                </code>
+              ))}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>TLS</dt>
+          <dd className="inline-flex items-center gap-1">
+            {proxy.route.tls === "none" ? <Globe aria-hidden="true" /> : <Lock aria-hidden="true" />}
+            {tlsLabels[proxy.route.tls]}
+          </dd>
+        </div>
+        <div>
+          <dt>Domains</dt>
+          <dd title={proxy.domains.map((domain) => domain.name).join(", ")}>{proxy.domains.length}</dd>
+        </div>
+      </dl>
+      <div className="flex items-center gap-1">
+        <span className="tags mr-auto">
+          {options.map((option) => (
+            <span key={option as string} className="tag">
+              {option}
+            </span>
+          ))}
+        </span>
+        <button type="button" className="icon-btn" aria-label={`Edit ${proxy.name}`} onClick={onEdit}>
+          <Pencil />
+        </button>
+        <button type="button" className="icon-btn" aria-label={`Remove ${proxy.name}`} onClick={onRemove}>
+          <Trash2 />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function ProxyDialogBody({ proxy, onDone }: { proxy?: T.Proxy; onDone: () => void }) {
+  const [form, setForm] = useState<ProxyForm>(
+    proxy
+      ? {
+          name: proxy.name,
+          upstreams: proxy.upstreams.join(" "),
+          domains: proxy.domains.map((domain) => domain.name).join(" "),
+          route: proxy.route,
+          enabled: proxy.enabled,
+        }
+      : blankProxy,
+  );
+  const route = form.route;
+  const setRoute = (next: Partial<T.Route>) => setForm({ ...form, route: { ...route, ...next } });
+  const save = useOperationMutation(() =>
+    api.proxies.upsert({
+      name: form.name.trim(),
+      upstreams: form.upstreams.split(/\s+/).filter(Boolean),
+      domains: form.domains.split(/[\s,]+/).filter(Boolean),
+      route: route.tls === "none" ? { ...route, redirectHttps: false } : route,
+      enabled: form.enabled,
+    }),
+  );
+  return (
+    <form
+      className="grid gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate(undefined, { onSuccess: onDone });
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>{proxy ? `Edit ${proxy.name}` : "Add proxy"}</DialogTitle>
+        <DialogDescription>Route edge domains to an upstream outside Bento.</DialogDescription>
+      </DialogHeader>
+      <Field label="Name" hint={proxy ? "The name identifies the proxy and cannot change." : undefined}>
+        <Input
+          value={form.name}
+          disabled={proxy !== undefined}
+          spellCheck={false}
+          autoFocus={!proxy}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+        />
+      </Field>
+      <Field label="Upstreams" hint="Space-separated; several are load-balanced.">
+        <Input
+          placeholder="http://10.0.0.5:8080"
+          spellCheck={false}
+          value={form.upstreams}
+          onChange={(event) => setForm({ ...form, upstreams: event.target.value })}
+        />
+      </Field>
+      <Field label="Domains">
+        <Input
+          placeholder="a.example.com b.example.com"
+          spellCheck={false}
+          value={form.domains}
+          onChange={(event) => setForm({ ...form, domains: event.target.value })}
+        />
+      </Field>
+      <div className={route.tls === "external" ? "grid-2" : undefined}>
+        <Field label="TLS">
+          <NativeSelect
+            className="w-full"
+            value={route.tls}
+            onChange={(event) => {
+              const tls = event.target.value as T.TLSMode;
+              setRoute({ tls, certName: tls === "external" ? route.certName : undefined });
+            }}
+          >
+            <option value="none">None</option>
+            <option value="self-signed">Self-signed</option>
+            <option value="acme">ACME</option>
+            <option value="external">External certificate</option>
+          </NativeSelect>
+        </Field>
+        {route.tls === "external" && (
+          <Field label="Certificate name">
+            <Input
+              value={route.certName ?? ""}
+              spellCheck={false}
+              onChange={(event) => setRoute({ certName: event.target.value })}
+            />
+          </Field>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-5">
+        <label className="check">
+          <Checkbox
+            checked={form.enabled}
+            onCheckedChange={(checked) => setForm({ ...form, enabled: checked === true })}
+          />
+          Enabled
+        </label>
+        <label className="check">
+          <Checkbox
+            checked={route.redirectHttps}
+            disabled={route.tls === "none"}
+            onCheckedChange={(checked) => setRoute({ redirectHttps: checked === true })}
+          />
+          HTTPS redirect
+        </label>
+        <label className="check">
+          <Checkbox
+            checked={route.accessLog}
+            onCheckedChange={(checked) => setRoute({ accessLog: checked === true })}
+          />
+          Access log
+        </label>
+        <label
+          className="check"
+          title="Cache public static files (css, js, images, fonts) at the edge. Responses the upstream marks private, no-store, or that set cookies are never cached."
+        >
+          <Checkbox
+            checked={route.staticCache ?? false}
+            onCheckedChange={(checked) => setRoute({ staticCache: checked === true })}
+          />
+          Edge static cache
+        </label>
+      </div>
+      {save.error && <Alert variant="destructive">{messageOf(save.error)}</Alert>}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={!form.name.trim() || !form.upstreams.trim() || save.isPending}>
+          {proxy ? "Save" : "Add proxy"}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
