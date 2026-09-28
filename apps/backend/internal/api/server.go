@@ -32,6 +32,8 @@ type Server struct {
 	AllowedOrigins []string
 	WebUI          fs.FS
 	Relay          *scheduler.RelayManager
+	// PublicAddrs lists the public listener addresses being served.
+	PublicAddrs func() []string
 
 	limiter loginLimiter
 }
@@ -66,6 +68,9 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/v1/apps/{id}/git", s.handlePutGitSource)
 	api("DELETE /api/v1/apps/{id}/git", s.handleDeleteGitSource)
 	api("POST /api/v1/apps/{id}/deploy", s.lifecycle(s.C.DeployApp))
+	api("GET /api/v1/apps/{id}/webhook", s.handleGetWebhook)
+	api("POST /api/v1/apps/{id}/webhook", s.handleEnableWebhook)
+	api("DELETE /api/v1/apps/{id}/webhook", s.handleDisableWebhook)
 	api("GET /api/v1/apps/{id}/readiness", s.handleReadiness)
 	api("GET /api/v1/apps/{id}/logs", s.handleAppLogs)
 	api("POST /api/v1/apps/{id}/exec", s.handleExec)
@@ -500,6 +505,91 @@ func (s *Server) handleDeleteGitSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, gitSourceToDTO(domain.GitSource{}, false))
+}
+
+func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	hook, found, err := store.GetWebhook(r.Context(), s.Store.DB(), app.ID)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, webhookToDTO(hook, found, s.webhookBase(r, app), s.publicTargets()))
+}
+
+// handleEnableWebhook creates the webhook or rotates its secret. It is the
+// only response that ever carries the secret.
+func (s *Server) handleEnableWebhook(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	var req struct{}
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	hook, err := s.C.EnableWebhook(r.Context(), app.ID)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, dto.WebhookSecret{Webhook: webhookToDTO(hook, true, s.webhookBase(r, app), s.publicTargets()), Secret: hook.Secret})
+}
+
+func (s *Server) handleDisableWebhook(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	if err := s.C.DisableWebhook(r.Context(), app.ID); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, webhookToDTO(domain.Webhook{}, false, "", s.publicTargets()))
+}
+
+// webhookBase is the public origin of the app's primary domain when the edge
+// routes it and forwards /_webhook/*, or "" when the operator exposes the
+// public listener another way.
+func (s *Server) webhookBase(r *http.Request, app domain.App) string {
+	es, err := s.C.EdgeSettings(r.Context())
+	if err != nil || !es.Enabled || s.C.PublicAppsPort == 0 || app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
+		return ""
+	}
+	for _, d := range app.Domains {
+		if !d.Primary {
+			continue
+		}
+		if app.Route.TLS == domain.TLSNone {
+			return "http://" + d.Name + portSuffix(es.HTTPPort, 80)
+		}
+		return "https://" + d.Name + portSuffix(es.HTTPSPort, 443)
+	}
+	return ""
+}
+
+// publicTargets are the public listener origins a proxy can forward to.
+func (s *Server) publicTargets() []string {
+	if s.PublicAddrs == nil {
+		return nil
+	}
+	var out []string
+	for _, a := range s.PublicAddrs() {
+		out = append(out, "http://"+a)
+	}
+	return out
+}
+
+func portSuffix(port, def int) string {
+	if port == def || port == 0 {
+		return ""
+	}
+	return ":" + strconv.Itoa(port)
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {

@@ -252,6 +252,46 @@ export interface GitSourceRequest {
   branch: string;
   rotateKey?: boolean;
 }
+/**
+ * Webhook is an app's deploy webhook. The secret is never part of this shape;
+ * it is returned once, in WebhookSecret, by the call that generates it.
+ */
+export interface Webhook {
+  enabled: boolean;
+  /**
+   * Path is served on every edge-routed domain.
+   */
+  path: string;
+  /**
+   * URL uses the app's primary domain when the edge routes it, else "".
+   */
+  url: string;
+  /**
+   * Targets are the backend's public listeners; point a host proxy or a
+   * Cloudflare Tunnel path rule for /_webhook/* at one of them.
+   */
+  targets: string[];
+  secretCreatedAt: string;
+  deliveries: WebhookDelivery[];
+}
+export interface WebhookDelivery {
+  at: string;
+  provider: string;
+  event: string;
+  deliveryId: string;
+  ref: string;
+  commit: string;
+  result: string;
+  detail: string;
+  operationId: string;
+}
+/**
+ * WebhookSecret answers enabling or rotating a webhook. Secret is shown only
+ * here; store it in the git host's webhook settings.
+ */
+export interface WebhookSecret extends Webhook {
+  secret: string;
+}
 export interface OperationEvent {
   seq: number /* int */;
   at: string;

@@ -106,6 +106,9 @@ export const api = {
     setGit: (id: string, body: T.GitSourceRequest) => request<T.GitSource>("PUT", `/api/v1/apps/${enc(id)}/git`, body),
     removeGit: (id: string) => request<T.GitSource>("DELETE", `/api/v1/apps/${enc(id)}/git`),
     deploy: (id: string) => mutate("POST", `/api/v1/apps/${enc(id)}/deploy`),
+    webhook: (id: string, signal?: AbortSignal) => get<T.Webhook>(`/api/v1/apps/${enc(id)}/webhook`, signal),
+    enableWebhook: (id: string) => request<T.WebhookSecret>("POST", `/api/v1/apps/${enc(id)}/webhook`, {}),
+    disableWebhook: (id: string) => request<T.Webhook>("DELETE", `/api/v1/apps/${enc(id)}/webhook`),
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
     terminalUrl: (id: string, mode: "tool" | "running", cols: number, rows: number) => {

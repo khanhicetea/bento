@@ -20,7 +20,8 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 			mk("a2", "unpub", domain.IngressManaged, domain.Unpublished),
 			mk("a3", "ext", domain.IngressExternal, domain.Unpublished),
 		},
-		Running: map[string]bool{"a1": true},
+		Running:        map[string]bool{"a1": true},
+		PublicUpstream: "10.200.0.1:7781",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,7 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 		"set $bento_upstream http://app-a1:3000;", "proxy_pass $bento_upstream;",
 		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $scheme;",
 		"acme_certificate bento_acme;", "return 301 https://$host$request_uri;", "listen 443 quic;",
+		"location ^~ /_webhook/ {", "proxy_pass http://10.200.0.1:7781;",
 	} {
 		if !strings.Contains(site, want) {
 			t.Errorf("site missing %q", want)
@@ -46,5 +48,19 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 		if strings.Contains(string(f), "/home/") || strings.Contains(string(f), "fastcgi_pass") {
 			t.Fatal("edge must never reference app homes or FPM")
 		}
+	}
+}
+
+func TestRenderWithoutPublicListenerLeavesWebhookPathToUpstream(t *testing.T) {
+	files, err := Render(Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
+		Proxies: []domain.Proxy{{Name: "p", Enabled: true, Upstreams: []string{"http://10.0.0.9:8080"},
+			Domains: []domain.DomainLink{{Name: "p.example.com", Primary: true}}, Route: domain.Route{TLS: domain.TLSNone}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(files["sites/proxy-p.conf"]), "_webhook") {
+		t.Fatal("without a public listener on the apps network the edge must not reserve /_webhook/")
 	}
 }

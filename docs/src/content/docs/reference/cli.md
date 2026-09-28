@@ -6,11 +6,12 @@ description: Command reference.
 ```text
 bento [--stack ROOT] [--json] [--no-wait] <command>
 
-serve [--listen 127.0.0.1:7780] [--origin URL]...
+serve [--listen 127.0.0.1:7780] [--origin URL]... [--public-listen IP:PORT|apps:PORT|off]...
 init --name NAME [--mysql V] [--postgres V] [--uid-first N --uid-last N] [--password-stdin]
 import --from DIR [--name NAME] [--uid-first N --uid-last N]
 version | status | auth set-password
 apps | app show|create|update|start|stop|restart|publish|unpublish|remove|bind|add-db|logs|exec|shell|minicrond|permissions
+app git|deploy|webhook SLUG
 ops [--target ID] | op ID | op cancel ID
 services | service add --engine E --version V
 edge | edge set --json FILE | tunnel | tunnel set-token | tunnel disable

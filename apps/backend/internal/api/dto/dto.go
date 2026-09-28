@@ -305,6 +305,42 @@ type GitSourceRequest struct {
 	RotateKey bool   `json:"rotateKey,omitempty"`
 }
 
+// ---- deploy webhook ----
+
+// Webhook is an app's deploy webhook. The secret is never part of this shape;
+// it is returned once, in WebhookSecret, by the call that generates it.
+type Webhook struct {
+	Enabled bool `json:"enabled"`
+	// Path is served on every edge-routed domain.
+	Path string `json:"path"`
+	// URL uses the app's primary domain when the edge routes it, else "".
+	URL string `json:"url"`
+	// Targets are the backend's public listeners; point a host proxy or a
+	// Cloudflare Tunnel path rule for /_webhook/* at one of them.
+	Targets         []string          `json:"targets"`
+	SecretCreatedAt string            `json:"secretCreatedAt"`
+	Deliveries      []WebhookDelivery `json:"deliveries"`
+}
+
+type WebhookDelivery struct {
+	At          string `json:"at"`
+	Provider    string `json:"provider"`
+	Event       string `json:"event"`
+	DeliveryID  string `json:"deliveryId"`
+	Ref         string `json:"ref"`
+	Commit      string `json:"commit"`
+	Result      string `json:"result"`
+	Detail      string `json:"detail"`
+	OperationID string `json:"operationId"`
+}
+
+// WebhookSecret answers enabling or rotating a webhook. Secret is shown only
+// here; store it in the git host's webhook settings.
+type WebhookSecret struct {
+	Webhook `tstype:",extends"`
+	Secret  string `json:"secret"`
+}
+
 // ---- operations ----
 
 type OperationEvent struct {

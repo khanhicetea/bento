@@ -119,9 +119,28 @@ backend stopped, edge traffic and scheduled jobs continued.
   `~/.ssh/known_hosts`, and the unregistered key was reported as `git-access-denied` with the public key in the
   guidance. No operation record or backend log contained private key material, and no tooling container remained.
 
+## Deploy webhook and `~/deploy.sh` (live Docker, disposable root, edge on 127.0.0.1:18080)
+
+- With the default `--public-listen`, the backend served `127.0.0.1:7781` at start and bound the apps bridge address
+  once the network existed. Docker had put that address at `10.200.2.128`, not `.1` (the dynamic range is the upper
+  `/25`), so it is read from the host's interfaces.
+- A bearer-authenticated `POST /_webhook/deploy/<id>` queued an `app.deploy` through each of: loopback (the
+  host-nginx path), the edge on a routed proxy domain (`proxy_pass http://10.200.2.128:7781`), and a throwaway
+  container on the apps network calling the bridge address (the cloudflared path). `/`, `/api/v1/session` on the
+  public port got 404; a bad secret got 404.
+- Earlier runs of the same build through the edge: an unrouted Host got 404; a 9 MB body got 413; curl requests
+  carrying GitHub-style `X-Hub-Signature-256` (computed with `openssl`), a GitLab `X-Gitlab-Token`, and a bearer token
+  each queued a deploy (`origin=webhook`); a push to another branch was recorded as `ignored-ref`.
+- `~/deploy.sh` ran after the fetch as uid 10000 from `/home/<slug>/app` with `BENTO_DEPLOY_TRIGGER=webhook`,
+  `BENTO_COMMIT`, `BENTO_PREVIOUS_COMMIT`, and `BENTO_WEBHOOK_PROVIDER`; its output appeared in the operation
+  events. A script exiting 3 failed the deploy as `deploy-script-failed` with its stderr, without a reload or record.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).
+- Deliveries sent by real git hosts (GitHub/GitLab/Gitea/Bitbucket); requests were simulated with curl. A real
+  cloudflared path rule to the public listener (only a plain container on the apps network was used), and hosts whose
+  firewall filters container-to-host traffic.
 - arm64 execution; PHP 8.3/8.5, Bun, and Python runtime images.
 - Live Cloudflare Tunnel, ACME issuance, HTTP/3, external certificates, rclone upload, scheduled backup firing,
   SQLite restore, and stop persistence across an actual host reboot (verified by restart-policy inspection only).

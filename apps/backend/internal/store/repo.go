@@ -238,6 +238,10 @@ func DeleteApp(ctx context.Context, q Q, id string) error {
 	if _, err := q.ExecContext(ctx, "DELETE FROM domains WHERE owner_kind='app' AND owner_id=?", id); err != nil {
 		return err
 	}
+	// The deploy key and webhook secret die with the app.
+	if _, err := q.ExecContext(ctx, "DELETE FROM settings WHERE key IN (?, ?)", gitSourceKey(id), webhookKey(id)); err != nil {
+		return err
+	}
 	_, err := q.ExecContext(ctx, "DELETE FROM apps WHERE id=?", id)
 	return err
 }
@@ -708,4 +712,48 @@ func PutGitSource(ctx context.Context, q Q, appID string, g domain.GitSource) er
 
 func DeleteGitSource(ctx context.Context, q Q, appID string) error {
 	return DeleteSetting(ctx, q, gitSourceKey(appID))
+}
+
+func webhookKey(appID string) string { return "webhook:" + appID }
+
+// GetWebhook returns the app's deploy webhook; ok is false when none is
+// enabled.
+func GetWebhook(ctx context.Context, q Q, appID string) (domain.Webhook, bool, error) {
+	var w domain.Webhook
+	ok, err := GetSetting(ctx, q, webhookKey(appID), &w)
+	return w, ok, err
+}
+
+func PutWebhook(ctx context.Context, q Q, appID string, w domain.Webhook) error {
+	return PutSetting(ctx, q, webhookKey(appID), w)
+}
+
+func DeleteWebhook(ctx context.Context, q Q, appID string) error {
+	return DeleteSetting(ctx, q, webhookKey(appID))
+}
+
+// FindWebhook resolves a hook id to its app id and webhook.
+func FindWebhook(ctx context.Context, q Q, hookID string) (string, domain.Webhook, error) {
+	rows, err := q.QueryContext(ctx, "SELECT key, value_json FROM settings WHERE key LIKE 'webhook:%'")
+	if err != nil {
+		return "", domain.Webhook{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key, raw string
+		if err := rows.Scan(&key, &raw); err != nil {
+			return "", domain.Webhook{}, err
+		}
+		var w domain.Webhook
+		if err := json.Unmarshal([]byte(raw), &w); err != nil {
+			return "", domain.Webhook{}, err
+		}
+		if w.HookID != "" && w.HookID == hookID {
+			return strings.TrimPrefix(key, "webhook:"), w, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", domain.Webhook{}, err
+	}
+	return "", domain.Webhook{}, ErrNotFound
 }

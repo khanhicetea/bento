@@ -8,6 +8,7 @@ export const keys = {
     list: () => ["apps", "list"] as const,
     detail: (id: string) => ["apps", "detail", id] as const,
     git: (id: string) => ["apps", "git", id] as const,
+    webhook: (id: string) => ["apps", "webhook", id] as const,
   },
   operations: {
     all: ["operations"] as const,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -227,7 +228,15 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 			}
 		}
 	}
-	files, err := edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps})
+	public := ""
+	if c.PublicAppsPort > 0 {
+		if gw := ns.AppsGateway(); gw != "" {
+			public = net.JoinHostPort(gw, strconv.Itoa(c.PublicAppsPort))
+		} else {
+			r.Warn(ctx, "apps network gateway not found on this host; /_webhook/* is not forwarded by the edge")
+		}
+	}
+	files, err := edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, PublicUpstream: public})
 	if err != nil {
 		return err
 	}

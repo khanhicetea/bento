@@ -34,18 +34,7 @@ const (
 )
 
 // redactor replaces an app's known secret values in app-controlled output.
-func redactor(app domain.App) *strings.Replacer {
-	var pairs []string
-	for _, b := range app.Bindings {
-		if b.Password != "" {
-			pairs = append(pairs, b.Password, "[redacted]")
-		}
-	}
-	if app.Redis.Password != "" {
-		pairs = append(pairs, app.Redis.Password, "[redacted]")
-	}
-	return strings.NewReplacer(pairs...)
-}
+func redactor(app domain.App) *strings.Replacer { return app.Redactor() }
 
 func sse(w http.ResponseWriter) (http.Flusher, bool) {
 	f, ok := w.(http.Flusher)

@@ -49,6 +49,10 @@ type Deps struct {
 	ReadyTimeout time.Duration
 	// PollInterval is the readiness poll cadence.
 	PollInterval time.Duration
+	// PublicAppsPort is the port of the backend's public listener on the apps
+	// network gateway (0 when not listening there). The edge proxies
+	// /_webhook/* to it.
+	PublicAppsPort int
 }
 
 type handler func(ctx context.Context, r *Run) (any, error)

@@ -16,6 +16,13 @@ This document explains how the Go backend is put together and why.
    - TCP on a **loopback-only** address (`cli.ValidateListen` rejects anything else) for the browser;
    - `run/bento.sock` (`0600`) for the CLI, wrapped by `Server.LocalOnly`, which admits only peers whose
      `SO_PEERCRED` uid is 0 or the backend's own uid.
+   - **public** TCP listeners (`--public-listen`, default `127.0.0.1:7781` and `apps:7781`) serving
+     `Server.PublicHandler` only: self-authenticating routes under `/_webhook/*` and nothing else (no UI, session,
+     or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
+     read from the host's interfaces because Docker picks it, usually `.128`) once the bridge exists and follows the
+     network plan, so the edge and cloudflared
+     can reach it; the loopback address is for host proxies. Operators may bind any address because nothing on
+     this listener works without a credential; `off` disables it.
 
 On SIGTERM it stops both listeners, waits up to 60 s for the current operation, stops relays, and exits. Containers
 are never stopped on shutdown.
@@ -220,6 +227,29 @@ The edge (`edge` package + `operations/edge.go`):
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
+When the public listener binds the apps network, every managed route (app or proxy) reserves
+`location ^~ /_webhook/`, proxied to `http://<apps-gateway>:<port>` with an 8 MiB body limit; it never reaches the
+upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
+Tunnel path rule, an operator proxy) forwards `/_webhook/*` to a public listener itself.
+
+### Git deploy and webhooks
+
+`app.deploy` runs in a tooling container as the app identity: fetch (deploy key on stdin, `/tmp` only), then
+`~/deploy.sh` when present in a **separate** exec (so the key is gone), then record the commit, then reload the app
+process. `~/deploy.sh` must be a regular executable file owned by the app or root; anything else fails
+`deploy-script-invalid` before any exec. It runs from `app/` with the app environment plus `BENTO_DEPLOY_TRIGGER`,
+`BENTO_OPERATION_ID`, `BENTO_REPO_URL`, `BENTO_BRANCH`, `BENTO_COMMIT`, `BENTO_PREVIOUS_COMMIT` (last fully successful
+deploy), and for webhooks `BENTO_WEBHOOK_{PROVIDER,EVENT,DELIVERY,REF,COMMIT,PUSHER}` (sanitized). A failing or
+timed-out script leaves the new code checked out but does not record the deploy or reload the app.
+
+A webhook (`settings` key `webhook:<appId>`) has a routing-only `hookId` and a 256-bit secret, returned only by the
+enable/rotate response. `Controller.HandleWebhook` verifies `X-Hub-Signature-256` / `X-Gitea-Signature` /
+`X-Forgejo-Signature` / Bitbucket `X-Hub-Signature` (HMAC-SHA256 over the raw body), `X-Gitlab-Token`, or
+`Authorization: Bearer`; an unknown hook and a bad credential both return 404 and are not recorded. Only a push to the
+configured branch deploys, and the payload never chooses what is fetched. A queued deploy absorbs further pushes
+(`coalesced`); a provider delivery id is the idempotency key (`duplicate`). The last 20 authenticated deliveries are
+kept with their result. Removing the git source or the app destroys the webhook.
+
 ## Data services and backups
 
 `dataservices.Manager` creates each service's secrets once (`services/<name>/secrets`, `0400`; MySQL gets a
@@ -292,3 +322,5 @@ changes its own UID and never execs into containers per request. Relays idle for
 - Exact confirmations are enforced server-side in `accept.go`, not only in the CLI/UI.
 - Missing durable data blocks; nothing is ever silently re-created empty.
 - The management API is loopback-only and requires a session or a peer-verified local socket.
+- The public listener serves only routes that authenticate themselves (today: deploy webhooks, by a per-app secret,
+  which can at most queue a deploy of the configured branch). Never add UI, session, or management routes to it.

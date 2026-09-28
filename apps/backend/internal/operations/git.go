@@ -7,9 +7,14 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -88,8 +93,8 @@ func (c *Controller) SetGitSource(ctx context.Context, id string, in GitSourceIn
 	return out, err
 }
 
-// RemoveGitSource forgets the repository and destroys the deploy key. The
-// checked-out code in the app home is left untouched.
+// RemoveGitSource forgets the repository and destroys the deploy key and the
+// deploy webhook. The checked-out code in the app home is left untouched.
 func (c *Controller) RemoveGitSource(ctx context.Context, id string) error {
 	return c.Store.Tx(ctx, func(q store.Q) error {
 		app, err := store.GetApp(ctx, q, id)
@@ -101,8 +106,30 @@ func (c *Controller) RemoveGitSource(ctx context.Context, id string) error {
 		} else if !ok {
 			return fmt.Errorf("%w: app %s has no git source", store.ErrNotFound, app.Slug)
 		}
+		if err := store.DeleteWebhook(ctx, q, app.ID); err != nil {
+			return err
+		}
 		return store.DeleteGitSource(ctx, q, app.ID)
 	})
+}
+
+// Deploy triggers.
+const (
+	DeployTriggerManual  = "manual"
+	DeployTriggerWebhook = "webhook"
+)
+
+// DeployRequest records what triggered a deploy. Webhook fields are the
+// provider's report and are informational only: a deploy always fetches the
+// configured branch head.
+type DeployRequest struct {
+	Trigger    string `json:"trigger"`
+	Provider   string `json:"provider,omitempty"`
+	Event      string `json:"event,omitempty"`
+	DeliveryID string `json:"deliveryId,omitempty"`
+	Ref        string `json:"ref,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	Pusher     string `json:"pusher,omitempty"`
 }
 
 // DeployApp submits a deploy of the configured branch into the app's code
@@ -120,7 +147,8 @@ func (c *Controller) DeployApp(ctx context.Context, id, idem string) (store.Oper
 	} else if !ok {
 		return store.Operation{}, fmt.Errorf("%w: configure a git source for %s first", ErrPrecondition, app.Slug)
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindAppDeploy, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem})
+	op, _, err := c.Submit(ctx, Submission{Kind: KindAppDeploy, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem,
+		Request: DeployRequest{Trigger: DeployTriggerManual}})
 	return op, err
 }
 
@@ -176,6 +204,17 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 	if !ok {
 		return nil, Fail("git-source-missing", "Configure a git source for the app, then deploy again.", "app %s has no git source", app.Slug)
 	}
+	var dreq DeployRequest
+	if len(r.Op.Request) > 0 {
+		_ = r.Decode(&dreq)
+	}
+	if dreq.Trigger == "" {
+		dreq.Trigger = DeployTriggerManual
+	}
+	script, err := c.deployScriptPresent(app)
+	if err != nil {
+		return nil, err
+	}
 	if err := r.Phase(ctx, "open-tool"); err != nil {
 		return nil, err
 	}
@@ -224,6 +263,17 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 	}
 	r.Info(ctx, "checked out %s %s", commit[:12], subject)
 
+	if script {
+		if err := r.Phase(ctx, "deploy-script"); err != nil {
+			return nil, err
+		}
+		if err := c.runDeployScript(ctx, r, app, tool, g, dreq, commit); err != nil {
+			return nil, err
+		}
+	} else {
+		r.Info(ctx, "no ~/deploy.sh; skipping the deploy script")
+	}
+
 	if err := r.Phase(ctx, "record"); err != nil {
 		return nil, err
 	}
@@ -239,7 +289,7 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 
-	result := map[string]any{"commit": commit, "subject": subject, "branch": g.Branch, "reloaded": ""}
+	result := map[string]any{"commit": commit, "subject": subject, "branch": g.Branch, "reloaded": "", "trigger": dreq.Trigger, "script": script}
 	if app.DesiredRuntime != domain.DesiredRunning {
 		r.Info(ctx, "app is stopped; start it to serve the new code")
 		return result, nil
@@ -284,6 +334,96 @@ func (c *Controller) reloadAppProcess(ctx context.Context, r *Run, app domain.Ap
 	}
 	r.Info(ctx, "%s reloaded", service)
 	return service, c.waitReady(ctx, r, app, obs.Generation)
+}
+
+// DeployScriptName is the operator-owned hook run after every fetch, from the
+// app home so a checkout never replaces it.
+const DeployScriptName = "deploy.sh"
+
+// deployScriptTimeout bounds one run of ~/deploy.sh.
+const deployScriptTimeout = 15 * time.Minute
+
+// deployScriptPresent reports whether ~/deploy.sh should run. A missing file
+// is skipped; anything that is not a plain executable file owned by the app
+// (or root) is refused rather than guessed at.
+func (c *Controller) deployScriptPresent(app domain.App) (bool, error) {
+	p := filepath.Join(c.Layout.AppHome(app.Slug), DeployScriptName)
+	st, err := os.Lstat(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	guidance := fmt.Sprintf("Make ~/%s a regular executable file owned by the app (chmod 755), or remove it to deploy without a script.", DeployScriptName)
+	if !st.Mode().IsRegular() {
+		return false, Fail("deploy-script-invalid", guidance, "~/%s of app %s is not a regular file (%s)", DeployScriptName, app.Slug, st.Mode().Type())
+	}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) != app.UID && sys.Uid != 0 {
+		return false, Fail("deploy-script-invalid", guidance, "~/%s of app %s is owned by uid %d", DeployScriptName, app.Slug, sys.Uid)
+	}
+	if st.Mode().Perm()&0o100 == 0 {
+		return false, Fail("deploy-script-invalid", guidance, "~/%s of app %s is not executable", DeployScriptName, app.Slug)
+	}
+	return true, nil
+}
+
+// runDeployScript runs ~/deploy.sh as the app identity in the tooling
+// container, from the code directory, in a separate exec from the fetch so
+// the deploy key is already gone. It receives a normalized environment, never
+// the raw webhook payload.
+func (c *Controller) runDeployScript(ctx context.Context, r *Run, app domain.App, tool *ToolSession, g domain.GitSource, d DeployRequest, commit string) error {
+	req, err := ExecRequestFor(app, []string{app.ContainerHome() + "/" + DeployScriptName}, "")
+	if err != nil {
+		return err
+	}
+	req.Env = append(req.Env,
+		"BENTO_DEPLOY_TRIGGER="+d.Trigger,
+		"BENTO_OPERATION_ID="+r.Op.ID,
+		"BENTO_REPO_URL="+g.RepoURL,
+		"BENTO_BRANCH="+g.Branch,
+		"BENTO_COMMIT="+commit,
+		"BENTO_PREVIOUS_COMMIT="+g.DeployedCommit,
+	)
+	if d.Trigger == DeployTriggerWebhook {
+		req.Env = append(req.Env,
+			"BENTO_WEBHOOK_PROVIDER="+d.Provider,
+			"BENTO_WEBHOOK_EVENT="+d.Event,
+			"BENTO_WEBHOOK_DELIVERY="+d.DeliveryID,
+			"BENTO_WEBHOOK_REF="+d.Ref,
+			"BENTO_WEBHOOK_COMMIT="+d.Commit,
+			"BENTO_WEBHOOK_PUSHER="+d.Pusher,
+		)
+	}
+	req.OutputLimit = 256 << 10
+	r.Info(ctx, "running ~/%s", DeployScriptName)
+	execCtx, cancel := context.WithTimeout(ctx, deployScriptTimeout)
+	res, err := c.Engine.Exec(execCtx, tool.ContainerID, req)
+	timedOut := execCtx.Err() != nil
+	cancel()
+	redact := app.Redactor()
+	for _, line := range tailLines(res.Stdout, 60) {
+		r.Info(ctx, "deploy.sh: %s", redact.Replace(line))
+	}
+	errTail := tailLines(res.Stderr, 40)
+	for _, line := range errTail {
+		r.Warn(ctx, "deploy.sh: %s", redact.Replace(line))
+	}
+	guidance := "The new code is checked out but the app was not reloaded and the deploy was not recorded. Fix ~/deploy.sh or the code and deploy again."
+	switch {
+	case timedOut:
+		return Fail("deploy-script-timeout", guidance, "~/%s did not finish within %s", DeployScriptName, deployScriptTimeout)
+	case err != nil:
+		return err
+	case res.ExitCode != 0:
+		detail := "no output"
+		if len(errTail) > 0 {
+			detail = redact.Replace(errTail[len(errTail)-1])
+		}
+		return Fail("deploy-script-failed", guidance, "~/%s exited with status %d: %s", DeployScriptName, res.ExitCode, detail)
+	}
+	r.Info(ctx, "~/%s finished", DeployScriptName)
+	return nil
 }
 
 func deployFailure(app domain.App, g domain.GitSource, exit int, gitLog []string) error {

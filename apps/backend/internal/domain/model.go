@@ -2,7 +2,10 @@
 // no knowledge of HTTP, SQLite, or Docker.
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type RuntimeKind string
 
@@ -61,6 +64,20 @@ type App struct {
 
 	Bindings []Binding
 	Domains  []DomainLink
+}
+
+// Redactor replaces the app's known secret values in app-controlled output.
+func (a App) Redactor() *strings.Replacer {
+	var pairs []string
+	for _, b := range a.Bindings {
+		if b.Password != "" {
+			pairs = append(pairs, b.Password, "[redacted]")
+		}
+	}
+	if a.Redis.Password != "" {
+		pairs = append(pairs, a.Redis.Password, "[redacted]")
+	}
+	return strings.NewReplacer(pairs...)
 }
 
 // ContainerHome is the home path inside containers.

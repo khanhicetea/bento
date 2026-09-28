@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, KeyRound, Rocket } from "lucide-react";
+import { GitBranch, KeyRound, Rocket, Webhook } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -20,6 +20,7 @@ export function DeployPanel({ app }: { app: T.App }) {
       <SourceForm app={app} source={source} />
       {source.configured ? <DeployCell app={app} source={source} /> : <HowItWorks />}
       {source.configured && source.usesSsh && <DeployKeyCell app={app} source={source} />}
+      {source.configured && <WebhookCell app={app} source={source} />}
     </div>
   );
 }
@@ -96,7 +97,8 @@ function DeployCell({ app, source }: { app: T.App; source: T.GitSource }) {
       />
       <p className="note my-3">
         Clones into an empty <code>app/</code> or resets tracked files to the branch head. Untracked files such as{" "}
-        <code>.env</code> and <code>vendor/</code> are kept.{" "}
+        <code>.env</code> and <code>vendor/</code> are kept. An executable <code>~/deploy.sh</code> then runs as the app
+        from <code>app/</code>; if it fails, the app is not reloaded.{" "}
         {app.desiredRuntime === "running"
           ? app.runtime.kind === "php-fpm"
             ? "PHP-FPM then reloads gracefully; the container and scheduler keep running."
@@ -146,6 +148,147 @@ function DeployKeyCell({ app, source }: { app: T.App; source: T.GitSource }) {
         pending={rotate.isPending}
         error={rotate.error}
         onConfirm={() => rotate.mutate()}
+      />
+    </Cell>
+  );
+}
+
+function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.apps.webhook(app.id),
+    queryFn: ({ signal }) => api.apps.webhook(app.id, signal),
+  });
+  // The secret is returned once by enable/rotate and never refetchable.
+  const [secret, setSecret] = useState("");
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
+  const enable = useMutation({
+    mutationFn: () => api.apps.enableWebhook(app.id),
+    onSuccess: ({ secret: next, ...hook }) => {
+      queryClient.setQueryData(keys.apps.webhook(app.id), hook);
+      setSecret(next);
+      setRotateOpen(false);
+    },
+  });
+  const disable = useMutation({
+    mutationFn: () => api.apps.disableWebhook(app.id),
+    onSuccess: (hook) => {
+      queryClient.setQueryData(keys.apps.webhook(app.id), hook);
+      setSecret("");
+      setDisableOpen(false);
+    },
+  });
+  if (query.isPending) return <DomainLoading label="webhook" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  const hook = query.data;
+  if (!hook.enabled) {
+    return (
+      <Cell title="Push to deploy" className="cell--wide">
+        <p className="note mb-3">
+          A webhook URL that deploys <code>{source.branch}</code> when your git host reports a push to it. Works with
+          GitHub, GitLab, Gitea, Forgejo, Bitbucket, or <code>curl</code> from CI. Requests are verified with a secret.
+        </p>
+        <Button variant="outline" disabled={enable.isPending} onClick={() => enable.mutate()}>
+          <Webhook /> Enable webhook
+        </Button>
+        {enable.error && <p className="note note--bad mt-2">{messageOf(enable.error)}</p>}
+      </Cell>
+    );
+  }
+  return (
+    <Cell title="Push to deploy" className="cell--wide">
+      <KeyValues
+        items={[
+          [
+            "URL",
+            hook.url ? (
+              <CopyableCode value={hook.url} />
+            ) : (
+              <span>
+                <CopyableCode value={hook.path} /> on any domain whose <code>/_webhook/*</code> reaches Bento
+              </span>
+            ),
+          ],
+          [
+            "Expose via",
+            hook.targets.length ? (
+              <span className="grid gap-1">
+                {hook.targets.map((target) => (
+                  <CopyableCode key={target} value={target} />
+                ))}
+              </span>
+            ) : (
+              "public listener is off"
+            ),
+          ],
+          ["Content type", <code>application/json</code>],
+          [
+            "Secret",
+            secret ? <CopyableCode value={secret} /> : `hidden (created ${formatRelative(hook.secretCreatedAt)})`,
+          ],
+        ]}
+      />
+      <p className="note my-2">
+        Edge-routed domains forward <code>/_webhook/*</code> automatically. Otherwise route that path to Bento yourself:
+        the loopback address from host nginx, the apps-network address from a Cloudflare Tunnel path rule.
+      </p>
+      {secret && (
+        <p className="note my-2 font-medium">
+          Copy the secret now; it is not shown again. Use it as the webhook secret (GitHub, Gitea, Forgejo, Bitbucket),
+          the secret token (GitLab), or <code>Authorization: Bearer &lt;secret&gt;</code> from CI.
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => setRotateOpen(true)}>
+          <KeyRound /> Rotate secret
+        </Button>
+        <Button variant="outline" onClick={() => setDisableOpen(true)}>
+          Disable
+        </Button>
+      </div>
+      {hook.deliveries.length > 0 && (
+        <ul className="note mt-3 grid gap-1">
+          {hook.deliveries.map((d) => (
+            <li key={`${d.at}-${d.deliveryId}-${d.result}`} title={d.detail}>
+              {formatRelative(d.at)} · {d.provider} {d.event}
+              {d.ref && (
+                <>
+                  {" "}
+                  <code>{d.ref.replace(/^refs\/heads\//, "")}</code>
+                </>
+              )}{" "}
+              → <strong>{d.result}</strong>
+              {d.operationId && (
+                <>
+                  {" "}
+                  <code>{d.operationId}</code>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <ConfirmDialog
+        open={rotateOpen}
+        onOpenChange={setRotateOpen}
+        title="Rotate webhook secret?"
+        description="The URL stays the same. Deliveries signed with the current secret are rejected until you update it at the git host."
+        confirmLabel="Rotate"
+        pending={enable.isPending}
+        error={enable.error}
+        onConfirm={() => enable.mutate()}
+      />
+      <ConfirmDialog
+        open={disableOpen}
+        onOpenChange={setDisableOpen}
+        title="Disable webhook?"
+        description="The URL and secret are destroyed and pushes no longer deploy. Enabling again creates a new URL."
+        confirmLabel="Disable"
+        destructive
+        pending={disable.isPending}
+        error={disable.error}
+        onConfirm={() => disable.mutate()}
       />
     </Cell>
   );

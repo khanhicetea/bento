@@ -32,7 +32,10 @@ const (
 	CertsMount  = "/etc/bento-edge-certs"
 	CustomMount = "/etc/bento-edge-custom"
 	ACMEMount   = "/var/lib/bento-acme"
-	LiveConf    = ConfMount + "/live/nginx.conf"
+	// HooksMount holds the backend's webhook socket. It is the only backend
+	// endpoint the edge can reach and serves nothing but webhook deliveries.
+	HooksMount = "/var/lib/bento-hooks"
+	LiveConf   = ConfMount + "/live/nginx.conf"
 )
 
 // Route is one managed edge route.
@@ -56,6 +59,9 @@ type Route struct {
 	HTTP3               bool
 	HTTPSPortSuffix     string
 	HTTPSAdvertisedPort int
+	// PublicUpstream is the backend's public listener (host:port) that
+	// /_webhook/* is proxied to; "" leaves the path to the upstream.
+	PublicUpstream string
 }
 
 // Input is everything needed to render one edge generation.
@@ -65,6 +71,8 @@ type Input struct {
 	Proxies  []domain.Proxy
 	// Running reports which published apps currently have a running instance.
 	Running map[string]bool
+	// PublicUpstream is the backend's public listener on the apps network.
+	PublicUpstream string
 }
 
 // Render produces the full candidate file set, keyed by relative path.
@@ -81,6 +89,7 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute("app", "app-"+a.Slug, a.Domains, a.Route, s, suffix)
+		r.PublicUpstream = in.PublicUpstream
 		r.AppUpstream = fmt.Sprintf("http://%s:%d", runtime.AppAlias(a.ID), a.HTTPPort())
 		r.MaxBodyMB = 64
 		if a.Runtime.PHP != nil && a.Runtime.PHP.UploadLimitMB > 0 {
@@ -95,6 +104,7 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute("proxy", "proxy-"+p.Name, p.Domains, p.Route, s, suffix)
+		r.PublicUpstream = in.PublicUpstream
 		r.UpstreamName = "bento_proxy_" + strings.ReplaceAll(p.Name, "-", "_")
 		scheme, uri := "http", ""
 		for _, u := range p.Upstreams {

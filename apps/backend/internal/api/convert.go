@@ -207,3 +207,19 @@ func gitSourceToDTO(g domain.GitSource, configured bool) dto.GitSource {
 		DeployedCommit: g.DeployedCommit, DeployedAt: platform.FormatTime(g.DeployedAt),
 	}
 }
+
+func webhookToDTO(w domain.Webhook, enabled bool, url string, targets []string) dto.Webhook {
+	if !enabled {
+		return dto.Webhook{Targets: nonNil(targets), Deliveries: []dto.WebhookDelivery{}}
+	}
+	out := dto.Webhook{Enabled: true, Path: domain.WebhookDeployPath(w.HookID), SecretCreatedAt: platform.FormatTime(w.SecretCreatedAt),
+		Targets: nonNil(targets), Deliveries: []dto.WebhookDelivery{}}
+	if url != "" {
+		out.URL = url + out.Path
+	}
+	for _, d := range w.Deliveries {
+		out.Deliveries = append(out.Deliveries, dto.WebhookDelivery{At: platform.FormatTime(d.At), Provider: d.Provider, Event: d.Event,
+			DeliveryID: d.DeliveryID, Ref: d.Ref, Commit: d.Commit, Result: d.Result, Detail: d.Detail, OperationID: d.OperationID})
+	}
+	return out
+}

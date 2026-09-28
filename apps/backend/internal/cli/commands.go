@@ -33,7 +33,8 @@ Usage: bento [--stack ROOT] <command> [arguments]
 The stack root comes from --stack or BENTO_STACK_ROOT (no global default).
 
 Backend:
-  serve [--listen 127.0.0.1:7780] [--origin URL]...   run the resident backend
+  serve [--listen 127.0.0.1:7780] [--origin URL]... [--public-listen ADDR|apps:PORT|off]...
+                                                      run the resident backend (public routes: /_webhook/*)
   init --name NAME [--mysql 8.4] [--postgres 17] [--uid-first N --uid-last N] [--password-stdin]
   import --from DIR [--name NEWNAME] [--uid-first N --uid-last N]
                                                       stage an export into an empty root
@@ -54,7 +55,8 @@ Client (requires the running backend):
   app minicrond SLUG -- ARGS...
   app permissions SLUG --mode check|dry-run|shallow|recursive
   app git SLUG [--repo URL --branch B [--rotate-key] | --remove]   shows the deploy key to add to the repo
-  app deploy SLUG                                     clones or resets to the branch, reloads the app process
+  app deploy SLUG                                     clones or resets to the branch, runs ~/deploy.sh, reloads
+  app webhook SLUG [--enable | --rotate | --disable]  push-to-deploy URL, secret (shown once) and recent deliveries
   ops [--target ID] | op ID | op cancel ID
   services | service add --engine mysql|postgres --version V
   edge | edge set --json FILE
@@ -179,12 +181,13 @@ func (r *runner) run(args []string) error {
 	case "serve":
 		fs, rest := sub("serve", args[1:])
 		listen := fs.String("listen", "127.0.0.1:7780", "loopback listen address")
-		var origins multiFlag
+		var origins, public multiFlag
 		fs.Var(&origins, "origin", "additional exact browser origin (repeatable)")
+		fs.Var(&public, "public-listen", "public routes listener: IP:PORT, apps:PORT (apps network gateway), or off (repeatable; default 127.0.0.1:7781 and apps:7781)")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, Version: r.version})
+		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, PublicListen: public, Version: r.version})
 	case "init":
 		fs, rest := sub("init", args[1:])
 		name := fs.String("name", "", "stack name")
@@ -575,6 +578,55 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			printJSON(acc.Operation.Result)
 		}
 		return err
+	case "webhook":
+		fs, rest := sub("app webhook", args[2:])
+		enable := fs.Bool("enable", false, "create the webhook (or rotate its secret)")
+		rotate := fs.Bool("rotate", false, "replace the secret; the URL is kept")
+		disable := fs.Bool("disable", false, "destroy the webhook")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		var hook dto.WebhookSecret
+		var err error
+		switch {
+		case *disable:
+			err = c.Do(ctx, "DELETE", base+"/webhook", map[string]any{}, &hook.Webhook, nil)
+		case *enable || *rotate:
+			err = c.Do(ctx, "POST", base+"/webhook", map[string]any{}, &hook, nil)
+		default:
+			err = c.Do(ctx, "GET", base+"/webhook", nil, &hook.Webhook, nil)
+		}
+		if err != nil {
+			return err
+		}
+		if r.json {
+			if hook.Secret != "" {
+				printJSON(hook)
+			} else {
+				printJSON(hook.Webhook)
+			}
+			return nil
+		}
+		if !hook.Enabled {
+			fmt.Fprintf(r.out, "no webhook (enable one with `bento app webhook %s --enable`)\n", slug)
+			return nil
+		}
+		if hook.URL != "" {
+			fmt.Fprintf(r.out, "url:    %s\n", hook.URL)
+		} else {
+			fmt.Fprintf(r.out, "path:   %s  (on any domain whose /_webhook/* reaches Bento)\n", hook.Path)
+		}
+		if len(hook.Targets) > 0 {
+			fmt.Fprintf(r.out, "expose: /_webhook/* -> %s  (host nginx, Cloudflare Tunnel path rule)\n", strings.Join(hook.Targets, " or "))
+		}
+		if hook.Secret != "" {
+			fmt.Fprintf(r.out, "secret: %s\n\nThis secret is shown only once. Use it as the webhook secret (GitHub, Gitea, Forgejo,\n"+
+				"Bitbucket), the secret token (GitLab), or `Authorization: Bearer <secret>` (curl/CI).\n", hook.Secret)
+		}
+		for _, d := range hook.Deliveries {
+			fmt.Fprintf(r.out, "%s  %-9s %-10s %-12s %s %s\n", d.At, d.Provider, d.Event, d.Result, d.OperationID, d.Detail)
+		}
+		return nil
 	case "logs":
 		fs, rest := sub("app logs", args[2:])
 		tail := fs.Int("tail", 200, "lines")

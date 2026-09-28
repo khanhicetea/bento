@@ -27,6 +27,7 @@ const password = "correct horse battery staple"
 type client struct {
 	t      *testing.T
 	srv    *httptest.Server
+	api    *Server
 	cookie *http.Cookie
 	csrf   string
 }
@@ -41,7 +42,7 @@ func newServer(t *testing.T) (*client, *testutil.Harness) {
 	}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
-	return &client{t: t, srv: srv}, h
+	return &client{t: t, srv: srv, api: s}, h
 }
 
 func (c *client) do(method, path, body string, hdr map[string]string) (*http.Response, string) {
@@ -373,5 +374,89 @@ func TestGitSourceEndpoints(t *testing.T) {
 	resp, _ = c.write("DELETE", "/api/v1/apps/shop/git", "")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("second delete -> %d", resp.StatusCode)
+	}
+}
+
+func TestWebhookEndpoints(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"]}`)
+	var acc dto.Accepted
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+
+	anon := &client{t: t, srv: c.srv}
+	if resp, _ := anon.do("GET", "/api/v1/apps/shop/webhook", "", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous get -> %d", resp.StatusCode)
+	}
+	if resp, _ := c.do("POST", "/api/v1/apps/shop/webhook", `{}`, map[string]string{"Origin": origin}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("enable without csrf -> %d", resp.StatusCode)
+	}
+	if resp, _ := c.write("POST", "/api/v1/apps/shop/webhook", `{}`); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("enable without git source -> %d", resp.StatusCode)
+	}
+	c.write("PUT", "/api/v1/apps/shop/git", `{"repoUrl":"git@github.com:o/r.git","branch":"main"}`)
+	if resp, out := c.write("POST", "/api/v1/apps/shop/webhook", `{"extra":1}`); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown field -> %d %s", resp.StatusCode, out)
+	}
+	resp, out := c.write("POST", "/api/v1/apps/shop/webhook", `{}`)
+	var hook dto.WebhookSecret
+	json.Unmarshal([]byte(out), &hook)
+	if resp.StatusCode != 200 || !hook.Enabled || len(hook.Secret) != 64 || !strings.HasPrefix(hook.Path, "/_webhook/deploy/") ||
+		resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("enable -> %d %s", resp.StatusCode, out)
+	}
+	for _, p := range []string{"/api/v1/apps/shop/webhook", "/api/v1/apps/shop", "/api/v1/apps/shop/git", "/api/v1/operations"} {
+		if _, out := c.do("GET", p, "", nil); strings.Contains(out, hook.Secret) {
+			t.Fatalf("%s leaked the webhook secret", p)
+		}
+	}
+
+	hooks := httptest.NewServer(c.api.PublicHandler())
+	t.Cleanup(hooks.Close)
+	post := func(path, body string, hdr map[string]string) (int, string) {
+		req, _ := http.NewRequest("POST", hooks.URL+path, strings.NewReader(body))
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode, string(b)
+	}
+	bearer := map[string]string{"Authorization": "Bearer " + hook.Secret}
+	// The public listener serves nothing but self-authenticating routes.
+	for _, p := range []string{"/api/v1/apps", "/api/v1/session", "/", "/scheduler/apps/shop/"} {
+		if code, _ := post(p, `{}`, bearer); code != http.StatusNotFound {
+			t.Errorf("public listener served %s -> %d", p, code)
+		}
+	}
+	if code, _ := post("/_webhook/deploy/NOT-A-HOOK", `{}`, bearer); code != http.StatusNotFound {
+		t.Fatalf("malformed hook id -> %d", code)
+	}
+	if code, _ := post(hook.Path+"?secret="+hook.Secret, `{}`, nil); code != http.StatusNotFound {
+		t.Fatalf("a secret in the query string must not authenticate -> %d", code)
+	}
+	if code, _ := post(hook.Path, strings.Repeat("x", MaxWebhookBodyBytes+1), bearer); code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body -> %d", code)
+	}
+	code, out := post(hook.Path, ``, bearer)
+	if code != http.StatusAccepted || !strings.Contains(out, `"result":"deployed"`) || !strings.Contains(out, `"operationId":"op_`) {
+		t.Fatalf("generic trigger -> %d %s", code, out)
+	}
+	_, out = c.do("GET", "/api/v1/apps/shop/webhook", "", nil)
+	var got dto.Webhook
+	json.Unmarshal([]byte(out), &got)
+	if len(got.Deliveries) != 1 || got.Deliveries[0].Provider != "generic" || got.Deliveries[0].Result != "deployed" {
+		t.Fatalf("delivery history: %s", out)
+	}
+	if resp, _ := c.write("DELETE", "/api/v1/apps/shop/webhook", ""); resp.StatusCode != 200 {
+		t.Fatalf("disable -> %d", resp.StatusCode)
+	}
+	if code, _ := post(hook.Path, ``, bearer); code != http.StatusNotFound {
+		t.Fatalf("a disabled hook must stop working -> %d", code)
 	}
 }
