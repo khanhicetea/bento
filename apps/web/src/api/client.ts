@@ -86,6 +86,7 @@ export const api = {
     status: (signal?: AbortSignal) => get<T.SystemStatus>("/api/v1/system", signal),
     catalog: (signal?: AbortSignal) => get<T.Catalog>("/api/v1/catalog", signal),
     docker: (signal?: AbortSignal) => get<T.DockerInventory>("/api/v1/system/docker", signal),
+    reconcile: (signal?: AbortSignal) => get<T.ReconcileStatus>("/api/v1/reconcile", signal),
     pruneImage: (id: string, confirm: string) =>
       mutate("POST", `/api/v1/system/docker/images/${enc(id.replace(/^sha256:/, ""))}/prune`, {
         confirm,

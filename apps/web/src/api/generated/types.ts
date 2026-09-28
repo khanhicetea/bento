@@ -149,6 +149,19 @@ export interface Reconcile {
   lastError?: string;
 }
 /**
+ * ReconcileTarget is a reconciler target that is failing, blocked, or has an
+ * operation pending. ID is an app id, "edge", "tunnel", "dbadmin", or
+ * "service:<name>".
+ */
+export interface ReconcileTarget {
+  id: string;
+  reconcile: Reconcile;
+  pendingOperation?: string;
+}
+export interface ReconcileStatus {
+  targets: ReconcileTarget[];
+}
+/**
  * IngressInfo explains who owns the app's public route.
  */
 export interface IngressInfo {

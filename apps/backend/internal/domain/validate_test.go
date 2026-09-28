@@ -103,3 +103,17 @@ func TestValidateEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabaseSuffixKeepsAppNamespacesDisjoint(t *testing.T) {
+	for _, ok := range []string{"blog", "reports2", "a"} {
+		if err := ValidateDatabaseSuffix(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	// "blog_x" would let app shop claim shop_blog_x, which belongs to app shop-blog.
+	for _, bad := range []string{"", "main", "blog_x", "Blog", "1db", "blog-x"} {
+		if ValidateDatabaseSuffix(bad) == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

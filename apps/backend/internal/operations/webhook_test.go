@@ -130,6 +130,35 @@ func TestWebhookPushDeploysOnlyConfiguredBranch(t *testing.T) {
 	}
 }
 
+// M5: after a failed deploy, a provider redelivery (same delivery ID) deploys
+// again instead of answering duplicate with the failed operation.
+func TestWebhookRedeliveryAfterFailureDeploysAgain(t *testing.T) {
+	h := newHarness(t)
+	_, w := h.webhookApp("shop")
+	ctx := context.Background()
+	var key string
+	var req docker.ExecRequest
+	h.fake.ExecHook = deployHook("", "permission denied (publickey)", 128, &key, &req)
+	hd, body := githubPush(w.Secret, "d1", "refs/heads/main")
+	first, _ := h.c.HandleWebhook(ctx, w.HookID, hd, body)
+	op, _ := store.GetOperation(ctx, h.store.DB(), first.OperationID)
+	if got := h.wait(op); got.State != store.OpFailed {
+		t.Fatalf("first deploy must fail, got %s", got.State)
+	}
+	h.fake.ExecHook = deployHook("BENTO_COMMIT="+testCommit+"\n", "", 0, &key, &req)
+	again, _ := h.c.HandleWebhook(ctx, w.HookID, hd, body)
+	if again.Result != "deployed" || again.OperationID == first.OperationID {
+		t.Fatalf("redelivery after failure: %+v", again)
+	}
+	op, _ = store.GetOperation(ctx, h.store.DB(), again.OperationID)
+	if got := h.wait(op); got.State != store.OpSucceeded {
+		t.Fatalf("redeployed: %s %s", got.State, got.ErrorMessage)
+	}
+	if third, _ := h.c.HandleWebhook(ctx, w.HookID, hd, body); third.Result != "duplicate" || third.OperationID != again.OperationID {
+		t.Fatalf("redelivery after success must dedupe: %+v", third)
+	}
+}
+
 func TestWebhookCoalescesWhileADeployIsQueued(t *testing.T) {
 	h := newHarness(t)
 	app, w := h.webhookApp("shop")

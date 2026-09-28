@@ -56,7 +56,7 @@ func newHarness(t *testing.T) *harness {
 		Store: s, Engine: fake, Layout: layout, HostIDs: platform.NoHostIDs{},
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Probe:        func(context.Context, string) (int, error) { return 200, nil },
-		ReadyTimeout: 2 * time.Second, PollInterval: 20 * time.Millisecond,
+		ReadyTimeout: 2 * time.Second, ServiceReadyTimeout: 300 * time.Millisecond, PollInterval: 20 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)

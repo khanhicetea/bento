@@ -185,6 +185,23 @@ func (c *Controller) submitWebhookDeploy(ctx context.Context, app domain.App, ev
 	idem := ""
 	if ev.DeliveryID != "" {
 		idem = "webhook:" + app.ID + ":" + ev.Provider + ":" + ev.DeliveryID
+		// Providers reuse the delivery ID on "Redeliver", which operators use
+		// after fixing a failed deploy. Dedupe only against a delivery that is
+		// queued, running, or succeeded; after a failure, chain a new key off
+		// the failed operation so each redelivery deploys once.
+		for {
+			prev, err := store.FindByIdempotencyKey(ctx, c.Store.DB(), idem)
+			if errors.Is(err, store.ErrNotFound) {
+				break
+			}
+			if err != nil {
+				return store.Operation{}, "", err
+			}
+			if prev.State != store.OpFailed && prev.State != store.OpCancelled && prev.State != store.OpInterrupted {
+				break
+			}
+			idem = "webhook:" + app.ID + ":" + ev.Provider + ":" + ev.DeliveryID + ":after:" + prev.ID
+		}
 	}
 	op, existed, err := c.Submit(ctx, Submission{Kind: KindAppDeploy, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem,
 		Origin: DeployTriggerWebhook, Request: DeployRequest{

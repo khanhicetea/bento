@@ -191,6 +191,19 @@ type Reconcile struct {
 	LastError   string `json:"lastError,omitempty"`
 }
 
+// ReconcileTarget is a reconciler target that is failing, blocked, or has an
+// operation pending. ID is an app id, "edge", "tunnel", "dbadmin", or
+// "service:<name>".
+type ReconcileTarget struct {
+	ID               string    `json:"id"`
+	Reconcile        Reconcile `json:"reconcile"`
+	PendingOperation string    `json:"pendingOperation,omitempty"`
+}
+
+type ReconcileStatus struct {
+	Targets []ReconcileTarget `json:"targets"`
+}
+
 // IngressInfo explains who owns the app's public route.
 type IngressInfo struct {
 	Mode          IngressMode `json:"mode"`

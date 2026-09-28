@@ -20,6 +20,8 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
   // detail query and cancel the fetch that observed the terminal state.
   void queryClient.invalidateQueries({ queryKey: keys.operations.lists });
   void queryClient.invalidateQueries({ queryKey: keys.system });
+  // Any finished operation can clear (or add to) a reconcile target's budget.
+  void queryClient.invalidateQueries({ queryKey: keys.reconcile });
   switch (op.targetKind) {
     case "app":
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });

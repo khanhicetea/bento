@@ -20,6 +20,7 @@ export const keys = {
     detail: (id: string) => ["operations", "detail", id] as const,
   },
   services: ["services"] as const,
+  reconcile: ["reconcile"] as const,
   edge: ["edge"] as const,
   tunnel: ["tunnel"] as const,
   utils: ["utils"] as const,

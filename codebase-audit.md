@@ -4,7 +4,7 @@
 **Scope:** the Go backend in `apps/backend`: operations, reconcile, runtime, docker, edge, dataservices, backup, transfer, scheduler, api, store and platform. The React UI was not reviewed.
 **Commit:** `0101243` (main)
 
-> **Fix status (2026-09-28):** C1, C2, H1–H6 are fixed on `main` (merge `2ff6484`). C2 moved the scheduler UI to the utils listener (`/_bento/scheduler/*`) behind single-use tickets and grant cookies, the same way the database browser works. The medium and low items and sections 2–3 are still open. Line references below point at the pre-fix commit `0101243`.
+> **Fix status (2026-09-28):** C1, C2, H1–H6 are fixed on `main` (merge `2ff6484`). C2 moved the scheduler UI to the utils listener (`/_bento/scheduler/*`) behind single-use tickets and grant cookies, the same way the database browser works. M1–M7 and M9 are fixed on `main`; M8, the low items, and sections 2–3 are still open. M4 moved to `<slug>_main` / `<slug>_<suffix>` names with underscore-free suffixes (no fallback for existing names). Line references below point at the pre-fix commit `0101243`.
 
 ## How this audit was done
 

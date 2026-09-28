@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/operations/{id}/cancel", s.handleCancelOp)
 
 	api("GET /api/v1/services", s.handleListServices)
+	api("GET /api/v1/reconcile", s.handleReconcileStatus)
 	api("POST /api/v1/services", s.handleCreateService)
 
 	api("GET /api/v1/edge", s.handleGetEdge)
@@ -792,6 +794,19 @@ func (s *Server) handleCancelOp(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- services ----
+
+func (s *Server) handleReconcileStatus(w http.ResponseWriter, r *http.Request) {
+	out := dto.ReconcileStatus{Targets: []dto.ReconcileTarget{}}
+	for id, st := range s.R.Statuses() {
+		t := dto.ReconcileTarget{ID: id, Reconcile: dto.Reconcile{Failures: st.Failures, Blocked: st.Blocked, LastError: st.LastError}, PendingOperation: st.Pending}
+		if !st.NextAttempt.IsZero() {
+			t.Reconcile.NextAttempt = platform.FormatTime(st.NextAttempt)
+		}
+		out.Targets = append(out.Targets, t)
+	}
+	slices.SortFunc(out.Targets, func(a, b dto.ReconcileTarget) int { return strings.Compare(a.ID, b.ID) })
+	writeJSON(w, http.StatusOK, out)
+}
 
 func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 	rows, err := store.ListServices(r.Context(), s.Store.DB())

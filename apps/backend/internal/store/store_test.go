@@ -222,8 +222,8 @@ func TestOperationIdempotencyAndInterruption(t *testing.T) {
 	if _, _, err := InsertOperation(ctx, s.DB(), op); !errors.Is(err, ErrConflict) {
 		t.Fatalf("reused key for another kind must conflict, got %v", err)
 	}
-	if err := MarkRunning(ctx, s.DB(), first.ID); err != nil {
-		t.Fatal(err)
+	if ok, err := MarkRunning(ctx, s.DB(), first.ID); err != nil || !ok {
+		t.Fatal(ok, err)
 	}
 	interrupted, err := InterruptRunning(ctx, s.DB())
 	if err != nil || len(interrupted) != 1 {
@@ -235,6 +235,29 @@ func TestOperationIdempotencyAndInterruption(t *testing.T) {
 	}
 	if _, err := NextQueued(ctx, s.DB()); !errors.Is(err, ErrNotFound) {
 		t.Fatal("interrupted operation must not be requeued")
+	}
+}
+
+// M1: an operation cancelled after NextQueued read it must not be claimed.
+func TestCancelledQueuedOperationIsNotClaimed(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	op, _, err := InsertOperation(ctx, s.DB(), Operation{ID: platform.NewOperationID(), Kind: "app.start", TargetKind: "app", TargetID: "a1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := NextQueued(ctx, s.DB())
+	if err != nil || next.ID != op.ID {
+		t.Fatal(err)
+	}
+	if _, err := RequestCancel(ctx, s.DB(), op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := MarkRunning(ctx, s.DB(), next.ID); err != nil || ok {
+		t.Fatalf("claimed a cancelled operation: %v %v", ok, err)
+	}
+	if got, _ := GetOperation(ctx, s.DB(), op.ID); got.State != OpCancelled {
+		t.Fatalf("state %s", got.State)
 	}
 }
 

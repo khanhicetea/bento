@@ -22,7 +22,7 @@ func TestRedisACLHashesSecretsAndScopesPrefixes(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin, _ := m.AdminPassword("redis")
-	if _, err := m.WriteRedisConfig("redis", []RedisUser{{Username: "app-a1", Password: "plaintext-app-secret", Prefix: "shop:"}}); err != nil {
+	if err := m.WriteRedisConfig("redis", []RedisUser{{Username: "app-a1", Password: "plaintext-app-secret", Prefix: "shop:"}}); err != nil {
 		t.Fatal(err)
 	}
 	acl, _ := os.ReadFile(filepath.Join(root, "services/redis/conf/users.acl"))
@@ -30,10 +30,10 @@ func TestRedisACLHashesSecretsAndScopesPrefixes(t *testing.T) {
 	if strings.Contains(s, "plaintext-app-secret") || strings.Contains(s, admin) {
 		t.Fatal("ACL file must contain only password hashes")
 	}
-	if !strings.Contains(s, "user app-a1 on sanitize-payload #") || !strings.Contains(s, "~shop:*") || !strings.Contains(s, "-@admin") {
+	if !strings.Contains(s, "user app-a1 on sanitize-payload #") || !strings.Contains(s, "~shop:*") || !strings.Contains(s, "-@admin") || !strings.HasSuffix(strings.TrimSpace(s), "-@dangerous +info") {
 		t.Fatal(s)
 	}
-	if _, err := m.WriteRedisConfig("redis", []RedisUser{{Username: "app-a1", Password: "x", Prefix: "*"}}); err == nil {
+	if err := m.WriteRedisConfig("redis", []RedisUser{{Username: "app-a1", Password: "x", Prefix: "*"}}); err == nil {
 		t.Fatal("wildcard prefix accepted")
 	}
 }

@@ -47,6 +47,9 @@ type Deps struct {
 	Probe func(ctx context.Context, url string) (int, error)
 	// ReadyTimeout bounds readiness waits.
 	ReadyTimeout time.Duration
+	// ServiceReadyTimeout bounds data-service readiness waits; a first MySQL
+	// init on a slow disk can take several minutes.
+	ServiceReadyTimeout time.Duration
 	// PollInterval is the readiness poll cadence.
 	PollInterval time.Duration
 	// UtilsAppsPort is the port of the backend's utils listener on the apps
@@ -83,6 +86,9 @@ func NewController(d Deps) (*Controller, error) {
 	}
 	if d.ReadyTimeout == 0 {
 		d.ReadyTimeout = 180 * time.Second
+	}
+	if d.ServiceReadyTimeout == 0 {
+		d.ServiceReadyTimeout = 10 * time.Minute
 	}
 	if d.PollInterval == 0 {
 		d.PollInterval = 2 * time.Second
@@ -252,9 +258,13 @@ func (c *Controller) Idle() bool { return c.current.Load() == "" }
 
 func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	db := c.Store.DB()
-	if err := store.MarkRunning(ctx, db, op.ID); err != nil {
+	claimed, err := store.MarkRunning(ctx, db, op.ID)
+	if err != nil {
 		c.Log.Error("mark running", "op", op.ID, "err", err)
 		return
+	}
+	if !claimed {
+		return // cancelled (or otherwise finished) after it was dequeued
 	}
 	c.current.Store(op.ID)
 	defer c.current.Store("")
@@ -327,13 +337,24 @@ func (c *Controller) notify(id string) {
 type Run struct {
 	c  *Controller
 	Op store.Operation
+	// uncancellable is set on a Run used for cleanup that must finish even
+	// after cancellation (for example restarting apps an export stopped).
+	uncancellable bool
+}
+
+// Uncancellable returns a view of r whose phases and waits ignore a
+// cancellation request.
+func (r *Run) Uncancellable() *Run {
+	u := *r
+	u.uncancellable = true
+	return &u
 }
 
 // Phase records a new phase. Phase boundaries are the only points where a
 // requested cancellation is honored.
 func (r *Run) Phase(ctx context.Context, phase string) error {
 	db := r.c.Store.DB()
-	if store.CancelRequested(ctx, db, r.Op.ID) {
+	if r.Cancelled(ctx) {
 		return ErrCancelled
 	}
 	r.Op.Phase = phase
@@ -346,7 +367,7 @@ func (r *Run) Phase(ctx context.Context, phase string) error {
 // Cancelled reports whether cancellation was requested. Handlers may call it
 // inside long waits that have no pending effects, such as readiness polling.
 func (r *Run) Cancelled(ctx context.Context) bool {
-	return store.CancelRequested(ctx, r.c.Store.DB(), r.Op.ID)
+	return !r.uncancellable && store.CancelRequested(ctx, r.c.Store.DB(), r.Op.ID)
 }
 
 func (r *Run) Info(ctx context.Context, format string, args ...any) {

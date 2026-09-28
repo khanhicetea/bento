@@ -25,6 +25,10 @@ type target struct {
 	PendingOp   string
 	LastError   string
 	Generation  int64
+	// OpTarget and LastFailedAt let a later successful operation on the same
+	// target, from any origin, restore the budget (see recovered).
+	OpTarget     string
+	LastFailedAt string
 }
 
 // TargetStatus is the observable reconciliation state of one target.
@@ -70,7 +74,26 @@ func (r *Reconciler) Status(id string) TargetStatus {
 	if !ok {
 		return TargetStatus{}
 	}
+	return t.status()
+}
+
+func (t *target) status() TargetStatus {
 	return TargetStatus{Failures: t.Failures, NextAttempt: t.NextAttempt, Blocked: t.Failures >= MaxAttempts, LastError: t.LastError, Pending: t.PendingOp}
+}
+
+// Statuses reports every tracked target that is failing or has a pending
+// operation, keyed by target id ("edge", "tunnel", "dbadmin", "service:<name>",
+// or an app id).
+func (r *Reconciler) Statuses() map[string]TargetStatus {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := map[string]TargetStatus{}
+	for id, t := range r.targets {
+		if t.Failures > 0 || t.PendingOp != "" || t.LastError != "" {
+			out[id] = t.status()
+		}
+	}
+	return out
 }
 
 // Passes reports completed passes (tests).
@@ -158,6 +181,7 @@ func (r *Reconciler) get(id string, gen int64) *target {
 // settle folds the outcome of a previously submitted reconcile operation.
 func (r *Reconciler) settle(ctx context.Context, t *target) bool {
 	if t.PendingOp == "" {
+		r.recovered(ctx, t)
 		return true
 	}
 	op, err := store.GetOperation(ctx, r.C.Store.DB(), t.PendingOp)
@@ -171,12 +195,27 @@ func (r *Reconciler) settle(ctx context.Context, t *target) bool {
 	}
 	t.Failures++
 	t.LastError = op.ErrorMessage
+	t.LastFailedAt = op.CreatedAt
 	delay := r.BaseBackoff << min(t.Failures-1, 6)
 	if delay > 30*time.Minute {
 		delay = 30 * time.Minute
 	}
 	t.NextAttempt = time.Now().Add(delay)
 	return true
+}
+
+// recovered clears a failing target's budget once any operation on it (an
+// operator's PUT /edge, a manual service ensure, ...) has succeeded since the
+// last reconcile failure, so a blocked target does not stay blocked for good.
+func (r *Reconciler) recovered(ctx context.Context, t *target) {
+	if t.Failures == 0 || t.OpTarget == "" {
+		return
+	}
+	ops, err := store.ListOperations(ctx, r.C.Store.DB(), store.OpFilter{TargetID: t.OpTarget, States: []store.OpState{store.OpSucceeded}, Limit: 1})
+	if err != nil || len(ops) == 0 || ops[0].CreatedAt <= t.LastFailedAt {
+		return
+	}
+	t.Failures, t.LastError, t.NextAttempt = 0, "", time.Time{}
 }
 
 func (r *Reconciler) submit(ctx context.Context, t *target, kind, targetKind, id string) {
@@ -190,6 +229,7 @@ func (r *Reconciler) submit(ctx context.Context, t *target, kind, targetKind, id
 		return
 	}
 	t.PendingOp = op.ID
+	t.OpTarget = id
 	r.Log.Info("reconcile submitted", "kind", kind, "target", id, "op", op.ID)
 }
 

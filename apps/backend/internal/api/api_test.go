@@ -98,7 +98,7 @@ func (c *client) write(method, path, body string) (*http.Response, string) {
 
 func TestUnauthenticatedSurfacesAreClosed(t *testing.T) {
 	c, _ := newServer(t)
-	for _, p := range []string{"/api/v1/apps", "/api/v1/system", "/api/v1/operations", "/api/v1/apps/shop/terminal"} {
+	for _, p := range []string{"/api/v1/apps", "/api/v1/system", "/api/v1/operations", "/api/v1/reconcile", "/api/v1/apps/shop/terminal"} {
 		resp, _ := c.do("GET", p, "", nil)
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s -> %d", p, resp.StatusCode)
@@ -657,5 +657,14 @@ func TestDockerInventory(t *testing.T) {
 	}
 	if h.Fake.CallCount("RemoveImage") != 1 {
 		t.Fatal("image was not removed")
+	}
+}
+
+func TestReconcileStatusListsTargets(t *testing.T) {
+	c, _ := newServer(t)
+	c.login()
+	resp, out := c.do("GET", "/api/v1/reconcile", "", nil)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(out, `"targets":[`) {
+		t.Fatalf("reconcile status -> %d %s", resp.StatusCode, out)
 	}
 }

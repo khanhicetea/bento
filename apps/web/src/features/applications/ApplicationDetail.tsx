@@ -431,7 +431,7 @@ function BindingRow({ appId, binding, showService }: { appId: string; binding: T
           </div>
           <div className="flex gap-2">
             <Input
-              placeholder="New database"
+              placeholder="New database (letters, digits)"
               aria-label="New database name"
               value={name}
               onChange={(event) => setName(event.target.value)}

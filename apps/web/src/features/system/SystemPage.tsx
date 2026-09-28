@@ -18,6 +18,7 @@ import { DataServices } from "../data/DatabasesPage.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { DockerInventory, type DockerKind } from "./DockerInventory.tsx";
+import { ReconcileTargets } from "./ReconcileTargets.tsx";
 
 type Tab = "overview" | DockerKind;
 const tabLabels: Record<Tab, string> = {
@@ -71,6 +72,7 @@ function Overview() {
           </div>
         </Cell>
       </div>
+      <ReconcileTargets />
       <DataServices />
       <div className="box">
         <Cell

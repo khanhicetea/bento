@@ -29,6 +29,9 @@ The backend watches Docker events and re-inspects everything every minute. It:
 - never recreates an app just because it is unhealthy,
 - refuses to recreate anything whose durable data (home, SQLite directories, database volumes) is missing,
 - gives up after five failed attempts per target (with backoff) and shows the target as **blocked** until you act.
+  Any later successful operation on that target (for example saving the edge settings again, or starting the app)
+  clears the block. `GET /api/v1/reconcile` lists every failing or blocked target, including the edge, tunnel, database
+  browser, and data services.
 
 ## App containers
 

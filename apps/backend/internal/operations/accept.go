@@ -59,7 +59,10 @@ func normalizeDomains(in []string, errs *domain.ValidationErrors) []domain.Domai
 	return out
 }
 
-func dbIdent(slug string) string { return strings.ReplaceAll(slug, "-", "_") }
+// dbName is the only way database names are formed: <slug with - as _>_<suffix>.
+func dbName(slug, suffix string) string {
+	return strings.ReplaceAll(slug, "-", "_") + "_" + suffix
+}
 
 func newVacuumSlot() *domain.VacuumSlot {
 	return &domain.VacuumSlot{DayOfWeek: mrand.IntN(7), Hour: mrand.IntN(5), Minute: mrand.IntN(60)}
@@ -81,7 +84,7 @@ func (c *Controller) newBinding(ctx context.Context, q store.Q, app domain.App, 
 		b.Service = svc.Name
 		b.Username = "u" + app.ID
 		b.Password = platform.RandomPassword(32)
-		b.Databases = []string{dbIdent(app.Slug)}
+		b.Databases = []string{dbName(app.Slug, domain.PrimaryDatabaseSuffix)}
 	case domain.EngineSQLite:
 		if req.Service != "" {
 			errs.Add(field+".service", "must be omitted for sqlite")
@@ -429,7 +432,10 @@ func (c *Controller) AddDatabase(ctx context.Context, id, bindingID, name, idem 
 	if err != nil {
 		return store.Operation{}, err
 	}
-	full := dbIdent(app.Slug) + "_" + name
+	if err := domain.ValidateDatabaseSuffix(name); err != nil {
+		return store.Operation{}, domain.ValidationErrors{{Field: "name", Message: err.Error()}}
+	}
+	full := dbName(app.Slug, name)
 	if err := domain.ValidateDatabaseName(full); err != nil {
 		return store.Operation{}, domain.ValidationErrors{{Field: "name", Message: err.Error()}}
 	}

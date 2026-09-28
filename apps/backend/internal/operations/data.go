@@ -88,18 +88,16 @@ func (c *Controller) syncRedisACL(ctx context.Context) error {
 	if err := c.Data().EnsureSecrets(svc.DataService); err != nil {
 		return err
 	}
-	changed, err := c.Data().WriteRedisConfig(svc.Name, users)
-	if err != nil {
+	if err := c.Data().WriteRedisConfig(svc.Name, users); err != nil {
 		return err
 	}
 	ins, err := c.Engine.Inspect(ctx, c.Names.ServiceContainer(svc.Name))
 	if err != nil || ins == nil || ins.State == nil || !ins.State.Running {
 		return err
 	}
-	if !changed {
-		return nil
-	}
-	return c.Data().ReloadRedisACL(ctx, svc.Name, ins.ID)
+	// Always reload: a reload that failed once must be retried even though
+	// the files on disk no longer differ.
+	return c.Data().ReloadRedis(ctx, svc.Name, ins.ID)
 }
 
 // ensureService makes a data service container exist and run. When
@@ -175,7 +173,16 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 			return "", err
 		}
 	}
-	deadline := time.Now().Add(3 * time.Minute)
+	// The container has now run against the volume, so the volume holds this
+	// service's data even if first-boot initialization turns out slow or fails
+	// readiness below. Mark it established now: from here on a missing volume
+	// is refused instead of recreated empty, and the reconciler keeps it running.
+	if !svc.Initialized {
+		if err := store.MarkServiceInitialized(ctx, c.Store.DB(), svc.Name); err != nil {
+			return "", err
+		}
+	}
+	deadline := time.Now().Add(c.ServiceReadyTimeout)
 	for {
 		if err := c.Data().Ready(ctx, svc.DataService, id); err == nil {
 			break
@@ -186,11 +193,6 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-time.After(c.PollInterval):
-		}
-	}
-	if !svc.Initialized {
-		if err := store.MarkServiceInitialized(ctx, c.Store.DB(), svc.Name); err != nil {
-			return "", err
 		}
 	}
 	return id, nil

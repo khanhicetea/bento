@@ -13,6 +13,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 )
 
@@ -144,6 +145,15 @@ func (f *Fake) Inspect(_ context.Context, nameOrID string) (*container.InspectRe
 		ID: c.ID, Name: "/" + c.Name, Config: c.Spec.Config, HostConfig: c.Spec.HostConfig,
 		State:           &container.State{Status: status, Running: c.Running},
 		NetworkSettings: &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
+	}
+	if c.Spec.HostConfig != nil {
+		for _, m := range c.Spec.HostConfig.Mounts {
+			mp := container.MountPoint{Type: m.Type, Destination: m.Target, Source: m.Source}
+			if m.Type == mount.TypeVolume {
+				mp.Name = m.Source
+			}
+			res.Mounts = append(res.Mounts, mp)
+		}
 	}
 	if c.Health != "" {
 		res.State.Health = &container.Health{Status: container.HealthStatus(c.Health)}

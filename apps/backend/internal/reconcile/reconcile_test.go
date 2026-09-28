@@ -115,3 +115,40 @@ func TestRetryBudgetIsBoundedAndObservable(t *testing.T) {
 		t.Fatal("recovery after reset failed")
 	}
 }
+
+// M7: a blocked non-app target recovers once any operation on it succeeds,
+// and its status is observable.
+func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
+	h, r, _ := setup(t)
+	ctx := context.Background()
+	_, op, err := h.C.CreateService(ctx, domain.EngineRedis, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.Wait(op.ID); got.State != store.OpSucceeded {
+		t.Fatal(got.ErrorMessage)
+	}
+	name := h.C.Names.ServiceContainer("redis")
+	for i := 0; i < MaxAttempts+2; i++ {
+		h.Fake.SetRunning(name, false)
+		h.Fake.FailOn = map[string]error{"Start": errors.New("injected")}
+		pass(t, h, r)
+		time.Sleep(5 * time.Millisecond << min(i, 6))
+		pass(t, h, r)
+	}
+	if st := r.Statuses()["service:redis"]; !st.Blocked {
+		t.Fatalf("expected blocked, got %+v", st)
+	}
+	h.Fake.FailOn = nil
+	op, _, err = h.C.Submit(ctx, operations.Submission{Kind: operations.KindServiceEnsure, TargetKind: "service", TargetID: "redis"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.Wait(op.ID); got.State != store.OpSucceeded {
+		t.Fatal(got.ErrorMessage)
+	}
+	pass(t, h, r)
+	if st, ok := r.Statuses()["service:redis"]; ok {
+		t.Fatalf("a successful ensure must clear the budget, got %+v", st)
+	}
+}

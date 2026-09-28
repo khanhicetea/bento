@@ -137,6 +137,9 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 	var stoppedServices []store.ServiceRow
 	defer func() {
 		rctx := context.WithoutCancel(ctx)
+		// Resume must run to completion even when the export was cancelled;
+		// otherwise every app it stopped stays down.
+		r := r.Uncancellable()
 		_ = r.Phase(rctx, "resume")
 		for _, s := range stoppedServices {
 			if _, e := c.ensureService(rctx, r, s, false); e != nil {

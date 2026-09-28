@@ -174,9 +174,16 @@ func ActiveForTarget(ctx context.Context, q Q, targetID string) (bool, error) {
 	return n > 0, err
 }
 
-func MarkRunning(ctx context.Context, q Q, id string) error {
-	_, err := q.ExecContext(ctx, "UPDATE operations SET state='running', started_at=? WHERE id=? AND state='queued'", now(), id)
-	return err
+// MarkRunning claims a queued operation. It reports false when the operation
+// is no longer queued (for example cancelled after NextQueued read it); the
+// caller must then not run it.
+func MarkRunning(ctx context.Context, q Q, id string) (bool, error) {
+	res, err := q.ExecContext(ctx, "UPDATE operations SET state='running', started_at=? WHERE id=? AND state='queued'", now(), id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 func SetPhase(ctx context.Context, q Q, id, phase string) error {
@@ -200,8 +207,20 @@ func RequestCancel(ctx context.Context, q Q, id string) (Operation, error) {
 	}
 	switch o.State {
 	case OpQueued:
-		if err := FinishOperation(ctx, q, id, OpCancelled, nil, "cancelled", "cancelled before start", ""); err != nil {
+		// Conditional on still being queued: the executor may claim it between
+		// the read above and this write, and a running operation must only get
+		// the cancel flag.
+		res, err := q.ExecContext(ctx, `UPDATE operations SET state=?, result_json='{}', error_code='cancelled', error_message='cancelled before start', guidance='', finished_at=? WHERE id=? AND state='queued'`,
+			OpCancelled, now(), id)
+		if err != nil {
 			return o, err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return o, err
+		} else if n == 0 {
+			if _, err := q.ExecContext(ctx, "UPDATE operations SET cancel_requested=1 WHERE id=? AND state='running'", id); err != nil {
+				return o, err
+			}
 		}
 	case OpRunning:
 		if _, err := q.ExecContext(ctx, "UPDATE operations SET cancel_requested=1 WHERE id=?", id); err != nil {

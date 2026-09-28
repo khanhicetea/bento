@@ -42,7 +42,8 @@ func (v ValidationErrors) Err() error {
 var (
 	slugPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}[a-z0-9]$`)
 	domainLabel     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	dbNamePattern   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
+	dbNamePattern   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+	dbSuffixPattern = regexp.MustCompile(`^[a-z][a-z0-9]{0,29}$`)
 	serviceName     = regexp.MustCompile(`^(mysql|postgres)[0-9]{1,3}$`)
 	readyPathRegexp = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@/%?-]{0,255}$`)
 	certNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -103,6 +104,23 @@ func CleanRelative(p string) (string, error) {
 		}
 	}
 	return c, nil
+}
+
+// PrimaryDatabaseSuffix names a binding's first database: <slug>_main.
+const PrimaryDatabaseSuffix = "main"
+
+// ValidateDatabaseSuffix checks the app-local part of a database name. Every
+// database is <slug with - as _>_<suffix>; slugs never contain "_" and suffixes
+// never do either, so the last "_" splits a name unambiguously and names from
+// different apps cannot collide.
+func ValidateDatabaseSuffix(suffix string) error {
+	if !dbSuffixPattern.MatchString(suffix) {
+		return fmt.Errorf("must be 1-30 lowercase letters or digits, starting with a letter (no underscores)")
+	}
+	if suffix == PrimaryDatabaseSuffix {
+		return fmt.Errorf("%q is reserved for the primary database", suffix)
+	}
+	return nil
 }
 
 func ValidateDatabaseName(name string) error {
