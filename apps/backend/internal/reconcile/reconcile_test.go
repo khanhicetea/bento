@@ -132,12 +132,14 @@ func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 		t.Fatal(got.ErrorMessage)
 	}
 	name := h.C.Names.ServiceContainer("redis")
-	for i := 0; i < MaxAttempts+2; i++ {
+	// Wait out the actual backoff rather than a fixed guess, which -race can outrun.
+	r.BaseBackoff = 20 * time.Millisecond
+	for range MaxAttempts + 2 {
 		h.Fake.SetRunning(name, false)
 		h.Fake.FailOn = map[string]error{"Start": errors.New("injected")}
 		pass(t, h, r)
-		time.Sleep(5 * time.Millisecond << min(i, 6))
 		pass(t, h, r)
+		time.Sleep(time.Until(r.Statuses()["service:redis"].NextAttempt) + time.Millisecond)
 	}
 	if st := r.Statuses()["service:redis"]; !st.Blocked {
 		t.Fatalf("expected blocked, got %+v", st)
