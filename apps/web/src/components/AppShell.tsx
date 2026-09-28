@@ -1,18 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type PropsWithChildren } from "react";
-import {
-  Activity,
-  Archive,
-  Boxes,
-  Database,
-  LayoutGrid,
-  LogOut,
-  Monitor,
-  Moon,
-  Network,
-  Server,
-  Sun,
-} from "lucide-react";
+import { Activity, Archive, Boxes, LayoutGrid, LogOut, Monitor, Moon, Network, Server, Sun } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api } from "../api/client.ts";
 import { keys } from "../api/keys.ts";
@@ -23,10 +11,9 @@ import { useLogout } from "../features/session/useSession.ts";
 const navigation = [
   { href: "/", icon: LayoutGrid, label: "Home" },
   { href: "/apps", icon: Boxes, label: "Apps" },
-  { href: "/data", icon: Database, label: "Data" },
-  { href: "/backups", icon: Archive, label: "Backups" },
-  { href: "/ingress", icon: Network, label: "Ingress" },
   { href: "/activity", icon: Activity, label: "Activity" },
+  { href: "/ingress", icon: Network, label: "Ingress" },
+  { href: "/backups", icon: Archive, label: "Backups" },
   { href: "/system", icon: Server, label: "System" },
 ] as const;
 

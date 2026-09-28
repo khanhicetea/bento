@@ -1,21 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Search } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import {
-  Cell,
-  DomainError,
-  DomainLoading,
-  EmptyState,
-  KeyValues,
-  PageHeader,
-  StateBadge,
-} from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, EmptyState, PageHeader, StateBadge } from "../../components/DomainState.tsx";
 import { describeOp, formatDuration, formatRelative } from "../../lib/format.ts";
 import { isTerminal } from "./OperationTracker.tsx";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 const stateFilters: Array<[string, string]> = [
@@ -25,7 +18,8 @@ const stateFilters: Array<[string, string]> = [
   ["failed", "Failed"],
 ];
 
-export function OperationsPage() {
+export function OperationsPage({ selectedId }: { selectedId?: string }) {
+  const [, navigate] = useLocation();
   const query = useQuery({
     queryKey: keys.operations.list(),
     queryFn: ({ signal }) => api.operations.list(undefined, signal),
@@ -83,11 +77,14 @@ export function OperationsPage() {
           </div>
         </div>
       )}
+      <Dialog open={!!selectedId} onOpenChange={(open) => !open && navigate("/activity")}>
+        <DialogContent className="sm:max-w-2xl">{selectedId && <OperationDetail id={selectedId} />}</DialogContent>
+      </Dialog>
     </>
   );
 }
 
-export function OperationDetailPage({ id }: { id: string }) {
+function OperationDetail({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: keys.operations.detail(id),
@@ -101,26 +98,51 @@ export function OperationDetailPage({ id }: { id: string }) {
   if (query.isPending) return <DomainLoading label="operation" />;
   if (query.error) return <DomainError message={messageOf(query.error)} />;
   const op = query.data;
+  const events = op.events ?? [];
   return (
     <>
-      <PageHeader
-        back={{ href: "/activity", label: "Activity" }}
-        title={describeOp(op)}
-        actions={
-          !isTerminal(op.state) && (
-            <Button variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
-              Cancel
-            </Button>
-          )
-        }
-      />
-      <div className="box box--main">
-        <Cell title="Timeline">
-          {(op.events ?? []).length === 0 ? (
-            <p className="note">No events yet</p>
+      <DialogHeader>
+        <DialogTitle className="flex flex-wrap items-center gap-2 pr-6">
+          {describeOp(op)} <StateBadge state={op.state} />
+        </DialogTitle>
+      </DialogHeader>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-4">
+        {(
+          [
+            ["Origin", op.origin],
+            ["Duration", formatDuration(op.startedAt, op.finishedAt)],
+            ["Created", <span title={op.createdAt}>{formatRelative(op.createdAt)}</span>],
+            [
+              "ID",
+              <code className="block truncate text-xs" title={op.id}>
+                {op.id}
+              </code>,
+            ],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="mt-0.5 font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {(op.errorMessage || op.guidance || cancel.error) && (
+        <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+          {op.errorMessage && <p className="text-destructive">{op.errorMessage}</p>}
+          {cancel.error && <p className="text-destructive">{messageOf(cancel.error)}</p>}
+          {op.guidance && <p>{op.guidance}</p>}
+        </div>
+      )}
+      <section className="grid min-h-0 gap-2">
+        <h3 className="text-sm font-semibold">
+          Timeline <span className="font-normal text-muted-foreground">{events.length}</span>
+        </h3>
+        <div className="max-h-[45vh] overflow-y-auto rounded-lg border px-3 py-1">
+          {events.length === 0 ? (
+            <p className="note py-2">No events yet</p>
           ) : (
             <ol className="timeline">
-              {(op.events ?? []).map((event) => (
+              {events.map((event) => (
                 <li key={event.seq} data-level={event.level}>
                   <time title={event.at}>{event.at.slice(11, 19)}</time>
                   <span className={event.level === "error" ? "text-destructive" : ""}>{event.message}</span>
@@ -128,30 +150,15 @@ export function OperationDetailPage({ id }: { id: string }) {
               ))}
             </ol>
           )}
-        </Cell>
-        <div className="col">
-          <Cell title="Details">
-            <KeyValues
-              items={[
-                ["State", <StateBadge state={op.state} />],
-                ["Origin", op.origin],
-                ["Duration", formatDuration(op.startedAt, op.finishedAt)],
-                ["Created", <span title={op.createdAt}>{formatRelative(op.createdAt)}</span>],
-                ["ID", <code className="note">{op.id}</code>],
-              ]}
-            />
-          </Cell>
-          {(op.errorMessage || op.guidance || cancel.error) && (
-            <Cell title="Notes" className={op.errorMessage || cancel.error ? "cell--alert" : ""}>
-              <div className="grid gap-2 text-sm">
-                {op.errorMessage && <p className="text-destructive">{op.errorMessage}</p>}
-                {cancel.error && <p className="text-destructive">{messageOf(cancel.error)}</p>}
-                {op.guidance && <p>{op.guidance}</p>}
-              </div>
-            </Cell>
-          )}
         </div>
-      </div>
+      </section>
+      {!isTerminal(op.state) && (
+        <DialogFooter>
+          <Button variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+            Cancel operation
+          </Button>
+        </DialogFooter>
+      )}
     </>
   );
 }

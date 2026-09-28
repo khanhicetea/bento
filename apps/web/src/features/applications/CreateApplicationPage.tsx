@@ -136,7 +136,7 @@ export function CreateApplicationPage() {
   const managed = ingress === "managed";
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader back={{ href: "/apps", label: "Apps" }} title="New app" description={stepLabels[step]} />
+      <PageHeader back={{ href: "/apps", label: "Apps" }} title="New app" />
       <ol className="steps" aria-label={`Step ${step + 1} of ${stepLabels.length}`}>
         {stepLabels.map((label, index) => (
           <li key={label} data-done={index <= step} aria-current={index === step ? "step" : undefined}>

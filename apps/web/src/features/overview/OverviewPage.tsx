@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, ChevronRight, CircleAlert, LoaderCircle, Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
@@ -39,28 +39,10 @@ export function OverviewPage() {
     );
 
   const allApps = apps.data?.apps ?? [];
-  const attention = allApps.filter(
-    (app) =>
-      app.observed.state === "failed" ||
-      app.observed.state === "unhealthy" ||
-      app.observed.state === "blocked" ||
-      (app.desiredRuntime === "running" && app.observed.state === "stopped"),
-  );
   const allOps = operations.data?.operations ?? [];
-  const recentFailed = allOps.filter(
-    (op) => op.state === "failed" && Date.now() - Date.parse(op.createdAt) < 86_400_000,
-  );
-  const initializing = (services.data?.services ?? []).filter(
-    (service) => !service.initialized || service.state === "starting",
-  );
-  const issues = attention.length + recentFailed.length + initializing.length + (system.data?.dockerError ? 1 : 0);
-  const checks = [operations, services, edge, tunnel, schedule];
-  const checksUnavailable = checks.some((query) => query.isError);
-  const checksPending = checks.some((query) => query.isPending);
   const running = allApps.filter((app) => app.observed.state === "healthy" || app.observed.state === "starting").length;
   const activeOps = allOps.filter((op) => !isTerminal(op.state)).length;
-  const recent = allOps.slice(0, 6);
-  const bad = issues > 0 || checksUnavailable;
+  const recent = allOps.slice(0, 8);
 
   const serviceState = (
     query: { isPending: boolean; error: unknown },
@@ -96,171 +78,82 @@ export function OverviewPage() {
         }
       />
 
-      <div className="box box--4">
-        <Cell className={`cell--span2 ${bad ? "cell--alert" : ""}`}>
-          <div className="hero">
-            <span className={`hero__seal ${bad ? "hero__seal--bad" : checksPending ? "hero__seal--wait" : ""}`}>
-              {bad ? (
-                <CircleAlert aria-hidden="true" />
-              ) : checksPending ? (
-                <LoaderCircle className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Check aria-hidden="true" />
-              )}
-            </span>
-            <div>
-              <h2>
-                {issues
-                  ? `${issues} to check`
-                  : checksUnavailable
-                    ? "Some checks failed"
-                    : checksPending
-                      ? "Checking…"
-                      : "All good"}
-              </h2>
-              <p>{issues ? "See below" : checksUnavailable ? "Refresh to retry" : "Nothing needs you"}</p>
-            </div>
-          </div>
-        </Cell>
-        <Cell>
-          <div className="metric">
-            <strong>
-              {running}
-              <small> / {allApps.length}</small>
-            </strong>
-            <span>Apps running</span>
-          </div>
-        </Cell>
-        <Cell>
-          <div className="metric">
-            <strong>{services.isPending ? "–" : (services.data?.services.length ?? 0)}</strong>
-            <span>Data services</span>
-          </div>
-        </Cell>
+      <div className="box box--3">
+        <MetricLink href="/apps" value={running} total={allApps.length} label="Apps running" />
+        <MetricLink
+          href="/system"
+          value={services.isPending ? "–" : (services.data?.services.length ?? 0)}
+          label="Data services"
+        />
+        <MetricLink href="/activity" value={operations.isPending ? "–" : activeOps} label="Operations in progress" />
       </div>
 
       <div className="box box--main">
-        <div className="col">
-          {issues > 0 && (
-            <Cell title="Needs attention" className="cell--alert">
-              <div className="rows">
-                {system.data?.dockerError && (
-                  <AttentionRow href="/system" title="Docker unavailable" detail={system.data.dockerError} />
-                )}
-                {attention.map((app) => (
-                  <AttentionRow
-                    key={app.id}
-                    href={`/apps/${encodeURIComponent(app.slug)}`}
-                    title={app.slug}
-                    detail={app.observed.message || `Wants ${app.desiredRuntime}, is ${app.observed.state}`}
-                  />
-                ))}
-                {recentFailed.map((op) => (
-                  <AttentionRow
-                    key={op.id}
-                    href={`/activity/${op.id}`}
-                    title={describeOp(op)}
-                    detail={op.errorMessage || "Failed"}
-                  />
-                ))}
-                {initializing.map((service) => (
-                  <AttentionRow key={service.name} href="/data" title={service.name} detail="Initializing" />
-                ))}
-              </div>
-            </Cell>
-          )}
-          <Cell
-            title="Apps"
-            action={
-              <Link href="/apps">
-                All <ArrowRight className="size-3.5" />
-              </Link>
-            }
-          >
-            {allApps.length === 0 ? (
-              <div className="empty">
-                <strong>No apps yet</strong>
-                <Button asChild size="sm">
-                  <Link href="/apps/new">Create one</Link>
-                </Button>
-              </div>
-            ) : (
-              <div className="rows">
-                {allApps.slice(0, 7).map((app) => {
-                  const drift = app.desiredRuntime === "running" && app.observed.state === "stopped";
-                  return (
-                    <Link key={app.id} href={`/apps/${encodeURIComponent(app.slug)}`} className="row">
-                      <span className="mono">{app.slug.slice(0, 1).toUpperCase()}</span>
-                      <span className="row__main">
-                        <strong>{app.slug}</strong>
-                        <small>{app.primaryDomain || `${app.toolchain} ${app.version}`}</small>
-                      </span>
-                      <StateBadge state={drift ? "drift" : app.observed.state} />
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </Cell>
-        </div>
-        <div className="col">
-          <Cell title="Stack">
+        <Cell
+          title="Recent activity"
+          action={
+            <Link href="/activity">
+              All <ArrowRight className="size-3.5" />
+            </Link>
+          }
+        >
+          {operations.isPending ? (
+            <DomainLoading label="activity" />
+          ) : operations.error ? (
+            <DomainError message={messageOf(operations.error)} onRetry={() => void operations.refetch()} />
+          ) : recent.length === 0 ? (
+            <p className="note">Nothing yet</p>
+          ) : (
             <div className="rows">
-              {stackServices.map(([name, href, [state, label]]) => (
-                <Link key={name} href={href} className="row">
+              {recent.map((op) => (
+                <Link key={op.id} href={`/activity/${op.id}`} className="row">
+                  <span className={`dot ${isTerminal(op.state) ? "" : "dot--wait"}`} />
                   <span className="row__main">
-                    <strong>{name}</strong>
+                    <strong>{describeOp(op)}</strong>
                   </span>
-                  <StateBadge state={state} label={label} />
+                  <span className="row__meta">{formatRelative(op.createdAt)}</span>
                 </Link>
               ))}
             </div>
-          </Cell>
-          <Cell
-            title="Activity"
-            action={
-              <Link href="/activity">
-                {activeOps > 0 ? `${activeOps} active` : "All"} <ArrowRight className="size-3.5" />
+          )}
+        </Cell>
+        <Cell title="Stack">
+          <div className="rows">
+            {stackServices.map(([name, href, [state, label]]) => (
+              <Link key={name} href={href} className="row">
+                <span className="row__main">
+                  <strong>{name}</strong>
+                </span>
+                <StateBadge state={state} label={label} />
               </Link>
-            }
-          >
-            {operations.isPending ? (
-              <DomainLoading label="activity" />
-            ) : operations.error ? (
-              <DomainError message={messageOf(operations.error)} onRetry={() => void operations.refetch()} />
-            ) : recent.length === 0 ? (
-              <p className="note">Nothing yet</p>
-            ) : (
-              <div className="rows">
-                {recent.map((op) => (
-                  <Link key={op.id} href={`/activity/${op.id}`} className="row">
-                    <span
-                      className={`dot ${op.state === "failed" ? "dot--bad" : isTerminal(op.state) ? "" : "dot--wait"}`}
-                    />
-                    <span className="row__main">
-                      <strong>{describeOp(op)}</strong>
-                    </span>
-                    <span className="row__meta">{formatRelative(op.createdAt)}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Cell>
-        </div>
+            ))}
+          </div>
+        </Cell>
       </div>
     </>
   );
 }
 
-function AttentionRow({ href, title, detail }: { href: string; title: string; detail: string }) {
+function MetricLink({
+  href,
+  value,
+  total,
+  label,
+}: {
+  href: string;
+  value: number | string;
+  total?: number;
+  label: string;
+}) {
   return (
-    <Link href={href} className="row">
-      <span className="dot dot--bad" />
-      <span className="row__main">
-        <strong>{title}</strong>
-        <small>{detail}</small>
-      </span>
-      <ChevronRight className="size-4" aria-hidden="true" />
+    <Link href={href} className="cell cell--link">
+      <div className="metric">
+        <strong>
+          {value}
+          {total !== undefined && <small> / {total}</small>}
+        </strong>
+        <span>{label}</span>
+      </div>
     </Link>
   );
 }

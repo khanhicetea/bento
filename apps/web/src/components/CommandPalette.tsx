@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { Activity, Archive, Boxes, Database, LayoutGrid, Network, Plus, Search, Server } from "lucide-react";
+import { Activity, Archive, Boxes, LayoutGrid, Network, Plus, Search, Server } from "lucide-react";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -8,11 +8,10 @@ const commands = [
   { href: "/", label: "Home", keywords: "overview dashboard health", icon: LayoutGrid },
   { href: "/apps", label: "Apps", keywords: "applications runtimes", icon: Boxes },
   { href: "/apps/new", label: "New app", keywords: "create application", icon: Plus },
-  { href: "/data", label: "Data services", keywords: "mysql postgres redis database", icon: Database },
-  { href: "/backups", label: "Backups", keywords: "artifacts restore schedule", icon: Archive },
-  { href: "/ingress", label: "Ingress", keywords: "edge tunnel proxies routes", icon: Network },
   { href: "/activity", label: "Activity", keywords: "operations events", icon: Activity },
-  { href: "/system", label: "System", keywords: "docker retained theme", icon: Server },
+  { href: "/ingress", label: "Ingress", keywords: "edge tunnel proxies routes", icon: Network },
+  { href: "/backups", label: "Backups", keywords: "artifacts restore schedule", icon: Archive },
+  { href: "/system", label: "System", keywords: "docker retained data services mysql postgres database", icon: Server },
 ] as const;
 
 export function CommandPalette() {

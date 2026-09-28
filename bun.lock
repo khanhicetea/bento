@@ -27,6 +27,7 @@
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "shadcn": "4.19.0",
+        "simple-icons": "16.33.0",
         "tailwind-merge": "3.3.1",
         "tw-animate-css": "1.4.0",
         "wouter": "3.7.1",
@@ -1658,6 +1659,8 @@
     "side-channel-weakmap": ["side-channel-weakmap@1.0.2", "", { "dependencies": { "call-bound": "^1.0.2", "es-errors": "^1.3.0", "get-intrinsic": "^1.2.5", "object-inspect": "^1.13.3", "side-channel-map": "^1.0.1" } }, "sha512-WPS/HvHQTYnHisLo9McqBHOJk2FkHO/tlpvldyrnem4aeQp4hai3gythswg6p01oSoTl58rcpiFAjF2br2Ak2A=="],
 
     "signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
+
+    "simple-icons": ["simple-icons@16.33.0", "", {}, "sha512-z14u6A8ngAg9mgERRsNO8YkjIMefehIpBk7A8Dz3Gd91945qFP19MLPSHgV4z8P5u/MRYd5e07OTzaDoB4d6qA=="],
 
     "sisteransi": ["sisteransi@1.0.5", "", {}, "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg=="],
 

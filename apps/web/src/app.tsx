@@ -5,9 +5,8 @@ import { ApplicationPage } from "./features/applications/ApplicationDetail.tsx";
 import { ApplicationsPage } from "./features/applications/ApplicationsPage.tsx";
 import { CreateApplicationPage } from "./features/applications/CreateApplicationPage.tsx";
 import { BackupsPage } from "./features/backups/BackupsPage.tsx";
-import { DatabasesPage } from "./features/data/DatabasesPage.tsx";
 import { OperationTrackerProvider } from "./features/operations/OperationTracker.tsx";
-import { OperationDetailPage, OperationsPage } from "./features/operations/OperationsPage.tsx";
+import { OperationsPage } from "./features/operations/OperationsPage.tsx";
 import { OverviewPage } from "./features/overview/OverviewPage.tsx";
 import { RoutingPage } from "./features/routing/RoutingPage.tsx";
 import { LoginPage } from "./features/session/LoginPage.tsx";
@@ -37,17 +36,19 @@ export function App() {
           <Route path="/apps/:slug/deploy">{(params) => <ApplicationPage slug={params.slug} tab="deploy" />}</Route>
           <Route path="/apps/:slug/settings">{(params) => <ApplicationPage slug={params.slug} tab="settings" />}</Route>
           <Route path="/apps/:slug">{(params) => <ApplicationPage slug={params.slug} />}</Route>
-          <Route path="/data" component={DatabasesPage} />
           <Route path="/backups" component={BackupsPage} />
           <Route path="/ingress" component={RoutingPage} />
-          <Route path="/activity/:id">{(params) => <OperationDetailPage id={params.id} />}</Route>
-          <Route path="/activity" component={OperationsPage} />
+          <Route path="/activity/:id">{(params) => <OperationsPage selectedId={params.id} />}</Route>
+          <Route path="/activity">{() => <OperationsPage />}</Route>
           <Route path="/system" component={SystemPage} />
           <Route path="/applications">
             <Redirect to="/apps" />
           </Route>
+          <Route path="/data">
+            <Redirect to="/system" />
+          </Route>
           <Route path="/databases">
-            <Redirect to="/data" />
+            <Redirect to="/system" />
           </Route>
           <Route path="/routing">
             <Redirect to="/ingress" />

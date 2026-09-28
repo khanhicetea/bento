@@ -3,12 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Database, Plus } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import { DomainError, DomainLoading, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import { DomainError, DomainLoading, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 
-export function DatabasesPage() {
+/** Shared database services, shown on the System page below the host metrics. */
+export function DataServices() {
   const q = useQuery({
     queryKey: keys.services,
     queryFn: ({ signal }) => api.services.list(signal),
@@ -22,8 +23,15 @@ export function DatabasesPage() {
   const selectedVersion = version || versions?.at(-1) || "";
   const create = useOperationMutation(() => api.services.create({ engine, version: selectedVersion }));
   return (
-    <>
-      <PageHeader title="Data" description="Shared databases on the private network. Volumes are never removed." />
+    <section id="data" aria-labelledby="data-services-title">
+      <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
+        <h2 id="data-services-title" className="text-lg font-semibold">
+          Data services
+        </h2>
+        <p className="text-sm text-muted-foreground max-sm:hidden">
+          Shared databases on the private network. Volumes are never removed.
+        </p>
+      </div>
       {q.isPending && <DomainLoading label="services" />}
       {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
       {q.data && (
@@ -117,6 +125,6 @@ export function DatabasesPage() {
           </div>
         </div>
       )}
-    </>
+    </section>
   );
 }

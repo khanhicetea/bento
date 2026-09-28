@@ -12,6 +12,7 @@ import {
   PageHeader,
   StateBadge,
 } from "../../components/DomainState.tsx";
+import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { formatBytes, formatCron, formatDuration, formatRelative } from "../../lib/format.ts";
 import { useApplication, useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
 import { Alert } from "@/components/ui/alert";
@@ -54,33 +55,59 @@ export function BackupsPage() {
   );
 }
 
+const engineLabels: Record<string, string> = { mysql: "MySQL", postgres: "PostgreSQL", sqlite: "SQLite" };
+
 function ArtifactsTab({ onRestore }: { onRestore: (artifact: T.BackupArtifact) => void }) {
+  const [engine, setEngine] = useState("all");
   const query = useQuery({ queryKey: keys.backups.artifacts, queryFn: ({ signal }) => api.backups.artifacts(signal) });
   if (query.isPending) return <DomainLoading label="backups" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
-  const artifacts = [...query.data.artifacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const all = [...query.data.artifacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const engines = [...new Set(all.map((artifact) => artifact.engine))].sort();
+  const artifacts = all.filter((artifact) => engine === "all" || artifact.engine === engine);
   return (
     <div className="box">
       <div className="cell">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <span className="note">
+            {artifacts.length} {artifacts.length === 1 ? "file" : "files"}
+          </span>
+          {engines.length > 1 && (
+            <div className="seg" role="group" aria-label="Filter by database type">
+              {["all", ...engines].map((value) => (
+                <button key={value} type="button" aria-pressed={engine === value} onClick={() => setEngine(value)}>
+                  {value === "all" ? "All" : <EngineLogo engine={value} className="size-3.5" />}
+                  {value !== "all" && (engineLabels[value] ?? value)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {artifacts.length === 0 ? (
           <EmptyState icon={<Archive />} title="No backups yet" />
         ) : (
           <div className="rows rows--lined">
             {artifacts.map((artifact) => (
               <div key={artifact.path} className="row">
-                <span className="mono">{artifact.appSlug.slice(0, 1).toUpperCase()}</span>
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg border bg-muted/40">
+                  <EngineLogo engine={artifact.engine} />
+                </span>
                 <span className="row__main">
-                  <strong>
-                    {artifact.appSlug} <span className="font-normal text-muted-foreground">/ {artifact.database}</span>
+                  <strong className="flex flex-wrap items-center gap-2">
+                    {artifact.database}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      {engineLabels[artifact.engine] ?? artifact.engine}
+                    </span>
                   </strong>
-                  <small title={artifact.path}>
-                    {artifact.engine} · {formatBytes(artifact.sizeBytes)}
+                  <small className="truncate" title={artifact.path}>
+                    {artifact.appSlug} · {artifact.path.split("/").at(-1)}
                   </small>
                 </span>
-                <span className="row__meta max-sm:hidden" title={artifact.createdAt}>
-                  {formatRelative(artifact.createdAt)}
+                <span className="row__meta grid justify-items-end max-sm:hidden">
+                  <span className="tabular-nums">{formatBytes(artifact.sizeBytes)}</span>
+                  <span title={artifact.createdAt}>{formatRelative(artifact.createdAt)}</span>
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => onRestore(artifact)}>
+                <Button size="sm" variant="outline" onClick={() => onRestore(artifact)}>
                   <RotateCcw /> Restore
                 </Button>
               </div>

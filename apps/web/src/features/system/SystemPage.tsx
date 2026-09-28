@@ -14,6 +14,7 @@ import {
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { formatRelative } from "../../lib/format.ts";
+import { DataServices } from "../data/DatabasesPage.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 
@@ -24,7 +25,7 @@ export function SystemPage() {
   const status = system.data;
   return (
     <>
-      <PageHeader title="System" description={status.stackName} />
+      <PageHeader title="System" />
       <div className="box box--3">
         <Cell>
           <div className="metric">
@@ -44,9 +45,11 @@ export function SystemPage() {
             <span>Architecture</span>
           </div>
         </Cell>
+      </div>
+      <DataServices />
+      <div className="box">
         <Cell
           title="Stack"
-          className="cell--wide"
           action={
             <StateBadge
               state={status.dockerError ? "failed" : "healthy"}
