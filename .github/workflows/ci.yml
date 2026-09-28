@@ -2,8 +2,10 @@ name: ci
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags:
+      - "*"
+  release:
+    types: [published]
 
 permissions:
   contents: read
