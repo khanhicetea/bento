@@ -85,12 +85,15 @@ func TestStopIntentIsNeverResurrected(t *testing.T) {
 
 func TestRetryBudgetIsBoundedAndObservable(t *testing.T) {
 	h, r, app := setup(t)
+	// The backoff must outlast a whole pass under -race, or the settling pass
+	// resubmits before the next failure is injected and the attempt succeeds.
+	r.BaseBackoff = 20 * time.Millisecond
 	h.Fake.Delete(h.C.Names.AppContainer(app.ID))
-	for i := 0; i < MaxAttempts+3; i++ {
+	for range MaxAttempts + 3 {
 		h.Fake.FailOn = map[string]error{"Create": errors.New("injected")}
 		pass(t, h, r)
-		time.Sleep(5 * time.Millisecond << min(i, 6))
 		pass(t, h, r)
+		time.Sleep(time.Until(r.Status(app.ID).NextAttempt) + time.Millisecond)
 	}
 	st := r.Status(app.ID)
 	if !st.Blocked || st.Failures != MaxAttempts {
