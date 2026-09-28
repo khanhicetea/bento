@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
@@ -111,5 +113,94 @@ func TestBackupAllTargetsFailed(t *testing.T) {
 	runs, _ := store.ListBackupRuns(ctx, h.store.DB(), 5)
 	if len(runs) != 1 || runs[0].State != "failed" {
 		t.Fatalf("runs: %+v", runs)
+	}
+}
+
+func TestManualUploadNeedsScheduleRemote(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all", Upload: true}, ""); err == nil || !strings.Contains(err.Error(), "rclone remote") {
+		t.Fatalf("upload without a remote must be refused, got %v", err)
+	}
+	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Cron: "0 3 * * *", Retain: 1, RcloneRemote: "s3:b --config=/x"}); err == nil {
+		t.Fatal("remote with flags accepted")
+	}
+}
+
+func TestRcloneTestOperation(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.c.SubmitRcloneTest(ctx, "", ""); err == nil {
+		t.Fatal("test without any remote must be refused")
+	}
+	if err := os.MkdirAll(h.layout.RcloneDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.layout.RcloneDir(), "rclone.conf"), []byte("[s3]\ntype = s3\nsecret_access_key = hidden\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Cron: "0 3 * * *", Retain: 1, RcloneRemote: "s3:bucket/bento"}); err != nil {
+		t.Fatal(err)
+	}
+	op, err := h.c.SubmitRcloneTest(ctx, "", "rclone-test-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.wait(op); got.State != store.OpSucceeded {
+		t.Fatalf("op: %s %s %s", got.State, got.ErrorCode, got.ErrorMessage)
+	}
+
+	// Each external effect fails the test cleanly and leaves no container.
+	for _, method := range []string{"Create", "Start"} {
+		h.fake.FailOn = map[string]error{method: os.ErrPermission}
+		op, err := h.c.SubmitRcloneTest(ctx, "s3:bucket", "rclone-test-"+method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := h.wait(op); got.State != store.OpFailed || got.ErrorCode != "rclone-test-failed" {
+			t.Fatalf("%s: %s %s %s", method, got.State, got.ErrorCode, got.ErrorMessage)
+		}
+		if len(h.fake.Containers) != 0 {
+			t.Fatalf("%s: container left behind", method)
+		}
+	}
+
+	op, err = h.c.SubmitRcloneTest(ctx, "gdrive:bento", "rclone-test-unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.wait(op); got.State != store.OpFailed || !strings.Contains(got.ErrorMessage, "not configured") {
+		t.Fatalf("unknown remote: %s %s", got.State, got.ErrorMessage)
+	}
+}
+
+// Cron fields are server wall-clock time. LastSlot is stored in UTC, so a
+// UTC+07 server must still fire "30 9 * * *" at 09:30 local, not 16:30.
+func TestScheduleUsesServerLocalTime(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	ict := time.FixedZone("ICT", 7*3600)
+	s := domain.BackupSchedule{Enabled: true, Cron: "30 9 * * *", Compression: "none", Retain: 1}
+	if err := h.c.SetBackupSchedule(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Date(2026, 9, 28, 9, 29, 0, 0, ict)
+	if got := NextBackup(s, before); !got.Equal(time.Date(2026, 9, 28, 9, 30, 0, 0, ict)) {
+		t.Fatalf("next run %s", got)
+	}
+	if !NextBackup(domain.BackupSchedule{Cron: s.Cron}, before).IsZero() {
+		t.Fatal("a disabled schedule has no next run")
+	}
+	if err := store.PutSetting(ctx, h.store.DB(), scheduleStateKey, ScheduleState{LastSlot: platform.FormatTime(before)}); err != nil {
+		t.Fatal(err)
+	}
+	h.c.checkSchedule(ctx, before.Add(30*time.Second))
+	if _, st, _ := h.c.BackupSchedule(ctx); st.LastRun != "" {
+		t.Fatalf("fired early: %+v", st)
+	}
+	h.c.checkSchedule(ctx, time.Date(2026, 9, 28, 9, 30, 20, 0, ict))
+	_, st, err := h.c.BackupSchedule(ctx)
+	if err != nil || !strings.HasPrefix(st.LastState, "submitted ") || st.LastSlot != "2026-09-28T02:30:00.000Z" {
+		t.Fatalf("did not fire at 09:30 local: %+v %v", st, err)
 	}
 }

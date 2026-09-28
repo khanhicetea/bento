@@ -32,5 +32,6 @@ export const keys = {
     artifacts: ["backups", "artifacts"] as const,
     runs: ["backups", "runs"] as const,
     schedule: ["backups", "schedule"] as const,
+    rclone: ["backups", "rclone"] as const,
   },
 };

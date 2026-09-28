@@ -535,6 +535,36 @@ export interface BackupSchedule {
   nextRun?: string;
   lastRun?: string;
   lastState?: string;
+  /**
+   * TimeZone is the server's zone that cron fields are read in, for
+   * example "UTC+07:00". Ignored on write.
+   */
+  timeZone?: string;
+}
+/**
+ * RcloneRemote is a configured rclone remote. Only its name and backend type
+ * are exposed; every other key may be a credential.
+ */
+export interface RcloneRemote {
+  name: string;
+  type: string;
+}
+/**
+ * RcloneStatus summarizes the stack's rclone.conf, which is edited in the
+ * rclone shell. Encrypted configs cannot be used for unattended uploads.
+ */
+export interface RcloneStatus {
+  present: boolean;
+  encrypted: boolean;
+  remotes: RcloneRemote[];
+  error?: string;
+}
+/**
+ * RcloneTestRequest lists a remote without changing it; an empty remote
+ * tests the schedule's remote.
+ */
+export interface RcloneTestRequest {
+  remote: string;
 }
 /**
  * RestoreRequest replaces an app database from an artifact. Confirm must be

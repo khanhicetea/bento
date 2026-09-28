@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, Download, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, ChevronRight, Cloud, Download, RotateCcw, SquareTerminal, Trash2 } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
@@ -13,6 +13,7 @@ import {
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
+import { keepEscapeInTerminal, TerminalView } from "../../components/TerminalDialog.tsx";
 import { formatBytes, formatCron, formatDuration, formatRelative } from "../../lib/format.ts";
 import { useApplication, useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
 import { Alert } from "@/components/ui/alert";
@@ -50,7 +51,7 @@ export function BackupsPage() {
       {tab === "artifacts" && <ArtifactsTab onRestore={setRestoreTarget} onDelete={setDeleteTarget} />}
       {tab === "runs" && <RunsTab />}
       {tab === "schedule" && <ScheduleForm />}
-      <BackupNowDialog open={runOpen} onOpenChange={setRunOpen} />
+      {runOpen && <BackupNowDialog onClose={() => setRunOpen(false)} />}
       {restoreTarget && <RestoreDialog artifact={restoreTarget} onClose={() => setRestoreTarget(null)} />}
       {deleteTarget && <DeleteDialog artifact={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     </>
@@ -182,12 +183,17 @@ function RunsTab() {
   );
 }
 
-function BackupNowDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function BackupNowDialog({ onClose }: { onClose: () => void }) {
   const [compression, setCompression] = useState("zstd");
-  const [upload, setUpload] = useState(false);
+  // Upload whenever a remote is set, unless the operator opts out.
+  const [skipUpload, setSkipUpload] = useState(false);
+  const schedule = useQuery({ queryKey: keys.backups.schedule, queryFn: ({ signal }) => api.backups.schedule(signal) });
+  const rclone = useQuery({ queryKey: keys.backups.rclone, queryFn: ({ signal }) => api.backups.rclone(signal) });
+  const remote = schedule.data?.rcloneRemote ?? "";
+  const upload = remote !== "" && !skipUpload;
   const run = useOperationMutation(() => api.backups.run({ scope: "all", compression, upload }));
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Back up now</DialogTitle>
@@ -200,18 +206,36 @@ function BackupNowDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
             <option value="none">none</option>
           </NativeSelect>
         </Field>
-        <label className="check">
-          <Checkbox checked={upload} onCheckedChange={(checked) => setUpload(checked === true)} />
-          Upload to rclone remote
-        </label>
+        <div className="grid gap-1">
+          <label className="check">
+            <Checkbox
+              checked={upload}
+              disabled={remote === ""}
+              onCheckedChange={(checked) => setSkipUpload(checked !== true)}
+            />
+            {remote ? (
+              <span>
+                Upload to <code>{remote}</code>
+              </span>
+            ) : (
+              "Upload to rclone remote"
+            )}
+          </label>
+          {schedule.isSuccess && remote === "" && (
+            <span className="note">Set an rclone remote in the Schedule tab to upload.</span>
+          )}
+          {upload && rclone.data?.encrypted && (
+            <span className="note note--bad">The rclone config is encrypted, so this upload will fail.</span>
+          )}
+        </div>
         {run.error && <Alert variant="destructive">{messageOf(run.error)}</Alert>}
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            disabled={run.isPending}
-            onClick={() => run.mutate(undefined, { onSuccess: () => onOpenChange(false) })}
+            disabled={run.isPending || schedule.isPending}
+            onClick={() => run.mutate(undefined, { onSuccess: onClose })}
           >
             Start
           </Button>
@@ -222,7 +246,12 @@ function BackupNowDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
 }
 
 function ScheduleForm() {
-  const query = useQuery({ queryKey: keys.backups.schedule, queryFn: ({ signal }) => api.backups.schedule(signal) });
+  // Polled so "Next run" and "Last run" move on after a slot fires.
+  const query = useQuery({
+    queryKey: keys.backups.schedule,
+    queryFn: ({ signal }) => api.backups.schedule(signal),
+    refetchInterval: 30_000,
+  });
   if (query.isPending) return <DomainLoading label="schedule" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   return <ScheduleEditor initial={query.data} />;
@@ -238,7 +267,10 @@ function ScheduleEditor({ initial }: { initial: T.BackupSchedule }) {
       setSchedule(data);
     },
   });
-  const dirty = JSON.stringify(schedule) !== JSON.stringify(initial);
+  // Only editable fields count; nextRun and lastRun change on every poll.
+  const editable = ({ enabled, cron, compression, retain, rcloneRemote }: T.BackupSchedule) =>
+    JSON.stringify([enabled, cron, compression, retain, rcloneRemote]);
+  const dirty = editable(schedule) !== editable(initial);
   return (
     <div className="box box--3">
       <Cell>
@@ -249,7 +281,9 @@ function ScheduleEditor({ initial }: { initial: T.BackupSchedule }) {
       </Cell>
       <Cell>
         <div className="metric">
-          <strong className="text-xl!">{initial.nextRun ? formatRelative(initial.nextRun) : "—"}</strong>
+          <strong className="text-xl!" title={initial.nextRun ? new Date(initial.nextRun).toLocaleString() : undefined}>
+            {initial.nextRun ? formatRelative(initial.nextRun) : "—"}
+          </strong>
           <span>Next run</span>
         </div>
       </Cell>
@@ -268,8 +302,11 @@ function ScheduleEditor({ initial }: { initial: T.BackupSchedule }) {
             />
             Enabled
           </label>
-          <div className="grid-2">
-            <Field label="Cron" hint={formatCron(schedule.cron)}>
+          <div className="grid items-start gap-4 sm:grid-cols-3">
+            <Field
+              label="Cron"
+              hint={`${formatCron(schedule.cron)}${initial.timeZone ? ` · ${initial.timeZone}` : ""}`}
+            >
               <Input
                 className="font-mono"
                 value={schedule.cron}
@@ -295,24 +332,125 @@ function ScheduleEditor({ initial }: { initial: T.BackupSchedule }) {
                 <option value="none">none</option>
               </NativeSelect>
             </Field>
-            <Field label="rclone remote">
-              <Input
-                value={schedule.rcloneRemote}
-                placeholder="remote:bucket/path"
-                onChange={(event) => setSchedule({ ...schedule, rcloneRemote: event.target.value })}
-              />
-            </Field>
           </div>
-          <p className="note">Missed runs are not replayed.</p>
         </div>
       </Cell>
+      <Cell className="cell--wide">
+        <UploadSection
+          remote={schedule.rcloneRemote}
+          onRemoteChange={(rcloneRemote) => setSchedule({ ...schedule, rcloneRemote })}
+        />
+      </Cell>
       <div className="cell cell--wide cell--muted flex flex-wrap items-center justify-end gap-3 py-3!">
-        {save.error && <span className="note note--bad mr-auto">{messageOf(save.error)}</span>}
+        {save.error ? (
+          <span className="note note--bad mr-auto">{messageOf(save.error)}</span>
+        ) : (
+          <span className="note mr-auto">Cron uses server time. Missed runs are not replayed.</span>
+        )}
         {dirty && <span className="note">Unsaved</span>}
         <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(schedule)}>
           Save
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Upload destination plus the rclone remotes it can use, which are
+ * configured in a throwaway rclone shell. */
+function UploadSection({ remote, onRemoteChange }: { remote: string; onRemoteChange: (remote: string) => void }) {
+  const queryClient = useQueryClient();
+  const [shellOpen, setShellOpen] = useState(false);
+  const query = useQuery({ queryKey: keys.backups.rclone, queryFn: ({ signal }) => api.backups.rclone(signal) });
+  const test = useOperationMutation((value: string) => api.backups.rcloneTest({ remote: value }));
+  const closeShell = () => {
+    setShellOpen(false);
+    void queryClient.invalidateQueries({ queryKey: keys.backups.rclone });
+  };
+  const remotes = query.data?.remotes ?? [];
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Cloud className="size-4 text-muted-foreground" aria-hidden="true" />
+        <strong className="mr-auto">Upload</strong>
+        <Button size="sm" variant="outline" onClick={() => setShellOpen(true)}>
+          <SquareTerminal /> Open rclone shell
+        </Button>
+      </div>
+      <div className="flex gap-2">
+        <Input
+          className="font-mono"
+          aria-label="rclone remote"
+          value={remote}
+          placeholder="remote:bucket/path — empty keeps backups on this host"
+          onChange={(event) => onRemoteChange(event.target.value)}
+        />
+        <Button variant="outline" disabled={!remote || test.isPending} onClick={() => test.mutate(remote)}>
+          Test
+        </Button>
+      </div>
+      {test.error && <span className="note note--bad">{messageOf(test.error)}</span>}
+      {query.error && <span className="note note--bad">{messageOf(query.error)}</span>}
+      {query.data?.error && <span className="note note--bad">{query.data.error}</span>}
+      {query.data?.encrypted ? (
+        <Alert variant="destructive">
+          The rclone config is encrypted, so uploads can’t unlock it. In the shell: <code>rclone config</code> →{" "}
+          <code>s</code> → <code>u</code> (unencrypt).
+        </Alert>
+      ) : (
+        query.data && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="note">Remotes:</span>
+            {remotes.length === 0 ? (
+              <span className="note">
+                none yet — open the shell and run <code>rclone config</code>.
+              </span>
+            ) : (
+              remotes.map((item) => (
+                <button
+                  key={item.name}
+                  type="button"
+                  title={`Use ${item.name}:`}
+                  className="rounded-full border bg-muted/60 px-2 py-0.5 font-mono text-xs hover:bg-muted"
+                  onClick={() => onRemoteChange(`${item.name}:`)}
+                >
+                  {item.name}: <span className="text-muted-foreground">{item.type || "?"}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )
+      )}
+      <details className="note">
+        <summary className="cursor-pointer select-none">How to add a remote</summary>
+        <ul className="mt-2 grid list-disc gap-1 pl-5">
+          <li>
+            In the shell, run <code>rclone config</code> and check it with <code>rclone lsd name:</code>. Then pick it
+            above, add a path (<code>name:bucket/bento</code>), and press Test.
+          </li>
+          <li>
+            Google Drive, OneDrive, Dropbox: answer <code>n</code> to “Use web browser”, run{" "}
+            <code>rclone authorize</code> on a computer with a browser, and paste the token.
+          </li>
+          <li>
+            A <code>crypt</code> remote encrypts backups before they leave this host. Don’t set a config password.
+          </li>
+        </ul>
+      </details>
+      {shellOpen && (
+        <Dialog open onOpenChange={(open) => !open && closeShell()}>
+          <DialogContent className="sm:max-w-5xl" onEscapeKeyDown={keepEscapeInTerminal}>
+            <DialogHeader>
+              <DialogTitle>rclone shell</DialogTitle>
+              <DialogDescription>
+                A throwaway rclone container that can see only this stack’s rclone config. Changes are saved as rclone
+                writes them. The shell is kept 15 minutes after you disconnect. Esc goes to the shell; close with ×.
+              </DialogDescription>
+            </DialogHeader>
+            <TerminalView path={api.backups.rcloneTerminalPath} />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

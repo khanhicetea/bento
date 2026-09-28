@@ -14,7 +14,7 @@ description: Files and directories in a stack root.
 | `edge/conf/{live,previous}` | Edge Nginx generations. `edge/custom/` holds your drop-ins; `edge/certs/` certificates; `edge/acme/` ACME state. |
 | `cloudflared/token` | Tunnel token (`0440`). |
 | `backups/<slug>/` | Backup artifacts. |
-| `rclone/rclone.conf` | rclone remote configuration (yours). |
+| `rclone/rclone.conf` | rclone remote configuration (yours; editable in the UI's rclone shell). Must not be encrypted. |
 | `run/`, `locks/`, `cache/`, `staging/` | Runtime coordination; not durable. |
 
 Database and Redis data live in Docker volumes named `bento-<stack>-<service>-data`.

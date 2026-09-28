@@ -21,7 +21,7 @@ Types are defined in Go (`apps/backend/internal/api/dto`) and generated for Type
 | Operations | `GET /operations`, `GET /operations/{id}`, `GET /operations/{id}/events` (SSE), `POST /operations/{id}/cancel` |
 | Data | `GET/POST /services`, `GET /retired`, `POST /retired/{id}/prune` |
 | Ingress | `GET/PUT /edge`, `GET /tunnel`, `PUT /tunnel/token`, `GET/POST /proxies`, `DELETE /proxies/{name}` |
-| Backups | `GET /backups/artifacts`, `GET /backups/runs`, `POST /backups`, `POST /backups/restore`, `GET/PUT /backups/schedule`, `POST /stack/export` |
+| Backups | `GET /backups/artifacts`, `GET /backups/runs`, `POST /backups`, `POST /backups/restore`, `GET/PUT /backups/schedule`, `GET /backups/rclone`, `POST /backups/rclone/test`, `GET /backups/rclone/terminal` (WebSocket), `POST /stack/export` |
 
 The scheduler UI is served on the utils listener at `/_bento/scheduler/a/<slug>/`, opened with a single-use ticket from
 `POST /apps/{id}/scheduler/ticket` (redeemed at `/_bento/scheduler/t/<ticket>`).

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { api } from "../api/client.ts";
@@ -15,7 +15,7 @@ const maxRetries = 6;
 
 // The shell outlives the socket for 15 minutes; remembering its id per tab
 // lets a reload, a network blip, or switching tabs reattach to it.
-const sessionKey = (appId: string, mode: string) => `bento.terminal.${appId}.${mode}`;
+const sessionKey = (path: string) => `bento.terminal.${path}`;
 function loadSession(key: string) {
   try {
     return sessionStorage.getItem(key) ?? undefined;
@@ -58,6 +58,36 @@ export function TerminalPanel({
   mode: "tool" | "running";
   onModeChange?: (mode: "tool" | "running") => void;
 }) {
+  return (
+    <TerminalView path={api.apps.terminalPath(appId, mode)}>
+      {mode === "running" && (
+        <span className="text-xs text-amber-600">Live app container — changes affect production</span>
+      )}
+      {onModeChange && (
+        <div className="seg ml-auto">
+          <button type="button" aria-pressed={mode === "tool"} onClick={() => onModeChange("tool")}>
+            Tool shell
+          </button>
+          <button type="button" aria-pressed={mode === "running"} onClick={() => onModeChange("running")}>
+            Live app
+          </button>
+        </div>
+      )}
+    </TerminalView>
+  );
+}
+
+/**
+ * Dialog onEscapeKeyDown handler: while the terminal has focus, Esc belongs
+ * to the shell (vim, less, readline), so the dialog stays open. xterm ignores
+ * defaultPrevented and still sends the key.
+ */
+export function keepEscapeInTerminal(event: KeyboardEvent) {
+  if (event.target instanceof Element && event.target.closest(".terminal-host")) event.preventDefault();
+}
+
+/** A reattachable WebSocket shell at a terminal endpoint path. */
+export function TerminalView({ path, children }: { path: string; children?: ReactNode }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
@@ -65,7 +95,7 @@ export function TerminalPanel({
   const [socket, setSocket] = useState<WebSocket | null>(null);
   useEffect(() => {
     if (!element) return;
-    const key = sessionKey(appId, mode);
+    const key = sessionKey(path);
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: '"SFMono-Regular", Consolas, monospace',
@@ -87,7 +117,7 @@ export function TerminalPanel({
 
     const connect = () => {
       setState(everConnected ? "reconnecting" : "connecting");
-      const ws = new WebSocket(api.apps.terminalUrl(appId, mode, terminal.cols, terminal.rows, loadSession(key)));
+      const ws = new WebSocket(api.terminalUrl(path, terminal.cols, terminal.rows, loadSession(key)));
       ws.binaryType = "arraybuffer";
       current = ws;
       setSocket(ws);
@@ -144,7 +174,7 @@ export function TerminalPanel({
       current?.close();
       terminal.dispose();
     };
-  }, [element, appId, mode, attempt]);
+  }, [element, path, attempt]);
   const live = state === "connected";
   return (
     <div className="box">
@@ -166,19 +196,7 @@ export function TerminalPanel({
             End session
           </Button>
         )}
-        {mode === "running" && (
-          <span className="text-xs text-amber-600">Live app container — changes affect production</span>
-        )}
-        {onModeChange && (
-          <div className="seg ml-auto">
-            <button type="button" aria-pressed={mode === "tool"} onClick={() => onModeChange("tool")}>
-              Tool shell
-            </button>
-            <button type="button" aria-pressed={mode === "running"} onClick={() => onModeChange("running")}>
-              Live app
-            </button>
-          </div>
-        )}
+        {children}
       </div>
       <div className="terminal-frame">
         <div ref={setElement} className="terminal-host" />
@@ -200,12 +218,12 @@ export function TerminalDialog({
 }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-5xl">
+      <DialogContent className="sm:max-w-5xl" onEscapeKeyDown={keepEscapeInTerminal}>
         <DialogHeader>
           <DialogTitle>{title} — terminal</DialogTitle>
           <DialogDescription>
             Runs as the app identity. Tool shells start no daemons and are kept 15 minutes after you disconnect; history
-            persists in the app home.
+            persists in the app home. Esc goes to the shell; close with ×.
           </DialogDescription>
         </DialogHeader>
         <TerminalPanel appId={appId} mode={mode} />

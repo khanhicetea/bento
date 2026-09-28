@@ -105,8 +105,10 @@ func (c *Controller) SetBackupSchedule(ctx context.Context, s domain.BackupSched
 	if s.Retain < 1 || s.Retain > 365 {
 		errs.Add("retain", "must be 1-365")
 	}
-	if s.RcloneRemote != "" && strings.ContainsAny(s.RcloneRemote, " \n\t'\"") {
-		errs.Add("rcloneRemote", "invalid remote")
+	if s.RcloneRemote != "" {
+		if _, err := backup.ValidateRemote(s.RcloneRemote); err != nil {
+			errs.Add("rcloneRemote", "must be name:path using letters, digits, _ . / -")
+		}
 	}
 	if err := errs.Err(); err != nil {
 		return err
@@ -140,6 +142,15 @@ func (c *Controller) SubmitBackup(ctx context.Context, req BackupRequest, idem s
 	}
 	if req.Trigger == "" {
 		req.Trigger = "manual"
+	}
+	if req.Upload {
+		sched, _, err := c.BackupSchedule(ctx)
+		if err != nil {
+			return store.Operation{}, err
+		}
+		if sched.RcloneRemote == "" {
+			return store.Operation{}, domain.ValidationErrors{{Field: "upload", Message: "set an rclone remote in the backup schedule first"}}
+		}
 	}
 	op, _, err := c.Submit(ctx, Submission{Kind: KindBackupRun, TargetKind: "backup", TargetID: "backup", IdempotencyKey: idem, Request: req, Origin: req.Trigger})
 	return op, err
@@ -379,10 +390,25 @@ func filepath_Base(p string) string {
 	return p
 }
 
-// RunSchedule evaluates the backup schedule once per minute. Missed slots
+var scheduleParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+
+// NextBackup is the first slot after now, or zero when the schedule is off
+// or invalid. Cron fields are wall-clock time in now's location (the server's
+// local time zone, as with crontab).
+func NextBackup(s domain.BackupSchedule, now time.Time) time.Time {
+	if !s.Enabled {
+		return time.Time{}
+	}
+	sched, err := scheduleParser.Parse(s.Cron)
+	if err != nil {
+		return time.Time{}
+	}
+	return sched.Next(now)
+}
+
+// RunSchedule evaluates the backup schedule every 30 seconds. Missed slots
 // (for example while the backend was down) are counted, not replayed.
 func (c *Controller) RunSchedule(ctx context.Context) {
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
 	for {
@@ -391,53 +417,59 @@ func (c *Controller) RunSchedule(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		s, st, err := c.BackupSchedule(ctx)
-		if err != nil || !s.Enabled {
-			continue
-		}
-		sched, err := parser.Parse(s.Cron)
-		if err != nil {
-			continue
-		}
-		now := time.Now()
-		last := platform.ParseTime(st.LastSlot)
-		if last.IsZero() {
-			last = now
-		}
-		due := sched.Next(last)
-		if due.After(now) {
-			if st.LastSlot == "" {
-				st.LastSlot = platform.FormatTime(now)
-				_ = store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st)
-			}
-			continue
-		}
-		// Count slots missed beyond the most recent one; run only once.
-		missed := 0
-		for next := sched.Next(due); !next.After(now) && missed < 10000; next = sched.Next(next) {
-			missed++
-			due = next
-		}
-		st.Missed += missed
-		st.LastSlot = platform.FormatTime(due)
-		if now.Sub(due) > 10*time.Minute {
-			// The backend was down across this slot: record, do not replay.
-			st.Missed++
-			st.LastState = "missed"
+		c.checkSchedule(ctx, time.Now())
+	}
+}
+
+// checkSchedule submits at most one backup for the latest slot at or before
+// now. Slots are computed in now's location: LastSlot is stored in UTC and
+// must be converted back, or cron fields would be read as UTC wall-clock.
+func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
+	s, st, err := c.BackupSchedule(ctx)
+	if err != nil || !s.Enabled {
+		return
+	}
+	sched, err := scheduleParser.Parse(s.Cron)
+	if err != nil {
+		return
+	}
+	last := platform.ParseTime(st.LastSlot)
+	if last.IsZero() {
+		last = now
+	}
+	due := sched.Next(last.In(now.Location()))
+	if due.After(now) {
+		if st.LastSlot == "" {
+			st.LastSlot = platform.FormatTime(now)
 			_ = store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st)
-			c.Log.Warn("scheduled backup slot missed while backend was unavailable", "slot", due)
-			continue
 		}
-		st.LastRun = platform.FormatTime(now)
-		op, err := c.SubmitBackup(ctx, BackupRequest{Scope: "all", Compression: s.Compression, Trigger: "schedule", Upload: s.RcloneRemote != ""}, "")
-		if err != nil {
-			st.LastState = "submit-failed"
-		} else {
-			st.LastState = "submitted " + op.ID
-		}
-		if err := store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st); err != nil && !errors.Is(err, context.Canceled) {
-			c.Log.Warn("schedule state", "err", err)
-		}
+		return
+	}
+	// Count slots missed beyond the most recent one; run only once.
+	missed := 0
+	for next := sched.Next(due); !next.After(now) && missed < 10000; next = sched.Next(next) {
+		missed++
+		due = next
+	}
+	st.Missed += missed
+	st.LastSlot = platform.FormatTime(due)
+	if now.Sub(due) > 10*time.Minute {
+		// The backend was down across this slot: record, do not replay.
+		st.Missed++
+		st.LastState = "missed"
+		_ = store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st)
+		c.Log.Warn("scheduled backup slot missed while backend was unavailable", "slot", due)
+		return
+	}
+	st.LastRun = platform.FormatTime(now)
+	op, err := c.SubmitBackup(ctx, BackupRequest{Scope: "all", Compression: s.Compression, Trigger: "schedule", Upload: s.RcloneRemote != ""}, "")
+	if err != nil {
+		st.LastState = "submit-failed"
+	} else {
+		st.LastState = "submitted " + op.ID
+	}
+	if err := store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st); err != nil && !errors.Is(err, context.Canceled) {
+		c.Log.Warn("schedule state", "err", err)
 	}
 }
 
@@ -467,4 +499,52 @@ func (c *Controller) handleBackupDelete(ctx context.Context, r *Run) (any, error
 	}
 	r.Info(ctx, "removed backup %s", r.Op.TargetID)
 	return map[string]any{"artifact": r.Op.TargetID}, nil
+}
+
+// RcloneTestRequest is the persisted request of a remote test.
+type RcloneTestRequest struct {
+	Remote string `json:"remote"`
+}
+
+// SubmitRcloneTest queues a read-only listing of remote, or of the schedule's
+// remote when none is given.
+func (c *Controller) SubmitRcloneTest(ctx context.Context, remote, idem string) (store.Operation, error) {
+	if remote == "" {
+		sched, _, err := c.BackupSchedule(ctx)
+		if err != nil {
+			return store.Operation{}, err
+		}
+		remote = sched.RcloneRemote
+	}
+	if _, err := backup.ValidateRemote(remote); err != nil {
+		return store.Operation{}, domain.ValidationErrors{{Field: "remote", Message: err.Error()}}
+	}
+	op, _, err := c.Submit(ctx, Submission{Kind: KindRcloneTest, TargetKind: "backup", TargetID: remote, IdempotencyKey: idem, Request: RcloneTestRequest{Remote: remote}})
+	return op, err
+}
+
+func (c *Controller) handleRcloneTest(ctx context.Context, r *Run) (any, error) {
+	var req RcloneTestRequest
+	if err := r.Decode(&req); err != nil {
+		return nil, err
+	}
+	if err := r.Phase(ctx, "test-remote"); err != nil {
+		return nil, err
+	}
+	msg, err := c.BackupDeps(nil).TestRemote(ctx, req.Remote)
+	if err != nil {
+		return nil, Fail("rclone-test-failed", "Fix the remote in the rclone shell, then test again.", "%v", err)
+	}
+	r.Info(ctx, "%s", msg)
+	return map[string]any{"remote": req.Remote, "message": msg}, nil
+}
+
+// OpenRcloneShell starts an idle rclone container for an interactive shell
+// that can edit the stack's rclone config and nothing else.
+func (c *Controller) OpenRcloneShell(ctx context.Context, lifetime time.Duration) (*ToolSession, error) {
+	id, err := c.BackupDeps(nil).OpenRcloneShell(ctx, "t"+platform.RandomHex(5), lifetime)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolSession{ContainerID: id, c: c}, nil
 }

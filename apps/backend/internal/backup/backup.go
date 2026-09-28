@@ -5,7 +5,8 @@
 // private partial and published atomically only if the dump succeeded and is
 // non-empty; retention runs only after the whole batch succeeds; uploads run
 // in an ephemeral container with read-only access to exactly the new
-// artifacts; administrator secrets never appear in argv.
+// artifacts (the rclone config directory is writable so refreshed OAuth tokens
+// persist); administrator secrets never appear in argv.
 package backup
 
 import (
@@ -23,8 +24,6 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/dataservices"
@@ -506,66 +505,4 @@ func ResolveArtifact(backupsDir, rel string) (string, error) {
 		return "", fmt.Errorf("artifact not found")
 	}
 	return clean, nil
-}
-
-// Upload copies exactly the given artifacts with rclone in an ephemeral
-// container: private config and the selected files mounted read-only.
-func (d Deps) Upload(ctx context.Context, remote string, artifacts []Artifact) error {
-	if remote == "" || len(artifacts) == 0 {
-		return nil
-	}
-	if !regexp.MustCompile(`^[A-Za-z0-9_-]+:[A-Za-z0-9_./-]*$`).MatchString(remote) {
-		return fmt.Errorf("invalid rclone remote %q", remote)
-	}
-	conf := filepath.Join(d.Layout.RcloneDir(), "rclone.conf")
-	if _, err := os.Stat(conf); err != nil {
-		return fmt.Errorf("rclone config %s is missing", conf)
-	}
-	if _, ok, err := d.Engine.ImageID(ctx, domain.RcloneImage); err != nil {
-		return err
-	} else if !ok {
-		if err := d.Engine.PullImage(ctx, domain.RcloneImage, nil); err != nil {
-			return err
-		}
-	}
-	mounts := []mount.Mount{{Type: mount.TypeBind, Source: d.Layout.RcloneDir(), Target: "/config/rclone", ReadOnly: true}}
-	for _, a := range artifacts {
-		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: filepath.Join(d.Layout.BackupsDir(), a.Path), Target: "/upload/" + a.Path, ReadOnly: true})
-	}
-	opID := "rclone-" + platform.RandomHex(5)
-	spec := docker.ContainerSpec{
-		Name: d.Names.BackupContainer(opID),
-		Config: &container.Config{Image: domain.RcloneImage, Cmd: []string{"copy", "/upload", remote, "--config", "/config/rclone/rclone.conf", "--no-traverse"},
-			Labels: d.Names.Labels(runtime.RoleBackup, map[string]string{runtime.LabelOperation: opID})},
-		HostConfig: &container.HostConfig{Mounts: mounts, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges:true"},
-			LogConfig: container.LogConfig{Type: "local", Config: map[string]string{"max-size": "5m", "max-file": "1"}}},
-	}
-	id, err := d.Engine.Create(ctx, spec)
-	if err != nil {
-		return err
-	}
-	defer d.Engine.Remove(context.WithoutCancel(ctx), id)
-	if err := d.Engine.Start(ctx, id); err != nil {
-		return err
-	}
-	code, err := d.Engine.Wait(ctx, id)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		rc, tty, lerr := d.Engine.Logs(ctx, id, "20", false, "")
-		tail := ""
-		if lerr == nil {
-			var b strings.Builder
-			if tty {
-				_, _ = io.Copy(&limitWriter{w: &b, n: 4096}, rc)
-			} else {
-				_, _ = stdcopy.StdCopy(&limitWriter{w: &b, n: 4096}, &limitWriter{w: &b, n: 4096}, rc)
-			}
-			rc.Close()
-			tail = b.String()
-		}
-		return fmt.Errorf("rclone exited %d: %s", code, strings.TrimSpace(tail))
-	}
-	return nil
 }

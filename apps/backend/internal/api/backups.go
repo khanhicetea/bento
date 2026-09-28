@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
 	"github.com/khanhicetea/bento/apps/backend/internal/backup"
@@ -81,9 +82,18 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	s.accepted(w, op, nil)
 }
 
-func scheduleDTO(sc domain.BackupSchedule, st operations.ScheduleState) dto.BackupSchedule {
+func scheduleDTO(sc domain.BackupSchedule, st operations.ScheduleState, now time.Time) dto.BackupSchedule {
 	return dto.BackupSchedule{Enabled: sc.Enabled, Cron: sc.Cron, Compression: sc.Compression, Retain: sc.Retain, RcloneRemote: sc.RcloneRemote,
-		LastRun: st.LastRun, LastState: st.LastState}
+		NextRun: platform.FormatTime(operations.NextBackup(sc, now)), LastRun: st.LastRun, LastState: st.LastState, TimeZone: zoneLabel(now)}
+}
+
+// zoneLabel names now's UTC offset ("UTC", "UTC+07:00", "UTC-03:30").
+func zoneLabel(now time.Time) string {
+	_, offset := now.Zone()
+	if offset == 0 {
+		return "UTC"
+	}
+	return "UTC" + now.Format("-07:00")
 }
 
 func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +102,7 @@ func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, scheduleDTO(sc, st))
+	writeJSON(w, http.StatusOK, scheduleDTO(sc, st, time.Now()))
 }
 
 func (s *Server) handlePutSchedule(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +117,39 @@ func (s *Server) handlePutSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handleGetSchedule(w, r)
+}
+
+// handleRcloneStatus reports remote names and types only; rclone.conf values
+// are credentials and never leave the host.
+func (s *Server) handleRcloneStatus(w http.ResponseWriter, r *http.Request) {
+	cfg, err := backup.ReadRcloneConfig(s.Layout.RcloneDir())
+	out := dto.RcloneStatus{Present: cfg.Present, Encrypted: cfg.Encrypted, Remotes: []dto.RcloneRemote{}}
+	if err != nil {
+		out.Error = err.Error()
+	}
+	for _, rm := range cfg.Remotes {
+		out.Remotes = append(out.Remotes, dto.RcloneRemote{Name: rm.Name, Type: rm.Type})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleRcloneTest(w http.ResponseWriter, r *http.Request) {
+	var req dto.RcloneTestRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.SubmitRcloneTest(r.Context(), req.Remote, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {

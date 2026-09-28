@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -98,7 +99,7 @@ func (c *client) write(method, path, body string) (*http.Response, string) {
 
 func TestUnauthenticatedSurfacesAreClosed(t *testing.T) {
 	c, _ := newServer(t)
-	for _, p := range []string{"/api/v1/apps", "/api/v1/system", "/api/v1/operations", "/api/v1/reconcile", "/api/v1/apps/shop/terminal"} {
+	for _, p := range []string{"/api/v1/apps", "/api/v1/system", "/api/v1/operations", "/api/v1/reconcile", "/api/v1/apps/shop/terminal", "/api/v1/backups/rclone", "/api/v1/backups/rclone/terminal"} {
 		resp, _ := c.do("GET", p, "", nil)
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s -> %d", p, resp.StatusCode)
@@ -666,5 +667,75 @@ func TestReconcileStatusListsTargets(t *testing.T) {
 	resp, out := c.do("GET", "/api/v1/reconcile", "", nil)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(out, `"targets":[`) {
 		t.Fatalf("reconcile status -> %d %s", resp.StatusCode, out)
+	}
+}
+
+func TestRcloneEndpoints(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	if err := os.MkdirAll(h.Layout.RcloneDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conf := "[s3]\ntype = s3\naccess_key_id = AKIAEXAMPLE\nsecret_access_key = do-not-leak\n"
+	if err := os.WriteFile(filepath.Join(h.Layout.RcloneDir(), "rclone.conf"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resp, body := c.do("GET", "/api/v1/backups/rclone", "", nil)
+	if resp.StatusCode != 200 || !strings.Contains(body, `"remotes":[{"name":"s3","type":"s3"}]`) {
+		t.Fatalf("status %d %s", resp.StatusCode, body)
+	}
+	if strings.Contains(body, "do-not-leak") || strings.Contains(body, "AKIAEXAMPLE") {
+		t.Fatalf("rclone credentials leaked: %s", body)
+	}
+
+	resp, _ = c.do("POST", "/api/v1/backups/rclone/test", `{"remote":"s3:bucket"}`, map[string]string{"Origin": origin})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("test without csrf -> %d", resp.StatusCode)
+	}
+	resp, body = c.write("POST", "/api/v1/backups/rclone/test", `{"remote":"s3:bucket; rm -rf /"}`)
+	if resp.StatusCode != http.StatusUnprocessableEntity && resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad remote -> %d %s", resp.StatusCode, body)
+	}
+	resp, body = c.write("POST", "/api/v1/backups/rclone/test", `{"remote":"s3:bucket","extra":1}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown field -> %d %s", resp.StatusCode, body)
+	}
+	resp, body = c.write("POST", "/api/v1/backups/rclone/test", `{"remote":"s3:bucket"}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("valid test -> %d %s", resp.StatusCode, body)
+	}
+
+	// The shell upgrade is a GET: it must enforce Origin and the CSRF token itself.
+	for name, q := range map[string]string{"no csrf": "", "wrong csrf": "?csrf=nope"} {
+		resp, _ = c.do("GET", "/api/v1/backups/rclone/terminal"+q, "", map[string]string{"Origin": origin})
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("terminal %s -> %d", name, resp.StatusCode)
+		}
+	}
+	resp, _ = c.do("GET", "/api/v1/backups/rclone/terminal?csrf="+c.csrf, "", map[string]string{"Origin": "http://evil.test"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("terminal foreign origin -> %d", resp.StatusCode)
+	}
+}
+
+func TestScheduleReportsNextRunAndZone(t *testing.T) {
+	c, _ := newServer(t)
+	c.login()
+	resp, body := c.write("PUT", "/api/v1/backups/schedule", `{"enabled":true,"cron":"*/5 * * * *","compression":"zstd","retain":3,"rcloneRemote":""}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("put %d %s", resp.StatusCode, body)
+	}
+	var s dto.BackupSchedule
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatal(err)
+	}
+	next, err := time.Parse(time.RFC3339Nano, s.NextRun)
+	if err != nil || !next.After(time.Now()) || next.After(time.Now().Add(5*time.Minute)) || !strings.HasPrefix(s.TimeZone, "UTC") {
+		t.Fatalf("nextRun %q timeZone %q", s.NextRun, s.TimeZone)
+	}
+	// The whole object round-trips, including read-only fields.
+	resp, body = c.write("PUT", "/api/v1/backups/schedule", body)
+	if resp.StatusCode != 200 {
+		t.Fatalf("round-trip put %d %s", resp.StatusCode, body)
 	}
 }

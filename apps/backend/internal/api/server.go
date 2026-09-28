@@ -120,6 +120,9 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/backups/delete", s.handleDeleteArtifact)
 	api("GET /api/v1/backups/schedule", s.handleGetSchedule)
 	api("PUT /api/v1/backups/schedule", s.handlePutSchedule)
+	api("GET /api/v1/backups/rclone", s.handleRcloneStatus)
+	api("POST /api/v1/backups/rclone/test", s.handleRcloneTest)
+	api("GET /api/v1/backups/rclone/terminal", s.handleRcloneTerminal)
 	api("POST /api/v1/stack/export", s.handleExport)
 
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

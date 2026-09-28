@@ -606,6 +606,31 @@ type BackupSchedule struct {
 	NextRun      string `json:"nextRun,omitempty"`
 	LastRun      string `json:"lastRun,omitempty"`
 	LastState    string `json:"lastState,omitempty"`
+	// TimeZone is the server's zone that cron fields are read in, for
+	// example "UTC+07:00". Ignored on write.
+	TimeZone string `json:"timeZone,omitempty"`
+}
+
+// RcloneRemote is a configured rclone remote. Only its name and backend type
+// are exposed; every other key may be a credential.
+type RcloneRemote struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// RcloneStatus summarizes the stack's rclone.conf, which is edited in the
+// rclone shell. Encrypted configs cannot be used for unattended uploads.
+type RcloneStatus struct {
+	Present   bool           `json:"present"`
+	Encrypted bool           `json:"encrypted"`
+	Remotes   []RcloneRemote `json:"remotes"`
+	Error     string         `json:"error,omitempty"`
+}
+
+// RcloneTestRequest lists a remote without changing it; an empty remote
+// tests the schedule's remote.
+type RcloneTestRequest struct {
+	Remote string `json:"remote"`
 }
 
 // RestoreRequest replaces an app database from an artifact. Confirm must be

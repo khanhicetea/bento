@@ -44,6 +44,7 @@ const (
 	KindBackupRun     = "backup.run"
 	KindBackupRestore = "backup.restore"
 	KindBackupDelete  = "backup.delete"
+	KindRcloneTest    = "backup.rclone-test"
 	KindStackExport   = "stack.export"
 	KindPermissions   = "app.permissions"
 )
@@ -70,6 +71,7 @@ func (c *Controller) registerHandlers() {
 		KindBackupRun:     c.handleBackupRun,
 		KindBackupRestore: c.handleBackupRestore,
 		KindBackupDelete:  c.handleBackupDelete,
+		KindRcloneTest:    c.handleRcloneTest,
 		KindStackExport:   c.handleStackExport,
 		KindPermissions:   c.handlePermissions,
 		KindAppDeploy:     c.handleDeploy,

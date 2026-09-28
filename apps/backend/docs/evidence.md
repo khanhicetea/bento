@@ -151,6 +151,27 @@ backend stopped, edge traffic and scheduled jobs continued.
 - Not verified: the Browse button in a real browser (popup handling, cookies across a public base URL over HTTPS),
   large imports/exports near the 80 MB / 15 minute limits, and access through cloudflared or the edge.
 
+## Backup schedule (live, disposable root, host TZ UTC+07:00)
+
+- Before the fix, cron fields were read as UTC wall-clock time (the stored UTC `LastSlot` set the location for
+  `cron.Next`), so on this host a slot fired 7 hours late, and `nextRun` was never filled in.
+- After: `backup schedule` with `23 22 * * *` returned `nextRun` 15:23Z (22:23 local) and `timeZone` `UTC+07:00`;
+  `backup.run` was submitted at 22:23:00.378 local and `nextRun` moved to the next day.
+
+## rclone shell and upload (live Docker 29.8.1, disposable root, `rclone/rclone:1.71.1` pinned digest)
+
+- `TestIntegrationRcloneShellAndUpload`: the shell container (read-only root, `CapDrop: ALL`, only `rclone/` mounted)
+  ran `rclone config create dest local` as root and the host saw `[dest] type = local` in `rclone/rclone.conf`.
+  `touch /etc/x` and `ls /upload` failed inside it. A TTY exec of `sh` showed the `rclone:` prompt and
+  `rclone listremotes`.
+- `Upload` copied an artifact through that remote (a local path under the config mount stood in for cloud storage);
+  `TestRemote` reported an existing path as reachable and a missing one (rclone exit 3) as "will be created"; an
+  unknown remote was refused before any container ran.
+- Found and fixed: the upload container's `local` log driver with `max-file: 1` was rejected by Docker ("compression
+  cannot be enabled when max file count is 1"), so uploads had never been able to start.
+- Not verified: a real cloud backend, an OAuth backend's token refresh writing back to the config, and the rclone shell
+  in a real browser.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).
@@ -158,7 +179,8 @@ backend stopped, edge traffic and scheduled jobs continued.
   cloudflared path rule to the utils listener (only a plain container on the apps network was used), and hosts whose
   firewall filters container-to-host traffic.
 - arm64 execution; PHP 8.3/8.5, Bun, and Python runtime images.
-- Live Cloudflare Tunnel, ACME issuance, HTTP/3, external certificates, rclone upload, scheduled backup firing,
+- Live Cloudflare Tunnel, ACME issuance, HTTP/3, external certificates, rclone upload to a real cloud backend,
+  scheduled backup firing,
   SQLite restore, and stop persistence across an actual host reboot (verified by restart-policy inspection only).
 - Base images are digest-pinned only for the verified versions (PHP 8.4, Node 24, Debian, edge, MySQL 8.4,
   PostgreSQL 17, Redis, cloudflared, rclone); other catalog entries are pinned by tag.

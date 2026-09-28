@@ -268,8 +268,14 @@ volume is a `volume-missing` failure. Volumes are never removed (except volumes 
 `backup` streams `mysqldump`/`pg_dump` exec output through zstd/gzip into a `0600` partial, fsyncs, and renames only a
 non-empty result. SQLite uses `.backup` in a network-less job container that mounts only that binding directory and a
 private staging dir. The batch holds `locks/backup.lock`; retention runs only after the whole batch succeeds; rclone runs
-in a job container with the config and the new artifacts mounted read-only. The schedule is evaluated by
-`Controller.RunSchedule`; slots missed by more than 10 minutes are counted as missed, never replayed.
+in a job container of the pinned image with the `rclone/` directory (writable, so OAuth token refreshes persist) and the
+new artifacts (read-only). Before any rclone container runs, `backup.checkRemote` requires `rclone.conf` to be a
+regular, unencrypted file that defines the remote; the API only ever reads section names and `type`. The rclone shell
+(`GET /backups/rclone/terminal`) is the same terminal machinery as app shells (`serveTerminal`, keyed by scope) over an
+idle `sleep` container of that image that mounts only `rclone/`; `backup.rclone-test` runs `rclone lsf --max-depth 1`
+and treats exit 3 (directory not found) as reachable. The schedule is evaluated by
+`Controller.RunSchedule` every 30 seconds in the server's local time zone (`LastSlot` is stored in UTC and converted
+back before `cron.Next`); slots missed by more than 10 minutes are counted as missed, never replayed.
 
 ## Transfer
 

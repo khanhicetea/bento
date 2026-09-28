@@ -118,12 +118,7 @@ export const api = {
     disableWebhook: (id: string) => request<T.Webhook>("DELETE", `/api/v1/apps/${enc(id)}/webhook`),
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
-    terminalUrl: (id: string, mode: "tool" | "running", cols: number, rows: number, session?: string) => {
-      const scheme = location.protocol === "https:" ? "wss" : "ws";
-      const q = new URLSearchParams({ mode, cols: String(cols), rows: String(rows), csrf: csrfToken });
-      if (session) q.set("session", session);
-      return `${scheme}://${location.host}/api/v1/apps/${enc(id)}/terminal?${q}`;
-    },
+    terminalPath: (id: string, mode: "tool" | "running") => `/api/v1/apps/${enc(id)}/terminal?mode=${mode}`,
   },
   operations: {
     list: (target?: string, signal?: AbortSignal) =>
@@ -176,6 +171,20 @@ export const api = {
     downloadUrl: (path: string) => `/api/v1/backups/download?path=${enc(path)}`,
     schedule: (signal?: AbortSignal) => get<T.BackupSchedule>("/api/v1/backups/schedule", signal),
     setSchedule: (body: T.BackupSchedule) => request<T.BackupSchedule>("PUT", "/api/v1/backups/schedule", body),
+    rclone: (signal?: AbortSignal) => get<T.RcloneStatus>("/api/v1/backups/rclone", signal),
+    rcloneTest: (body: T.RcloneTestRequest) => mutate("POST", "/api/v1/backups/rclone/test", body),
+    rcloneTerminalPath: "/api/v1/backups/rclone/terminal",
+  },
+  /** WebSocket URL of a terminal endpoint path (see TerminalView). */
+  terminalUrl: (path: string, cols: number, rows: number, session?: string) => {
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    const url = new URL(path, location.origin);
+    url.protocol = `${scheme}:`;
+    url.searchParams.set("cols", String(cols));
+    url.searchParams.set("rows", String(rows));
+    url.searchParams.set("csrf", csrfToken);
+    if (session) url.searchParams.set("session", session);
+    return url.toString();
   },
 };
 

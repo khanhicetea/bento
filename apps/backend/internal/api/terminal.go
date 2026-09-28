@@ -11,6 +11,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
@@ -91,10 +92,12 @@ type termSub struct {
 // termSession is a live exec with at most one attached client. Output is
 // kept in a bounded backlog that is replayed on reattach.
 type termSession struct {
-	id, appID, owner, mode string
-	exec                   *docker.ExecSession
-	cancel                 context.CancelFunc
-	resize                 func(rows, cols uint)
+	// scope identifies what the shell runs in (an app and mode, or the rclone
+	// shell); a reattach must match scope and owner.
+	id, scope, owner string
+	exec             *docker.ExecSession
+	cancel           context.CancelFunc
+	resize           func(rows, cols uint)
 
 	mu      sync.Mutex
 	backlog []byte
@@ -196,36 +199,37 @@ func (t *termSession) detach(gen uint64) {
 	}
 }
 
-// openTerminal starts a shell in a new tool container or the running
-// instance. Its lifetime is bounded by terminalMaxAge, not by the request.
-func (s *Server) openTerminal(app domain.App, owner, mode string, rows, cols int) (*termSession, error) {
+// terminalTarget is the container and exec a new shell runs in. release
+// removes an ephemeral container; it is nil-safe.
+type terminalTarget struct {
+	container string
+	exec      docker.ExecRequest
+	release   func()
+}
+
+// openTerminal starts a shell in the target prepare returns. Its lifetime is
+// bounded by terminalMaxAge, not by the request.
+func (s *Server) openTerminal(scope, owner string, rows, cols int, prepare func(ctx context.Context) (terminalTarget, error)) (*termSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), terminalMaxAge)
-	var target string
-	var err error
-	var tool *operations.ToolSession
-	if mode == "running" {
-		target, err = s.C.RunningInstance(ctx, app)
-	} else {
-		tool, err = s.C.OpenTool(ctx, app, terminalMaxAge)
-		if tool != nil {
-			target = tool.ContainerID
+	target, err := prepare(ctx)
+	release := func() {
+		if target.release != nil {
+			target.release()
 		}
 	}
 	if err != nil {
 		cancel()
-		tool.Close()
+		release()
 		return nil, err
 	}
-	er, _ := operations.ExecRequestFor(app, []string{"bash", "-l"}, "")
-	er.Env = append(er.Env, terminalEnv(app)...)
-	sess, err := s.C.Engine.ExecAttach(ctx, target, er, uint(rows), uint(cols))
+	sess, err := s.C.Engine.ExecAttach(ctx, target.container, target.exec, uint(rows), uint(cols))
 	if err != nil {
 		cancel()
-		tool.Close()
+		release()
 		return nil, err
 	}
 	t := &termSession{
-		id: platform.RandomHex(16), appID: app.ID, owner: owner, mode: mode,
+		id: platform.RandomHex(16), scope: scope, owner: owner,
 		exec: sess, cancel: cancel, done: make(chan struct{}),
 		resize: func(rows, cols uint) { _ = s.C.Engine.ExecResize(ctx, sess.ID, rows, cols) },
 	}
@@ -242,22 +246,71 @@ func (s *Server) openTerminal(app domain.App, owner, mode string, rows, cols int
 		}
 		s.terminals.remove(t.id)
 		t.kill()
-		tool.Close()
+		release()
 		t.finish(code)
 	}()
 	return t, nil
 }
 
-// handleTerminal is an authenticated, bidirectional terminal over
-// WebSocket. Binary frames carry terminal bytes; text frames carry JSON
-// control messages (resize and close from client; session and exit from
-// server). Passing ?session= reattaches a detached shell of the same app,
-// mode, and principal, replaying its recent output.
+// appTerminal prepares a shell in a new tool container or the running
+// instance of app.
+func (s *Server) appTerminal(app domain.App, mode string) func(ctx context.Context) (terminalTarget, error) {
+	return func(ctx context.Context) (terminalTarget, error) {
+		var target terminalTarget
+		var err error
+		if mode == "running" {
+			target.container, err = s.C.RunningInstance(ctx, app)
+		} else {
+			var tool *operations.ToolSession
+			tool, err = s.C.OpenTool(ctx, app, terminalMaxAge)
+			if tool != nil {
+				target.container, target.release = tool.ContainerID, tool.Close
+			}
+		}
+		if err != nil {
+			return target, err
+		}
+		target.exec, _ = operations.ExecRequestFor(app, []string{"bash", "-l"}, "")
+		target.exec.Env = append(target.exec.Env, terminalEnv(app)...)
+		return target, nil
+	}
+}
+
+// rcloneTerminal prepares a shell in a new rclone container that mounts only
+// the stack's rclone config directory.
+func (s *Server) rcloneTerminal(ctx context.Context) (terminalTarget, error) {
+	tool, err := s.C.OpenRcloneShell(ctx, terminalMaxAge)
+	if err != nil {
+		return terminalTarget{}, err
+	}
+	return terminalTarget{container: tool.ContainerID, exec: backup.RcloneShellExec(), release: tool.Close}, nil
+}
+
+// handleTerminal opens or reattaches an app shell: a tool container by
+// default, the running instance with ?mode=running.
 func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	app, ok := s.loadApp(w, r)
 	if !ok {
 		return
 	}
+	mode := "tool"
+	if r.URL.Query().Get("mode") == "running" {
+		mode = "running"
+	}
+	s.serveTerminal(w, r, "app:"+app.ID+":"+mode, s.appTerminal(app, mode))
+}
+
+// handleRcloneTerminal opens or reattaches the stack's rclone shell.
+func (s *Server) handleRcloneTerminal(w http.ResponseWriter, r *http.Request) {
+	s.serveTerminal(w, r, "rclone", s.rcloneTerminal)
+}
+
+// serveTerminal is an authenticated, bidirectional terminal over WebSocket.
+// Binary frames carry terminal bytes; text frames carry JSON control
+// messages (resize and close from client; session and exit from server).
+// Passing ?session= reattaches a detached shell of the same scope and
+// principal, replaying its recent output.
+func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, scope string, prepare func(ctx context.Context) (terminalTarget, error)) {
 	p, _ := principalFrom(r.Context())
 	owner := "local"
 	if p.Kind == "session" {
@@ -267,10 +320,6 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		owner = "session:" + p.Session.TokenHash
-	}
-	mode := "tool"
-	if r.URL.Query().Get("mode") == "running" {
-		mode = "running"
 	}
 	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
 	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
@@ -286,15 +335,16 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	var backlog []byte
 	resumed := false
 	t := s.terminals.get(r.URL.Query().Get("session"))
-	if t != nil && t.appID == app.ID && t.owner == owner && t.mode == mode {
+	if t != nil && t.scope == scope && t.owner == owner {
 		sub, gen, backlog, resumed = t.attach()
 	}
 	if !resumed {
 		var err error
-		if t, err = s.openTerminal(app, owner, mode, rows, cols); err != nil {
+		if t, err = s.openTerminal(scope, owner, rows, cols, prepare); err != nil {
 			writeError(w, s.Log, err)
 			return
 		}
+		var ok bool
 		if sub, gen, _, ok = t.attach(); !ok {
 			writeError(w, s.Log, &apiError{status: http.StatusConflict, code: dto.ErrorCodeConflict, msg: "shell exited immediately"})
 			return
