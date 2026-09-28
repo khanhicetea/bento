@@ -57,8 +57,11 @@ func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 	return platform.SHA256Hex(b)[:20]
 }
 
-func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) docker.ContainerSpec {
-	bind := netip.MustParseAddr(s.Bind)
+func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker.ContainerSpec, error) {
+	bind, err := parseEdgeBind(s.Bind)
+	if err != nil {
+		return docker.ContainerSpec{}, invalidEdgeBind(err)
+	}
 	ports := network.PortMap{
 		network.MustParsePort("80/tcp"):  {{HostIP: bind, HostPort: strconv.Itoa(s.HTTPPort)}},
 		network.MustParsePort("443/tcp"): {{HostIP: bind, HostPort: strconv.Itoa(s.HTTPSPort)}},
@@ -101,7 +104,7 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) docker.
 		Networking: &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{
 			c.Names.AppsNetwork(): {IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr(ns.EdgeIP)}},
 		}},
-	}
+	}, nil
 }
 
 func (c *Controller) prepareEdgeDirs() error {
@@ -156,7 +159,10 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 	if err != nil {
 		return err
 	}
-	spec := c.edgeSpec(s, ns)
+	spec, err := c.edgeSpec(s, ns)
+	if err != nil {
+		return err
+	}
 	opID := "validate-" + platform.RandomHex(4)
 	spec.Name = c.Names.BackupContainer(opID)
 	spec.Config.Entrypoint = []string{"sleep"}
@@ -253,6 +259,9 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 		}
 		return nil
 	}
+	if _, err := parseEdgeBind(s.Bind); err != nil {
+		return invalidEdgeBind(err)
+	}
 	if err := c.prepareEdgeDirs(); err != nil {
 		return err
 	}
@@ -295,7 +304,10 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 		r.Info(ctx, "edge generation promoted (%d route files)", len(files)-1)
 	}
 	// Ensure the edge container matches its planned shape.
-	spec := c.edgeSpec(s, ns)
+	spec, err := c.edgeSpec(s, ns)
+	if err != nil {
+		return err
+	}
 	gen := spec.Config.Labels[runtime.LabelGeneration]
 	if id != "" {
 		ins, err := c.Engine.Inspect(ctx, id)
@@ -429,4 +441,9 @@ func (c *Controller) handleTunnelApply(ctx context.Context, r *Run) (any, error)
 		return nil, err
 	}
 	return map[string]any{"applied": true}, c.applyTunnel(ctx, r)
+}
+
+func invalidEdgeBind(err error) error {
+	return Fail("edge-settings-invalid", "The persisted edge bind address is invalid; re-save the edge settings with a valid IPv4 bind address.",
+		"edge bind address: %v", err)
 }

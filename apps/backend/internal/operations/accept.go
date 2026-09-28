@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand/v2"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -490,7 +491,7 @@ func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, i
 	if s.Bind == "" {
 		s.Bind = "0.0.0.0"
 	}
-	if ip, err := parseIP(s.Bind); err != nil || !ip {
+	if _, err := parseEdgeBind(s.Bind); err != nil {
 		errs.Add("bind", "must be an IPv4 address")
 	}
 	if s.ACMEURL == "" {
@@ -512,18 +513,17 @@ func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, i
 	return op, err
 }
 
-func parseIP(s string) (bool, error) {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
-		return false, nil
+// parseEdgeBind accepts only a canonical dotted-quad IPv4 address (no
+// trailing garbage, no leading zeros, no zone, no IPv6).
+func parseEdgeBind(s string) (netip.Addr, error) {
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Addr{}, err
 	}
-	for _, p := range parts {
-		var n int
-		if _, err := fmt.Sscanf(p, "%d", &n); err != nil || n < 0 || n > 255 {
-			return false, nil
-		}
+	if !a.Is4() {
+		return netip.Addr{}, fmt.Errorf("%q is not an IPv4 address", s)
 	}
-	return true, nil
+	return a, nil
 }
 
 // SetTunnelToken stores a token in a private file (never state, API output,

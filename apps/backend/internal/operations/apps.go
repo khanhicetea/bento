@@ -673,8 +673,10 @@ func (c *Controller) handleStop(ctx context.Context, r *Run) (any, error) {
 	if err := r.Phase(ctx, "remove-route"); err != nil {
 		return nil, err
 	}
+	// A broken edge must not block stopping: warn and continue. The stale route
+	// only returns 502 and edge drift reconciliation reapplies it later.
 	if err := c.applyEdge(ctx, r); err != nil {
-		return nil, Fail("route-removal-failed", "Stop intent is persisted and the app was not stopped; fix the edge error and retry stop.", "%v", err)
+		r.Warn(ctx, "edge route removal failed; stopping anyway (the stale route will return 502 until the edge is fixed): %v", err)
 	}
 	if err := r.Phase(ctx, "stop"); err != nil {
 		return nil, err
@@ -893,8 +895,9 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 	if err := r.Phase(ctx, "remove-route"); err != nil {
 		return nil, err
 	}
+	// A broken edge must not block removal: warn and continue.
 	if err := c.applyEdge(ctx, r); err != nil {
-		return nil, err
+		r.Warn(ctx, "edge route removal failed; removing anyway (the stale route will return 502 until the edge is fixed): %v", err)
 	}
 	if err := r.Phase(ctx, "remove-containers"); err != nil {
 		return nil, err
