@@ -281,6 +281,12 @@ type EnvVar struct {
 	Value string `json:"value"`
 }
 
+// BackupDeleteRequest removes one backup artifact; Confirm must be "delete".
+type BackupDeleteRequest struct {
+	Artifact string `json:"artifact"`
+	Confirm  string `json:"confirm"`
+}
+
 // ConfirmRequest carries an exact destructive confirmation phrase.
 type ConfirmRequest struct {
 	Confirm string `json:"confirm"`

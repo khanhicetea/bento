@@ -68,6 +68,7 @@ export function describeOp(op: Pick<T.Operation, "kind" | "targetId">, targetLab
     "app.remove": "Removing",
     "backup.run": "Running backup",
     "backup.restore": "Restoring backup",
+    "backup.delete": "Deleting backup",
     "edge.update": "Updating edge",
     "proxy.upsert": "Saving proxy",
     "proxy.remove": "Removing proxy",

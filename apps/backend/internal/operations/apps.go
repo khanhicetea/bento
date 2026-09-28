@@ -43,6 +43,7 @@ const (
 	KindDBAdminApply  = "dbadmin.apply"
 	KindBackupRun     = "backup.run"
 	KindBackupRestore = "backup.restore"
+	KindBackupDelete  = "backup.delete"
 	KindStackExport   = "stack.export"
 	KindPermissions   = "app.permissions"
 )
@@ -68,6 +69,7 @@ func (c *Controller) registerHandlers() {
 		KindDBAdminApply:  c.handleDBAdminApply,
 		KindBackupRun:     c.handleBackupRun,
 		KindBackupRestore: c.handleBackupRestore,
+		KindBackupDelete:  c.handleBackupDelete,
 		KindStackExport:   c.handleStackExport,
 		KindPermissions:   c.handlePermissions,
 		KindAppDeploy:     c.handleDeploy,

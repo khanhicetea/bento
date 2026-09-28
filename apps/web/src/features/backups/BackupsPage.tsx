@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, RotateCcw } from "lucide-react";
+import { Archive, ChevronRight, Download, RotateCcw, Trash2 } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
@@ -36,6 +36,7 @@ export function BackupsPage() {
   const [tab, setTab] = useState<Tab>("artifacts");
   const [runOpen, setRunOpen] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<T.BackupArtifact | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<T.BackupArtifact | null>(null);
   return (
     <>
       <PageHeader title="Backups" actions={<Button onClick={() => setRunOpen(true)}>Back up now</Button>} />
@@ -46,18 +47,25 @@ export function BackupsPage() {
           </button>
         ))}
       </div>
-      {tab === "artifacts" && <ArtifactsTab onRestore={setRestoreTarget} />}
+      {tab === "artifacts" && <ArtifactsTab onRestore={setRestoreTarget} onDelete={setDeleteTarget} />}
       {tab === "runs" && <RunsTab />}
       {tab === "schedule" && <ScheduleForm />}
       <BackupNowDialog open={runOpen} onOpenChange={setRunOpen} />
       {restoreTarget && <RestoreDialog artifact={restoreTarget} onClose={() => setRestoreTarget(null)} />}
+      {deleteTarget && <DeleteDialog artifact={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     </>
   );
 }
 
 const engineLabels: Record<string, string> = { mysql: "MySQL", postgres: "PostgreSQL", sqlite: "SQLite" };
 
-function ArtifactsTab({ onRestore }: { onRestore: (artifact: T.BackupArtifact) => void }) {
+function ArtifactsTab({
+  onRestore,
+  onDelete,
+}: {
+  onRestore: (artifact: T.BackupArtifact) => void;
+  onDelete: (artifact: T.BackupArtifact) => void;
+}) {
   const [engine, setEngine] = useState("all");
   const query = useQuery({ queryKey: keys.backups.artifacts, queryFn: ({ signal }) => api.backups.artifacts(signal) });
   if (query.isPending) return <DomainLoading label="backups" />;
@@ -107,8 +115,21 @@ function ArtifactsTab({ onRestore }: { onRestore: (artifact: T.BackupArtifact) =
                   <span className="tabular-nums">{formatBytes(artifact.sizeBytes)}</span>
                   <span title={artifact.createdAt}>{formatRelative(artifact.createdAt)}</span>
                 </span>
+                <Button size="sm" variant="outline" asChild>
+                  <a href={api.backups.downloadUrl(artifact.path)} download aria-label={`Download ${artifact.path}`}>
+                    <Download />
+                  </a>
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => onRestore(artifact)}>
                   <RotateCcw /> Restore
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Delete ${artifact.path}`}
+                  onClick={() => onDelete(artifact)}
+                >
+                  <Trash2 />
                 </Button>
               </div>
             ))}
@@ -382,4 +403,33 @@ function sqliteFileId(path?: string): string | null {
   if (!path) return null;
   const parts = path.split("/").filter(Boolean);
   return parts.length >= 2 ? (parts.at(-2) ?? null) : null;
+}
+
+function DeleteDialog({ artifact, onClose }: { artifact: T.BackupArtifact; onClose: () => void }) {
+  const remove = useOperationMutation(() => api.backups.remove({ artifact: artifact.path, confirm: "delete" }));
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete this backup?</DialogTitle>
+          <DialogDescription>
+            <code className="break-all">{artifact.path}</code> will be permanently removed from disk.
+          </DialogDescription>
+        </DialogHeader>
+        {remove.error && <Alert variant="destructive">{messageOf(remove.error)}</Alert>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            No
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(undefined, { onSuccess: onClose })}
+          >
+            Yes, delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

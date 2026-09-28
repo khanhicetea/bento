@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -385,4 +386,32 @@ func (c *Controller) RunSchedule(ctx context.Context) {
 			c.Log.Warn("schedule state", "err", err)
 		}
 	}
+}
+
+// SubmitBackupDelete removes one published artifact. It requires the literal
+// confirmation "delete"; the path is re-resolved when the operation runs.
+func (c *Controller) SubmitBackupDelete(ctx context.Context, artifact, confirm, idem string) (store.Operation, error) {
+	if confirm != "delete" {
+		return store.Operation{}, fmt.Errorf("%w: type exactly \"delete\" to remove this backup", ErrConfirmation)
+	}
+	if _, err := backup.ResolveArtifact(c.Layout.BackupsDir(), artifact); err != nil {
+		return store.Operation{}, fmt.Errorf("%w: %v", store.ErrNotFound, err)
+	}
+	op, _, err := c.Submit(ctx, Submission{Kind: KindBackupDelete, TargetKind: "backup", TargetID: artifact, IdempotencyKey: idem})
+	return op, err
+}
+
+func (c *Controller) handleBackupDelete(ctx context.Context, r *Run) (any, error) {
+	path, err := backup.ResolveArtifact(c.Layout.BackupsDir(), r.Op.TargetID)
+	if err != nil {
+		return map[string]any{"alreadyRemoved": true}, nil
+	}
+	if err := r.Phase(ctx, "remove-artifact"); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	r.Info(ctx, "removed backup %s", r.Op.TargetID)
+	return map[string]any{"artifact": r.Op.TargetID}, nil
 }

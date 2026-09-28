@@ -316,10 +316,12 @@ func (d Deps) dumpSQLite(ctx context.Context, t Target, w io.Writer) error {
 	return err
 }
 
+var artifactName = regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}Z)\.(sql|db)(\.zst|\.gz)?$`)
+
 // ListArtifacts enumerates published artifacts (partials excluded).
 func ListArtifacts(backupsDir string) ([]Artifact, error) {
 	var out []Artifact
-	pattern := regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}Z)\.(sql|db)(\.zst|\.gz)?$`)
+	pattern := artifactName
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -392,7 +394,7 @@ func ResolveArtifact(backupsDir, rel string) (string, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		return "", fmt.Errorf("artifact not found")
 	}
-	if strings.HasPrefix(filepath.Base(clean), ".") {
+	if strings.HasPrefix(filepath.Base(clean), ".") || !artifactName.MatchString(filepath.Base(clean)) {
 		return "", fmt.Errorf("artifact not found")
 	}
 	return clean, nil

@@ -168,6 +168,8 @@ export const api = {
     runs: (signal?: AbortSignal) => get<T.BackupRunList>("/api/v1/backups/runs", signal),
     run: (body: T.BackupRequest) => mutate("POST", "/api/v1/backups", body),
     restore: (body: T.RestoreRequest) => mutate("POST", "/api/v1/backups/restore", body),
+    remove: (body: T.BackupDeleteRequest) => mutate("POST", "/api/v1/backups/delete", body),
+    downloadUrl: (path: string) => `/api/v1/backups/download?path=${enc(path)}`,
     schedule: (signal?: AbortSignal) => get<T.BackupSchedule>("/api/v1/backups/schedule", signal),
     setSchedule: (body: T.BackupSchedule) => request<T.BackupSchedule>("PUT", "/api/v1/backups/schedule", body),
   },

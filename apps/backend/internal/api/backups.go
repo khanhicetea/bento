@@ -1,7 +1,10 @@
 package api
 
 import (
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
 	"github.com/khanhicetea/bento/apps/backend/internal/backup"
@@ -118,6 +121,48 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	op, err := s.C.SubmitExport(r.Context(), req.Destination, req.Confirm, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) {
+	path, err := backup.ResolveArtifact(s.Layout.BackupsDir(), r.URL.Query().Get("path"))
+	if err != nil {
+		writeError(w, s.Log, notFound("no such backup"))
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		writeError(w, s.Log, notFound("no such backup"))
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(path)}))
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, "", info.ModTime(), f)
+}
+
+func (s *Server) handleDeleteArtifact(w http.ResponseWriter, r *http.Request) {
+	var req dto.BackupDeleteRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.SubmitBackupDelete(r.Context(), req.Artifact, req.Confirm, idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return

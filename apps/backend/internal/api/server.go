@@ -112,6 +112,8 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/backups/runs", s.handleListRuns)
 	api("POST /api/v1/backups", s.handleRunBackup)
 	api("POST /api/v1/backups/restore", s.handleRestore)
+	api("GET /api/v1/backups/download", s.handleDownloadArtifact)
+	api("POST /api/v1/backups/delete", s.handleDeleteArtifact)
 	api("GET /api/v1/backups/schedule", s.handleGetSchedule)
 	api("PUT /api/v1/backups/schedule", s.handlePutSchedule)
 	api("POST /api/v1/stack/export", s.handleExport)

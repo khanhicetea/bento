@@ -235,6 +235,13 @@ export interface EnvVar {
   value: string;
 }
 /**
+ * BackupDeleteRequest removes one backup artifact; Confirm must be "delete".
+ */
+export interface BackupDeleteRequest {
+  artifact: string;
+  confirm: string;
+}
+/**
  * ConfirmRequest carries an exact destructive confirmation phrase.
  */
 export interface ConfirmRequest {
