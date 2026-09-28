@@ -112,9 +112,10 @@ export const api = {
     disableWebhook: (id: string) => request<T.Webhook>("DELETE", `/api/v1/apps/${enc(id)}/webhook`),
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
-    terminalUrl: (id: string, mode: "tool" | "running", cols: number, rows: number) => {
+    terminalUrl: (id: string, mode: "tool" | "running", cols: number, rows: number, session?: string) => {
       const scheme = location.protocol === "https:" ? "wss" : "ws";
       const q = new URLSearchParams({ mode, cols: String(cols), rows: String(rows), csrf: csrfToken });
+      if (session) q.set("session", session);
       return `${scheme}://${location.host}/api/v1/apps/${enc(id)}/terminal?${q}`;
     },
   },

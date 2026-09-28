@@ -1342,6 +1342,25 @@ a.row:hover {
   color: #8a8172;
 }
 
+/* The xterm viewport owns scrolling; the frame only paints padding around it. */
+.terminal-frame {
+  height: calc(100vh - 17rem);
+  height: calc(100dvh - 17rem);
+  min-height: 22rem;
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  background: #16140f;
+  overflow: hidden;
+}
+.terminal-host {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+.terminal-host .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: #3a352e transparent;
+}
+
 /* ---------- Login ---------- */
 
 .login {

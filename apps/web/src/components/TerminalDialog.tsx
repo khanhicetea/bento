@@ -6,7 +6,48 @@ import { StateBadge } from "./DomainState.tsx";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-type ConnectionState = "connecting" | "connected" | "closed" | "error";
+type ConnectionState = "connecting" | "connected" | "reconnecting" | "detached" | "closed" | "error";
+
+// Server close codes (see internal/api/terminal.go).
+const closeTakenOver = 4001;
+const closeIdle = 1008;
+const maxRetries = 6;
+
+// The shell outlives the socket for 15 minutes; remembering its id per tab
+// lets a reload, a network blip, or switching tabs reattach to it.
+const sessionKey = (appId: string, mode: string) => `bento.terminal.${appId}.${mode}`;
+function loadSession(key: string) {
+  try {
+    return sessionStorage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+function saveSession(key: string, id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(key, id);
+    else sessionStorage.removeItem(key);
+  } catch {
+    return;
+  }
+}
+
+const stateBadge: Record<ConnectionState, string> = {
+  connected: "healthy",
+  connecting: "queued",
+  reconnecting: "queued",
+  detached: "stopped",
+  closed: "stopped",
+  error: "failed",
+};
+const stateLabel: Record<ConnectionState, string> = {
+  connected: "connected",
+  connecting: "connecting",
+  reconnecting: "reconnecting",
+  detached: "open in another tab",
+  closed: "closed",
+  error: "disconnected",
+};
 
 export function TerminalPanel({
   appId,
@@ -21,8 +62,10 @@ export function TerminalPanel({
   const [state, setState] = useState<ConnectionState>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
   useEffect(() => {
     if (!element) return;
+    const key = sessionKey(appId, mode);
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: '"SFMono-Regular", Consolas, monospace',
@@ -34,22 +77,53 @@ export function TerminalPanel({
     terminal.loadAddon(fit);
     terminal.open(element);
     fit.fit();
-    setState("connecting");
     setExitCode(null);
-    const socket = new WebSocket(api.apps.terminalUrl(appId, mode, terminal.cols, terminal.rows));
-    socket.binaryType = "arraybuffer";
     const encoder = new TextEncoder();
-    socket.onopen = () => setState("connected");
-    socket.onmessage = (event: MessageEvent<ArrayBuffer | string>) => {
-      if (typeof event.data === "string") {
-        const message = JSON.parse(event.data) as { type: string; code?: number };
-        if (message.type === "exit") setExitCode(message.code ?? -1);
-      } else terminal.write(new Uint8Array(event.data));
+    let current: WebSocket | null = null;
+    let disposed = false;
+    let retries = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let everConnected = false;
+
+    const connect = () => {
+      setState(everConnected ? "reconnecting" : "connecting");
+      const ws = new WebSocket(api.apps.terminalUrl(appId, mode, terminal.cols, terminal.rows, loadSession(key)));
+      ws.binaryType = "arraybuffer";
+      current = ws;
+      setSocket(ws);
+      let finished = false;
+      ws.onmessage = (event: MessageEvent<ArrayBuffer | string>) => {
+        if (typeof event.data !== "string") {
+          terminal.write(new Uint8Array(event.data));
+          return;
+        }
+        const message = JSON.parse(event.data) as { type: string; code?: number; id?: string; resumed?: boolean };
+        if (message.type === "session" && message.id) {
+          if (message.resumed) terminal.reset();
+          else if (everConnected) terminal.write("\r\n\x1b[2m[previous shell ended; started a new one]\x1b[0m\r\n");
+          saveSession(key, message.id);
+          everConnected = true;
+          retries = 0;
+          setState("connected");
+        } else if (message.type === "exit") {
+          finished = true;
+          saveSession(key, null);
+          setExitCode(message.code ?? -1);
+        }
+      };
+      ws.onclose = (event) => {
+        if (disposed) return;
+        if (finished) return setState("closed");
+        if (event.code === closeTakenOver) return setState("detached");
+        if (event.code === closeIdle || retries >= maxRetries) return setState("error");
+        setState("reconnecting");
+        retryTimer = setTimeout(connect, Math.min(1000 * 2 ** retries++, 15_000));
+      };
     };
-    socket.onclose = () => setState((value) => (value === "error" ? value : "closed"));
-    socket.onerror = () => setState("error");
+    connect();
+
     const input = terminal.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
+      if (current?.readyState === WebSocket.OPEN) current.send(encoder.encode(data));
     });
     const resize = new ResizeObserver(() => {
       try {
@@ -57,38 +131,43 @@ export function TerminalPanel({
       } catch {
         return;
       }
-      if (socket.readyState === WebSocket.OPEN)
-        socket.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }));
+      if (current?.readyState === WebSocket.OPEN)
+        current.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }));
     });
     resize.observe(element);
     terminal.focus();
     return () => {
+      disposed = true;
+      clearTimeout(retryTimer);
       resize.disconnect();
       input.dispose();
-      socket.close();
+      current?.close();
       terminal.dispose();
     };
   }, [element, appId, mode, attempt]);
+  const live = state === "connected";
   return (
     <div className="box">
       <div className="cell flex flex-wrap items-center gap-2 py-2.5!">
-        <StateBadge
-          state={
-            state === "connected"
-              ? "healthy"
-              : state === "connecting"
-                ? "queued"
-                : state === "error"
-                  ? "failed"
-                  : "stopped"
-          }
-          label={state}
-        />
+        <StateBadge state={stateBadge[state]} label={stateLabel[state]} />
         {exitCode !== null && <StateBadge state={exitCode === 0 ? "succeeded" : "failed"} label={`Exit ${exitCode}`} />}
-        {(state === "closed" || state === "error") && (
+        {(state === "closed" || state === "error" || state === "detached") && (
           <Button size="sm" variant="ghost" onClick={() => setAttempt((value) => value + 1)}>
-            Reconnect
+            {state === "detached" ? "Take over" : state === "closed" ? "New shell" : "Reconnect"}
           </Button>
+        )}
+        {live && (
+          <Button
+            size="sm"
+            variant="ghost"
+            title="Stop the shell now instead of keeping it for 15 minutes after you leave"
+            onClick={() => socket?.send(JSON.stringify({ type: "close" }))}
+          >
+            End session
+          </Button>
+        )}
+        {mode === "running" && (
+          <span className="text-xs text-amber-600">Live app container — changes affect production</span>
         )}
         {onModeChange && (
           <div className="seg ml-auto">
@@ -101,7 +180,9 @@ export function TerminalPanel({
           </div>
         )}
       </div>
-      <div ref={setElement} className="console p-2!" />
+      <div className="terminal-frame">
+        <div ref={setElement} className="terminal-host" />
+      </div>
     </div>
   );
 }
@@ -123,7 +204,8 @@ export function TerminalDialog({
         <DialogHeader>
           <DialogTitle>{title} — terminal</DialogTitle>
           <DialogDescription>
-            Runs as the app identity. Tool shells are ephemeral and start no daemons.
+            Runs as the app identity. Tool shells start no daemons and are kept 15 minutes after you disconnect; history
+            persists in the app home.
           </DialogDescription>
         </DialogHeader>
         <TerminalPanel appId={appId} mode={mode} />

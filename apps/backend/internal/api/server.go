@@ -36,7 +36,8 @@ type Server struct {
 	// PublicAddrs lists the public listener addresses being served.
 	PublicAddrs func() []string
 
-	limiter loginLimiter
+	limiter   loginLimiter
+	terminals terminalRegistry
 }
 
 // Handler builds the route table. local marks the Unix control socket.

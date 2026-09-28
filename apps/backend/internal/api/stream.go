@@ -11,11 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/moby/moby/api/pkg/stdcopy"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
-	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -26,8 +24,6 @@ const (
 	logMaxDuration   = 30 * time.Minute
 	logMaxBytes      = 20 << 20
 	logMaxTail       = 5000
-	terminalIdle     = 30 * time.Minute
-	terminalMaxAge   = 4 * time.Hour
 	execOutputLimit  = 1 << 20
 	execTimeout      = 10 * time.Minute
 	schedulerTimeout = 2 * time.Minute
@@ -262,132 +258,3 @@ func (s *Server) handleSchedulerCommand(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, dto.ExecResult{ExitCode: res.ExitCode, Stdout: string(res.Stdout), Stderr: string(res.Stderr), Truncated: res.Truncated})
 }
-
-type termControl struct {
-	Type string `json:"type"`
-	Cols uint   `json:"cols"`
-	Rows uint   `json:"rows"`
-	Code int    `json:"code"`
-}
-
-// handleTerminal is an authenticated, bidirectional terminal over
-// WebSocket. Binary frames carry terminal bytes; text frames carry JSON
-// control messages (resize from client, exit status from server).
-func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
-	app, ok := s.loadApp(w, r)
-	if !ok {
-		return
-	}
-	p, _ := principalFrom(r.Context())
-	if p.Kind == "session" {
-		// WebSocket upgrades are GETs: enforce exact Origin and the CSRF token.
-		if !s.originAllowed(r.Header.Get("Origin")) || r.URL.Query().Get("csrf") != p.Session.CSRFToken {
-			writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden, msg: "origin or CSRF check failed"})
-			return
-		}
-	}
-	running := r.URL.Query().Get("mode") == "running"
-	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
-	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
-	if cols <= 0 || cols > 1000 {
-		cols = 120
-	}
-	if rows <= 0 || rows > 1000 {
-		rows = 32
-	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), terminalMaxAge)
-	defer cancel()
-	var target string
-	var err error
-	var tool *operations.ToolSession
-	if running {
-		target, err = s.C.RunningInstance(ctx, app)
-	} else {
-		tool, err = s.C.OpenTool(ctx, app, terminalMaxAge)
-		if tool != nil {
-			defer tool.Close()
-			target = tool.ContainerID
-		}
-	}
-	if err != nil {
-		writeError(w, s.Log, err)
-		return
-	}
-	er, _ := operations.ExecRequestFor(app, []string{"bash", "-l"}, "")
-	er.Env = append(er.Env, "TERM=xterm-256color")
-	sess, err := s.C.Engine.ExecAttach(ctx, target, er, uint(rows), uint(cols))
-	if err != nil {
-		writeError(w, s.Log, err)
-		return
-	}
-	defer sess.Conn.Close()
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true}) // origin verified above
-	if err != nil {
-		return
-	}
-	defer conn.CloseNow()
-	conn.SetReadLimit(64 << 10)
-	activity := make(chan struct{}, 1)
-	touch := func() {
-		select {
-		case activity <- struct{}{}:
-		default:
-		}
-	}
-	go func() {
-		buf := make([]byte, 32<<10)
-		for {
-			n, err := sess.Read.Read(buf)
-			if n > 0 {
-				touch()
-				if werr := conn.Write(ctx, websocket.MessageBinary, buf[:n]); werr != nil {
-					cancel()
-					return
-				}
-			}
-			if err != nil {
-				code := -1
-				if c, done, e := s.C.Engine.ExecExitCode(context.Background(), sess.ID); e == nil && done {
-					code = c
-				}
-				msg, _ := json.Marshal(termControl{Type: "exit", Code: code})
-				_ = conn.Write(ctx, websocket.MessageText, msg)
-				_ = conn.Close(websocket.StatusNormalClosure, "exited")
-				cancel()
-				return
-			}
-		}
-	}()
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-activity:
-			case <-time.After(terminalIdle):
-				_ = conn.Close(websocket.StatusPolicyViolation, "idle timeout")
-				cancel()
-				return
-			}
-		}
-	}()
-	for {
-		typ, data, err := conn.Read(ctx)
-		if err != nil {
-			return
-		}
-		touch()
-		if typ == websocket.MessageBinary {
-			if _, err := sess.Conn.Write(data); err != nil {
-				return
-			}
-			continue
-		}
-		var c termControl
-		if json.Unmarshal(data, &c) == nil && c.Type == "resize" && c.Cols > 0 && c.Rows > 0 && c.Cols <= 1000 && c.Rows <= 1000 {
-			_ = s.C.Engine.ExecResize(ctx, sess.ID, c.Rows, c.Cols)
-		}
-	}
-}
-
-var _ = docker.ExecRequest{}
