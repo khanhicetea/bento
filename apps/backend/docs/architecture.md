@@ -113,9 +113,10 @@ Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remo
   frontend/pool/scheduler files changed: validate with the running process (`nginx -t`, `php-fpm -t`,
   `minicrond validate`); on failure restore the previous bytes (`runtime.Changes.Restore`) and send nothing; on
   success reload (`nginx -s reload`, `s6-svc -r`, `minicrond reload`).
-- **stop:** remove the edge route first, then set the restart policy to `no` and stop. The persisted intent plus
+- **stop:** remove the edge route first, then set the restart policy to `no` and stop. If the edge apply fails the
+  stop still proceeds with a warning; the stale route returns 502 until edge drift reconciliation reapplies it. The persisted intent plus
   `restart=no` is what keeps a stopped app stopped across backend and host restarts.
-- **remove:** route removal, container removal (owned only), verify nothing remains, record a `retired_apps` row
+- **remove:** route removal (an edge apply failure is a warning, not a blocker, as for stop), container removal (owned only), verify nothing remains, record a `retired_apps` row
   listing retained artifacts, retire the UID, delete app rows, delete generated config, refresh Redis ACLs.
 - **prune:** drop the recorded relational databases and user, delete SQLite dirs and the home (only if its sidecar
   still names the retired app id). UIDs are never reclaimed.
