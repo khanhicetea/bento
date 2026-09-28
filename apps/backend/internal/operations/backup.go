@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -296,6 +297,9 @@ func (c *Controller) handleBackupRestore(ctx context.Context, r *Run) (any, erro
 	if !engineOK {
 		return nil, Fail("engine-mismatch", "Choose an artifact of the binding's engine.", "artifact %s is not a %s backup", req.Artifact, b.Engine)
 	}
+	if warn := crossAppWarning(c.Layout.BackupsDir(), path, app.Slug); warn != "" {
+		r.Warn(ctx, "%s", warn)
+	}
 	if err := r.Phase(ctx, "restore"); err != nil {
 		return nil, err
 	}
@@ -316,6 +320,22 @@ func (c *Controller) handleBackupRestore(ctx context.Context, r *Run) (any, erro
 		return nil, Fail("restore-failed", "The destination may be partially restored; restore again or from another artifact.", "%v", err)
 	}
 	return map[string]any{"restored": req.Database, "from": req.Artifact}, nil
+}
+
+// crossAppWarning reports when an artifact was produced for a different app
+// than the restore target. Artifacts live under <backups>/<source-slug>/, so
+// the directory names the source app. Cross-app restores are allowed (for
+// example, cloning data into a staging app) but are surfaced as a warning.
+func crossAppWarning(backupsDir, artifactPath, targetSlug string) string {
+	rel, err := filepath.Rel(backupsDir, artifactPath)
+	if err != nil {
+		return ""
+	}
+	source, _, ok := strings.Cut(filepath.ToSlash(rel), "/")
+	if !ok || source == targetSlug {
+		return ""
+	}
+	return fmt.Sprintf("artifact %s was taken from app %s, not %s; restoring cross-app data", rel, source, targetSlug)
 }
 
 func filepath_Base(p string) string {

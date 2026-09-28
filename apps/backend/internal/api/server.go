@@ -716,6 +716,8 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 			svc.State, svc.Message = dto.ObservedStateBlocked, "docker unavailable"
 		case ins == nil:
 			svc.State = dto.ObservedStateAbsent
+		case ins.State == nil:
+			svc.State = dto.ObservedStateStopped
 		case ins.State.Running && ins.State.Health != nil && ins.State.Health.Status == "healthy":
 			svc.State = dto.ObservedStateHealthy
 		case ins.State.Running && ins.State.Health != nil && ins.State.Health.Status == "unhealthy":
@@ -777,6 +779,8 @@ func (s *Server) containerState(ctx context.Context, name string) dto.ObservedSt
 		return dto.ObservedStateBlocked
 	case ins == nil:
 		return dto.ObservedStateAbsent
+	case ins.State == nil:
+		return dto.ObservedStateStopped
 	case ins.State.Running:
 		return dto.ObservedStateHealthy
 	default:
