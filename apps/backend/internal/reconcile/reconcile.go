@@ -106,6 +106,7 @@ func (r *Reconciler) Passes() int {
 // Run watches events and resyncs periodically until ctx ends.
 func (r *Reconciler) Run(ctx context.Context) {
 	go r.watchEvents(ctx)
+	go r.pruneHistory(ctx)
 	ticker := time.NewTicker(r.Interval)
 	defer ticker.Stop()
 	r.Trigger()
@@ -127,6 +128,28 @@ func (r *Reconciler) Run(ctx context.Context) {
 		}
 		if err := r.Pass(ctx); err != nil && ctx.Err() == nil {
 			r.Log.Warn("reconcile pass failed", "err", err)
+		}
+	}
+}
+
+// pruneInterval is how often finished operation and backup history is pruned.
+const pruneInterval = 6 * time.Hour
+
+// pruneHistory applies store.DefaultRetention at startup and periodically.
+func (r *Reconciler) pruneHistory(ctx context.Context) {
+	t := time.NewTicker(pruneInterval)
+	defer t.Stop()
+	for {
+		ops, runs, err := store.PruneHistory(ctx, r.C.Store.DB(), store.DefaultRetention)
+		if err != nil && ctx.Err() == nil {
+			r.Log.Warn("history prune failed", "err", err)
+		} else if ops+runs > 0 {
+			r.Log.Info("pruned history", "operations", ops, "backupRuns", runs)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }

@@ -7,6 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
 type OpState string
@@ -158,9 +162,11 @@ func ListOperations(ctx context.Context, q Q, f OpFilter) ([]Operation, error) {
 	return out, rows.Err()
 }
 
-// NextQueued returns the oldest queued operation.
+// NextQueued returns the oldest queued operation. Insertion order (rowid) is
+// the FIFO order; created_at has millisecond resolution and ids are random, so
+// neither can break ties between operations accepted in the same instant.
 func NextQueued(ctx context.Context, q Q) (Operation, error) {
-	o, err := scanOp(q.QueryRowContext(ctx, "SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY created_at, id LIMIT 1"))
+	o, err := scanOp(q.QueryRowContext(ctx, "SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY rowid LIMIT 1"))
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, ErrNotFound
 	}
@@ -238,19 +244,36 @@ func CancelRequested(ctx context.Context, q Q, id string) bool {
 	return n == 1
 }
 
-// maxEventsPerOperation bounds the journal of one operation.
+// maxEventsPerOperation bounds the journal of one operation. When exceeded,
+// the oldest events are dropped and replaced by a single truncation marker so
+// the most recent events (including the final error) are always kept.
 const maxEventsPerOperation = 200
+
+// TruncatedEventMessage prefixes the marker that replaces dropped events.
+const TruncatedEventMessage = "earlier events truncated"
 
 func AppendEvent(ctx context.Context, q Q, id, level, message string) error {
 	var seq int
 	if err := q.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq),0) FROM operation_events WHERE operation_id=?", id).Scan(&seq); err != nil {
 		return err
 	}
-	if seq >= maxEventsPerOperation {
+	next := seq + 1
+	at := now()
+	if _, err := q.ExecContext(ctx, "INSERT INTO operation_events(operation_id, seq, at, level, message) VALUES(?,?,?,?,?)",
+		id, next, at, level, truncate(message, 1000)); err != nil {
+		return err
+	}
+	if next <= maxEventsPerOperation {
 		return nil
 	}
+	// Keep the newest maxEventsPerOperation-1 events plus one marker that
+	// occupies the slot just below them. Seqs stay monotonic for cursors.
+	marker := next - maxEventsPerOperation + 1
+	if _, err := q.ExecContext(ctx, "DELETE FROM operation_events WHERE operation_id=? AND seq <= ?", id, marker); err != nil {
+		return err
+	}
 	_, err := q.ExecContext(ctx, "INSERT INTO operation_events(operation_id, seq, at, level, message) VALUES(?,?,?,?,?)",
-		id, seq+1, now(), level, truncate(message, 1000))
+		id, marker, at, "warn", fmt.Sprintf("%s (%d dropped)", TruncatedEventMessage, marker))
 	return err
 }
 
@@ -288,9 +311,39 @@ func InterruptRunning(ctx context.Context, q Q) ([]Operation, error) {
 	return ops, nil
 }
 
+// truncate limits s to at most n bytes without splitting a UTF-8 sequence.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
+}
+
+// DefaultRetention is how long finished operations and backup runs are kept.
+const DefaultRetention = 30 * 24 * time.Hour
+
+// PruneHistory deletes terminal operations (with their events) and finished
+// backup runs that finished before now-retention. Queued and running
+// operations and unfinished backup runs are never pruned.
+func PruneHistory(ctx context.Context, q Q, retention time.Duration) (ops, runs int64, err error) {
+	cutoff := platform.FormatTime(time.Now().Add(-retention))
+	const terminal = "state IN ('succeeded','failed','cancelled','interrupted') AND finished_at IS NOT NULL AND finished_at < ?"
+	if _, err = q.ExecContext(ctx, "DELETE FROM operation_events WHERE operation_id IN (SELECT id FROM operations WHERE "+terminal+")", cutoff); err != nil {
+		return
+	}
+	res, err := q.ExecContext(ctx, "DELETE FROM operations WHERE "+terminal, cutoff)
+	if err != nil {
+		return
+	}
+	ops, _ = res.RowsAffected()
+	res, err = q.ExecContext(ctx, "DELETE FROM backup_runs WHERE finished_at IS NOT NULL AND finished_at < ?", cutoff)
+	if err != nil {
+		return
+	}
+	runs, _ = res.RowsAffected()
+	return ops, runs, nil
 }
