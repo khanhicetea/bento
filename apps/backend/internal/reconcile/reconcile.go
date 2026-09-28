@@ -349,16 +349,45 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 	return nil
 }
 
-// collectTools removes exited ephemeral tool containers this stack owns.
+// orphanGrace is how long a non-running ephemeral container is left alone
+// after creation, so a container between Create and Start of an active
+// operation (or a short-lived image probe) is never collected.
+const orphanGrace = 2 * time.Minute
+
+// collectTools removes non-running ephemeral containers (tool, backup job,
+// image probe) this stack owns once they are past the grace period and no
+// active operation claims them.
 func (r *Reconciler) collectTools(ctx context.Context) error {
-	tools, err := r.C.Engine.List(ctx, map[string]string{runtime.LabelStackID: r.C.Stack.ID, runtime.LabelRole: string(runtime.RoleTool)})
+	list, err := r.C.Engine.List(ctx, map[string]string{runtime.LabelStackID: r.C.Stack.ID})
 	if err != nil {
 		return err
 	}
-	for _, t := range tools {
-		if t.State != "running" && r.C.Names.OwnedBy(t.Labels, runtime.RoleTool, "") {
-			_ = r.C.Engine.Remove(ctx, t.ID)
+	now := time.Now()
+	for _, t := range list {
+		if !collectable(string(t.State)) {
+			continue
 		}
+		role := runtime.Role(t.Labels[runtime.LabelRole])
+		if role != runtime.RoleTool && role != runtime.RoleBackup && role != runtime.RoleProbe {
+			continue
+		}
+		if !r.C.Names.OwnedBy(t.Labels, role, "") {
+			continue
+		}
+		if t.Created == 0 || now.Sub(time.Unix(t.Created, 0)) < orphanGrace {
+			continue
+		}
+		if opID := t.Labels[runtime.LabelOperation]; opID != "" {
+			op, err := store.GetOperation(ctx, r.C.Store.DB(), opID)
+			if err == nil && !op.State.Terminal() {
+				continue
+			}
+		}
+		_ = r.C.Engine.Remove(ctx, t.ID)
 	}
 	return nil
+}
+
+func collectable(state string) bool {
+	return state == "exited" || state == "created" || state == "dead"
 }

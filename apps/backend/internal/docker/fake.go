@@ -38,6 +38,10 @@ type FakeContainer struct {
 	Running bool
 	Health  string
 	IP      netip.Addr
+	// Created is reported by List; State overrides the exited state List
+	// reports for a stopped container (e.g. "created").
+	Created time.Time
+	State   string
 }
 
 func NewFake() *Fake {
@@ -96,7 +100,7 @@ func (f *Fake) BuildImage(_ context.Context, tag string, r io.Reader, _, _ map[s
 	return id, nil
 }
 
-func (f *Fake) ReadImageFile(_ context.Context, _, path string) ([]byte, error) {
+func (f *Fake) ReadImageFile(_ context.Context, _, path string, _ map[string]string) ([]byte, error) {
 	if path == "/etc/passwd" {
 		return []byte("root:x:0:0:root:/root:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"), nil
 	}
@@ -168,7 +172,10 @@ outer:
 		if c.Running {
 			state = container.StateRunning
 		}
-		out = append(out, container.Summary{ID: c.ID, Names: []string{"/" + c.Name}, Labels: c.Spec.Config.Labels, State: state})
+		if c.State != "" && !c.Running {
+			state = container.ContainerState(c.State)
+		}
+		out = append(out, container.Summary{ID: c.ID, Names: []string{"/" + c.Name}, Labels: c.Spec.Config.Labels, State: state, Created: c.Created.Unix()})
 	}
 	return out, nil
 }
@@ -184,7 +191,7 @@ func (f *Fake) Create(_ context.Context, spec ContainerSpec) (string, error) {
 	}
 	f.seq++
 	id := fmt.Sprintf("c%04d", f.seq)
-	f.Containers[id] = &FakeContainer{ID: id, Name: spec.Name, Spec: spec, IP: netip.AddrFrom4([4]byte{10, 211, 0, byte(100 + f.seq)})}
+	f.Containers[id] = &FakeContainer{ID: id, Name: spec.Name, Spec: spec, Created: time.Now(), IP: netip.AddrFrom4([4]byte{10, 211, 0, byte(100 + f.seq)})}
 	return id, nil
 }
 

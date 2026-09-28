@@ -116,11 +116,11 @@ func (m *ImageManager) IdentityBase(ctx context.Context, imageID string) ([]byte
 			return []byte(c.Passwd), []byte(c.Group), nil
 		}
 	}
-	passwd, err := m.Engine.ReadImageFile(ctx, imageID, "/etc/passwd")
+	passwd, err := m.Engine.ReadImageFile(ctx, imageID, "/etc/passwd", m.Names.Labels(RoleProbe, nil))
 	if err != nil {
 		return nil, nil, err
 	}
-	group, err := m.Engine.ReadImageFile(ctx, imageID, "/etc/group")
+	group, err := m.Engine.ReadImageFile(ctx, imageID, "/etc/group", m.Names.Labels(RoleProbe, nil))
 	if err != nil {
 		return nil, nil, err
 	}

@@ -916,7 +916,12 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 	for _, t := range tools {
-		if !c.Names.OwnedBy(t.Labels, runtime.RoleTool, app.ID) && !c.Names.OwnedBy(t.Labels, runtime.RoleRuntime, app.ID) {
+		// Tool and runtime containers are removed outright; backup job
+		// containers only once exited (an orphan left by a crash).
+		switch {
+		case c.Names.OwnedBy(t.Labels, runtime.RoleTool, app.ID), c.Names.OwnedBy(t.Labels, runtime.RoleRuntime, app.ID):
+		case c.Names.OwnedBy(t.Labels, runtime.RoleBackup, app.ID) && t.State != "running":
+		default:
 			continue
 		}
 		if err := c.Engine.Remove(ctx, t.ID); err != nil {
