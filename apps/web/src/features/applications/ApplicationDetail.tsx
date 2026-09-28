@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Database, ExternalLink, HardDrive, Plus, Terminal as TerminalIcon } from "lucide-react";
+import { Database, ExternalLink, Plus, Terminal as TerminalIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
+import { EngineLogo } from "../../components/EngineLogo.tsx";
 import {
   Cell,
   CopyableCode,
@@ -298,18 +299,49 @@ function Overview({ app }: { app: T.App }) {
   );
 }
 
+function engineTitle(engine: T.Engine) {
+  return engine === "postgres" ? "PostgreSQL" : engine === "mysql" ? "MySQL" : "SQLite";
+}
+
+interface BindingGroup {
+  key: string;
+  title: string;
+  engine: T.Engine;
+  bindings: T.Binding[];
+}
+
+/** Buckets bindings by db kind — engine plus version (e.g. "MySQL 8.4" vs "MySQL 9") — one bento card per kind. */
+function groupBindingsByKind(bindings: T.Binding[], services: T.Service[]): BindingGroup[] {
+  const versionByService = new Map(services.map((s) => [s.name, s.version]));
+  const groups = new Map<string, BindingGroup>();
+  for (const binding of bindings) {
+    const sqlite = binding.engine === "sqlite";
+    const version = !sqlite && binding.service ? versionByService.get(binding.service) : undefined;
+    const key = sqlite ? "sqlite" : `${binding.engine}:${version ?? ""}`;
+    const title = sqlite || !version ? engineTitle(binding.engine) : `${engineTitle(binding.engine)} ${version}`;
+    const group = groups.get(key);
+    if (group) group.bindings.push(binding);
+    else groups.set(key, { key, title, engine: binding.engine, bindings: [binding] });
+  }
+  return [...groups.values()];
+}
+
 function DataBindings({ app }: { app: T.App }) {
   const [engine, setEngine] = useState("sqlite");
+  const services = useQuery({ queryKey: keys.services, queryFn: ({ signal }) => api.services.list(signal) });
   const addBinding = useOperationMutation(() => {
     const [value, service] = engine.split(":");
     return api.apps.addBinding(app.id, { engine: value as T.Engine, service });
   });
+  const groups = groupBindingsByKind(app.bindings, services.data?.services ?? []);
+  const remainder = groups.length % 3;
+  const addSpan = remainder === 0 ? "cell--wide" : remainder === 1 ? "cell--span2" : "";
   return (
-    <div className="box box--2">
-      {app.bindings.map((binding) => (
-        <BindingCard key={binding.id} appId={app.id} binding={binding} />
+    <div className="box box--3">
+      {groups.map((group) => (
+        <KindCard key={group.key} appId={app.id} group={group} />
       ))}
-      <Cell title="Add binding" className={`cell--muted ${app.bindings.length % 2 === 0 ? "cell--wide" : ""}`}>
+      <Cell title="Add binding" className={`cell--muted ${addSpan}`}>
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-48 flex-1">
             <NativeSelect
@@ -333,32 +365,53 @@ function DataBindings({ app }: { app: T.App }) {
   );
 }
 
-function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) {
+function KindCard({ appId, group }: { appId: string; group: BindingGroup }) {
+  const multi = group.bindings.length > 1;
+  const solo = group.bindings[0]!;
+  return (
+    <section className="cell grid content-start gap-4" aria-label={`${group.title} binding`}>
+      <div className="tile__top">
+        <span className="mono">
+          <EngineLogo engine={group.engine} className="size-4" />
+        </span>
+        <div className="tile__name">
+          <strong>{group.title}</strong>
+          <small>{multi ? `${group.bindings.length} bindings` : (solo.service ?? "Private file")}</small>
+        </div>
+      </div>
+      <div className="grid gap-4">
+        {group.bindings.map((binding) => (
+          <BindingRow key={binding.id} appId={appId} binding={binding} showService={multi} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BindingRow({ appId, binding, showService }: { appId: string; binding: T.Binding; showService: boolean }) {
   const [name, setName] = useState("");
   const add = useOperationMutation(() => api.apps.addDatabase(appId, binding.id, name));
   const browse = useBrowseBinding(appId, binding.id);
   const sqlite = binding.engine === "sqlite";
   return (
-    <section className="cell grid content-start gap-4" aria-label={`${binding.engine} binding`}>
-      <div className="tile__top">
-        <span className="mono">{sqlite ? <HardDrive className="size-4" /> : <Database className="size-4" />}</span>
-        <div className="tile__name">
-          <strong>{sqlite ? "SQLite" : binding.engine === "postgres" ? "PostgreSQL" : "MySQL"}</strong>
-          <small>{binding.service || "Private file"}</small>
+    <div className={showService ? "grid gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0" : "grid gap-3"}>
+      {(showService || !sqlite) && (
+        <div className="flex items-center gap-2">
+          {showService && <span className="text-sm font-medium">{binding.service ?? "Private file"}</span>}
+          {!sqlite && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              disabled={!binding.databases.length || browse.isPending}
+              title="Open this binding in the database browser (new tab)"
+              onClick={() => browse.open()}
+            >
+              <ExternalLink /> Browse
+            </Button>
+          )}
         </div>
-        {!sqlite && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            disabled={!binding.databases.length || browse.isPending}
-            title="Open this binding in the database browser (new tab)"
-            onClick={() => browse.open()}
-          >
-            <ExternalLink /> Browse
-          </Button>
-        )}
-      </div>
+      )}
       {sqlite ? (
         <KeyValues items={[["Path", binding.sqlitePath ? <CopyableCode value={binding.sqlitePath} /> : "—"]]} />
       ) : (
@@ -395,7 +448,7 @@ function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) 
       )}
       {add.error && <p className="note note--bad">{messageOf(add.error)}</p>}
       {browse.error && <p className="note note--bad">{messageOf(browse.error)}</p>}
-    </section>
+    </div>
   );
 }
 

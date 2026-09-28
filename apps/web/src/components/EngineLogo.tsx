@@ -1,10 +1,11 @@
-import { siMysql, siPostgresql, siSqlite } from "simple-icons";
+import { siMysql, siPostgresql, siRedis, siSqlite } from "simple-icons";
 
 const logos: Record<string, { path: string; color: string; title: string }> = {
   mysql: { path: siMysql.path, color: `#${siMysql.hex}`, title: "MySQL" },
   postgres: { path: siPostgresql.path, color: `#${siPostgresql.hex}`, title: "PostgreSQL" },
   // SQLite's brand navy disappears on dark surfaces; use its lighter feather blue.
   sqlite: { path: siSqlite.path, color: "#0F80CC", title: "SQLite" },
+  redis: { path: siRedis.path, color: `#${siRedis.hex}`, title: "Redis" },
 };
 
 export function EngineLogo({ engine, className = "size-5" }: { engine: string; className?: string }) {

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Database, Plus } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
+import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { DomainError, DomainLoading, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ export function DataServices() {
               <article key={s.name} className="cell tile">
                 <div className="tile__top">
                   <span className="mono mono--lg">
-                    <Database className="size-5" />
+                    <EngineLogo engine={s.engine} className="size-5" />
                   </span>
                   <div className="tile__name">
                     <strong>{s.name}</strong>

@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Boxes, Database, ExternalLink, Globe, Lock, Plus, Search } from "lucide-react";
+import { Boxes, ExternalLink, Globe, Lock, Plus, Search } from "lucide-react";
 import { Link } from "wouter";
 import { messageOf, type T } from "../../api/client.ts";
 import { DomainError, DomainLoading, EmptyState, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { useApplicationList } from "./useApplications.ts";
@@ -197,7 +198,7 @@ function ApplicationTile({ app }: { app: T.AppSummary }) {
               <span className="chips">
                 {Object.entries(databaseCounts(app.bindingSummary)).map(([engine, count]) => (
                   <span key={engine} className="chip">
-                    <Database aria-hidden="true" />
+                    <EngineLogo engine={engine} className="size-3.5" />
                     {engineLabel[engine as T.Engine]} ×{count}
                   </span>
                 ))}

@@ -1,10 +1,11 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Code2, Database, Globe, HardDrive, Lock, Plus, Server, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Code2, Globe, Lock, Plus, Server, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { Cell, Field, KeyValues, PageHeader } from "../../components/DomainState.tsx";
+import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { useCatalog, useOperationMutation } from "./useApplications.ts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -398,7 +399,7 @@ export function CreateApplicationPage() {
                     name="binding"
                     checked={binding === "sqlite"}
                     onChange={() => setBinding("sqlite")}
-                    icon={<HardDrive className="size-4" />}
+                    icon={<EngineLogo engine="sqlite" className="size-4" />}
                     title="SQLite"
                     detail="Private file"
                   />
@@ -412,7 +413,7 @@ export function CreateApplicationPage() {
                           name="binding"
                           checked={binding === value}
                           onChange={() => setBinding(value)}
-                          icon={<Database className="size-4" />}
+                          icon={<EngineLogo engine={service.engine} className="size-4" />}
                           title={`${service.engine === "postgres" ? "Postgres" : "MySQL"} ${service.version}`}
                           detail={service.name}
                         />
