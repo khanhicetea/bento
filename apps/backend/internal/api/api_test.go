@@ -97,7 +97,7 @@ func (c *client) write(method, path, body string) (*http.Response, string) {
 
 func TestUnauthenticatedSurfacesAreClosed(t *testing.T) {
 	c, _ := newServer(t)
-	for _, p := range []string{"/api/v1/apps", "/api/v1/system", "/api/v1/operations", "/scheduler/apps/shop/", "/api/v1/apps/shop/terminal"} {
+	for _, p := range []string{"/api/v1/apps", "/api/v1/system", "/api/v1/operations", "/api/v1/apps/shop/terminal"} {
 		resp, _ := c.do("GET", p, "", nil)
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s -> %d", p, resp.StatusCode)
@@ -236,25 +236,6 @@ func TestSecretsNeverInResponses(t *testing.T) {
 		_, out := c.do("GET", p, "", nil)
 		if strings.Contains(out, app.Redis.Password) {
 			t.Fatalf("%s leaked a secret", p)
-		}
-	}
-}
-
-func TestSchedulerGatewayAuthorization(t *testing.T) {
-	c, _ := newServer(t)
-	c.login()
-	resp, _ := c.do("GET", "/scheduler/apps/nosuch/", "", nil)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown app -> %d", resp.StatusCode)
-	}
-	resp, _ = c.do("POST", "/scheduler/apps/nosuch/api/v1/token/rotate", "", map[string]string{"Origin": "http://evil.test"})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("cross-origin scheduler write -> %d", resp.StatusCode)
-	}
-	for _, p := range []string{"/scheduler/apps/UPPER/", "/scheduler/apps/a/", "/scheduler/apps/shop/../x"} {
-		resp, _ = c.do("GET", p, "", nil)
-		if resp.StatusCode == http.StatusOK {
-			t.Errorf("%s accepted", p)
 		}
 	}
 }

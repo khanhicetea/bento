@@ -225,20 +225,19 @@ type BindingSummary struct {
 }
 
 type App struct {
-	AppSummary    `tstype:",extends"`
-	GID           int         `json:"gid"`
-	Home          string      `json:"home"`
-	Runtime       RuntimeSpec `json:"runtime"`
-	Route         Route       `json:"route"`
-	Domains       []Domain    `json:"domains"`
-	Bindings      []Binding   `json:"bindings"`
-	RedisPrefix   string      `json:"redisPrefix"`
-	RedisUser     string      `json:"redisUser"`
-	IngressInfo   IngressInfo `json:"ingressInfo"`
-	Reconcile     Reconcile   `json:"reconcile"`
-	SchedulerPath string      `json:"schedulerPath"`
-	CreatedAt     string      `json:"createdAt"`
-	UpdatedAt     string      `json:"updatedAt"`
+	AppSummary  `tstype:",extends"`
+	GID         int         `json:"gid"`
+	Home        string      `json:"home"`
+	Runtime     RuntimeSpec `json:"runtime"`
+	Route       Route       `json:"route"`
+	Domains     []Domain    `json:"domains"`
+	Bindings    []Binding   `json:"bindings"`
+	RedisPrefix string      `json:"redisPrefix"`
+	RedisUser   string      `json:"redisUser"`
+	IngressInfo IngressInfo `json:"ingressInfo"`
+	Reconcile   Reconcile   `json:"reconcile"`
+	CreatedAt   string      `json:"createdAt"`
+	UpdatedAt   string      `json:"updatedAt"`
 }
 
 type AppList struct {
@@ -337,6 +336,15 @@ type DBAdminSettingsRequest struct {
 // under BaseURL (the utils base URL) or, when that is empty, on the current
 // host at LoopbackPort (0 when the utils listener has no loopback address).
 type DBAdminTicket struct {
+	Path         string `json:"path"`
+	BaseURL      string `json:"baseUrl"`
+	LoopbackPort int    `json:"loopbackPort"`
+	ExpiresAt    string `json:"expiresAt"`
+}
+
+// SchedulerTicket opens one app's scheduler UI on the utils listener. The
+// fields mean the same as in DBAdminTicket.
+type SchedulerTicket struct {
 	Path         string `json:"path"`
 	BaseURL      string `json:"baseUrl"`
 	LoopbackPort int    `json:"loopbackPort"`

@@ -17,8 +17,8 @@ This document explains how the Go backend is put together and why.
    - `run/bento.sock` (`0600`) for the CLI, wrapped by `Server.LocalOnly`, which admits only peers whose
      `SO_PEERCRED` uid is 0 or the backend's own uid.
    - **utils** TCP listeners (`--utils-listen`, default `127.0.0.1:7781` and `apps:7781`) serving
-     `Server.UtilsHandler` only: self-authenticating routes under `/_bento/webhook/*` and the ticketed database browser
-     under `/_bento/dbadmin/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
+     `Server.UtilsHandler` only: self-authenticating routes under `/_bento/webhook/*`, the ticketed database browser
+     under `/_bento/dbadmin/*`, and the ticketed scheduler UI under `/_bento/scheduler/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
      read from the host's interfaces because Docker picks it, usually `.128`) once the bridge exists and follows the
      network plan, so the edge and cloudflared
      can reach it; the loopback address is for host proxies. Operators may bind any address because nothing on
@@ -230,7 +230,7 @@ Publication is persisted only after `checkReady` passes, and route activation is
 When the utils listener binds the apps network, every managed route (app or proxy) reserves
 `location ^~ /_bento/webhook/`, proxied to `http://<apps-gateway>:<port>` with an 8 MiB body limit; it never reaches the
 upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
-Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils listener itself. `/_bento/dbadmin/*` is never reserved on app routes.
+Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils listener itself. `/_bento/dbadmin/*` and `/_bento/scheduler/*` are never reserved on app routes.
 
 ### Git deploy and webhooks
 
@@ -294,14 +294,7 @@ only what it created.
   operation events as SSE, bounded exec (1 MiB, 10 min), `minicrond` passthrough (refuses `daemon`), and the
   WebSocket terminal (origin + CSRF query token for browsers; binary frames for bytes, JSON text frames for
   `resize`/`exit`; 30 min idle, 4 h max).
-- `gateway.go`: `/scheduler/apps/<slug>/…` — session required on every request, exact origin + fetch metadata for
-  writes, app must be desired running, auth/cookie/forwarding headers stripped, `Set-Cookie` dropped, frame headers set
-  to same-origin, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-origin` pinned, streaming
-  via `FlushInterval: -1`, bodies capped at 10 MB. `Origin: null` is always refused. Known gap (audit C2): scheduler
-  content still runs on the management origin, so a compromised app's `minicrond` UI can act with the operator
-  session. A CSP `sandbox` without `allow-same-origin` is not applied because the opaque origin would drop the
-  `SameSite=Strict` session cookie (and fail the origin check) on the scheduler UI's own API calls; closing the gap
-  needs a separate origin or a per-app, cookie-less capability token for the gateway.
+- `gateway.go`: the scheduler UI gateway (see below). The management handler serves no app-controlled content.
 - SPA serving: existing files are served; client routes fall back to `index.html`; asset-like paths 404.
 
 ## Database browser: `api/dbadmin.go`, `operations/dbadmin.go`
@@ -321,6 +314,22 @@ the bridge), forwarding only `adminer_*` cookies and adding `X-Bento-*` headers 
 base64 password, databases, gateway token). `router.php` checks the token, forces those values into Adminer on every
 request, and keeps only a placeholder password in Adminer's session. Response cookies are re-scoped to the binding
 path. Tickets and grants do not survive a backend restart.
+
+## Scheduler UI gateway: `api/gateway.go`
+
+minicrond's UI is app-controlled, so it is never served on the management origin (it could otherwise read the CSRF
+token from `GET /api/v1/session` and drive the API). `POST /api/v1/apps/{id}/scheduler/ticket` (browser session +
+CSRF, app desired running) issues a one-minute single-use ticket held in memory by token hash.
+`GET /_bento/scheduler/t/<ticket>` on the utils listener redeems it for a grant cookie (`bento_scheduler`, HttpOnly,
+SameSite=Lax, path `/_bento/scheduler/a/<slug>/`, 30 minutes idle) and redirects. Each `/_bento/scheduler/a/<slug>/…`
+request checks the grant (bound to that slug), `GetLiveSession` for the issuing session, same-origin fetch metadata on
+writes, and that the app is desired running; then it forwards the full path over the app's relay. minicrond serves
+under `runtime.SchedulerBasePath` = `/_bento/scheduler/a/<slug>/` (`BENTO_SCHEDULER_BASE_PATH`), so no path rewriting
+happens. Cookie, authorization, CSRF, and forwarding headers are stripped; `Set-Cookie` is dropped; responses get
+`X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, `Cross-Origin-Resource-Policy: same-origin`, and
+`Referrer-Policy: no-referrer`. The UI opens it in a new tab (it is not framed). Streaming uses `FlushInterval: -1`;
+bodies are capped at 10 MB. Tickets and grants do not survive a backend restart. A compromised app's UI can reach only
+its own scheduler grant path on the utils origin.
 
 ## Scheduler relay: `scheduler`
 
@@ -349,8 +358,10 @@ changes its own UID and never execs into containers per request. Relays idle for
 - The management API is loopback-only and requires a session or a peer-verified local socket.
 - The utils listener serves only routes that authenticate themselves: deploy webhooks (per-app secret; can at most
   queue a deploy of the configured branch) and the database browser (single-use ticket from a session + CSRF call,
-  then a binding-scoped grant re-checked against the live session on every request). Never add UI, login, or
-  management routes to it.
+  then a binding-scoped grant re-checked against the live session on every request), and the scheduler UI (the same
+  ticket/grant scheme, scoped to one app slug). Never add Bento's own UI, login, or management routes to it.
+- App-controlled content (the scheduler UI) is never served on the management origin; the management UI sets
+  `frame-src 'none'` and `frame-ancestors 'none'`, and `Origin: null` never passes the origin check.
 - The Adminer container holds no credentials, joins only the data network, and refuses requests without the
   gateway token. The gateway injects one binding's app-user credentials per request; URL parameters cannot select
   another server, driver, user, or database.

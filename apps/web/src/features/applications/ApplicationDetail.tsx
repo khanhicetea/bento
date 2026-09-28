@@ -336,7 +336,7 @@ function DataBindings({ app }: { app: T.App }) {
 function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) {
   const [name, setName] = useState("");
   const add = useOperationMutation(() => api.apps.addDatabase(appId, binding.id, name));
-  const browse = useBrowseBinding(appId, binding.id);
+  const browse = useUtilsTab(() => api.dbadmin.ticket(appId, binding.id));
   const sqlite = binding.engine === "sqlite";
   return (
     <section className="cell grid content-start gap-4" aria-label={`${binding.engine} binding`}>
@@ -400,14 +400,15 @@ function BindingCard({ appId, binding }: { appId: string; binding: T.Binding }) 
 }
 
 /**
- * Opens a binding in the database browser. The tab is opened synchronously
- * (popup blockers) and pointed at the single-use ticket once it is issued.
+ * Opens a utils-listener page (database browser, scheduler) in a new tab. The
+ * tab is opened synchronously (popup blockers) and pointed at the single-use
+ * ticket once it is issued.
  */
-function useBrowseBinding(appId: string, bindingId: string) {
+function useUtilsTab(issue: () => Promise<T.DBAdminTicket | T.SchedulerTicket>) {
   const mutation = useMutation({
     mutationFn: async (tab: Window | null) => {
       try {
-        const ticket = await api.dbadmin.ticket(appId, bindingId);
+        const ticket = await issue();
         const base =
           ticket.baseUrl || (ticket.loopbackPort ? `http://${location.hostname}:${ticket.loopbackPort}` : "");
         if (!base) throw new Error("The utils listener is off; start bento serve with --utils-listen.");
@@ -447,6 +448,7 @@ function ServiceOptions() {
 }
 
 function Scheduler({ app }: { app: T.App }) {
+  const open = useUtilsTab(() => api.scheduler.ticket(app.id));
   if (app.desiredRuntime !== "running")
     return (
       <div className="box">
@@ -458,17 +460,16 @@ function Scheduler({ app }: { app: T.App }) {
     );
   return (
     <div className="box">
-      <div className="cell cell--flush">
-        <div className="flex justify-end border-b px-3 py-2">
-          <a className="note inline-flex items-center gap-1" href={app.schedulerPath} target="_blank" rel="noreferrer">
-            Open <ExternalLink className="size-3" />
-          </a>
-        </div>
-        <iframe
-          title={`${app.slug} scheduler`}
-          src={app.schedulerPath}
-          className="block h-[calc(100vh-16rem)] min-h-96 w-full"
-        />
+      <div className="cell empty">
+        <strong>Scheduler</strong>
+        <p>
+          The scheduler UI is served by the app, so it opens in its own tab on the utils listener, isolated from this
+          control plane.
+        </p>
+        <Button onClick={open.open} disabled={open.isPending}>
+          <ExternalLink /> Open scheduler
+        </Button>
+        {open.error && <p className="note note--bad">{messageOf(open.error)}</p>}
       </div>
     </div>
   );

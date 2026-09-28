@@ -193,7 +193,6 @@ export interface App extends AppSummary {
   redisUser: string;
   ingressInfo: IngressInfo;
   reconcile: Reconcile;
-  schedulerPath: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -284,6 +283,16 @@ export interface DBAdminSettingsRequest {
  * host at LoopbackPort (0 when the utils listener has no loopback address).
  */
 export interface DBAdminTicket {
+  path: string;
+  baseUrl: string;
+  loopbackPort: number /* int */;
+  expiresAt: string;
+}
+/**
+ * SchedulerTicket opens one app's scheduler UI on the utils listener. The
+ * fields mean the same as in DBAdminTicket.
+ */
+export interface SchedulerTicket {
   path: string;
   baseUrl: string;
   loopbackPort: number /* int */;
