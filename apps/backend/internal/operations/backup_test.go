@@ -43,7 +43,7 @@ func TestBackupContinuesPastFailingTarget(t *testing.T) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "sqlite-"+b.SQLiteFileID+"-20200101T000000Z.db"), []byte("old"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "sqlite-"+b.SQLiteFileID+"-20200101T000000.000Z.db"), []byte("old"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

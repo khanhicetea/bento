@@ -132,20 +132,13 @@ func (c closerFunc) Close() error { return c() }
 
 var safeName = regexp.MustCompile(`[^a-z0-9_.-]`)
 
-// Artifact timestamp layouts. New artifacts use millisecond resolution;
-// the legacy one-second layout is still parsed for existing files.
-const (
-	stampLayout       = "20060102T150405.000Z"
-	legacyStampLayout = "20060102T150405Z"
-)
+// stampLayout is the artifact timestamp, at millisecond resolution.
+const stampLayout = "20060102T150405.000Z"
 
-var artifactPattern = regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}(?:\.\d{3})?Z)\.(sql|db)(\.zst|\.gz)?$`)
+var artifactPattern = regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}\.\d{3}Z)\.(sql|db)(\.zst|\.gz)?$`)
 
 func parseStamp(s string) time.Time {
-	if ts, err := time.Parse(stampLayout, s); err == nil {
-		return ts
-	}
-	ts, _ := time.Parse(legacyStampLayout, s)
+	ts, _ := time.Parse(stampLayout, s)
 	return ts
 }
 

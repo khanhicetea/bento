@@ -26,8 +26,8 @@ func TestRetentionKeepsNewestPerDatabase(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "shop"), 0o700)
 	for _, n := range []string{
-		"mysql-shop-20250101T000000Z.sql.zst", "mysql-shop-20250102T000000Z.sql.zst", "mysql-shop-20250103T000000Z.sql.zst",
-		"mysql-other-20250101T000000Z.sql.zst", ".partial-abc",
+		"mysql-shop-20250101T000000.000Z.sql.zst", "mysql-shop-20250102T000000.000Z.sql.zst", "mysql-shop-20250103T000000.000Z.sql.zst",
+		"mysql-other-20250101T000000.000Z.sql.zst", ".partial-abc",
 	} {
 		os.WriteFile(filepath.Join(dir, "shop", n), []byte("x"), 0o600)
 	}
@@ -35,7 +35,7 @@ func TestRetentionKeepsNewestPerDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed) != 1 || removed[0] != "shop/mysql-shop-20250101T000000Z.sql.zst" {
+	if len(removed) != 1 || removed[0] != "shop/mysql-shop-20250101T000000.000Z.sql.zst" {
 		t.Fatalf("removed %v", removed)
 	}
 }
@@ -43,9 +43,9 @@ func TestRetentionKeepsNewestPerDatabase(t *testing.T) {
 func TestResolveArtifactContainment(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "shop"), 0o700)
-	os.WriteFile(filepath.Join(dir, "shop", "mysql-shop-20250101T000000Z.sql"), []byte("x"), 0o600)
+	os.WriteFile(filepath.Join(dir, "shop", "mysql-shop-20250101T000000.000Z.sql"), []byte("x"), 0o600)
 	os.Symlink("/etc", filepath.Join(dir, "evil"))
-	if _, err := ResolveArtifact(dir, "shop/mysql-shop-20250101T000000Z.sql"); err != nil {
+	if _, err := ResolveArtifact(dir, "shop/mysql-shop-20250101T000000.000Z.sql"); err != nil {
 		t.Fatal(err)
 	}
 	for _, bad := range []string{"../x", "/etc/passwd", "evil/passwd", "shop/.partial", "shop"} {
@@ -80,17 +80,17 @@ func TestPublishRefusesOverwrite(t *testing.T) {
 	}
 }
 
-func TestListArtifactsParsesLegacyAndMillisecondNames(t *testing.T) {
+func TestListArtifactsMillisecondNamesOnly(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "shop"), 0o700)
 	for _, n := range []string{"mysql-shop-20250101T000000Z.sql.zst", "mysql-shop-20250101T000000.123Z.sql.zst", "mysql-shop-20250101T000000.500Z.sql"} {
 		os.WriteFile(filepath.Join(dir, "shop", n), []byte("x"), 0o600)
 	}
 	arts, err := ListArtifacts(dir)
-	if err != nil || len(arts) != 3 {
+	if err != nil || len(arts) != 2 {
 		t.Fatalf("%v %v", arts, err)
 	}
-	if arts[0].Path != "shop/mysql-shop-20250101T000000.500Z.sql" || arts[2].Path != "shop/mysql-shop-20250101T000000Z.sql.zst" {
+	if arts[0].Path != "shop/mysql-shop-20250101T000000.500Z.sql" || arts[1].Path != "shop/mysql-shop-20250101T000000.123Z.sql.zst" {
 		t.Fatalf("order %v", arts)
 	}
 	for _, a := range arts {

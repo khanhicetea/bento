@@ -8,7 +8,7 @@ sidebar:
 ```bash
 bento backup run [--app shop] [--compression zstd|gzip|none] [--upload]
 bento backup list
-bento backup restore --artifact shop/mysql-shop-20260101T020000Z.sql.zst --app shop --database shop
+bento backup restore --artifact shop/mysql-shop-20260101T020000.000Z.sql.zst --app shop --database shop
 ```
 
 - One batch at a time. MySQL uses `mysqldump --single-transaction`, PostgreSQL `pg_dump`, SQLite the online
