@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
@@ -113,44 +112,13 @@ func writeApplied(stateDir, path string, a AppliedConfig) error {
 	return platform.AtomicWrite(path, data, 0o600, platform.RootOwner)
 }
 
-// diskScopes captures the current on-disk bytes of every scope.
-func diskScopes(cfgDir string) (map[string]AppliedScope, error) {
-	out := map[string]AppliedScope{}
-	for _, s := range Scopes {
-		files := map[string][]byte{}
-		for _, n := range ScopeFiles(s) {
-			b, err := os.ReadFile(filepath.Join(cfgDir, n))
-			if errors.Is(err, fs.ErrNotExist) {
-				files[n] = nil
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			files[n] = b
-		}
-		out[s] = AppliedScope{Hash: scopeHash(s, files), Files: files}
-	}
-	return out, nil
-}
-
-// loadOrInitApplied reads applied state. A missing state file (first run
-// after upgrade, or a fresh app) is initialized from the current disk bytes,
-// which are the best evidence of what the instance loaded; this avoids a
-// reload storm on upgrade.
-func loadOrInitApplied(ctx AppContext, appID string) (AppliedConfig, error) {
-	path := ctx.Layout.AppAppliedConfig(appID)
-	a, ok, err := readApplied(path)
+// loadApplied reads applied state. A missing file means nothing has been
+// applied yet: every scope counts as changed until the instance starts or
+// reloads and records it.
+func loadApplied(ctx AppContext, appID string) (AppliedConfig, error) {
+	a, ok, err := readApplied(ctx.Layout.AppAppliedConfig(appID))
 	if err != nil || ok {
 		return a, err
 	}
-	scopes, err := diskScopes(ctx.Layout.AppConfigDir(appID))
-	if err != nil {
-		return AppliedConfig{}, err
-	}
-	a = AppliedConfig{Version: appliedVersion, Scopes: scopes}
-	if err := writeApplied(ctx.Layout.AppStateDir(appID), path, a); err != nil {
-		return AppliedConfig{}, err
-	}
-	return a, nil
+	return AppliedConfig{Version: appliedVersion, Scopes: map[string]AppliedScope{}}, nil
 }

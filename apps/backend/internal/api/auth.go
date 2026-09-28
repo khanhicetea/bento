@@ -132,6 +132,11 @@ func (s *Server) sessionFromRequest(r *http.Request) (store.Session, bool) {
 
 // originAllowed requires an exact configured origin.
 func (s *Server) originAllowed(origin string) bool {
+	// An opaque origin (sandboxed frame, data: URL) is never trusted, even if
+	// misconfigured into AllowedOrigins.
+	if origin == "" || origin == "null" {
+		return false
+	}
 	for _, o := range s.AllowedOrigins {
 		if origin == o {
 			return true

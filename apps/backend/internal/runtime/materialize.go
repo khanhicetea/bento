@@ -25,8 +25,8 @@ const (
 )
 
 // SchedulerBasePath is the URL prefix minicrond serves under; the backend's
-// authenticated scheduler proxy forwards exactly this prefix.
-func SchedulerBasePath(slug string) string { return "/scheduler/apps/" + slug + "/" }
+// scheduler gateway on the utils listener forwards exactly this prefix.
+func SchedulerBasePath(slug string) string { return "/_bento/scheduler/a/" + slug + "/" }
 
 // SQLiteFile is the database file path inside the container.
 func SQLiteFile(b domain.Binding, slug string) string {
@@ -249,13 +249,13 @@ func AppConfigDrift(app domain.App, ctx AppContext) (bool, error) {
 	// A scope rendered differently from what the instance applied is drift
 	// even when the disk already holds the new bytes (written by a tool or
 	// backup container, or left by an earlier interrupted write).
-	if a, ok, err := readApplied(ctx.Layout.AppAppliedConfig(app.ID)); err != nil {
+	a, err := loadApplied(ctx, app.ID)
+	if err != nil {
 		return false, err
-	} else if ok {
-		for _, s := range Scopes {
-			if a.Scopes[s].Hash != renderedScopeHash(m, s) {
-				return true, nil
-			}
+	}
+	for _, s := range Scopes {
+		if a.Scopes[s].Hash != renderedScopeHash(m, s) {
+			return true, nil
 		}
 	}
 	cfgDir := ctx.Layout.AppConfigDir(app.ID)
@@ -291,7 +291,7 @@ func WriteAppConfigChanges(app domain.App, ctx AppContext) (Materialized, Change
 		return m, ch, err
 	}
 	ch.dir, ch.owner = cfgDir, owner
-	applied, err := loadOrInitApplied(ctx, app.ID)
+	applied, err := loadApplied(ctx, app.ID)
 	if err != nil {
 		return m, ch, err
 	}

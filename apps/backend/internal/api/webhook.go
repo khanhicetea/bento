@@ -24,6 +24,7 @@ func (s *Server) UtilsHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+domain.WebhookPathPrefix+"deploy/{hook}", s.handleDeployWebhook)
 	mux.Handle(dbadminPathPrefix, s.dbadminGateway())
+	mux.Handle(schedulerPathPrefix, s.schedulerGateway())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeHookJSON(w, http.StatusNotFound, map[string]string{"result": "not-found"})
 	})

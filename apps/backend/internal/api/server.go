@@ -40,6 +40,7 @@ type Server struct {
 	limiter   loginLimiter
 	terminals terminalRegistry
 	dbadmin   dbadminGate
+	scheduler dbadminGate // same ticket/grant mechanics; bindingID holds the app slug
 }
 
 // Handler builds the route table. local marks the Unix control socket.
@@ -83,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/apps/{id}/logs", s.handleAppLogs)
 	api("POST /api/v1/apps/{id}/exec", s.handleExec)
 	api("POST /api/v1/apps/{id}/scheduler/command", s.handleSchedulerCommand)
+	api("POST /api/v1/apps/{id}/scheduler/ticket", s.handleSchedulerTicket)
 	api("GET /api/v1/apps/{id}/terminal", s.handleTerminal)
 
 	api("GET /api/v1/operations", s.handleListOps)
@@ -118,7 +120,6 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/v1/backups/schedule", s.handlePutSchedule)
 	api("POST /api/v1/stack/export", s.handleExport)
 
-	mux.Handle("/scheduler/apps/", s.schedulerGateway())
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, notFound("no such endpoint"))
 	}))
@@ -131,10 +132,8 @@ func securityHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
-		if !strings.HasPrefix(r.URL.Path, "/scheduler/apps/") {
-			h.Set("X-Frame-Options", "DENY")
-			h.Set("Content-Security-Policy", "default-src 'self'; frame-src 'self'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'")
-		}
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "default-src 'self'; frame-src 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

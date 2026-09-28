@@ -175,7 +175,6 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.RedisUser = app.Redis.Username
 	out.IngressInfo = ingressInfo(app)
 	out.Reconcile = rec
-	out.SchedulerPath = runtime.SchedulerBasePath(app.Slug)
 	out.CreatedAt = platform.FormatTime(app.CreatedAt)
 	out.UpdatedAt = platform.FormatTime(app.UpdatedAt)
 	return out, nil
