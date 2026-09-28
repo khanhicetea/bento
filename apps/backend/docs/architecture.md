@@ -294,7 +294,11 @@ only what it created.
 - `stream.go`: logs as SSE (tail ≤ 5000, 30 min, 20 MB, the app's secrets redacted, resume via `since`/`Last-Event-ID`),
   operation events as SSE, bounded exec (1 MiB, 10 min), `minicrond` passthrough (refuses `daemon`), and the
   WebSocket terminal (origin + CSRF query token for browsers; binary frames for bytes, JSON text frames for
-  `resize`/`exit`; 30 min idle, 4 h max).
+  `resize`/`exit`; 30 min idle, 4 h max). Log lines over 256 KiB are truncated with a `…[truncated]` marker and the
+  stream continues. Exec and `minicrond` output get the same secret redaction as logs. The interactive terminal PTY
+  stream is deliberately **not** redacted: a secret can be split across arbitrary chunk boundaries and terminal escape
+  sequences, and the operator can already read the app's secrets from its environment inside that shell, so
+  redaction there would give false assurance.
 - `gateway.go`: the scheduler UI gateway (see below). The management handler serves no app-controlled content.
 - SPA serving: existing files are served; client routes fall back to `index.html`; asset-like paths 404.
 
