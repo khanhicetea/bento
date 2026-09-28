@@ -41,7 +41,7 @@ func TestCollectToolsHonoursGraceAndActiveOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MarkRunning(ctx, h.Store.DB(), active.ID); err != nil {
+	if _, err := store.MarkRunning(ctx, h.Store.DB(), active.ID); err != nil {
 		t.Fatal(err)
 	}
 	tool := func(op string) map[string]string {
