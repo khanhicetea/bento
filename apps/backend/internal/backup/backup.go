@@ -355,10 +355,24 @@ func ListArtifacts(backupsDir string) ([]Artifact, error) {
 	return out, nil
 }
 
+// RetentionKey identifies the (app, engine, database) series an artifact
+// belongs to for retention.
+func RetentionKey(a Artifact) string {
+	return a.AppSlug + "/" + string(a.Engine) + "/" + a.Database
+}
+
 // Retain keeps the newest keep artifacts per (app, engine, database) and
 // deletes older ones. Call only after a fully successful batch.
 func Retain(backupsDir string, keep int) ([]string, error) {
-	if keep < 1 {
+	return RetainKeys(backupsDir, keep, nil)
+}
+
+// RetainKeys applies Retain only to the series named in keys (see
+// RetentionKey). A nil keys map means every series; an empty map means none.
+// Use it after a partial batch so series whose newest dump failed keep their
+// older artifacts.
+func RetainKeys(backupsDir string, keep int, keys map[string]bool) ([]string, error) {
+	if keep < 1 || (keys != nil && len(keys) == 0) {
 		return nil, nil
 	}
 	arts, err := ListArtifacts(backupsDir)
@@ -368,7 +382,10 @@ func Retain(backupsDir string, keep int) ([]string, error) {
 	seen := map[string]int{}
 	var removed []string
 	for _, a := range arts {
-		key := a.AppSlug + "/" + string(a.Engine) + "/" + a.Database
+		key := RetentionKey(a)
+		if keys != nil && !keys[key] {
+			continue
+		}
 		seen[key]++
 		if seen[key] > keep {
 			if err := os.Remove(filepath.Join(backupsDir, a.Path)); err != nil {
