@@ -34,6 +34,7 @@ const (
 	RoleDBAdmin  Role = "dbadmin"
 	RoleNetwork  Role = "network"
 	RoleVolume   Role = "volume"
+	RoleProbe    Role = "probe"
 )
 
 var stackNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,22}[a-z0-9]$`)

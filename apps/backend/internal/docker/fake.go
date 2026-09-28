@@ -42,6 +42,10 @@ type FakeContainer struct {
 	Running bool
 	Health  string
 	IP      netip.Addr
+	// Created is reported by List; State overrides the exited state List
+	// reports for a stopped container (e.g. "created").
+	Created time.Time
+	State   string
 }
 
 func NewFake() *Fake {
@@ -101,7 +105,7 @@ func (f *Fake) BuildImage(_ context.Context, tag string, r io.Reader, _, labels 
 	return id, nil
 }
 
-func (f *Fake) ReadImageFile(_ context.Context, _, path string) ([]byte, error) {
+func (f *Fake) ReadImageFile(_ context.Context, _, path string, _ map[string]string) ([]byte, error) {
 	if path == "/etc/passwd" {
 		return []byte("root:x:0:0:root:/root:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"), nil
 	}
@@ -182,8 +186,11 @@ outer:
 		if c.Running {
 			state = container.StateRunning
 		}
+		if c.State != "" && !c.Running {
+			state = container.ContainerState(c.State)
+		}
 		sum := container.Summary{ID: c.ID, Names: []string{"/" + c.Name}, Image: c.Spec.Config.Image, ImageID: f.Images[c.Spec.Config.Image],
-			Labels: c.Spec.Config.Labels, State: state, NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{}}}
+			Labels: c.Spec.Config.Labels, State: state, Created: c.Created.Unix(), NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{}}}
 		if c.Spec.HostConfig != nil {
 			for _, m := range c.Spec.HostConfig.Mounts {
 				sum.Mounts = append(sum.Mounts, container.MountPoint{Type: m.Type, Name: m.Source, Source: m.Source, Destination: m.Target})
@@ -210,7 +217,7 @@ func (f *Fake) Create(_ context.Context, spec ContainerSpec) (string, error) {
 	}
 	f.seq++
 	id := fmt.Sprintf("c%04d", f.seq)
-	f.Containers[id] = &FakeContainer{ID: id, Name: spec.Name, Spec: spec, IP: netip.AddrFrom4([4]byte{10, 211, 0, byte(100 + f.seq)})}
+	f.Containers[id] = &FakeContainer{ID: id, Name: spec.Name, Spec: spec, Created: time.Now(), IP: netip.AddrFrom4([4]byte{10, 211, 0, byte(100 + f.seq)})}
 	return id, nil
 }
 

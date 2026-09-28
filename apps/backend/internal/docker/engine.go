@@ -122,7 +122,7 @@ type Engine interface {
 	ImageID(ctx context.Context, ref string) (string, bool, error)
 	PullImage(ctx context.Context, ref string, progress func(string)) error
 	BuildImage(ctx context.Context, tag string, buildContext io.Reader, args, labels map[string]string, progress func(string)) (string, error)
-	ReadImageFile(ctx context.Context, image, path string) ([]byte, error)
+	ReadImageFile(ctx context.Context, image, path string, labels map[string]string) ([]byte, error)
 	EnsureNetwork(ctx context.Context, spec NetworkSpec) (NetworkInfo, error)
 	UsedSubnets(ctx context.Context) ([]netip.Prefix, error)
 	InspectNetwork(ctx context.Context, name string) (*NetworkInfo, error)
@@ -284,10 +284,10 @@ func (s *SDK) BuildImage(ctx context.Context, tag string, buildContext io.Reader
 }
 
 // ReadImageFile reads one regular file from an image by creating (never
-// starting) a throwaway container.
-func (s *SDK) ReadImageFile(ctx context.Context, image, path string) ([]byte, error) {
+// starting) a throwaway container carrying the caller's ownership labels.
+func (s *SDK) ReadImageFile(ctx context.Context, image, path string, labels map[string]string) ([]byte, error) {
 	created, err := s.c.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &container.Config{Image: image, Entrypoint: []string{"/bin/true"}, Labels: map[string]string{"io.bento.managed": "true", "io.bento.role": "probe"}},
+		Config:     &container.Config{Image: image, Entrypoint: []string{"/bin/true"}, Labels: labels},
 		HostConfig: &container.HostConfig{NetworkMode: "none"},
 	})
 	if err != nil {
