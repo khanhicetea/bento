@@ -218,7 +218,7 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 	if err := r.Phase(ctx, "open-tool"); err != nil {
 		return nil, err
 	}
-	tool, err := c.OpenTool(ctx, app, deployTimeout+time.Minute)
+	tool, err := c.OpenTool(ctx, app, deployToolLifetime)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +342,11 @@ const DeployScriptName = "deploy.sh"
 
 // deployScriptTimeout bounds one run of ~/deploy.sh.
 const deployScriptTimeout = 15 * time.Minute
+
+// deployToolLifetime bounds the deploy tooling container. It must outlive
+// both the fetch and the deploy script run inside it, plus slack, or the
+// container's PID 1 exits and kills a still-running deploy.sh.
+const deployToolLifetime = deployTimeout + deployScriptTimeout + 2*time.Minute
 
 // deployScriptPresent reports whether ~/deploy.sh should run. A missing file
 // is skipped; anything that is not a plain executable file owned by the app

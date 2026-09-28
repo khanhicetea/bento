@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -197,32 +199,58 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 	}
 	deps := c.BackupDeps(func(s string) { r.Info(ctx, "%s", s) })
 	var arts []backup.Artifact
+	var failed []string
+	okKeys := map[string]bool{}
+	attempted := 0
 	for _, t := range targets {
 		if err := r.Phase(ctx, fmt.Sprintf("dump %s/%s", t.App.Slug, t.Database)); err != nil {
 			finish("cancelled", "", err.Error(), arts)
 			return map[string]any{"artifacts": arts}, err
 		}
+		if t.Binding.Engine == domain.EngineSQLite {
+			dbFile := filepath.Join(c.Layout.SQLiteFileDir(t.Binding.SQLiteFileID), t.App.Slug+".db")
+			if _, err := os.Lstat(dbFile); errors.Is(err, os.ErrNotExist) {
+				r.Info(ctx, "skipped %s/%s: SQLite database file does not exist yet", t.App.Slug, t.Database)
+				continue
+			}
+		}
+		attempted++
 		a, err := deps.Dump(ctx, t, req.Compression)
 		if err != nil {
-			// Earlier completed artifacts remain; retention is skipped.
-			finish("failed", "", err.Error(), arts)
-			return map[string]any{"artifacts": arts}, Fail("backup-failed", "Earlier artifacts in this batch were kept; retention was not applied. Fix the failing target and rerun.",
-				"%s/%s: %v", t.App.Slug, t.Database, err)
+			// Continue with the remaining targets; this series keeps its
+			// older artifacts because retention skips it below.
+			r.Warn(ctx, "dump %s/%s failed: %v", t.App.Slug, t.Database, err)
+			failed = append(failed, fmt.Sprintf("%s/%s: %v", t.App.Slug, t.Database, err))
+			continue
 		}
 		r.Info(ctx, "published %s (%d bytes)", a.Path, a.SizeBytes)
 		arts = append(arts, a)
+		okKeys[backup.RetentionKey(a)] = true
+	}
+	if attempted > 0 && len(failed) == attempted {
+		msg := strings.Join(failed, "; ")
+		finish("failed", "", msg, arts)
+		return map[string]any{"artifacts": arts}, Fail("backup-failed", "No target could be dumped; retention was not applied. Fix the failing targets and rerun.", "%s", msg)
 	}
 	sched, _, _ := c.BackupSchedule(ctx)
-	if req.Trigger == "schedule" || req.Scope == "all" {
+	if (req.Trigger == "schedule" || req.Scope == "all") && len(okKeys) > 0 {
 		if err := r.Phase(ctx, "retention"); err != nil {
 			return nil, err
 		}
-		removed, err := backup.Retain(c.Layout.BackupsDir(), sched.Retain)
+		// Only series dumped successfully in this batch are pruned.
+		removed, err := backup.RetainKeys(c.Layout.BackupsDir(), sched.Retain, okKeys)
 		if err != nil {
 			r.Warn(ctx, "retention: %v", err)
 		} else if len(removed) > 0 {
 			r.Info(ctx, "retention removed %d old artifact(s)", len(removed))
 		}
+	}
+	state, msg := "succeeded", ""
+	var partialErr error
+	if len(failed) > 0 {
+		state, msg = "partial", strings.Join(failed, "; ")
+		partialErr = Fail("backup-partial", "Successful artifacts were kept and retention was applied only to their series. Fix the failing targets and rerun.",
+			"%d of %d target(s) failed: %s", len(failed), attempted, msg)
 	}
 	upload := ""
 	if req.Upload || (req.Trigger == "schedule" && sched.RcloneRemote != "") {
@@ -231,12 +259,19 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		}
 		if err := deps.Upload(ctx, sched.RcloneRemote, arts); err != nil {
 			upload = "failed"
-			finish("succeeded", upload, "upload failed: "+err.Error(), arts)
+			finish(state, upload, strings.TrimPrefix(msg+"; upload failed: "+err.Error(), "; "), arts)
+			if partialErr != nil {
+				return map[string]any{"artifacts": arts}, Fail("backup-partial", "Local artifacts were kept. Fix the failing targets and the rclone configuration, then rerun.",
+					"%d of %d target(s) failed: %s; upload failed: %v", len(failed), attempted, msg, err)
+			}
 			return map[string]any{"artifacts": arts}, Fail("upload-failed", "Local artifacts were kept. Check the rclone configuration and remote.", "%v", err)
 		}
 		upload = "succeeded"
 	}
-	finish("succeeded", upload, "", arts)
+	finish(state, upload, msg, arts)
+	if partialErr != nil {
+		return map[string]any{"artifacts": arts, "upload": upload, "failed": failed}, partialErr
+	}
 	return map[string]any{"artifacts": arts, "upload": upload}, nil
 }
 
