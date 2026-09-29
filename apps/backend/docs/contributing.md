@@ -66,6 +66,11 @@ sudo /tmp/bento --stack /tmp/s1 init --name s1 && sudo /tmp/bento --stack /tmp/s
    - make it safe to run again after a partial failure (idempotent creates, "already done" checks).
 3. Decide whether it is safe for the reconciler to trigger; if so, extend `reconcile.Pass`.
 4. Add fault-injection coverage with `docker.Fake.FailOn` (see `TestFaultInjectionEachBoundaryThenRecover`).
+5. Leave the kind out of `claimsFor` (`operations/claims.go`) unless it is worth running in parallel: an unlisted kind
+   is *global* and runs alone, which is always safe. To make it parallel, list the exclusive and shared claims it
+   needs, make sure every shared resource it touches is behind a lock (see the parallelism section of
+   `architecture.md`), extend `TestOnlyReviewedKindsRunInParallel`, and add a test that it overlaps with unrelated
+   work and not with related work (`parallel_test.go`).
 
 Never put Docker calls inside `Store.Tx`, and never perform effects in an HTTP handler.
 

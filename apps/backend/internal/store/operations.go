@@ -173,6 +173,25 @@ func NextQueued(ctx context.Context, q Q) (Operation, error) {
 	return o, err
 }
 
+// ListQueued returns up to limit queued operations, oldest first (the same
+// FIFO order as NextQueued).
+func ListQueued(ctx context.Context, q Q, limit int) ([]Operation, error) {
+	rows, err := q.QueryContext(ctx, "SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY rowid LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Operation
+	for rows.Next() {
+		o, err := scanOp(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // ActiveForTarget reports whether a queued or running operation reserves target.
 func ActiveForTarget(ctx context.Context, q Q, targetID string) (bool, error) {
 	var n int

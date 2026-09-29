@@ -83,14 +83,60 @@ Every change with external effects follows the same path.
    confirmations, then `Controller.Submit`, which in **one transaction** runs the `Mutate` callback (persist intent,
    e.g. `desired_runtime='stopped'`) and inserts the operation row. With an `Idempotency-Key`, an existing operation
    with that key is returned instead (a different kind/target with the same key is a conflict).
-2. **Execution** (`controller.go`): a single goroutine dequeues the oldest `queued` operation, marks it `running`, and
-   calls the handler registered for its kind (`registerHandlers` in `apps.go`). Handlers call `r.Phase(ctx, name)`
+2. **Execution** (`controller.go`): one dispatcher goroutine scans the `queued` operations oldest first, marks each
+   one it can start `running`, and runs the handler registered for its kind (`registerHandlers` in `apps.go`) in its
+   own worker, up to `bento serve --op-concurrency` (default 4) at once. Handlers call `r.Phase(ctx, name)`
    between effects; that records the phase/event and is the **only** place a requested cancellation is honored.
 3. **Completion:** the handler returns a result (stored as JSON) or an error. `*OpError` carries a stable code and
    operator guidance; other errors become `failed` with generic guidance. A panic is caught and recorded.
 
-Serialization is deliberately conservative: one operation at a time for the whole stack. Handlers re-read state from
-the store, so an operation that was superseded (e.g. `start` after a later `stop`) notices and exits.
+Parallelism is deliberately conservative. Each operation declares **claims** (`claims.go`): exclusive on its own app
+or service, shared on the data services an app is bound to, or global. The dispatcher starts an operation only when its
+claims do not conflict with any running operation or with any *earlier queued operation that has not started*, so
+operations on the same resource keep FIFO order and nothing overtakes a waiting exclusive or global operation.
+
+| Kind | Claims |
+| --- | --- |
+| `app.reconcile`, `app.start`, `app.restart`, `app.update`, `app.deploy` | exclusive `app:<id>`, shared `service:<name>` for each bound service (and `redis`) |
+| `app.stop` | exclusive `app:<id>` |
+| `service.create`, `service.reconcile` | exclusive `service:<name>` |
+| everything else, and any unclassified kind | **global**: runs alone, after everything before it, before anything after it |
+
+An `app.start` or `app.update` of an unprovisioned app is global because provisioning writes grants on shared data
+services. The reasons for each global kind are the shared state it rewrites: the edge settings or several routes at once
+(`edge.apply`, `app.publish|unpublish|remove`), data services and their grants (`app.provision`, `binding.add`,
+`database.add`), the image set (`image.prune`), home ownership (`app.permissions`), or every app at once
+(`stack.export`, `backup.*`).
+
+A dispatch pass loads every app once (for the claims of app operations) and records, for each queued operation that is
+blocked, the operation it waits behind. The API returns it as `waitingOn` on queued operations; the UI shows it on the
+Activity page and in the operation tracker, and `bento ops` in the PHASE column. An operation that is only waiting for
+a free slot has no `waitingOn`.
+
+Parallel handlers share five things, each serialized inside the handlers:
+
+- **Edge generations, container and reload** — `edgeMu` around `applyEdge`. It renders the whole route set, so two
+  parallel applies would race on `edge/conf/{live,previous}`.
+- **Network plan and creation** — `netMu` in `NetworkPlan`/`EnsureNetworks` (read-then-write of the plan setting and
+  check-then-create of the Docker networks).
+- **Runtime image builds** — `ImageManager` locks per image tag: concurrent `Ensure` calls for one tag build it once;
+  different tags (for example a PHP and a Node image) build concurrently. `Remove` (image prune) excludes every
+  `Ensure`.
+- **Redis ACL** — `aclMu` in `syncRedisACL`, which reads every app's identity, rewrites the ACL file and reloads Redis.
+  `app.update` and `service.reconcile` of Redis may call it in parallel.
+- **Route activation of a booting app** — while an operation is (re)starting an app's instance and has not seen it ready,
+  the app is *warming* and every edge render treats it as not running, so another operation's `applyEdge` never routes
+  to it early. If such an apply happened, the warming operation re-applies the edge as soon as the app is ready (a
+  failure there is a warning; edge drift reconciliation retries). `EdgeConfigDrift` reports no drift while any app is
+  warming, so the reconciler does not queue an `edge.apply` for a route that is about to be restored. The flag clears
+  on readiness or when the operation ends.
+
+Lock order when nested: image tag lock, `edgeMu`, `netMu`; `aclMu` and `runMu` (running, warming and waiting state) are
+leaves.
+
+Handlers re-read state from the store, so an operation that was superseded (e.g. `start` after a later `stop`) notices
+and exits. `--op-concurrency 1` restores strictly serial execution; the maximum is 16. Shutdown stops dispatching and
+waits for every running operation.
 
 Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remove|prune|reconcile|permissions`,
 `binding.add`, `database.add`, `service.create|reconcile`, `edge.apply`, `tunnel.apply`, `backup.run|restore`,

@@ -164,7 +164,7 @@ func (s *Server) handleOpEvents(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		_ = sseEvent(w, "state", "", opToDTO(op, nil))
+		_ = sseEvent(w, "state", "", s.opDTO(op, nil))
 		flusher.Flush()
 		if op.State.Terminal() {
 			return

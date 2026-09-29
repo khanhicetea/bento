@@ -450,6 +450,9 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 			if err := r.Phase(ctx, "start"); err != nil {
 				return "", "", err
 			}
+			if !obs.Running || forceRestart {
+				c.setWarming(app.ID, r.Op.ID)
+			}
 			if obs.RestartMode != string(container.RestartPolicyUnlessStopped) {
 				if err := c.Engine.SetRestartPolicy(ctx, obs.ContainerID, container.RestartPolicyUnlessStopped); err != nil {
 					return "", "", err
@@ -484,6 +487,7 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 		if err := r.Phase(ctx, "replace"); err != nil {
 			return "", "", err
 		}
+		c.setWarming(app.ID, r.Op.ID)
 		if obs.Running {
 			if err := c.Engine.Stop(ctx, obs.ContainerID, runtime.StopTimeout); err != nil {
 				return "", "", Fail("stop-failed", "Retry; the previous instance is still in place.", "stop previous instance: %v", err)
@@ -496,6 +500,7 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 	if err := r.Phase(ctx, "create"); err != nil {
 		return "", "", err
 	}
+	c.setWarming(app.ID, r.Op.ID)
 	id, err := c.Engine.Create(ctx, spec)
 	if err != nil {
 		return "", "", Fail("create-failed", "Check for a conflicting container name and Docker errors.", "create: %v", err)
@@ -583,6 +588,14 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 		chk := c.checkReady(ctx, app, gen)
 		if chk.Ready {
 			r.Info(ctx, "app is ready")
+			if c.clearWarming(app.ID) {
+				// An operation running in parallel applied the edge while this
+				// instance booted and left its route unavailable.
+				r.Info(ctx, "refreshing routes held while the app was starting")
+				if err := c.applyEdge(ctx, r); err != nil {
+					r.Warn(ctx, "route refresh failed; edge reconciliation will retry it: %v", err)
+				}
+			}
 			return nil
 		}
 		if chk.Reason != last {

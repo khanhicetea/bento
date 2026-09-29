@@ -180,6 +180,16 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	return out, nil
 }
 
+// opDTO is opToDTO plus the executor's live view of what a queued operation
+// waits behind.
+func (s *Server) opDTO(o store.Operation, events []store.OpEvent) dto.Operation {
+	out := opToDTO(o, events)
+	if o.State == store.OpQueued && s.C != nil {
+		out.WaitingOn = s.C.WaitingOn(o.ID)
+	}
+	return out
+}
+
 func opToDTO(o store.Operation, events []store.OpEvent) dto.Operation {
 	out := dto.Operation{
 		ID: o.ID, Kind: o.Kind, TargetKind: o.TargetKind, TargetID: o.TargetID, State: dto.OperationState(o.State), Phase: o.Phase,

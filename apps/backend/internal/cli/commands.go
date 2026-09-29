@@ -21,6 +21,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/scheduler"
 	"github.com/khanhicetea/bento/apps/backend/internal/stack"
@@ -33,7 +34,7 @@ Usage: bento [--stack ROOT] <command> [arguments]
 The stack root comes from --stack or BENTO_STACK_ROOT (no global default).
 
 Backend:
-  serve [--listen 127.0.0.1:7780] [--origin URL]... [--utils-listen ADDR|apps:PORT|off]...
+  serve [--listen 127.0.0.1:7780] [--origin URL]... [--utils-listen ADDR|apps:PORT|off]... [--op-concurrency 4]
                                                       run the resident backend (utils routes: /_bento/webhook/*, /_bento/dbadmin/*)
   init --name NAME [--mysql 8.4] [--postgres 17] [--uid-first N --uid-last N] [--password-stdin]
   import --from DIR [--name NEWNAME] [--uid-first N --uid-last N]
@@ -184,10 +185,11 @@ func (r *runner) run(args []string) error {
 		var origins, utils multiFlag
 		fs.Var(&origins, "origin", "additional exact browser origin (repeatable)")
 		fs.Var(&utils, "utils-listen", "utils routes listener: IP:PORT, apps:PORT (apps network gateway), or off (repeatable; default 127.0.0.1:7781 and apps:7781)")
+		concurrency := fs.Int("op-concurrency", operations.DefaultConcurrency, fmt.Sprintf("operations executed at once, 1-%d (1 = strictly serial)", MaxOpConcurrency))
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, UtilsListen: utils, Version: r.version})
+		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, UtilsListen: utils, OpConcurrency: *concurrency, Version: r.version})
 	case "init":
 		fs, rest := sub("init", args[1:])
 		name := fs.String("name", "", "stack name")
@@ -302,7 +304,11 @@ func (r *runner) run(args []string) error {
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "ID\tKIND\tTARGET\tSTATE\tPHASE\tCREATED\tERROR")
 		for _, o := range list.Operations {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", o.ID, o.Kind, o.TargetID, o.State, o.Phase, o.CreatedAt, o.ErrorMessage)
+			phase := o.Phase
+			if o.WaitingOn != "" {
+				phase = "waiting on " + o.WaitingOn
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", o.ID, o.Kind, o.TargetID, o.State, phase, o.CreatedAt, o.ErrorMessage)
 		}
 		return tw.Flush()
 	case "op":

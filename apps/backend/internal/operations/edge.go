@@ -191,7 +191,8 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 
 // renderEdge renders the complete edge configuration from current desired
 // state without touching the filesystem or Docker objects.
-func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns NetworkSettings, warn func(string)) (map[string][]byte, error) {
+// forApply marks a render that will be promoted (see holdRoute).
+func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns NetworkSettings, warn func(string), forApply bool) (map[string][]byte, error) {
 	apps, err := store.ListApps(ctx, c.Store.DB())
 	if err != nil {
 		return nil, err
@@ -204,7 +205,8 @@ func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns N
 	for _, a := range apps {
 		if a.Publication == domain.Published {
 			obs, err := c.observe(ctx, a)
-			if err == nil && obs.Running {
+			// A booting app is not routed until its own operation saw it ready.
+			if err == nil && obs.Running && !c.holdRoute(a.ID, forApply) {
 				runningApps[a.ID] = true
 			}
 		}
@@ -231,7 +233,12 @@ func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	files, err := c.renderEdge(ctx, s, ns, nil)
+	// A warming app renders as unavailable until its operation sees it
+	// ready and refreshes the edge itself; that is not drift.
+	if c.anyWarming() {
+		return false, nil
+	}
+	files, err := c.renderEdge(ctx, s, ns, nil, false)
 	if err != nil {
 		return false, err
 	}
@@ -240,7 +247,11 @@ func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
 
 // applyEdge renders routes from current desired state and activates them.
 // Validation failure leaves the live generation untouched and sends no reload.
+// Operations on different apps run in parallel and each ends by applying the
+// whole edge, so the render-stage-promote-reload sequence is exclusive.
 func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
+	c.edgeMu.Lock()
+	defer c.edgeMu.Unlock()
 	s, err := c.EdgeSettings(ctx)
 	if err != nil {
 		return err
@@ -269,7 +280,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	if err != nil {
 		return err
 	}
-	files, err := c.renderEdge(ctx, s, ns, func(msg string) { r.Warn(ctx, "%s", msg) })
+	files, err := c.renderEdge(ctx, s, ns, func(msg string) { r.Warn(ctx, "%s", msg) }, true)
 	if err != nil {
 		return err
 	}

@@ -42,9 +42,15 @@ func (h *harness) toolWrite(app domain.App) {
 	}
 }
 
+// setVacuum moves the app's vacuum slot so its scheduler config changes. The
+// slot assigned at creation is random; if it already is Sunday 03:minute,
+// the next minute is used so the write is always a change.
 func (h *harness) setVacuum(app domain.App, minute int) domain.App {
 	h.t.Helper()
 	ctx := context.Background()
+	if v := app.Bindings[0].Vacuum; v != nil && v.DayOfWeek == 0 && v.Hour == 3 && v.Minute == minute {
+		minute = (minute + 1) % 60
+	}
 	v := fmt.Sprintf(`{"dayOfWeek":0,"hour":3,"minute":%d}`, minute)
 	if _, err := h.store.DB().ExecContext(ctx, "UPDATE bindings SET vacuum_json = ? WHERE id = ?", v, app.Bindings[0].ID); err != nil {
 		h.t.Fatal(err)

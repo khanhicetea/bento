@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestListenIsLoopbackOnly(t *testing.T) {
 	for _, ok := range []string{"127.0.0.1:7780", "localhost:7780", "[::1]:7780", "127.0.0.2:80"} {
@@ -20,6 +23,15 @@ func TestListenIsLoopbackOnly(t *testing.T) {
 	for _, bad := range []string{"*", "http://x/path", "javascript:alert(1)", "http://"} {
 		if validateOrigin(bad) == nil {
 			t.Errorf("origin %q accepted", bad)
+		}
+	}
+}
+
+func TestServeRejectsOutOfRangeOpConcurrency(t *testing.T) {
+	for _, n := range []int{-1, MaxOpConcurrency + 1} {
+		err := Serve(ServeOptions{Root: t.TempDir(), Listen: "127.0.0.1:7780", OpConcurrency: n})
+		if err == nil || !strings.Contains(err.Error(), "--op-concurrency") {
+			t.Errorf("op-concurrency %d: got %v", n, err)
 		}
 	}
 }

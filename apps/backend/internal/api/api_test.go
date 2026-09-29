@@ -12,12 +12,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/reconcile"
 	"github.com/khanhicetea/bento/apps/backend/internal/scheduler"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -737,5 +739,65 @@ func TestScheduleReportsNextRunAndZone(t *testing.T) {
 	resp, body = c.write("PUT", "/api/v1/backups/schedule", body)
 	if resp.StatusCode != 200 {
 		t.Fatalf("round-trip put %d %s", resp.StatusCode, body)
+	}
+}
+
+// A queued operation blocked behind another reports what it waits on; a
+// running or finished one does not.
+func TestQueuedOperationReportsWaitingOn(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	ctx := context.Background()
+	app, op, err := h.C.CreateApp(ctx, operations.CreateAppInput{Slug: "shop",
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Wait(op.ID)
+	release := make(chan struct{})
+	var once sync.Once
+	open := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(open)
+	h.Fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
+		if len(req.Cmd) > 0 && strings.HasSuffix(req.Cmd[0], "bento-ready") {
+			<-release
+		}
+		return docker.ExecResult{}
+	}
+	start, err := h.C.StartApp(ctx, app.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prune, err := h.C.PruneImage(ctx, strings.Repeat("b", 64), "delete", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(id string) dto.Operation {
+		t.Helper()
+		resp, body := c.do("GET", "/api/v1/operations/"+id, "", nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("get %s: %d %s", id, resp.StatusCode, body)
+		}
+		var o dto.Operation
+		if err := json.Unmarshal([]byte(body), &o); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for get(prune.ID).WaitingOn != start.ID {
+		if time.Now().After(deadline) {
+			t.Fatalf("queued prune never reported waiting on %s: %+v", start.ID, get(prune.ID))
+		}
+		h.C.Wake()
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := get(start.ID); got.State != dto.OperationState(store.OpRunning) || got.WaitingOn != "" {
+		t.Fatalf("running operation: state %s waitingOn %q", got.State, got.WaitingOn)
+	}
+	open()
+	h.Wait(prune.ID)
+	if got := get(prune.ID); got.WaitingOn != "" {
+		t.Fatalf("finished operation still waiting on %q", got.WaitingOn)
 	}
 }

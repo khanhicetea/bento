@@ -1,6 +1,7 @@
 // Package operations plans and executes every runtime-changing mutation as a
 // durable, journaled operation. HTTP handlers and CLI commands only validate,
-// persist intent, and submit; the single executor performs external effects.
+// persist intent, and submit; the executor performs external effects, running
+// operations with disjoint claims (see claims.go) in parallel.
 package operations
 
 import (
@@ -10,11 +11,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
+	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -56,7 +59,17 @@ type Deps struct {
 	// network gateway (0 when not listening there). The edge proxies
 	// /_bento/webhook/* to it.
 	UtilsAppsPort int
+	// Concurrency bounds how many operations execute at once (default
+	// DefaultConcurrency). 1 restores strictly serial execution.
+	Concurrency int
 }
+
+// DefaultConcurrency is the default number of operations executing at once.
+const DefaultConcurrency = 4
+
+// queueScanLimit bounds how many queued operations one dispatch pass
+// considers.
+const queueScanLimit = 256
 
 type handler func(ctx context.Context, r *Run) (any, error)
 
@@ -71,10 +84,39 @@ type Controller struct {
 	wake     chan struct{}
 	stopping atomic.Bool
 	done     chan struct{}
-	current  atomic.Value // string op id
+	workers  sync.WaitGroup
 	mu       sync.Mutex
 	// listeners receive operation state change notifications (SSE).
 	listeners map[chan string]struct{}
+
+	// runMu guards running, warming and waitingOn.
+	runMu sync.Mutex
+	// running maps the id of each executing operation to its claims.
+	running map[string]claims
+	// warming tracks apps whose instance an operation is (re)starting and has
+	// not yet seen ready. Edge renders treat such an app as not running, so
+	// another operation's edge apply never routes to it early; the owning
+	// operation re-applies the edge once the app is ready if that happened.
+	warming map[string]*warmState
+	// waitingOn maps a queued operation to the operation it waits behind, as
+	// of the last dispatch pass.
+	waitingOn map[string]string
+	// passes counts completed dispatch passes (tests).
+	passes atomic.Int64
+
+	// Locks for state shared by operations that run in parallel. Acquisition
+	// order when nested: images (runtime.ImageManager), edgeMu, netMu; aclMu
+	// and runMu are leaves.
+	netMu  sync.Mutex // network plan + network creation
+	edgeMu sync.Mutex // edge generations, container and reload
+	aclMu  sync.Mutex // Redis ACL file and reload
+}
+
+type warmState struct {
+	op string
+	// edgeStale is set when an edge apply rendered the app's route as
+	// unavailable because it was warming.
+	edgeStale bool
 }
 
 func NewController(d Deps) (*Controller, error) {
@@ -93,6 +135,9 @@ func NewController(d Deps) (*Controller, error) {
 	if d.PollInterval == 0 {
 		d.PollInterval = 2 * time.Second
 	}
+	if d.Concurrency <= 0 {
+		d.Concurrency = DefaultConcurrency
+	}
 	stack, err := store.GetStackIdentity(context.Background(), d.Store.DB())
 	if err != nil {
 		return nil, fmt.Errorf("stack identity: %w", err)
@@ -104,8 +149,10 @@ func NewController(d Deps) (*Controller, error) {
 		wake:      make(chan struct{}, 1),
 		done:      make(chan struct{}),
 		listeners: map[chan string]struct{}{},
+		running:   map[string]claims{},
+		warming:   map[string]*warmState{},
+		waitingOn: map[string]string{},
 	}
-	c.current.Store("")
 	c.registerHandlers()
 	return c, nil
 }
@@ -217,57 +264,252 @@ func (c *Controller) Recover(ctx context.Context) error {
 func (c *Controller) Start(ctx context.Context) {
 	go func() {
 		defer close(c.done)
+		defer c.workers.Wait()
 		for {
 			if c.stopping.Load() || ctx.Err() != nil {
 				return
 			}
-			op, err := store.NextQueued(ctx, c.Store.DB())
-			if errors.Is(err, store.ErrNotFound) {
+			started, err := c.dispatch(ctx)
+			if err != nil {
+				c.Log.Error("dequeue operations", "err", err)
 				select {
-				case <-c.wake:
-				case <-time.After(5 * time.Second):
+				case <-time.After(time.Second):
 				case <-ctx.Done():
 					return
 				}
 				continue
 			}
-			if err != nil {
-				c.Log.Error("dequeue operation", "err", err)
-				time.Sleep(time.Second)
+			if started {
 				continue
 			}
-			c.execute(ctx, op)
+			select {
+			case <-c.wake:
+			case <-time.After(5 * time.Second):
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 }
 
-// Shutdown stops accepting work and waits up to timeout for the current
-// operation to reach completion. It never tears down the data plane.
+// dispatch starts every queued operation that can run now, oldest first, up
+// to the concurrency limit. An operation is skipped, and its claims held back
+// from later operations, when it conflicts with a running operation or with
+// an earlier queued one that could not start: work on the same resources
+// stays FIFO and nothing overtakes a waiting exclusive operation. The whole
+// queue is scanned even at the limit so waitingOn stays current. It reports
+// whether it started anything.
+func (c *Controller) dispatch(ctx context.Context) (bool, error) {
+	defer c.passes.Add(1)
+	queued, err := store.ListQueued(ctx, c.Store.DB(), queueScanLimit)
+	if err != nil {
+		return false, err
+	}
+	type pending struct {
+		id string
+		cl claims
+	}
+	lookup := c.appLookup(ctx)
+	free := c.Concurrency - c.runningCount()
+	var waiting []pending
+	waitingOn := map[string]string{}
+	started := false
+	for _, op := range queued {
+		if c.stopping.Load() || ctx.Err() != nil {
+			break
+		}
+		cl := classify(op, lookup)
+		blocker := c.blocker(cl)
+		for _, w := range waiting {
+			if blocker != "" {
+				break
+			}
+			if cl.conflicts(w.cl) {
+				blocker = w.id
+			}
+		}
+		if blocker != "" {
+			waitingOn[op.ID] = blocker
+			waiting = append(waiting, pending{op.ID, cl})
+			continue
+		}
+		if free <= 0 {
+			// Out of capacity, not blocked: it keeps its place in line.
+			waiting = append(waiting, pending{op.ID, cl})
+			continue
+		}
+		claimed, err := store.MarkRunning(ctx, c.Store.DB(), op.ID)
+		if err != nil {
+			c.Log.Error("mark running", "op", op.ID, "err", err)
+			waiting = append(waiting, pending{op.ID, cl})
+			continue
+		}
+		if !claimed {
+			continue // cancelled after it was listed
+		}
+		c.begin(op.ID, cl)
+		free--
+		started = true
+		c.workers.Add(1)
+		go func() {
+			defer c.workers.Done()
+			defer c.Wake() // a finished operation may unblock queued ones
+			defer c.end(op.ID)
+			c.execute(ctx, op)
+		}()
+	}
+	c.runMu.Lock()
+	c.waitingOn = waitingOn
+	c.runMu.Unlock()
+	return started, nil
+}
+
+// appLookup returns a per-pass app lookup that loads every app with one query
+// the first time it is needed, instead of one query per queued operation.
+func (c *Controller) appLookup(ctx context.Context) func(string) (domain.App, error) {
+	var apps map[string]domain.App
+	var err error
+	return func(id string) (domain.App, error) {
+		if apps == nil && err == nil {
+			var list []domain.App
+			if list, err = store.ListApps(ctx, c.Store.DB()); err == nil {
+				apps = make(map[string]domain.App, len(list))
+				for _, a := range list {
+					apps[a.ID] = a
+				}
+			}
+		}
+		if err != nil {
+			return domain.App{}, err
+		}
+		a, ok := apps[id]
+		if !ok {
+			return a, store.ErrNotFound
+		}
+		return a, nil
+	}
+}
+
+func (c *Controller) runningCount() int {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	return len(c.running)
+}
+
+// blocker returns the id of a running operation whose claims conflict with
+// cl, or "".
+func (c *Controller) blocker(cl claims) string {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	ids := make([]string, 0, len(c.running))
+	for id := range c.running {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // deterministic answer when several conflict
+	for _, id := range ids {
+		if cl.conflicts(c.running[id]) {
+			return id
+		}
+	}
+	return ""
+}
+
+// WaitingOn returns the operation a queued operation is waiting behind, or ""
+// when it is not blocked (it is next in line, waiting for a free slot, or no
+// longer queued).
+func (c *Controller) WaitingOn(id string) string {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	return c.waitingOn[id]
+}
+
+func (c *Controller) begin(id string, cl claims) {
+	c.runMu.Lock()
+	c.running[id] = cl
+	c.runMu.Unlock()
+}
+
+func (c *Controller) end(id string) {
+	c.runMu.Lock()
+	delete(c.running, id)
+	for app, w := range c.warming {
+		if w.op == id {
+			delete(c.warming, app)
+		}
+	}
+	c.runMu.Unlock()
+}
+
+// setWarming records that op is starting app's instance and it is not ready.
+func (c *Controller) setWarming(appID, opID string) {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	if w, ok := c.warming[appID]; ok && w.op == opID {
+		return
+	}
+	c.warming[appID] = &warmState{op: opID}
+}
+
+// clearWarming records that app's instance became ready. It reports whether
+// an edge apply left the app's route unavailable meanwhile.
+func (c *Controller) clearWarming(appID string) (edgeStale bool) {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	if w, ok := c.warming[appID]; ok {
+		edgeStale = w.edgeStale
+		delete(c.warming, appID)
+	}
+	return edgeStale
+}
+
+// holdRoute reports whether app's route must render as unavailable because
+// its instance is warming. forApply records that the render will be promoted,
+// so the warming operation refreshes the edge once the app is ready.
+func (c *Controller) holdRoute(appID string, forApply bool) bool {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	w, ok := c.warming[appID]
+	if ok && forApply {
+		w.edgeStale = true
+	}
+	return ok
+}
+
+func (c *Controller) anyWarming() bool {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	return len(c.warming) > 0
+}
+
+func (c *Controller) runningIDs() []string {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	ids := make([]string, 0, len(c.running))
+	for id := range c.running {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// Shutdown stops accepting work and waits up to timeout for the executing
+// operations to reach completion. It never tears down the data plane.
 func (c *Controller) Shutdown(timeout time.Duration) {
 	c.stopping.Store(true)
 	c.Wake()
 	select {
 	case <-c.done:
 	case <-time.After(timeout):
-		c.Log.Warn("shutdown timeout; current operation will be marked interrupted on next start", "op", c.current.Load())
+		c.Log.Warn("shutdown timeout; running operations will be marked interrupted on next start", "ops", c.runningIDs())
 	}
 }
 
 // Idle reports whether no operation is executing (tests).
-func (c *Controller) Idle() bool { return c.current.Load() == "" }
+func (c *Controller) Idle() bool { return c.runningCount() == 0 }
 
+// execute runs an operation the dispatcher already claimed (marked running).
 func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	db := c.Store.DB()
-	claimed, err := store.MarkRunning(ctx, db, op.ID)
-	if err != nil {
-		c.Log.Error("mark running", "op", op.ID, "err", err)
-		return
-	}
-	if !claimed {
-		return // cancelled (or otherwise finished) after it was dequeued
-	}
-	c.current.Store(op.ID)
-	defer c.current.Store("")
 	c.notify(op.ID)
 	run := &Run{c: c, Op: op}
 	h := c.handlers[op.Kind]

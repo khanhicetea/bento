@@ -5,9 +5,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -155,5 +158,53 @@ func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 	pass(t, h, r)
 	if st, ok := r.Statuses()["service:redis"]; ok {
 		t.Fatalf("a successful ensure must clear the budget, got %+v", st)
+	}
+}
+
+// After a host reboot every app needs a reconcile; one slow readiness wait
+// must not queue the others behind it.
+func TestDownAppsAreReconciledInParallel(t *testing.T) {
+	h := testutil.New(t)
+	ctx := context.Background()
+	var apps []domain.App
+	for _, slug := range []string{"alpha", "beta", "gamma"} {
+		app, op, err := h.C.CreateApp(ctx, operations.CreateAppInput{Slug: slug,
+			Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}}}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.Wait(op.ID)
+		op, err = h.C.StartApp(ctx, app.ID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := h.Wait(op.ID); got.State != store.OpSucceeded {
+			t.Fatal(got.ErrorMessage)
+		}
+		apps = append(apps, app)
+	}
+	for _, app := range apps {
+		h.Fake.Delete(h.C.Names.AppContainer(app.ID))
+	}
+	var inflight, peak atomic.Int32
+	h.Fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
+		if len(req.Cmd) > 0 && strings.HasSuffix(req.Cmd[0], "bento-ready") {
+			n := inflight.Add(1)
+			for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+			}
+			time.Sleep(60 * time.Millisecond)
+			inflight.Add(-1)
+		}
+		return docker.ExecResult{}
+	}
+	r := New(h.C, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pass(t, h, r)
+	for _, app := range apps {
+		if obs, _ := h.C.Observe(ctx, app); !obs.Running {
+			t.Fatalf("%s was not recreated", app.Slug)
+		}
+	}
+	if peak.Load() < 2 {
+		t.Fatalf("reconcile operations for different apps never overlapped (peak %d)", peak.Load())
 	}
 }

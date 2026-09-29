@@ -138,7 +138,11 @@ function TrackedOperation({
           <span className="text-muted-foreground">· {op.state}</span>
         </div>
         <div className="truncate text-xs text-muted-foreground">
-          {failed ? op.errorMessage : (lastEvent ?? op.phase ?? "queued")}
+          {failed
+            ? op.errorMessage
+            : op.waitingOn
+              ? "Waiting for an earlier operation"
+              : (lastEvent ?? op.phase ?? "queued")}
         </div>
         {failed && op.guidance && <div className="mt-1 text-xs">{op.guidance}</div>}
       </div>

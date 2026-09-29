@@ -69,22 +69,45 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 }
 
 // ImageManager resolves managed images and caches their identity files.
+// Operations run in parallel: builds of the same tag are serialized (one
+// builds, the rest find it), builds of different tags run concurrently, and
+// Remove excludes every Ensure.
 type ImageManager struct {
 	Engine docker.Engine
 	Layout platform.Layout
 	Names  Names
-	mu     sync.Mutex
+
+	prune sync.RWMutex // Ensure holds it shared, Remove exclusively
+	mu    sync.Mutex   // guards tags
+	tags  map[string]*sync.Mutex
+}
+
+func (m *ImageManager) tagLock(tag string) *sync.Mutex {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.tags == nil {
+		m.tags = map[string]*sync.Mutex{}
+	}
+	l, ok := m.tags[tag]
+	if !ok {
+		l = &sync.Mutex{}
+		m.tags[tag] = l
+	}
+	return l
 }
 
 // Ensure returns the image ID for key, building it through the Engine API if
 // the deterministic tag is absent. It never shells out to the Docker CLI.
 func (m *ImageManager) Ensure(ctx context.Context, key domain.ImageKey, progress func(string)) (string, ImageSpec, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	spec, err := PlanImage(key)
 	if err != nil {
 		return "", spec, err
 	}
+	m.prune.RLock()
+	defer m.prune.RUnlock()
+	l := m.tagLock(spec.Tag())
+	l.Lock()
+	defer l.Unlock()
 	if id, ok, err := m.Engine.ImageID(ctx, spec.Tag()); err != nil {
 		return "", spec, err
 	} else if ok {
@@ -109,8 +132,8 @@ var ErrImageNotPrunable = errors.New("image is not prunable")
 // lock so it cannot race a concurrent Ensure; the Engine additionally refuses
 // removal while any container references the image.
 func (m *ImageManager) Remove(ctx context.Context, id string) (docker.ImageSummary, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.prune.Lock()
+	defer m.prune.Unlock()
 	containers, err := m.Engine.List(ctx, nil)
 	if err != nil {
 		return docker.ImageSummary{}, err

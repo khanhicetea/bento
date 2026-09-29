@@ -111,6 +111,14 @@ func PlanNetworks(used []netip.Prefix) (NetworkSettings, error) {
 
 // NetworkPlan returns the persisted plan, choosing one on first use.
 func (c *Controller) NetworkPlan(ctx context.Context) (NetworkSettings, error) {
+	c.netMu.Lock()
+	defer c.netMu.Unlock()
+	return c.networkPlan(ctx)
+}
+
+// networkPlan is NetworkPlan for callers holding netMu: choosing a plan is a
+// read-then-write that parallel operations must not interleave.
+func (c *Controller) networkPlan(ctx context.Context) (NetworkSettings, error) {
 	var ns NetworkSettings
 	found, err := store.GetSetting(ctx, c.Store.DB(), networkSettingKey, &ns)
 	if err != nil || found {
@@ -129,7 +137,9 @@ func (c *Controller) NetworkPlan(ctx context.Context) (NetworkSettings, error) {
 // EnsureNetworks creates the stack networks if missing and refuses to use a
 // same-named network that this stack does not own.
 func (c *Controller) EnsureNetworks(ctx context.Context) (NetworkSettings, error) {
-	ns, err := c.NetworkPlan(ctx)
+	c.netMu.Lock()
+	defer c.netMu.Unlock()
+	ns, err := c.networkPlan(ctx)
 	if err != nil {
 		return ns, err
 	}

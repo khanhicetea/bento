@@ -34,8 +34,14 @@ type ServeOptions struct {
 	Origins []string
 	// UtilsListen are the utils listener addresses (see ParseUtilsListen).
 	UtilsListen []string
-	Version     string
+	// OpConcurrency bounds operations executed at once (0 = default).
+	OpConcurrency int
+	Version       string
 }
+
+// MaxOpConcurrency caps --op-concurrency: parallel operations share one
+// SQLite connection and one Docker daemon, so more mostly adds contention.
+const MaxOpConcurrency = 16
 
 // ValidateListen requires a loopback address. Non-loopback exposure is
 // rejected in this release: loopback is not authentication, and remote
@@ -101,6 +107,12 @@ func Serve(opts ServeOptions) error {
 	if err != nil {
 		return err
 	}
+	if opts.OpConcurrency == 0 {
+		opts.OpConcurrency = operations.DefaultConcurrency
+	}
+	if opts.OpConcurrency < 1 || opts.OpConcurrency > MaxOpConcurrency {
+		return fmt.Errorf("--op-concurrency must be between 1 and %d", MaxOpConcurrency)
+	}
 	if _, err := os.Stat(layout.Database()); err != nil {
 		if m := stack.DetectForeign(layout.Root); m != "" {
 			return fmt.Errorf("%s is not a Bento stack root (found %s); it was left untouched", layout.Root, m)
@@ -131,7 +143,7 @@ func Serve(opts ServeOptions) error {
 		log.Info("docker engine", "version", v.ServerVersion, "api", v.APIVersion, "arch", v.Arch)
 	}
 	ctrl, err := operations.NewController(operations.Deps{Store: st, Engine: engine, Layout: layout, HostIDs: platform.FileHostIDs{}, Log: log,
-		UtilsAppsPort: appsPort(utilsAddrs)})
+		UtilsAppsPort: appsPort(utilsAddrs), Concurrency: opts.OpConcurrency})
 	if err != nil {
 		return err
 	}
@@ -187,7 +199,7 @@ func Serve(opts ServeOptions) error {
 		return err
 	}
 	go utils.followApps(ctx)
-	log.Info("bento backend ready", "stack", ctrl.Stack.Name, "root", layout.Root, "listen", tcp.Addr().String(), "control", layout.ControlSocket(), "utils", utilsListen, "ui", webui.Built())
+	log.Info("bento backend ready", "stack", ctrl.Stack.Name, "root", layout.Root, "listen", tcp.Addr().String(), "control", layout.ControlSocket(), "utils", utilsListen, "opConcurrency", opts.OpConcurrency, "ui", webui.Built())
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)

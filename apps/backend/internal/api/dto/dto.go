@@ -429,21 +429,24 @@ type OperationEvent struct {
 }
 
 type Operation struct {
-	ID           string           `json:"id"`
-	Kind         string           `json:"kind"`
-	TargetKind   string           `json:"targetKind"`
-	TargetID     string           `json:"targetId"`
-	State        OperationState   `json:"state"`
-	Phase        string           `json:"phase"`
-	Origin       string           `json:"origin"`
-	ErrorCode    string           `json:"errorCode,omitempty"`
-	ErrorMessage string           `json:"errorMessage,omitempty"`
-	Guidance     string           `json:"guidance,omitempty"`
-	Result       map[string]any   `json:"result,omitempty"`
-	CreatedAt    string           `json:"createdAt"`
-	StartedAt    string           `json:"startedAt,omitempty"`
-	FinishedAt   string           `json:"finishedAt,omitempty"`
-	Events       []OperationEvent `json:"events,omitempty"`
+	ID           string         `json:"id"`
+	Kind         string         `json:"kind"`
+	TargetKind   string         `json:"targetKind"`
+	TargetID     string         `json:"targetId"`
+	State        OperationState `json:"state"`
+	Phase        string         `json:"phase"`
+	Origin       string         `json:"origin"`
+	ErrorCode    string         `json:"errorCode,omitempty"`
+	ErrorMessage string         `json:"errorMessage,omitempty"`
+	Guidance     string         `json:"guidance,omitempty"`
+	Result       map[string]any `json:"result,omitempty"`
+	CreatedAt    string         `json:"createdAt"`
+	StartedAt    string         `json:"startedAt,omitempty"`
+	FinishedAt   string         `json:"finishedAt,omitempty"`
+	// WaitingOn is set on a queued operation that waits behind another
+	// operation touching the same app, service or stack-wide state.
+	WaitingOn string           `json:"waitingOn,omitempty"`
+	Events    []OperationEvent `json:"events,omitempty"`
 }
 
 type OperationList struct {

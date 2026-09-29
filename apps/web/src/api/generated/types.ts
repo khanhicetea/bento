@@ -395,6 +395,11 @@ export interface Operation {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  /**
+   * WaitingOn is set on a queued operation that waits behind another
+   * operation touching the same app, service or stack-wide state.
+   */
+  waitingOn?: string;
   events?: OperationEvent[];
 }
 export interface OperationList {

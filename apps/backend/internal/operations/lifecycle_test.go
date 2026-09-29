@@ -35,6 +35,13 @@ func requireRoot(t *testing.T) {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil)
+}
+
+// newHarnessWith is newHarness with a hook to adjust the controller deps
+// (concurrency, a wrapped engine) before the executor starts.
+func newHarnessWith(t *testing.T, mutate func(*Deps)) *harness {
+	t.Helper()
 	requireRoot(t)
 	layout := platform.Layout{Root: t.TempDir()}
 	for dir, mode := range layout.SkeletonDirs() {
@@ -52,12 +59,16 @@ func newHarness(t *testing.T) *harness {
 	}
 	fake := docker.NewFake()
 	fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{Stdout: []byte("ready")} }
-	c, err := NewController(Deps{
+	deps := Deps{
 		Store: s, Engine: fake, Layout: layout, HostIDs: platform.NoHostIDs{},
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Probe:        func(context.Context, string) (int, error) { return 200, nil },
 		ReadyTimeout: 2 * time.Second, ServiceReadyTimeout: 300 * time.Millisecond, PollInterval: 20 * time.Millisecond,
-	})
+	}
+	if mutate != nil {
+		mutate(&deps)
+	}
+	c, err := NewController(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

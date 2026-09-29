@@ -182,7 +182,7 @@ func (s *Server) webUI() http.Handler {
 func (s *Server) accepted(w http.ResponseWriter, op store.Operation, app *dto.App) {
 	url := "/api/v1/operations/" + op.ID
 	w.Header().Set("Location", url)
-	writeJSON(w, http.StatusAccepted, dto.Accepted{Operation: opToDTO(op, nil), StatusURL: url, App: app})
+	writeJSON(w, http.StatusAccepted, dto.Accepted{Operation: s.opDTO(op, nil), StatusURL: url, App: app})
 }
 
 // ---- system ----
@@ -759,7 +759,7 @@ func (s *Server) handleListOps(w http.ResponseWriter, r *http.Request) {
 	}
 	out := dto.OperationList{Operations: []dto.Operation{}}
 	for _, o := range ops {
-		out.Operations = append(out.Operations, opToDTO(o, nil))
+		out.Operations = append(out.Operations, s.opDTO(o, nil))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -780,7 +780,7 @@ func (s *Server) handleGetOp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, opToDTO(op, events))
+	writeJSON(w, http.StatusOK, s.opDTO(op, events))
 }
 
 func (s *Server) handleCancelOp(w http.ResponseWriter, r *http.Request) {
@@ -795,7 +795,7 @@ func (s *Server) handleCancelOp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.C.Wake()
-	writeJSON(w, http.StatusOK, opToDTO(op, nil))
+	writeJSON(w, http.StatusOK, s.opDTO(op, nil))
 }
 
 // ---- services ----

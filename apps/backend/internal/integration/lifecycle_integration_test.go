@@ -237,3 +237,76 @@ func TestIntegrationAppLifecycle(t *testing.T) {
 		t.Fatal("stopped app was resurrected")
 	}
 }
+
+// Operations on different apps run in parallel: two starts submitted together
+// overlap in time, and so do the reconcile operations that recreate both
+// after their instances are deleted. Both apps end up serving.
+func TestIntegrationParallelAppOperations(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	node := domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}, Port: 3000}}
+	apps := []domain.App{e.create("left", node), e.create("right", node)}
+	for _, a := range apps {
+		writeFile(t, filepath.Join(e.layout.AppCode(a.Slug), "s.js"),
+			"require('http').createServer((q,s)=>s.end('"+a.Slug+"')).listen(3000,'0.0.0.0')", a.UID)
+	}
+	overlap := func(what string, ops []store.Operation) {
+		t.Helper()
+		a, b := ops[0], ops[1]
+		if !(a.StartedAt < b.FinishedAt && b.StartedAt < a.FinishedAt) {
+			t.Fatalf("%s did not overlap: [%s .. %s] vs [%s .. %s]", what, a.StartedAt, a.FinishedAt, b.StartedAt, b.FinishedAt)
+		}
+	}
+	serves := func() {
+		t.Helper()
+		for _, a := range apps {
+			obs, _ := e.c.Observe(ctx, a)
+			if !obs.Running {
+				t.Fatalf("%s is not running", a.Slug)
+			}
+			resp, err := http.Get(fmt.Sprintf("http://%s:%d/", obs.IP, a.HTTPPort()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if string(b) != a.Slug {
+				t.Fatalf("%s served %q", a.Slug, b)
+			}
+		}
+	}
+
+	var submitted []store.Operation
+	for _, a := range apps {
+		op, err := e.c.StartApp(ctx, a.ID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		submitted = append(submitted, op)
+	}
+	var started []store.Operation
+	for _, op := range submitted {
+		started = append(started, e.wait(op, nil))
+	}
+	overlap("start operations", started)
+	serves()
+
+	for _, a := range apps {
+		obs, _ := e.c.Observe(ctx, a)
+		e.sdk.Remove(ctx, obs.ContainerID)
+	}
+	r := reconcile.New(e.c, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := r.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var reconciles []store.Operation
+	for _, a := range apps {
+		ops, _ := store.ListOperations(ctx, e.s.DB(), store.OpFilter{TargetID: a.ID, States: []store.OpState{store.OpQueued, store.OpRunning, store.OpSucceeded}, Limit: 1})
+		if len(ops) != 1 || ops[0].Kind != operations.KindAppReconcile {
+			t.Fatalf("%s: reconciler did not submit a reconcile operation: %+v", a.Slug, ops)
+		}
+		reconciles = append(reconciles, e.wait(ops[0], nil))
+	}
+	overlap("reconcile operations", reconciles)
+	serves()
+}

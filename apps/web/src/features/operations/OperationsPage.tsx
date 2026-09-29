@@ -63,7 +63,10 @@ export function OperationsPage({ selectedId }: { selectedId?: string }) {
                     <span className="row__main">
                       <strong>{describeOp(op)}</strong>
                       <small className={op.errorMessage ? "text-destructive!" : ""}>
-                        {op.errorMessage || `${op.origin} · ${formatDuration(op.startedAt, op.finishedAt)}`}
+                        {op.errorMessage ||
+                          (op.waitingOn
+                            ? `${op.origin} · waiting for an earlier operation`
+                            : `${op.origin} · ${formatDuration(op.startedAt, op.finishedAt)}`)}
                       </small>
                     </span>
                     <span className="row__meta max-sm:hidden" title={op.createdAt}>
@@ -126,6 +129,15 @@ function OperationDetail({ id }: { id: string }) {
           </div>
         ))}
       </dl>
+      {op.waitingOn && (
+        <p className="rounded-lg border bg-muted/40 p-4 text-sm">
+          Queued behind{" "}
+          <Link href={`/activity/${op.waitingOn}`} className="font-medium underline">
+            an earlier operation
+          </Link>{" "}
+          on the same app, data service, or stack-wide state. It starts when that one finishes.
+        </p>
+      )}
       {(op.errorMessage || op.guidance || cancel.error) && (
         <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
           {op.errorMessage && <p className="text-destructive">{op.errorMessage}</p>}

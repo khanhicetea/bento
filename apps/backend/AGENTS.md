@@ -8,8 +8,9 @@ Rules for coding agents working in `apps/backend`. They extend the root `AGENTS.
 
 One static Go binary, `bento`:
 
-- `bento serve` — the resident backend for one stack root: SQLite intent (`bento.db`), a single operation executor, a
-  reconciler, REST API + embedded UI on a loopback TCP port, and a root-only Unix control socket for the CLI.
+- `bento serve` — the resident backend for one stack root: SQLite intent (`bento.db`), an operation executor (runs
+  operations in parallel only when their claims are disjoint), a reconciler, REST API + embedded UI on a loopback TCP
+  port, and a root-only Unix control socket for the CLI.
 - `bento init` / `bento import` — offline commands that take the same stack lock.
 - Every other subcommand is a thin client of the running backend over `run/bento.sock`.
 
@@ -73,6 +74,12 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 
 ## Gotchas learned the hard way
 
+- **Operations run in parallel only if `operations/claims.go` says so.** An unlisted kind is global (runs alone).
+  Handlers of parallel kinds (`app.reconcile|start|restart|update|deploy|stop`, `service.create|reconcile`) share the
+  edge, the network plan, image builds and the Redis ACL only through `applyEdge` (`edgeMu`), `NetworkPlan`/
+  `EnsureNetworks` (`netMu`), `Images.Ensure` (per-tag lock) and `syncRedisACL` (`aclMu`): never write those outside
+  these functions. Grants (`provisionRelational`) write shared data services and are only for global kinds; a parallel
+  kind that could provision (an unprovisioned `start`/`update`) is classified global.
 - **Container spec changes:** any change to `AppContainerSpec` output must bump `specVersion` in `runtime/spec.go`.
   Every running app is then replaced (one at a time) on its next start/update or by the reconciler — mention this in
   your change summary. Secret material must influence the fingerprint only via `App.CredentialsGeneration`.

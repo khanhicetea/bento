@@ -172,6 +172,37 @@ backend stopped, edge traffic and scheduled jobs continued.
 - Not verified: a real cloud backend, an OAuth backend's token refresh writing back to the config, and the rclone shell
   in a real browser.
 
+## Parallel operation execution (2026-09-29; fake engine plus live Docker 29.8.1, disposable root)
+
+- The executor runs operations with disjoint claims in parallel (up to `Deps.Concurrency`, default 4); see
+  `architecture.md`. `go test -race` over `internal/operations` (`parallel_test.go`) and `internal/reconcile`, as root,
+  against `docker.Fake`: operations on different apps overlap; operations on one app never do; the concurrency limit is
+  honoured for 1 and 2; a global operation waits for running work and nothing queued behind it overtakes it; an app
+  bound to a data service waits for an earlier queued operation on that service while an unrelated app does not;
+  `Shutdown` waits for every running operation; parallel `EnsureNetworks` creates each network once; `applyEdge` is
+  exclusive; an app being started is not routed by another operation's edge apply until it is ready; every registered
+  kind not explicitly reviewed is global.
+- Each guard (shared service claims, `netMu`, `edgeMu`, warming exclusion, the queue-order rule, the claim table) was
+  removed in turn and its test failed.
+- `TestIntegrationParallelAppOperations` (real Docker, `node:24` HTTP apps): two starts submitted together ran with
+  overlapping start/finish intervals and both served; after both instances were deleted, one reconciler pass submitted
+  two `app.reconcile` operations that also overlapped and both apps served again. `TestIntegrationAppLifecycle` still
+  passes with the new executor.
+- Follow-up (same day): a restart that overlapped another operation's edge apply left a published route "unavailable"
+  until the reconciler repaired it (reproduced with the fake engine: `EdgeConfigDrift` true after the restart); the
+  warming operation now restores it (`TestRestartRestoresRouteHeldDuringBoot`), and warming apps are not reported as
+  drift. `app.update` and `app.deploy` became parallel kinds (`TestDeploysOfDifferentAppsRunInParallel`,
+  `TestUpdatesOfDifferentAppsRunInParallel`); image builds lock per tag (`TestEnsureBuildsDifferentTagsConcurrently…`,
+  `TestRemoveExcludesEnsure`); `syncRedisACL` is serialized (`TestRedisACLSyncsAreSerialized`); queued operations report
+  `waitingOn` through the API (`TestQueuedOperationReportsWaitingOn`); `--op-concurrency` is range-checked. Each new
+  guard was removed in turn and its test failed. Negative dispatch assertions wait for a dispatch pass instead of
+  sleeping.
+- Found while testing: `TestToolWriteDoesNotAbsorbScopedReload` failed about 1 in 2000 runs because the random vacuum
+  slot assigned at app creation could equal the slot the test set; fixed in the test helper.
+- Not verified: parallel operations with a real edge (host ports 80/443 were not used) and with real MySQL/PostgreSQL
+  services; parallel deploys against a real git host; two different runtime images building concurrently on real
+  Docker; behaviour under a real host reboot with many apps; throughput gain (only overlap was measured).
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).

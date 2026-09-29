@@ -67,7 +67,11 @@ func (c *Controller) provisionRelational(ctx context.Context, b domain.Binding) 
 
 // syncRedisACL rewrites the Redis ACL file from all app identities and
 // reloads it when the Redis service is running.
+// Operations running in parallel may call it; aclMu keeps each
+// read-apps/write-file/reload sequence whole.
 func (c *Controller) syncRedisACL(ctx context.Context) error {
+	c.aclMu.Lock()
+	defer c.aclMu.Unlock()
 	svc, err := store.GetService(ctx, c.Store.DB(), "redis")
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
