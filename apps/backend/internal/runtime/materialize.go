@@ -120,13 +120,13 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 			file{"fastcgi.conf", fastcgi, 0o440},
 			file{"php-fpm.conf", pool, 0o440},
 		)
-		m.FrontendHash = platform.SHA256Hex(append(append([]byte{}, frontend...), fastcgi...))
+		m.FrontendHash = platform.SHA256HexConcat(frontend, fastcgi)
 		m.PoolHash = platform.SHA256Hex(pool)
 	}
 
 	passwd, group := identityFiles(app, ctx.ImagePasswd, ctx.ImageGroup)
 	identity = []file{{"passwd", passwd, 0o444}, {"group", group, 0o444}}
-	m.IdentityHash = platform.SHA256Hex(append(append([]byte{}, passwd...), group...))
+	m.IdentityHash = platform.SHA256HexConcat(passwd, group)
 	return config, identity, m, nil
 }
 

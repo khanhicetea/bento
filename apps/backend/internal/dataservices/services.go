@@ -238,7 +238,14 @@ func (m *Manager) SQL(ctx context.Context, s domain.DataService, containerID, da
 	return strings.TrimSpace(string(res.Stdout)), nil
 }
 
-var identPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+// Validation patterns are compiled once: WriteRedisConfig checks every Redis
+// identity on each write and ProvisionBinding each generated password.
+var (
+	identPattern       = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+	passwordPattern    = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+	redisUserPattern   = regexp.MustCompile(`^[a-z0-9-]+$`)
+	redisPrefixPattern = regexp.MustCompile(`^[a-z0-9-]+:$`)
+)
 
 func ident(s string) (string, error) {
 	if !identPattern.MatchString(s) {
@@ -267,7 +274,7 @@ func (m *Manager) ProvisionBinding(
 	if err != nil {
 		return err
 	}
-	if !regexp.MustCompile(`^[A-Za-z0-9]+$`).MatchString(b.Password) {
+	if !passwordPattern.MatchString(b.Password) {
 		return errors.New("generated password has an unexpected format")
 	}
 	switch s.Engine {
@@ -433,8 +440,7 @@ func (m *Manager) WriteRedisConfig(service string, users []RedisUser) error {
 	var acl bytes.Buffer
 	fmt.Fprintf(&acl, "user default on sanitize-payload #%s ~* &* +@all\n", platform.SHA256Hex([]byte(admin)))
 	for _, u := range users {
-		validUser := regexp.MustCompile(`^[a-z0-9-]+$`).MatchString(u.Username)
-		if !validUser || !regexp.MustCompile(`^[a-z0-9-]+:$`).MatchString(u.Prefix) {
+		if !redisUserPattern.MatchString(u.Username) || !redisPrefixPattern.MatchString(u.Prefix) {
 			return fmt.Errorf("invalid redis identity %q", u.Username)
 		}
 		// INFO is read-only and called on connect by many clients (BullMQ,

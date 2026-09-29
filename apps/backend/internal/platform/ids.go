@@ -66,6 +66,18 @@ func SHA256Hex(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// SHA256HexConcat hashes the concatenation of parts without building it: the
+// result equals SHA256Hex of the joined bytes, so fingerprints that used the
+// joined form are unchanged.
+func SHA256HexConcat(parts ...[]byte) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write(p) // hash.Hash.Write never returns an error
+	}
+	var sum [sha256.Size]byte
+	return hex.EncodeToString(h.Sum(sum[:0]))
+}
+
 // FormatTime is the single wire/storage timestamp representation: RFC 3339 UTC
 // with millisecond precision.
 func FormatTime(t time.Time) string {
