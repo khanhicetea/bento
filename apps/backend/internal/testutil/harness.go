@@ -28,6 +28,13 @@ type Harness struct {
 // provisioning creates app-owned directories.
 func New(t *testing.T) *Harness {
 	t.Helper()
+	return NewWith(t, nil)
+}
+
+// NewWith is New with a hook to adjust the controller deps (for example to
+// wrap the engine) before the executor starts.
+func NewWith(t *testing.T, mutate func(*operations.Deps)) *Harness {
+	t.Helper()
 	if os.Geteuid() != 0 {
 		t.Skip("requires root")
 	}
@@ -45,12 +52,16 @@ func New(t *testing.T) *Harness {
 	store.SetMeta(ctx, s.DB(), "stack_id", "stest")
 	store.SetMeta(ctx, s.DB(), "stack_name", "test")
 	fake := docker.NewFake()
-	c, err := operations.NewController(operations.Deps{
+	deps := operations.Deps{
 		Store: s, Engine: fake, Layout: layout, HostIDs: platform.NoHostIDs{},
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Probe:        func(context.Context, string) (int, error) { return 200, nil },
 		ReadyTimeout: 2 * time.Second, PollInterval: 20 * time.Millisecond,
-	})
+	}
+	if mutate != nil {
+		mutate(&deps)
+	}
+	c, err := operations.NewController(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

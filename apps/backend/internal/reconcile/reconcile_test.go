@@ -17,7 +17,11 @@ import (
 )
 
 func setup(t *testing.T) (*testutil.Harness, *Reconciler, domain.App) {
-	h := testutil.New(t)
+	return setupWith(t, nil)
+}
+
+func setupWith(t *testing.T, mutate func(*operations.Deps)) (*testutil.Harness, *Reconciler, domain.App) {
+	h := testutil.NewWith(t, mutate)
 	ctx := t.Context()
 	app, op, err := h.C.CreateApp(ctx, operations.CreateAppInput{Slug: "shop",
 		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}}}, "")

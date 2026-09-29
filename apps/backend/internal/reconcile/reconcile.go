@@ -51,10 +51,21 @@ type Reconciler struct {
 	// BaseBackoff is the first retry delay; it doubles per failure up to 30m.
 	BaseBackoff time.Duration
 
+	// passMu serializes passes. A pass works on its own copy of the targets
+	// (work) and publishes it when it ends, so Status, Statuses and
+	// ResetBudget never wait for its Docker and store calls.
+	passMu sync.Mutex
+	work   map[string]*target // guarded by passMu
+
+	// mu guards the published targets, resets and passes. Published targets
+	// are never mutated; a pass mutates only its copies.
 	mu      sync.Mutex
 	targets map[string]*target
-	trigger chan struct{}
+	// resets holds the ids reset while a pass is in flight; the pass drops
+	// them when it publishes, as if the reset came after the pass.
+	resets  map[string]bool
 	passes  int
+	trigger chan struct{}
 }
 
 func New(c *operations.Controller, log *slog.Logger) *Reconciler {
@@ -65,6 +76,7 @@ func New(c *operations.Controller, log *slog.Logger) *Reconciler {
 		Debounce:    2 * time.Second,
 		BaseBackoff: 30 * time.Second,
 		targets:     map[string]*target{},
+		resets:      map[string]bool{},
 		trigger:     make(chan struct{}, 1),
 	}
 }
@@ -224,13 +236,41 @@ func (r *Reconciler) watchEvents(ctx context.Context) {
 	}
 }
 
+// get returns the in-flight pass's target for id, starting a fresh budget
+// when the id is new or its configuration generation changed.
 func (r *Reconciler) get(id string, gen int64) *target {
-	t, ok := r.targets[id]
+	t, ok := r.work[id]
 	if !ok || (gen != 0 && t.Generation != gen) {
 		t = &target{Generation: gen}
-		r.targets[id] = t
+		r.work[id] = t
 	}
 	return t
+}
+
+// beginPass copies the published targets into the pass's working set.
+// Callers hold passMu.
+func (r *Reconciler) beginPass() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	clear(r.resets)
+	r.work = make(map[string]*target, len(r.targets))
+	for id, t := range r.targets {
+		c := *t
+		r.work[id] = &c
+	}
+}
+
+// endPass publishes the working set, minus targets reset during the pass.
+// Callers hold passMu.
+func (r *Reconciler) endPass() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id := range r.resets {
+		delete(r.work, id)
+	}
+	clear(r.resets)
+	r.targets, r.work = r.work, nil
+	r.passes++
 }
 
 // settle folds the outcome of a previously submitted reconcile operation.
@@ -297,15 +337,17 @@ func (r *Reconciler) ResetBudget(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.targets, id)
+	r.resets[id] = true
 }
 
 // Pass performs one full desired-versus-observed comparison.
 func (r *Reconciler) Pass(ctx context.Context) error {
-	r.mu.Lock()
-	defer func() {
-		r.passes++
-		r.mu.Unlock()
-	}()
+	r.passMu.Lock()
+	defer r.passMu.Unlock()
+	r.beginPass()
+	// Publish also after an error or a panic: what the pass learned so far
+	// is kept, as when it updated the targets in place.
+	defer r.endPass()
 	db := r.C.Store.DB()
 	services, err := store.ListServices(ctx, db)
 	if err != nil {
