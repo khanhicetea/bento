@@ -1375,31 +1375,39 @@ func (c *Controller) handlePermissions(ctx context.Context, r *Run) (any, error)
 	return map[string]any{"mode": req.Mode, "issues": issues}, nil
 }
 
-// PlannedGeneration computes the intended fingerprint without writing files
-// or building images. ok is false when the managed image does not exist yet.
-func (c *Controller) PlannedGeneration(ctx context.Context, app domain.App) (string, bool, error) {
+// planContext resolves what rendering an app's config needs: the managed
+// image id and the app context built from its identity base and the network
+// plan. ok is false when the managed image does not exist yet.
+func (c *Controller) planContext(ctx context.Context, app domain.App) (string, runtime.AppContext, bool, error) {
 	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
 	if err != nil {
-		return "", false, err
+		return "", runtime.AppContext{}, false, err
 	}
 	imageID, ok, err := c.Engine.ImageID(ctx, spec.Tag())
 	if err != nil || !ok {
-		return "", false, err
+		return "", runtime.AppContext{}, false, err
 	}
 	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
 	if err != nil {
-		return "", false, err
+		return "", runtime.AppContext{}, false, err
 	}
 	ns, err := c.NetworkPlan(ctx)
 	if err != nil {
-		return "", false, err
+		return "", runtime.AppContext{}, false, err
 	}
-	_, _, m, err := runtime.RenderAppConfig(
-		app,
-		runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
-	)
+	actx := runtime.AppContext{
+		Layout:         c.Layout,
+		TrustedProxies: ns.TrustedProxies(),
+		ImagePasswd:    passwd,
+		ImageGroup:     group,
+	}
+	return imageID, actx, true, nil
+}
+
+func (c *Controller) plannedGeneration(app domain.App, imageID string, actx runtime.AppContext) (string, error) {
+	_, _, m, err := runtime.RenderAppConfig(app, actx)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	return runtime.Fingerprint(runtime.AppInputs{
 		App:          app,
@@ -1407,32 +1415,56 @@ func (c *Controller) PlannedGeneration(ctx context.Context, app domain.App) (str
 		Layout:       c.Layout,
 		ImageID:      imageID,
 		Materialized: m,
-	}), true, nil
+	}), nil
+}
+
+// PlannedGeneration computes the intended fingerprint without writing files
+// or building images. ok is false when the managed image does not exist yet.
+func (c *Controller) PlannedGeneration(ctx context.Context, app domain.App) (string, bool, error) {
+	imageID, actx, ok, err := c.planContext(ctx, app)
+	if err != nil || !ok {
+		return "", false, err
+	}
+	gen, err := c.plannedGeneration(app, imageID, actx)
+	if err != nil {
+		return "", false, err
+	}
+	return gen, true, nil
 }
 
 // AppConfigDrift reports whether generated config on disk differs from what
 // the embedded templates render now. It never writes.
 func (c *Controller) AppConfigDrift(ctx context.Context, app domain.App) (bool, error) {
-	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
-	if err != nil {
-		return false, err
-	}
-	imageID, ok, err := c.Engine.ImageID(ctx, spec.Tag())
+	_, actx, ok, err := c.planContext(ctx, app)
 	if err != nil || !ok {
 		return !ok, err
 	}
-	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
+	return runtime.AppConfigDrift(app, actx)
+}
+
+// RunningAppDrift reports whether a running app whose container carries
+// observedGen needs reconciling: the managed image is missing, the planned
+// fingerprint differs, or (template-only changes, applied by scoped reloads)
+// the generated config drifted. It is PlannedGeneration followed by
+// AppConfigDrift, resolving the image id, identity base and network plan
+// once instead of twice: the reconciler runs it for every running app on
+// every pass, and the image lookup is a Docker round trip.
+func (c *Controller) RunningAppDrift(ctx context.Context, app domain.App, observedGen string) (bool, error) {
+	imageID, actx, ok, err := c.planContext(ctx, app)
 	if err != nil {
 		return false, err
 	}
-	ns, err := c.NetworkPlan(ctx)
+	if !ok {
+		return true, nil
+	}
+	gen, err := c.plannedGeneration(app, imageID, actx)
 	if err != nil {
 		return false, err
 	}
-	return runtime.AppConfigDrift(
-		app,
-		runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
-	)
+	if gen != observedGen {
+		return true, nil
+	}
+	return runtime.AppConfigDrift(app, actx)
 }
 
 // Observe exposes observed state to status readers.

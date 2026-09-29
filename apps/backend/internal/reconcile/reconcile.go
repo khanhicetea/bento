@@ -406,21 +406,11 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		case domain.DesiredRunning:
 			if !obs.Exists || !obs.Running {
 				need = true
-			} else {
-				gen, ok, err := r.C.PlannedGeneration(ctx, app)
-				if err != nil {
-					t.LastError = err.Error()
-					continue
-				}
-				// Unhealthy readiness alone never triggers recreation.
-				need = !ok || gen != obs.Generation
-				if !need {
-					// Template-only changes are applied by scoped reloads.
-					if need, err = r.C.AppConfigDrift(ctx, app); err != nil {
-						t.LastError = err.Error()
-						continue
-					}
-				}
+			} else if need, err = r.C.RunningAppDrift(ctx, app, obs.Generation); err != nil {
+				// Unhealthy readiness alone never triggers recreation: only a
+				// missing image, a changed fingerprint or config drift does.
+				t.LastError = err.Error()
+				continue
 			}
 		}
 		if need {
