@@ -19,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -441,7 +441,7 @@ func ListArtifacts(backupsDir string) ([]Artifact, error) {
 				Database: m[2], SizeBytes: info.Size(), CreatedAt: ts})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	slices.SortFunc(out, func(a, b Artifact) int { return b.CreatedAt.Compare(a.CreatedAt) })
 	return out, nil
 }
 

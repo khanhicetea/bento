@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -30,12 +31,7 @@ func appClaim(id string) string       { return "app:" + id }
 func serviceClaim(name string) string { return "service:" + name }
 
 func hasClaim(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // conflicts reports whether a and b must not run at the same time. Shared

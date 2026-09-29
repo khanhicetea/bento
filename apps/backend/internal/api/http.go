@@ -39,8 +39,7 @@ func decode(w http.ResponseWriter, r *http.Request, out any) error {
 	body := http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 	raw, err := io.ReadAll(body)
 	if err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return &apiError{status: http.StatusRequestEntityTooLarge, code: dto.ErrorCodeTooLarge, msg: "request body too large"}
 		}
 		return err
@@ -61,16 +60,14 @@ func decode(w http.ResponseWriter, r *http.Request, out any) error {
 }
 
 func jsonErr(err error) string {
-	var ute *json.UnmarshalTypeError
-	if errors.As(err, &ute) {
+	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 		return fmt.Sprintf("field %q has the wrong type or is out of range", ute.Field)
 	}
 	msg := err.Error()
 	if strings.HasPrefix(msg, "json: unknown field") {
 		return strings.TrimPrefix(msg, "json: ")
 	}
-	var se *json.SyntaxError
-	if errors.As(err, &se) {
+	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
 		return "malformed JSON"
 	}
 	return "malformed request"

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -54,7 +54,7 @@ func NewFake() *Fake {
 
 func (f *Fake) record(call string) error {
 	f.Calls = append(f.Calls, call)
-	name := strings.SplitN(call, " ", 2)[0]
+	name, _, _ := strings.Cut(call, " ")
 	if err, ok := f.FailOn[name]; ok {
 		delete(f.FailOn, name)
 		return err
@@ -406,7 +406,7 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }
 

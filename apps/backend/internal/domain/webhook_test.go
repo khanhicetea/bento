@@ -100,7 +100,7 @@ func TestParseWebhookProviders(t *testing.T) {
 
 func TestWebhookRecordKeepsRecentDeliveries(t *testing.T) {
 	var w Webhook
-	for i := 0; i < MaxWebhookDeliveries+5; i++ {
+	for i := range MaxWebhookDeliveries + 5 {
 		w.Record(WebhookDelivery{Result: "deployed", Detail: string(rune('a' + i%26))})
 	}
 	if len(w.Deliveries) != MaxWebhookDeliveries || w.Deliveries[0].Detail != string(rune('a'+(MaxWebhookDeliveries+4)%26)) {

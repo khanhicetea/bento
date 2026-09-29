@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 )
 
@@ -80,9 +81,7 @@ func (n Names) Labels(role Role, extra map[string]string) map[string]string {
 		LabelStackID: n.StackID,
 		LabelRole:    string(role),
 	}
-	for k, v := range extra {
-		l[k] = v
-	}
+	maps.Copy(l, extra)
 	return l
 }
 

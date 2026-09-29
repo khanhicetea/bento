@@ -3,7 +3,7 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 
@@ -115,7 +115,7 @@ func Fingerprint(in AppInputs) string {
 	for _, m := range appMounts(in) {
 		mounts = append(mounts, fmt.Sprintf("%s:%s:%t", m.Source, m.Target, m.ReadOnly))
 	}
-	sort.Strings(mounts)
+	slices.Sort(mounts)
 	nets := []string{in.Names.AppsNetwork()}
 	if needsDataNetwork(in.App) {
 		nets = append(nets, in.Names.DataNetwork())
@@ -168,7 +168,7 @@ func AppContainerSpec(in AppInputs, running bool) (docker.ContainerSpec, string)
 		Mounts:         appMounts(in),
 		Resources:      appResources(app.Resources),
 		LogConfig:      logConfig(),
-		Init:           boolPtr(false),
+		Init:           new(false),
 		IpcMode:        "private",
 		ShmSize:        64 << 20,
 	}
@@ -201,11 +201,9 @@ func ToolContainerSpec(in AppInputs, opID string, maxLifetime time.Duration) doc
 		Mounts:         appMounts(in),
 		Resources:      appResources(app.Resources),
 		LogConfig:      logConfig(),
-		Init:           boolPtr(true),
+		Init:           new(true),
 	}
 	return docker.ContainerSpec{
 		Name: in.Names.ToolContainer(app.ID, opID), Config: cfg, HostConfig: host, Networking: appNetworks(in),
 	}
 }
-
-func boolPtr(b bool) *bool { return &b }

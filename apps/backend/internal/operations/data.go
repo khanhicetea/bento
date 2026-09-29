@@ -56,8 +56,7 @@ func (c *Controller) provisionRelational(ctx context.Context, b domain.Binding) 
 		return err
 	}
 	if err := c.Data().ProvisionBinding(ctx, svc.DataService, id, b); err != nil {
-		var ar *dataservices.AdoptionRefused
-		if errors.As(err, &ar) {
+		if _, ok := errors.AsType[*dataservices.AdoptionRefused](err); ok {
 			return Fail("database-retained", "Choose a different database name, or prune the retained app that owns it.", "%v", err)
 		}
 		return Fail("grant-failed", "Inspect the data service; grants are idempotent and can be retried.", "%v", err)

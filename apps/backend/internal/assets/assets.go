@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -70,7 +70,7 @@ func BuildContext(kind string) ([]byte, string, error) {
 	for n := range files {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	dirs := map[string]bool{}
@@ -83,7 +83,7 @@ func BuildContext(kind string) ([]byte, string, error) {
 	for d := range dirs {
 		dirList = append(dirList, d)
 	}
-	sort.Strings(dirList)
+	slices.Sort(dirList)
 	for _, d := range dirList {
 		if err := tw.WriteHeader(&tar.Header{Name: d + "/", Typeflag: tar.TypeDir, Mode: 0o755, ModTime: fixedTime, Format: tar.FormatPAX}); err != nil {
 			return nil, "", err

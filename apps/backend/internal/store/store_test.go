@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
@@ -112,11 +111,11 @@ func (f fakeHost) Taken(id int) bool { return f[id] }
 
 func TestAllocatorNeverReusesAndSkipsHostCollisions(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	rng := domain.UIDRange{First: 10000, Last: 10005}
 	host := fakeHost{10001: true}
 	var got []int
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		err := s.Tx(ctx, func(q Q) error {
 			uid, err := AllocateUID(ctx, q, rng, host, "app"+strconv.Itoa(i), "s"+strconv.Itoa(i))
 			got = append(got, uid)
@@ -173,15 +172,13 @@ func TestAllocatorNeverReusesAndSkipsHostCollisions(t *testing.T) {
 
 func TestAllocatorConcurrentUnique(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	rng := domain.UIDRange{First: 20000, Last: 29999}
 	var mu sync.Mutex
 	seen := map[int]bool{}
 	var wg sync.WaitGroup
-	for i := 0; i < 25; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range 25 {
+		wg.Go(func() {
 			err := s.Tx(ctx, func(q Q) error {
 				uid, err := AllocateUID(ctx, q, rng, nil, "a"+strconv.Itoa(i), "s"+strconv.Itoa(i))
 				if err == nil {
@@ -197,7 +194,7 @@ func TestAllocatorConcurrentUnique(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-		}(i)
+		})
 	}
 	wg.Wait()
 	if len(seen) != 25 {
@@ -207,7 +204,7 @@ func TestAllocatorConcurrentUnique(t *testing.T) {
 
 func TestOperationIdempotencyAndInterruption(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	op := Operation{ID: platform.NewOperationID(), Kind: "app.start", TargetKind: "app", TargetID: "a1", IdempotencyKey: "key-12345678"}
 	first, existed, err := InsertOperation(ctx, s.DB(), op)
 	if err != nil || existed {
@@ -241,7 +238,7 @@ func TestOperationIdempotencyAndInterruption(t *testing.T) {
 // M1: an operation cancelled after NextQueued read it must not be claimed.
 func TestCancelledQueuedOperationIsNotClaimed(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	op, _, err := InsertOperation(ctx, s.DB(), Operation{ID: platform.NewOperationID(), Kind: "app.start", TargetKind: "app", TargetID: "a1"})
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +260,7 @@ func TestCancelledQueuedOperationIsNotClaimed(t *testing.T) {
 
 func TestDomainOwnershipUnique(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	links := []domain.DomainLink{{Name: "a.example.com", Primary: true}}
 	if err := ReplaceDomains(ctx, s.DB(), "app", "a1", links); err != nil {
 		t.Fatal(err)

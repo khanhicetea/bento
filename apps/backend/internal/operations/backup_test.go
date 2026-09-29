@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +32,7 @@ func sqliteBinding(t *testing.T, app domain.App) domain.Binding {
 
 func TestBackupContinuesPastFailingTarget(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	good, bad, empty := h.createApp("good"), h.createApp("bad"), h.createApp("empty")
 	for _, app := range []domain.App{good, bad} {
 		b := sqliteBinding(t, app)
@@ -95,7 +94,7 @@ func TestBackupContinuesPastFailingTarget(t *testing.T) {
 
 func TestBackupAllTargetsFailed(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	app := h.createApp("solo")
 	b := sqliteBinding(t, app)
 	if err := os.WriteFile(filepath.Join(h.layout.SQLiteFileDir(b.SQLiteFileID), app.Slug+".db"), []byte("db"), 0o600); err != nil {
@@ -118,7 +117,7 @@ func TestBackupAllTargetsFailed(t *testing.T) {
 
 func TestManualUploadNeedsScheduleRemote(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all", Upload: true}, ""); err == nil || !strings.Contains(err.Error(), "rclone remote") {
 		t.Fatalf("upload without a remote must be refused, got %v", err)
 	}
@@ -129,7 +128,7 @@ func TestManualUploadNeedsScheduleRemote(t *testing.T) {
 
 func TestRcloneTestOperation(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SubmitRcloneTest(ctx, "", ""); err == nil {
 		t.Fatal("test without any remote must be refused")
 	}
@@ -178,7 +177,7 @@ func TestRcloneTestOperation(t *testing.T) {
 // UTC+07 server must still fire "30 9 * * *" at 09:30 local, not 16:30.
 func TestScheduleUsesServerLocalTime(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ict := time.FixedZone("ICT", 7*3600)
 	s := domain.BackupSchedule{Enabled: true, Cron: "30 9 * * *", Compression: "none", Retain: 1}
 	if err := h.c.SetBackupSchedule(ctx, s); err != nil {

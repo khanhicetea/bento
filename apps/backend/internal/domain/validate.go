@@ -72,7 +72,7 @@ func NormalizeDomain(name string) (string, error) {
 	if len(d) < 3 || len(d) > 253 || !strings.Contains(d, ".") {
 		return "", fmt.Errorf("invalid domain %q", name)
 	}
-	for _, label := range strings.Split(d, ".") {
+	for label := range strings.SplitSeq(d, ".") {
 		if !domainLabel.MatchString(label) {
 			return "", fmt.Errorf("invalid domain %q", name)
 		}
@@ -98,7 +98,7 @@ func CleanRelative(p string) (string, error) {
 	if c == "." {
 		return "", nil
 	}
-	for _, part := range strings.Split(c, "/") {
+	for part := range strings.SplitSeq(c, "/") {
 		if strings.HasPrefix(part, ".") {
 			return "", fmt.Errorf("hidden path components are not allowed")
 		}

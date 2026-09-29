@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -137,12 +138,7 @@ func (s *Server) originAllowed(origin string) bool {
 	if origin == "" || origin == "null" {
 		return false
 	}
-	for _, o := range s.AllowedOrigins {
-		if origin == o {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.AllowedOrigins, origin)
 }
 
 // checkWrite enforces exact Origin, same-origin fetch metadata, and the

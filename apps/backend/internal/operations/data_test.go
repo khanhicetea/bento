@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -17,7 +16,7 @@ import (
 // recreating it empty.
 func TestSlowFirstBootStillEstablishesService(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{ExitCode: 1} }
 	svc, op, err := h.c.CreateService(ctx, domain.EnginePostgres, "16", "")
 	if err != nil {
@@ -49,7 +48,7 @@ func TestSlowFirstBootStillEstablishesService(t *testing.T) {
 // on disk no longer changes.
 func TestRedisACLReloadRetriedAfterFailure(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{Stdout: []byte("OK")} }
 	h.mustSucceed(func() (store.Operation, error) {
 		_, op, err := h.c.CreateService(ctx, domain.EngineRedis, "", "")
@@ -83,7 +82,7 @@ func TestRedisACLReloadRetriedAfterFailure(t *testing.T) {
 // short by the same cancel flag.
 func TestUncancellableRunIgnoresCancelRequest(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	h.cancel() // stop the executor; this test drives the row by hand
 	h.c.Shutdown(2 * time.Second)
 	op, _, err := store.InsertOperation(ctx, h.store.DB(), store.Operation{ID: platform.NewOperationID(), Kind: KindStackExport, TargetKind: "stack", TargetID: "stack"})

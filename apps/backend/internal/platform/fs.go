@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -150,7 +150,7 @@ func NoSymlinkBetween(base, target string) error {
 		return nil
 	}
 	cur := base
-	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
 		cur = filepath.Join(cur, part)
 		info, err := os.Lstat(cur)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -286,7 +286,7 @@ func readDirNames(dirfd int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 

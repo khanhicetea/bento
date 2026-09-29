@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -203,7 +203,7 @@ func (p *utilsListeners) Addrs() []string {
 	for a := range p.servers {
 		out = append(out, a)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"testing"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
@@ -13,7 +12,7 @@ import (
 func TestRemoveCollectsExitedOrphanBackupJob(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	job := h.c.Names.Labels(runtime.RoleBackup, map[string]string{runtime.LabelAppID: app.ID, runtime.LabelOperation: "op_crashed"})
 	if _, err := h.fake.Create(ctx, docker.ContainerSpec{Name: h.c.Names.BackupContainer("sqlite-orphan"), Config: &container.Config{Labels: job}}); err != nil {
 		t.Fatal(err)
@@ -27,7 +26,7 @@ func TestRemoveCollectsExitedOrphanBackupJob(t *testing.T) {
 func TestRemoveRefusesWhileBackupJobRuns(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	job := h.c.Names.Labels(runtime.RoleBackup, map[string]string{runtime.LabelAppID: app.ID})
 	id, err := h.fake.Create(ctx, docker.ContainerSpec{Name: h.c.Names.BackupContainer("sqlite-live"), Config: &container.Config{Labels: job}})
 	if err != nil {

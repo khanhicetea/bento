@@ -1,7 +1,6 @@
 package reconcile
 
 import (
-	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -19,7 +18,7 @@ import (
 
 func setup(t *testing.T) (*testutil.Harness, *Reconciler, domain.App) {
 	h := testutil.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	app, op, err := h.C.CreateApp(ctx, operations.CreateAppInput{Slug: "shop",
 		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}}}, "")
 	if err != nil {
@@ -41,7 +40,7 @@ func setup(t *testing.T) (*testutil.Harness, *Reconciler, domain.App) {
 
 func pass(t *testing.T, h *testutil.Harness, r *Reconciler) {
 	t.Helper()
-	if err := r.Pass(context.Background()); err != nil {
+	if err := r.Pass(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	h.WaitIdle()
@@ -61,7 +60,7 @@ func TestMissedEventRepairedByResync(t *testing.T) {
 	h, r, app := setup(t)
 	h.Fake.Delete(h.C.Names.AppContainer(app.ID)) // no event delivered by the fake
 	pass(t, h, r)
-	obs, _ := h.C.Observe(context.Background(), app)
+	obs, _ := h.C.Observe(t.Context(), app)
 	if !obs.Running {
 		t.Fatal("full resync must recreate a missing desired-running instance")
 	}
@@ -69,7 +68,7 @@ func TestMissedEventRepairedByResync(t *testing.T) {
 
 func TestStopIntentIsNeverResurrected(t *testing.T) {
 	h, r, app := setup(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	op, _ := h.C.StopApp(ctx, app.ID, "")
 	h.Wait(op.ID)
 	// Something starts the container behind Bento's back.
@@ -102,7 +101,7 @@ func TestRetryBudgetIsBoundedAndObservable(t *testing.T) {
 	if !st.Blocked || st.Failures != MaxAttempts {
 		t.Fatalf("expected blocked after %d failures, got %+v", MaxAttempts, st)
 	}
-	ops, _ := store.ListOperations(context.Background(), h.Store.DB(), store.OpFilter{TargetID: app.ID})
+	ops, _ := store.ListOperations(t.Context(), h.Store.DB(), store.OpFilter{TargetID: app.ID})
 	n := 0
 	for _, o := range ops {
 		if o.Kind == operations.KindAppReconcile {
@@ -116,7 +115,7 @@ func TestRetryBudgetIsBoundedAndObservable(t *testing.T) {
 	h.Fake.FailOn = nil
 	r.ResetBudget(app.ID)
 	pass(t, h, r)
-	obs, _ := h.C.Observe(context.Background(), app)
+	obs, _ := h.C.Observe(t.Context(), app)
 	if !obs.Running {
 		t.Fatal("recovery after reset failed")
 	}
@@ -126,7 +125,7 @@ func TestRetryBudgetIsBoundedAndObservable(t *testing.T) {
 // and its status is observable.
 func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 	h, r, _ := setup(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, op, err := h.C.CreateService(ctx, domain.EngineRedis, "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +164,7 @@ func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 // must not queue the others behind it.
 func TestDownAppsAreReconciledInParallel(t *testing.T) {
 	h := testutil.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	var apps []domain.App
 	for _, slug := range []string{"alpha", "beta", "gamma"} {
 		app, op, err := h.C.CreateApp(ctx, operations.CreateAppInput{Slug: slug,

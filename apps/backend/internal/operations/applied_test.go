@@ -103,7 +103,7 @@ func (h *harness) reconcile(app domain.App) store.Operation {
 func TestToolWriteDoesNotAbsorbScopedReload(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 
 	if drift, err := h.c.AppConfigDrift(ctx, app); err != nil || drift {
@@ -132,7 +132,7 @@ func TestToolWriteDoesNotAbsorbScopedReload(t *testing.T) {
 func TestFailedValidationRestoresAppliedBytes(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 	path := filepath.Join(h.layout.AppConfigDir(app.ID), "minicrond.toml")
 	before, err := os.ReadFile(path)
@@ -167,7 +167,7 @@ func TestFailedValidationRestoresAppliedBytes(t *testing.T) {
 func TestStartRecreatesInstanceWithMissingNetwork(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 	old, _ := h.c.Observe(ctx, app)
 	h.mustSucceed(h.c.StopApp(ctx, app.ID, ""))
@@ -189,7 +189,7 @@ func TestStartRecreatesInstanceWithMissingNetwork(t *testing.T) {
 func TestStartOtherFailureDoesNotRecreate(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 	h.mustSucceed(h.c.StopApp(ctx, app.ID, ""))
 	created := h.fake.CallCount("Create")

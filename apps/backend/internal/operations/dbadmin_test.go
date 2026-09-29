@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +10,7 @@ import (
 
 func TestDBAdminLifecycleAndHardening(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.SetDBAdmin(ctx, true, "dbadmin-on-1"))
 	ins, err := h.c.Engine.Inspect(ctx, h.c.Names.DBAdminContainer())
 	if err != nil || ins == nil || !ins.State.Running || !h.c.Names.OwnedBy(ins.Config.Labels, runtime.RoleDBAdmin, "") {

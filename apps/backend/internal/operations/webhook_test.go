@@ -50,7 +50,7 @@ func (h *harness) webhookApp(slug string) (domain.App, domain.Webhook) {
 func TestWebhookEnableRotatesSecretKeepsURL(t *testing.T) {
 	h := newHarness(t)
 	app, first := h.webhookApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	second, err := h.c.EnableWebhook(ctx, app.ID)
 	if err != nil || second.HookID != first.HookID || second.Secret == first.Secret {
 		t.Fatal("rotation must keep the URL and replace the secret")
@@ -70,7 +70,7 @@ func TestWebhookEnableRotatesSecretKeepsURL(t *testing.T) {
 func TestWebhookRejectsUnknownAndUnauthenticated(t *testing.T) {
 	h := newHarness(t)
 	app, w := h.webhookApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	hd, body := githubPush("wrong-secret", "d1", "refs/heads/main")
 	for _, hook := range []string{w.HookID, strings.Repeat("0", 32)} {
 		out, err := h.c.HandleWebhook(ctx, hook, hd, body)
@@ -90,7 +90,7 @@ func TestWebhookRejectsUnknownAndUnauthenticated(t *testing.T) {
 func TestWebhookPushDeploysOnlyConfiguredBranch(t *testing.T) {
 	h := newHarness(t)
 	app, w := h.webhookApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	var key string
 	var req docker.ExecRequest
 	h.fake.ExecHook = deployHook("BENTO_COMMIT="+testCommit+"\n", "", 0, &key, &req)
@@ -135,7 +135,7 @@ func TestWebhookPushDeploysOnlyConfiguredBranch(t *testing.T) {
 func TestWebhookRedeliveryAfterFailureDeploysAgain(t *testing.T) {
 	h := newHarness(t)
 	_, w := h.webhookApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	var key string
 	var req docker.ExecRequest
 	h.fake.ExecHook = deployHook("", "permission denied (publickey)", 128, &key, &req)
@@ -162,7 +162,7 @@ func TestWebhookRedeliveryAfterFailureDeploysAgain(t *testing.T) {
 func TestWebhookCoalescesWhileADeployIsQueued(t *testing.T) {
 	h := newHarness(t)
 	app, w := h.webhookApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	h.fake.ExecHook = func(_ string, r docker.ExecRequest) docker.ExecResult {
@@ -229,7 +229,7 @@ func scriptHook(exit int, stderr string, script *docker.ExecRequest, execs *[]st
 func TestDeployRunsHomeScriptAsAppWithNormalizedEnv(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestDeployRunsHomeScriptAsAppWithNormalizedEnv(t *testing.T) {
 func TestDeployScriptFailureSkipsRecordAndReload(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestDeployScriptMustBeAPlainExecutableFile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t)
 			app := h.createApp("shop")
-			ctx := context.Background()
+			ctx := t.Context()
 			if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
 				t.Fatal(err)
 			}
@@ -347,7 +347,7 @@ func TestDeployScriptMustBeAPlainExecutableFile(t *testing.T) {
 func TestDeployScriptFaultInjection(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +387,7 @@ func TestAppsGatewayIsTheHostAddressInTheSubnet(t *testing.T) {
 		t.Fatalf("a subnet without a host address must yield no gateway, got %q", got)
 	}
 	h := newHarness(t)
-	if gw, err := h.c.AppsGateway(context.Background()); err != nil || gw != "" {
+	if gw, err := h.c.AppsGateway(t.Context()); err != nil || gw != "" {
 		t.Fatalf("reading the gateway must never plan networks: %q %v", gw, err)
 	}
 }

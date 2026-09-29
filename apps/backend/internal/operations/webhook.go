@@ -139,8 +139,8 @@ func (c *Controller) HandleWebhook(ctx context.Context, hookID string, h domain.
 	default:
 		op, result, err := c.submitWebhookDeploy(ctx, app, ev)
 		if err != nil {
-			var oe *OpError
-			if !errors.As(err, &oe) {
+			oe, ok := errors.AsType[*OpError](err)
+			if !ok {
 				return WebhookOutcome{}, err
 			}
 			out.Status, out.Result, out.Detail = http.StatusServiceUnavailable, "refused", oe.Message

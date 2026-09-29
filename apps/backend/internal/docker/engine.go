@@ -534,7 +534,7 @@ func (s *SDK) Exec(ctx context.Context, id string, req ExecRequest) (ExecResult,
 		case <-time.After(5 * time.Second):
 		}
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		ins, err := s.c.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
 		if err != nil {
 			return ExecResult{}, err

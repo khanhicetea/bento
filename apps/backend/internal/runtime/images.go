@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -38,9 +39,7 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 		return ImageSpec{}, err
 	}
 	args := map[string]string{"DEBIAN_BASE": key.RuntimeDebianBase()}
-	for k, v := range domain.RuntimeArtifacts {
-		args[k] = v
-	}
+	maps.Copy(args, domain.RuntimeArtifacts)
 	kind := "http"
 	if key.Kind == domain.RuntimePHP {
 		kind = "php"
@@ -59,7 +58,7 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	for k := range args {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var h bytes.Buffer
 	h.WriteString(ctxHash)
 	for _, k := range keys {

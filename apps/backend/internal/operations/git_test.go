@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -38,7 +37,7 @@ func TestNewDeployKeyIsUsableOpenSSHEd25519(t *testing.T) {
 func TestSetGitSourceKeepsKeyUntilRotated(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "https://user:tok@github.com/o/r.git", Branch: "main"}); err == nil {
 		t.Fatal("embedded HTTPS credentials must be refused")
 	}
@@ -68,7 +67,7 @@ func TestSetGitSourceKeepsKeyUntilRotated(t *testing.T) {
 func TestDeployRequiresGitSource(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	if _, err := h.c.DeployApp(context.Background(), app.ID, ""); !errors.Is(err, ErrPrecondition) {
+	if _, err := h.c.DeployApp(t.Context(), app.ID, ""); !errors.Is(err, ErrPrecondition) {
 		t.Fatalf("deploy without a source must be refused, got %v", err)
 	}
 }
@@ -91,7 +90,7 @@ func deployHook(stdout, stderr string, exit int, gotKey *string, gotReq *docker.
 func TestDeployPassesKeyOnStdinRecordsCommitAndRestarts(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	g, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"})
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +140,7 @@ func TestDeployPassesKeyOnStdinRecordsCommitAndRestarts(t *testing.T) {
 func TestDeployPublicHTTPSSendsNoKeyAndStoppedAppStaysStopped(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "https://github.com/o/r.git", Branch: "main"}); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +173,7 @@ func TestDeployFailuresAreDiagnosable(t *testing.T) {
 		t.Run(tc.code, func(t *testing.T) {
 			h := newHarness(t)
 			app := h.createApp("shop")
-			ctx := context.Background()
+			ctx := t.Context()
 			if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
 				t.Fatal(err)
 			}
@@ -205,7 +204,7 @@ func TestDeployFaultInjectionThenRecover(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			h := newHarness(t)
 			app := h.createApp("shop")
-			ctx := context.Background()
+			ctx := t.Context()
 			if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
 				t.Fatal(err)
 			}

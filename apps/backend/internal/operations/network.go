@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"slices"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -69,7 +70,7 @@ func (c *Controller) AppsGateway(ctx context.Context) (string, error) {
 func candidateSubnets() []netip.Prefix {
 	var out []netip.Prefix
 	for second := 200; second < 208; second++ {
-		for third := 0; third < 256; third++ {
+		for third := range 256 {
 			out = append(out, netip.PrefixFrom(netip.AddrFrom4([4]byte{10, byte(second), byte(third), 0}), 24))
 		}
 	}
@@ -77,12 +78,7 @@ func candidateSubnets() []netip.Prefix {
 }
 
 func overlaps(p netip.Prefix, used []netip.Prefix) bool {
-	for _, u := range used {
-		if p.Overlaps(u) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(used, p.Overlaps)
 }
 
 // PlanNetworks picks two unused subnets.

@@ -1,7 +1,6 @@
 package stack
 
 import (
-	"context"
 	"crypto/sha256"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ func TestInitRefusesForeignAndNonEmptyWithoutChanges(t *testing.T) {
 	os.WriteFile(filepath.Join(foreign, "state.db"), []byte("other"), 0o600)
 	os.WriteFile(filepath.Join(foreign, ".env"), []byte("KEY=value\n"), 0o600)
 	before := treeHash(t, foreign)
-	if _, err := Init(context.Background(), InitOptions{Root: foreign, Name: "prod"}); err == nil {
+	if _, err := Init(t.Context(), InitOptions{Root: foreign, Name: "prod"}); err == nil {
 		t.Fatal("foreign root accepted")
 	}
 	if treeHash(t, foreign) != before {
@@ -42,7 +41,7 @@ func TestInitRefusesForeignAndNonEmptyWithoutChanges(t *testing.T) {
 	}
 	other := t.TempDir()
 	os.WriteFile(filepath.Join(other, "notes.txt"), []byte("x"), 0o600)
-	if _, err := Init(context.Background(), InitOptions{Root: other, Name: "prod"}); err == nil {
+	if _, err := Init(t.Context(), InitOptions{Root: other, Name: "prod"}); err == nil {
 		t.Fatal("non-empty root accepted")
 	}
 }
@@ -52,7 +51,7 @@ func TestInitCreatesVersionedPrivateStack(t *testing.T) {
 		t.Skip("requires root")
 	}
 	root := filepath.Join(t.TempDir(), "stack")
-	id, err := Init(context.Background(), InitOptions{Root: root, Name: "prod", MySQL: "8.4", Password: "a sufficiently long password"})
+	id, err := Init(t.Context(), InitOptions{Root: root, Name: "prod", MySQL: "8.4", Password: "a sufficiently long password"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +70,11 @@ func TestInitCreatesVersionedPrivateStack(t *testing.T) {
 	}
 	s, _ := store.Open(l.Database())
 	defer s.Close()
-	ops, _ := store.ListOperations(context.Background(), s.DB(), store.OpFilter{})
+	ops, _ := store.ListOperations(t.Context(), s.DB(), store.OpFilter{})
 	if len(ops) != 2 {
 		t.Fatalf("expected explicit init operations for redis and mysql, got %d", len(ops))
 	}
-	if _, err := Init(context.Background(), InitOptions{Root: root, Name: "prod"}); err == nil {
+	if _, err := Init(t.Context(), InitOptions{Root: root, Name: "prod"}); err == nil {
 		t.Fatal("re-init of an existing stack accepted")
 	}
 }

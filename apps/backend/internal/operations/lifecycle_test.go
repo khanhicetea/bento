@@ -154,7 +154,7 @@ func TestCreateIsStoppedUnpublishedAndDoesNotStart(t *testing.T) {
 func TestStartStopRestartSemantics(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 	obs, _ := h.c.Observe(ctx, app)
 	if !obs.Running || obs.RestartMode != "unless-stopped" {
@@ -186,7 +186,7 @@ func TestReadinessFailureIsBoundedAndDoesNotPublish(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
 	h.c.Probe = func(context.Context, string) (int, error) { return 503, nil }
-	op, err := h.c.StartApp(context.Background(), app.ID, "")
+	op, err := h.c.StartApp(t.Context(), app.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestFaultInjectionEachBoundaryThenRecover(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			h := newHarness(t)
 			app := h.createApp("shop")
-			ctx := context.Background()
+			ctx := t.Context()
 			h.fake.FailOn = map[string]error{method: errors.New("injected " + method + " failure")}
 			if method == "BuildImage" {
 				// Force a fresh build: the image was built during provisioning.
@@ -236,7 +236,7 @@ func TestFaultInjectionEachBoundaryThenRecover(t *testing.T) {
 func TestInterruptedOperationIsNotReplayed(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	// Simulate a crash mid-operation: a running row with no executor.
 	op, _, err := store.InsertOperation(ctx, h.store.DB(), store.Operation{ID: platform.NewOperationID(), Kind: KindAppRemove, TargetKind: "app", TargetID: app.ID})
 	if err != nil {
@@ -259,18 +259,16 @@ func TestInterruptedOperationIsNotReplayed(t *testing.T) {
 func TestConcurrentStartsCreateOneInstance(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	ops := make(chan store.Operation, 5)
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			op, err := h.c.StartApp(ctx, app.ID, "")
 			if err == nil {
 				ops <- op
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(ops)
@@ -285,7 +283,7 @@ func TestConcurrentStartsCreateOneInstance(t *testing.T) {
 func TestMissingHomeBlocksRecreation(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 	h.fake.Delete(h.c.Names.AppContainer(app.ID))
 	os.Rename(h.layout.AppHome("shop"), h.layout.AppHome("shop")+".moved")
@@ -315,7 +313,7 @@ func TestMissingCodeDirectoryBlocksStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	op, err := h.c.StartApp(context.Background(), app.ID, "")
+	op, err := h.c.StartApp(t.Context(), app.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +329,7 @@ func TestMissingCodeDirectoryBlocksStart(t *testing.T) {
 func TestRetainedHomeIsNeverAdopted(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSucceed(h.c.RemoveApp(ctx, app.ID, "delete shop", ""))
 	if _, err := h.c.RemoveApp(ctx, "shop", "delete shop", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Fatal("app should be gone")
@@ -354,7 +352,7 @@ func TestRemoveRequiresExactConfirmation(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
 	for _, bad := range []string{"", "delete", "delete Shop", "delete shop ", "yes"} {
-		if _, err := h.c.RemoveApp(context.Background(), app.ID, bad, ""); !errors.Is(err, ErrConfirmation) {
+		if _, err := h.c.RemoveApp(t.Context(), app.ID, bad, ""); !errors.Is(err, ErrConfirmation) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
@@ -363,7 +361,7 @@ func TestRemoveRequiresExactConfirmation(t *testing.T) {
 func TestIdempotentSubmissionReturnsSameOperation(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	a, err := h.c.StartApp(ctx, app.ID, "client-key-1")
 	if err != nil {
 		t.Fatal(err)

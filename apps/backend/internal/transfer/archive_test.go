@@ -17,7 +17,6 @@ func archive(t *testing.T, entries []tar.Header) []byte {
 	zw, _ := zstd.NewWriter(&buf)
 	tw := tar.NewWriter(zw)
 	for _, h := range entries {
-		h := h
 		if h.Typeflag == tar.TypeReg {
 			h.Size = 1
 		}

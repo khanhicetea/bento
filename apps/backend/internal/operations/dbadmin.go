@@ -133,7 +133,7 @@ func (c *Controller) dbadminSpec(generation string) docker.ContainerSpec {
 			ReadonlyRootfs: true,
 			CapDrop:        []string{"ALL"},
 			SecurityOpt:    []string{"no-new-privileges:true"},
-			Resources:      container.Resources{Memory: 512 << 20, MemorySwap: 512 << 20, PidsLimit: ptr(int64(128))},
+			Resources:      container.Resources{Memory: 512 << 20, MemorySwap: 512 << 20, PidsLimit: new(int64(128))},
 			LogConfig:      container.LogConfig{Type: "local", Config: map[string]string{"max-size": "10m", "max-file": "3"}},
 		},
 		// Data network only: it reaches the database services and has no egress.
@@ -142,8 +142,6 @@ func (c *Controller) dbadminSpec(generation string) docker.ContainerSpec {
 		}},
 	}
 }
-
-func ptr[T any](v T) *T { return &v }
 
 // prepareDBAdminDir writes the front controller and, once, the gateway token.
 // Both are readable only by root and the adminer group.

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -108,7 +109,7 @@ func ArchiveRoot(root string, w io.Writer, skip map[string]bool) error {
 		if rel == "." {
 			return nil
 		}
-		top := strings.SplitN(rel, string(filepath.Separator), 2)[0]
+		top, _, _ := strings.Cut(rel, string(filepath.Separator))
 		if skip[top] {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -243,8 +244,7 @@ func ExtractRoot(r io.Reader, root string) error {
 			return fmt.Errorf("%w: unsupported type for %q", ErrUnsafeArchive, h.Name)
 		}
 	}
-	for i := len(dirs) - 1; i >= 0; i-- {
-		d := dirs[i]
+	for _, d := range slices.Backward(dirs) {
 		if err := os.Lchown(d.path, d.uid, d.gid); err != nil {
 			return err
 		}
@@ -264,7 +264,7 @@ func noSymlinkParents(root, target string) error {
 		return nil
 	}
 	cur := root
-	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
 		cur = filepath.Join(cur, part)
 		info, err := os.Lstat(cur)
 		if err != nil {

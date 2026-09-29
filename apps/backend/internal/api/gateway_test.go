@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -68,7 +67,7 @@ func ticketPathFor(c *client, slug string) (int, string) {
 func TestSchedulerGatewayTicketsAndGrants(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, slug := range []string{"shop", "blog"} {
 		_, body := c.write("POST", "/api/v1/apps", `{"slug":"`+slug+`","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["`+slug+`.example.com"]}`)
 		var acc dto.Accepted

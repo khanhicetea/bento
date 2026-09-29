@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -43,7 +42,7 @@ func newServer(t *testing.T) (*client, *testutil.Harness) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := &Server{C: h.C, R: reconcile.New(h.C, log), Store: h.Store, Layout: h.Layout, Log: log, Version: "test",
 		StartedAt: time.Now(), AllowedOrigins: []string{origin}, WebUI: webui.FS(), Relay: scheduler.NewRelayManager(h.Layout, "/proc/self/exe", log)}
-	if err := SetOperatorPassword(context.Background(), h.Store, password); err != nil {
+	if err := SetOperatorPassword(t.Context(), h.Store, password); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(s.Handler())
@@ -159,7 +158,7 @@ func TestWritesRequireCSRFOriginAndFetchMetadata(t *testing.T) {
 func TestSessionExpiry(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	if _, err := h.Store.DB().ExecContext(context.Background(), "UPDATE sessions SET expires_at = '2000-01-01T00:00:00.000Z'"); err != nil {
+	if _, err := h.Store.DB().ExecContext(t.Context(), "UPDATE sessions SET expires_at = '2000-01-01T00:00:00.000Z'"); err != nil {
 		t.Fatal(err)
 	}
 	resp, _ := c.do("GET", "/api/v1/apps", "", nil)
@@ -235,7 +234,7 @@ func TestSecretsNeverInResponses(t *testing.T) {
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
 	h.Wait(acc.Operation.ID)
-	app, _ := store.GetApp(context.Background(), h.Store.DB(), "shop")
+	app, _ := store.GetApp(t.Context(), h.Store.DB(), "shop")
 	for _, p := range []string{"/api/v1/apps", "/api/v1/apps/shop", "/api/v1/operations", "/api/v1/tunnel"} {
 		_, out := c.do("GET", p, "", nil)
 		if strings.Contains(out, app.Redis.Password) {
@@ -342,7 +341,7 @@ func TestGitSourceEndpoints(t *testing.T) {
 	if resp.StatusCode != 200 || !g.Configured || !g.UsesSSH || !strings.HasPrefix(g.PublicKey, "ssh-ed25519 ") || g.Fingerprint == "" {
 		t.Fatalf("put -> %d %s", resp.StatusCode, out)
 	}
-	stored, _, _ := store.GetGitSource(context.Background(), h.Store.DB(), acc.Operation.TargetID)
+	stored, _, _ := store.GetGitSource(t.Context(), h.Store.DB(), acc.Operation.TargetID)
 	keyBody := strings.Split(stored.PrivateKey, "\n")[1]
 	for _, p := range []string{"/api/v1/apps/shop/git", "/api/v1/apps/shop", "/api/v1/operations"} {
 		_, out := c.do("GET", p, "", nil)
@@ -465,7 +464,7 @@ func TestWebhookEndpoints(t *testing.T) {
 func TestDBAdminTicketGateway(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	ctx := context.Background()
+	ctx := t.Context()
 	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"]}`)
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
@@ -747,7 +746,7 @@ func TestScheduleReportsNextRunAndZone(t *testing.T) {
 func TestQueuedOperationReportsWaitingOn(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	ctx := context.Background()
+	ctx := t.Context()
 	app, op, err := h.C.CreateApp(ctx, operations.CreateAppInput{Slug: "shop",
 		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}}}, "")
 	if err != nil {

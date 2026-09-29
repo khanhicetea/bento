@@ -13,7 +13,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -126,7 +126,7 @@ func Render(in Input) (map[string][]byte, error) {
 		anyACME = anyACME || r.ACME
 		routes = append(routes, r)
 	}
-	sort.Slice(routes, func(i, j int) bool { return routes[i].Name < routes[j].Name })
+	slices.SortFunc(routes, func(a, b Route) int { return strings.Compare(a.Name, b.Name) })
 	files := map[string][]byte{}
 	main, err := assets.Render("edge-nginx.conf.tmpl", map[string]any{
 		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3,
@@ -175,10 +175,9 @@ func splitUpstream(u string) (scheme, hostport, path string) {
 		scheme = "https"
 	}
 	rest := strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
-	if i := strings.Index(rest, "/"); i >= 0 {
-		hostport, path = rest[:i], rest[i:]
-	} else {
-		hostport = rest
+	hostport, path, found := strings.Cut(rest, "/")
+	if found {
+		path = "/" + path
 	}
 	if !strings.Contains(hostport, ":") {
 		if scheme == "https" {

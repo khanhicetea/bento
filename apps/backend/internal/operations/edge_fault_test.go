@@ -24,7 +24,7 @@ func breakEdge(t *testing.T, h *harness, mode string) {
 		h.fake.Images = map[string]string{}
 		h.fake.FailOn = map[string]error{"PullImage": errors.New("injected PullImage failure")}
 	}
-	if err := store.PutSetting(context.Background(), h.store.DB(), edgeSettingKey, s); err != nil {
+	if err := store.PutSetting(t.Context(), h.store.DB(), edgeSettingKey, s); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -41,7 +41,7 @@ func TestStopAndRemoveSucceedWithBrokenEdge(t *testing.T) {
 		t.Run(mode+"/stop", func(t *testing.T) {
 			h := newHarness(t)
 			app := h.createApp("shop")
-			ctx := context.Background()
+			ctx := t.Context()
 			h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 			breakEdge(t, h, mode)
 			op := h.mustSucceed(h.c.StopApp(ctx, app.ID, ""))
@@ -58,7 +58,7 @@ func TestStopAndRemoveSucceedWithBrokenEdge(t *testing.T) {
 		t.Run(mode+"/remove", func(t *testing.T) {
 			h := newHarness(t)
 			app := h.createApp("shop")
-			ctx := context.Background()
+			ctx := t.Context()
 			h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 			breakEdge(t, h, mode)
 			op := h.mustSucceed(h.c.RemoveApp(ctx, app.ID, "delete shop", ""))
@@ -75,13 +75,12 @@ func TestStopAndRemoveSucceedWithBrokenEdge(t *testing.T) {
 
 func TestConfigureEdgeRejectsInvalidBind(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, bind := range []string{"1.2.3.4x", "010.0.0.1", "1.2.3", "256.0.0.1", "::1", "fe80::1%eth0", " 1.2.3.4", "localhost"} {
 		s := domain.DefaultEdgeSettings()
 		s.Bind = bind
 		_, err := h.c.ConfigureEdge(ctx, s, "")
-		var ve domain.ValidationErrors
-		if !errors.As(err, &ve) {
+		if _, ok := errors.AsType[domain.ValidationErrors](err); !ok {
 			t.Fatalf("bind %q: expected validation error, got %v", bind, err)
 		}
 	}
@@ -97,8 +96,7 @@ func TestEdgeSpecRejectsPersistedBadBind(t *testing.T) {
 	s := domain.DefaultEdgeSettings()
 	s.Bind = "010.0.0.1"
 	_, err := h.c.edgeSpec(s, NetworkSettings{EdgeIP: "10.0.0.2"})
-	var oe *OpError
-	if !errors.As(err, &oe) || oe.Code != "edge-settings-invalid" {
+	if oe, ok := errors.AsType[*OpError](err); !ok || oe.Code != "edge-settings-invalid" {
 		t.Fatalf("expected edge-settings-invalid, got %v", err)
 	}
 }

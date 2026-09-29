@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -350,13 +350,11 @@ func (c *Controller) dispatch(ctx context.Context) (bool, error) {
 		c.begin(op.ID, cl)
 		free--
 		started = true
-		c.workers.Add(1)
-		go func() {
-			defer c.workers.Done()
+		c.workers.Go(func() {
 			defer c.Wake() // a finished operation may unblock queued ones
 			defer c.end(op.ID)
 			c.execute(ctx, op)
-		}()
+		})
 	}
 	c.runMu.Lock()
 	c.waitingOn = waitingOn
@@ -405,7 +403,7 @@ func (c *Controller) blocker(cl claims) string {
 	for id := range c.running {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids) // deterministic answer when several conflict
+	slices.Sort(ids) // deterministic answer when several conflict
 	for _, id := range ids {
 		if cl.conflicts(c.running[id]) {
 			return id
@@ -488,7 +486,7 @@ func (c *Controller) runningIDs() []string {
 	for id := range c.running {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids
 }
 

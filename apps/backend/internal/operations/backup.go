@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -312,10 +313,8 @@ func findDatabase(app domain.App, database string) (domain.Binding, bool, error)
 		if b.Engine == domain.EngineSQLite && b.SQLiteFileID == database {
 			return b, true, nil
 		}
-		for _, d := range b.Databases {
-			if d == database {
-				return b, false, nil
-			}
+		if slices.Contains(b.Databases, database) {
+			return b, false, nil
 		}
 	}
 	return domain.Binding{}, false, fmt.Errorf("%w: database %s is not bound to app %s", store.ErrNotFound, database, app.Slug)
@@ -384,8 +383,8 @@ func crossAppWarning(backupsDir, artifactPath, targetSlug string) string {
 }
 
 func filepath_Base(p string) string {
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[i+1:]
+	if _, base, ok := strings.CutLast(p, "/"); ok {
+		return base
 	}
 	return p
 }

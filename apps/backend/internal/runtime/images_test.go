@@ -58,13 +58,11 @@ func TestEnsureBuildsDifferentTagsConcurrentlyAndEachTagOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 3 {
 		for _, k := range []domain.ImageKey{phpKey, nodeKey} {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if _, _, err := m.Ensure(context.Background(), k, nil); err != nil {
+			wg.Go(func() {
+				if _, _, err := m.Ensure(t.Context(), k, nil); err != nil {
 					t.Error(err)
 				}
-			}()
+			})
 		}
 	}
 	wg.Wait()
@@ -83,15 +81,8 @@ func TestRemoveExcludesEnsure(t *testing.T) {
 	m := &ImageManager{Engine: eng}
 	var wg sync.WaitGroup
 	for _, k := range []domain.ImageKey{phpKey, nodeKey} {
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			m.Ensure(context.Background(), k, nil)
-		}()
-		go func() {
-			defer wg.Done()
-			m.Remove(context.Background(), "sha256:none")
-		}()
+		wg.Go(func() { m.Ensure(t.Context(), k, nil) })
+		wg.Go(func() { m.Remove(t.Context(), "sha256:none") })
 	}
 	wg.Wait()
 	if eng.overlapRemove.Load() {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"io/fs"
@@ -9,12 +10,12 @@ import (
 	"os"
 	"path"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -1086,11 +1087,8 @@ func (s *Server) handleAppMetrics(w http.ResponseWriter, r *http.Request) {
 	out.BlockRead, out.BlockWrite = int64(st.BlockRead), int64(st.BlockWrite)
 	out.PIDs = int(st.PIDs)
 	out.ProcessTotal = len(procs)
-	sort.SliceStable(procs, func(i, j int) bool {
-		if procs[i].CPUPercent != procs[j].CPUPercent {
-			return procs[i].CPUPercent > procs[j].CPUPercent
-		}
-		return procs[i].RSSKiB > procs[j].RSSKiB
+	slices.SortStableFunc(procs, func(a, b docker.Process) int {
+		return cmp.Or(cmp.Compare(b.CPUPercent, a.CPUPercent), cmp.Compare(b.RSSKiB, a.RSSKiB))
 	})
 	if len(procs) > metricsMaxProcesses {
 		procs = procs[:metricsMaxProcesses]

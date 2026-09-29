@@ -219,10 +219,7 @@ func (r *Reconciler) settle(ctx context.Context, t *target) bool {
 	t.Failures++
 	t.LastError = op.ErrorMessage
 	t.LastFailedAt = op.CreatedAt
-	delay := r.BaseBackoff << min(t.Failures-1, 6)
-	if delay > 30*time.Minute {
-		delay = 30 * time.Minute
-	}
+	delay := min(r.BaseBackoff<<min(t.Failures-1, 6), 30*time.Minute)
 	t.NextAttempt = time.Now().Add(delay)
 	return true
 }

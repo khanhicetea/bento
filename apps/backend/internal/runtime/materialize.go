@@ -7,7 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -224,12 +224,7 @@ func (c *Changes) MarkApplied(scopes ...string) error {
 func (c *Changes) MarkAllApplied() error { return c.MarkApplied(Scopes...) }
 
 func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // FrontendFiles, PoolFiles and SchedulerFiles name scoped-reload inputs.
@@ -459,7 +454,7 @@ func renderScheduler(app domain.App) ([]byte, error) {
 			Timeout:  3600,
 		})
 	}
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })
+	slices.SortFunc(jobs, func(a, b schedJob) int { return strings.Compare(a.Name, b.Name) })
 	return assets.Render("minicrond.toml.tmpl", map[string]any{"Slug": app.Slug, "AppID": app.ID, "Jobs": jobs})
 }
 
@@ -522,7 +517,7 @@ func identityFiles(app domain.App, basePasswd, baseGroup []byte) ([]byte, []byte
 }
 
 func colonFileHasName(data []byte, name string) bool {
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, name+":") {
 			return true
 		}
@@ -535,7 +530,7 @@ func colonFileHasName(data []byte, name string) bool {
 func stripID(data []byte, id int) []byte {
 	var out []string
 	want := strconv.Itoa(id)
-	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(string(data), "\n"), "\n") {
 		f := strings.Split(line, ":")
 		if len(f) >= 3 && f[2] == want {
 			continue

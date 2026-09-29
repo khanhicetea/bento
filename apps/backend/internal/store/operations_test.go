@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ func TestTruncateIsRuneSafe(t *testing.T) {
 
 func TestAppendEventKeepsTailWithMarker(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	op, _, err := InsertOperation(ctx, s.DB(), Operation{ID: platform.NewOperationID(), Kind: "app.start", TargetKind: "app", TargetID: "a1"})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +65,7 @@ func TestAppendEventKeepsTailWithMarker(t *testing.T) {
 
 func TestNextQueuedIsInsertionOrder(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ids := []string{"op-zzz", "op-aaa", "op-mmm"}
 	for _, id := range ids {
 		if _, _, err := InsertOperation(ctx, s.DB(), Operation{ID: id, Kind: "k", TargetKind: "app", TargetID: id}); err != nil {
@@ -90,7 +89,7 @@ func TestNextQueuedIsInsertionOrder(t *testing.T) {
 
 func TestPruneHistory(t *testing.T) {
 	s := newStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	db := s.DB()
 	old := platform.FormatTime(time.Now().Add(-40 * 24 * time.Hour))
 	mk := func(id string, state OpState, finished string) {

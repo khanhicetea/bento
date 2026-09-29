@@ -1,7 +1,6 @@
 package reconcile
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -15,7 +14,7 @@ import (
 
 func addEphemeral(t *testing.T, h *testutil.Harness, name string, labels map[string]string, state string, age time.Duration) {
 	t.Helper()
-	id, err := h.Fake.Create(context.Background(), docker.ContainerSpec{Name: name, Config: &container.Config{Labels: labels}})
+	id, err := h.Fake.Create(t.Context(), docker.ContainerSpec{Name: name, Config: &container.Config{Labels: labels}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +34,7 @@ func exists(h *testutil.Harness, name string) bool {
 
 func TestCollectToolsHonoursGraceAndActiveOperations(t *testing.T) {
 	h, r, app := setup(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	n := h.C.Names
 	active, _, err := store.InsertOperation(ctx, h.Store.DB(), store.Operation{ID: platform.NewOperationID(), Kind: "app.exec", TargetKind: "app", TargetID: "other"})
 	if err != nil {

@@ -80,7 +80,7 @@ func (c *Controller) isWarming(appID string) bool { return c.holdRoute(appID, fa
 
 func state(t *testing.T, h *harness, op store.Operation) store.Operation {
 	t.Helper()
-	got, err := store.GetOperation(context.Background(), h.store.DB(), op.ID)
+	got, err := store.GetOperation(t.Context(), h.store.DB(), op.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +141,12 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 		KindAppUpdate: true, KindAppDeploy: true, KindServiceCreate: true, KindServiceEnsure: true,
 	}
 	for kind := range h.c.handlers {
-		cl := h.c.claimsFor(context.Background(), store.Operation{Kind: kind, TargetID: "x"})
+		cl := h.c.claimsFor(t.Context(), store.Operation{Kind: kind, TargetID: "x"})
 		if cl.global == parallel[kind] {
 			t.Errorf("kind %s: global=%v, want %v", kind, cl.global, !parallel[kind])
 		}
 	}
-	if !h.c.claimsFor(context.Background(), store.Operation{Kind: "future.kind"}).global {
+	if !h.c.claimsFor(t.Context(), store.Operation{Kind: "future.kind"}).global {
 		t.Error("an unknown kind must run alone")
 	}
 }
@@ -154,7 +154,7 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 func TestUnprovisionedStartOrUpdateRunsAlone(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, kind := range []string{KindAppStart, KindAppUpdate} {
 		if h.c.claimsFor(ctx, store.Operation{Kind: kind, TargetID: app.ID}).global {
 			t.Fatalf("%s of a provisioned app should not run alone", kind)
@@ -184,7 +184,7 @@ func TestOperationsOnDifferentAppsRunInParallel(t *testing.T) {
 		}
 		return readyResult
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	opA, err := h.c.StartApp(ctx, a.ID, "")
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestSameAppOperationsStaySerialAcrossAppsOverlap(t *testing.T) {
 		mu.Unlock()
 		return readyResult
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	var ops []store.Operation
 	for range 3 {
 		for _, app := range apps {
@@ -274,7 +274,7 @@ func TestConcurrencyLimitIsHonored(t *testing.T) {
 		}
 		var ops []store.Operation
 		for _, app := range apps {
-			op, err := h.c.StartApp(context.Background(), app.ID, "")
+			op, err := h.c.StartApp(t.Context(), app.ID, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -302,7 +302,7 @@ func TestGlobalOperationIsABarrier(t *testing.T) {
 		}
 		return readyResult
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	startA, err := h.c.StartApp(ctx, a.ID, "")
 	if err != nil {
 		t.Fatal(err)
@@ -360,7 +360,7 @@ func TestWaitingOnIsEmptyWhenOnlyOutOfCapacity(t *testing.T) {
 		}
 		return readyResult
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	h.mustSubmit(h.c.StartApp(ctx, a.ID, ""))
 	g.waitFor(t, 1)
 	second := h.mustSubmit(h.c.StartApp(ctx, b.ID, ""))
@@ -379,7 +379,7 @@ func TestWaitingOnIsEmptyWhenOnlyOutOfCapacity(t *testing.T) {
 // operation for that service is running, but unrelated apps are not held up.
 func TestAppWaitsForItsServiceButNotForOthers(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	svc, op, err := h.c.CreateService(ctx, domain.EnginePostgres, "16", "")
 	if err != nil {
 		t.Fatal(err)
@@ -448,7 +448,7 @@ func TestShutdownWaitsForEveryRunningOperation(t *testing.T) {
 		}
 		return readyResult
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	opA, _ := h.c.StartApp(ctx, a.ID, "")
 	opB, _ := h.c.StartApp(ctx, b.ID, "")
 	g.waitFor(t, 2)
@@ -506,15 +506,13 @@ func TestParallelEnsureNetworksCreatesEachNetworkOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	plans := make([]NetworkSettings, 8)
 	for i := range plans {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ns, err := h.c.EnsureNetworks(context.Background())
+		wg.Go(func() {
+			ns, err := h.c.EnsureNetworks(t.Context())
 			if err != nil {
 				t.Error(err)
 			}
 			plans[i] = ns
-		}()
+		})
 	}
 	wg.Wait()
 	if n := eng.created.Load(); n != 2 {
@@ -531,12 +529,12 @@ func TestApplyEdgeIsExclusive(t *testing.T) {
 	h := newHarness(t)
 	s := domain.DefaultEdgeSettings()
 	s.Enabled = true
-	if err := store.PutSetting(context.Background(), h.store.DB(), edgeSettingKey, s); err != nil {
+	if err := store.PutSetting(t.Context(), h.store.DB(), edgeSettingKey, s); err != nil {
 		t.Fatal(err)
 	}
 	h.c.edgeMu.Lock()
 	done := make(chan error, 1)
-	go func() { done <- h.c.applyEdge(context.Background(), &Run{c: h.c}) }()
+	go func() { done <- h.c.applyEdge(t.Context(), &Run{c: h.c}) }()
 	select {
 	case err := <-done:
 		t.Fatalf("applyEdge ran while another edge apply held the lock (err=%v)", err)
@@ -557,7 +555,7 @@ func TestApplyEdgeIsExclusive(t *testing.T) {
 // own operation has not yet seen it ready.
 func TestBootingAppIsNotRoutedByAnotherOperation(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	app := h.createApp("shop")
 	cur, _ := store.GetApp(ctx, h.store.DB(), app.ID)
 	cur.Publication = domain.Published
@@ -619,7 +617,7 @@ func TestWarmingIsClearedWhenStartFails(t *testing.T) {
 	h := newHarness(t)
 	app := h.createApp("shop")
 	h.c.Probe = func(context.Context, string) (int, error) { return 503, nil }
-	op, err := h.c.StartApp(context.Background(), app.ID, "")
+	op, err := h.c.StartApp(t.Context(), app.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +641,7 @@ func enableEdge(t *testing.T, h *harness) {
 	t.Helper()
 	s := domain.DefaultEdgeSettings()
 	s.Enabled = true
-	if err := store.PutSetting(context.Background(), h.store.DB(), edgeSettingKey, s); err != nil {
+	if err := store.PutSetting(t.Context(), h.store.DB(), edgeSettingKey, s); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -653,7 +651,7 @@ func enableEdge(t *testing.T, h *harness) {
 // the app is ready, and the reconciler must not see drift meanwhile.
 func TestRestartRestoresRouteHeldDuringBoot(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	enableEdge(t, h)
 	app := h.createApp("shop")
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
@@ -696,7 +694,7 @@ func TestRestartRestoresRouteHeldDuringBoot(t *testing.T) {
 // A restart that no other edge apply overlapped does not touch the edge.
 func TestRestartWithoutHeldRouteLeavesEdgeAlone(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	enableEdge(t, h)
 	app := h.createApp("shop")
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
@@ -714,7 +712,7 @@ func TestRestartWithoutHeldRouteLeavesEdgeAlone(t *testing.T) {
 
 func TestDeploysOfDifferentAppsRunInParallel(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	apps := []domain.App{h.createApp("alpha"), h.createApp("beta")}
 	for _, a := range apps {
 		if _, err := h.c.SetGitSource(ctx, a.ID, GitSourceInput{RepoURL: "https://github.com/o/r.git", Branch: "main"}); err != nil {
@@ -744,7 +742,7 @@ func TestDeploysOfDifferentAppsRunInParallel(t *testing.T) {
 
 func TestUpdatesOfDifferentAppsRunInParallel(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	apps := []domain.App{h.createApp("alpha"), h.createApp("beta")}
 	for _, a := range apps {
 		h.mustSucceed(h.c.StartApp(ctx, a.ID, ""))
@@ -775,7 +773,7 @@ func TestUpdatesOfDifferentAppsRunInParallel(t *testing.T) {
 // read-write-reload sequences must not interleave.
 func TestRedisACLSyncsAreSerialized(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{Stdout: []byte("OK")} }
 	h.mustSucceed(func() (store.Operation, error) {
 		_, op, err := h.c.CreateService(ctx, domain.EngineRedis, "", "")
@@ -794,13 +792,11 @@ func TestRedisACLSyncsAreSerialized(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := h.c.syncRedisACL(ctx); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if peak.Load() != 1 {
@@ -812,7 +808,7 @@ func TestRedisACLSyncsAreSerialized(t *testing.T) {
 // app created afterwards is not seen by the same pass (the next pass sees it).
 func TestDispatchLoadsAppsOncePerPass(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	a := h.createApp("alpha")
 	lookup := h.c.appLookup(ctx)
 	if cl := classify(store.Operation{Kind: KindAppStart, TargetID: a.ID}, lookup); cl.global {

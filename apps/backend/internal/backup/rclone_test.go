@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -89,7 +88,7 @@ func TestUploadSpecIsScoped(t *testing.T) {
 	// A failing Remove keeps the container in the fake so its spec can be read.
 	fake.FailOn = map[string]error{"Remove": os.ErrPermission}
 	arts := []Artifact{{Path: "shop/mysql-shop-20260101T000000.000Z.sql.zst"}}
-	if err := d.Upload(context.Background(), "secure:daily", arts); err != nil {
+	if err := d.Upload(t.Context(), "secure:daily", arts); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.ContainsFunc(fake.Calls, func(c string) bool { return strings.HasPrefix(c, "Remove ") }) {
@@ -122,7 +121,7 @@ func TestUploadRefusesUnusableConfig(t *testing.T) {
 	}
 	for name, tc := range cases {
 		d, fake := rcloneDeps(t, tc.conf)
-		err := d.Upload(context.Background(), tc.remote, arts)
+		err := d.Upload(t.Context(), tc.remote, arts)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v", name, err)
 		}

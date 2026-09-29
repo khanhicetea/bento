@@ -110,8 +110,7 @@ func Main(args []string, version string) int {
 	r := &runner{layout: layout, json: *jsonOut, wait: !*noWait, version: version, out: os.Stdout}
 	if err := r.run(rest); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		var ae *APIError
-		if errors.As(err, &ae) && ae.Status < 500 {
+		if ae, ok := errors.AsType[*APIError](err); ok && ae.Status < 500 {
 			return 3
 		}
 		return 1

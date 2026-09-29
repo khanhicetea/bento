@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -382,7 +382,7 @@ func (m *Manager) WriteRedisConfig(service string, users []RedisUser) error {
 		"port 6379\nbind 0.0.0.0\nprotected-mode yes\ndir /data\nappendonly yes\n" +
 		"aclfile /etc/redis-bento/users.acl\n" +
 		fmt.Sprintf("maxmemory %d\nmaxmemory-policy noeviction\n", RedisMaxMemory())
-	sort.Slice(users, func(i, j int) bool { return users[i].Username < users[j].Username })
+	slices.SortFunc(users, func(a, b RedisUser) int { return strings.Compare(a.Username, b.Username) })
 	var acl bytes.Buffer
 	fmt.Fprintf(&acl, "user default on sanitize-payload #%s ~* &* +@all\n", platform.SHA256Hex([]byte(admin)))
 	for _, u := range users {
@@ -411,7 +411,7 @@ func RedisMaxMemory() int64 {
 	if err != nil {
 		return 256 << 20
 	}
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		if f := strings.Fields(line); len(f) >= 2 && f[0] == "MemTotal:" {
 			kb, err := strconv.ParseInt(f[1], 10, 64)
 			if err != nil {

@@ -146,14 +146,12 @@ func (d Deps) rcloneSpec(name string, role runtime.Role, opID string, mounts []m
 			Env:    []string{"RCLONE_CONFIG=" + rcloneConfigFile, "HOME=/tmp", "XDG_CACHE_HOME=/tmp/.cache"},
 			Labels: d.Names.Labels(role, map[string]string{runtime.LabelOperation: opID})},
 		HostConfig: &container.HostConfig{Mounts: mounts, ReadonlyRootfs: true, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=64m"},
-			CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges:true"}, Init: boolPtr(true),
+			CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges:true"}, Init: new(true),
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 			// The local driver compresses rotated files and refuses max-file 1.
 			LogConfig: container.LogConfig{Type: "local", Config: map[string]string{"max-size": "5m", "max-file": "2"}}},
 	}
 }
-
-func boolPtr(b bool) *bool { return &b }
 
 // runRclone runs one rclone command to completion and returns its exit code
 // and the tail of its output.

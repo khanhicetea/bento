@@ -1158,8 +1158,7 @@ func (c *Controller) handlePermissions(ctx context.Context, r *Run) (any, error)
 	owner := platform.Owner{UID: app.UID, GID: app.GID}
 	home := c.Layout.AppHome(app.Slug)
 	if err := c.verifyHome(app); err != nil {
-		var oe *OpError
-		if !(errors.As(err, &oe) && oe.Code == "home-owner") {
+		if oe, ok := errors.AsType[*OpError](err); !ok || oe.Code != "home-owner" {
 			return nil, err
 		}
 	}

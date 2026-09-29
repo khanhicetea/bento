@@ -39,11 +39,12 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	msg := fmt.Sprintf("%s: %s", e.Body.Code, e.Body.Message)
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "%s: %s", e.Body.Code, e.Body.Message)
 	for _, f := range e.Body.Fields {
-		msg += fmt.Sprintf("\n  %s: %s", f.Field, f.Message)
+		fmt.Fprintf(&msg, "\n  %s: %s", f.Field, f.Message)
 	}
-	return msg
+	return msg.String()
 }
 
 func (c *Client) Do(ctx context.Context, method, path string, body, out any, headers map[string]string) error {
@@ -92,7 +93,7 @@ func (c *Client) Mutate(ctx context.Context, method, path string, body any, wait
 	var acc dto.Accepted
 	key := "cli-" + platform.RandomHex(12)
 	var err error
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		err = c.Do(ctx, method, path, body, &acc, map[string]string{"Idempotency-Key": key})
 		if err == nil {
 			break
