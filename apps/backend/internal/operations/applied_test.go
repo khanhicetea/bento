@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,7 +19,7 @@ import (
 // reloading or recording applied state.
 func (h *harness) toolWrite(app domain.App) {
 	h.t.Helper()
-	ctx := context.Background()
+	ctx := h.t.Context()
 	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
 	if err != nil {
 		h.t.Fatal(err)
@@ -47,7 +46,7 @@ func (h *harness) toolWrite(app domain.App) {
 // the next minute is used so the write is always a change.
 func (h *harness) setVacuum(app domain.App, minute int) domain.App {
 	h.t.Helper()
-	ctx := context.Background()
+	ctx := h.t.Context()
 	if v := app.Bindings[0].Vacuum; v != nil && v.DayOfWeek == 0 && v.Hour == 3 && v.Minute == minute {
 		minute = (minute + 1) % 60
 	}
@@ -91,7 +90,7 @@ func (h *harness) logExec(validateExit int) *execLog {
 }
 
 func (h *harness) reconcile(app domain.App) store.Operation {
-	op, _, err := h.c.Submit(context.Background(), Submission{Kind: KindAppReconcile, TargetKind: "app", TargetID: app.ID, Origin: "reconciler"})
+	op, _, err := h.c.Submit(h.t.Context(), Submission{Kind: KindAppReconcile, TargetKind: "app", TargetID: app.ID, Origin: "reconciler"})
 	if err != nil {
 		h.t.Fatal(err)
 	}

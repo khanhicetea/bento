@@ -100,6 +100,10 @@ func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pr, pw := io.Pipe()
+	// Closing the read side unblocks the copier when the handler returns
+	// early (client gone, byte limit reached); otherwise it would block in
+	// pw.Write forever.
+	defer pr.Close()
 	go func() {
 		if tty {
 			_, err := io.Copy(pw, rc)

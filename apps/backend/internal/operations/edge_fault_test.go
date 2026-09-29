@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -30,7 +29,7 @@ func breakEdge(t *testing.T, h *harness, mode string) {
 }
 
 func hasWarning(h *harness, opID, substr string) bool {
-	events, _ := store.ListEvents(context.Background(), h.store.DB(), opID, 0)
+	events, _ := store.ListEvents(h.t.Context(), h.store.DB(), opID, 0)
 	return slices.ContainsFunc(events, func(e store.OpEvent) bool {
 		return e.Level == "warn" && strings.Contains(e.Message, substr)
 	})

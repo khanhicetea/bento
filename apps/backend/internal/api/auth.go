@@ -225,7 +225,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !verifyPassword(rec.Hash, req.Password) {
 		s.limiter.fail()
-		time.Sleep(300 * time.Millisecond)
+		select { // slow guessing, but not past a client that already left
+		case <-r.Context().Done():
+		case <-time.After(300 * time.Millisecond):
+		}
 		writeError(w, s.Log, &apiError{status: http.StatusUnauthorized, code: dto.ErrorCodeUnauthorized, msg: "invalid password"})
 		return
 	}

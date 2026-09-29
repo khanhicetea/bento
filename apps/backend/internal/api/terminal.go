@@ -381,7 +381,12 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, scope str
 	}
 	go func() {
 		defer cancel()
+		// One idle timer, re-armed on activity, instead of a new time.After
+		// per output chunk.
+		idle := time.NewTimer(terminalIdle)
+		defer idle.Stop()
 		for {
+			idle.Reset(terminalIdle)
 			select {
 			case <-ctx.Done():
 				return
@@ -403,7 +408,7 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, scope str
 					return
 				}
 			case <-activity:
-			case <-time.After(terminalIdle):
+			case <-idle.C:
 				_ = conn.Close(websocket.StatusPolicyViolation, "idle timeout")
 				return
 			}

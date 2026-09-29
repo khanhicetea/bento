@@ -53,7 +53,7 @@ func newHarnessWith(t *testing.T, mutate func(*Deps)) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	for k, v := range map[string]string{"stack_id": "stest", "stack_name": "test"} {
 		store.SetMeta(ctx, s.DB(), k, v)
 	}
@@ -72,7 +72,7 @@ func newHarnessWith(t *testing.T, mutate func(*Deps)) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rctx, cancel := context.WithCancel(ctx)
+	rctx, cancel := context.WithCancel(context.Background())
 	c.Start(rctx)
 	h := &harness{t: t, c: c, fake: fake, store: s, layout: layout, cancel: cancel}
 	t.Cleanup(func() {
@@ -87,7 +87,7 @@ func (h *harness) wait(op store.Operation) store.Operation {
 	h.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		got, err := store.GetOperation(context.Background(), h.store.DB(), op.ID)
+		got, err := store.GetOperation(h.t.Context(), h.store.DB(), op.ID)
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func (h *harness) wait(op store.Operation) store.Operation {
 
 func (h *harness) createApp(slug string) domain.App {
 	h.t.Helper()
-	app, op, err := h.c.CreateApp(context.Background(), CreateAppInput{
+	app, op, err := h.c.CreateApp(h.t.Context(), CreateAppInput{
 		Slug:    slug,
 		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}},
 		Domains: []string{slug + ".example.com"}, Bindings: []BindingRequest{{Engine: domain.EngineSQLite}},
@@ -113,7 +113,7 @@ func (h *harness) createApp(slug string) domain.App {
 	if got := h.wait(op); got.State != store.OpSucceeded {
 		h.t.Fatalf("provision failed: %s %s", got.ErrorCode, got.ErrorMessage)
 	}
-	app, _ = store.GetApp(context.Background(), h.store.DB(), app.ID)
+	app, _ = store.GetApp(h.t.Context(), h.store.DB(), app.ID)
 	return app
 }
 

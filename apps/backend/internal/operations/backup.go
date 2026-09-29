@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -426,8 +427,19 @@ func (c *Controller) RunSchedule(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		c.checkSchedule(ctx, time.Now())
+		c.safeCheckSchedule(ctx, time.Now())
 	}
+}
+
+// safeCheckSchedule keeps a panic in one schedule check from stopping the
+// resident backend; the next tick retries.
+func (c *Controller) safeCheckSchedule(ctx context.Context, now time.Time) {
+	defer func() {
+		if p := recover(); p != nil {
+			c.Log.Error("backup schedule check panicked", "panic", p, "stack", string(debug.Stack()))
+		}
+	}()
+	c.checkSchedule(ctx, now)
 }
 
 // checkSchedule submits at most one backup for the latest slot at or before

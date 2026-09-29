@@ -106,7 +106,11 @@ func (c *Client) Mutate(ctx context.Context, method, path string, body any, wait
 		if _, ok := errors.AsType[*APIError](err); ok {
 			return acc, err
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return acc, err
+		case <-time.After(time.Second):
+		}
 	}
 	if err != nil {
 		return acc, err

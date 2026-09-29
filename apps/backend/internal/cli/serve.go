@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -152,12 +153,15 @@ func Serve(opts ServeOptions) error {
 	}
 	ctrl.Start(ctx)
 	rec := reconcile.New(ctrl, log)
-	go rec.Run(ctx)
-	go ctrl.RunSchedule(ctx)
+	// Background loops end with ctx and are joined before the store closes.
+	var bg sync.WaitGroup
+	defer func() { cancel(); bg.Wait() }() // also on early error returns
+	bg.Go(func() { rec.Run(ctx) })
+	bg.Go(func() { ctrl.RunSchedule(ctx) })
 	// The relay child runs as an app UID; /proc/self/exe is a magic link, so
 	// the binary need not live in a directory that UID can traverse.
 	relay := scheduler.NewRelayManager(layout, "/proc/self/exe", log)
-	go func() {
+	bg.Go(func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
 		for {
@@ -168,7 +172,7 @@ func Serve(opts ServeOptions) error {
 				relay.Reap(false)
 			}
 		}
-	}()
+	})
 	utils := &utilsListeners{log: log, gateway: ctrl.AppsGateway, appsPort: appsPort(utilsAddrs), servers: map[string]*http.Server{}}
 	srv := &api.Server{C: ctrl, R: rec, Store: st, Layout: layout, Log: log, Version: opts.Version, StartedAt: time.Now(),
 		AllowedOrigins: origins, WebUI: webui.FS(), Relay: relay, UtilsAddrs: utils.Addrs}
@@ -189,7 +193,8 @@ func Serve(opts ServeOptions) error {
 	}
 	web := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	local := &http.Server{Handler: srv.LocalOnly(handler), ReadHeaderTimeout: 10 * time.Second, ConnContext: api.ConnContext}
-	errc := make(chan error, 4)
+	// One slot per listener, so no Serve goroutine blocks on a report nobody reads.
+	errc := make(chan error, 2+len(utilsAddrs))
 	go func() { errc <- web.Serve(tcp) }()
 	go func() { errc <- local.Serve(unixLn) }()
 	// The utils listener serves only self-authenticating routes (webhooks and
@@ -198,7 +203,15 @@ func Serve(opts ServeOptions) error {
 	if err := utils.startFixed(utilsAddrs, errc); err != nil {
 		return err
 	}
-	go utils.followApps(ctx)
+	// followApps is stopped before the utils listeners shut down, so it cannot
+	// bind a new apps-network listener during the drain.
+	followCtx, stopFollow := context.WithCancel(ctx)
+	defer stopFollow()
+	followDone := make(chan struct{})
+	go func() {
+		defer close(followDone)
+		utils.followApps(followCtx)
+	}()
 	log.Info("bento backend ready", "stack", ctrl.Stack.Name, "root", layout.Root, "listen", tcp.Addr().String(), "control", layout.ControlSocket(), "utils", utilsListen, "opConcurrency", opts.OpConcurrency, "ui", webui.Built())
 
 	sigs := make(chan os.Signal, 1)
@@ -220,9 +233,12 @@ func Serve(opts ServeOptions) error {
 	defer scancel()
 	_ = web.Shutdown(sctx)
 	_ = local.Shutdown(sctx)
+	stopFollow()
+	<-followDone
 	utils.shutdown(sctx)
 	ctrl.Shutdown(60 * time.Second)
 	cancel()
+	bg.Wait()
 	relay.Reap(true)
 	_ = os.Remove(layout.ControlSocket())
 	log.Info("backend stopped; app containers, ingress, and schedulers keep running")

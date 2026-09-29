@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -33,7 +32,7 @@ func githubPush(secret, delivery, ref string) (http.Header, []byte) {
 func (h *harness) webhookApp(slug string) (domain.App, domain.Webhook) {
 	h.t.Helper()
 	app := h.createApp(slug)
-	ctx := context.Background()
+	ctx := h.t.Context()
 	if _, err := h.c.EnableWebhook(ctx, app.ID); !errors.Is(err, ErrPrecondition) {
 		h.t.Fatalf("a webhook needs a git source first, got %v", err)
 	}

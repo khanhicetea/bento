@@ -749,11 +749,19 @@ func (r *runner) shell(ctx context.Context, c *Client, slug string, running bool
 		winch := make(chan os.Signal, 1)
 		signal.Notify(winch, syscall.SIGWINCH)
 		defer signal.Stop(winch)
+		// signal.Stop never closes winch, so the loop also ends with the shell.
+		winchCtx, stopWinch := context.WithCancel(ctx)
+		defer stopWinch()
 		go func() {
-			for range winch {
+			for {
+				select {
+				case <-winchCtx.Done():
+					return
+				case <-winch:
+				}
 				if w, h, err := term.GetSize(fd); err == nil {
 					msg, _ := json.Marshal(map[string]any{"type": "resize", "cols": w, "rows": h})
-					_ = conn.Write(ctx, websocket.MessageText, msg)
+					_ = conn.Write(winchCtx, websocket.MessageText, msg)
 				}
 			}
 		}()

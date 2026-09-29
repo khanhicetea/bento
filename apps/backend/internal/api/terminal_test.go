@@ -2,7 +2,6 @@ package api
 
 import (
 	"bufio"
-	"context"
 	"net"
 	"testing"
 	"time"
@@ -13,17 +12,20 @@ import (
 func newTestTermSession(t *testing.T) (*termSession, net.Conn) {
 	t.Helper()
 	shell, remote := net.Pipe()
-	_, cancel := context.WithCancel(context.Background())
 	ts := &termSession{
 		id: "t1", exec: &docker.ExecSession{ID: "e1", Conn: shell, Read: bufio.NewReader(shell)},
-		cancel: cancel, resize: func(uint, uint) {}, done: make(chan struct{}),
+		cancel: func() {}, resize: func(uint, uint) {}, done: make(chan struct{}),
 	}
 	go func() {
 		ts.pump()
 		ts.kill()
 		ts.finish(7)
 	}()
-	t.Cleanup(func() { _ = remote.Close() })
+	// Closing the remote end ends the pump; wait so no goroutine outlives the test.
+	t.Cleanup(func() {
+		_ = remote.Close()
+		<-ts.done
+	})
 	return ts, remote
 }
 

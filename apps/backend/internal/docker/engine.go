@@ -543,7 +543,11 @@ func (s *SDK) Exec(ctx context.Context, id string, req ExecRequest) (ExecResult,
 			return ExecResult{ExitCode: ins.ExitCode, Stdout: stdout.buf.Bytes(), Stderr: stderr.buf.Bytes(),
 				Truncated: stdout.truncated || stderr.truncated}, nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ExecResult{}, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	return ExecResult{}, errors.New("exec did not finish")
 }

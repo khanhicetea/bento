@@ -6,7 +6,9 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -104,10 +106,13 @@ func (r *Reconciler) Passes() int {
 	return r.passes
 }
 
-// Run watches events and resyncs periodically until ctx ends.
+// Run watches events and resyncs periodically until ctx ends. It returns
+// once its helper goroutines have stopped too.
 func (r *Reconciler) Run(ctx context.Context) {
-	go r.watchEvents(ctx)
-	go r.pruneHistory(ctx)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() { r.watchEvents(ctx) })
+	wg.Go(func() { r.pruneHistory(ctx) })
 	ticker := time.NewTicker(r.Interval)
 	defer ticker.Stop()
 	r.Trigger()
@@ -127,10 +132,23 @@ func (r *Reconciler) Run(ctx context.Context) {
 				<-r.trigger
 			}
 		}
-		if err := r.Pass(ctx); err != nil && ctx.Err() == nil {
+		if err := r.safePass(ctx); err != nil && ctx.Err() == nil {
 			r.Log.Warn("reconcile pass failed", "err", err)
 		}
 	}
+}
+
+// safePass runs Pass, turning a panic into an error: the reconciler runs in
+// the resident backend, where an unrecovered panic would stop the management
+// plane. Operation handlers are guarded the same way by the executor.
+func (r *Reconciler) safePass(ctx context.Context) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			r.Log.Error("reconcile pass panicked", "panic", p, "stack", string(debug.Stack()))
+			err = fmt.Errorf("reconcile pass panicked: %v", p)
+		}
+	}()
+	return r.Pass(ctx)
 }
 
 // pruneInterval is how often finished operation and backup history is pruned.
