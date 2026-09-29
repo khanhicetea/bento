@@ -40,10 +40,8 @@ func (c *Controller) EnableWebhook(ctx context.Context, id string) (domain.Webho
 		if err != nil {
 			return err
 		}
-		if _, ok, err := store.GetGitSource(ctx, q, app.ID); err != nil {
+		if err := requireGitSource(ctx, q, app); err != nil {
 			return err
-		} else if !ok {
-			return fmt.Errorf("%w: configure a git source for %s first", ErrPrecondition, app.Slug)
 		}
 		w, ok, err := store.GetWebhook(ctx, q, app.ID)
 		if err != nil {

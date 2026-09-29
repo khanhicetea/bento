@@ -113,6 +113,17 @@ func (c *Controller) RemoveGitSource(ctx context.Context, id string) error {
 	})
 }
 
+// requireGitSource refuses a request that needs the app's repository when no
+// git source is configured.
+func requireGitSource(ctx context.Context, q store.Q, app domain.App) error {
+	if _, ok, err := store.GetGitSource(ctx, q, app.ID); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: configure a git source for %s first", ErrPrecondition, app.Slug)
+	}
+	return nil
+}
+
 // Deploy triggers.
 const (
 	DeployTriggerManual  = "manual"
@@ -142,10 +153,8 @@ func (c *Controller) DeployApp(ctx context.Context, id, idem string) (store.Oper
 	if !app.Provisioned {
 		return store.Operation{}, fmt.Errorf("%w: app %s is not provisioned yet", ErrPrecondition, app.Slug)
 	}
-	if _, ok, err := store.GetGitSource(ctx, c.Store.DB(), app.ID); err != nil {
+	if err := requireGitSource(ctx, c.Store.DB(), app); err != nil {
 		return store.Operation{}, err
-	} else if !ok {
-		return store.Operation{}, fmt.Errorf("%w: configure a git source for %s first", ErrPrecondition, app.Slug)
 	}
 	op, _, err := c.Submit(ctx, Submission{Kind: KindAppDeploy, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem,
 		Request: DeployRequest{Trigger: DeployTriggerManual}})
