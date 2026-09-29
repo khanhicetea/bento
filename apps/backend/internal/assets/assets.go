@@ -85,7 +85,13 @@ func BuildContext(kind string) ([]byte, string, error) {
 	}
 	slices.Sort(dirList)
 	for _, d := range dirList {
-		if err := tw.WriteHeader(&tar.Header{Name: d + "/", Typeflag: tar.TypeDir, Mode: 0o755, ModTime: fixedTime, Format: tar.FormatPAX}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     d + "/",
+			Typeflag: tar.TypeDir,
+			Mode:     0o755,
+			ModTime:  fixedTime,
+			Format:   tar.FormatPAX,
+		}); err != nil {
 			return nil, "", err
 		}
 	}
@@ -94,7 +100,14 @@ func BuildContext(kind string) ([]byte, string, error) {
 		if executable(n) {
 			mode = 0o755
 		}
-		if err := tw.WriteHeader(&tar.Header{Name: n, Typeflag: tar.TypeReg, Mode: mode, Size: int64(len(files[n])), ModTime: fixedTime, Format: tar.FormatPAX}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     n,
+			Typeflag: tar.TypeReg,
+			Mode:     mode,
+			Size:     int64(len(files[n])),
+			ModTime:  fixedTime,
+			Format:   tar.FormatPAX,
+		}); err != nil {
 			return nil, "", err
 		}
 		if _, err := tw.Write(files[n]); err != nil {

@@ -71,7 +71,11 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hea
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
-			return fmt.Errorf("the Bento backend is not running for %s (start it with `bento serve --stack %s`)", c.Layout.Root, c.Layout.Root)
+			return fmt.Errorf(
+				"the Bento backend is not running for %s (start it with `bento serve --stack %s`)",
+				c.Layout.Root,
+				c.Layout.Root,
+			)
 		}
 		return err
 	}
@@ -94,7 +98,13 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hea
 
 // Mutate submits a mutation with a fresh idempotency key so a transport
 // retry cannot duplicate work, then optionally waits for the operation.
-func (c *Client) Mutate(ctx context.Context, method, path string, body any, wait bool, w io.Writer) (dto.Accepted, error) {
+func (c *Client) Mutate(
+	ctx context.Context,
+	method, path string,
+	body any,
+	wait bool,
+	w io.Writer,
+) (dto.Accepted, error) {
 	var acc dto.Accepted
 	key := "cli-" + platform.RandomHex(12)
 	var err error
@@ -136,7 +146,7 @@ func (c *Client) Mutate(ctx context.Context, method, path string, body any, wait
 
 // WaitOperation polls until the operation is terminal, printing new events.
 func (c *Client) WaitOperation(ctx context.Context, id string, w io.Writer) (dto.Operation, error) {
-	seen := 0
+	var seen int
 	for {
 		var op dto.Operation
 		if err := c.Do(ctx, "GET", "/api/v1/operations/"+id, nil, &op, nil); err != nil {
@@ -149,7 +159,10 @@ func (c *Client) WaitOperation(ctx context.Context, id string, w io.Writer) (dto
 			}
 		}
 		switch op.State {
-		case dto.OperationStateSucceeded, dto.OperationStateFailed, dto.OperationStateCancelled, dto.OperationStateInterrupted:
+		case dto.OperationStateSucceeded,
+			dto.OperationStateFailed,
+			dto.OperationStateCancelled,
+			dto.OperationStateInterrupted:
 			return op, nil
 		}
 		select {

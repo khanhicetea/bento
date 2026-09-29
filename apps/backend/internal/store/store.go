@@ -64,13 +64,23 @@ func CheckCompatible(path string) error {
 		return err
 	}
 	if appID != ApplicationID {
-		return fmt.Errorf("%w: %s is not a Bento state database (application_id=%#x); it was left untouched", ErrUnsupportedState, path, appID)
+		return fmt.Errorf(
+			"%w: %s is not a Bento state database (application_id=%#x); it was left untouched",
+			ErrUnsupportedState,
+			path,
+			appID,
+		)
 	}
 	if version < SchemaVersion {
 		return fmt.Errorf("%w: schema version %d is older than supported %d", ErrUnsupportedState, version, SchemaVersion)
 	}
 	if version > SchemaVersion {
-		return fmt.Errorf("%w: schema version %d was written by a newer Bento (supported %d)", ErrUnsupportedState, version, SchemaVersion)
+		return fmt.Errorf(
+			"%w: schema version %d was written by a newer Bento (supported %d)",
+			ErrUnsupportedState,
+			version,
+			SchemaVersion,
+		)
 	}
 	return nil
 }
@@ -89,9 +99,10 @@ func dsn(path string) string {
 
 // Create initializes a new baseline database. The file must not exist.
 func Create(path string) (*Store, error) {
-	if _, err := os.Lstat(path); err == nil {
+	switch _, err := os.Lstat(path); {
+	case err == nil:
 		return nil, fmt.Errorf("refusing to initialize: %s already exists", path)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	case !errors.Is(err, fs.ErrNotExist):
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
@@ -114,7 +125,11 @@ func Create(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA application_id = %d; PRAGMA user_version = %d;", ApplicationID, SchemaVersion)); err != nil {
+	if _, err := tx.Exec(fmt.Sprintf(
+		"PRAGMA application_id = %d; PRAGMA user_version = %d;",
+		ApplicationID,
+		SchemaVersion,
+	)); err != nil {
 		tx.Rollback()
 		db.Close()
 		return nil, err

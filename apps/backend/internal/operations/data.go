@@ -28,10 +28,25 @@ func (c *Controller) serviceContainer(ctx context.Context, s domain.DataService)
 		return "", err
 	}
 	if ins == nil || ins.State == nil || !ins.State.Running {
-		return "", Fail("service-unavailable", "Wait for reconciliation to start the service, or inspect its status.", "data service %s is not running", s.Name)
+		return "", Fail(
+			"service-unavailable",
+			"Wait for reconciliation to start the service, or inspect its status.",
+			"data service %s is not running",
+			s.Name,
+		)
 	}
-	if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, roleOf(s.Engine), "") || ins.Config.Labels[runtime.LabelService] != s.Name {
-		return "", Fail("foreign-container", "Resolve the conflicting container manually.", "container %s is not Bento's %s service", c.Names.ServiceContainer(s.Name), s.Name)
+	if ins.Config == nil || !c.Names.OwnedBy(
+		ins.Config.Labels,
+		roleOf(s.Engine),
+		"",
+	) || ins.Config.Labels[runtime.LabelService] != s.Name {
+		return "", Fail(
+			"foreign-container",
+			"Resolve the conflicting container manually.",
+			"container %s is not Bento's %s service",
+			c.Names.ServiceContainer(s.Name),
+			s.Name,
+		)
 	}
 	if err := c.Data().Ready(ctx, s, ins.ID); err != nil {
 		return "", Fail("service-not-ready", "Retry after the service finishes starting.", "%v", err)
@@ -57,7 +72,12 @@ func (c *Controller) provisionRelational(ctx context.Context, b domain.Binding) 
 	}
 	if err := c.Data().ProvisionBinding(ctx, svc.DataService, id, b); err != nil {
 		if _, ok := errors.AsType[*dataservices.AdoptionRefused](err); ok {
-			return Fail("database-retained", "Choose a different database name, or prune the retained app that owns it.", "%v", err)
+			return Fail(
+				"database-retained",
+				"Choose a different database name, or prune the retained app that owns it.",
+				"%v",
+				err,
+			)
 		}
 		return Fail("grant-failed", "Inspect the data service; grants are idempotent and can be retried.", "%v", err)
 	}
@@ -85,7 +105,10 @@ func (c *Controller) syncRedisACL(ctx context.Context) error {
 	var users []dataservices.RedisUser
 	for _, a := range apps {
 		if a.Redis.Username != "" {
-			users = append(users, dataservices.RedisUser{Username: a.Redis.Username, Password: a.Redis.Password, Prefix: a.Redis.Prefix})
+			users = append(
+				users,
+				dataservices.RedisUser{Username: a.Redis.Username, Password: a.Redis.Password, Prefix: a.Redis.Prefix},
+			)
 		}
 	}
 	if err := c.Data().EnsureSecrets(svc.DataService); err != nil {
@@ -124,16 +147,30 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 	}
 	if vol == nil {
 		if svc.Initialized || !allowInit {
-			return "", Fail("volume-missing", "Restore the volume from a backup or raw archive. Bento never replaces an established service's data with an empty volume.",
-				"volume %s for established service %s is missing", svc.Volume, svc.Name)
+			return "", Fail(
+				"volume-missing",
+				"Restore the volume from a backup or raw archive. Bento never replaces an established service's data with an empty volume.",
+				"volume %s for established service %s is missing",
+				svc.Volume,
+				svc.Name,
+			)
 		}
-		if _, err := c.Engine.VolumeCreate(ctx, svc.Volume, c.Names.Labels(runtime.RoleVolume, map[string]string{runtime.LabelService: svc.Name})); err != nil {
+		if _, err := c.Engine.VolumeCreate(
+			ctx,
+			svc.Volume,
+			c.Names.Labels(runtime.RoleVolume, map[string]string{runtime.LabelService: svc.Name}),
+		); err != nil {
 			return "", err
 		}
 		r.Info(ctx, "created volume %s", svc.Volume)
 	} else if !c.Names.OwnedBy(vol.Labels, runtime.RoleVolume, "") || vol.Labels[runtime.LabelService] != svc.Name {
-		return "", Fail("foreign-volume", "Rename the conflicting volume or choose another service name; Bento never adopts unknown volumes.",
-			"volume %s exists but is not owned by this stack's %s service", svc.Volume, svc.Name)
+		return "", Fail(
+			"foreign-volume",
+			"Rename the conflicting volume or choose another service name; Bento never adopts unknown volumes.",
+			"volume %s exists but is not owned by this stack's %s service",
+			svc.Volume,
+			svc.Name,
+		)
 	}
 	if _, ok, err := c.Engine.ImageID(ctx, svc.Image); err != nil {
 		return "", err
@@ -148,19 +185,34 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 	if err != nil {
 		return "", err
 	}
-	id := ""
+	var id string
 	if ins != nil {
-		if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, roleOf(svc.Engine), "") || ins.Config.Labels[runtime.LabelService] != svc.Name {
-			return "", Fail("foreign-container", "Resolve the conflicting container manually.", "container %s is not owned by this stack", spec.Name)
+		if ins.Config == nil || !c.Names.OwnedBy(
+			ins.Config.Labels,
+			roleOf(svc.Engine),
+			"",
+		) || ins.Config.Labels[runtime.LabelService] != svc.Name {
+			return "", Fail(
+				"foreign-container",
+				"Resolve the conflicting container manually.",
+				"container %s is not owned by this stack",
+				spec.Name,
+			)
 		}
-		mounted := false
+		var mounted bool
 		for _, m := range ins.Mounts {
 			if m.Name == svc.Volume {
 				mounted = true
 			}
 		}
 		if !mounted {
-			return "", Fail("unexpected-mounts", "Inspect the service container.", "service container %s does not mount volume %s", spec.Name, svc.Volume)
+			return "", Fail(
+				"unexpected-mounts",
+				"Inspect the service container.",
+				"service container %s does not mount volume %s",
+				spec.Name,
+				svc.Volume,
+			)
 		}
 		id = ins.ID
 		if ins.State == nil || !ins.State.Running {
@@ -187,9 +239,11 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 	}
 	deadline := time.Now().Add(c.ServiceReadyTimeout)
 	for {
-		if err := c.Data().Ready(ctx, svc.DataService, id); err == nil {
+		err := c.Data().Ready(ctx, svc.DataService, id)
+		if err == nil {
 			break
-		} else if time.Now().After(deadline) {
+		}
+		if time.Now().After(deadline) {
 			return "", Fail("service-not-ready", "Inspect the service logs.", "%v", err)
 		}
 		select {

@@ -190,9 +190,15 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 	var final string
 	switch t.Binding.Engine {
 	case domain.EngineMySQL, domain.EnginePostgres:
-		final = filepath.Join(dir, fmt.Sprintf("%s-%s-%s.sql%s", t.Binding.Engine, safeName.ReplaceAllString(t.Database, "_"), stamp, e))
+		final = filepath.Join(
+			dir,
+			fmt.Sprintf("%s-%s-%s.sql%s", t.Binding.Engine, safeName.ReplaceAllString(t.Database, "_"), stamp, e),
+		)
 	case domain.EngineSQLite:
-		final = filepath.Join(dir, fmt.Sprintf("sqlite-%s-%s.db%s", safeName.ReplaceAllString(t.Binding.SQLiteFileID, "_"), stamp, e))
+		final = filepath.Join(
+			dir,
+			fmt.Sprintf("sqlite-%s-%s.db%s", safeName.ReplaceAllString(t.Binding.SQLiteFileID, "_"), stamp, e),
+		)
 	}
 	partial := filepath.Join(dir, ".partial-"+platform.RandomHex(6))
 	f, err := os.OpenFile(partial, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
@@ -232,7 +238,14 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 		return Artifact{}, err
 	}
 	rel, _ := filepath.Rel(d.Layout.BackupsDir(), final)
-	return Artifact{Path: rel, AppSlug: t.App.Slug, Engine: t.Binding.Engine, Database: t.Database, SizeBytes: size, CreatedAt: now}, nil
+	return Artifact{
+		Path:      rel,
+		AppSlug:   t.App.Slug,
+		Engine:    t.Binding.Engine,
+		Database:  t.Database,
+		SizeBytes: size,
+		CreatedAt: now,
+	}, nil
 }
 
 func (d Deps) dumpRelational(ctx context.Context, t Target, w io.Writer) error {
@@ -256,12 +269,22 @@ func (d Deps) dumpRelational(ctx context.Context, t Target, w io.Writer) error {
 		df = &definerFilter{w: w}
 		out = df
 	}
-	res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{Cmd: cmd, Stdout: out, Stderr: &limitWriter{w: &stderr, n: 4096}})
+	res, err := d.Engine.Exec(
+		ctx,
+		id,
+		docker.ExecRequest{Cmd: cmd, Stdout: out, Stderr: &limitWriter{w: &stderr, n: 4096}},
+	)
 	if err != nil {
 		return err
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("%s dump of %s failed (exit %d): %s", svc.Engine, t.Database, res.ExitCode, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf(
+			"%s dump of %s failed (exit %d): %s",
+			svc.Engine,
+			t.Database,
+			res.ExitCode,
+			strings.TrimSpace(stderr.String()),
+		)
 	}
 	if df != nil {
 		return df.Flush()

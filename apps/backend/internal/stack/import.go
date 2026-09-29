@@ -66,7 +66,7 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 	if !empty {
 		return fmt.Errorf("refusing to import: %s is not empty", layout.Root)
 	}
-	createdRoot := false
+	var createdRoot bool
 	if _, statErr := os.Lstat(layout.Root); errors.Is(statErr, fs.ErrNotExist) {
 		createdRoot = true
 	}
@@ -119,7 +119,12 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 		return err
 	}
 	defer lock.Release()
-	if err = platform.CopyFile(filepath.Join(from, m.StateFile), layout.Database(), 0o600, platform.RootOwner); err != nil {
+	if err = platform.CopyFile(
+		filepath.Join(from, m.StateFile),
+		layout.Database(),
+		0o600,
+		platform.RootOwner,
+	); err != nil {
 		return err
 	}
 	s, err := store.Open(layout.Database())
@@ -177,7 +182,12 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 			}
 		}
 		for _, svc := range m.Services {
-			if _, err := q.ExecContext(ctx, "UPDATE data_services SET volume=? WHERE name=?", names.ServiceVolume(svc.Name), svc.Name); err != nil {
+			if _, err := q.ExecContext(
+				ctx,
+				"UPDATE data_services SET volume=? WHERE name=?",
+				names.ServiceVolume(svc.Name),
+				svc.Name,
+			); err != nil {
 				return err
 			}
 		}
@@ -235,7 +245,11 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 		} else if existing != nil {
 			return fmt.Errorf("volume %s already exists; choose a different stack name", vol)
 		}
-		if _, err = engine.VolumeCreate(ctx, vol, names.Labels(runtime.RoleVolume, map[string]string{runtime.LabelService: svc.Name})); err != nil {
+		if _, err = engine.VolumeCreate(
+			ctx,
+			vol,
+			names.Labels(runtime.RoleVolume, map[string]string{runtime.LabelService: svc.Name}),
+		); err != nil {
 			return err
 		}
 		createdVolumes = append(createdVolumes, vol)

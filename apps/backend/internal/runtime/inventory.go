@@ -69,8 +69,13 @@ func (u usage) add(key, who string, ours bool) {
 // stack from labels and from what this stack's containers reference. appSlugs
 // maps app IDs to display slugs. It is read-only: nothing here authorizes a
 // destructive action.
-func (n Names) ClassifyInventory(containers []container.Summary, images []docker.ImageSummary, volumes []docker.VolumeInfo,
-	networks []docker.NetworkSummary, appSlugs map[string]string) Inventory {
+func (n Names) ClassifyInventory(
+	containers []container.Summary,
+	images []docker.ImageSummary,
+	volumes []docker.VolumeInfo,
+	networks []docker.NetworkSummary,
+	appSlugs map[string]string,
+) Inventory {
 	imgs, vols, nets := newUsage(), newUsage(), newUsage()
 	anyUse := map[string]bool{}
 	for _, c := range containers {
@@ -138,7 +143,11 @@ func (n Names) classify(labels map[string]string, builtImage bool, u usage, key 
 
 // PrunableImage reports whether id may be removed by an image prune: the
 // image exists, was built by Bento, and no container references it.
-func PrunableImage(containers []container.Summary, images []docker.ImageSummary, id string) (docker.ImageSummary, bool) {
+func PrunableImage(
+	containers []container.Summary,
+	images []docker.ImageSummary,
+	id string,
+) (docker.ImageSummary, bool) {
 	for _, i := range images {
 		if i.ID != id {
 			continue

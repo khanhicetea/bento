@@ -85,12 +85,12 @@ type Input struct {
 // Render produces the full candidate file set, keyed by relative path.
 func Render(in Input) (map[string][]byte, error) {
 	s := in.Settings
-	suffix := ""
+	var suffix string
 	if s.HTTPSPort != 443 {
 		suffix = ":" + strconv.Itoa(s.HTTPSPort)
 	}
 	var routes []Route
-	anyACME := false
+	var anyACME bool
 	for _, a := range in.Apps {
 		if a.Ingress != domain.IngressManaged || a.Publication != domain.Published || len(a.Domains) == 0 {
 			continue
@@ -148,7 +148,13 @@ func Render(in Input) (map[string][]byte, error) {
 	return files, nil
 }
 
-func baseRoute(kind, name string, domains []domain.DomainLink, route domain.Route, s domain.EdgeSettings, suffix string) Route {
+func baseRoute(
+	kind, name string,
+	domains []domain.DomainLink,
+	route domain.Route,
+	s domain.EdgeSettings,
+	suffix string,
+) Route {
 	var names []string
 	for _, d := range domains {
 		names = append(names, d.Name)
@@ -172,9 +178,9 @@ func baseRoute(kind, name string, domains []domain.DomainLink, route domain.Rout
 }
 
 func splitUpstream(u string) (scheme, hostport, path string) {
-	scheme = "http"
+	scheme, port := "http", ":80"
 	if strings.HasPrefix(u, "https://") {
-		scheme = "https"
+		scheme, port = "https", ":443"
 	}
 	rest := strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
 	hostport, path, found := strings.Cut(rest, "/")
@@ -182,13 +188,9 @@ func splitUpstream(u string) (scheme, hostport, path string) {
 		path = "/" + path
 	}
 	if !strings.Contains(hostport, ":") {
-		if scheme == "https" {
-			hostport += ":443"
-		} else {
-			hostport += ":80"
-		}
+		hostport += port
 	}
-	return
+	return scheme, hostport, path
 }
 
 // Generations manages the on-disk config directories under edge/conf.
@@ -240,7 +242,7 @@ func (g Generations) Promote(name string) error {
 // Same reports whether files equal the live generation byte for byte.
 func (g Generations) Same(files map[string][]byte) bool {
 	live := g.Live()
-	count := 0
+	var count int
 	err := filepath.Walk(live, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
@@ -286,8 +288,18 @@ func EnsureBootCert(certsDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := platform.AtomicWrite(key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}), 0o600, platform.RootOwner); err != nil {
+	if err := platform.AtomicWrite(
+		key,
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}),
+		0o600,
+		platform.RootOwner,
+	); err != nil {
 		return err
 	}
-	return platform.AtomicWrite(crt, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644, platform.RootOwner)
+	return platform.AtomicWrite(
+		crt,
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		0o644,
+		platform.RootOwner,
+	)
 }

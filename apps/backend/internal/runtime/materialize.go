@@ -114,7 +114,12 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 		if err != nil {
 			return nil, nil, m, err
 		}
-		config = append(config, file{"nginx.conf", frontend, 0o440}, file{"fastcgi.conf", fastcgi, 0o440}, file{"php-fpm.conf", pool, 0o440})
+		config = append(
+			config,
+			file{"nginx.conf", frontend, 0o440},
+			file{"fastcgi.conf", fastcgi, 0o440},
+			file{"php-fpm.conf", pool, 0o440},
+		)
 		m.FrontendHash = platform.SHA256Hex(append(append([]byte{}, frontend...), fastcgi...))
 		m.PoolHash = platform.SHA256Hex(pool)
 	}
@@ -188,7 +193,7 @@ func (c Changes) Restore(names ...string) error {
 func (c Changes) RestoreUnapplied(except ...string) error {
 	var errs []error
 	for _, s := range Scopes {
-		if !c.Changed(s) || contains(except, s) {
+		if !c.Changed(s) || slices.Contains(except, s) {
 			continue
 		}
 		errs = append(errs, c.Restore(ScopeFiles(s)...))
@@ -222,10 +227,6 @@ func (c *Changes) MarkApplied(scopes ...string) error {
 // MarkAllApplied records every scope as applied: a freshly (re)started
 // instance loads all generated config at boot.
 func (c *Changes) MarkAllApplied() error { return c.MarkApplied(Scopes...) }
-
-func contains(list []string, s string) bool {
-	return slices.Contains(list, s)
-}
 
 // FrontendFiles, PoolFiles and SchedulerFiles name scoped-reload inputs.
 var (
@@ -341,7 +342,7 @@ func WriteAppConfigChanges(app domain.App, ctx AppContext) (Materialized, Change
 
 func scopeOf(name string) string {
 	for _, s := range Scopes {
-		if contains(ScopeFiles(s), name) {
+		if slices.Contains(ScopeFiles(s), name) {
 			return s
 		}
 	}
@@ -416,7 +417,7 @@ func CredentialsEnv(app domain.App) []byte {
 }
 
 func bindingFields(b domain.Binding, slug string) (conn, host string, port int, db, user, pass string) {
-	first := ""
+	var first string
 	if len(b.Databases) > 0 {
 		first = b.Databases[0]
 	}
@@ -483,13 +484,15 @@ func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool []byte, 
 		"OpenBasedir": openBasedir(app),
 	}
 	if frontend, err = assets.Render("app-nginx.conf.tmpl", data); err != nil {
-		return
+		return nil, nil, nil, err
 	}
 	if fastcgi, err = assets.Render("app-fastcgi.conf.tmpl", data); err != nil {
-		return
+		return nil, nil, nil, err
 	}
-	pool, err = assets.Render("php-fpm.conf.tmpl", data)
-	return
+	if pool, err = assets.Render("php-fpm.conf.tmpl", data); err != nil {
+		return nil, nil, nil, err
+	}
+	return frontend, fastcgi, pool, nil
 }
 
 func openBasedir(app domain.App) string {
@@ -510,7 +513,10 @@ func identityFiles(app domain.App, basePasswd, baseGroup []byte) ([]byte, []byte
 		name = "app" + strconv.Itoa(app.UID)
 	}
 	passwd := withTrailingNewline(stripID(basePasswd, app.UID))
-	passwd = append(passwd, fmt.Sprintf("%s:x:%d:%d:Bento app %s:%s:/bin/bash\n", name, app.UID, app.GID, app.Slug, app.ContainerHome())...)
+	passwd = append(
+		passwd,
+		fmt.Sprintf("%s:x:%d:%d:Bento app %s:%s:/bin/bash\n", name, app.UID, app.GID, app.Slug, app.ContainerHome())...,
+	)
 	group := withTrailingNewline(stripID(baseGroup, app.GID))
 	group = append(group, fmt.Sprintf("%s:x:%d:\n", name, app.GID)...)
 	return passwd, group

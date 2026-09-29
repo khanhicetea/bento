@@ -87,7 +87,11 @@ func (h *Harness) WaitIdle() {
 	h.T.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		ops, _ := store.ListOperations(h.T.Context(), h.Store.DB(), store.OpFilter{States: []store.OpState{store.OpQueued, store.OpRunning}})
+		ops, _ := store.ListOperations(
+			h.T.Context(),
+			h.Store.DB(),
+			store.OpFilter{States: []store.OpState{store.OpQueued, store.OpRunning}},
+		)
 		if len(ops) == 0 {
 			return
 		}

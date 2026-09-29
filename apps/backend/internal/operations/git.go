@@ -202,7 +202,12 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, Fail("git-source-missing", "Configure a git source for the app, then deploy again.", "app %s has no git source", app.Slug)
+		return nil, Fail(
+			"git-source-missing",
+			"Configure a git source for the app, then deploy again.",
+			"app %s has no git source",
+			app.Slug,
+		)
 	}
 	var dreq DeployRequest
 	if len(r.Op.Request) > 0 {
@@ -234,8 +239,13 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Env = append(req.Env, "BENTO_CODE_DIR="+app.ContainerCode(), "BENTO_GIT_URL="+g.RepoURL, "BENTO_GIT_BRANCH="+g.Branch)
-	key := ""
+	req.Env = append(
+		req.Env,
+		"BENTO_CODE_DIR="+app.ContainerCode(),
+		"BENTO_GIT_URL="+g.RepoURL,
+		"BENTO_GIT_BRANCH="+g.Branch,
+	)
+	var key string
 	if g.UsesSSH() {
 		key = g.PrivateKey
 	}
@@ -291,7 +301,14 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 
-	result := map[string]any{"commit": commit, "subject": subject, "branch": g.Branch, "reloaded": "", "trigger": dreq.Trigger, "script": script}
+	result := map[string]any{
+		"commit":   commit,
+		"subject":  subject,
+		"branch":   g.Branch,
+		"reloaded": "",
+		"trigger":  dreq.Trigger,
+		"script":   script,
+	}
 	if app.DesiredRuntime != domain.DesiredRunning {
 		r.Info(ctx, "app is stopped; start it to serve the new code")
 		return result, nil
@@ -362,12 +379,29 @@ func (c *Controller) deployScriptPresent(app domain.App) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	guidance := fmt.Sprintf("Make ~/%s a regular executable file owned by the app (chmod 755), or remove it to deploy without a script.", DeployScriptName)
+	guidance := fmt.Sprintf(
+		"Make ~/%s a regular executable file owned by the app (chmod 755), or remove it to deploy without a script.",
+		DeployScriptName,
+	)
 	if !st.Mode().IsRegular() {
-		return false, Fail("deploy-script-invalid", guidance, "~/%s of app %s is not a regular file (%s)", DeployScriptName, app.Slug, st.Mode().Type())
+		return false, Fail(
+			"deploy-script-invalid",
+			guidance,
+			"~/%s of app %s is not a regular file (%s)",
+			DeployScriptName,
+			app.Slug,
+			st.Mode().Type(),
+		)
 	}
 	if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) != app.UID && sys.Uid != 0 {
-		return false, Fail("deploy-script-invalid", guidance, "~/%s of app %s is owned by uid %d", DeployScriptName, app.Slug, sys.Uid)
+		return false, Fail(
+			"deploy-script-invalid",
+			guidance,
+			"~/%s of app %s is owned by uid %d",
+			DeployScriptName,
+			app.Slug,
+			sys.Uid,
+		)
 	}
 	if st.Mode().Perm()&0o100 == 0 {
 		return false, Fail("deploy-script-invalid", guidance, "~/%s of app %s is not executable", DeployScriptName, app.Slug)
@@ -379,7 +413,15 @@ func (c *Controller) deployScriptPresent(app domain.App) (bool, error) {
 // container, from the code directory, in a separate exec from the fetch so
 // the deploy key is already gone. It receives a normalized environment, never
 // the raw webhook payload.
-func (c *Controller) runDeployScript(ctx context.Context, r *Run, app domain.App, tool *ToolSession, g domain.GitSource, d DeployRequest, commit string) error {
+func (c *Controller) runDeployScript(
+	ctx context.Context,
+	r *Run,
+	app domain.App,
+	tool *ToolSession,
+	g domain.GitSource,
+	d DeployRequest,
+	commit string,
+) error {
 	req, err := ExecRequestFor(app, []string{app.ContainerHome() + "/" + DeployScriptName}, "")
 	if err != nil {
 		return err
@@ -427,7 +469,14 @@ func (c *Controller) runDeployScript(ctx context.Context, r *Run, app domain.App
 		if len(errTail) > 0 {
 			detail = redact.Replace(errTail[len(errTail)-1])
 		}
-		return Fail("deploy-script-failed", guidance, "~/%s exited with status %d: %s", DeployScriptName, res.ExitCode, detail)
+		return Fail(
+			"deploy-script-failed",
+			guidance,
+			"~/%s exited with status %d: %s",
+			DeployScriptName,
+			res.ExitCode,
+			detail,
+		)
 	}
 	r.Info(ctx, "~/%s finished", DeployScriptName)
 	return nil
@@ -439,7 +488,10 @@ func deployFailure(app domain.App, g domain.GitSource, exit int, gitLog []string
 		detail = gitLog[len(gitLog)-1]
 	}
 	for _, line := range gitLog {
-		if strings.Contains(line, "Permission denied") || strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "ERROR:") {
+		if strings.Contains(
+			line,
+			"Permission denied",
+		) || strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "ERROR:") {
 			detail = line
 			break
 		}
@@ -447,21 +499,56 @@ func deployFailure(app domain.App, g domain.GitSource, exit int, gitLog []string
 	joined := strings.Join(gitLog, "\n")
 	switch {
 	case exit == 65:
-		return Fail("git-origin-mismatch", "Point the app at the repository already checked out, or move the existing code away.", "%s", detail)
+		return Fail(
+			"git-origin-mismatch",
+			"Point the app at the repository already checked out, or move the existing code away.",
+			"%s",
+			detail,
+		)
 	case exit == 66:
-		return Fail("code-dir-not-empty", "Deploy only clones into an empty code directory. Move the existing files out of app/ or initialize them as a checkout of the repository.", "%s", detail)
+		return Fail(
+			"code-dir-not-empty",
+			"Deploy only clones into an empty code directory. Move the existing files out of app/ or initialize them as a checkout of the repository.",
+			"%s",
+			detail,
+		)
 	case strings.Contains(joined, "Permission denied (publickey)"), strings.Contains(joined, "Repository not found"),
 		strings.Contains(joined, "Could not read from remote repository"):
-		return Fail("git-access-denied", fmt.Sprintf("Add this read-only deploy key to the repository (%s) and deploy again: %s", g.Fingerprint, g.PublicKey),
-			"app %s could not read %s: %s", app.Slug, g.RepoURL, detail)
-	case strings.Contains(joined, "Host key verification failed"), strings.Contains(joined, "REMOTE HOST IDENTIFICATION HAS CHANGED"):
-		return Fail("git-host-key", "The git host key differs from the one pinned in ~/.ssh/known_hosts of the app. Verify the host and edit that file if the change is legitimate.",
-			"host key check failed for %s", g.RepoURL)
+		return Fail(
+			"git-access-denied",
+			fmt.Sprintf("Add this read-only deploy key to the repository (%s) and deploy again: %s", g.Fingerprint, g.PublicKey),
+			"app %s could not read %s: %s",
+			app.Slug,
+			g.RepoURL,
+			detail,
+		)
+	case strings.Contains(joined, "Host key verification failed"), strings.Contains(
+		joined,
+		"REMOTE HOST IDENTIFICATION HAS CHANGED",
+	):
+		return Fail(
+			"git-host-key",
+			"The git host key differs from the one pinned in ~/.ssh/known_hosts of the app. Verify the host and edit that file if the change is legitimate.",
+			"host key check failed for %s",
+			g.RepoURL,
+		)
 	case strings.Contains(joined, "Remote branch") && strings.Contains(joined, "not found"),
 		strings.Contains(joined, "couldn't find remote ref"):
-		return Fail("git-branch-missing", "Check the configured branch name.", "branch %s was not found in %s", g.Branch, g.RepoURL)
+		return Fail(
+			"git-branch-missing",
+			"Check the configured branch name.",
+			"branch %s was not found in %s",
+			g.Branch,
+			g.RepoURL,
+		)
 	}
-	return Fail("deploy-failed", "Inspect the git output in the operation events.", "git exited with status %d: %s", exit, detail)
+	return Fail(
+		"deploy-failed",
+		"Inspect the git output in the operation events.",
+		"git exited with status %d: %s",
+		exit,
+		detail,
+	)
 }
 
 func tailLines(b []byte, n int) []string {

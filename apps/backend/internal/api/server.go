@@ -141,7 +141,10 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Frame-Options", "DENY")
-		h.Set("Content-Security-Policy", "default-src 'self'; frame-src 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'")
+		h.Set(
+			"Content-Security-Policy",
+			"default-src 'self'; frame-src 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'",
+		)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -209,7 +212,11 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 			st.RunningApps++
 		}
 	}
-	queued, _ := store.ListOperations(ctx, s.Store.DB(), store.OpFilter{States: []store.OpState{store.OpQueued, store.OpRunning}, Limit: 500})
+	queued, _ := store.ListOperations(
+		ctx,
+		s.Store.DB(),
+		store.OpFilter{States: []store.OpState{store.OpQueued, store.OpRunning}, Limit: 500},
+	)
 	st.QueuedOps = len(queued)
 	writeJSON(w, http.StatusOK, st)
 }
@@ -381,8 +388,13 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	in := operations.CreateAppInput{Slug: req.Slug, Runtime: runtimeFromDTO(req.Runtime), Ingress: domain.IngressMode(req.Ingress),
-		Domains: req.Domains, Route: routeFromDTO(req.Route)}
+	in := operations.CreateAppInput{
+		Slug:    req.Slug,
+		Runtime: runtimeFromDTO(req.Runtime),
+		Ingress: domain.IngressMode(req.Ingress),
+		Domains: req.Domains,
+		Route:   routeFromDTO(req.Route),
+	}
 	if req.Resources != nil {
 		in.Resources = domain.Resources(*req.Resources)
 	}
@@ -514,7 +526,12 @@ func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, err := s.C.AddBinding(r.Context(), app.ID, operations.BindingRequest{Engine: domain.Engine(req.Engine), Service: req.Service}, idem)
+	op, err := s.C.AddBinding(
+		r.Context(),
+		app.ID,
+		operations.BindingRequest{Engine: domain.Engine(req.Engine), Service: req.Service},
+		idem,
+	)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -596,7 +613,11 @@ func (s *Server) handlePutGitSource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	g, err := s.C.SetGitSource(r.Context(), app.ID, operations.GitSourceInput{RepoURL: req.RepoURL, Branch: req.Branch, RotateKey: req.RotateKey})
+	g, err := s.C.SetGitSource(
+		r.Context(),
+		app.ID,
+		operations.GitSourceInput{RepoURL: req.RepoURL, Branch: req.Branch, RotateKey: req.RotateKey},
+	)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -647,7 +668,11 @@ func (s *Server) handleEnableWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, dto.WebhookSecret{Webhook: webhookToDTO(hook, true, s.webhookBase(r, app), s.utilsTargets()), Secret: hook.Secret})
+	writeJSON(
+		w,
+		http.StatusOK,
+		dto.WebhookSecret{Webhook: webhookToDTO(hook, true, s.webhookBase(r, app), s.utilsTargets()), Secret: hook.Secret},
+	)
 }
 
 func (s *Server) handleDisableWebhook(w http.ResponseWriter, r *http.Request) {
@@ -692,7 +717,10 @@ func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 		return ps.BaseURL
 	}
 	es, err := s.C.EdgeSettings(r.Context())
-	if err != nil || !es.Enabled || s.C.UtilsAppsPort == 0 || app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
+	if err != nil || !es.Enabled || s.C.UtilsAppsPort == 0 {
+		return ""
+	}
+	if app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
 		return ""
 	}
 	for _, d := range app.Domains {
@@ -804,7 +832,11 @@ func (s *Server) handleCancelOp(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReconcileStatus(w http.ResponseWriter, r *http.Request) {
 	out := dto.ReconcileStatus{Targets: []dto.ReconcileTarget{}}
 	for id, st := range s.R.Statuses() {
-		t := dto.ReconcileTarget{ID: id, Reconcile: dto.Reconcile{Failures: st.Failures, Blocked: st.Blocked, LastError: st.LastError}, PendingOperation: st.Pending}
+		t := dto.ReconcileTarget{
+			ID:               id,
+			Reconcile:        dto.Reconcile{Failures: st.Failures, Blocked: st.Blocked, LastError: st.LastError},
+			PendingOperation: st.Pending,
+		}
 		if !st.NextAttempt.IsZero() {
 			t.Reconcile.NextAttempt = platform.FormatTime(st.NextAttempt)
 		}
@@ -822,7 +854,14 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 	}
 	out := dto.ServiceList{Services: []dto.Service{}}
 	for _, row := range rows {
-		svc := dto.Service{Name: row.Name, Engine: dto.Engine(row.Engine), Version: row.Version, Image: row.Image, Volume: row.Volume, Initialized: row.Initialized}
+		svc := dto.Service{
+			Name:        row.Name,
+			Engine:      dto.Engine(row.Engine),
+			Version:     row.Version,
+			Image:       row.Image,
+			Volume:      row.Volume,
+			Initialized: row.Initialized,
+		}
 		ins, err := s.C.Engine.Inspect(r.Context(), s.C.Names.ServiceContainer(row.Name))
 		switch {
 		case err != nil:
@@ -876,7 +915,11 @@ func (s *Server) handleGetEdge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	st := dto.EdgeStatus{Settings: dto.EdgeSettings(es), State: s.containerState(r.Context(), s.C.Names.EdgeContainer()), Routes: []string{}}
+	st := dto.EdgeStatus{
+		Settings: dto.EdgeSettings(es),
+		State:    s.containerState(r.Context(), s.C.Names.EdgeContainer()),
+		Routes:   []string{},
+	}
 	if entries, err := os.ReadDir(s.Layout.EdgeConfDir() + "/live/sites"); err == nil {
 		for _, e := range entries {
 			st.Routes = append(st.Routes, strings.TrimSuffix(e.Name(), ".conf"))
@@ -926,9 +969,13 @@ func (s *Server) handleGetTunnel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.TunnelStatus{Enabled: ts.Enabled, TokenGeneration: int(ts.TokenGeneration),
-		State: s.containerState(r.Context(), s.C.Names.TunnelContainer()),
-		Note:  "Cloudflare hostname and origin rules are operator-owned; target http://app-<appId>:<port> or the edge. The token is never returned."})
+	writeJSON(w, http.StatusOK, dto.TunnelStatus{
+		Enabled:         ts.Enabled,
+		TokenGeneration: int(ts.TokenGeneration),
+		State:           s.containerState(r.Context(), s.C.Names.TunnelContainer()),
+		Note: "Cloudflare hostname and origin rules are operator-owned; " +
+			"target http://app-<appId>:<port> or the edge. The token is never returned.",
+	})
 }
 
 func (s *Server) handlePutTunnel(w http.ResponseWriter, r *http.Request) {
@@ -974,8 +1021,12 @@ func (s *Server) handleUpsertProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	_, op, err := s.C.UpsertProxy(r.Context(), operations.ProxyInput{Name: req.Name, Upstreams: req.Upstreams, Domains: req.Domains,
-		Route: routeFromDTO(req.Route), Enabled: req.Enabled}, idem)
+	_, op, err := s.C.UpsertProxy(
+		r.Context(),
+		operations.ProxyInput{Name: req.Name, Upstreams: req.Upstreams, Domains: req.Domains,
+			Route: routeFromDTO(req.Route), Enabled: req.Enabled},
+		idem,
+	)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -1020,7 +1071,15 @@ func (s *Server) handleListRetired(w http.ResponseWriter, r *http.Request) {
 		d := dto.RetiredApp{AppID: ra.AppID, Slug: ra.Slug, UID: ra.UID, RetiredAt: ra.RetiredAt, PrunedAt: ra.PrunedAt,
 			Home: ra.Artifacts.Home, SQLiteFileIDs: nonNil(ra.Artifacts.SQLiteFileIDs), Relational: []dto.RetainedRelational{}}
 		for _, rel := range ra.Artifacts.Relational {
-			d.Relational = append(d.Relational, dto.RetainedRelational{Engine: dto.Engine(rel.Engine), Service: rel.Service, Username: rel.Username, Databases: nonNil(rel.Databases)})
+			d.Relational = append(
+				d.Relational,
+				dto.RetainedRelational{
+					Engine:    dto.Engine(rel.Engine),
+					Service:   rel.Service,
+					Username:  rel.Username,
+					Databases: nonNil(rel.Databases),
+				},
+			)
 		}
 		out.Retired = append(out.Retired, d)
 	}

@@ -111,6 +111,10 @@ type Controller struct {
 	netMu  sync.Mutex // network plan + network creation
 	edgeMu sync.Mutex // edge generations, container and reload
 	aclMu  sync.Mutex // Redis ACL file and reload
+
+	// webhookMu serializes webhook deliveries so coalescing sees queued
+	// deploys. Only HandleWebhook takes it, before any other controller lock.
+	webhookMu sync.Mutex
 }
 
 type warmState struct {
@@ -198,7 +202,11 @@ type Submission struct {
 // without re-applying Mutate.
 func (c *Controller) Submit(ctx context.Context, s Submission) (store.Operation, bool, error) {
 	if c.stopping.Load() {
-		return store.Operation{}, false, Fail("shutting-down", "Retry after the backend restarts.", "backend is shutting down and not accepting new operations")
+		return store.Operation{}, false, Fail(
+			"shutting-down",
+			"Retry after the backend restarts.",
+			"backend is shutting down and not accepting new operations",
+		)
 	}
 	if _, ok := c.handlers[s.Kind]; !ok {
 		return store.Operation{}, false, fmt.Errorf("unknown operation kind %q", s.Kind)
@@ -314,7 +322,7 @@ func (c *Controller) dispatch(ctx context.Context) (bool, error) {
 	free := c.Concurrency - c.runningCount()
 	var waiting []pending
 	waitingOn := map[string]string{}
-	started := false
+	var started bool
 	for _, op := range queued {
 		if c.stopping.Load() || ctx.Err() != nil {
 			break
@@ -635,7 +643,13 @@ func (r *Run) Warn(ctx context.Context, format string, args ...any) {
 // event appends to the operation journal and wakes subscribers. The journal is
 // advisory, so a failed write is logged (without the message) and not returned.
 func (r *Run) event(ctx context.Context, level, msg string) {
-	if err := store.AppendEvent(ctx, r.c.Store.DB(), r.Op.ID, level, msg); err != nil && !errors.Is(err, context.Canceled) {
+	if err := store.AppendEvent(
+		ctx,
+		r.c.Store.DB(),
+		r.Op.ID,
+		level,
+		msg,
+	); err != nil && !errors.Is(err, context.Canceled) {
 		r.c.Log.Warn("record operation event", "op", r.Op.ID, "level", level, "err", err)
 	}
 	r.c.notify(r.Op.ID)

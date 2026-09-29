@@ -142,7 +142,7 @@ func (s *Server) handleOpEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	after := 0
+	var after int
 	if v := r.Header.Get("Last-Event-ID"); v != "" {
 		after, _ = strconv.Atoi(v)
 	}
@@ -161,7 +161,12 @@ func (s *Server) handleOpEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, e := range events {
 			after = e.Seq
-			if sseEvent(w, "event", strconv.Itoa(e.Seq), dto.OperationEvent{Seq: e.Seq, At: e.At, Level: e.Level, Message: e.Message}) != nil {
+			if sseEvent(
+				w,
+				"event",
+				strconv.Itoa(e.Seq),
+				dto.OperationEvent{Seq: e.Seq, At: e.At, Level: e.Level, Message: e.Message},
+			) != nil {
 				return
 			}
 		}
@@ -280,7 +285,7 @@ const (
 // stream ended; a final unterminated line is returned with io.EOF.
 func readBoundedLine(br *bufio.Reader, limit int) (string, error) {
 	var buf []byte
-	truncated := false
+	var truncated bool
 	for {
 		chunk, err := br.ReadSlice('\n')
 		chunk = bytes.TrimSuffix(chunk, []byte("\n"))
@@ -304,5 +309,10 @@ func readBoundedLine(br *bufio.Reader, limit int) (string, error) {
 // redactedExecResult applies the app's log redaction to exec output.
 func redactedExecResult(app domain.App, code int, stdout, stderr []byte, truncated bool) dto.ExecResult {
 	red := redactor(app)
-	return dto.ExecResult{ExitCode: code, Stdout: red.Replace(string(stdout)), Stderr: red.Replace(string(stderr)), Truncated: truncated}
+	return dto.ExecResult{
+		ExitCode:  code,
+		Stdout:    red.Replace(string(stdout)),
+		Stderr:    red.Replace(string(stderr)),
+		Truncated: truncated,
+	}
 }

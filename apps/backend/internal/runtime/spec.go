@@ -38,7 +38,10 @@ func appMounts(in AppInputs) []mount.Mount {
 	}
 	for _, b := range app.Bindings {
 		if b.Engine == domain.EngineSQLite {
-			ms = append(ms, mount.Mount{Type: mount.TypeBind, Source: in.Layout.SQLiteFileDir(b.SQLiteFileID), Target: b.SQLiteContainerDir()})
+			ms = append(
+				ms,
+				mount.Mount{Type: mount.TypeBind, Source: in.Layout.SQLiteFileDir(b.SQLiteFileID), Target: b.SQLiteContainerDir()},
+			)
 		}
 	}
 	for i := range ms {

@@ -121,7 +121,13 @@ type Engine interface {
 	Version(ctx context.Context) (VersionInfo, error)
 	ImageID(ctx context.Context, ref string) (string, bool, error)
 	PullImage(ctx context.Context, ref string, progress func(string)) error
-	BuildImage(ctx context.Context, tag string, buildContext io.Reader, args, labels map[string]string, progress func(string)) (string, error)
+	BuildImage(
+		ctx context.Context,
+		tag string,
+		buildContext io.Reader,
+		args, labels map[string]string,
+		progress func(string),
+	) (string, error)
 	ReadImageFile(ctx context.Context, image, path string, labels map[string]string) ([]byte, error)
 	EnsureNetwork(ctx context.Context, spec NetworkSpec) (NetworkInfo, error)
 	UsedSubnets(ctx context.Context) ([]netip.Prefix, error)
@@ -180,7 +186,11 @@ func (s *SDK) Version(ctx context.Context) (VersionInfo, error) {
 		return VersionInfo{}, err
 	}
 	if versionLess(v.APIVersion, MinAPIVersion) {
-		return VersionInfo{}, fmt.Errorf("docker engine API %s is older than the supported minimum %s", v.APIVersion, MinAPIVersion)
+		return VersionInfo{}, fmt.Errorf(
+			"docker engine API %s is older than the supported minimum %s",
+			v.APIVersion,
+			MinAPIVersion,
+		)
 	}
 	return VersionInfo{ServerVersion: v.Version, APIVersion: v.APIVersion, Arch: v.Arch}, nil
 }
@@ -209,7 +219,7 @@ func (s *SDK) PullImage(ctx context.Context, ref string, progress func(string)) 
 		return err
 	}
 	defer resp.Close()
-	last := ""
+	var last string
 	for msg, err := range resp.JSONMessages(ctx) {
 		if err != nil {
 			return err
@@ -233,7 +243,13 @@ type buildLine struct {
 	} `json:"aux"`
 }
 
-func (s *SDK) BuildImage(ctx context.Context, tag string, buildContext io.Reader, args, labels map[string]string, progress func(string)) (string, error) {
+func (s *SDK) BuildImage(
+	ctx context.Context,
+	tag string,
+	buildContext io.Reader,
+	args, labels map[string]string,
+	progress func(string),
+) (string, error) {
 	buildArgs := map[string]*string{}
 	for k, v := range args {
 		buildArgs[k] = &v
@@ -329,7 +345,13 @@ func (s *SDK) EnsureNetwork(ctx context.Context, spec NetworkSpec) (NetworkInfo,
 	if err != nil {
 		return NetworkInfo{}, err
 	}
-	return NetworkInfo{ID: res.ID, Name: spec.Name, Internal: spec.Internal, Labels: spec.Labels, Subnets: []netip.Prefix{spec.Subnet}}, nil
+	return NetworkInfo{
+		ID:       res.ID,
+		Name:     spec.Name,
+		Internal: spec.Internal,
+		Labels:   spec.Labels,
+		Subnets:  []netip.Prefix{spec.Subnet},
+	}, nil
 }
 
 // UsedSubnets lists IPv4 subnets of every Docker network on the host.
@@ -357,7 +379,12 @@ func (s *SDK) InspectNetwork(ctx context.Context, name string) (*NetworkInfo, er
 	if err != nil {
 		return nil, err
 	}
-	info := &NetworkInfo{ID: res.Network.ID, Name: res.Network.Name, Internal: res.Network.Internal, Labels: res.Network.Labels}
+	info := &NetworkInfo{
+		ID:       res.Network.ID,
+		Name:     res.Network.Name,
+		Internal: res.Network.Internal,
+		Labels:   res.Network.Labels,
+	}
 	for _, c := range res.Network.IPAM.Config {
 		if c.Subnet.IsValid() {
 			info.Subnets = append(info.Subnets, c.Subnet)
@@ -433,7 +460,11 @@ func (s *SDK) Signal(ctx context.Context, id, signal string) error {
 }
 
 func (s *SDK) SetRestartPolicy(ctx context.Context, id string, policy container.RestartPolicyMode) error {
-	_, err := s.c.ContainerUpdate(ctx, id, client.ContainerUpdateOptions{RestartPolicy: &container.RestartPolicy{Name: policy}})
+	_, err := s.c.ContainerUpdate(
+		ctx,
+		id,
+		client.ContainerUpdateOptions{RestartPolicy: &container.RestartPolicy{Name: policy}},
+	)
 	return err
 }
 
@@ -561,7 +592,11 @@ func (s *SDK) ExecAttach(ctx context.Context, id string, req ExecRequest, height
 	if err != nil {
 		return nil, err
 	}
-	att, err := s.c.ExecAttach(ctx, created.ID, client.ExecAttachOptions{TTY: true, ConsoleSize: client.ConsoleSize{Height: height, Width: width}})
+	att, err := s.c.ExecAttach(
+		ctx,
+		created.ID,
+		client.ExecAttachOptions{TTY: true, ConsoleSize: client.ConsoleSize{Height: height, Width: width}},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -581,7 +616,13 @@ func (s *SDK) ExecExitCode(ctx context.Context, execID string) (int, bool, error
 	return ins.ExitCode, !ins.Running, nil
 }
 
-func (s *SDK) Logs(ctx context.Context, id string, tail string, follow bool, since string) (io.ReadCloser, bool, error) {
+func (s *SDK) Logs(
+	ctx context.Context,
+	id string,
+	tail string,
+	follow bool,
+	since string,
+) (io.ReadCloser, bool, error) {
 	ins, err := s.Inspect(ctx, id)
 	if err != nil {
 		return nil, false, err
@@ -654,7 +695,11 @@ func (s *SDK) RemoveImage(ctx context.Context, id string, tags []string) error {
 		refs = []string{id}
 	}
 	for _, ref := range refs {
-		if _, err := s.c.ImageRemove(ctx, ref, client.ImageRemoveOptions{PruneChildren: true}); err != nil && !IsNotFound(err) {
+		if _, err := s.c.ImageRemove(
+			ctx,
+			ref,
+			client.ImageRemoveOptions{PruneChildren: true},
+		); err != nil && !IsNotFound(err) {
 			return err
 		}
 	}
@@ -789,7 +834,11 @@ var topColumns = []string{"pid", "ppid", "user", "pcpu", "pmem", "rss", "etime",
 // Top lists the container's processes. Returns nil when the container is
 // missing or not running.
 func (s *SDK) Top(ctx context.Context, id string) ([]Process, error) {
-	res, err := s.c.ContainerTop(ctx, id, client.ContainerTopOptions{Arguments: []string{"-o", strings.Join(topColumns, ",")}})
+	res, err := s.c.ContainerTop(
+		ctx,
+		id,
+		client.ContainerTopOptions{Arguments: []string{"-o", strings.Join(topColumns, ",")}},
+	)
 	if IsNotFound(err) || (err != nil && strings.Contains(err.Error(), "is not running")) {
 		return nil, nil
 	}

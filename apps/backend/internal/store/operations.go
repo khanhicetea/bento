@@ -97,9 +97,22 @@ func InsertOperation(ctx context.Context, q Q, o Operation) (Operation, bool, er
 	}
 	o.State = OpQueued
 	o.CreatedAt = now()
-	_, err := q.ExecContext(ctx, `INSERT INTO operations(id, kind, target_kind, target_id, state, phase, target_generation, idempotency_key,
+	_, err := q.ExecContext(
+		ctx,
+		`INSERT INTO operations(id, kind, target_kind, target_id, state, phase, target_generation, idempotency_key,
 		request_json, origin, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		o.ID, o.Kind, o.TargetKind, o.TargetID, o.State, o.Phase, o.TargetGeneration, nullable(o.IdempotencyKey), string(o.Request), o.Origin, o.CreatedAt)
+		o.ID,
+		o.Kind,
+		o.TargetKind,
+		o.TargetID,
+		o.State,
+		o.Phase,
+		o.TargetGeneration,
+		nullable(o.IdempotencyKey),
+		string(o.Request),
+		o.Origin,
+		o.CreatedAt,
+	)
 	if isUniqueViolation(err) {
 		return o, false, fmt.Errorf("%w: duplicate operation", ErrConflict)
 	}
@@ -166,7 +179,10 @@ func ListOperations(ctx context.Context, q Q, f OpFilter) ([]Operation, error) {
 // the FIFO order; created_at has millisecond resolution and ids are random, so
 // neither can break ties between operations accepted in the same instant.
 func NextQueued(ctx context.Context, q Q) (Operation, error) {
-	o, err := scanOp(q.QueryRowContext(ctx, "SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY rowid LIMIT 1"))
+	o, err := scanOp(q.QueryRowContext(
+		ctx,
+		"SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY rowid LIMIT 1",
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return o, ErrNotFound
 	}
@@ -176,7 +192,11 @@ func NextQueued(ctx context.Context, q Q) (Operation, error) {
 // ListQueued returns up to limit queued operations, oldest first (the same
 // FIFO order as NextQueued).
 func ListQueued(ctx context.Context, q Q, limit int) ([]Operation, error) {
-	rows, err := q.QueryContext(ctx, "SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY rowid LIMIT ?", limit)
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT "+opColumns+" FROM operations WHERE state = 'queued' ORDER BY rowid LIMIT ?",
+		limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +215,11 @@ func ListQueued(ctx context.Context, q Q, limit int) ([]Operation, error) {
 // ActiveForTarget reports whether a queued or running operation reserves target.
 func ActiveForTarget(ctx context.Context, q Q, targetID string) (bool, error) {
 	var n int
-	err := q.QueryRowContext(ctx, "SELECT COUNT(*) FROM operations WHERE target_id = ? AND state IN ('queued','running')", targetID).Scan(&n)
+	err := q.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM operations WHERE target_id = ? AND state IN ('queued','running')",
+		targetID,
+	).Scan(&n)
 	return n > 0, err
 }
 
@@ -203,7 +227,12 @@ func ActiveForTarget(ctx context.Context, q Q, targetID string) (bool, error) {
 // is no longer queued (for example cancelled after NextQueued read it); the
 // caller must then not run it.
 func MarkRunning(ctx context.Context, q Q, id string) (bool, error) {
-	res, err := q.ExecContext(ctx, "UPDATE operations SET state='running', started_at=? WHERE id=? AND state='queued'", now(), id)
+	res, err := q.ExecContext(
+		ctx,
+		"UPDATE operations SET state='running', started_at=? WHERE id=? AND state='queued'",
+		now(),
+		id,
+	)
 	if err != nil {
 		return false, err
 	}
@@ -216,12 +245,28 @@ func SetPhase(ctx context.Context, q Q, id, phase string) error {
 	return err
 }
 
-func FinishOperation(ctx context.Context, q Q, id string, state OpState, result json.RawMessage, code, message, guidance string) error {
+func FinishOperation(
+	ctx context.Context,
+	q Q,
+	id string,
+	state OpState,
+	result json.RawMessage,
+	code, message, guidance string,
+) error {
 	if len(result) == 0 {
 		result = json.RawMessage("{}")
 	}
-	_, err := q.ExecContext(ctx, `UPDATE operations SET state=?, result_json=?, error_code=?, error_message=?, guidance=?, finished_at=? WHERE id=?`,
-		state, string(result), code, truncate(message, 2000), truncate(guidance, 2000), now(), id)
+	_, err := q.ExecContext(
+		ctx,
+		`UPDATE operations SET state=?, result_json=?, error_code=?, error_message=?, guidance=?, finished_at=? WHERE id=?`,
+		state,
+		string(result),
+		code,
+		truncate(message, 2000),
+		truncate(guidance, 2000),
+		now(),
+		id,
+	)
 	return err
 }
 
@@ -235,15 +280,24 @@ func RequestCancel(ctx context.Context, q Q, id string) (Operation, error) {
 		// Conditional on still being queued: the executor may claim it between
 		// the read above and this write, and a running operation must only get
 		// the cancel flag.
-		res, err := q.ExecContext(ctx, `UPDATE operations SET state=?, result_json='{}', error_code='cancelled', error_message='cancelled before start', guidance='', finished_at=? WHERE id=? AND state='queued'`,
-			OpCancelled, now(), id)
+		res, err := q.ExecContext(
+			ctx,
+			`UPDATE operations SET state=?, result_json='{}', error_code='cancelled', error_message='cancelled before start', guidance='', finished_at=? WHERE id=? AND state='queued'`,
+			OpCancelled,
+			now(),
+			id,
+		)
 		if err != nil {
 			return o, err
 		}
 		if n, err := res.RowsAffected(); err != nil {
 			return o, err
 		} else if n == 0 {
-			if _, err := q.ExecContext(ctx, "UPDATE operations SET cancel_requested=1 WHERE id=? AND state='running'", id); err != nil {
+			if _, err := q.ExecContext(
+				ctx,
+				"UPDATE operations SET cancel_requested=1 WHERE id=? AND state='running'",
+				id,
+			); err != nil {
 				return o, err
 			}
 		}
@@ -276,13 +330,24 @@ const TruncatedEventMessage = "earlier events truncated"
 
 func AppendEvent(ctx context.Context, q Q, id, level, message string) error {
 	var seq int
-	if err := q.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq),0) FROM operation_events WHERE operation_id=?", id).Scan(&seq); err != nil {
+	if err := q.QueryRowContext(
+		ctx,
+		"SELECT COALESCE(MAX(seq),0) FROM operation_events WHERE operation_id=?",
+		id,
+	).Scan(&seq); err != nil {
 		return err
 	}
 	next := seq + 1
 	at := now()
-	if _, err := q.ExecContext(ctx, "INSERT INTO operation_events(operation_id, seq, at, level, message) VALUES(?,?,?,?,?)",
-		id, next, at, level, truncate(message, 1000)); err != nil {
+	if _, err := q.ExecContext(
+		ctx,
+		"INSERT INTO operation_events(operation_id, seq, at, level, message) VALUES(?,?,?,?,?)",
+		id,
+		next,
+		at,
+		level,
+		truncate(message, 1000),
+	); err != nil {
 		return err
 	}
 	if next <= maxEventsPerOperation {
@@ -291,7 +356,12 @@ func AppendEvent(ctx context.Context, q Q, id, level, message string) error {
 	// Keep the newest maxEventsPerOperation-1 events plus one marker that
 	// occupies the slot just below them. Seqs stay monotonic for cursors.
 	marker := next - maxEventsPerOperation + 1
-	if _, err := q.ExecContext(ctx, "DELETE FROM operation_events WHERE operation_id=? AND seq <= ?", id, marker); err != nil {
+	if _, err := q.ExecContext(
+		ctx,
+		"DELETE FROM operation_events WHERE operation_id=? AND seq <= ?",
+		id,
+		marker,
+	); err != nil {
 		return err
 	}
 	_, err := q.ExecContext(ctx, "INSERT INTO operation_events(operation_id, seq, at, level, message) VALUES(?,?,?,?,?)",
@@ -300,7 +370,12 @@ func AppendEvent(ctx context.Context, q Q, id, level, message string) error {
 }
 
 func ListEvents(ctx context.Context, q Q, id string, afterSeq int) ([]OpEvent, error) {
-	rows, err := q.QueryContext(ctx, "SELECT seq, at, level, message FROM operation_events WHERE operation_id=? AND seq > ? ORDER BY seq", id, afterSeq)
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT seq, at, level, message FROM operation_events WHERE operation_id=? AND seq > ? ORDER BY seq",
+		id,
+		afterSeq,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -324,9 +399,10 @@ func InterruptRunning(ctx context.Context, q Q) ([]Operation, error) {
 		return nil, err
 	}
 	for _, o := range ops {
-		if err := FinishOperation(ctx, q, o.ID, OpInterrupted, nil, "interrupted",
-			fmt.Sprintf("backend stopped during phase %q", o.Phase),
-			"Inspect the target status; intent is preserved and reconciliation converges safe state. Resubmit the operation explicitly if still required."); err != nil {
+		guidance := "Inspect the target status; intent is preserved and reconciliation converges safe state. " +
+			"Resubmit the operation explicitly if still required."
+		msg := fmt.Sprintf("backend stopped during phase %q", o.Phase)
+		if err := FinishOperation(ctx, q, o.ID, OpInterrupted, nil, "interrupted", msg, guidance); err != nil {
 			return nil, err
 		}
 	}
@@ -354,17 +430,21 @@ const DefaultRetention = 30 * 24 * time.Hour
 func PruneHistory(ctx context.Context, q Q, retention time.Duration) (ops, runs int64, err error) {
 	cutoff := platform.FormatTime(time.Now().Add(-retention))
 	const terminal = "state IN ('succeeded','failed','cancelled','interrupted') AND finished_at IS NOT NULL AND finished_at < ?"
-	if _, err = q.ExecContext(ctx, "DELETE FROM operation_events WHERE operation_id IN (SELECT id FROM operations WHERE "+terminal+")", cutoff); err != nil {
-		return
+	if _, err = q.ExecContext(
+		ctx,
+		"DELETE FROM operation_events WHERE operation_id IN (SELECT id FROM operations WHERE "+terminal+")",
+		cutoff,
+	); err != nil {
+		return 0, 0, err
 	}
 	res, err := q.ExecContext(ctx, "DELETE FROM operations WHERE "+terminal, cutoff)
 	if err != nil {
-		return
+		return 0, 0, err
 	}
 	ops, _ = res.RowsAffected()
 	res, err = q.ExecContext(ctx, "DELETE FROM backup_runs WHERE finished_at IS NOT NULL AND finished_at < ?", cutoff)
 	if err != nil {
-		return
+		return ops, 0, err
 	}
 	runs, _ = res.RowsAffected()
 	return ops, runs, nil

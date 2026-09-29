@@ -139,17 +139,26 @@ func (d Deps) ensureRcloneImage(ctx context.Context) error {
 // rcloneSpec is the hardened shape shared by upload, test, and shell
 // containers: pinned image, config directory only, no capabilities.
 func (d Deps) rcloneSpec(name string, role runtime.Role, opID string, mounts []mount.Mount) docker.ContainerSpec {
-	mounts = append([]mount.Mount{{Type: mount.TypeBind, Source: d.Layout.RcloneDir(), Target: rcloneConfigMount}}, mounts...)
+	mounts = append(
+		[]mount.Mount{{Type: mount.TypeBind, Source: d.Layout.RcloneDir(), Target: rcloneConfigMount}},
+		mounts...,
+	)
 	return docker.ContainerSpec{
 		Name: name,
 		Config: &container.Config{Image: domain.RcloneImage,
 			Env:    []string{"RCLONE_CONFIG=" + rcloneConfigFile, "HOME=/tmp", "XDG_CACHE_HOME=/tmp/.cache"},
 			Labels: d.Names.Labels(role, map[string]string{runtime.LabelOperation: opID})},
-		HostConfig: &container.HostConfig{Mounts: mounts, ReadonlyRootfs: true, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=64m"},
-			CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges:true"}, Init: new(true),
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
+		HostConfig: &container.HostConfig{
+			Mounts:         mounts,
+			ReadonlyRootfs: true,
+			Tmpfs:          map[string]string{"/tmp": "rw,nosuid,nodev,size=64m"},
+			CapDrop:        []string{"ALL"},
+			SecurityOpt:    []string{"no-new-privileges:true"},
+			Init:           new(true),
+			RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyDisabled},
 			// The local driver compresses rotated files and refuses max-file 1.
-			LogConfig: container.LogConfig{Type: "local", Config: map[string]string{"max-size": "5m", "max-file": "2"}}},
+			LogConfig: container.LogConfig{Type: "local", Config: map[string]string{"max-size": "5m", "max-file": "2"}},
+		},
 	}
 }
 
@@ -203,7 +212,15 @@ func (d Deps) Upload(ctx context.Context, remote string, artifacts []Artifact) e
 	}
 	var mounts []mount.Mount
 	for _, a := range artifacts {
-		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: filepath.Join(d.Layout.BackupsDir(), a.Path), Target: "/upload/" + a.Path, ReadOnly: true})
+		mounts = append(
+			mounts,
+			mount.Mount{
+				Type:     mount.TypeBind,
+				Source:   filepath.Join(d.Layout.BackupsDir(), a.Path),
+				Target:   "/upload/" + a.Path,
+				ReadOnly: true,
+			},
+		)
 	}
 	code, tail, err := d.runRclone(ctx, []string{"copy", "/upload", remote, "--no-traverse"}, mounts)
 	if err != nil {
@@ -226,14 +243,21 @@ func (d Deps) TestRemote(ctx context.Context, remote string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	code, tail, err := d.runRclone(ctx, []string{"lsf", "--max-depth", "1", "--contimeout", "15s", "--timeout", "30s", "--retries", "1", remote}, nil)
+	code, tail, err := d.runRclone(
+		ctx,
+		[]string{"lsf", "--max-depth", "1", "--contimeout", "15s", "--timeout", "30s", "--retries", "1", remote},
+		nil,
+	)
 	switch {
 	case err != nil:
 		return "", err
 	case code == 0:
 		return fmt.Sprintf("%s is reachable", remote), nil
 	case code == rcloneDirNotFound:
-		return fmt.Sprintf("%s is reachable; the path does not exist yet and will be created by the first upload", remote), nil
+		return fmt.Sprintf(
+			"%s is reachable; the path does not exist yet and will be created by the first upload",
+			remote,
+		), nil
 	}
 	return "", fmt.Errorf("rclone exited %d: %s", code, tail)
 }
@@ -252,7 +276,13 @@ func (d Deps) RcloneShellSpec(opID string, lifetime time.Duration) docker.Contai
 func RcloneShellExec() docker.ExecRequest {
 	return docker.ExecRequest{
 		Cmd: []string{"sh"},
-		Env: []string{"TERM=xterm-256color", "RCLONE_CONFIG=" + rcloneConfigFile, "HOME=/tmp", "XDG_CACHE_HOME=/tmp/.cache", `PS1=rclone:\w\$ `},
+		Env: []string{
+			"TERM=xterm-256color",
+			"RCLONE_CONFIG=" + rcloneConfigFile,
+			"HOME=/tmp",
+			"XDG_CACHE_HOME=/tmp/.cache",
+			`PS1=rclone:\w\$ `,
+		},
 	}
 }
 

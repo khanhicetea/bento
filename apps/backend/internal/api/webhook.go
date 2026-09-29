@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
 // MaxWebhookBodyBytes bounds a delivery; the edge enforces the same limit.
@@ -46,13 +47,15 @@ func (s *Server) handleDeployWebhook(w http.ResponseWriter, r *http.Request) {
 		writeHookJSON(w, http.StatusBadRequest, map[string]string{"result": "bad-request"})
 		return
 	}
+	// The hook id authenticates the URL, so logs carry only a hash prefix.
+	hookRef := platform.SHA256Hex([]byte(hook))[:8]
 	out, err := s.C.HandleWebhook(r.Context(), hook, r.Header, body)
 	if err != nil {
-		s.Log.Error("webhook delivery", "hook", hook[:8], "err", err)
+		s.Log.Error("webhook delivery", "hook", hookRef, "err", err)
 		writeHookJSON(w, http.StatusInternalServerError, map[string]string{"result": "error"})
 		return
 	}
-	s.Log.Info("webhook delivery", "hook", hook[:8], "status", out.Status, "result", out.Result, "op", out.OperationID)
+	s.Log.Info("webhook delivery", "hook", hookRef, "status", out.Status, "result", out.Result, "op", out.OperationID)
 	writeHookJSON(w, out.Status, out)
 }
 

@@ -134,7 +134,12 @@ func (c *Controller) edgeContainer(ctx context.Context) (string, bool, error) {
 		return "", false, err
 	}
 	if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, runtime.RoleEdge, "") {
-		return "", false, Fail("foreign-container", "Resolve the conflicting container manually.", "container %s is not this stack's edge", c.Names.EdgeContainer())
+		return "", false, Fail(
+			"foreign-container",
+			"Resolve the conflicting container manually.",
+			"container %s is not this stack's edge",
+			c.Names.EdgeContainer(),
+		)
 	}
 	return ins.ID, ins.State != nil && ins.State.Running, nil
 }
@@ -195,7 +200,13 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 // renderEdge renders the complete edge configuration from current desired
 // state without touching the filesystem or Docker objects.
 // forApply marks a render that will be promoted (see holdRoute).
-func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns NetworkSettings, warn func(string), forApply bool) (map[string][]byte, error) {
+func (c *Controller) renderEdge(
+	ctx context.Context,
+	s domain.EdgeSettings,
+	ns NetworkSettings,
+	warn func(string),
+	forApply bool,
+) (map[string][]byte, error) {
 	apps, err := store.ListApps(ctx, c.Store.DB())
 	if err != nil {
 		return nil, err
@@ -214,7 +225,7 @@ func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns N
 			}
 		}
 	}
-	upstream := ""
+	var upstream string
 	if c.UtilsAppsPort > 0 {
 		if gw := ns.AppsGateway(); gw != "" {
 			upstream = net.JoinHostPort(gw, strconv.Itoa(c.UtilsAppsPort))
@@ -222,7 +233,13 @@ func (c *Controller) renderEdge(ctx context.Context, s domain.EdgeSettings, ns N
 			warn("apps network gateway not found on this host; /_bento/webhook/* is not forwarded by the edge")
 		}
 	}
-	return edge.Render(edge.Input{Settings: s, Apps: apps, Proxies: proxies, Running: runningApps, UtilsUpstream: upstream})
+	return edge.Render(edge.Input{
+		Settings:      s,
+		Apps:          apps,
+		Proxies:       proxies,
+		Running:       runningApps,
+		UtilsUpstream: upstream,
+	})
 }
 
 // EdgeConfigDrift reports whether the live edge generation differs from what
@@ -302,14 +319,18 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 		if err != nil {
 			return err
 		}
-		runningID := ""
+		var runningID string
 		if running {
 			runningID = id
 		}
 		if err := c.validateEdge(ctx, cand, runningID); err != nil {
 			gens.Discard(cand)
-			return Fail("edge-validation-failed", "The live edge configuration is unchanged and no reload was sent. Fix the route or custom drop-in and retry.",
-				"edge configuration rejected: %v", err)
+			return Fail(
+				"edge-validation-failed",
+				"The live edge configuration is unchanged and no reload was sent. Fix the route or custom drop-in and retry.",
+				"edge configuration rejected: %v",
+				err,
+			)
 		}
 		if err := gens.Promote(cand); err != nil {
 			gens.Discard(cand)
@@ -355,7 +376,12 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	}
 	if changed {
 		if err := c.Engine.Signal(ctx, id, "HUP"); err != nil {
-			return Fail("edge-reload-failed", "The validated generation is live on disk; retry to reload.", "reload edge: %v", err)
+			return Fail(
+				"edge-reload-failed",
+				"The validated generation is live on disk; retry to reload.",
+				"reload edge: %v",
+				err,
+			)
 		}
 		r.Info(ctx, "edge reloaded")
 	}
@@ -384,8 +410,13 @@ func (c *Controller) tunnelSpec(s domain.TunnelSettings, ns NetworkSettings) doc
 			}),
 		},
 		HostConfig: &container.HostConfig{
-			RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			Mounts:         []mount.Mount{{Type: mount.TypeBind, Source: c.Layout.TunnelDir(), Target: "/etc/bento-tunnel", ReadOnly: true}},
+			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
+			Mounts: []mount.Mount{{
+				Type:     mount.TypeBind,
+				Source:   c.Layout.TunnelDir(),
+				Target:   "/etc/bento-tunnel",
+				ReadOnly: true,
+			}},
 			ReadonlyRootfs: true,
 			CapDrop:        []string{"ALL"},
 			SecurityOpt:    []string{"no-new-privileges:true"},
@@ -409,7 +440,12 @@ func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 		return err
 	}
 	if ins != nil && (ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, runtime.RoleTunnel, "")) {
-		return Fail("foreign-container", "Resolve the conflicting container manually.", "container %s is not this stack's tunnel", c.Names.TunnelContainer())
+		return Fail(
+			"foreign-container",
+			"Resolve the conflicting container manually.",
+			"container %s is not this stack's tunnel",
+			c.Names.TunnelContainer(),
+		)
 	}
 	if !s.Enabled {
 		if ins != nil {
@@ -458,6 +494,10 @@ func (c *Controller) handleTunnelApply(ctx context.Context, r *Run) (any, error)
 }
 
 func invalidEdgeBind(err error) error {
-	return Fail("edge-settings-invalid", "The persisted edge bind address is invalid; re-save the edge settings with a valid IPv4 bind address.",
-		"edge bind address: %v", err)
+	return Fail(
+		"edge-settings-invalid",
+		"The persisted edge bind address is invalid; re-save the edge settings with a valid IPv4 bind address.",
+		"edge bind address: %v",
+		err,
+	)
 }

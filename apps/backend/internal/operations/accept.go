@@ -68,7 +68,14 @@ func newVacuumSlot() *domain.VacuumSlot {
 	return &domain.VacuumSlot{DayOfWeek: mrand.IntN(7), Hour: mrand.IntN(5), Minute: mrand.IntN(60)}
 }
 
-func (c *Controller) newBinding(ctx context.Context, q store.Q, app domain.App, req BindingRequest, field string, errs *domain.ValidationErrors) (domain.Binding, bool) {
+func (c *Controller) newBinding(
+	ctx context.Context,
+	q store.Q,
+	app domain.App,
+	req BindingRequest,
+	field string,
+	errs *domain.ValidationErrors,
+) (domain.Binding, bool) {
 	b := domain.Binding{ID: "b" + platform.RandomHex(6), AppID: app.ID, Engine: req.Engine, CreatedAt: time.Now().UTC()}
 	switch req.Engine {
 	case domain.EngineMySQL, domain.EnginePostgres:
@@ -101,7 +108,11 @@ func (c *Controller) newBinding(ctx context.Context, q store.Q, app domain.App, 
 
 // CreateApp allocates a new incarnation, persists it desired stopped and
 // unpublished, and queues provisioning. It never starts the app.
-func (c *Controller) CreateApp(ctx context.Context, in CreateAppInput, idem string) (domain.App, store.Operation, error) {
+func (c *Controller) CreateApp(
+	ctx context.Context,
+	in CreateAppInput,
+	idem string,
+) (domain.App, store.Operation, error) {
 	var errs domain.ValidationErrors
 	if err := domain.ValidateSlug(in.Slug); err != nil {
 		errs.Add("slug", "%s", err)
@@ -130,7 +141,11 @@ func (c *Controller) CreateApp(ctx context.Context, in CreateAppInput, idem stri
 				return app, op, nil
 			}
 		}
-		return domain.App{}, store.Operation{}, fmt.Errorf("%w: a retained home for %q exists from an earlier app; prune it or restore explicitly", store.ErrConflict, in.Slug)
+		return domain.App{}, store.Operation{}, fmt.Errorf(
+			"%w: a retained home for %q exists from an earlier app; prune it or restore explicitly",
+			store.ErrConflict,
+			in.Slug,
+		)
 	}
 	rng := domain.DefaultUIDRange()
 	// An unreadable configured range is refused rather than silently replaced
@@ -144,7 +159,12 @@ func (c *Controller) CreateApp(ctx context.Context, in CreateAppInput, idem stri
 		DesiredRuntime: domain.DesiredStopped, Ingress: in.Ingress, Publication: domain.Unpublished, Route: in.Route,
 		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now, Domains: links,
 	}
-	app.Redis = domain.RedisIdentity{Mode: "acl", Prefix: in.Slug + ":", Username: "app-" + app.ID, Password: platform.RandomPassword(32)}
+	app.Redis = domain.RedisIdentity{
+		Mode:     "acl",
+		Prefix:   in.Slug + ":",
+		Username: "app-" + app.ID,
+		Password: platform.RandomPassword(32),
+	}
 	op, existed, err := c.Submit(ctx, Submission{
 		Kind: KindAppProvision, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem, Generation: 1,
 		Request: map[string]any{"slug": in.Slug},
@@ -204,7 +224,12 @@ type UpdateAppInput struct {
 
 // UpdateApp persists a configuration change and queues its scoped
 // application. The runtime kind is immutable per incarnation.
-func (c *Controller) UpdateApp(ctx context.Context, id string, in UpdateAppInput, idem string) (domain.App, store.Operation, error) {
+func (c *Controller) UpdateApp(
+	ctx context.Context,
+	id string,
+	in UpdateAppInput,
+	idem string,
+) (domain.App, store.Operation, error) {
 	app, err := store.GetApp(ctx, c.Store.DB(), id)
 	if err != nil {
 		return app, store.Operation{}, err
@@ -245,7 +270,12 @@ func (c *Controller) UpdateApp(ctx context.Context, id string, in UpdateAppInput
 				return err
 			}
 			if in.ExpectedGeneration != 0 && in.ExpectedGeneration != cur.ConfigGeneration {
-				return fmt.Errorf("%w: app configuration generation is %d, not %d", ErrPrecondition, cur.ConfigGeneration, in.ExpectedGeneration)
+				return fmt.Errorf(
+					"%w: app configuration generation is %d, not %d",
+					ErrPrecondition,
+					cur.ConfigGeneration,
+					in.ExpectedGeneration,
+				)
 			}
 			if in.Runtime != nil {
 				env := cur.Runtime.Env
@@ -285,7 +315,11 @@ func (c *Controller) UpdateApp(ctx context.Context, id string, in UpdateAppInput
 }
 
 // setIntent is a helper for simple lifecycle submissions.
-func (c *Controller) lifecycle(ctx context.Context, id, kind, idem string, mutate func(a *domain.App) error) (store.Operation, error) {
+func (c *Controller) lifecycle(
+	ctx context.Context,
+	id, kind, idem string,
+	mutate func(a *domain.App) error,
+) (store.Operation, error) {
 	app, err := store.GetApp(ctx, c.Store.DB(), id)
 	if err != nil {
 		return store.Operation{}, err
@@ -338,7 +372,11 @@ func (c *Controller) RestartApp(ctx context.Context, id, idem string) (store.Ope
 func (c *Controller) PublishApp(ctx context.Context, id, idem string) (store.Operation, error) {
 	return c.lifecycle(ctx, id, KindAppPublish, idem, func(a *domain.App) error {
 		if a.Ingress != domain.IngressManaged {
-			return fmt.Errorf("%w: publication applies only to managed ingress; this app uses %s ingress, whose routes are operator-owned", ErrPrecondition, a.Ingress)
+			return fmt.Errorf(
+				"%w: publication applies only to managed ingress; this app uses %s ingress, whose routes are operator-owned",
+				ErrPrecondition,
+				a.Ingress,
+			)
 		}
 		if a.DesiredRuntime != domain.DesiredRunning {
 			return fmt.Errorf("%w: start the app first; publish never starts an app", ErrPrecondition)
@@ -350,7 +388,11 @@ func (c *Controller) PublishApp(ctx context.Context, id, idem string) (store.Ope
 func (c *Controller) UnpublishApp(ctx context.Context, id, idem string) (store.Operation, error) {
 	return c.lifecycle(ctx, id, KindAppUnpublish, idem, func(a *domain.App) error {
 		if a.Ingress != domain.IngressManaged {
-			return fmt.Errorf("%w: this app's routes are operator-owned (%s ingress); remove them in the external router", ErrPrecondition, a.Ingress)
+			return fmt.Errorf(
+				"%w: this app's routes are operator-owned (%s ingress); remove them in the external router",
+				ErrPrecondition,
+				a.Ingress,
+			)
 		}
 		a.Publication = domain.Unpublished
 		return nil
@@ -364,7 +406,11 @@ func (c *Controller) RemoveApp(ctx context.Context, id, confirm, idem string) (s
 		return store.Operation{}, err
 	}
 	if confirm != "delete "+app.Slug {
-		return store.Operation{}, fmt.Errorf("%w: type exactly %q to remove this app (durable data is retained)", ErrConfirmation, "delete "+app.Slug)
+		return store.Operation{}, fmt.Errorf(
+			"%w: type exactly %q to remove this app (durable data is retained)",
+			ErrConfirmation,
+			"delete "+app.Slug,
+		)
 	}
 	return c.lifecycle(ctx, id, KindAppRemove, idem, func(a *domain.App) error {
 		a.DesiredRuntime = domain.DesiredStopped
@@ -384,15 +430,26 @@ func (c *Controller) PruneRetired(ctx context.Context, appID, confirm, idem stri
 		return store.Operation{}, fmt.Errorf("%w: already pruned", store.ErrConflict)
 	}
 	if confirm != "delete" {
-		return store.Operation{}, fmt.Errorf("%w: type exactly \"delete\" to permanently delete the retained data listed in the prune plan", ErrConfirmation)
+		return store.Operation{}, fmt.Errorf(
+			"%w: type exactly \"delete\" to permanently delete the retained data listed in the prune plan",
+			ErrConfirmation,
+		)
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindAppPrune, TargetKind: "retired-app", TargetID: ret.AppID, IdempotencyKey: idem,
-		Request: map[string]any{"slug": ret.Slug}})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{Kind: KindAppPrune, TargetKind: "retired-app", TargetID: ret.AppID, IdempotencyKey: idem,
+			Request: map[string]any{"slug": ret.Slug}},
+	)
 	return op, err
 }
 
 // AddBinding appends an add-only data binding.
-func (c *Controller) AddBinding(ctx context.Context, id string, req BindingRequest, idem string) (store.Operation, error) {
+func (c *Controller) AddBinding(
+	ctx context.Context,
+	id string,
+	req BindingRequest,
+	idem string,
+) (store.Operation, error) {
 	app, err := store.GetApp(ctx, c.Store.DB(), id)
 	if err != nil {
 		return store.Operation{}, err
@@ -411,7 +468,11 @@ func (c *Controller) AddBinding(ctx context.Context, id string, req BindingReque
 			}
 			for _, existing := range cur.Bindings {
 				if existing.Engine == b.Engine && b.Service != "" && existing.Service == b.Service {
-					return fmt.Errorf("%w: the app already has a binding to %s; add a database to it instead", store.ErrConflict, b.Service)
+					return fmt.Errorf(
+						"%w: the app already has a binding to %s; add a database to it instead",
+						store.ErrConflict,
+						b.Service,
+					)
 				}
 			}
 			if err := store.InsertBinding(ctx, q, b); err != nil {
@@ -463,7 +524,11 @@ func (c *Controller) AddDatabase(ctx context.Context, id, bindingID, name, idem 
 }
 
 // CreateService adds a managed MySQL/PostgreSQL version (add-only).
-func (c *Controller) CreateService(ctx context.Context, engine domain.Engine, version, idem string) (domain.DataService, store.Operation, error) {
+func (c *Controller) CreateService(
+	ctx context.Context,
+	engine domain.Engine,
+	version, idem string,
+) (domain.DataService, store.Operation, error) {
 	var image string
 	var ok bool
 	switch engine {
@@ -475,13 +540,23 @@ func (c *Controller) CreateService(ctx context.Context, engine domain.Engine, ve
 		image, ok, version = domain.RedisImage, true, domain.RedisVersion
 	}
 	if !ok {
-		return domain.DataService{}, store.Operation{}, domain.ValidationErrors{{Field: "version", Message: "unsupported engine or version"}}
+		return domain.DataService{}, store.Operation{}, domain.ValidationErrors{{
+			Field:   "version",
+			Message: "unsupported engine or version",
+		}}
 	}
 	name := string(engine) + strings.ReplaceAll(version, ".", "")
 	if engine == domain.EngineRedis {
 		name = "redis"
 	}
-	svc := domain.DataService{Name: name, Engine: engine, Version: version, Image: image, Volume: c.Names.ServiceVolume(name), CreatedAt: time.Now().UTC()}
+	svc := domain.DataService{
+		Name:      name,
+		Engine:    engine,
+		Version:   version,
+		Image:     image,
+		Volume:    c.Names.ServiceVolume(name),
+		CreatedAt: time.Now().UTC(),
+	}
 	op, _, err := c.Submit(ctx, Submission{
 		Kind: KindServiceCreate, TargetKind: "service", TargetID: name, IdempotencyKey: idem, Request: svc,
 		Mutate: func(ctx context.Context, q store.Q) error { return store.InsertService(ctx, q, svc) },
@@ -543,7 +618,10 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 	token = strings.TrimSpace(token)
 	enabled := token != ""
 	if enabled && (len(token) < 32 || len(token) > 4096 || strings.ContainsAny(token, " \n\r\t\"'")) {
-		return store.Operation{}, domain.ValidationErrors{{Field: "token", Message: "does not look like a Cloudflare tunnel token"}}
+		return store.Operation{}, domain.ValidationErrors{{
+			Field:   "token",
+			Message: "does not look like a Cloudflare tunnel token",
+		}}
 	}
 	if err := platform.EnsureDir(c.Layout.TunnelDir(), 0o750, platform.Owner{UID: 0, GID: TunnelUID}); err != nil {
 		return store.Operation{}, err
@@ -601,7 +679,11 @@ type ProxyInput struct {
 }
 
 // UpsertProxy manages an edge reverse-proxy route to an external upstream.
-func (c *Controller) UpsertProxy(ctx context.Context, in ProxyInput, idem string) (domain.Proxy, store.Operation, error) {
+func (c *Controller) UpsertProxy(
+	ctx context.Context,
+	in ProxyInput,
+	idem string,
+) (domain.Proxy, store.Operation, error) {
 	var errs domain.ValidationErrors
 	if err := domain.ValidateSlug(in.Name); err != nil {
 		errs.Add("name", "%s", err)
@@ -654,8 +736,12 @@ func (c *Controller) DeleteProxy(ctx context.Context, name, confirm, idem string
 		return store.Operation{}, fmt.Errorf("%w: type exactly %q", ErrConfirmation, "delete "+p.Name)
 	}
 	op, _, err := c.Submit(ctx, Submission{
-		Kind: KindEdgeApply, TargetKind: "proxy", TargetID: p.ID, IdempotencyKey: idem, Request: map[string]any{"delete": p.Name},
-		Mutate: func(ctx context.Context, q store.Q) error { return store.DeleteProxy(ctx, q, p.ID) },
+		Kind:           KindEdgeApply,
+		TargetKind:     "proxy",
+		TargetID:       p.ID,
+		IdempotencyKey: idem,
+		Request:        map[string]any{"delete": p.Name},
+		Mutate:         func(ctx context.Context, q store.Q) error { return store.DeleteProxy(ctx, q, p.ID) },
 	})
 	return op, err
 }
@@ -664,12 +750,24 @@ func (c *Controller) RepairPermissions(ctx context.Context, id, mode, idem strin
 	switch mode {
 	case "check", "dry-run", "shallow", "recursive":
 	default:
-		return store.Operation{}, domain.ValidationErrors{{Field: "mode", Message: "must be check, dry-run, shallow, or recursive"}}
+		return store.Operation{}, domain.ValidationErrors{{
+			Field:   "mode",
+			Message: "must be check, dry-run, shallow, or recursive",
+		}}
 	}
 	app, err := store.GetApp(ctx, c.Store.DB(), id)
 	if err != nil {
 		return store.Operation{}, err
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindPermissions, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem, Request: map[string]any{"mode": mode}})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{
+			Kind:           KindPermissions,
+			TargetKind:     "app",
+			TargetID:       app.ID,
+			IdempotencyKey: idem,
+			Request:        map[string]any{"mode": mode},
+		},
+	)
 	return op, err
 }

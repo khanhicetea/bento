@@ -27,7 +27,11 @@ func InsertSession(ctx context.Context, q Q, s Session) error {
 func GetLiveSession(ctx context.Context, q Q, tokenHash string, at time.Time) (Session, error) {
 	var s Session
 	var created, expires string
-	err := q.QueryRowContext(ctx, "SELECT token_hash, csrf_token, created_at, expires_at FROM sessions WHERE token_hash=? AND revoked=0", tokenHash).
+	err := q.QueryRowContext(
+		ctx,
+		"SELECT token_hash, csrf_token, created_at, expires_at FROM sessions WHERE token_hash=? AND revoked=0",
+		tokenHash,
+	).
 		Scan(&s.TokenHash, &s.CSRFToken, &created, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
@@ -54,7 +58,11 @@ func RevokeAllSessions(ctx context.Context, q Q) error {
 }
 
 func PruneSessions(ctx context.Context, q Q, at time.Time) error {
-	_, err := q.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ? OR revoked=1", platform.FormatTime(at.Add(-24*time.Hour)))
+	_, err := q.ExecContext(
+		ctx,
+		"DELETE FROM sessions WHERE expires_at < ? OR revoked=1",
+		platform.FormatTime(at.Add(-24*time.Hour)),
+	)
 	return err
 }
 
@@ -72,20 +80,39 @@ type BackupRun struct {
 }
 
 func InsertBackupRun(ctx context.Context, q Q, r BackupRun) error {
-	_, err := q.ExecContext(ctx, "INSERT INTO backup_runs(id, trigger, state, started_at) VALUES(?,?,?,?)", r.ID, r.Trigger, r.State, r.StartedAt)
+	_, err := q.ExecContext(
+		ctx,
+		"INSERT INTO backup_runs(id, trigger, state, started_at) VALUES(?,?,?,?)",
+		r.ID,
+		r.Trigger,
+		r.State,
+		r.StartedAt,
+	)
 	return err
 }
 
 func FinishBackupRun(ctx context.Context, q Q, r BackupRun) error {
 	arts, _ := json.Marshal(r.Artifacts)
-	_, err := q.ExecContext(ctx, "UPDATE backup_runs SET state=?, finished_at=?, artifacts_json=?, upload_state=?, error_message=? WHERE id=?",
-		r.State, now(), string(arts), r.UploadState, truncate(r.Error, 2000), r.ID)
+	_, err := q.ExecContext(
+		ctx,
+		"UPDATE backup_runs SET state=?, finished_at=?, artifacts_json=?, upload_state=?, error_message=? WHERE id=?",
+		r.State,
+		now(),
+		string(arts),
+		r.UploadState,
+		truncate(r.Error, 2000),
+		r.ID,
+	)
 	return err
 }
 
 func ListBackupRuns(ctx context.Context, q Q, limit int) ([]BackupRun, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, trigger, state, started_at, COALESCE(finished_at,''), artifacts_json, upload_state, error_message
-		FROM backup_runs ORDER BY started_at DESC LIMIT ?`, limit)
+	rows, err := q.QueryContext(
+		ctx,
+		`SELECT id, trigger, state, started_at, COALESCE(finished_at,''), artifacts_json, upload_state, error_message
+		FROM backup_runs ORDER BY started_at DESC LIMIT ?`,
+		limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +121,16 @@ func ListBackupRuns(ctx context.Context, q Q, limit int) ([]BackupRun, error) {
 	for rows.Next() {
 		var r BackupRun
 		var arts string
-		if err := rows.Scan(&r.ID, &r.Trigger, &r.State, &r.StartedAt, &r.FinishedAt, &arts, &r.UploadState, &r.Error); err != nil {
+		if err := rows.Scan(
+			&r.ID,
+			&r.Trigger,
+			&r.State,
+			&r.StartedAt,
+			&r.FinishedAt,
+			&arts,
+			&r.UploadState,
+			&r.Error,
+		); err != nil {
 			return nil, err
 		}
 		// Artifacts are display-only history; an unreadable list shows as empty

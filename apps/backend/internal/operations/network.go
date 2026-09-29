@@ -160,7 +160,12 @@ func (c *Controller) EnsureNetworks(ctx context.Context) (NetworkSettings, error
 			continue
 		}
 		subnet := netip.MustParsePrefix(n.subnet)
-		spec := docker.NetworkSpec{Name: n.name, Internal: n.internal, Subnet: subnet, Labels: c.Names.Labels(runtime.RoleNetwork, nil)}
+		spec := docker.NetworkSpec{
+			Name:     n.name,
+			Internal: n.internal,
+			Subnet:   subnet,
+			Labels:   c.Names.Labels(runtime.RoleNetwork, nil),
+		}
 		if n.dynamic {
 			a := subnet.Addr().As4()
 			spec.IPRange = netip.PrefixFrom(netip.AddrFrom4([4]byte{a[0], a[1], a[2], 128}), 25)

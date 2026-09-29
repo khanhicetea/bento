@@ -123,7 +123,7 @@ func ArchiveRoot(root string, w io.Writer, skip map[string]bool) error {
 		if info.Mode()&(os.ModeSocket|os.ModeNamedPipe|os.ModeDevice) != 0 {
 			return nil // runtime sockets are not durable state
 		}
-		link := ""
+		var link string
 		if info.Mode()&os.ModeSymlink != 0 {
 			if link, err = os.Readlink(p); err != nil {
 				return err

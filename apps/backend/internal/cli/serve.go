@@ -61,7 +61,10 @@ func ValidateListen(addr string) (string, int, error) {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
-		return "", 0, fmt.Errorf("refusing non-loopback listen address %q: the management API is loopback-only in this release", addr)
+		return "", 0, fmt.Errorf(
+			"refusing non-loopback listen address %q: the management API is loopback-only in this release",
+			addr,
+		)
 	}
 	return host, port, nil
 }
@@ -77,7 +80,12 @@ func DefaultOrigins(host string, port int) []string {
 
 func validateOrigin(o string) error {
 	u, err := url.Parse(o)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+	if err != nil {
+		return fmt.Errorf("invalid origin %q (expected scheme://host[:port])", o)
+	}
+	validScheme := u.Scheme == "http" || u.Scheme == "https"
+	bareHost := u.Host != "" && (u.Path == "" || u.Path == "/") && u.RawQuery == ""
+	if !validScheme || !bareHost {
 		return fmt.Errorf("invalid origin %q (expected scheme://host[:port])", o)
 	}
 	return nil
@@ -119,7 +127,10 @@ func Serve(opts ServeOptions) error {
 			return fmt.Errorf("%s is not a Bento stack root (found %s); it was left untouched", layout.Root, m)
 		}
 		// Lost state fails closed; it never triggers empty-stack initialization.
-		return fmt.Errorf("no Bento state at %s (run `bento init` for a new stack; restore from backup if state was lost)", layout.Database())
+		return fmt.Errorf(
+			"no Bento state at %s (run `bento init` for a new stack; restore from backup if state was lost)",
+			layout.Database(),
+		)
 	}
 	lock, err := platform.TryLock(layout.ControllerLock())
 	if err != nil {
@@ -143,8 +154,15 @@ func Serve(opts ServeOptions) error {
 	} else {
 		log.Info("docker engine", "version", v.ServerVersion, "api", v.APIVersion, "arch", v.Arch)
 	}
-	ctrl, err := operations.NewController(operations.Deps{Store: st, Engine: engine, Layout: layout, HostIDs: platform.FileHostIDs{}, Log: log,
-		UtilsAppsPort: appsPort(utilsAddrs), Concurrency: opts.OpConcurrency})
+	ctrl, err := operations.NewController(operations.Deps{
+		Store:         st,
+		Engine:        engine,
+		Layout:        layout,
+		HostIDs:       platform.FileHostIDs{},
+		Log:           log,
+		UtilsAppsPort: appsPort(utilsAddrs),
+		Concurrency:   opts.OpConcurrency,
+	})
 	if err != nil {
 		return err
 	}
@@ -173,7 +191,12 @@ func Serve(opts ServeOptions) error {
 			}
 		}
 	})
-	utils := &utilsListeners{log: log, gateway: ctrl.AppsGateway, appsPort: appsPort(utilsAddrs), servers: map[string]*http.Server{}}
+	utils := &utilsListeners{
+		log:      log,
+		gateway:  ctrl.AppsGateway,
+		appsPort: appsPort(utilsAddrs),
+		servers:  map[string]*http.Server{},
+	}
 	srv := &api.Server{C: ctrl, R: rec, Store: st, Layout: layout, Log: log, Version: opts.Version, StartedAt: time.Now(),
 		AllowedOrigins: origins, WebUI: webui.FS(), Relay: relay, UtilsAddrs: utils.Addrs}
 	handler := srv.Handler()
@@ -191,8 +214,17 @@ func Serve(opts ServeOptions) error {
 	if err := os.Chmod(layout.ControlSocket(), 0o600); err != nil {
 		return err
 	}
-	web := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
-	local := &http.Server{Handler: srv.LocalOnly(handler), ReadHeaderTimeout: 10 * time.Second, ConnContext: api.ConnContext}
+	web := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
+	}
+	local := &http.Server{
+		Handler:           srv.LocalOnly(handler),
+		ReadHeaderTimeout: 10 * time.Second,
+		ConnContext:       api.ConnContext,
+	}
 	// One slot per listener, so no Serve goroutine blocks on a report nobody reads.
 	errc := make(chan error, 2+len(utilsAddrs))
 	go func() { errc <- web.Serve(tcp) }()
@@ -212,7 +244,23 @@ func Serve(opts ServeOptions) error {
 		defer close(followDone)
 		utils.followApps(followCtx)
 	}()
-	log.Info("bento backend ready", "stack", ctrl.Stack.Name, "root", layout.Root, "listen", tcp.Addr().String(), "control", layout.ControlSocket(), "utils", utilsListen, "opConcurrency", opts.OpConcurrency, "ui", webui.Built())
+	log.Info(
+		"bento backend ready",
+		"stack",
+		ctrl.Stack.Name,
+		"root",
+		layout.Root,
+		"listen",
+		tcp.Addr().String(),
+		"control",
+		layout.ControlSocket(),
+		"utils",
+		utilsListen,
+		"opConcurrency",
+		opts.OpConcurrency,
+		"ui",
+		webui.Built(),
+	)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)

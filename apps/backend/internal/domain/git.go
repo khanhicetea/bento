@@ -55,7 +55,13 @@ func ValidateGitSource(repoURL, branch string, errs *ValidationErrors) {
 			errs.Add("repoUrl", "must not embed credentials; use an SSH URL with the deploy key for private repositories")
 		case u.Scheme == "ssh" && u.User != nil && func() bool { _, ok := u.User.Password(); return ok }():
 			errs.Add("repoUrl", "must not embed a password")
-		case u.RawQuery != "" || u.Fragment != "" || !repoPathChars.MatchString(strings.TrimPrefix(u.Path, "/")) || strings.Contains(u.Path, ".."):
+		case u.RawQuery != "" || u.Fragment != "" || !repoPathChars.MatchString(strings.TrimPrefix(
+			u.Path,
+			"/",
+		)) || strings.Contains(
+			u.Path,
+			"..",
+		):
 			errs.Add("repoUrl", "has an unsupported repository path")
 		}
 	default:

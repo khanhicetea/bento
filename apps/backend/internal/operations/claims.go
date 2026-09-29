@@ -30,10 +30,6 @@ var globalClaims = claims{global: true}
 func appClaim(id string) string       { return "app:" + id }
 func serviceClaim(name string) string { return "service:" + name }
 
-func hasClaim(list []string, s string) bool {
-	return slices.Contains(list, s)
-}
-
 // conflicts reports whether a and b must not run at the same time. Shared
 // claims coexist; an exclusive claim conflicts with any claim on the resource.
 func (a claims) conflicts(b claims) bool {
@@ -41,12 +37,12 @@ func (a claims) conflicts(b claims) bool {
 		return true
 	}
 	for _, k := range a.excl {
-		if hasClaim(b.excl, k) || hasClaim(b.shared, k) {
+		if slices.Contains(b.excl, k) || slices.Contains(b.shared, k) {
 			return true
 		}
 	}
 	for _, k := range a.shared {
-		if hasClaim(b.excl, k) {
+		if slices.Contains(b.excl, k) {
 			return true
 		}
 	}
@@ -57,11 +53,11 @@ func (a claims) conflicts(b claims) bool {
 func serviceDeps(app domain.App) []string {
 	var out []string
 	for _, b := range app.Bindings {
-		if b.Engine != domain.EngineSQLite && !hasClaim(out, serviceClaim(b.Service)) {
+		if b.Engine != domain.EngineSQLite && !slices.Contains(out, serviceClaim(b.Service)) {
 			out = append(out, serviceClaim(b.Service))
 		}
 	}
-	if app.Redis.Username != "" && !hasClaim(out, serviceClaim("redis")) {
+	if app.Redis.Username != "" && !slices.Contains(out, serviceClaim("redis")) {
 		out = append(out, serviceClaim("redis"))
 	}
 	return out

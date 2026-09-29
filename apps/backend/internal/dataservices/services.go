@@ -68,7 +68,12 @@ func (m *Manager) EnsureSecrets(s domain.DataService) error {
 	switch s.Engine {
 	case domain.EngineMySQL:
 		cnf := fmt.Sprintf("[client]\nuser=root\npassword=%s\nhost=localhost\n", password)
-		if _, err := platform.WriteIfChanged(filepath.Join(dir, "client.cnf"), []byte(cnf), 0o400, platform.RootOwner); err != nil {
+		if _, err := platform.WriteIfChanged(
+			filepath.Join(dir, "client.cnf"),
+			[]byte(cnf),
+			0o400,
+			platform.RootOwner,
+		); err != nil {
 			return err
 		}
 	case domain.EngineRedis:
@@ -131,7 +136,10 @@ func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
 			Interval: 15 * time.Second, Timeout: 5 * time.Second, StartPeriod: 60 * time.Second, Retries: 5,
 		}
 	case domain.EngineRedis:
-		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: m.confDir(s.Name), Target: "/etc/redis-bento", ReadOnly: true})
+		mounts = append(
+			mounts,
+			mount.Mount{Type: mount.TypeBind, Source: m.confDir(s.Name), Target: "/etc/redis-bento", ReadOnly: true},
+		)
 		cfg.Cmd = []string{"redis-server", "/etc/redis-bento/redis.conf"}
 		cfg.User = "999:999"
 		// Liveness only: an unauthenticated PING proves the server answers.
@@ -168,7 +176,15 @@ func (m *Manager) Ready(ctx context.Context, s domain.DataService, containerID s
 	// First-boot entrypoints run a temporary socket-only server; requiring a
 	// TCP answer ensures the real server is up.
 	case domain.EngineMySQL:
-		req.Cmd = []string{"mysqladmin", "--defaults-extra-file=/run/bento-secrets/client.cnf", "--protocol=tcp", "-h", "127.0.0.1", "ping", "--silent"}
+		req.Cmd = []string{
+			"mysqladmin",
+			"--defaults-extra-file=/run/bento-secrets/client.cnf",
+			"--protocol=tcp",
+			"-h",
+			"127.0.0.1",
+			"ping",
+			"--silent",
+		}
 	case domain.EnginePostgres:
 		req.Cmd = []string{"pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-q"}
 	case domain.EngineRedis:
@@ -241,7 +257,12 @@ func redactLine(s string) string {
 
 // ProvisionBinding creates the app user (idempotent) and each database,
 // refusing to adopt a database that exists without this user's ownership.
-func (m *Manager) ProvisionBinding(ctx context.Context, s domain.DataService, containerID string, b domain.Binding) error {
+func (m *Manager) ProvisionBinding(
+	ctx context.Context,
+	s domain.DataService,
+	containerID string,
+	b domain.Binding,
+) error {
 	user, err := ident(b.Username)
 	if err != nil {
 		return err
@@ -251,7 +272,13 @@ func (m *Manager) ProvisionBinding(ctx context.Context, s domain.DataService, co
 	}
 	switch s.Engine {
 	case domain.EngineMySQL:
-		if _, err := m.SQL(ctx, s, containerID, "", fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s';\n", user, b.Password)); err != nil {
+		if _, err := m.SQL(
+			ctx,
+			s,
+			containerID,
+			"",
+			fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s';\n", user, b.Password),
+		); err != nil {
 			return err
 		}
 		for _, name := range b.Databases {
@@ -283,12 +310,24 @@ func (m *Manager) mysqlDatabase(ctx context.Context, s domain.DataService, id, u
 	if err != nil {
 		return err
 	}
-	exists, err := m.SQL(ctx, s, id, "", fmt.Sprintf("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '%s';\n", db))
+	exists, err := m.SQL(
+		ctx,
+		s,
+		id,
+		"",
+		fmt.Sprintf("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '%s';\n", db),
+	)
 	if err != nil {
 		return err
 	}
 	if exists != "0" {
-		grants, err := m.SQL(ctx, s, id, "", fmt.Sprintf("SELECT COUNT(*) FROM mysql.db WHERE User = '%s' AND Db = '%s';\n", user, db))
+		grants, err := m.SQL(
+			ctx,
+			s,
+			id,
+			"",
+			fmt.Sprintf("SELECT COUNT(*) FROM mysql.db WHERE User = '%s' AND Db = '%s';\n", user, db),
+		)
 		if err != nil {
 			return err
 		}
@@ -307,7 +346,13 @@ func (m *Manager) postgresDatabase(ctx context.Context, s domain.DataService, id
 	if err != nil {
 		return err
 	}
-	owner, err := m.SQL(ctx, s, id, "", fmt.Sprintf("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '%s';\n", db))
+	owner, err := m.SQL(
+		ctx,
+		s,
+		id,
+		"",
+		fmt.Sprintf("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '%s';\n", db),
+	)
 	if err != nil {
 		return err
 	}
@@ -388,14 +433,21 @@ func (m *Manager) WriteRedisConfig(service string, users []RedisUser) error {
 	var acl bytes.Buffer
 	fmt.Fprintf(&acl, "user default on sanitize-payload #%s ~* &* +@all\n", platform.SHA256Hex([]byte(admin)))
 	for _, u := range users {
-		if !regexp.MustCompile(`^[a-z0-9-]+$`).MatchString(u.Username) || !regexp.MustCompile(`^[a-z0-9-]+:$`).MatchString(u.Prefix) {
+		validUser := regexp.MustCompile(`^[a-z0-9-]+$`).MatchString(u.Username)
+		if !validUser || !regexp.MustCompile(`^[a-z0-9-]+:$`).MatchString(u.Prefix) {
 			return fmt.Errorf("invalid redis identity %q", u.Username)
 		}
 		// INFO is read-only and called on connect by many clients (BullMQ,
 		// Sidekiq, health checks); the rest of @dangerous stays denied because
 		// FLUSHDB, KEYS and friends ignore key prefixes.
-		fmt.Fprintf(&acl, "user %s on sanitize-payload #%s resetkeys ~%s* resetchannels &%s* +@all -@admin -@dangerous +info\n",
-			u.Username, platform.SHA256Hex([]byte(u.Password)), u.Prefix, u.Prefix)
+		fmt.Fprintf(
+			&acl,
+			"user %s on sanitize-payload #%s resetkeys ~%s* resetchannels &%s* +@all -@admin -@dangerous +info\n",
+			u.Username,
+			platform.SHA256Hex([]byte(u.Password)),
+			u.Prefix,
+			u.Prefix,
+		)
 	}
 	owner := platform.Owner{UID: 0, GID: 999}
 	if _, err := platform.WriteIfChanged(filepath.Join(dir, "redis.conf"), []byte(conf), 0o440, owner); err != nil {
@@ -444,7 +496,11 @@ func (m *Manager) ReloadRedis(ctx context.Context, service, containerID string) 
 			return err
 		}
 		if res.ExitCode != 0 || !strings.Contains(string(res.Stdout), "OK") {
-			return fmt.Errorf("redis %s failed: %s", strings.Join(cmd[2:4], " "), redactLine(string(res.Stdout)+string(res.Stderr)))
+			return fmt.Errorf(
+				"redis %s failed: %s",
+				strings.Join(cmd[2:4], " "),
+				redactLine(string(res.Stdout)+string(res.Stderr)),
+			)
 		}
 	}
 	return nil

@@ -37,7 +37,11 @@ type PasswordRecord struct {
 func HashPassword(password string) string {
 	salt := []byte(platform.RandomToken(16))
 	key := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
-	return fmt.Sprintf("argon2id$3$65536$2$%s$%s", base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key))
+	return fmt.Sprintf(
+		"argon2id$3$65536$2$%s$%s",
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key),
+	)
 }
 
 func verifyPassword(encoded, password string) bool {
@@ -171,7 +175,11 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		sess, ok := s.sessionFromRequest(r)
 		if !ok {
-			writeJSON(w, http.StatusUnauthorized, dto.ErrorResponse{Error: dto.ErrorBody{Code: dto.ErrorCodeUnauthorized, Message: "authentication required"}})
+			writeJSON(
+				w,
+				http.StatusUnauthorized,
+				dto.ErrorResponse{Error: dto.ErrorBody{Code: dto.ErrorCodeUnauthorized, Message: "authentication required"}},
+			)
 			return
 		}
 		if unsafeMethod(r.Method) {
@@ -195,7 +203,11 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, dto.Session{Authenticated: false})
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.Session{Authenticated: true, CSRFToken: sess.CSRFToken, ExpiresAt: platform.FormatTime(sess.ExpiresAt)})
+	writeJSON(
+		w,
+		http.StatusOK,
+		dto.Session{Authenticated: true, CSRFToken: sess.CSRFToken, ExpiresAt: platform.FormatTime(sess.ExpiresAt)},
+	)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +216,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.limiter.allowed() {
-		writeError(w, s.Log, &apiError{status: http.StatusTooManyRequests, code: dto.ErrorCodeRateLimited, msg: "too many failed logins; wait and retry"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusTooManyRequests,
+				code:   dto.ErrorCodeRateLimited,
+				msg:    "too many failed logins; wait and retry",
+			},
+		)
 		return
 	}
 	var req dto.LoginRequest
@@ -229,11 +249,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 		case <-time.After(300 * time.Millisecond):
 		}
-		writeError(w, s.Log, &apiError{status: http.StatusUnauthorized, code: dto.ErrorCodeUnauthorized, msg: "invalid password"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{status: http.StatusUnauthorized, code: dto.ErrorCodeUnauthorized, msg: "invalid password"},
+		)
 		return
 	}
 	token := platform.RandomToken(32)
-	sess := store.Session{TokenHash: tokenHash(token), CSRFToken: platform.RandomToken(24), CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(SessionTTL)}
+	sess := store.Session{
+		TokenHash: tokenHash(token),
+		CSRFToken: platform.RandomToken(24),
+		CreatedAt: time.Now().UTC(),
+		ExpiresAt: time.Now().UTC().Add(SessionTTL),
+	}
 	if err := store.InsertSession(r.Context(), s.Store.DB(), sess); err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -246,7 +275,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Name: SessionCookie, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil, Expires: sess.ExpiresAt,
 	})
-	writeJSON(w, http.StatusOK, dto.Session{Authenticated: true, CSRFToken: sess.CSRFToken, ExpiresAt: platform.FormatTime(sess.ExpiresAt)})
+	writeJSON(
+		w,
+		http.StatusOK,
+		dto.Session{Authenticated: true, CSRFToken: sess.CSRFToken, ExpiresAt: platform.FormatTime(sess.ExpiresAt)},
+	)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -254,7 +287,17 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(SessionCookie); err == nil {
 		revokeErr = store.RevokeSession(r.Context(), s.Store.DB(), tokenHash(c.Value))
 	}
-	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(
+		w,
+		&http.Cookie{
+			Name:     SessionCookie,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   -1,
+		},
+	)
 	if revokeErr != nil {
 		// The cookie is cleared, but the server-side session is still valid:
 		// report the failure instead of claiming a completed logout.
@@ -304,7 +347,14 @@ func (s *Server) LocalOnly(next http.Handler) http.Handler {
 		c, _ := r.Context().Value(connKey{}).(net.Conn)
 		uid, err := PeerUID(c)
 		if err != nil || (uid != 0 && uid != own) {
-			writeJSON(w, http.StatusForbidden, dto.ErrorResponse{Error: dto.ErrorBody{Code: dto.ErrorCodeForbidden, Message: "control socket requires root or the backend user"}})
+			writeJSON(
+				w,
+				http.StatusForbidden,
+				dto.ErrorResponse{Error: dto.ErrorBody{
+					Code:    dto.ErrorCodeForbidden,
+					Message: "control socket requires root or the backend user",
+				}},
+			)
 			return
 		}
 		ctx := context.WithValue(r.Context(), principalKey{}, principal{Kind: "local"})

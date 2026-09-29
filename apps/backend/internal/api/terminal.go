@@ -209,7 +209,11 @@ type terminalTarget struct {
 
 // openTerminal starts a shell in the target prepare returns. Its lifetime is
 // bounded by terminalMaxAge, not by the request.
-func (s *Server) openTerminal(scope, owner string, rows, cols int, prepare func(ctx context.Context) (terminalTarget, error)) (*termSession, error) {
+func (s *Server) openTerminal(
+	scope, owner string,
+	rows, cols int,
+	prepare func(ctx context.Context) (terminalTarget, error),
+) (*termSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), terminalMaxAge)
 	target, err := prepare(ctx)
 	release := func() {
@@ -310,13 +314,22 @@ func (s *Server) handleRcloneTerminal(w http.ResponseWriter, r *http.Request) {
 // messages (resize and close from client; session and exit from server).
 // Passing ?session= reattaches a detached shell of the same scope and
 // principal, replaying its recent output.
-func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, scope string, prepare func(ctx context.Context) (terminalTarget, error)) {
+func (s *Server) serveTerminal(
+	w http.ResponseWriter,
+	r *http.Request,
+	scope string,
+	prepare func(ctx context.Context) (terminalTarget, error),
+) {
 	p, _ := principalFrom(r.Context())
 	owner := "local"
 	if p.Kind == "session" {
 		// WebSocket upgrades are GETs: enforce exact Origin and the CSRF token.
 		if !s.originAllowed(r.Header.Get("Origin")) || r.URL.Query().Get("csrf") != p.Session.CSRFToken {
-			writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden, msg: "origin or CSRF check failed"})
+			writeError(
+				w,
+				s.Log,
+				&apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden, msg: "origin or CSRF check failed"},
+			)
 			return
 		}
 		owner = "session:" + p.Session.TokenHash
@@ -333,7 +346,7 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, scope str
 	var sub *termSub
 	var gen uint64
 	var backlog []byte
-	resumed := false
+	var resumed bool
 	t := s.terminals.get(r.URL.Query().Get("session"))
 	if t != nil && t.scope == scope && t.owner == owner {
 		sub, gen, backlog, resumed = t.attach()
@@ -346,7 +359,11 @@ func (s *Server) serveTerminal(w http.ResponseWriter, r *http.Request, scope str
 		}
 		var ok bool
 		if sub, gen, _, ok = t.attach(); !ok {
-			writeError(w, s.Log, &apiError{status: http.StatusConflict, code: dto.ErrorCodeConflict, msg: "shell exited immediately"})
+			writeError(
+				w,
+				s.Log,
+				&apiError{status: http.StatusConflict, code: dto.ErrorCodeConflict, msg: "shell exited immediately"},
+			)
 			return
 		}
 	}

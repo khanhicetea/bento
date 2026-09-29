@@ -155,7 +155,11 @@ func (s *Server) handleGetDBAdmin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.DBAdminStatus{Enabled: ds.Enabled, State: s.containerState(r.Context(), s.C.Names.DBAdminContainer())})
+	writeJSON(
+		w,
+		http.StatusOK,
+		dto.DBAdminStatus{Enabled: ds.Enabled, State: s.containerState(r.Context(), s.C.Names.DBAdminContainer())},
+	)
 }
 
 func (s *Server) handlePutDBAdmin(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +186,15 @@ func (s *Server) handlePutDBAdmin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDBAdminTicket(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	if p.Kind != "session" {
-		writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden, msg: "the database browser needs a browser session"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusForbidden,
+				code:   dto.ErrorCodeForbidden,
+				msg:    "the database browser needs a browser session",
+			},
+		)
 		return
 	}
 	app, ok := s.loadApp(w, r)
@@ -215,7 +227,12 @@ func (s *Server) handleDBAdminTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := time.Now().Add(dbadminTicketTTL)
-	ticket := s.dbadmin.issue(dbadminPass{appID: app.ID, bindingID: b.ID, sessionHash: p.Session.TokenHash, expires: expires})
+	ticket := s.dbadmin.issue(dbadminPass{
+		appID:       app.ID,
+		bindingID:   b.ID,
+		sessionHash: p.Session.TokenHash,
+		expires:     expires,
+	})
 	writeJSON(w, http.StatusOK, dto.DBAdminTicket{Path: dbadminPathPrefix + "t/" + ticket, BaseURL: us.BaseURL,
 		LoopbackPort: s.utilsLoopbackPort(), ExpiresAt: platform.FormatTime(expires)})
 }
@@ -230,7 +247,11 @@ func dbadminBinding(app domain.App, id string) (domain.Binding, error) {
 			return b, badRequest("the database browser supports MySQL and PostgreSQL bindings only")
 		}
 		if b.Service == "" || b.Username == "" || b.Password == "" || len(b.Databases) == 0 {
-			return b, &apiError{status: http.StatusPreconditionFailed, code: dto.ErrorCodePrecondition, msg: "the binding has no provisioned database yet"}
+			return b, &apiError{
+				status: http.StatusPreconditionFailed,
+				code:   dto.ErrorCodePrecondition,
+				msg:    "the binding has no provisioned database yet",
+			}
 		}
 		return b, nil
 	}
@@ -434,7 +455,11 @@ func (s *Server) dbadminGateway() http.Handler {
 		_ = rc.SetReadDeadline(time.Now().Add(dbadminDeadline))
 		_ = rc.SetWriteDeadline(time.Now().Add(dbadminDeadline))
 		r.Body = http.MaxBytesReader(w, r.Body, dbadminMaxBody)
-		ctx := context.WithValue(r.Context(), dbadminTargetKey{}, dbadminTarget{endpoint: ep, token: token, binding: b, https: requestHTTPS(r), prefix: prefix})
+		ctx := context.WithValue(
+			r.Context(),
+			dbadminTargetKey{},
+			dbadminTarget{endpoint: ep, token: token, binding: b, https: requestHTTPS(r), prefix: prefix},
+		)
 		proxy.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -446,7 +471,11 @@ func (s *Server) redeemDBAdminTicket(w http.ResponseWriter, r *http.Request, tic
 	}
 	pass, grant, ok := s.dbadmin.redeem(ticket)
 	if !ok {
-		dbadminText(w, http.StatusUnauthorized, "this database browser link expired or was already used; open it again from the Bento UI")
+		dbadminText(
+			w,
+			http.StatusUnauthorized,
+			"this database browser link expired or was already used; open it again from the Bento UI",
+		)
 		return
 	}
 	if _, err := store.GetLiveSession(r.Context(), s.Store.DB(), pass.sessionHash, time.Now()); err != nil {

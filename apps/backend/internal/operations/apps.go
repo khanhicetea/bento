@@ -83,7 +83,12 @@ func (c *Controller) registerHandlers() {
 func (c *Controller) loadApp(ctx context.Context, id string) (domain.App, error) {
 	app, err := store.GetApp(ctx, c.Store.DB(), id)
 	if errors.Is(err, store.ErrNotFound) {
-		return app, Fail("app-not-found", "The app was removed after this operation was accepted.", "app %s no longer exists", id)
+		return app, Fail(
+			"app-not-found",
+			"The app was removed after this operation was accepted.",
+			"app %s no longer exists",
+			id,
+		)
 	}
 	return app, err
 }
@@ -117,15 +122,32 @@ func (c *Controller) ensureHome(app domain.App) error {
 		if err := platform.EnsureDir(home, 0o750, owner); err != nil {
 			return err
 		}
-		sc := HomeSidecar{StackID: c.Stack.ID, AppID: app.ID, Slug: app.Slug, UID: app.UID, GID: app.GID, CreatedAt: platform.FormatTime(time.Now())}
+		sc := HomeSidecar{
+			StackID:   c.Stack.ID,
+			AppID:     app.ID,
+			Slug:      app.Slug,
+			UID:       app.UID,
+			GID:       app.GID,
+			CreatedAt: platform.FormatTime(time.Now()),
+		}
 		raw, _ := json.MarshalIndent(sc, "", "  ")
-		if err := platform.AtomicWrite(c.Layout.HomeSidecar(app.Slug), append(raw, '\n'), 0o444, platform.RootOwner); err != nil {
+		if err := platform.AtomicWrite(
+			c.Layout.HomeSidecar(app.Slug),
+			append(raw, '\n'),
+			0o444,
+			platform.RootOwner,
+		); err != nil {
 			return err
 		}
 	case err != nil:
 		return err
 	case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
-		return Fail("home-unsafe", "Replace the path with a real directory or restore it from backup.", "app home %s is not a real directory", home)
+		return Fail(
+			"home-unsafe",
+			"Replace the path with a real directory or restore it from backup.",
+			"app home %s is not a real directory",
+			home,
+		)
 	default:
 		if err := c.verifyHomeIdentity(app); err != nil {
 			return err
@@ -157,10 +179,20 @@ func (c *Controller) verifyHome(app domain.App) error {
 		dir := c.Layout.SQLiteFileDir(b.SQLiteFileID)
 		o, mode, err := platform.StatOwner(dir)
 		if err != nil {
-			return Fail("durable-state-missing", "Restore the SQLite directory from backup.", "sqlite binding directory %s is missing", dir)
+			return Fail(
+				"durable-state-missing",
+				"Restore the SQLite directory from backup.",
+				"sqlite binding directory %s is missing",
+				dir,
+			)
 		}
 		if !mode.IsDir() || o.UID != app.UID {
-			return Fail("durable-state-invalid", "Repair permissions or restore the directory.", "sqlite binding directory %s has unexpected type or owner", dir)
+			return Fail(
+				"durable-state-invalid",
+				"Repair permissions or restore the directory.",
+				"sqlite binding directory %s has unexpected type or owner",
+				dir,
+			)
 		}
 	}
 	return nil
@@ -170,8 +202,12 @@ func (c *Controller) verifyCodeDir(app domain.App) error {
 	code := c.Layout.AppCode(app.Slug)
 	owner, mode, err := platform.StatOwner(code)
 	if errors.Is(err, fs.ErrNotExist) {
-		return Fail("durable-state-missing", "Restore the app code directory from backup; Bento will not create an empty replacement for an established app.",
-			"app code directory %s is missing", code)
+		return Fail(
+			"durable-state-missing",
+			"Restore the app code directory from backup; Bento will not create an empty replacement for an established app.",
+			"app code directory %s is missing",
+			code,
+		)
 	}
 	if err != nil {
 		return err
@@ -187,8 +223,12 @@ func (c *Controller) verifyHomeIdentity(app domain.App) error {
 	home := c.Layout.AppHome(app.Slug)
 	info, err := os.Lstat(home)
 	if errors.Is(err, fs.ErrNotExist) {
-		return Fail("durable-state-missing", "Restore the app home from backup; Bento will not create an empty replacement for an established app.",
-			"app home %s is missing", home)
+		return Fail(
+			"durable-state-missing",
+			"Restore the app home from backup; Bento will not create an empty replacement for an established app.",
+			"app home %s is missing",
+			home,
+		)
 	}
 	if err != nil {
 		return err
@@ -198,20 +238,38 @@ func (c *Controller) verifyHomeIdentity(app domain.App) error {
 	}
 	raw, err := os.ReadFile(c.Layout.HomeSidecar(app.Slug))
 	if err != nil {
-		return Fail("home-retained", "This home was not created for this app incarnation. Prune the retained app data or restore explicitly; Bento never adopts or re-owns it automatically.",
-			"app home %s exists without a Bento identity record", home)
+		return Fail(
+			"home-retained",
+			"This home was not created for this app incarnation. Prune the retained app data or restore explicitly; Bento never adopts or re-owns it automatically.",
+			"app home %s exists without a Bento identity record",
+			home,
+		)
 	}
 	var sc HomeSidecar
 	if err := json.Unmarshal(raw, &sc); err != nil || sc.AppID != app.ID || sc.StackID != c.Stack.ID || sc.UID != app.UID {
-		return Fail("home-retained", "The home belongs to a different app incarnation or stack. Prune it or restore explicitly.",
-			"app home %s belongs to app %s (uid %d), not %s (uid %d)", home, sc.AppID, sc.UID, app.ID, app.UID)
+		return Fail(
+			"home-retained",
+			"The home belongs to a different app incarnation or stack. Prune it or restore explicitly.",
+			"app home %s belongs to app %s (uid %d), not %s (uid %d)",
+			home,
+			sc.AppID,
+			sc.UID,
+			app.ID,
+			app.UID,
+		)
 	}
 	owner, _, err := platform.StatOwner(home)
 	if err != nil {
 		return err
 	}
 	if owner.UID != app.UID {
-		return Fail("home-owner", "Run a permission check/repair for the app.", "app home is owned by uid %d, expected %d", owner.UID, app.UID)
+		return Fail(
+			"home-owner",
+			"Run a permission check/repair for the app.",
+			"app home is owned by uid %d, expected %d",
+			owner.UID,
+			app.UID,
+		)
 	}
 	return nil
 }
@@ -233,17 +291,31 @@ func (c *Controller) ensureSQLiteDirs(app domain.App) error {
 			return err
 		}
 		if !mode.IsDir() || o.UID != app.UID {
-			return Fail("sqlite-retained", "The SQLite directory exists for another identity; refusing to adopt it.", "sqlite directory %s is not owned by this app", dir)
+			return Fail(
+				"sqlite-retained",
+				"The SQLite directory exists for another identity; refusing to adopt it.",
+				"sqlite directory %s is not owned by this app",
+				dir,
+			)
 		}
 	}
 	return nil
 }
 
 // materialize resolves the runtime image and writes generated config.
-func (c *Controller) materialize(ctx context.Context, r *Run, app domain.App) (runtime.AppInputs, runtime.Changes, error) {
+func (c *Controller) materialize(
+	ctx context.Context,
+	r *Run,
+	app domain.App,
+) (runtime.AppInputs, runtime.Changes, error) {
 	imageID, _, err := c.Images.Ensure(ctx, app.Runtime.ImageKey(), func(s string) { r.Info(ctx, "%s", s) })
 	if err != nil {
-		return runtime.AppInputs{}, runtime.Changes{}, Fail("image", "Check Docker connectivity and build output, then retry.", "managed image: %v", err)
+		return runtime.AppInputs{}, runtime.Changes{}, Fail(
+			"image",
+			"Check Docker connectivity and build output, then retry.",
+			"managed image: %v",
+			err,
+		)
 	}
 	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
 	if err != nil {
@@ -370,7 +442,14 @@ func (c *Controller) observe(ctx context.Context, app domain.App) (Observation, 
 		}
 	}
 	// Scoped to this stack: an imported clone legitimately shares app ids.
-	all, err := c.Engine.List(ctx, map[string]string{runtime.LabelStackID: c.Stack.ID, runtime.LabelAppID: app.ID, runtime.LabelRole: string(runtime.RoleRuntime)})
+	all, err := c.Engine.List(
+		ctx,
+		map[string]string{
+			runtime.LabelStackID: c.Stack.ID,
+			runtime.LabelAppID:   app.ID,
+			runtime.LabelRole:    string(runtime.RoleRuntime),
+		},
+	)
 	if err != nil {
 		return o, err
 	}
@@ -390,19 +469,29 @@ func (c *Controller) verifyOwnedInstance(ctx context.Context, app domain.App, id
 		return err
 	}
 	if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, runtime.RoleRuntime, app.ID) {
-		return Fail("foreign-container", "Rename or remove the conflicting container manually; Bento never adopts or deletes unknown resources.",
-			"container %s is not Bento's instance for app %s", c.Names.AppContainer(app.ID), app.Slug)
+		return Fail(
+			"foreign-container",
+			"Rename or remove the conflicting container manually; Bento never adopts or deletes unknown resources.",
+			"container %s is not Bento's instance for app %s",
+			c.Names.AppContainer(app.ID),
+			app.Slug,
+		)
 	}
 	if ins.HostConfig != nil {
 		wantHome := c.Layout.AppHome(app.Slug)
-		found := false
+		var found bool
 		for _, m := range ins.HostConfig.Mounts {
 			if m.Type == mount.TypeBind && m.Target == app.ContainerHome() && m.Source == wantHome {
 				found = true
 			}
 		}
 		if !found {
-			return Fail("unexpected-mounts", "Inspect the container; its mounts do not match this app.", "container for %s does not mount the expected home", app.Slug)
+			return Fail(
+				"unexpected-mounts",
+				"Inspect the container; its mounts do not match this app.",
+				"container for %s does not mount the expected home",
+				app.Slug,
+			)
 		}
 	}
 	return nil
@@ -411,7 +500,12 @@ func (c *Controller) verifyOwnedInstance(ctx context.Context, app domain.App, id
 // ensureInstance makes the persistent instance match the planned generation
 // and be running. The previous instance is stopped before its replacement
 // starts (no overlap of schedulers or workers).
-func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App, forceRestart bool) (string, string, error) {
+func (c *Controller) ensureInstance(
+	ctx context.Context,
+	r *Run,
+	app domain.App,
+	forceRestart bool,
+) (string, string, error) {
 	if err := r.Phase(ctx, "verify-durable-state"); err != nil {
 		return "", "", err
 	}
@@ -441,7 +535,10 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 	}
 	if len(obs.Duplicates) > 0 {
 		return "", "", Fail("duplicate-instance", "Stop and remove the extra containers manually after verifying them.",
-			"found %d additional runtime container(s) labeled for app %s: %s", len(obs.Duplicates), app.Slug, strings.Join(obs.Duplicates, ", "))
+			"found %d additional runtime container(s) labeled for app %s: %s", len(obs.Duplicates), app.Slug, strings.Join(
+				obs.Duplicates,
+				", ",
+			))
 	}
 	if obs.Exists {
 		if err := c.verifyOwnedInstance(ctx, app, obs.ContainerID); err != nil {
@@ -491,7 +588,12 @@ func (c *Controller) ensureInstance(ctx context.Context, r *Run, app domain.App,
 		c.setWarming(app.ID, r.Op.ID)
 		if obs.Running {
 			if err := c.Engine.Stop(ctx, obs.ContainerID, runtime.StopTimeout); err != nil {
-				return "", "", Fail("stop-failed", "Retry; the previous instance is still in place.", "stop previous instance: %v", err)
+				return "", "", Fail(
+					"stop-failed",
+					"Retry; the previous instance is still in place.",
+					"stop previous instance: %v",
+					err,
+				)
 			}
 		}
 		if err := c.Engine.Remove(ctx, obs.ContainerID); err != nil {
@@ -555,7 +657,9 @@ func (c *Controller) checkReady(ctx context.Context, app domain.App, gen string)
 	ectx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	res, err := c.Engine.Exec(ectx, obs.ContainerID, docker.ExecRequest{
-		User: strconv.Itoa(app.UID) + ":" + strconv.Itoa(app.GID), Cmd: []string{"/usr/local/bin/bento-ready"}, OutputLimit: 4096,
+		User:        strconv.Itoa(app.UID) + ":" + strconv.Itoa(app.GID),
+		Cmd:         []string{"/usr/local/bin/bento-ready"},
+		OutputLimit: 4096,
 	})
 	if err != nil {
 		return ReadyCheck{Reason: "readiness exec: " + err.Error()}
@@ -584,7 +688,7 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 		return err
 	}
 	deadline := time.Now().Add(c.ReadyTimeout)
-	last := ""
+	var last string
 	for {
 		chk := c.checkReady(ctx, app, gen)
 		if chk.Ready {
@@ -617,8 +721,13 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 			return ErrCancelled
 		}
 		if time.Now().After(deadline) {
-			return Fail("not-ready", "The instance keeps running; inspect logs and readiness configuration. Publication was not changed.",
-				"app did not become ready within %s: %s", c.ReadyTimeout, last)
+			return Fail(
+				"not-ready",
+				"The instance keeps running; inspect logs and readiness configuration. Publication was not changed.",
+				"app did not become ready within %s: %s",
+				c.ReadyTimeout,
+				last,
+			)
 		}
 		select {
 		case <-ctx.Done():
@@ -726,7 +835,11 @@ func (c *Controller) handleStop(ctx context.Context, r *Run) (any, error) {
 	// A broken edge must not block stopping: warn and continue. The stale route
 	// only returns 502 and edge drift reconciliation reapplies it later.
 	if err := c.applyEdge(ctx, r); err != nil {
-		r.Warn(ctx, "edge route removal failed; stopping anyway (the stale route will return 502 until the edge is fixed): %v", err)
+		r.Warn(
+			ctx,
+			"edge route removal failed; stopping anyway (the stale route will return 502 until the edge is fixed): %v",
+			err,
+		)
 	}
 	if err := r.Phase(ctx, "stop"); err != nil {
 		return nil, err
@@ -817,12 +930,19 @@ func (c *Controller) handleUpdate(ctx context.Context, r *Run) (any, error) {
 	return result, nil
 }
 
-func (c *Controller) appExec(ctx context.Context, app domain.App, id string, argv ...string) (docker.ExecResult, error) {
+func (c *Controller) appExec(
+	ctx context.Context,
+	app domain.App,
+	id string,
+	argv ...string,
+) (docker.ExecResult, error) {
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	return c.Engine.Exec(cctx, id, docker.ExecRequest{
-		User: strconv.Itoa(app.UID) + ":" + strconv.Itoa(app.GID), Cmd: append([]string{"/usr/local/bin/bento-exec"}, argv...), OutputLimit: 16 << 10,
-		Env: []string{"BENTO_EXEC_WORKDIR=" + app.ContainerCode()},
+		User:        strconv.Itoa(app.UID) + ":" + strconv.Itoa(app.GID),
+		Cmd:         append([]string{"/usr/local/bin/bento-exec"}, argv...),
+		OutputLimit: 16 << 10,
+		Env:         []string{"BENTO_EXEC_WORKDIR=" + app.ContainerCode()},
 	})
 }
 
@@ -837,7 +957,8 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 		validate []string
 		reload   []string
 	}{
-		{ch.Frontend, runtime.ScopeFrontend, "local nginx", []string{"nginx", "-t", "-q", "-e", "stderr", "-c", "/etc/bento/nginx.conf"},
+		{ch.Frontend, runtime.ScopeFrontend, "local nginx",
+			[]string{"nginx", "-t", "-q", "-e", "stderr", "-c", "/etc/bento/nginx.conf"},
 			[]string{"nginx", "-e", "stderr", "-c", "/etc/bento/nginx.conf", "-s", "reload"}},
 		{ch.Pool, runtime.ScopePool, "php-fpm", []string{"php-fpm", "-t", "--fpm-config", "/etc/bento/php-fpm.conf"},
 			[]string{"/package/admin/s6/command/s6-svc", "-r", "/run/service/php-fpm"}},
@@ -865,14 +986,19 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 			if rerr := ch.RestoreUnapplied(); rerr != nil {
 				r.Warn(ctx, "restoring the previous configuration failed: %v", rerr)
 			}
-			detail := ""
+			var detail string
 			if err == nil {
 				detail = strings.TrimSpace(string(res.Stderr) + string(res.Stdout))
 			} else {
 				detail = err.Error()
 			}
-			return Fail("validation-failed", "Previous configuration restored; no reload was sent. Correct the configuration and retry.",
-				"%s rejected the new configuration: %s", s.name, detail)
+			return Fail(
+				"validation-failed",
+				"Previous configuration restored; no reload was sent. Correct the configuration and retry.",
+				"%s rejected the new configuration: %s",
+				s.name,
+				detail,
+			)
 		}
 		res, err = c.appExec(ctx, app, id, s.reload...)
 		if err != nil || res.ExitCode != 0 {
@@ -894,7 +1020,13 @@ func (c *Controller) handlePublish(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 	if app.Ingress != domain.IngressManaged {
-		return nil, Fail("not-managed", "Publication controls apply only to Bento-managed edge routes.", "app %s uses %s ingress", app.Slug, app.Ingress)
+		return nil, Fail(
+			"not-managed",
+			"Publication controls apply only to Bento-managed edge routes.",
+			"app %s uses %s ingress",
+			app.Slug,
+			app.Ingress,
+		)
 	}
 	edge, err := c.EdgeSettings(ctx)
 	if err != nil {
@@ -904,7 +1036,12 @@ func (c *Controller) handlePublish(ctx context.Context, r *Run) (any, error) {
 		return nil, Fail("edge-disabled", "Enable the managed edge first.", "the managed edge is not enabled")
 	}
 	if app.DesiredRuntime != domain.DesiredRunning {
-		return nil, Fail("not-running", "Start the app first; publish never starts an app implicitly.", "app %s is stopped", app.Slug)
+		return nil, Fail(
+			"not-running",
+			"Start the app first; publish never starts an app implicitly.",
+			"app %s is stopped",
+			app.Slug,
+		)
 	}
 	if len(app.Domains) == 0 {
 		return nil, Fail("no-domain", "Add a primary domain first.", "app %s has no domains", app.Slug)
@@ -918,7 +1055,12 @@ func (c *Controller) handlePublish(ctx context.Context, r *Run) (any, error) {
 	}
 	_, gen := runtime.AppContainerSpec(in, true)
 	if chk := c.checkReady(ctx, app, gen); !chk.Ready {
-		return nil, Fail("not-ready", "Publication unchanged. Wait for the app to become ready (or restart it) and publish again.", "app is not ready: %s", chk.Reason)
+		return nil, Fail(
+			"not-ready",
+			"Publication unchanged. Wait for the app to become ready (or restart it) and publish again.",
+			"app is not ready: %s",
+			chk.Reason,
+		)
 	}
 	if err := c.Store.Tx(ctx, func(q store.Q) error {
 		cur, err := store.GetApp(ctx, q, app.ID)
@@ -962,7 +1104,11 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 	}
 	// A broken edge must not block removal: warn and continue.
 	if err := c.applyEdge(ctx, r); err != nil {
-		r.Warn(ctx, "edge route removal failed; removing anyway (the stale route will return 502 until the edge is fixed): %v", err)
+		r.Warn(
+			ctx,
+			"edge route removal failed; removing anyway (the stale route will return 502 until the edge is fixed): %v",
+			err,
+		)
 	}
 	if err := r.Phase(ctx, "remove-containers"); err != nil {
 		return nil, err
@@ -1004,7 +1150,12 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 	if len(left) > 0 {
-		return nil, Fail("containers-remain", "Remove the remaining containers labeled for this app, then retry.", "%d container(s) for the app still exist", len(left))
+		return nil, Fail(
+			"containers-remain",
+			"Remove the remaining containers labeled for this app, then retry.",
+			"%d container(s) for the app still exist",
+			len(left),
+		)
 	}
 	if err := r.Phase(ctx, "retire-identity"); err != nil {
 		return nil, err
@@ -1014,11 +1165,18 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 		if b.Engine == domain.EngineSQLite {
 			arts.SQLiteFileIDs = append(arts.SQLiteFileIDs, b.SQLiteFileID)
 		} else {
-			arts.Relational = append(arts.Relational, store.RetainedRelational{Engine: b.Engine, Service: b.Service, Username: b.Username, Databases: b.Databases})
+			arts.Relational = append(
+				arts.Relational,
+				store.RetainedRelational{Engine: b.Engine, Service: b.Service, Username: b.Username, Databases: b.Databases},
+			)
 		}
 	}
 	if err := c.Store.Tx(ctx, func(q store.Q) error {
-		if err := store.InsertRetired(ctx, q, store.RetiredApp{AppID: app.ID, Slug: app.Slug, UID: app.UID, Artifacts: arts}); err != nil {
+		if err := store.InsertRetired(
+			ctx,
+			q,
+			store.RetiredApp{AppID: app.ID, Slug: app.Slug, UID: app.UID, Artifacts: arts},
+		); err != nil {
 			return err
 		}
 		state := "retired"
@@ -1052,7 +1210,12 @@ func (c *Controller) handlePrune(ctx context.Context, r *Run) (any, error) {
 		return map[string]any{"alreadyPruned": true}, nil
 	}
 	if _, err := store.GetApp(ctx, c.Store.DB(), ret.Slug); err == nil {
-		return nil, Fail("slug-active", "Remove the active app with this slug first.", "an active app now uses slug %s", ret.Slug)
+		return nil, Fail(
+			"slug-active",
+			"Remove the active app with this slug first.",
+			"an active app now uses slug %s",
+			ret.Slug,
+		)
 	}
 	if err := r.Phase(ctx, "drop-databases"); err != nil {
 		return nil, err
@@ -1133,7 +1296,11 @@ func (c *Controller) handleReconcile(ctx context.Context, r *Run) (any, error) {
 			if err := c.scopedReloads(ctx, r, app, obs.ContainerID, ch); err != nil {
 				return nil, err
 			}
-			return map[string]any{"reloaded": map[string]bool{"frontend": ch.Frontend, "pool": ch.Pool, "scheduler": ch.Scheduler}}, nil
+			return map[string]any{"reloaded": map[string]bool{
+				"frontend":  ch.Frontend,
+				"pool":      ch.Pool,
+				"scheduler": ch.Scheduler,
+			}}, nil
 		}
 	}
 	id, gen, err := c.ensureInstance(ctx, r, app, false)
@@ -1213,11 +1380,20 @@ func (c *Controller) PlannedGeneration(ctx context.Context, app domain.App) (str
 	if err != nil {
 		return "", false, err
 	}
-	_, _, m, err := runtime.RenderAppConfig(app, runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group})
+	_, _, m, err := runtime.RenderAppConfig(
+		app,
+		runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
+	)
 	if err != nil {
 		return "", false, err
 	}
-	return runtime.Fingerprint(runtime.AppInputs{App: app, Names: c.Names, Layout: c.Layout, ImageID: imageID, Materialized: m}), true, nil
+	return runtime.Fingerprint(runtime.AppInputs{
+		App:          app,
+		Names:        c.Names,
+		Layout:       c.Layout,
+		ImageID:      imageID,
+		Materialized: m,
+	}), true, nil
 }
 
 // AppConfigDrift reports whether generated config on disk differs from what
@@ -1239,7 +1415,10 @@ func (c *Controller) AppConfigDrift(ctx context.Context, app domain.App) (bool, 
 	if err != nil {
 		return false, err
 	}
-	return runtime.AppConfigDrift(app, runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group})
+	return runtime.AppConfigDrift(
+		app,
+		runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
+	)
 }
 
 // Observe exposes observed state to status readers.

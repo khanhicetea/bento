@@ -40,7 +40,11 @@ func decode(w http.ResponseWriter, r *http.Request, out any) error {
 	raw, err := io.ReadAll(body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			return &apiError{status: http.StatusRequestEntityTooLarge, code: dto.ErrorCodeTooLarge, msg: "request body too large"}
+			return &apiError{
+				status: http.StatusRequestEntityTooLarge,
+				code:   dto.ErrorCodeTooLarge,
+				msg:    "request body too large",
+			}
 		}
 		return err
 	}
@@ -50,11 +54,19 @@ func decode(w http.ResponseWriter, r *http.Request, out any) error {
 		return &apiError{status: http.StatusBadRequest, code: dto.ErrorCodeValidation, msg: "invalid JSON: " + jsonErr(err)}
 	}
 	if dec.More() {
-		return &apiError{status: http.StatusBadRequest, code: dto.ErrorCodeValidation, msg: "invalid JSON: trailing data after object"}
+		return &apiError{
+			status: http.StatusBadRequest,
+			code:   dto.ErrorCodeValidation,
+			msg:    "invalid JSON: trailing data after object",
+		}
 	}
 	var extra json.RawMessage
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return &apiError{status: http.StatusBadRequest, code: dto.ErrorCodeValidation, msg: "invalid JSON: trailing data after object"}
+		return &apiError{
+			status: http.StatusBadRequest,
+			code:   dto.ErrorCodeValidation,
+			msg:    "invalid JSON: trailing data after object",
+		}
 	}
 	return nil
 }
@@ -131,7 +143,11 @@ func writeError(w http.ResponseWriter, log *slog.Logger, err error) {
 		ae = &apiError{status: statusClientClosedRequest, code: dto.ErrorCodeUnavailable, msg: "request canceled"}
 	default:
 		log.Error("request failed", "err", err)
-		ae = &apiError{status: http.StatusInternalServerError, code: dto.ErrorCodeInternal, msg: "internal error; see backend log"}
+		ae = &apiError{
+			status: http.StatusInternalServerError,
+			code:   dto.ErrorCodeInternal,
+			msg:    "internal error; see backend log",
+		}
 	}
 	writeJSON(w, ae.status, dto.ErrorResponse{Error: dto.ErrorBody{Code: ae.code, Message: ae.msg, Fields: ae.fields}})
 }

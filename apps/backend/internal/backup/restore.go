@@ -19,7 +19,12 @@ import (
 
 // RestoreRelational replaces an app-namespaced database with an artifact.
 // Not object-level atomic: a failure may leave a partial destination.
-func (d Deps) RestoreRelational(ctx context.Context, app domain.App, b domain.Binding, database, artifactPath string) error {
+func (d Deps) RestoreRelational(
+	ctx context.Context,
+	app domain.App,
+	b domain.Binding,
+	database, artifactPath string,
+) error {
 	id, svc, err := d.ServiceContainer(ctx, b.Service)
 	if err != nil {
 		return err
@@ -36,8 +41,14 @@ func (d Deps) RestoreRelational(ctx context.Context, app domain.App, b domain.Bi
 		// A short dump returns fewer bytes and io.EOF; the charset sniff only
 		// needs whatever is available.
 		head, _ := peek.Peek(dumpPeekBytes)
-		reset := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-			database, database, mysqlCharsetClause(head), database, b.Username)
+		reset := fmt.Sprintf(
+			"DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
+			database,
+			database,
+			mysqlCharsetClause(head),
+			database,
+			b.Username,
+		)
 		if _, err := d.Data.SQL(ctx, svc, id, "", reset); err != nil {
 			return err
 		}
@@ -52,13 +63,25 @@ func (d Deps) RestoreRelational(ctx context.Context, app domain.App, b domain.Bi
 			return fmt.Errorf("mysql restore failed: %s", strings.TrimSpace(stderr.String()))
 		}
 	case domain.EnginePostgres:
-		reset := fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();\n"+
-			"DROP DATABASE IF EXISTS \"%s\";\nCREATE DATABASE \"%s\" OWNER \"%s\";\n", database, database, database, b.Username)
+		reset := fmt.Sprintf(
+			"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();\n"+
+				"DROP DATABASE IF EXISTS \"%s\";\nCREATE DATABASE \"%s\" OWNER \"%s\";\n",
+			database,
+			database,
+			database,
+			b.Username,
+		)
 		if _, err := d.Data.SQL(ctx, svc, id, "", reset); err != nil {
 			return err
 		}
-		if _, err := d.Data.SQL(ctx, svc, id, database, fmt.Sprintf(
-			"REVOKE ALL ON DATABASE \"%s\" FROM PUBLIC;\nREVOKE ALL ON SCHEMA public FROM PUBLIC;\nALTER SCHEMA public OWNER TO \"%s\";\n", database, b.Username)); err != nil {
+		lockdown := fmt.Sprintf(
+			"REVOKE ALL ON DATABASE \"%s\" FROM PUBLIC;\n"+
+				"REVOKE ALL ON SCHEMA public FROM PUBLIC;\n"+
+				"ALTER SCHEMA public OWNER TO \"%s\";\n",
+			database,
+			b.Username,
+		)
+		if _, err := d.Data.SQL(ctx, svc, id, database, lockdown); err != nil {
 			return err
 		}
 		// Objects are created as the app role so ownership stays app-scoped.

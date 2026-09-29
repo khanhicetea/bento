@@ -56,7 +56,11 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 		return id, fmt.Errorf("invalid uid range %d-%d", opts.UIDRange.First, opts.UIDRange.Last)
 	}
 	if m := DetectForeign(layout.Root); m != "" {
-		return id, fmt.Errorf("%s is not a Bento stack root (found %s); it was left untouched. Initialize an empty directory instead", layout.Root, m)
+		return id, fmt.Errorf(
+			"%s is not a Bento stack root (found %s); it was left untouched. Initialize an empty directory instead",
+			layout.Root,
+			m,
+		)
 	}
 	empty, err := platform.DirIsEmptyOrMissing(layout.Root)
 	if err != nil {
@@ -87,23 +91,49 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 	defer s.Close()
 	id = store.StackIdentity{ID: platform.NewStackID(), Name: opts.Name, CreatedAt: platform.FormatTime(time.Now())}
 	names := runtime.Names{StackID: id.ID, StackName: id.Name}
-	services := []domain.DataService{{Name: "redis", Engine: domain.EngineRedis, Version: domain.RedisVersion, Image: domain.RedisImage}}
+	services := []domain.DataService{{
+		Name:    "redis",
+		Engine:  domain.EngineRedis,
+		Version: domain.RedisVersion,
+		Image:   domain.RedisImage,
+	}}
 	if opts.MySQL != "" {
 		img, ok := domain.MySQLVersions[opts.MySQL]
 		if !ok {
 			return id, fmt.Errorf("unsupported MySQL version %q", opts.MySQL)
 		}
-		services = append(services, domain.DataService{Name: "mysql" + strings.ReplaceAll(opts.MySQL, ".", ""), Engine: domain.EngineMySQL, Version: opts.MySQL, Image: img})
+		services = append(
+			services,
+			domain.DataService{
+				Name:    "mysql" + strings.ReplaceAll(opts.MySQL, ".", ""),
+				Engine:  domain.EngineMySQL,
+				Version: opts.MySQL,
+				Image:   img,
+			},
+		)
 	}
 	if opts.Postgres != "" {
 		img, ok := domain.PostgresVersions[opts.Postgres]
 		if !ok {
 			return id, fmt.Errorf("unsupported PostgreSQL version %q", opts.Postgres)
 		}
-		services = append(services, domain.DataService{Name: "postgres" + opts.Postgres, Engine: domain.EnginePostgres, Version: opts.Postgres, Image: img})
+		services = append(
+			services,
+			domain.DataService{
+				Name:    "postgres" + opts.Postgres,
+				Engine:  domain.EnginePostgres,
+				Version: opts.Postgres,
+				Image:   img,
+			},
+		)
 	}
 	err = s.Tx(ctx, func(q store.Q) error {
-		for k, v := range map[string]string{"stack_id": id.ID, "stack_name": id.Name, "created_at": id.CreatedAt, "format": "bento-go-state"} {
+		for k, v := range map[string]string{
+			"stack_id":   id.ID,
+			"stack_name": id.Name,
+			"created_at": id.CreatedAt,
+			"format":     "bento-go-state",
+		} {
 			if err := store.SetMeta(ctx, q, k, v); err != nil {
 				return err
 			}
@@ -142,7 +172,12 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 		}
 	}
 	placeholder := "# rclone configuration for scheduled backup uploads (operator-owned, private).\n"
-	if err := platform.AtomicWrite(filepath.Join(layout.RcloneDir(), "rclone.conf"), []byte(placeholder), 0o600, platform.RootOwner); err != nil {
+	if err := platform.AtomicWrite(
+		filepath.Join(layout.RcloneDir(), "rclone.conf"),
+		[]byte(placeholder),
+		0o600,
+		platform.RootOwner,
+	); err != nil {
 		return id, err
 	}
 	return id, nil

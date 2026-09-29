@@ -183,12 +183,27 @@ func (r *runner) run(args []string) error {
 		listen := fs.String("listen", "127.0.0.1:7780", "loopback listen address")
 		var origins, utils multiFlag
 		fs.Var(&origins, "origin", "additional exact browser origin (repeatable)")
-		fs.Var(&utils, "utils-listen", "utils routes listener: IP:PORT, apps:PORT (apps network gateway), or off (repeatable; default 127.0.0.1:7781 and apps:7781)")
-		concurrency := fs.Int("op-concurrency", operations.DefaultConcurrency, fmt.Sprintf("operations executed at once, 1-%d (1 = strictly serial)", MaxOpConcurrency))
+		fs.Var(
+			&utils,
+			"utils-listen",
+			"utils routes listener: IP:PORT, apps:PORT (apps network gateway), or off (repeatable; default 127.0.0.1:7781 and apps:7781)",
+		)
+		concurrency := fs.Int(
+			"op-concurrency",
+			operations.DefaultConcurrency,
+			fmt.Sprintf("operations executed at once, 1-%d (1 = strictly serial)", MaxOpConcurrency),
+		)
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		return Serve(ServeOptions{Root: r.layout.Root, Listen: *listen, Origins: origins, UtilsListen: utils, OpConcurrency: *concurrency, Version: r.version})
+		return Serve(ServeOptions{
+			Root:          r.layout.Root,
+			Listen:        *listen,
+			Origins:       origins,
+			UtilsListen:   utils,
+			OpConcurrency: *concurrency,
+			Version:       r.version,
+		})
 	case "init":
 		fs, rest := sub("init", args[1:])
 		name := fs.String("name", "", "stack name")
@@ -200,7 +215,13 @@ func (r *runner) run(args []string) error {
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		opts := stack.InitOptions{Root: r.layout.Root, Name: *name, UIDRange: domain.UIDRange{First: *first, Last: *last}, MySQL: *mysql, Postgres: *pg}
+		opts := stack.InitOptions{
+			Root:     r.layout.Root,
+			Name:     *name,
+			UIDRange: domain.UIDRange{First: *first, Last: *last},
+			MySQL:    *mysql,
+			Postgres: *pg,
+		}
 		if *pwStdin {
 			pw, err := readSecret("")
 			if err != nil {
@@ -212,7 +233,14 @@ func (r *runner) run(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(r.out, "initialized stack %s (%s) at %s\nnext: bento --stack %s serve\n", id.Name, id.ID, r.layout.Root, r.layout.Root)
+		fmt.Fprintf(
+			r.out,
+			"initialized stack %s (%s) at %s\nnext: bento --stack %s serve\n",
+			id.Name,
+			id.ID,
+			r.layout.Root,
+			r.layout.Root,
+		)
 		if opts.Password == "" {
 			fmt.Fprintf(r.out, "then set the web password: bento --stack %s auth set-password\n", r.layout.Root)
 		}
@@ -235,10 +263,18 @@ func (r *runner) run(args []string) error {
 			return err
 		}
 		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-		if err := stack.Import(ctx, engine, log, stack.ImportOptions{Root: r.layout.Root, From: *from, Name: *name, NewUIDRange: rng}); err != nil {
+		if err := stack.Import(
+			ctx,
+			engine,
+			log,
+			stack.ImportOptions{Root: r.layout.Root, From: *from, Name: *name, NewUIDRange: rng},
+		); err != nil {
 			return err
 		}
-		fmt.Fprintln(r.out, "imported. All apps are stopped and unpublished; edge, tunnel, and backup schedule are disabled until you enable them.")
+		fmt.Fprintln(
+			r.out,
+			"imported. All apps are stopped and unpublished; edge, tunnel, and backup schedule are disabled until you enable them.",
+		)
 		return nil
 	case "status":
 		var st dto.SystemStatus
@@ -249,8 +285,22 @@ func (r *runner) run(args []string) error {
 			printJSON(st)
 			return nil
 		}
-		fmt.Fprintf(r.out, "stack %s (%s) root %s\nbackend %s since %s\ndocker %s api %s %s %s\napps %d (%d desired running), active operations %d\n",
-			st.StackName, st.StackID, st.Root, st.Version, st.StartedAt, st.DockerVersion, st.DockerAPI, st.Arch, st.DockerError, st.Apps, st.RunningApps, st.QueuedOps)
+		fmt.Fprintf(
+			r.out,
+			"stack %s (%s) root %s\nbackend %s since %s\ndocker %s api %s %s %s\napps %d (%d desired running), active operations %d\n",
+			st.StackName,
+			st.StackID,
+			st.Root,
+			st.Version,
+			st.StartedAt,
+			st.DockerVersion,
+			st.DockerAPI,
+			st.Arch,
+			st.DockerError,
+			st.Apps,
+			st.RunningApps,
+			st.QueuedOps,
+		)
 		return nil
 	case "auth":
 		if len(args) < 2 || args[1] != "set-password" {
@@ -277,7 +327,20 @@ func (r *runner) run(args []string) error {
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "SLUG\tID\tUID\tRUNTIME\tDESIRED\tOBSERVED\tINGRESS\tPUBLICATION\tDOMAIN")
 		for _, a := range list.Apps {
-			fmt.Fprintf(tw, "%s\t%s\t%d\t%s %s\t%s\t%s\t%s\t%s\t%s\n", a.Slug, a.ID, a.UID, a.Toolchain, a.Version, a.DesiredRuntime, a.Observed.State, a.Ingress, a.Publication, a.PrimaryDomain)
+			fmt.Fprintf(
+				tw,
+				"%s\t%s\t%d\t%s %s\t%s\t%s\t%s\t%s\t%s\n",
+				a.Slug,
+				a.ID,
+				a.UID,
+				a.Toolchain,
+				a.Version,
+				a.DesiredRuntime,
+				a.Observed.State,
+				a.Ingress,
+				a.Publication,
+				a.PrimaryDomain,
+			)
 		}
 		return tw.Flush()
 	case "app":
@@ -307,7 +370,17 @@ func (r *runner) run(args []string) error {
 			if o.WaitingOn != "" {
 				phase = "waiting on " + o.WaitingOn
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", o.ID, o.Kind, o.TargetID, o.State, phase, o.CreatedAt, o.ErrorMessage)
+			fmt.Fprintf(
+				tw,
+				"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				o.ID,
+				o.Kind,
+				o.TargetID,
+				o.State,
+				phase,
+				o.CreatedAt,
+				o.ErrorMessage,
+			)
 		}
 		return tw.Flush()
 	case "op":
@@ -353,7 +426,14 @@ func (r *runner) run(args []string) error {
 		if len(args) < 2 || args[1] != "add" {
 			return errors.New("usage: bento service add --engine E --version V")
 		}
-		_, err := c.Mutate(ctx, "POST", "/api/v1/services", dto.CreateServiceRequest{Engine: dto.Engine(*engine), Version: *ver}, r.wait, r.out)
+		_, err := c.Mutate(
+			ctx,
+			"POST",
+			"/api/v1/services",
+			dto.CreateServiceRequest{Engine: dto.Engine(*engine), Version: *ver},
+			r.wait,
+			r.out,
+		)
 		return err
 	case "edge":
 		if len(args) >= 2 && args[1] == "set" {
@@ -377,7 +457,7 @@ func (r *runner) run(args []string) error {
 		return nil
 	case "tunnel":
 		if len(args) >= 2 && (args[1] == "set-token" || args[1] == "disable") {
-			token := ""
+			var token string
 			if args[1] == "set-token" {
 				var err error
 				if token, err = readSecret("Cloudflare tunnel token: "); err != nil {
@@ -441,7 +521,14 @@ func (r *runner) run(args []string) error {
 		if err != nil {
 			return err
 		}
-		_, err = c.Mutate(ctx, "POST", "/api/v1/stack/export", dto.ExportRequest{Destination: *to, Confirm: got}, r.wait, r.out)
+		_, err = c.Mutate(
+			ctx,
+			"POST",
+			"/api/v1/stack/export",
+			dto.ExportRequest{Destination: *to, Confirm: got},
+			r.wait,
+			r.out,
+		)
 		return err
 	}
 	return fmt.Errorf("unknown command %q (see bento help)", args[0])
@@ -470,7 +557,14 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		}
 		acc, err := c.Mutate(ctx, "POST", "/api/v1/apps", req, r.wait, r.out)
 		if err == nil && acc.App != nil {
-			fmt.Fprintf(r.out, "app %s id %s uid %d (stopped and unpublished; start it with `bento app start %s`)\n", acc.App.Slug, acc.App.ID, acc.App.UID, acc.App.Slug)
+			fmt.Fprintf(
+				r.out,
+				"app %s id %s uid %d (stopped and unpublished; start it with `bento app start %s`)\n",
+				acc.App.Slug,
+				acc.App.ID,
+				acc.App.UID,
+				acc.App.Slug,
+			)
 		}
 		return err
 	}
@@ -503,7 +597,10 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		_, err := c.Mutate(ctx, "POST", base+"/"+cmd, map[string]any{}, r.wait, r.out)
 		return err
 	case "remove":
-		fmt.Fprintln(os.Stderr, "Removing stops and deletes the app's containers and retires its identity. Home, SQLite files, and databases are retained.")
+		fmt.Fprintln(
+			os.Stderr,
+			"Removing stops and deletes the app's containers and retires its identity. Home, SQLite files, and databases are retained.",
+		)
 		got, err := confirmPrompt("delete " + slug)
 		if err != nil {
 			return err
@@ -517,7 +614,14 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		_, err := c.Mutate(ctx, "POST", base+"/bindings", dto.BindingRequest{Engine: dto.Engine(*engine), Service: *svc}, r.wait, r.out)
+		_, err := c.Mutate(
+			ctx,
+			"POST",
+			base+"/bindings",
+			dto.BindingRequest{Engine: dto.Engine(*engine), Service: *svc},
+			r.wait,
+			r.out,
+		)
 		return err
 	case "add-db":
 		fs, rest := sub("app add-db", args[2:])
@@ -526,7 +630,14 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		_, err := c.Mutate(ctx, "POST", base+"/bindings/"+*binding+"/databases", dto.AddDatabaseRequest{Name: *name}, r.wait, r.out)
+		_, err := c.Mutate(
+			ctx,
+			"POST",
+			base+"/bindings/"+*binding+"/databases",
+			dto.AddDatabaseRequest{Name: *name},
+			r.wait,
+			r.out,
+		)
 		return err
 	case "permissions":
 		fs, rest := sub("app permissions", args[2:])
@@ -554,7 +665,14 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		case *remove:
 			err = c.Do(ctx, "DELETE", base+"/git", map[string]any{}, &g, nil)
 		case *repo != "":
-			err = c.Do(ctx, "PUT", base+"/git", dto.GitSourceRequest{RepoURL: *repo, Branch: *branch, RotateKey: *rotate}, &g, nil)
+			err = c.Do(
+				ctx,
+				"PUT",
+				base+"/git",
+				dto.GitSourceRequest{RepoURL: *repo, Branch: *branch, RotateKey: *rotate},
+				&g,
+				nil,
+			)
 		default:
 			err = c.Do(ctx, "GET", base+"/git", nil, &g, nil)
 		}
@@ -574,7 +692,12 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			fmt.Fprintf(r.out, "deployed: %s at %s\n", g.DeployedCommit, g.DeployedAt)
 		}
 		if g.UsesSSH {
-			fmt.Fprintf(r.out, "\nAdd this read-only deploy key to the repository (GitHub: Settings > Deploy keys):\n\n%s\n\nfingerprint: %s\n", g.PublicKey, g.Fingerprint)
+			fmt.Fprintf(
+				r.out,
+				"\nAdd this read-only deploy key to the repository (GitHub: Settings > Deploy keys):\n\n%s\n\nfingerprint: %s\n",
+				g.PublicKey,
+				g.Fingerprint,
+			)
 		}
 		return nil
 	case "deploy":
@@ -622,11 +745,19 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			fmt.Fprintf(r.out, "path:   %s  (on any domain whose /_bento/webhook/* reaches Bento)\n", hook.Path)
 		}
 		if len(hook.Targets) > 0 {
-			fmt.Fprintf(r.out, "expose: /_bento/webhook/* -> %s  (host nginx, Cloudflare Tunnel path rule)\n", strings.Join(hook.Targets, " or "))
+			fmt.Fprintf(
+				r.out,
+				"expose: /_bento/webhook/* -> %s  (host nginx, Cloudflare Tunnel path rule)\n",
+				strings.Join(hook.Targets, " or "),
+			)
 		}
 		if hook.Secret != "" {
-			fmt.Fprintf(r.out, "secret: %s\n\nThis secret is shown only once. Use it as the webhook secret (GitHub, Gitea, Forgejo,\n"+
-				"Bitbucket), the secret token (GitLab), or `Authorization: Bearer <secret>` (curl/CI).\n", hook.Secret)
+			fmt.Fprintf(
+				r.out,
+				"secret: %s\n\nThis secret is shown only once. Use it as the webhook secret (GitHub, Gitea, Forgejo,\n"+
+					"Bitbucket), the secret token (GitLab), or `Authorization: Bearer <secret>` (curl/CI).\n",
+				hook.Secret,
+			)
 		}
 		for _, d := range hook.Deliveries {
 			fmt.Fprintf(r.out, "%s  %-9s %-10s %-12s %s %s\n", d.At, d.Provider, d.Event, d.Result, d.OperationID, d.Detail)
@@ -652,7 +783,14 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			return errors.New("usage: bento app exec SLUG [--running] -- ARGV...")
 		}
 		var res dto.ExecResult
-		if err := c.Do(ctx, "POST", base+"/exec", dto.ExecRequest{Argv: argv, Workdir: *workdir, Running: *running}, &res, nil); err != nil {
+		if err := c.Do(
+			ctx,
+			"POST",
+			base+"/exec",
+			dto.ExecRequest{Argv: argv, Workdir: *workdir, Running: *running},
+			&res,
+			nil,
+		); err != nil {
 			return err
 		}
 		os.Stdout.WriteString(res.Stdout)
@@ -670,7 +808,14 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			argv = argv[1:]
 		}
 		var res dto.ExecResult
-		if err := c.Do(ctx, "POST", base+"/scheduler/command", dto.SchedulerCommandRequest{Argv: argv}, &res, nil); err != nil {
+		if err := c.Do(
+			ctx,
+			"POST",
+			base+"/scheduler/command",
+			dto.SchedulerCommandRequest{Argv: argv},
+			&res,
+			nil,
+		); err != nil {
 			return err
 		}
 		os.Stdout.WriteString(res.Stdout)
@@ -780,7 +925,7 @@ func (r *runner) shell(ctx context.Context, c *Client, slug string, running bool
 			}
 		}
 	}()
-	exit := 0
+	var exit int
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
@@ -823,7 +968,13 @@ func (r *runner) retired(ctx context.Context, c *Client, args []string) error {
 		if ra.PrunedAt != "" {
 			return fmt.Errorf("already pruned at %s", ra.PrunedAt)
 		}
-		fmt.Fprintf(os.Stderr, "Permanently delete retained data of %s (%s, uid %d, uid is NOT reclaimed):\n", ra.Slug, ra.AppID, ra.UID)
+		fmt.Fprintf(
+			os.Stderr,
+			"Permanently delete retained data of %s (%s, uid %d, uid is NOT reclaimed):\n",
+			ra.Slug,
+			ra.AppID,
+			ra.UID,
+		)
 		fmt.Fprintf(os.Stderr, "  home: %s\n", ra.Home)
 		for _, id := range ra.SQLiteFileIDs {
 			fmt.Fprintf(os.Stderr, "  sqlite directory: %s\n", id)
@@ -894,7 +1045,14 @@ func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
 		if err != nil {
 			return err
 		}
-		_, err = c.Mutate(ctx, "POST", "/api/v1/backups/restore", dto.RestoreRequest{Artifact: *art, AppID: *app, Database: *db, Confirm: got}, r.wait, r.out)
+		_, err = c.Mutate(
+			ctx,
+			"POST",
+			"/api/v1/backups/restore",
+			dto.RestoreRequest{Artifact: *art, AppID: *app, Database: *db, Confirm: got},
+			r.wait,
+			r.out,
+		)
 		return err
 	case "schedule":
 		fs, rest := sub("backup schedule", args[1:])

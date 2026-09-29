@@ -48,7 +48,12 @@ func GetMeta(ctx context.Context, q Q, key string) (string, error) {
 }
 
 func SetMeta(ctx context.Context, q Q, key, value string) error {
-	_, err := q.ExecContext(ctx, "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value)
+	_, err := q.ExecContext(
+		ctx,
+		"INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+		key,
+		value,
+	)
 	return err
 }
 
@@ -72,7 +77,8 @@ func PutSetting(ctx context.Context, q Q, key string, value any) error {
 		return err
 	}
 	_, err = q.ExecContext(ctx, `INSERT INTO settings(key, value_json, updated_at) VALUES(?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`, key, string(raw), now())
+		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+		key, string(raw), now())
 	return err
 }
 
@@ -105,7 +111,13 @@ var ErrUIDExhausted = errors.New("uid range exhausted")
 // high-water mark, skipping host collisions. The high-water mark never
 // decreases and ledger rows are never deleted, so IDs are not reused within
 // this stack lineage.
-func AllocateUID(ctx context.Context, q Q, rng domain.UIDRange, host platform.HostIDs, appID, slug string) (int, error) {
+func AllocateUID(
+	ctx context.Context,
+	q Q,
+	rng domain.UIDRange,
+	host platform.HostIDs,
+	appID, slug string,
+) (int, error) {
 	hw := rng.First - 1
 	if v, err := GetMeta(ctx, q, "uid_highwater"); err == nil {
 		n, perr := strconv.Atoi(v)
@@ -130,8 +142,14 @@ func AllocateUID(ctx context.Context, q Q, rng domain.UIDRange, host platform.Ho
 			// Skipped IDs still advance the high-water mark.
 			continue
 		}
-		if _, err := q.ExecContext(ctx, "INSERT INTO uid_ledger(uid, app_id, slug, state, allocated_at) VALUES(?, ?, ?, 'allocated', ?)",
-			candidate, appID, slug, now()); err != nil {
+		if _, err := q.ExecContext(
+			ctx,
+			"INSERT INTO uid_ledger(uid, app_id, slug, state, allocated_at) VALUES(?, ?, ?, 'allocated', ?)",
+			candidate,
+			appID,
+			slug,
+			now(),
+		); err != nil {
 			return 0, err
 		}
 		if err := SetMeta(ctx, q, "uid_highwater", strconv.Itoa(candidate)); err != nil {
@@ -147,7 +165,13 @@ func SetLedgerState(ctx context.Context, q Q, uid int, state string) error {
 	if state == "retired" || state == "burned" {
 		retired = sql.NullString{String: now(), Valid: true}
 	}
-	_, err := q.ExecContext(ctx, "UPDATE uid_ledger SET state = ?, retired_at = COALESCE(?, retired_at) WHERE uid = ?", state, retired, uid)
+	_, err := q.ExecContext(
+		ctx,
+		"UPDATE uid_ledger SET state = ?, retired_at = COALESCE(?, retired_at) WHERE uid = ?",
+		state,
+		retired,
+		uid,
+	)
 	return err
 }
 
@@ -161,7 +185,10 @@ type LedgerEntry struct {
 }
 
 func ListLedger(ctx context.Context, q Q) ([]LedgerEntry, error) {
-	rows, err := q.QueryContext(ctx, "SELECT uid, app_id, slug, state, allocated_at, COALESCE(retired_at,'') FROM uid_ledger ORDER BY uid")
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT uid, app_id, slug, state, allocated_at, COALESCE(retired_at,'') FROM uid_ledger ORDER BY uid",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -186,8 +213,10 @@ func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	var a domain.App
 	var runtimeJSON, resourcesJSON, routeJSON, redisJSON, created, updated string
 	var provisioned int
-	err := row.Scan(&a.ID, &a.Slug, &a.UID, &a.GID, &runtimeJSON, &resourcesJSON, &a.DesiredRuntime, &a.Ingress,
-		&a.Publication, &routeJSON, &redisJSON, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated)
+	err := row.Scan(
+		&a.ID, &a.Slug, &a.UID, &a.GID, &runtimeJSON, &resourcesJSON, &a.DesiredRuntime, &a.Ingress, &a.Publication,
+		&routeJSON, &redisJSON, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
+	)
 	if err != nil {
 		return a, err
 	}
@@ -218,7 +247,7 @@ func mustJSON(v any) string {
 }
 
 func InsertApp(ctx context.Context, q Q, a domain.App) error {
-	provisioned := 0
+	var provisioned int
 	if a.Provisioned {
 		provisioned = 1
 	}
@@ -234,14 +263,27 @@ func InsertApp(ctx context.Context, q Q, a domain.App) error {
 
 // UpdateApp persists mutable desired state. Identity columns are never updated.
 func UpdateApp(ctx context.Context, q Q, a domain.App) error {
-	provisioned := 0
+	var provisioned int
 	if a.Provisioned {
 		provisioned = 1
 	}
-	res, err := q.ExecContext(ctx, `UPDATE apps SET runtime_json=?, resources_json=?, desired_runtime=?, ingress=?, publication=?,
+	res, err := q.ExecContext(
+		ctx,
+		`UPDATE apps SET runtime_json=?, resources_json=?, desired_runtime=?, ingress=?, publication=?,
 		route_json=?, redis_json=?, config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
-		mustJSON(a.Runtime), mustJSON(a.Resources), a.DesiredRuntime, a.Ingress, a.Publication, mustJSON(a.Route),
-		mustJSON(a.Redis), a.ConfigGeneration, a.CredentialsGeneration, provisioned, now(), a.ID)
+		mustJSON(a.Runtime),
+		mustJSON(a.Resources),
+		a.DesiredRuntime,
+		a.Ingress,
+		a.Publication,
+		mustJSON(a.Route),
+		mustJSON(a.Redis),
+		a.ConfigGeneration,
+		a.CredentialsGeneration,
+		provisioned,
+		now(),
+		a.ID,
+	)
 	if err != nil {
 		return err
 	}
@@ -256,7 +298,12 @@ func DeleteApp(ctx context.Context, q Q, id string) error {
 		return err
 	}
 	// The deploy key and webhook secret die with the app.
-	if _, err := q.ExecContext(ctx, "DELETE FROM settings WHERE key IN (?, ?)", gitSourceKey(id), webhookKey(id)); err != nil {
+	if _, err := q.ExecContext(
+		ctx,
+		"DELETE FROM settings WHERE key IN (?, ?)",
+		gitSourceKey(id),
+		webhookKey(id),
+	); err != nil {
 		return err
 	}
 	_, err := q.ExecContext(ctx, "DELETE FROM apps WHERE id=?", id)
@@ -265,7 +312,12 @@ func DeleteApp(ctx context.Context, q Q, id string) error {
 
 // GetApp loads an app by id or slug, including bindings and domains.
 func GetApp(ctx context.Context, q Q, idOrSlug string) (domain.App, error) {
-	a, err := scanApp(q.QueryRowContext(ctx, "SELECT "+appColumns+" FROM apps WHERE id = ? OR slug = ?", idOrSlug, idOrSlug))
+	a, err := scanApp(q.QueryRowContext(
+		ctx,
+		"SELECT "+appColumns+" FROM apps WHERE id = ? OR slug = ?",
+		idOrSlug,
+		idOrSlug,
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -321,9 +373,21 @@ func InsertBinding(ctx context.Context, q Q, b domain.Binding) error {
 	if err := q.QueryRowContext(ctx, "SELECT COUNT(*) FROM bindings WHERE app_id = ?", b.AppID).Scan(&pos); err != nil {
 		return err
 	}
-	_, err := q.ExecContext(ctx, `INSERT INTO bindings(id, app_id, engine, service, username, password, sqlite_file_id, vacuum_json, position, created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?)`, b.ID, b.AppID, b.Engine, nullable(b.Service), nullable(b.Username), nullable(b.Password),
-		nullable(b.SQLiteFileID), vacuum, pos, platform.FormatTime(b.CreatedAt))
+	_, err := q.ExecContext(
+		ctx,
+		`INSERT INTO bindings(id, app_id, engine, service, username, password, sqlite_file_id, vacuum_json, position, created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		b.ID,
+		b.AppID,
+		b.Engine,
+		nullable(b.Service),
+		nullable(b.Username),
+		nullable(b.Password),
+		nullable(b.SQLiteFileID),
+		vacuum,
+		pos,
+		platform.FormatTime(b.CreatedAt),
+	)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: the app already has a binding for this service", ErrConflict)
 	}
@@ -333,8 +397,12 @@ func InsertBinding(ctx context.Context, q Q, b domain.Binding) error {
 func nullable(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
 
 func ListBindings(ctx context.Context, q Q, appID string) ([]domain.Binding, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, app_id, engine, COALESCE(service,''), COALESCE(username,''), COALESCE(password,''),
-		COALESCE(sqlite_file_id,''), COALESCE(vacuum_json,''), created_at FROM bindings WHERE app_id = ? ORDER BY position`, appID)
+	rows, err := q.QueryContext(
+		ctx,
+		`SELECT id, app_id, engine, COALESCE(service,''), COALESCE(username,''), COALESCE(password,''),
+		COALESCE(sqlite_file_id,''), COALESCE(vacuum_json,''), created_at FROM bindings WHERE app_id = ? ORDER BY position`,
+		appID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +410,17 @@ func ListBindings(ctx context.Context, q Q, appID string) ([]domain.Binding, err
 	for rows.Next() {
 		var b domain.Binding
 		var vacuum, created string
-		if err := rows.Scan(&b.ID, &b.AppID, &b.Engine, &b.Service, &b.Username, &b.Password, &b.SQLiteFileID, &vacuum, &created); err != nil {
+		if err := rows.Scan(
+			&b.ID,
+			&b.AppID,
+			&b.Engine,
+			&b.Service,
+			&b.Username,
+			&b.Password,
+			&b.SQLiteFileID,
+			&vacuum,
+			&created,
+		); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -361,7 +439,11 @@ func ListBindings(ctx context.Context, q Q, appID string) ([]domain.Binding, err
 		return nil, err
 	}
 	for i := range out {
-		names, err := q.QueryContext(ctx, "SELECT name FROM binding_databases WHERE binding_id = ? ORDER BY created_at, name", out[i].ID)
+		names, err := q.QueryContext(
+			ctx,
+			"SELECT name FROM binding_databases WHERE binding_id = ? ORDER BY created_at, name",
+			out[i].ID,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -379,7 +461,13 @@ func ListBindings(ctx context.Context, q Q, appID string) ([]domain.Binding, err
 }
 
 func AddBindingDatabase(ctx context.Context, q Q, bindingID, name string) error {
-	_, err := q.ExecContext(ctx, "INSERT INTO binding_databases(binding_id, name, created_at) VALUES(?,?,?)", bindingID, name, now())
+	_, err := q.ExecContext(
+		ctx,
+		"INSERT INTO binding_databases(binding_id, name, created_at) VALUES(?,?,?)",
+		bindingID,
+		name,
+		now(),
+	)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: database %s already exists on this binding", ErrConflict, name)
 	}
@@ -389,7 +477,12 @@ func AddBindingDatabase(ctx context.Context, q Q, bindingID, name string) error 
 // ---- domains ----
 
 func ListDomains(ctx context.Context, q Q, ownerKind, ownerID string) ([]domain.DomainLink, error) {
-	rows, err := q.QueryContext(ctx, "SELECT name, is_primary FROM domains WHERE owner_kind = ? AND owner_id = ? ORDER BY is_primary DESC, name", ownerKind, ownerID)
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT name, is_primary FROM domains WHERE owner_kind = ? AND owner_id = ? ORDER BY is_primary DESC, name",
+		ownerKind,
+		ownerID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +510,11 @@ type DomainOwner struct {
 func DomainOwnerOf(ctx context.Context, q Q, name string) (DomainOwner, error) {
 	var d DomainOwner
 	var p int
-	err := q.QueryRowContext(ctx, "SELECT name, owner_kind, owner_id, is_primary FROM domains WHERE name = ?", name).Scan(&d.Name, &d.OwnerKind, &d.OwnerID, &p)
+	err := q.QueryRowContext(
+		ctx,
+		"SELECT name, owner_kind, owner_id, is_primary FROM domains WHERE name = ?",
+		name,
+	).Scan(&d.Name, &d.OwnerKind, &d.OwnerID, &p)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, ErrNotFound
 	}
@@ -428,7 +525,7 @@ func DomainOwnerOf(ctx context.Context, q Q, name string) (DomainOwner, error) {
 // ReplaceDomains sets an owner's domain links. Every name must be unowned or
 // already owned by this owner; exactly one link is primary.
 func ReplaceDomains(ctx context.Context, q Q, ownerKind, ownerID string, links []domain.DomainLink) error {
-	primaries := 0
+	var primaries int
 	for _, l := range links {
 		if l.Primary {
 			primaries++
@@ -444,16 +541,28 @@ func ReplaceDomains(ctx context.Context, q Q, ownerKind, ownerID string, links [
 	if len(links) > 0 && primaries != 1 {
 		return errors.New("exactly one primary domain is required")
 	}
-	if _, err := q.ExecContext(ctx, "DELETE FROM domains WHERE owner_kind = ? AND owner_id = ?", ownerKind, ownerID); err != nil {
+	if _, err := q.ExecContext(
+		ctx,
+		"DELETE FROM domains WHERE owner_kind = ? AND owner_id = ?",
+		ownerKind,
+		ownerID,
+	); err != nil {
 		return err
 	}
 	for _, l := range links {
-		p := 0
+		var p int
 		if l.Primary {
 			p = 1
 		}
-		if _, err := q.ExecContext(ctx, "INSERT INTO domains(name, owner_kind, owner_id, is_primary, created_at) VALUES(?,?,?,?,?)",
-			l.Name, ownerKind, ownerID, p, now()); err != nil {
+		if _, err := q.ExecContext(
+			ctx,
+			"INSERT INTO domains(name, owner_kind, owner_id, is_primary, created_at) VALUES(?,?,?,?,?)",
+			l.Name,
+			ownerKind,
+			ownerID,
+			p,
+			now(),
+		); err != nil {
 			return err
 		}
 	}
@@ -482,7 +591,10 @@ func scanProxy(row interface{ Scan(...any) error }) (domain.Proxy, error) {
 }
 
 func ListProxies(ctx context.Context, q Q) ([]domain.Proxy, error) {
-	rows, err := q.QueryContext(ctx, "SELECT id, name, upstreams_json, route_json, enabled, created_at, updated_at FROM proxies ORDER BY name")
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT id, name, upstreams_json, route_json, enabled, created_at, updated_at FROM proxies ORDER BY name",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +617,12 @@ func ListProxies(ctx context.Context, q Q) ([]domain.Proxy, error) {
 }
 
 func GetProxy(ctx context.Context, q Q, idOrName string) (domain.Proxy, error) {
-	p, err := scanProxy(q.QueryRowContext(ctx, "SELECT id, name, upstreams_json, route_json, enabled, created_at, updated_at FROM proxies WHERE id = ? OR name = ?", idOrName, idOrName))
+	p, err := scanProxy(q.QueryRowContext(
+		ctx,
+		"SELECT id, name, upstreams_json, route_json, enabled, created_at, updated_at FROM proxies WHERE id = ? OR name = ?",
+		idOrName,
+		idOrName,
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -517,13 +634,22 @@ func GetProxy(ctx context.Context, q Q, idOrName string) (domain.Proxy, error) {
 }
 
 func UpsertProxy(ctx context.Context, q Q, p domain.Proxy) error {
-	enabled := 0
+	var enabled int
 	if p.Enabled {
 		enabled = 1
 	}
-	_, err := q.ExecContext(ctx, `INSERT INTO proxies(id, name, upstreams_json, route_json, enabled, created_at, updated_at) VALUES(?,?,?,?,?,?,?)
+	_, err := q.ExecContext(
+		ctx,
+		`INSERT INTO proxies(id, name, upstreams_json, route_json, enabled, created_at, updated_at) VALUES(?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET upstreams_json=excluded.upstreams_json, route_json=excluded.route_json, enabled=excluded.enabled, updated_at=excluded.updated_at`,
-		p.ID, p.Name, mustJSON(p.Upstreams), mustJSON(p.Route), enabled, platform.FormatTime(p.CreatedAt), now())
+		p.ID,
+		p.Name,
+		mustJSON(p.Upstreams),
+		mustJSON(p.Route),
+		enabled,
+		platform.FormatTime(p.CreatedAt),
+		now(),
+	)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: proxy name already exists", ErrConflict)
 	}
@@ -546,7 +672,10 @@ type ServiceRow struct {
 }
 
 func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
-	rows, err := q.QueryContext(ctx, "SELECT name, engine, version, image, volume, initialized, created_at FROM data_services ORDER BY name")
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT name, engine, version, image, volume, initialized, created_at FROM data_services ORDER BY name",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +699,11 @@ func GetService(ctx context.Context, q Q, name string) (ServiceRow, error) {
 	var s ServiceRow
 	var init int
 	var created string
-	err := q.QueryRowContext(ctx, "SELECT name, engine, version, image, volume, initialized, created_at FROM data_services WHERE name = ?", name).
+	err := q.QueryRowContext(
+		ctx,
+		"SELECT name, engine, version, image, volume, initialized, created_at FROM data_services WHERE name = ?",
+		name,
+	).
 		Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
@@ -581,8 +714,16 @@ func GetService(ctx context.Context, q Q, name string) (ServiceRow, error) {
 }
 
 func InsertService(ctx context.Context, q Q, s domain.DataService) error {
-	_, err := q.ExecContext(ctx, "INSERT INTO data_services(name, engine, version, image, volume, created_at) VALUES(?,?,?,?,?,?)",
-		s.Name, s.Engine, s.Version, s.Image, s.Volume, platform.FormatTime(s.CreatedAt))
+	_, err := q.ExecContext(
+		ctx,
+		"INSERT INTO data_services(name, engine, version, image, volume, created_at) VALUES(?,?,?,?,?,?)",
+		s.Name,
+		s.Engine,
+		s.Version,
+		s.Image,
+		s.Volume,
+		platform.FormatTime(s.CreatedAt),
+	)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: service %s already exists", ErrConflict, s.Name)
 	}
@@ -664,13 +805,23 @@ type RetiredApp struct {
 }
 
 func InsertRetired(ctx context.Context, q Q, r RetiredApp) error {
-	_, err := q.ExecContext(ctx, "INSERT INTO retired_apps(app_id, slug, uid, retired_at, artifacts_json) VALUES(?,?,?,?,?)",
-		r.AppID, r.Slug, r.UID, now(), mustJSON(r.Artifacts))
+	_, err := q.ExecContext(
+		ctx,
+		"INSERT INTO retired_apps(app_id, slug, uid, retired_at, artifacts_json) VALUES(?,?,?,?,?)",
+		r.AppID,
+		r.Slug,
+		r.UID,
+		now(),
+		mustJSON(r.Artifacts),
+	)
 	return err
 }
 
 func ListRetired(ctx context.Context, q Q) ([]RetiredApp, error) {
-	rows, err := q.QueryContext(ctx, "SELECT app_id, slug, uid, retired_at, artifacts_json, COALESCE(pruned_at,'') FROM retired_apps ORDER BY retired_at DESC")
+	rows, err := q.QueryContext(
+		ctx,
+		"SELECT app_id, slug, uid, retired_at, artifacts_json, COALESCE(pruned_at,'') FROM retired_apps ORDER BY retired_at DESC",
+	)
 	if err != nil {
 		return nil, err
 	}

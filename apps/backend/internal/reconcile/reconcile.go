@@ -58,8 +58,15 @@ type Reconciler struct {
 }
 
 func New(c *operations.Controller, log *slog.Logger) *Reconciler {
-	return &Reconciler{C: c, Log: log, Interval: 60 * time.Second, Debounce: 2 * time.Second, BaseBackoff: 30 * time.Second,
-		targets: map[string]*target{}, trigger: make(chan struct{}, 1)}
+	return &Reconciler{
+		C:           c,
+		Log:         log,
+		Interval:    60 * time.Second,
+		Debounce:    2 * time.Second,
+		BaseBackoff: 30 * time.Second,
+		targets:     map[string]*target{},
+		trigger:     make(chan struct{}, 1),
+	}
 }
 
 // Trigger requests a pass soon (debounced).
@@ -81,7 +88,13 @@ func (r *Reconciler) Status(id string) TargetStatus {
 }
 
 func (t *target) status() TargetStatus {
-	return TargetStatus{Failures: t.Failures, NextAttempt: t.NextAttempt, Blocked: t.Failures >= MaxAttempts, LastError: t.LastError, Pending: t.PendingOp}
+	return TargetStatus{
+		Failures:    t.Failures,
+		NextAttempt: t.NextAttempt,
+		Blocked:     t.Failures >= MaxAttempts,
+		LastError:   t.LastError,
+		Pending:     t.PendingOp,
+	}
 }
 
 // Statuses reports every tracked target that is failing or has a pending
@@ -250,7 +263,11 @@ func (r *Reconciler) recovered(ctx context.Context, t *target) {
 	if t.Failures == 0 || t.OpTarget == "" {
 		return
 	}
-	ops, err := store.ListOperations(ctx, r.C.Store.DB(), store.OpFilter{TargetID: t.OpTarget, States: []store.OpState{store.OpSucceeded}, Limit: 1})
+	ops, err := store.ListOperations(
+		ctx,
+		r.C.Store.DB(),
+		store.OpFilter{TargetID: t.OpTarget, States: []store.OpState{store.OpSucceeded}, Limit: 1},
+	)
 	if err != nil || len(ops) == 0 || ops[0].CreatedAt <= t.LastFailedAt {
 		return
 	}
@@ -261,8 +278,11 @@ func (r *Reconciler) submit(ctx context.Context, t *target, kind, targetKind, id
 	if t.Failures >= MaxAttempts || time.Now().Before(t.NextAttempt) {
 		return
 	}
-	op, _, err := r.C.Submit(ctx, operations.Submission{Kind: kind, TargetKind: targetKind, TargetID: id, Origin: "reconciler",
-		Request: map[string]any{"reason": "converge"}})
+	op, _, err := r.C.Submit(
+		ctx,
+		operations.Submission{Kind: kind, TargetKind: targetKind, TargetID: id, Origin: "reconciler",
+			Request: map[string]any{"reason": "converge"}},
+	)
 	if err != nil {
 		t.LastError = err.Error()
 		return
@@ -337,7 +357,7 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		need := false
+		var need bool
 		switch app.DesiredRuntime {
 		case domain.DesiredStopped:
 			need = obs.Exists && obs.Running

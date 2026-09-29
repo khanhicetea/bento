@@ -27,8 +27,14 @@ func runtimeFromDTO(r dto.RuntimeSpec) domain.Runtime {
 		out.PHP = &p
 	}
 	if r.HTTP != nil {
-		h := domain.HTTPRuntime{Toolchain: r.HTTP.Toolchain, Version: r.HTTP.Version, Argv: append([]string(nil), r.HTTP.Argv...),
-			Workdir: r.HTTP.Workdir, Port: r.HTTP.Port, ReadyPath: r.HTTP.ReadyPath}
+		h := domain.HTTPRuntime{
+			Toolchain: r.HTTP.Toolchain,
+			Version:   r.HTTP.Version,
+			Argv:      append([]string(nil), r.HTTP.Argv...),
+			Workdir:   r.HTTP.Workdir,
+			Port:      r.HTTP.Port,
+			ReadyPath: r.HTTP.ReadyPath,
+		}
 		out.HTTP = &h
 	}
 	return out
@@ -51,11 +57,23 @@ func routeFromDTO(r *dto.Route) domain.Route {
 	if r == nil {
 		return domain.Route{TLS: domain.TLSNone}
 	}
-	return domain.Route{TLS: domain.TLSMode(r.TLS), CertName: r.CertName, RedirectHTTPS: r.RedirectHTTPS, AccessLog: r.AccessLog, StaticCache: r.StaticCache}
+	return domain.Route{
+		TLS:           domain.TLSMode(r.TLS),
+		CertName:      r.CertName,
+		RedirectHTTPS: r.RedirectHTTPS,
+		AccessLog:     r.AccessLog,
+		StaticCache:   r.StaticCache,
+	}
 }
 
 func routeToDTO(r domain.Route) dto.Route {
-	return dto.Route{TLS: dto.TLSMode(r.TLS), CertName: r.CertName, RedirectHTTPS: r.RedirectHTTPS, AccessLog: r.AccessLog, StaticCache: r.StaticCache}
+	return dto.Route{
+		TLS:           dto.TLSMode(r.TLS),
+		CertName:      r.CertName,
+		RedirectHTTPS: r.RedirectHTTPS,
+		AccessLog:     r.AccessLog,
+		StaticCache:   r.StaticCache,
+	}
 }
 
 func domainsToDTO(ds []domain.DomainLink) []dto.Domain {
@@ -67,8 +85,13 @@ func domainsToDTO(ds []domain.DomainLink) []dto.Domain {
 }
 
 func observedToDTO(app domain.App, obs operations.Observation, planned string, rec dto.Reconcile) dto.Observed {
-	o := dto.Observed{ContainerID: short(obs.ContainerID), Health: obs.Health, StartedAt: obs.StartedAt, ExitCode: obs.ExitCode,
-		GenerationCurrent: obs.Exists && planned != "" && obs.Generation == planned}
+	o := dto.Observed{
+		ContainerID:       short(obs.ContainerID),
+		Health:            obs.Health,
+		StartedAt:         obs.StartedAt,
+		ExitCode:          obs.ExitCode,
+		GenerationCurrent: obs.Exists && planned != "" && obs.Generation == planned,
+	}
 	switch {
 	case !app.Provisioned:
 		o.State, o.Message = dto.ObservedStateAbsent, "provisioning pending or failed; see operations"
@@ -97,10 +120,11 @@ func observedToDTO(app domain.App, obs operations.Observation, planned string, r
 	if o.Message == "" && rec.LastError != "" && o.State != dto.ObservedStateHealthy {
 		o.Message = "last reconciliation failed: " + rec.LastError
 	}
-	if app.DesiredRuntime == domain.DesiredRunning && app.Publication == domain.Published && o.State != dto.ObservedStateHealthy {
-		if o.Message == "" {
-			o.Message = "published route is pending activation or currently unavailable"
-		}
+	publishedButUnhealthy := app.DesiredRuntime == domain.DesiredRunning &&
+		app.Publication == domain.Published &&
+		o.State != dto.ObservedStateHealthy
+	if publishedButUnhealthy && o.Message == "" {
+		o.Message = "published route is pending activation or currently unavailable"
 	}
 	return o
 }
@@ -113,7 +137,10 @@ func short(s string) string {
 }
 
 func ingressInfo(app domain.App) dto.IngressInfo {
-	info := dto.IngressInfo{Mode: dto.IngressMode(app.Ingress), InternalURL: fmt.Sprintf("http://%s:%d", runtime.AppAlias(app.ID), app.HTTPPort())}
+	info := dto.IngressInfo{
+		Mode:        dto.IngressMode(app.Ingress),
+		InternalURL: fmt.Sprintf("http://%s:%d", runtime.AppAlias(app.ID), app.HTTPPort()),
+	}
 	switch app.Ingress {
 	case domain.IngressManaged:
 		info.BentoControls = true
@@ -141,13 +168,27 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	}
 	key := app.Runtime.ImageKey()
 	sum := dto.AppSummary{
-		ID: app.ID, Slug: app.Slug, UID: app.UID, Kind: dto.RuntimeKind(app.Runtime.Kind), Toolchain: key.Toolchain, Version: key.Version,
-		DesiredRuntime: dto.DesiredRuntime(app.DesiredRuntime), Ingress: dto.IngressMode(app.Ingress), Publication: dto.Publication(app.Publication),
-		PrimaryDomain: app.PrimaryDomain(), Provisioned: app.Provisioned, ConfigGeneration: int(app.ConfigGeneration),
-		Observed: observedToDTO(app, obs, planned, rec), BindingSummary: []dto.BindingSummary{}, Resources: dto.Resources(app.Resources),
+		ID:               app.ID,
+		Slug:             app.Slug,
+		UID:              app.UID,
+		Kind:             dto.RuntimeKind(app.Runtime.Kind),
+		Toolchain:        key.Toolchain,
+		Version:          key.Version,
+		DesiredRuntime:   dto.DesiredRuntime(app.DesiredRuntime),
+		Ingress:          dto.IngressMode(app.Ingress),
+		Publication:      dto.Publication(app.Publication),
+		PrimaryDomain:    app.PrimaryDomain(),
+		Provisioned:      app.Provisioned,
+		ConfigGeneration: int(app.ConfigGeneration),
+		Observed:         observedToDTO(app, obs, planned, rec),
+		BindingSummary:   []dto.BindingSummary{},
+		Resources:        dto.Resources(app.Resources),
 	}
 	for _, b := range app.Bindings {
-		sum.BindingSummary = append(sum.BindingSummary, dto.BindingSummary{Engine: dto.Engine(b.Engine), Service: b.Service, Databases: len(b.Databases)})
+		sum.BindingSummary = append(
+			sum.BindingSummary,
+			dto.BindingSummary{Engine: dto.Engine(b.Engine), Service: b.Service, Databases: len(b.Databases)},
+		)
 	}
 	out := dto.App{AppSummary: sum}
 	if !detail {
@@ -164,8 +205,14 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.Domains = domainsToDTO(app.Domains)
 	out.Bindings = []dto.Binding{}
 	for _, b := range app.Bindings {
-		db := dto.Binding{ID: b.ID, Engine: dto.Engine(b.Engine), Service: b.Service, Username: b.Username, Databases: nonNil(b.Databases),
-			CreatedAt: platform.FormatTime(b.CreatedAt)}
+		db := dto.Binding{
+			ID:        b.ID,
+			Engine:    dto.Engine(b.Engine),
+			Service:   b.Service,
+			Username:  b.Username,
+			Databases: nonNil(b.Databases),
+			CreatedAt: platform.FormatTime(b.CreatedAt),
+		}
 		if b.Engine == domain.EngineSQLite {
 			db.SQLitePath = runtime.SQLiteFile(b, app.Slug)
 		}
@@ -192,9 +239,19 @@ func (s *Server) opDTO(o store.Operation, events []store.OpEvent) dto.Operation 
 
 func opToDTO(o store.Operation, events []store.OpEvent) dto.Operation {
 	out := dto.Operation{
-		ID: o.ID, Kind: o.Kind, TargetKind: o.TargetKind, TargetID: o.TargetID, State: dto.OperationState(o.State), Phase: o.Phase,
-		Origin: o.Origin, ErrorCode: o.ErrorCode, ErrorMessage: o.ErrorMessage, Guidance: o.Guidance,
-		CreatedAt: o.CreatedAt, StartedAt: o.StartedAt, FinishedAt: o.FinishedAt,
+		ID:           o.ID,
+		Kind:         o.Kind,
+		TargetKind:   o.TargetKind,
+		TargetID:     o.TargetID,
+		State:        dto.OperationState(o.State),
+		Phase:        o.Phase,
+		Origin:       o.Origin,
+		ErrorCode:    o.ErrorCode,
+		ErrorMessage: o.ErrorMessage,
+		Guidance:     o.Guidance,
+		CreatedAt:    o.CreatedAt,
+		StartedAt:    o.StartedAt,
+		FinishedAt:   o.FinishedAt,
 	}
 	if len(o.Result) > 2 {
 		// The result was marshaled by the controller; it is informational, so
@@ -208,8 +265,16 @@ func opToDTO(o store.Operation, events []store.OpEvent) dto.Operation {
 }
 
 func proxyToDTO(p domain.Proxy) dto.Proxy {
-	return dto.Proxy{ID: p.ID, Name: p.Name, Upstreams: nonNil(p.Upstreams), Domains: domainsToDTO(p.Domains), Route: routeToDTO(p.Route),
-		Enabled: p.Enabled, CreatedAt: platform.FormatTime(p.CreatedAt), UpdatedAt: platform.FormatTime(p.UpdatedAt)}
+	return dto.Proxy{
+		ID:        p.ID,
+		Name:      p.Name,
+		Upstreams: nonNil(p.Upstreams),
+		Domains:   domainsToDTO(p.Domains),
+		Route:     routeToDTO(p.Route),
+		Enabled:   p.Enabled,
+		CreatedAt: platform.FormatTime(p.CreatedAt),
+		UpdatedAt: platform.FormatTime(p.UpdatedAt),
+	}
 }
 
 func gitSourceToDTO(g domain.GitSource, configured bool) dto.GitSource {
@@ -227,14 +292,30 @@ func webhookToDTO(w domain.Webhook, enabled bool, url string, targets []string) 
 	if !enabled {
 		return dto.Webhook{Targets: nonNil(targets), Deliveries: []dto.WebhookDelivery{}}
 	}
-	out := dto.Webhook{Enabled: true, Path: domain.WebhookDeployPath(w.HookID), SecretCreatedAt: platform.FormatTime(w.SecretCreatedAt),
-		Targets: nonNil(targets), Deliveries: []dto.WebhookDelivery{}}
+	out := dto.Webhook{
+		Enabled:         true,
+		Path:            domain.WebhookDeployPath(w.HookID),
+		SecretCreatedAt: platform.FormatTime(w.SecretCreatedAt),
+		Targets:         nonNil(targets),
+		Deliveries:      []dto.WebhookDelivery{},
+	}
 	if url != "" {
 		out.URL = url + out.Path
 	}
 	for _, d := range w.Deliveries {
-		out.Deliveries = append(out.Deliveries, dto.WebhookDelivery{At: platform.FormatTime(d.At), Provider: d.Provider, Event: d.Event,
-			DeliveryID: d.DeliveryID, Ref: d.Ref, Commit: d.Commit, Pusher: d.Pusher, Auth: d.Auth, Result: d.Result, Detail: d.Detail, OperationID: d.OperationID})
+		out.Deliveries = append(out.Deliveries, dto.WebhookDelivery{
+			At:          platform.FormatTime(d.At),
+			Provider:    d.Provider,
+			Event:       d.Event,
+			DeliveryID:  d.DeliveryID,
+			Ref:         d.Ref,
+			Commit:      d.Commit,
+			Pusher:      d.Pusher,
+			Auth:        d.Auth,
+			Result:      d.Result,
+			Detail:      d.Detail,
+			OperationID: d.OperationID,
+		})
 	}
 	return out
 }

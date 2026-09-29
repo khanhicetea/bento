@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
@@ -84,14 +83,16 @@ type WebhookOutcome struct {
 	OperationID string `json:"operationId,omitempty"`
 }
 
-// webhookMu serializes deliveries so coalescing sees queued deploys.
-var webhookMu sync.Mutex
-
 // HandleWebhook authenticates a delivery for hookID and, for a push to the
 // configured branch, submits a deploy. It performs no effects: like any
 // handler it only records intent. An unknown hook and a bad credential are
 // indistinguishable to the caller and are not recorded.
-func (c *Controller) HandleWebhook(ctx context.Context, hookID string, h domain.Headers, body []byte) (WebhookOutcome, error) {
+func (c *Controller) HandleWebhook(
+	ctx context.Context,
+	hookID string,
+	h domain.Headers,
+	body []byte,
+) (WebhookOutcome, error) {
 	denied := WebhookOutcome{Status: http.StatusNotFound, Result: "not-found"}
 	appID, w, err := store.FindWebhook(ctx, c.Store.DB(), hookID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -119,11 +120,19 @@ func (c *Controller) HandleWebhook(ctx context.Context, hookID string, h domain.
 		return denied, nil
 	}
 
-	webhookMu.Lock()
-	defer webhookMu.Unlock()
+	c.webhookMu.Lock()
+	defer c.webhookMu.Unlock()
 	ev := domain.ParseWebhook(h, body, g.Branch)
-	d := domain.WebhookDelivery{At: time.Now().UTC(), Provider: ev.Provider, Event: ev.Event, DeliveryID: ev.DeliveryID, Ref: ev.Ref, Commit: ev.Commit,
-		Pusher: ev.Pusher, Auth: auth}
+	d := domain.WebhookDelivery{
+		At:         time.Now().UTC(),
+		Provider:   ev.Provider,
+		Event:      ev.Event,
+		DeliveryID: ev.DeliveryID,
+		Ref:        ev.Ref,
+		Commit:     ev.Commit,
+		Pusher:     ev.Pusher,
+		Auth:       auth,
+	}
 	out := WebhookOutcome{Status: http.StatusAccepted}
 	switch {
 	case ev.Kind == domain.WebhookPing:
@@ -172,8 +181,16 @@ func (c *Controller) HandleWebhook(ctx context.Context, hookID string, h domain.
 // submitWebhookDeploy submits a deploy, or returns the already queued one:
 // every deploy fetches the branch head, so a queued deploy covers this push.
 // A provider redelivery maps to its original operation.
-func (c *Controller) submitWebhookDeploy(ctx context.Context, app domain.App, ev domain.WebhookEvent) (store.Operation, string, error) {
-	queued, err := store.ListOperations(ctx, c.Store.DB(), store.OpFilter{TargetID: app.ID, States: []store.OpState{store.OpQueued}})
+func (c *Controller) submitWebhookDeploy(
+	ctx context.Context,
+	app domain.App,
+	ev domain.WebhookEvent,
+) (store.Operation, string, error) {
+	queued, err := store.ListOperations(
+		ctx,
+		c.Store.DB(),
+		store.OpFilter{TargetID: app.ID, States: []store.OpState{store.OpQueued}},
+	)
 	if err != nil {
 		return store.Operation{}, "", err
 	}
@@ -182,7 +199,7 @@ func (c *Controller) submitWebhookDeploy(ctx context.Context, app domain.App, ev
 			return o, "coalesced", nil
 		}
 	}
-	idem := ""
+	var idem string
 	if ev.DeliveryID != "" {
 		idem = "webhook:" + app.ID + ":" + ev.Provider + ":" + ev.DeliveryID
 		// Providers reuse the delivery ID on "Redeliver", which operators use
@@ -203,11 +220,14 @@ func (c *Controller) submitWebhookDeploy(ctx context.Context, app domain.App, ev
 			idem = "webhook:" + app.ID + ":" + ev.Provider + ":" + ev.DeliveryID + ":after:" + prev.ID
 		}
 	}
-	op, existed, err := c.Submit(ctx, Submission{Kind: KindAppDeploy, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem,
-		Origin: DeployTriggerWebhook, Request: DeployRequest{
-			Trigger: DeployTriggerWebhook, Provider: ev.Provider, Event: ev.Event, DeliveryID: ev.DeliveryID,
-			Ref: ev.Ref, Commit: ev.Commit, Pusher: ev.Pusher,
-		}})
+	op, existed, err := c.Submit(
+		ctx,
+		Submission{Kind: KindAppDeploy, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem,
+			Origin: DeployTriggerWebhook, Request: DeployRequest{
+				Trigger: DeployTriggerWebhook, Provider: ev.Provider, Event: ev.Event, DeliveryID: ev.DeliveryID,
+				Ref: ev.Ref, Commit: ev.Commit, Pusher: ev.Pusher,
+			}},
+	)
 	if existed {
 		return op, "duplicate", err
 	}

@@ -54,18 +54,38 @@ func (s *Server) handleEdgeMetrics(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.Log.Debug("edge metrics exec failed", "err", err)
 		}
-		writeError(w, s.Log, &apiError{status: http.StatusServiceUnavailable, code: dto.ErrorCodeUnavailable, msg: "edge metrics are unavailable; is the edge running?"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusServiceUnavailable,
+				code:   dto.ErrorCodeUnavailable,
+				msg:    "edge metrics are unavailable; is the edge running?",
+			},
+		)
 		return
 	}
 	m, err := parseStubStatus(res.Stdout)
 	if err != nil {
 		s.Log.Warn("edge stub_status unparseable", "err", err)
-		writeError(w, s.Log, &apiError{status: http.StatusServiceUnavailable, code: dto.ErrorCodeUnavailable, msg: "edge metrics are unavailable"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusServiceUnavailable,
+				code:   dto.ErrorCodeUnavailable,
+				msg:    "edge metrics are unavailable",
+			},
+		)
 		return
 	}
 	now := time.Now()
 	m.SampledAt = platform.FormatTime(now)
-	m.RequestsPerSecond, m.AcceptsPerSecond = s.edgeStats.rates(edgeSample{at: now, accepts: m.Accepts, requests: m.Requests})
+	m.RequestsPerSecond, m.AcceptsPerSecond = s.edgeStats.rates(edgeSample{
+		at:       now,
+		accepts:  m.Accepts,
+		requests: m.Requests,
+	})
 	writeJSON(w, http.StatusOK, m)
 }
 

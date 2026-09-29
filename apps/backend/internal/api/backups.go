@@ -23,8 +23,11 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
 	}
 	out := dto.BackupArtifactList{Artifacts: []dto.BackupArtifact{}}
 	for _, a := range arts {
-		out.Artifacts = append(out.Artifacts, dto.BackupArtifact{Path: a.Path, AppSlug: a.AppSlug, Engine: dto.Engine(a.Engine), Database: a.Database,
-			SizeBytes: int(a.SizeBytes), CreatedAt: platform.FormatTime(a.CreatedAt)})
+		out.Artifacts = append(
+			out.Artifacts,
+			dto.BackupArtifact{Path: a.Path, AppSlug: a.AppSlug, Engine: dto.Engine(a.Engine), Database: a.Database,
+				SizeBytes: int(a.SizeBytes), CreatedAt: platform.FormatTime(a.CreatedAt)},
+		)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -37,8 +40,11 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	out := dto.BackupRunList{Runs: []dto.BackupRun{}}
 	for _, b := range runs {
-		out.Runs = append(out.Runs, dto.BackupRun{ID: b.ID, Trigger: b.Trigger, State: b.State, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt,
-			Artifacts: nonNil(b.Artifacts), UploadState: b.UploadState, Error: b.Error})
+		out.Runs = append(
+			out.Runs,
+			dto.BackupRun{ID: b.ID, Trigger: b.Trigger, State: b.State, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt,
+				Artifacts: nonNil(b.Artifacts), UploadState: b.UploadState, Error: b.Error},
+		)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -54,8 +60,12 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, err := s.C.SubmitBackup(r.Context(), operations.BackupRequest{Scope: req.Scope, AppID: req.AppID, BindingID: req.BindingID,
-		Compression: req.Compression, Upload: req.Upload, Trigger: "manual"}, idem)
+	op, err := s.C.SubmitBackup(
+		r.Context(),
+		operations.BackupRequest{Scope: req.Scope, AppID: req.AppID, BindingID: req.BindingID,
+			Compression: req.Compression, Upload: req.Upload, Trigger: "manual"},
+		idem,
+	)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -74,7 +84,12 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, err := s.C.SubmitRestore(r.Context(), operations.RestoreRequest{Artifact: req.Artifact, AppID: req.AppID, Database: req.Database}, req.Confirm, idem)
+	op, err := s.C.SubmitRestore(
+		r.Context(),
+		operations.RestoreRequest{Artifact: req.Artifact, AppID: req.AppID, Database: req.Database},
+		req.Confirm,
+		idem,
+	)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -83,8 +98,17 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 }
 
 func scheduleDTO(sc domain.BackupSchedule, st operations.ScheduleState, now time.Time) dto.BackupSchedule {
-	return dto.BackupSchedule{Enabled: sc.Enabled, Cron: sc.Cron, Compression: sc.Compression, Retain: sc.Retain, RcloneRemote: sc.RcloneRemote,
-		NextRun: platform.FormatTime(operations.NextBackup(sc, now)), LastRun: st.LastRun, LastState: st.LastState, TimeZone: zoneLabel(now)}
+	return dto.BackupSchedule{
+		Enabled:      sc.Enabled,
+		Cron:         sc.Cron,
+		Compression:  sc.Compression,
+		Retain:       sc.Retain,
+		RcloneRemote: sc.RcloneRemote,
+		NextRun:      platform.FormatTime(operations.NextBackup(sc, now)),
+		LastRun:      st.LastRun,
+		LastState:    st.LastState,
+		TimeZone:     zoneLabel(now),
+	}
 }
 
 // zoneLabel names now's UTC offset ("UTC", "UTC+07:00", "UTC-03:30").
@@ -111,7 +135,13 @@ func (s *Server) handlePutSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	sc := domain.BackupSchedule{Enabled: req.Enabled, Cron: req.Cron, Compression: req.Compression, Retain: req.Retain, RcloneRemote: req.RcloneRemote}
+	sc := domain.BackupSchedule{
+		Enabled:      req.Enabled,
+		Cron:         req.Cron,
+		Compression:  req.Compression,
+		Retain:       req.Retain,
+		RcloneRemote: req.RcloneRemote,
+	}
 	if err := s.C.SetBackupSchedule(r.Context(), sc); err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -189,7 +219,10 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(path)}))
+	w.Header().Set(
+		"Content-Disposition",
+		mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(path)}),
+	)
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, "", info.ModTime(), f)
 }

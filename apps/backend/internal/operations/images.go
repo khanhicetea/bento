@@ -24,7 +24,10 @@ func (c *Controller) PruneImage(ctx context.Context, digest, confirm, idem strin
 	if confirm != "delete" {
 		return store.Operation{}, fmt.Errorf("%w: type exactly \"delete\" to remove this image", ErrConfirmation)
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindImagePrune, TargetKind: "image", TargetID: "sha256:" + digest, IdempotencyKey: idem})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{Kind: KindImagePrune, TargetKind: "image", TargetID: "sha256:" + digest, IdempotencyKey: idem},
+	)
 	return op, err
 }
 
@@ -37,7 +40,12 @@ func (c *Controller) handleImagePrune(ctx context.Context, r *Run) (any, error) 
 		if img.ID == "" {
 			return map[string]any{"alreadyRemoved": true}, nil
 		}
-		return nil, Fail("image-in-use", "Only unused images built by Bento can be pruned.", "image %s is not Bento-built or is used by a container", r.Op.TargetID)
+		return nil, Fail(
+			"image-in-use",
+			"Only unused images built by Bento can be pruned.",
+			"image %s is not Bento-built or is used by a container",
+			r.Op.TargetID,
+		)
 	}
 	if err != nil {
 		return nil, err

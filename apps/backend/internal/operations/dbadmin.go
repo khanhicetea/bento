@@ -167,7 +167,12 @@ func (c *Controller) dbadminContainer(ctx context.Context) (*container.InspectRe
 		return nil, err
 	}
 	if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, runtime.RoleDBAdmin, "") {
-		return nil, Fail("foreign-container", "Resolve the conflicting container manually.", "container %s is not this stack's database browser", c.Names.DBAdminContainer())
+		return nil, Fail(
+			"foreign-container",
+			"Resolve the conflicting container manually.",
+			"container %s is not this stack's database browser",
+			c.Names.DBAdminContainer(),
+		)
 	}
 	return ins, nil
 }
@@ -183,7 +188,10 @@ func (c *Controller) DBAdminDrift(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return ins == nil || ins.State == nil || !ins.State.Running || ins.Config.Labels[runtime.LabelGeneration] != dbadminFingerprint(router), nil
+	if ins == nil || ins.State == nil || !ins.State.Running {
+		return true, nil
+	}
+	return ins.Config.Labels[runtime.LabelGeneration] != dbadminFingerprint(router), nil
 }
 
 func (c *Controller) applyDBAdmin(ctx context.Context, r *Run) error {

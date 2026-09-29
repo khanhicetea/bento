@@ -50,7 +50,13 @@ type FakeContainer struct {
 }
 
 func NewFake() *Fake {
-	return &Fake{Containers: map[string]*FakeContainer{}, Networks: map[string]NetworkInfo{}, Volumes: map[string]VolumeInfo{}, Images: map[string]string{}, ImageLabels: map[string]map[string]string{}}
+	return &Fake{
+		Containers:  map[string]*FakeContainer{},
+		Networks:    map[string]NetworkInfo{},
+		Volumes:     map[string]VolumeInfo{},
+		Images:      map[string]string{},
+		ImageLabels: map[string]map[string]string{},
+	}
 }
 
 func (f *Fake) record(call string) error {
@@ -93,7 +99,13 @@ func (f *Fake) PullImage(_ context.Context, ref string, _ func(string)) error {
 	return nil
 }
 
-func (f *Fake) BuildImage(_ context.Context, tag string, r io.Reader, _, labels map[string]string, _ func(string)) (string, error) {
+func (f *Fake) BuildImage(
+	_ context.Context,
+	tag string,
+	r io.Reader,
+	_, labels map[string]string,
+	_ func(string),
+) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.record("BuildImage " + tag); err != nil {
@@ -119,7 +131,13 @@ func (f *Fake) EnsureNetwork(_ context.Context, spec NetworkSpec) (NetworkInfo, 
 	if n, ok := f.Networks[spec.Name]; ok {
 		return n, nil
 	}
-	n := NetworkInfo{ID: "net-" + spec.Name, Name: spec.Name, Internal: spec.Internal, Labels: spec.Labels, Subnets: []netip.Prefix{spec.Subnet}}
+	n := NetworkInfo{
+		ID:       "net-" + spec.Name,
+		Name:     spec.Name,
+		Internal: spec.Internal,
+		Labels:   spec.Labels,
+		Subnets:  []netip.Prefix{spec.Subnet},
+	}
 	f.Networks[spec.Name] = n
 	return n, nil
 }
@@ -190,11 +208,22 @@ outer:
 		if c.State != "" && !c.Running {
 			state = container.ContainerState(c.State)
 		}
-		sum := container.Summary{ID: c.ID, Names: []string{"/" + c.Name}, Image: c.Spec.Config.Image, ImageID: f.Images[c.Spec.Config.Image],
-			Labels: c.Spec.Config.Labels, State: state, Created: c.Created.Unix(), NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{}}}
+		sum := container.Summary{
+			ID:              c.ID,
+			Names:           []string{"/" + c.Name},
+			Image:           c.Spec.Config.Image,
+			ImageID:         f.Images[c.Spec.Config.Image],
+			Labels:          c.Spec.Config.Labels,
+			State:           state,
+			Created:         c.Created.Unix(),
+			NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{}},
+		}
 		if c.Spec.HostConfig != nil {
 			for _, m := range c.Spec.HostConfig.Mounts {
-				sum.Mounts = append(sum.Mounts, container.MountPoint{Type: m.Type, Name: m.Source, Source: m.Source, Destination: m.Target})
+				sum.Mounts = append(
+					sum.Mounts,
+					container.MountPoint{Type: m.Type, Name: m.Source, Source: m.Source, Destination: m.Target},
+				)
 			}
 		}
 		if c.Spec.Networking != nil {
@@ -218,7 +247,13 @@ func (f *Fake) Create(_ context.Context, spec ContainerSpec) (string, error) {
 	}
 	f.seq++
 	id := fmt.Sprintf("c%04d", f.seq)
-	f.Containers[id] = &FakeContainer{ID: id, Name: spec.Name, Spec: spec, Created: time.Now(), IP: netip.AddrFrom4([4]byte{10, 211, 0, byte(100 + f.seq)})}
+	f.Containers[id] = &FakeContainer{
+		ID:      id,
+		Name:    spec.Name,
+		Spec:    spec,
+		Created: time.Now(),
+		IP:      netip.AddrFrom4([4]byte{10, 211, 0, byte(100 + f.seq)}),
+	}
 	return id, nil
 }
 
@@ -397,7 +432,10 @@ func (f *Fake) ListNetworks(context.Context) ([]NetworkSummary, error) {
 	out := make([]NetworkSummary, 0, len(f.Networks))
 	for _, k := range sortedKeys(f.Networks) {
 		n := f.Networks[k]
-		out = append(out, NetworkSummary{ID: n.ID, Name: n.Name, Driver: "bridge", Internal: n.Internal, Labels: n.Labels, Subnets: n.Subnets})
+		out = append(
+			out,
+			NetworkSummary{ID: n.ID, Name: n.Name, Driver: "bridge", Internal: n.Internal, Labels: n.Labels, Subnets: n.Subnets},
+		)
 	}
 	return out, nil
 }
@@ -437,7 +475,7 @@ func (f *Fake) Delete(nameOrID string) {
 func (f *Fake) CallCount(prefix string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	n := 0
+	var n int
 	for _, c := range f.Calls {
 		if strings.HasPrefix(c, prefix) {
 			n++

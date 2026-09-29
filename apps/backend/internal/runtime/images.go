@@ -97,7 +97,11 @@ func (m *ImageManager) tagLock(tag string) *sync.Mutex {
 
 // Ensure returns the image ID for key, building it through the Engine API if
 // the deterministic tag is absent. It never shells out to the Docker CLI.
-func (m *ImageManager) Ensure(ctx context.Context, key domain.ImageKey, progress func(string)) (string, ImageSpec, error) {
+func (m *ImageManager) Ensure(
+	ctx context.Context,
+	key domain.ImageKey,
+	progress func(string),
+) (string, ImageSpec, error) {
 	spec, err := PlanImage(key)
 	if err != nil {
 		return "", spec, err

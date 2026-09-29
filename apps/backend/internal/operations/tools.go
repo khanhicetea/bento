@@ -53,7 +53,10 @@ func (c *Controller) OpenTool(ctx context.Context, app domain.App, lifetime time
 	if err != nil {
 		return nil, err
 	}
-	m, err := runtime.WriteAppConfig(app, runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group})
+	m, err := runtime.WriteAppConfig(
+		app,
+		runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
+	)
 	if err != nil {
 		return nil, err
 	}

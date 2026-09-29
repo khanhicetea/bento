@@ -85,10 +85,12 @@ type utilsListeners struct {
 	gateway  func(context.Context) (string, error)
 	appsPort int
 
-	mu        sync.Mutex
+	mu        sync.Mutex // guards servers and appsBound
 	servers   map[string]*http.Server
 	appsBound string
-	appsWarn  string
+	// appsWarn is owned by the single followApps goroutine (the only caller of
+	// syncApps), so it is read and written without mu.
+	appsWarn string
 }
 
 func newUtilsServer(h http.Handler) *http.Server {
@@ -150,7 +152,7 @@ func (p *utilsListeners) syncApps(ctx context.Context) {
 		p.log.Warn("utils listener: read network plan", "err", err)
 		return
 	}
-	want := ""
+	var want string
 	if gw != "" {
 		want = net.JoinHostPort(gw, strconv.Itoa(p.appsPort))
 	}

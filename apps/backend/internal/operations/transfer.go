@@ -32,13 +32,19 @@ var RootSkip = map[string]bool{
 // apps and data services to take consistent snapshots.
 func (c *Controller) SubmitExport(ctx context.Context, dest, confirm, idem string) (store.Operation, error) {
 	if confirm != "export" {
-		return store.Operation{}, fmt.Errorf("%w: type exactly \"export\"; running apps and data services are stopped briefly for a consistent snapshot", ErrConfirmation)
+		return store.Operation{}, fmt.Errorf(
+			"%w: type exactly \"export\"; running apps and data services are stopped briefly for a consistent snapshot",
+			ErrConfirmation,
+		)
 	}
 	if err := validateExportDest(c.Layout.Root, dest); err != nil {
 		return store.Operation{}, domain.ValidationErrors{{Field: "destination", Message: err.Error()}}
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindStackExport, TargetKind: "stack", TargetID: "stack", IdempotencyKey: idem,
-		Request: map[string]string{"destination": dest}})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{Kind: KindStackExport, TargetKind: "stack", TargetID: "stack", IdempotencyKey: idem,
+			Request: map[string]string{"destination": dest}},
+	)
 	return op, err
 }
 
@@ -60,7 +66,12 @@ func validateExportDest(root, dest string) error {
 }
 
 // volumeJob runs tar in a scoped job container using the service's own image.
-func (c *Controller) volumeJob(ctx context.Context, image, volume, dir string, readOnlyVolume bool, cmd []string) error {
+func (c *Controller) volumeJob(
+	ctx context.Context,
+	image, volume, dir string,
+	readOnlyVolume bool,
+	cmd []string,
+) error {
 	opID := "vol-" + platform.RandomHex(5)
 	spec := docker.ContainerSpec{
 		Name: c.Names.BackupContainer(opID),
@@ -146,7 +157,13 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 			if _, e := c.ensureService(rctx, r, s, false); e != nil {
 				r.Warn(rctx, "service %s did not restart: %v", s.Name, e)
 				if err == nil {
-					err = Fail("resume-failed", "Start the service manually through reconciliation.", "service %s did not restart: %v", s.Name, e)
+					err = Fail(
+						"resume-failed",
+						"Start the service manually through reconciliation.",
+						"service %s did not restart: %v",
+						s.Name,
+						e,
+					)
 				}
 			}
 		}
@@ -202,8 +219,16 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 	if err != nil {
 		return nil, err
 	}
-	m := transfer.Manifest{Format: transfer.FormatName, Version: transfer.FormatVersion, SchemaVersion: store.SchemaVersion,
-		StackID: c.Stack.ID, StackName: c.Stack.Name, CreatedAt: platform.FormatTime(time.Now()), StateFile: "state.db", RootArchive: "stack.tar.zst"}
+	m := transfer.Manifest{
+		Format:        transfer.FormatName,
+		Version:       transfer.FormatVersion,
+		SchemaVersion: store.SchemaVersion,
+		StackID:       c.Stack.ID,
+		StackName:     c.Stack.Name,
+		CreatedAt:     platform.FormatTime(time.Now()),
+		StateFile:     "state.db",
+		RootArchive:   "stack.tar.zst",
+	}
 	if v, err := c.Engine.Version(ctx); err == nil {
 		m.Arch = v.Arch
 	}
@@ -215,11 +240,21 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 			return nil, Fail("volume-missing", "Restore the service volume before exporting.", "volume %s is missing", s.Volume)
 		}
 		file := "volume-" + s.Name + ".tar"
-		if err := c.volumeJob(ctx, s.Image, s.Volume, dest, true, []string{"-C", "/v", "-cf", "/x/" + file, "."}); err != nil {
+		if err := c.volumeJob(
+			ctx,
+			s.Image,
+			s.Volume,
+			dest,
+			true,
+			[]string{"-C", "/v", "-cf", "/x/" + file, "."},
+		); err != nil {
 			return nil, err
 		}
-		m.Services = append(m.Services, transfer.ServiceEntry{Name: s.Name, Engine: string(s.Engine), Version: s.Version, Image: s.Image,
-			VolumeFile: file, SourceVolume: s.Volume})
+		m.Services = append(
+			m.Services,
+			transfer.ServiceEntry{Name: s.Name, Engine: string(s.Engine), Version: s.Version, Image: s.Image,
+				VolumeFile: file, SourceVolume: s.Volume},
+		)
 	}
 	if err := transfer.WriteManifest(dest, m); err != nil {
 		return nil, err

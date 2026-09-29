@@ -75,11 +75,18 @@ func (c *Controller) BackupDeps(progress func(string)) backup.Deps {
 			if err != nil {
 				return docker.ContainerSpec{}, err
 			}
-			m, err := runtime.WriteAppConfig(app, runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group})
+			m, err := runtime.WriteAppConfig(
+				app,
+				runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
+			)
 			if err != nil {
 				return docker.ContainerSpec{}, err
 			}
-			return runtime.ToolContainerSpec(runtime.AppInputs{App: app, Names: c.Names, Layout: c.Layout, ImageID: imageID, Materialized: m}, "backup", time.Hour), nil
+			return runtime.ToolContainerSpec(
+				runtime.AppInputs{App: app, Names: c.Names, Layout: c.Layout, ImageID: imageID, Materialized: m},
+				"backup",
+				time.Hour,
+			), nil
 		},
 	}
 }
@@ -119,7 +126,12 @@ func (c *Controller) SetBackupSchedule(ctx context.Context, s domain.BackupSched
 	return c.Store.Tx(ctx, func(q store.Q) error {
 		// Changing the schedule resets its slot bookkeeping to now so that
 		// enabling it never triggers a burst of catch-up runs.
-		if err := store.PutSetting(ctx, q, scheduleStateKey, ScheduleState{LastSlot: platform.FormatTime(time.Now())}); err != nil {
+		if err := store.PutSetting(
+			ctx,
+			q,
+			scheduleStateKey,
+			ScheduleState{LastSlot: platform.FormatTime(time.Now())},
+		); err != nil {
 			return err
 		}
 		return store.PutSetting(ctx, q, scheduleSettingKey, s)
@@ -152,10 +164,23 @@ func (c *Controller) SubmitBackup(ctx context.Context, req BackupRequest, idem s
 			return store.Operation{}, err
 		}
 		if sched.RcloneRemote == "" {
-			return store.Operation{}, domain.ValidationErrors{{Field: "upload", Message: "set an rclone remote in the backup schedule first"}}
+			return store.Operation{}, domain.ValidationErrors{{
+				Field:   "upload",
+				Message: "set an rclone remote in the backup schedule first",
+			}}
 		}
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindBackupRun, TargetKind: "backup", TargetID: "backup", IdempotencyKey: idem, Request: req, Origin: req.Trigger})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{
+			Kind:           KindBackupRun,
+			TargetKind:     "backup",
+			TargetID:       "backup",
+			IdempotencyKey: idem,
+			Request:        req,
+			Origin:         req.Trigger,
+		},
+	)
 	return op, err
 }
 
@@ -195,11 +220,19 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		return nil, fmt.Errorf("acquire backup lock: %w", err)
 	}
 	if err != nil {
-		return nil, Fail("backup-running", "Wait for the running backup batch to finish.", "another backup batch holds the lock")
+		return nil, Fail(
+			"backup-running",
+			"Wait for the running backup batch to finish.",
+			"another backup batch holds the lock",
+		)
 	}
 	defer lock.Release()
 	runID := r.Op.ID
-	if err := store.InsertBackupRun(ctx, c.Store.DB(), store.BackupRun{ID: runID, Trigger: req.Trigger, State: "running", StartedAt: platform.FormatTime(time.Now())}); err != nil {
+	if err := store.InsertBackupRun(
+		ctx,
+		c.Store.DB(),
+		store.BackupRun{ID: runID, Trigger: req.Trigger, State: "running", StartedAt: platform.FormatTime(time.Now())},
+	); err != nil {
 		return nil, err
 	}
 	finish := func(state, upload, msg string, arts []backup.Artifact) {
@@ -207,7 +240,11 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		for _, a := range arts {
 			paths = append(paths, a.Path)
 		}
-		if err := store.FinishBackupRun(context.WithoutCancel(ctx), c.Store.DB(), store.BackupRun{ID: runID, State: state, Artifacts: paths, UploadState: upload, Error: msg}); err != nil {
+		if err := store.FinishBackupRun(
+			context.WithoutCancel(ctx),
+			c.Store.DB(),
+			store.BackupRun{ID: runID, State: state, Artifacts: paths, UploadState: upload, Error: msg},
+		); err != nil {
 			c.Log.Warn("record backup run", "run", runID, "err", err)
 		}
 	}
@@ -220,7 +257,7 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 	var arts []backup.Artifact
 	var failed []string
 	okKeys := map[string]bool{}
-	attempted := 0
+	var attempted int
 	for _, t := range targets {
 		if err := r.Phase(ctx, fmt.Sprintf("dump %s/%s", t.App.Slug, t.Database)); err != nil {
 			finish("cancelled", "", err.Error(), arts)
@@ -249,7 +286,12 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 	if attempted > 0 && len(failed) == attempted {
 		msg := strings.Join(failed, "; ")
 		finish("failed", "", msg, arts)
-		return map[string]any{"artifacts": arts}, Fail("backup-failed", "No target could be dumped; retention was not applied. Fix the failing targets and rerun.", "%s", msg)
+		return map[string]any{"artifacts": arts}, Fail(
+			"backup-failed",
+			"No target could be dumped; retention was not applied. Fix the failing targets and rerun.",
+			"%s",
+			msg,
+		)
 	}
 	sched, _, schedErr := c.BackupSchedule(ctx)
 	if schedErr != nil {
@@ -272,10 +314,16 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 	var partialErr error
 	if len(failed) > 0 {
 		state, msg = "partial", strings.Join(failed, "; ")
-		partialErr = Fail("backup-partial", "Successful artifacts were kept and retention was applied only to their series. Fix the failing targets and rerun.",
-			"%d of %d target(s) failed: %s", len(failed), attempted, msg)
+		partialErr = Fail(
+			"backup-partial",
+			"Successful artifacts were kept and retention was applied only to their series. Fix the failing targets and rerun.",
+			"%d of %d target(s) failed: %s",
+			len(failed),
+			attempted,
+			msg,
+		)
 	}
-	upload := ""
+	var upload string
 	if req.Upload || (req.Trigger == "schedule" && sched.RcloneRemote != "") {
 		if err := r.Phase(ctx, "upload"); err != nil {
 			return nil, err
@@ -284,10 +332,22 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 			upload = "failed"
 			finish(state, upload, strings.TrimPrefix(msg+"; upload failed: "+err.Error(), "; "), arts)
 			if partialErr != nil {
-				return map[string]any{"artifacts": arts}, Fail("backup-partial", "Local artifacts were kept. Fix the failing targets and the rclone configuration, then rerun.",
-					"%d of %d target(s) failed: %s; upload failed: %v", len(failed), attempted, msg, err)
+				return map[string]any{"artifacts": arts}, Fail(
+					"backup-partial",
+					"Local artifacts were kept. Fix the failing targets and the rclone configuration, then rerun.",
+					"%d of %d target(s) failed: %s; upload failed: %v",
+					len(failed),
+					attempted,
+					msg,
+					err,
+				)
 			}
-			return map[string]any{"artifacts": arts}, Fail("upload-failed", "Local artifacts were kept. Check the rclone configuration and remote.", "%v", err)
+			return map[string]any{"artifacts": arts}, Fail(
+				"upload-failed",
+				"Local artifacts were kept. Check the rclone configuration and remote.",
+				"%v",
+				err,
+			)
 		}
 		upload = "succeeded"
 	}
@@ -299,9 +359,17 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 }
 
 // SubmitRestore requires the exact confirmation "replace <database>".
-func (c *Controller) SubmitRestore(ctx context.Context, req RestoreRequest, confirm, idem string) (store.Operation, error) {
+func (c *Controller) SubmitRestore(
+	ctx context.Context,
+	req RestoreRequest,
+	confirm, idem string,
+) (store.Operation, error) {
 	if confirm != "replace "+req.Database {
-		return store.Operation{}, fmt.Errorf("%w: type exactly %q; restore replaces the database contents", ErrConfirmation, "replace "+req.Database)
+		return store.Operation{}, fmt.Errorf(
+			"%w: type exactly %q; restore replaces the database contents",
+			ErrConfirmation,
+			"replace "+req.Database,
+		)
 	}
 	if _, err := backup.ResolveArtifact(c.Layout.BackupsDir(), req.Artifact); err != nil {
 		return store.Operation{}, fmt.Errorf("%w: %v", store.ErrNotFound, err)
@@ -313,7 +381,10 @@ func (c *Controller) SubmitRestore(ctx context.Context, req RestoreRequest, conf
 	if _, _, err := findDatabase(app, req.Database); err != nil {
 		return store.Operation{}, err
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindBackupRestore, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem, Request: req})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{Kind: KindBackupRestore, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem, Request: req},
+	)
 	return op, err
 }
 
@@ -328,7 +399,12 @@ func findDatabase(app domain.App, database string) (domain.Binding, bool, error)
 			return b, false, nil
 		}
 	}
-	return domain.Binding{}, false, fmt.Errorf("%w: database %s is not bound to app %s", store.ErrNotFound, database, app.Slug)
+	return domain.Binding{}, false, fmt.Errorf(
+		"%w: database %s is not bound to app %s",
+		store.ErrNotFound,
+		database,
+		app.Slug,
+	)
 }
 
 func (c *Controller) handleBackupRestore(ctx context.Context, r *Run) (any, error) {
@@ -348,9 +424,15 @@ func (c *Controller) handleBackupRestore(ctx context.Context, r *Run) (any, erro
 	if err != nil {
 		return nil, err
 	}
-	engineOK := strings.Contains(filepath_Base(path), string(b.Engine)+"-")
+	engineOK := strings.Contains(slashBase(path), string(b.Engine)+"-")
 	if !engineOK {
-		return nil, Fail("engine-mismatch", "Choose an artifact of the binding's engine.", "artifact %s is not a %s backup", req.Artifact, b.Engine)
+		return nil, Fail(
+			"engine-mismatch",
+			"Choose an artifact of the binding's engine.",
+			"artifact %s is not a %s backup",
+			req.Artifact,
+			b.Engine,
+		)
 	}
 	if warn := crossAppWarning(c.Layout.BackupsDir(), path, app.Slug); warn != "" {
 		r.Warn(ctx, "%s", warn)
@@ -372,7 +454,12 @@ func (c *Controller) handleBackupRestore(ctx context.Context, r *Run) (any, erro
 		err = deps.RestoreRelational(ctx, app, b, req.Database, path)
 	}
 	if err != nil {
-		return nil, Fail("restore-failed", "The destination may be partially restored; restore again or from another artifact.", "%v", err)
+		return nil, Fail(
+			"restore-failed",
+			"The destination may be partially restored; restore again or from another artifact.",
+			"%v",
+			err,
+		)
 	}
 	return map[string]any{"restored": req.Database, "from": req.Artifact}, nil
 }
@@ -393,7 +480,9 @@ func crossAppWarning(backupsDir, artifactPath, targetSlug string) string {
 	return fmt.Sprintf("artifact %s was taken from app %s, not %s; restoring cross-app data", rel, source, targetSlug)
 }
 
-func filepath_Base(p string) string {
+// slashBase returns the text after the last "/" (p itself when there is none).
+// Unlike filepath.Base it does not trim trailing slashes or map "" to ".".
+func slashBase(p string) string {
 	if _, base, ok := strings.CutLast(p, "/"); ok {
 		return base
 	}
@@ -467,7 +556,7 @@ func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
 		return
 	}
 	// Count slots missed beyond the most recent one; run only once.
-	missed := 0
+	var missed int
 	for next := sched.Next(due); !next.After(now) && missed < 10000; next = sched.Next(next) {
 		missed++
 		due = next
@@ -483,7 +572,11 @@ func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
 		return
 	}
 	st.LastRun = platform.FormatTime(now)
-	op, err := c.SubmitBackup(ctx, BackupRequest{Scope: "all", Compression: s.Compression, Trigger: "schedule", Upload: s.RcloneRemote != ""}, "")
+	op, err := c.SubmitBackup(
+		ctx,
+		BackupRequest{Scope: "all", Compression: s.Compression, Trigger: "schedule", Upload: s.RcloneRemote != ""},
+		"",
+	)
 	if err != nil {
 		st.LastState = "submit-failed"
 	} else {
@@ -509,7 +602,10 @@ func (c *Controller) SubmitBackupDelete(ctx context.Context, artifact, confirm, 
 	if _, err := backup.ResolveArtifact(c.Layout.BackupsDir(), artifact); err != nil {
 		return store.Operation{}, fmt.Errorf("%w: %v", store.ErrNotFound, err)
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindBackupDelete, TargetKind: "backup", TargetID: artifact, IdempotencyKey: idem})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{Kind: KindBackupDelete, TargetKind: "backup", TargetID: artifact, IdempotencyKey: idem},
+	)
 	return op, err
 }
 
@@ -546,7 +642,16 @@ func (c *Controller) SubmitRcloneTest(ctx context.Context, remote, idem string) 
 	if _, err := backup.ValidateRemote(remote); err != nil {
 		return store.Operation{}, domain.ValidationErrors{{Field: "remote", Message: err.Error()}}
 	}
-	op, _, err := c.Submit(ctx, Submission{Kind: KindRcloneTest, TargetKind: "backup", TargetID: remote, IdempotencyKey: idem, Request: RcloneTestRequest{Remote: remote}})
+	op, _, err := c.Submit(
+		ctx,
+		Submission{
+			Kind:           KindRcloneTest,
+			TargetKind:     "backup",
+			TargetID:       remote,
+			IdempotencyKey: idem,
+			Request:        RcloneTestRequest{Remote: remote},
+		},
+	)
 	return op, err
 }
 

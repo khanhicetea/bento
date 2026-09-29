@@ -47,7 +47,15 @@ type gatewayAppKey struct{}
 func (s *Server) handleSchedulerTicket(w http.ResponseWriter, r *http.Request) {
 	p, _ := principalFrom(r.Context())
 	if p.Kind != "session" {
-		writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden, msg: "the scheduler UI needs a browser session"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusForbidden,
+				code:   dto.ErrorCodeForbidden,
+				msg:    "the scheduler UI needs a browser session",
+			},
+		)
 		return
 	}
 	app, ok := s.loadApp(w, r)
@@ -55,7 +63,15 @@ func (s *Server) handleSchedulerTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if app.DesiredRuntime != domain.DesiredRunning {
-		writeError(w, s.Log, &apiError{status: http.StatusPreconditionFailed, code: dto.ErrorCodePrecondition, msg: "the app is stopped; its scheduler is not running"})
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusPreconditionFailed,
+				code:   dto.ErrorCodePrecondition,
+				msg:    "the app is stopped; its scheduler is not running",
+			},
+		)
 		return
 	}
 	us, err := s.C.UtilsSettings(r.Context())
@@ -64,7 +80,12 @@ func (s *Server) handleSchedulerTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expires := time.Now().Add(schedulerTicketTTL)
-	ticket := s.scheduler.issue(dbadminPass{appID: app.ID, bindingID: app.Slug, sessionHash: p.Session.TokenHash, expires: expires})
+	ticket := s.scheduler.issue(dbadminPass{
+		appID:       app.ID,
+		bindingID:   app.Slug,
+		sessionHash: p.Session.TokenHash,
+		expires:     expires,
+	})
 	writeJSON(w, http.StatusOK, dto.SchedulerTicket{Path: schedulerPathPrefix + "t/" + ticket, BaseURL: us.BaseURL,
 		LoopbackPort: s.utilsLoopbackPort(), ExpiresAt: platform.FormatTime(expires)})
 }
@@ -163,7 +184,11 @@ func (s *Server) redeemSchedulerTicket(w http.ResponseWriter, r *http.Request, t
 	}
 	pass, grant, ok := s.scheduler.redeem(ticket)
 	if !ok {
-		dbadminText(w, http.StatusUnauthorized, "this scheduler link expired or was already used; open it again from the Bento UI")
+		dbadminText(
+			w,
+			http.StatusUnauthorized,
+			"this scheduler link expired or was already used; open it again from the Bento UI",
+		)
 		return
 	}
 	if _, err := store.GetLiveSession(r.Context(), s.Store.DB(), pass.sessionHash, time.Now()); err != nil {
