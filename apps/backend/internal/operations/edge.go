@@ -3,7 +3,7 @@ package operations
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net"
 	"net/netip"
 	"strconv"
@@ -150,11 +150,14 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 			return err
 		}
 		if res.ExitCode != 0 {
-			return fmt.Errorf("%s", strings.TrimSpace(string(res.Stderr)))
+			return errors.New(strings.TrimSpace(string(res.Stderr)))
 		}
 		return nil
 	}
-	s, _ := c.EdgeSettings(ctx)
+	s, err := c.EdgeSettings(ctx)
+	if err != nil {
+		return err
+	}
 	ns, err := c.NetworkPlan(ctx)
 	if err != nil {
 		return err
@@ -184,7 +187,7 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 		return err
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("%s", strings.TrimSpace(string(res.Stderr)))
+		return errors.New(strings.TrimSpace(string(res.Stderr)))
 	}
 	return nil
 }
@@ -410,7 +413,7 @@ func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 	}
 	if !s.Enabled {
 		if ins != nil {
-			_ = c.Engine.Stop(ctx, ins.ID, 15*time.Second)
+			_ = c.Engine.Stop(ctx, ins.ID, 15*time.Second) // graceful stop is best effort; Remove forces
 			return c.Engine.Remove(ctx, ins.ID)
 		}
 		return nil
@@ -428,7 +431,7 @@ func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 			return nil
 		}
 		r.Info(ctx, "tunnel token changed; recreating only the tunnel container")
-		_ = c.Engine.Stop(ctx, ins.ID, 15*time.Second)
+		_ = c.Engine.Stop(ctx, ins.ID, 15*time.Second) // graceful stop is best effort; Remove forces
 		if err := c.Engine.Remove(ctx, ins.ID); err != nil {
 			return err
 		}

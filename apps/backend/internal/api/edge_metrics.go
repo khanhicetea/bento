@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -87,14 +88,14 @@ func parseStubStatus(raw []byte) (dto.EdgeMetrics, error) {
 	var err error
 	active, ok := strings.CutPrefix(strings.TrimSpace(lines[0]), "Active connections:")
 	if !ok {
-		return m, fmt.Errorf("missing active connections")
+		return m, errors.New("missing active connections")
 	}
 	if m.Active, err = num(active); err != nil {
 		return m, err
 	}
 	f := strings.Fields(lines[2])
 	if len(f) != 3 {
-		return m, fmt.Errorf("malformed counters line")
+		return m, errors.New("malformed counters line")
 	}
 	for i, dst := range []*int64{&m.Accepts, &m.Handled, &m.Requests} {
 		if *dst, err = num(f[i]); err != nil {
@@ -103,7 +104,7 @@ func parseStubStatus(raw []byte) (dto.EdgeMetrics, error) {
 	}
 	f = strings.Fields(lines[3])
 	if len(f) != 6 || f[0] != "Reading:" || f[2] != "Writing:" || f[4] != "Waiting:" {
-		return m, fmt.Errorf("malformed state line")
+		return m, errors.New("malformed state line")
 	}
 	for i, dst := range []*int64{&m.Reading, &m.Writing, &m.Waiting} {
 		if *dst, err = num(f[i*2+1]); err != nil {

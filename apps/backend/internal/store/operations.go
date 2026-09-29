@@ -100,7 +100,7 @@ func InsertOperation(ctx context.Context, q Q, o Operation) (Operation, bool, er
 	_, err := q.ExecContext(ctx, `INSERT INTO operations(id, kind, target_kind, target_id, state, phase, target_generation, idempotency_key,
 		request_json, origin, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		o.ID, o.Kind, o.TargetKind, o.TargetID, o.State, o.Phase, o.TargetGeneration, nullable(o.IdempotencyKey), string(o.Request), o.Origin, o.CreatedAt)
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+	if isUniqueViolation(err) {
 		return o, false, fmt.Errorf("%w: duplicate operation", ErrConflict)
 	}
 	return o, false, err
@@ -257,6 +257,9 @@ func RequestCancel(ctx context.Context, q Q, id string) (Operation, error) {
 	return GetOperation(ctx, q, id)
 }
 
+// CancelRequested reports whether cancellation of id was requested. A failed
+// read reports false: the operation keeps running and the next phase
+// boundary checks again.
 func CancelRequested(ctx context.Context, q Q, id string) bool {
 	var n int
 	_ = q.QueryRowContext(ctx, "SELECT cancel_requested FROM operations WHERE id=?", id).Scan(&n)

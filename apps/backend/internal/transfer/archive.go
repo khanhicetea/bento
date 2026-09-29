@@ -208,7 +208,7 @@ func ExtractRoot(r io.Reader, root string) error {
 		mode := os.FileMode(h.Mode) & 0o7777
 		switch h.Typeflag {
 		case tar.TypeDir:
-			if err := os.Mkdir(target, 0o700); err != nil && !os.IsExist(err) {
+			if err := os.Mkdir(target, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 				return err
 			}
 			dirs = append(dirs, dirMeta{target, mode, h.Uid, h.Gid, h.ModTime})
@@ -218,10 +218,12 @@ func ExtractRoot(r io.Reader, root string) error {
 				return err
 			}
 			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+				_ = f.Close() // the copy error takes precedence
 				return err
 			}
-			f.Close()
+			if err := f.Close(); err != nil {
+				return err
+			}
 			if err := os.Lchown(target, h.Uid, h.Gid); err != nil {
 				return err
 			}

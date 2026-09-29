@@ -10,12 +10,29 @@ import (
 	"strings"
 	"time"
 
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
+
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
 var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("conflict")
+
+// isUniqueViolation reports whether err is a SQLite UNIQUE or PRIMARY KEY
+// constraint failure (both report "UNIQUE constraint failed").
+func isUniqueViolation(err error) bool {
+	se, ok := errors.AsType[*sqlite.Error](err)
+	if !ok {
+		return false
+	}
+	switch se.Code() {
+	case sqlite3.SQLITE_CONSTRAINT_UNIQUE, sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
+		return true
+	}
+	return false
+}
 
 func now() string { return platform.FormatTime(time.Now()) }
 
@@ -209,7 +226,7 @@ func InsertApp(ctx context.Context, q Q, a domain.App) error {
 		a.ID, a.Slug, a.UID, a.GID, mustJSON(a.Runtime), mustJSON(a.Resources), a.DesiredRuntime, a.Ingress,
 		a.Publication, mustJSON(a.Route), mustJSON(a.Redis), a.ConfigGeneration, a.CredentialsGeneration, provisioned,
 		platform.FormatTime(a.CreatedAt), platform.FormatTime(a.UpdatedAt))
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: app slug or uid already exists", ErrConflict)
 	}
 	return err
@@ -307,7 +324,7 @@ func InsertBinding(ctx context.Context, q Q, b domain.Binding) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO bindings(id, app_id, engine, service, username, password, sqlite_file_id, vacuum_json, position, created_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?)`, b.ID, b.AppID, b.Engine, nullable(b.Service), nullable(b.Username), nullable(b.Password),
 		nullable(b.SQLiteFileID), vacuum, pos, platform.FormatTime(b.CreatedAt))
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: the app already has a binding for this service", ErrConflict)
 	}
 	return err
@@ -363,7 +380,7 @@ func ListBindings(ctx context.Context, q Q, appID string) ([]domain.Binding, err
 
 func AddBindingDatabase(ctx context.Context, q Q, bindingID, name string) error {
 	_, err := q.ExecContext(ctx, "INSERT INTO binding_databases(binding_id, name, created_at) VALUES(?,?,?)", bindingID, name, now())
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: database %s already exists on this binding", ErrConflict, name)
 	}
 	return err
@@ -425,7 +442,7 @@ func ReplaceDomains(ctx context.Context, q Q, ownerKind, ownerID string, links [
 		}
 	}
 	if len(links) > 0 && primaries != 1 {
-		return fmt.Errorf("exactly one primary domain is required")
+		return errors.New("exactly one primary domain is required")
 	}
 	if _, err := q.ExecContext(ctx, "DELETE FROM domains WHERE owner_kind = ? AND owner_id = ?", ownerKind, ownerID); err != nil {
 		return err
@@ -507,7 +524,7 @@ func UpsertProxy(ctx context.Context, q Q, p domain.Proxy) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO proxies(id, name, upstreams_json, route_json, enabled, created_at, updated_at) VALUES(?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET upstreams_json=excluded.upstreams_json, route_json=excluded.route_json, enabled=excluded.enabled, updated_at=excluded.updated_at`,
 		p.ID, p.Name, mustJSON(p.Upstreams), mustJSON(p.Route), enabled, platform.FormatTime(p.CreatedAt), now())
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: proxy name already exists", ErrConflict)
 	}
 	return err
@@ -566,7 +583,7 @@ func GetService(ctx context.Context, q Q, name string) (ServiceRow, error) {
 func InsertService(ctx context.Context, q Q, s domain.DataService) error {
 	_, err := q.ExecContext(ctx, "INSERT INTO data_services(name, engine, version, image, volume, created_at) VALUES(?,?,?,?,?,?)",
 		s.Name, s.Engine, s.Version, s.Image, s.Volume, platform.FormatTime(s.CreatedAt))
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: service %s already exists", ErrConflict, s.Name)
 	}
 	return err

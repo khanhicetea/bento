@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -112,7 +113,7 @@ func (c *Controller) ensureHome(app domain.App) error {
 	owner := platform.Owner{UID: app.UID, GID: app.GID}
 	info, err := os.Lstat(home)
 	switch {
-	case os.IsNotExist(err):
+	case errors.Is(err, fs.ErrNotExist):
 		if err := platform.EnsureDir(home, 0o750, owner); err != nil {
 			return err
 		}
@@ -132,7 +133,7 @@ func (c *Controller) ensureHome(app domain.App) error {
 	}
 	for _, sub := range []string{"app", "tmp", "tmp/sessions", ".local", ".local/share", ".local/state", "logs"} {
 		p := filepath.Join(home, sub)
-		if _, err := os.Lstat(p); os.IsNotExist(err) {
+		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
 			if err := platform.EnsureDir(p, 0o750, owner); err != nil {
 				return err
 			}
@@ -168,7 +169,7 @@ func (c *Controller) verifyHome(app domain.App) error {
 func (c *Controller) verifyCodeDir(app domain.App) error {
 	code := c.Layout.AppCode(app.Slug)
 	owner, mode, err := platform.StatOwner(code)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return Fail("durable-state-missing", "Restore the app code directory from backup; Bento will not create an empty replacement for an established app.",
 			"app code directory %s is missing", code)
 	}
@@ -185,7 +186,7 @@ func (c *Controller) verifyCodeDir(app domain.App) error {
 func (c *Controller) verifyHomeIdentity(app domain.App) error {
 	home := c.Layout.AppHome(app.Slug)
 	info, err := os.Lstat(home)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return Fail("durable-state-missing", "Restore the app home from backup; Bento will not create an empty replacement for an established app.",
 			"app home %s is missing", home)
 	}
@@ -221,7 +222,7 @@ func (c *Controller) ensureSQLiteDirs(app domain.App) error {
 			continue
 		}
 		dir := c.Layout.SQLiteFileDir(b.SQLiteFileID)
-		if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
 			if err := platform.EnsureDir(dir, 0o700, platform.Owner{UID: app.UID, GID: app.GID}); err != nil {
 				return err
 			}
@@ -603,6 +604,8 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 			last = chk.Reason
 		}
 		if chk.Reason == "instance is not running" {
+			// Only a confirmed exit fails fast; a failed observation keeps
+			// polling until the deadline.
 			obs, _ := c.observe(ctx, app)
 			if obs.Exists && !obs.Running && obs.Status == "exited" {
 				tail := c.logTail(ctx, obs.ContainerID, 30)
@@ -859,7 +862,9 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 		if err != nil || res.ExitCode != 0 {
 			// Restore every scope not yet applied, not only this one, so no
 			// unapplied bytes are silently absorbed by a later write.
-			_ = ch.RestoreUnapplied()
+			if rerr := ch.RestoreUnapplied(); rerr != nil {
+				r.Warn(ctx, "restoring the previous configuration failed: %v", rerr)
+			}
 			detail := ""
 			if err == nil {
 				detail = strings.TrimSpace(string(res.Stderr) + string(res.Stdout))
@@ -1154,7 +1159,11 @@ func (c *Controller) handlePermissions(ctx context.Context, r *Run) (any, error)
 	var req struct {
 		Mode string `json:"mode"`
 	}
-	_ = r.Decode(&req)
+	if len(r.Op.Request) > 0 {
+		if err := r.Decode(&req); err != nil {
+			return nil, fmt.Errorf("decode permissions request: %w", err)
+		}
+	}
 	owner := platform.Owner{UID: app.UID, GID: app.GID}
 	home := c.Layout.AppHome(app.Slug)
 	if err := c.verifyHome(app); err != nil {

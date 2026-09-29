@@ -5,6 +5,7 @@ package reconcile
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -280,7 +281,11 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		if !r.settle(ctx, t) {
 			continue
 		}
-		if busy, _ := store.ActiveForTarget(ctx, db, s.Name); busy {
+		busy, err := store.ActiveForTarget(ctx, db, s.Name)
+		if err != nil {
+			return err
+		}
+		if busy {
 			continue
 		}
 		ins, err := r.C.Engine.Inspect(ctx, r.C.Names.ServiceContainer(s.Name))
@@ -303,7 +308,11 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		if !app.Provisioned {
 			continue
 		}
-		if busy, _ := store.ActiveForTarget(ctx, db, app.ID); busy {
+		busy, err := store.ActiveForTarget(ctx, db, app.ID)
+		if err != nil {
+			return err
+		}
+		if busy {
 			continue
 		}
 		obs, err := r.C.Observe(ctx, app)
@@ -353,7 +362,11 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 	if es.Enabled {
 		t := r.get("edge", 0)
 		if r.settle(ctx, t) {
-			if busy, _ := store.ActiveForTarget(ctx, db, "edge"); !busy {
+			busy, err := store.ActiveForTarget(ctx, db, "edge")
+			if err != nil {
+				return err
+			}
+			if !busy {
 				ins, err := r.C.Engine.Inspect(ctx, r.C.Names.EdgeContainer())
 				if err != nil {
 					return err
@@ -378,7 +391,11 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 	if ts.Enabled {
 		t := r.get("tunnel", 0)
 		if r.settle(ctx, t) {
-			if busy, _ := store.ActiveForTarget(ctx, db, "tunnel"); !busy {
+			busy, err := store.ActiveForTarget(ctx, db, "tunnel")
+			if err != nil {
+				return err
+			}
+			if !busy {
 				ins, err := r.C.Engine.Inspect(ctx, r.C.Names.TunnelContainer())
 				if err != nil {
 					return err
@@ -396,7 +413,11 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 	if ds.Enabled {
 		t := r.get("dbadmin", 0)
 		if r.settle(ctx, t) {
-			if busy, _ := store.ActiveForTarget(ctx, db, "dbadmin"); !busy {
+			busy, err := store.ActiveForTarget(ctx, db, "dbadmin")
+			if err != nil {
+				return err
+			}
+			if !busy {
 				need, err := r.C.DBAdminDrift(ctx)
 				if err != nil {
 					t.LastError = err.Error()
@@ -442,8 +463,14 @@ func (r *Reconciler) collectTools(ctx context.Context) error {
 			if err == nil && !op.State.Terminal() {
 				continue
 			}
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				// Owner state unknown: keep the container and retry next pass.
+				continue
+			}
 		}
-		_ = r.C.Engine.Remove(ctx, t.ID)
+		if err := r.C.Engine.Remove(ctx, t.ID); err != nil {
+			r.Log.Warn("remove orphaned tool container", "container", t.ID, "err", err)
+		}
 	}
 	return nil
 }

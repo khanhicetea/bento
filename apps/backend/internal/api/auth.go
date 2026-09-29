@@ -61,7 +61,7 @@ func verifyPassword(encoded, password string) bool {
 // ValidatePassword enforces a minimum operator password strength.
 func ValidatePassword(pw string) error {
 	if len(pw) < 12 || len(pw) > 1024 {
-		return fmt.Errorf("password must be 12-1024 characters")
+		return errors.New("password must be 12-1024 characters")
 	}
 	return nil
 }
@@ -235,7 +235,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	_ = store.PruneSessions(r.Context(), s.Store.DB(), time.Now())
+	if err := store.PruneSessions(r.Context(), s.Store.DB(), time.Now()); err != nil {
+		// Expired sessions are rejected on use; pruning is housekeeping.
+		s.Log.Warn("prune expired sessions", "err", err)
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: SessionCookie, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil, Expires: sess.ExpiresAt,
@@ -244,10 +247,17 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	var revokeErr error
 	if c, err := r.Cookie(SessionCookie); err == nil {
-		_ = store.RevokeSession(r.Context(), s.Store.DB(), tokenHash(c.Value))
+		revokeErr = store.RevokeSession(r.Context(), s.Store.DB(), tokenHash(c.Value))
 	}
 	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	if revokeErr != nil {
+		// The cookie is cleared, but the server-side session is still valid:
+		// report the failure instead of claiming a completed logout.
+		writeError(w, s.Log, fmt.Errorf("revoke session: %w", revokeErr))
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

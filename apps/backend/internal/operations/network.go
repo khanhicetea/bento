@@ -2,7 +2,7 @@ package operations
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/netip"
 	"slices"
 
@@ -94,7 +94,7 @@ func PlanNetworks(used []netip.Prefix) (NetworkSettings, error) {
 		}
 	}
 	if len(picked) < 2 {
-		return NetworkSettings{}, fmt.Errorf("no free /24 subnet available in 10.200.0.0/13")
+		return NetworkSettings{}, errors.New("no free /24 subnet available in 10.200.0.0/13")
 	}
 	base := picked[0].Addr().As4()
 	return NetworkSettings{

@@ -97,6 +97,8 @@ func ListBackupRuns(ctx context.Context, q Q, limit int) ([]BackupRun, error) {
 		if err := rows.Scan(&r.ID, &r.Trigger, &r.State, &r.StartedAt, &r.FinishedAt, &arts, &r.UploadState, &r.Error); err != nil {
 			return nil, err
 		}
+		// Artifacts are display-only history; an unreadable list shows as empty
+		// rather than hiding every run.
 		_ = json.Unmarshal([]byte(arts), &r.Artifacts)
 		out = append(out, r)
 	}

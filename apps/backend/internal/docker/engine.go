@@ -545,7 +545,7 @@ func (s *SDK) Exec(ctx context.Context, id string, req ExecRequest) (ExecResult,
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return ExecResult{}, fmt.Errorf("exec did not finish")
+	return ExecResult{}, errors.New("exec did not finish")
 }
 
 func (s *SDK) ExecAttach(ctx context.Context, id string, req ExecRequest, height, width uint) (*ExecSession, error) {
@@ -583,7 +583,7 @@ func (s *SDK) Logs(ctx context.Context, id string, tail string, follow bool, sin
 		return nil, false, err
 	}
 	if ins == nil {
-		return nil, false, fmt.Errorf("container not found")
+		return nil, false, errors.New("container not found")
 	}
 	rc, err := s.c.ContainerLogs(ctx, id, client.ContainerLogsOptions{
 		ShowStdout: true, ShowStderr: true, Tail: tail, Follow: follow, Since: since, Timestamps: true,

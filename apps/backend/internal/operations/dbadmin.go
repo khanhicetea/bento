@@ -197,7 +197,7 @@ func (c *Controller) applyDBAdmin(ctx context.Context, r *Run) error {
 	}
 	if !s.Enabled {
 		if ins != nil {
-			_ = c.Engine.Stop(ctx, ins.ID, 5*time.Second)
+			_ = c.Engine.Stop(ctx, ins.ID, 5*time.Second) // graceful stop is best effort; Remove forces
 			return c.Engine.Remove(ctx, ins.ID)
 		}
 		return nil
@@ -221,7 +221,7 @@ func (c *Controller) applyDBAdmin(ctx context.Context, r *Run) error {
 			return nil
 		}
 		r.Info(ctx, "database browser changed; recreating its container")
-		_ = c.Engine.Stop(ctx, ins.ID, 5*time.Second)
+		_ = c.Engine.Stop(ctx, ins.ID, 5*time.Second) // graceful stop is best effort; Remove forces
 		if err := c.Engine.Remove(ctx, ins.ID); err != nil {
 			return err
 		}

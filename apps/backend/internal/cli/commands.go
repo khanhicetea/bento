@@ -158,7 +158,7 @@ func readSecret(prompt string) (string, error) {
 		return strings.TrimSpace(string(b)), err
 	}
 	line, err := bufio.NewReader(io.LimitReader(os.Stdin, 8192)).ReadString('\n')
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
@@ -167,7 +167,7 @@ func readSecret(prompt string) (string, error) {
 func confirmPrompt(expected string) (string, error) {
 	fmt.Fprintf(os.Stderr, "Type %q to confirm: ", expected)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
 	return strings.TrimRight(line, "\r\n"), nil
@@ -254,7 +254,7 @@ func (r *runner) run(args []string) error {
 		return nil
 	case "auth":
 		if len(args) < 2 || args[1] != "set-password" {
-			return fmt.Errorf("usage: bento auth set-password")
+			return errors.New("usage: bento auth set-password")
 		}
 		pw, err := readSecret("New operator password: ")
 		if err != nil {
@@ -320,7 +320,7 @@ func (r *runner) run(args []string) error {
 			return nil
 		}
 		if len(args) != 2 {
-			return fmt.Errorf("usage: bento op ID | bento op cancel ID")
+			return errors.New("usage: bento op ID | bento op cancel ID")
 		}
 		var op dto.Operation
 		if err := c.Do(ctx, "GET", "/api/v1/operations/"+args[1], nil, &op, nil); err != nil {
@@ -351,7 +351,7 @@ func (r *runner) run(args []string) error {
 			return err
 		}
 		if len(args) < 2 || args[1] != "add" {
-			return fmt.Errorf("usage: bento service add --engine E --version V")
+			return errors.New("usage: bento service add --engine E --version V")
 		}
 		_, err := c.Mutate(ctx, "POST", "/api/v1/services", dto.CreateServiceRequest{Engine: dto.Engine(*engine), Version: *ver}, r.wait, r.out)
 		return err
@@ -384,7 +384,7 @@ func (r *runner) run(args []string) error {
 					return err
 				}
 				if token == "" {
-					return fmt.Errorf("empty token (use `bento tunnel disable` to disable)")
+					return errors.New("empty token (use `bento tunnel disable` to disable)")
 				}
 			}
 			_, err := c.Mutate(ctx, "PUT", "/api/v1/tunnel/token", dto.SetTunnelTokenRequest{Token: token}, r.wait, r.out)
@@ -425,7 +425,7 @@ func (r *runner) run(args []string) error {
 			_, err := c.Mutate(ctx, "POST", "/api/v1/proxies", p, r.wait, r.out)
 			return err
 		}
-		return fmt.Errorf("usage: bento proxy set --json FILE | bento proxy remove NAME")
+		return errors.New("usage: bento proxy set --json FILE | bento proxy remove NAME")
 	case "retired":
 		return r.retired(ctx, c, args[1:])
 	case "backup":
@@ -454,7 +454,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 
 func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 	if len(args) < 2 && !(len(args) == 1 && args[0] == "create") {
-		return fmt.Errorf("usage: bento app <command> SLUG (see bento help)")
+		return errors.New("usage: bento app <command> SLUG (see bento help)")
 	}
 	cmd := args[0]
 	switch cmd {
@@ -649,7 +649,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		}
 		argv := fs.Args()
 		if len(argv) == 0 {
-			return fmt.Errorf("usage: bento app exec SLUG [--running] -- ARGV...")
+			return errors.New("usage: bento app exec SLUG [--running] -- ARGV...")
 		}
 		var res dto.ExecResult
 		if err := c.Do(ctx, "POST", base+"/exec", dto.ExecRequest{Argv: argv, Workdir: *workdir, Running: *running}, &res, nil); err != nil {
@@ -806,7 +806,7 @@ func (r *runner) retired(ctx context.Context, c *Client, args []string) error {
 		return nil
 	}
 	if len(args) != 2 || args[0] != "prune" {
-		return fmt.Errorf("usage: bento retired | bento retired prune APP_ID")
+		return errors.New("usage: bento retired | bento retired prune APP_ID")
 	}
 	for _, ra := range list.Retired {
 		if ra.AppID != args[1] {
@@ -835,7 +835,7 @@ func (r *runner) retired(ctx context.Context, c *Client, args []string) error {
 
 func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: bento backup run|list|runs|restore|schedule")
+		return errors.New("usage: bento backup run|list|runs|restore|schedule")
 	}
 	switch args[0] {
 	case "run":

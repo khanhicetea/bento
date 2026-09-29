@@ -172,6 +172,8 @@ func (m *ImageManager) IdentityBase(ctx context.Context, imageID string) ([]byte
 	if err != nil {
 		return nil, nil, err
 	}
+	// The cache only saves a probe container next time; a failed write is
+	// harmless, and marshaling two strings cannot fail.
 	raw, _ := json.Marshal(identityCache{Passwd: string(passwd), Group: string(group)})
 	_ = platform.AtomicWrite(cachePath, raw, 0o600, platform.RootOwner)
 	return passwd, group, nil

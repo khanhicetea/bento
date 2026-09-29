@@ -9,7 +9,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -205,7 +207,7 @@ func (g Generations) Stage(files map[string][]byte) (string, error) {
 	}
 	for rel, data := range files {
 		if err := platform.AtomicWrite(filepath.Join(dir, rel), data, 0o644, platform.RootOwner); err != nil {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir) // discard the incomplete candidate
 			return "", err
 		}
 	}
@@ -219,15 +221,20 @@ func (g Generations) Discard(name string) { _ = os.RemoveAll(filepath.Join(g.Dir
 func (g Generations) Promote(name string) error {
 	cand := filepath.Join(g.Dir, name)
 	live := g.Live()
-	if _, err := os.Lstat(live); os.IsNotExist(err) {
+	if _, err := os.Lstat(live); errors.Is(err, fs.ErrNotExist) {
 		return os.Rename(cand, live)
 	}
 	if err := unix.Renameat2(unix.AT_FDCWD, cand, unix.AT_FDCWD, live, unix.RENAME_EXCHANGE); err != nil {
 		return fmt.Errorf("swap edge generation: %w", err)
 	}
 	prev := filepath.Join(g.Dir, "previous")
-	_ = os.RemoveAll(prev)
-	return os.Rename(cand, prev)
+	if err := os.RemoveAll(prev); err != nil {
+		return fmt.Errorf("remove previous edge generation: %w", err)
+	}
+	if err := os.Rename(cand, prev); err != nil {
+		return fmt.Errorf("keep previous edge generation: %w", err)
+	}
+	return nil
 }
 
 // Same reports whether files equal the live generation byte for byte.
@@ -243,7 +250,7 @@ func (g Generations) Same(files map[string][]byte) bool {
 		want, ok := files[rel]
 		got, rerr := os.ReadFile(p)
 		if !ok || rerr != nil || string(got) != string(want) {
-			return fmt.Errorf("differs")
+			return errors.New("differs")
 		}
 		return nil
 	})
@@ -262,7 +269,10 @@ func EnsureBootCert(certsDir string) error {
 	if err != nil {
 		return err
 	}
-	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
+	if err != nil {
+		return err
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial, Subject: pkix.Name{CommonName: "bento-boot", Organization: []string{"Bento"}},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(30, 0, 0),

@@ -3,7 +3,7 @@
 package platform
 
 import (
-	"fmt"
+	"errors"
 	"path/filepath"
 )
 
@@ -15,7 +15,7 @@ type Layout struct {
 
 func NewLayout(root string) (Layout, error) {
 	if root == "" {
-		return Layout{}, fmt.Errorf("stack root is required (--stack or BENTO_STACK_ROOT)")
+		return Layout{}, errors.New("stack root is required (--stack or BENTO_STACK_ROOT)")
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {

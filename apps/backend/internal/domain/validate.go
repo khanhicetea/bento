@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -57,7 +58,7 @@ var reservedSlugs = map[string]bool{
 
 func ValidateSlug(slug string) error {
 	if !slugPattern.MatchString(slug) || strings.Contains(slug, "--") {
-		return fmt.Errorf("must be 3-32 lowercase letters, digits, or single hyphens, starting with a letter")
+		return errors.New("must be 3-32 lowercase letters, digits, or single hyphens, starting with a letter")
 	}
 	if reservedSlugs[slug] {
 		return fmt.Errorf("%q is reserved", slug)
@@ -89,18 +90,18 @@ func CleanRelative(p string) (string, error) {
 		return "", nil
 	}
 	if strings.HasPrefix(p, "/") || strings.ContainsRune(p, 0) {
-		return "", fmt.Errorf("must be a relative path inside the app code directory")
+		return "", errors.New("must be a relative path inside the app code directory")
 	}
 	c := path.Clean(p)
 	if c == ".." || strings.HasPrefix(c, "../") {
-		return "", fmt.Errorf("must stay inside the app code directory")
+		return "", errors.New("must stay inside the app code directory")
 	}
 	if c == "." {
 		return "", nil
 	}
 	for part := range strings.SplitSeq(c, "/") {
 		if strings.HasPrefix(part, ".") {
-			return "", fmt.Errorf("hidden path components are not allowed")
+			return "", errors.New("hidden path components are not allowed")
 		}
 	}
 	return c, nil
@@ -115,7 +116,7 @@ const PrimaryDatabaseSuffix = "main"
 // different apps cannot collide.
 func ValidateDatabaseSuffix(suffix string) error {
 	if !dbSuffixPattern.MatchString(suffix) {
-		return fmt.Errorf("must be 1-30 lowercase letters or digits, starting with a letter (no underscores)")
+		return errors.New("must be 1-30 lowercase letters or digits, starting with a letter (no underscores)")
 	}
 	if suffix == PrimaryDatabaseSuffix {
 		return fmt.Errorf("%q is reserved for the primary database", suffix)
@@ -132,7 +133,7 @@ func ValidateDatabaseName(name string) error {
 
 func ValidateServiceName(name string) error {
 	if !serviceName.MatchString(name) {
-		return fmt.Errorf("must look like mysql84 or postgres17")
+		return errors.New("must look like mysql84 or postgres17")
 	}
 	return nil
 }
@@ -313,13 +314,13 @@ func ValidateRoute(r *Route, field string, errs *ValidationErrors) {
 func ValidateUpstream(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("must be an http(s) URL with a host")
+		return errors.New("must be an http(s) URL with a host")
 	}
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("must not include credentials, query, or fragment")
+		return errors.New("must not include credentials, query, or fragment")
 	}
 	if strings.ContainsAny(raw, " ;{}'\"\\\n\r\t$") {
-		return fmt.Errorf("contains characters not allowed in generated configuration")
+		return errors.New("contains characters not allowed in generated configuration")
 	}
 	return nil
 }
@@ -329,5 +330,5 @@ func ValidateIngress(mode IngressMode) error {
 	case IngressManaged, IngressExternal, IngressNone:
 		return nil
 	}
-	return fmt.Errorf("must be managed, external, or none")
+	return errors.New("must be managed, external, or none")
 }

@@ -179,7 +179,7 @@ func Serve(opts ServeOptions) error {
 	if err != nil {
 		return err
 	}
-	_ = os.Remove(layout.ControlSocket())
+	_ = os.Remove(layout.ControlSocket()) // stale socket of a previous run; Listen reports real problems
 	unixLn, err := net.Listen("unix", layout.ControlSocket())
 	if err != nil {
 		return err
@@ -203,15 +203,19 @@ func Serve(opts ServeOptions) error {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
+	var listenErr error
 	select {
 	case s := <-sigs:
 		log.Info("shutdown requested", "signal", s.String())
 	case err := <-errc:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("listener failed", "err", err)
+			// Returned after the graceful shutdown below so the process exits
+			// non-zero and the service manager can restart it.
+			listenErr = fmt.Errorf("listener failed: %w", err)
 		}
 	}
 	// Stop accepting, checkpoint/drain within a bound; the data plane keeps running.
+	// A shutdown that hits the deadline only drops lingering connections.
 	sctx, scancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer scancel()
 	_ = web.Shutdown(sctx)
@@ -222,5 +226,5 @@ func Serve(opts ServeOptions) error {
 	relay.Reap(true)
 	_ = os.Remove(layout.ControlSocket())
 	log.Info("backend stopped; app containers, ingress, and schedulers keep running")
-	return nil
+	return listenErr
 }

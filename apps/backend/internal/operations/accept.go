@@ -133,7 +133,11 @@ func (c *Controller) CreateApp(ctx context.Context, in CreateAppInput, idem stri
 		return domain.App{}, store.Operation{}, fmt.Errorf("%w: a retained home for %q exists from an earlier app; prune it or restore explicitly", store.ErrConflict, in.Slug)
 	}
 	rng := domain.DefaultUIDRange()
-	_, _ = store.GetSetting(ctx, c.Store.DB(), "uid_range", &rng)
+	// An unreadable configured range is refused rather than silently replaced
+	// by the default, which could allocate outside the operator's range.
+	if _, err := store.GetSetting(ctx, c.Store.DB(), "uid_range", &rng); err != nil {
+		return domain.App{}, store.Operation{}, fmt.Errorf("read uid range: %w", err)
+	}
 	now := time.Now().UTC()
 	app := domain.App{
 		ID: platform.NewAppID(), Slug: in.Slug, Runtime: in.Runtime, Resources: in.Resources,
@@ -554,6 +558,7 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 	if prevErr != nil && !errors.Is(prevErr, os.ErrNotExist) {
 		return store.Operation{}, fmt.Errorf("read existing tunnel token: %w", prevErr)
 	}
+	// rollback is best effort: the Submit error is what the caller reports.
 	rollback := func() {
 		if hadPrev {
 			_ = platform.AtomicWrite(path, prev, 0o440, owner)

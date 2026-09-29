@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -285,7 +286,7 @@ func readBoundedLine(br *bufio.Reader, limit int) (string, error) {
 		} else {
 			buf = append(buf, chunk...)
 		}
-		if err == bufio.ErrBufferFull {
+		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
 		}
 		line := strings.TrimSuffix(string(buf), "\r")

@@ -8,7 +8,9 @@ package dataservices
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,7 +56,7 @@ func (m *Manager) EnsureSecrets(s domain.DataService) error {
 	}
 	pwPath := filepath.Join(dir, "root-password")
 	pw, err := os.ReadFile(pwPath)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		pw = []byte(platform.RandomPassword(32))
 		if err := platform.AtomicWrite(pwPath, pw, 0o400, platform.RootOwner); err != nil {
 			return err
@@ -206,7 +208,7 @@ func (m *Manager) SQL(ctx context.Context, s domain.DataService, containerID, da
 		}
 		req.Cmd = []string{"psql", "-U", "postgres", "-d", database, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1"}
 	default:
-		return "", fmt.Errorf("not a relational service")
+		return "", errors.New("not a relational service")
 	}
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -245,7 +247,7 @@ func (m *Manager) ProvisionBinding(ctx context.Context, s domain.DataService, co
 		return err
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9]+$`).MatchString(b.Password) {
-		return fmt.Errorf("generated password has an unexpected format")
+		return errors.New("generated password has an unexpected format")
 	}
 	switch s.Engine {
 	case domain.EngineMySQL:

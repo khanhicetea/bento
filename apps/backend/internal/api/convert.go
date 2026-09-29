@@ -197,6 +197,8 @@ func opToDTO(o store.Operation, events []store.OpEvent) dto.Operation {
 		CreatedAt: o.CreatedAt, StartedAt: o.StartedAt, FinishedAt: o.FinishedAt,
 	}
 	if len(o.Result) > 2 {
+		// The result was marshaled by the controller; it is informational, so
+		// an undecodable one is omitted rather than failing the whole view.
 		_ = json.Unmarshal(o.Result, &out.Result)
 	}
 	for _, e := range events {

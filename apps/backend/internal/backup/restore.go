@@ -3,8 +3,10 @@ package backup
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,6 +33,8 @@ func (d Deps) RestoreRelational(ctx context.Context, app domain.App, b domain.Bi
 	switch svc.Engine {
 	case domain.EngineMySQL:
 		peek := bufio.NewReaderSize(src, dumpPeekBytes)
+		// A short dump returns fewer bytes and io.EOF; the charset sniff only
+		// needs whatever is available.
 		head, _ := peek.Peek(dumpPeekBytes)
 		reset := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
 			database, database, mysqlCharsetClause(head), database, b.Username)
@@ -70,7 +74,7 @@ func (d Deps) RestoreRelational(ctx context.Context, app domain.App, b domain.Bi
 			return fmt.Errorf("postgres restore failed: %s", strings.TrimSpace(stderr.String()))
 		}
 	default:
-		return fmt.Errorf("not a relational binding")
+		return errors.New("not a relational binding")
 	}
 	return nil
 }
@@ -93,30 +97,45 @@ func (d Deps) RestoreSQLite(app domain.App, b domain.Binding, artifactPath strin
 		return err
 	}
 	head := make([]byte, 16)
-	n, _ := io.ReadFull(src, head)
-	if n < 16 || string(head[:15]) != "SQLite format 3" {
-		f.Close()
-		os.Remove(partial)
-		return fmt.Errorf("artifact is not a SQLite database")
+	n, err := io.ReadFull(src, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		_ = f.Close()
+		_ = os.Remove(partial)
+		return fmt.Errorf("read artifact: %w", err)
 	}
-	if _, err := f.Write(head); err == nil {
+	if n < 16 || string(head[:15]) != "SQLite format 3" {
+		_ = f.Close()
+		_ = os.Remove(partial)
+		return errors.New("artifact is not a SQLite database")
+	}
+	// Any write, copy, sync, or close failure aborts before the rename so a
+	// truncated database is never published.
+	_, err = f.Write(head)
+	if err == nil {
 		_, err = io.Copy(f, src)
 	}
 	if err == nil {
 		err = f.Sync()
 	}
-	f.Close()
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
 	if err != nil {
-		os.Remove(partial)
+		_ = os.Remove(partial)
 		return err
 	}
 	if err := os.Lchown(partial, app.UID, app.GID); err != nil {
-		os.Remove(partial)
+		_ = os.Remove(partial)
 		return err
 	}
 	target := filepath.Join(dir, app.Slug+".db")
+	// Stale journal files of the replaced database must not be replayed
+	// against the restored file; they may or may not exist.
 	for _, sfx := range []string{"-wal", "-shm"} {
-		_ = os.Remove(target + sfx)
+		if err := os.Remove(target + sfx); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			_ = os.Remove(partial)
+			return fmt.Errorf("remove stale journal: %w", err)
+		}
 	}
 	return os.Rename(partial, target)
 }

@@ -2,6 +2,8 @@ package platform
 
 import (
 	"bufio"
+	"errors"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -42,10 +44,16 @@ func (h FileHostIDs) group() string {
 	return "/etc/group"
 }
 
+// idInColonFile reports whether id appears in the third field of path. A
+// missing file has no IDs; a file that cannot be read fully counts as a
+// collision, so the allocator skips the ID instead of risking a clash.
 func idInColonFile(path string, id int) bool {
 	f, err := os.Open(path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return false
+	}
+	if err != nil {
+		return true
 	}
 	defer f.Close()
 	want := strconv.Itoa(id)
@@ -56,7 +64,7 @@ func idInColonFile(path string, id int) bool {
 			return true
 		}
 	}
-	return false
+	return sc.Err() != nil
 }
 
 // NoHostIDs never reports a collision (tests).

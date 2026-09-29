@@ -3,7 +3,9 @@ package stack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -65,7 +67,7 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 		return fmt.Errorf("refusing to import: %s is not empty", layout.Root)
 	}
 	createdRoot := false
-	if _, statErr := os.Lstat(layout.Root); os.IsNotExist(statErr) {
+	if _, statErr := os.Lstat(layout.Root); errors.Is(statErr, fs.ErrNotExist) {
 		createdRoot = true
 	}
 	var createdVolumes []string
@@ -74,16 +76,24 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 			return
 		}
 		cctx := context.WithoutCancel(ctx)
+		// Cleanup is best effort; the import error is what the caller reports,
+		// and leftovers are logged so the operator can remove them.
 		for _, v := range createdVolumes {
 			log.Warn("import failed; removing volume created by this import", "volume", v)
-			_ = removeVolume(cctx, engine, v)
+			if rerr := removeVolume(cctx, engine, v); rerr != nil {
+				log.Warn("remove imported volume", "volume", v, "err", rerr)
+			}
 		}
 		if createdRoot {
-			_ = os.RemoveAll(layout.Root)
+			if rerr := os.RemoveAll(layout.Root); rerr != nil {
+				log.Warn("remove partially imported stack root", "root", layout.Root, "err", rerr)
+			}
 		} else {
 			entries, _ := os.ReadDir(layout.Root)
 			for _, e := range entries {
-				_ = os.RemoveAll(filepath.Join(layout.Root, e.Name()))
+				if rerr := os.RemoveAll(filepath.Join(layout.Root, e.Name())); rerr != nil {
+					log.Warn("remove partially imported entry", "path", filepath.Join(layout.Root, e.Name()), "err", rerr)
+				}
 			}
 		}
 	}()
@@ -95,7 +105,7 @@ func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts Im
 		return err
 	}
 	err = transfer.ExtractRoot(f, layout.Root)
-	f.Close()
+	_ = f.Close() // read-only; the extract result is what matters
 	if err != nil {
 		return fmt.Errorf("extract: %w", err)
 	}

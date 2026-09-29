@@ -53,7 +53,7 @@ func decode(w http.ResponseWriter, r *http.Request, out any) error {
 		return &apiError{status: http.StatusBadRequest, code: dto.ErrorCodeValidation, msg: "invalid JSON: trailing data after object"}
 	}
 	var extra json.RawMessage
-	if err := dec.Decode(&extra); err != io.EOF {
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return &apiError{status: http.StatusBadRequest, code: dto.ErrorCodeValidation, msg: "invalid JSON: trailing data after object"}
 	}
 	return nil

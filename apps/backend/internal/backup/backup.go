@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -71,7 +72,7 @@ func ext(compression string) (string, error) {
 	case "none":
 		return "", nil
 	}
-	return "", fmt.Errorf("compression must be zstd, gzip, or none")
+	return "", errors.New("compression must be zstd, gzip, or none")
 }
 
 type compressor struct {
@@ -104,7 +105,7 @@ func Decompress(path string) (io.ReadCloser, error) {
 	case strings.HasSuffix(path, ".zst"):
 		z, err := zstd.NewReader(f)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 		return struct {
@@ -114,13 +115,13 @@ func Decompress(path string) (io.ReadCloser, error) {
 	case strings.HasSuffix(path, ".gz"):
 		g, err := gzip.NewReader(f)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 		return struct {
 			io.Reader
 			io.Closer
-		}{g, closerFunc(func() error { g.Close(); return f.Close() })}, nil
+		}{g, closerFunc(func() error { return errors.Join(g.Close(), f.Close()) })}, nil
 	}
 	return f, nil
 }
@@ -198,7 +199,9 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 	if err != nil {
 		return Artifact{}, err
 	}
-	cleanup := func() { f.Close(); os.Remove(partial) }
+	// cleanup discards the partial artifact after a failure; the original
+	// error is what the caller reports.
+	cleanup := func() { _ = f.Close(); _ = os.Remove(partial) }
 	comp, err := newCompressor(f, compression)
 	if err != nil {
 		cleanup()
@@ -221,7 +224,7 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 		return Artifact{}, err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(partial)
+		_ = os.Remove(partial)
 		return Artifact{}, err
 	}
 	size, err := publish(partial, final)
@@ -330,6 +333,8 @@ func (f *definerFilter) Flush() error {
 	return err
 }
 
+// limitWriter keeps at most n bytes of diagnostic output (stderr excerpts in
+// memory). It always reports success so the producer is never interrupted.
 type limitWriter struct {
 	w io.Writer
 	n int
@@ -398,7 +403,7 @@ func (d Deps) dumpSQLite(ctx context.Context, t Target, w io.Writer) error {
 	snap := filepath.Join(staging, "snapshot.db")
 	info, err := os.Lstat(snap)
 	if err != nil || !info.Mode().IsRegular() {
-		return fmt.Errorf("sqlite backup produced no snapshot")
+		return errors.New("sqlite backup produced no snapshot")
 	}
 	f, err := os.Open(snap)
 	if err != nil {
@@ -414,7 +419,7 @@ func ListArtifacts(backupsDir string) ([]Artifact, error) {
 	var out []Artifact
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -499,10 +504,10 @@ func ResolveArtifact(backupsDir, rel string) (string, error) {
 	}
 	info, err := os.Lstat(clean)
 	if err != nil || !info.Mode().IsRegular() {
-		return "", fmt.Errorf("artifact not found")
+		return "", errors.New("artifact not found")
 	}
 	if strings.HasPrefix(filepath.Base(clean), ".") || !artifactPattern.MatchString(filepath.Base(clean)) {
-		return "", fmt.Errorf("artifact not found")
+		return "", errors.New("artifact not found")
 	}
 	return clean, nil
 }

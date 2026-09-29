@@ -4,7 +4,7 @@
 package runtime
 
 import (
-	"fmt"
+	"errors"
 	"maps"
 	"regexp"
 )
@@ -43,7 +43,7 @@ var stackNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,22}[a-z0-9]$`)
 // ValidateStackName checks the human stack name used as a Docker name prefix.
 func ValidateStackName(name string) error {
 	if !stackNamePattern.MatchString(name) {
-		return fmt.Errorf("stack name must be 2-24 lowercase letters, digits, or hyphens, starting with a letter")
+		return errors.New("stack name must be 2-24 lowercase letters, digits, or hyphens, starting with a letter")
 	}
 	return nil
 }

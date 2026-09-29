@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/netip"
@@ -298,7 +299,7 @@ func (f *Fake) Exec(_ context.Context, id string, req ExecRequest) (ExecResult, 
 }
 
 func (f *Fake) ExecAttach(context.Context, string, ExecRequest, uint, uint) (*ExecSession, error) {
-	return nil, fmt.Errorf("fake engine does not support attach")
+	return nil, errors.New("fake engine does not support attach")
 }
 func (f *Fake) ExecResize(context.Context, string, uint, uint) error { return nil }
 func (f *Fake) ExecExitCode(context.Context, string) (int, bool, error) {
@@ -411,7 +412,7 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 func (f *Fake) CopyFrom(context.Context, string, string) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("fake engine does not support copy")
+	return nil, errors.New("fake engine does not support copy")
 }
 
 // SetRunning simulates an out-of-band state change (crash, manual stop).

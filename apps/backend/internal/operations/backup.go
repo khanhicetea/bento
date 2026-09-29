@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -189,6 +190,9 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 	lock, err := platform.TryLock(c.Layout.BackupLock())
+	if err != nil && !errors.Is(err, platform.ErrLocked) {
+		return nil, fmt.Errorf("acquire backup lock: %w", err)
+	}
 	if err != nil {
 		return nil, Fail("backup-running", "Wait for the running backup batch to finish.", "another backup batch holds the lock")
 	}
@@ -202,7 +206,9 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		for _, a := range arts {
 			paths = append(paths, a.Path)
 		}
-		_ = store.FinishBackupRun(context.WithoutCancel(ctx), c.Store.DB(), store.BackupRun{ID: runID, State: state, Artifacts: paths, UploadState: upload, Error: msg})
+		if err := store.FinishBackupRun(context.WithoutCancel(ctx), c.Store.DB(), store.BackupRun{ID: runID, State: state, Artifacts: paths, UploadState: upload, Error: msg}); err != nil {
+			c.Log.Warn("record backup run", "run", runID, "err", err)
+		}
 	}
 	targets, err := c.backupTargets(ctx, req)
 	if err != nil {
@@ -244,8 +250,12 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		finish("failed", "", msg, arts)
 		return map[string]any{"artifacts": arts}, Fail("backup-failed", "No target could be dumped; retention was not applied. Fix the failing targets and rerun.", "%s", msg)
 	}
-	sched, _, _ := c.BackupSchedule(ctx)
-	if (req.Trigger == "schedule" || req.Scope == "all") && len(okKeys) > 0 {
+	sched, _, schedErr := c.BackupSchedule(ctx)
+	if schedErr != nil {
+		// Never prune with the default retention in place of the operator's.
+		r.Warn(ctx, "backup settings unreadable; retention skipped: %v", schedErr)
+	}
+	if schedErr == nil && (req.Trigger == "schedule" || req.Scope == "all") && len(okKeys) > 0 {
 		if err := r.Phase(ctx, "retention"); err != nil {
 			return nil, err
 		}
@@ -440,7 +450,7 @@ func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
 	if due.After(now) {
 		if st.LastSlot == "" {
 			st.LastSlot = platform.FormatTime(now)
-			_ = store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st)
+			c.saveScheduleState(ctx, st)
 		}
 		return
 	}
@@ -456,7 +466,7 @@ func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
 		// The backend was down across this slot: record, do not replay.
 		st.Missed++
 		st.LastState = "missed"
-		_ = store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st)
+		c.saveScheduleState(ctx, st)
 		c.Log.Warn("scheduled backup slot missed while backend was unavailable", "slot", due)
 		return
 	}
@@ -467,6 +477,12 @@ func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
 	} else {
 		st.LastState = "submitted " + op.ID
 	}
+	c.saveScheduleState(ctx, st)
+}
+
+// saveScheduleState persists the scheduler's bookkeeping. It runs on the
+// background ticker, so a failure is logged rather than returned.
+func (c *Controller) saveScheduleState(ctx context.Context, st ScheduleState) {
 	if err := store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st); err != nil && !errors.Is(err, context.Canceled) {
 		c.Log.Warn("schedule state", "err", err)
 	}
@@ -493,7 +509,7 @@ func (c *Controller) handleBackupDelete(ctx context.Context, r *Run) (any, error
 	if err := r.Phase(ctx, "remove-artifact"); err != nil {
 		return nil, err
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	r.Info(ctx, "removed backup %s", r.Op.TargetID)

@@ -65,14 +65,14 @@ func (m *RelayManager) TargetSocket(app domain.App) (string, error) {
 	}
 	info, err := os.Lstat(sock)
 	if err != nil {
-		return "", fmt.Errorf("scheduler socket unavailable (is the app running?)")
+		return "", errors.New("scheduler socket unavailable (is the app running?)")
 	}
 	if info.Mode()&os.ModeSocket == 0 {
-		return "", fmt.Errorf("scheduler socket path is not a socket")
+		return "", errors.New("scheduler socket path is not a socket")
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || int(st.Uid) != app.UID {
-		return "", fmt.Errorf("scheduler socket is not owned by the app identity")
+		return "", errors.New("scheduler socket is not owned by the app identity")
 	}
 	return sock, nil
 }
@@ -117,18 +117,18 @@ func (m *RelayManager) start(app domain.App, target string) (*relay, error) {
 		return nil, err
 	}
 	sock := m.Layout.RelaySocket(app.ID)
-	_ = os.Remove(sock)
+	_ = os.Remove(sock) // stale socket of an earlier relay; Listen reports real problems
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sock, Net: "unix"})
 	if err != nil {
 		return nil, err
 	}
 	ln.SetUnlinkOnClose(false)
 	if err := os.Chmod(sock, 0o600); err != nil {
-		ln.Close()
+		_ = ln.Close()
 		return nil, err
 	}
 	f, err := ln.File()
-	ln.Close()
+	_ = ln.Close() // the duplicated descriptor in f keeps the socket open
 	if err != nil {
 		return nil, err
 	}

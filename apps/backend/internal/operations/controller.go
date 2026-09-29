@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -515,6 +516,7 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	result, err := func() (res any, err error) {
 		defer func() {
 			if p := recover(); p != nil {
+				c.Log.Error("operation panicked", "op", op.ID, "kind", op.Kind, "panic", p, "stack", string(debug.Stack()))
 				err = Fail("internal", "Report this failure with the operation id.", "unexpected failure: %v", p)
 			}
 		}()
@@ -522,23 +524,16 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	}()
 	var raw json.RawMessage
 	if result != nil {
-		raw, _ = json.Marshal(result)
+		var merr error
+		if raw, merr = json.Marshal(result); merr != nil {
+			c.Log.Error("encode operation result", "op", op.ID, "kind", op.Kind, "err", merr)
+		}
 	}
-	state, code, msg, guidance := store.OpSucceeded, "", "", ""
-	var oe *OpError
-	switch {
-	case err == nil:
-	case errors.Is(err, ErrCancelled):
-		state, code, msg = store.OpCancelled, "cancelled", err.Error()
-		guidance = "Effects completed before cancellation remain in place; inspect the target status."
-	case errors.As(err, &oe):
-		state, code, msg, guidance = store.OpFailed, oe.Code, oe.Message, oe.Guidance
-	default:
-		state, code, msg = store.OpFailed, "failed", err.Error()
-		guidance = "Inspect the operation events and target status, then retry explicitly if appropriate."
-	}
+	state, code, msg, guidance := outcome(err)
 	if err != nil {
-		_ = store.AppendEvent(context.WithoutCancel(ctx), db, op.ID, "error", msg)
+		if aerr := store.AppendEvent(context.WithoutCancel(ctx), db, op.ID, "error", msg); aerr != nil {
+			c.Log.Warn("record operation event", "op", op.ID, "err", aerr)
+		}
 		c.Log.Warn("operation failed", "op", op.ID, "kind", op.Kind, "code", code, "err", msg)
 	} else {
 		c.Log.Info("operation succeeded", "op", op.ID, "kind", op.Kind)
@@ -547,6 +542,23 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 		c.Log.Error("finish operation", "op", op.ID, "err", ferr)
 	}
 	c.notify(op.ID)
+}
+
+// outcome maps a handler's result error to the terminal state, error code,
+// message, and guidance stored on the operation.
+func outcome(err error) (state store.OpState, code, msg, guidance string) {
+	if err == nil {
+		return store.OpSucceeded, "", "", ""
+	}
+	if errors.Is(err, ErrCancelled) {
+		return store.OpCancelled, "cancelled", err.Error(),
+			"Effects completed before cancellation remain in place; inspect the target status."
+	}
+	if oe, ok := errors.AsType[*OpError](err); ok {
+		return store.OpFailed, oe.Code, oe.Message, oe.Guidance
+	}
+	return store.OpFailed, "failed", err.Error(),
+		"Inspect the operation events and target status, then retry explicitly if appropriate."
 }
 
 // Subscribe returns a channel of operation ids whose state changed.
@@ -598,9 +610,11 @@ func (r *Run) Phase(ctx context.Context, phase string) error {
 		return ErrCancelled
 	}
 	r.Op.Phase = phase
-	_ = store.SetPhase(ctx, db, r.Op.ID, phase)
-	_ = store.AppendEvent(ctx, db, r.Op.ID, "info", "phase: "+phase)
-	r.c.notify(r.Op.ID)
+	// Progress records are advisory: a failed write must not fail the effect.
+	if err := store.SetPhase(ctx, db, r.Op.ID, phase); err != nil && !errors.Is(err, context.Canceled) {
+		r.c.Log.Warn("record operation phase", "op", r.Op.ID, "phase", phase, "err", err)
+	}
+	r.event(ctx, "info", "phase: "+phase)
 	return nil
 }
 
@@ -611,12 +625,19 @@ func (r *Run) Cancelled(ctx context.Context) bool {
 }
 
 func (r *Run) Info(ctx context.Context, format string, args ...any) {
-	_ = store.AppendEvent(ctx, r.c.Store.DB(), r.Op.ID, "info", fmt.Sprintf(format, args...))
-	r.c.notify(r.Op.ID)
+	r.event(ctx, "info", fmt.Sprintf(format, args...))
 }
 
 func (r *Run) Warn(ctx context.Context, format string, args ...any) {
-	_ = store.AppendEvent(ctx, r.c.Store.DB(), r.Op.ID, "warn", fmt.Sprintf(format, args...))
+	r.event(ctx, "warn", fmt.Sprintf(format, args...))
+}
+
+// event appends to the operation journal and wakes subscribers. The journal is
+// advisory, so a failed write is logged (without the message) and not returned.
+func (r *Run) event(ctx context.Context, level, msg string) {
+	if err := store.AppendEvent(ctx, r.c.Store.DB(), r.Op.ID, level, msg); err != nil && !errors.Is(err, context.Canceled) {
+		r.c.Log.Warn("record operation event", "op", r.Op.ID, "level", level, "err", err)
+	}
 	r.c.notify(r.Op.ID)
 }
 

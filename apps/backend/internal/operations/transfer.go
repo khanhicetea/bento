@@ -2,6 +2,7 @@ package operations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,17 +44,17 @@ func (c *Controller) SubmitExport(ctx context.Context, dest, confirm, idem strin
 
 func validateExportDest(root, dest string) error {
 	if !filepath.IsAbs(dest) || filepath.Clean(dest) != dest {
-		return fmt.Errorf("must be a clean absolute path")
+		return errors.New("must be a clean absolute path")
 	}
 	if dest == root || strings.HasPrefix(dest, root+"/") || strings.HasPrefix(root, dest+"/") {
-		return fmt.Errorf("must be outside the stack root")
+		return errors.New("must be outside the stack root")
 	}
 	empty, err := platform.DirIsEmptyOrMissing(dest)
 	if err != nil {
 		return err
 	}
 	if !empty {
-		return fmt.Errorf("must be empty or not exist")
+		return errors.New("must be empty or not exist")
 	}
 	return nil
 }
@@ -195,7 +196,9 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 		return nil, err
 	}
 	err = transfer.ArchiveRoot(c.Layout.Root, f, RootSkip)
-	f.Close()
+	if cerr := f.Close(); err == nil && cerr != nil {
+		err = fmt.Errorf("close root archive: %w", cerr)
+	}
 	if err != nil {
 		return nil, err
 	}

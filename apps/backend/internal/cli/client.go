@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
@@ -68,7 +70,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hea
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "connection refused") {
+		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
 			return fmt.Errorf("the Bento backend is not running for %s (start it with `bento serve --stack %s`)", c.Layout.Root, c.Layout.Root)
 		}
 		return err
@@ -84,7 +86,10 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any, hea
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response from %s %s: %w", method, path, err)
+	}
+	return nil
 }
 
 // Mutate submits a mutation with a fresh idempotency key so a transport
@@ -98,7 +103,7 @@ func (c *Client) Mutate(ctx context.Context, method, path string, body any, wait
 		if err == nil {
 			break
 		}
-		if _, ok := err.(*APIError); ok {
+		if _, ok := errors.AsType[*APIError](err); ok {
 			return acc, err
 		}
 		time.Sleep(time.Second)
@@ -120,7 +125,7 @@ func (c *Client) Mutate(ctx context.Context, method, path string, body any, wait
 		if op.Guidance != "" {
 			msg += "\nguidance: " + op.Guidance
 		}
-		return acc, fmt.Errorf("%s", msg)
+		return acc, errors.New(msg)
 	}
 	return acc, nil
 }

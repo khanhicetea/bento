@@ -206,7 +206,9 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 	}
 	var dreq DeployRequest
 	if len(r.Op.Request) > 0 {
-		_ = r.Decode(&dreq)
+		if err := r.Decode(&dreq); err != nil {
+			return nil, fmt.Errorf("decode deploy request: %w", err)
+		}
 	}
 	if dreq.Trigger == "" {
 		dreq.Trigger = DeployTriggerManual

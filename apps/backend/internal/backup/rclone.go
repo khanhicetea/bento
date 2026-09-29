@@ -80,7 +80,7 @@ func ReadRcloneConfig(dir string) (RcloneConfig, error) {
 	}
 	defer f.Close()
 	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
-		return out, fmt.Errorf("rclone config is not a regular file")
+		return out, errors.New("rclone config is not a regular file")
 	}
 	out.Present = true
 	sc := bufio.NewScanner(io.LimitReader(f, 1<<20))
