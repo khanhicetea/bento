@@ -278,7 +278,7 @@ func (c *Controller) Start(ctx context.Context) {
 			if c.stopping.Load() || ctx.Err() != nil {
 				return
 			}
-			started, err := c.dispatch(ctx)
+			started, err := c.safeDispatch(ctx)
 			if err != nil {
 				c.Log.Error("dequeue operations", "err", err)
 				select {
@@ -299,6 +299,22 @@ func (c *Controller) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// safeDispatch runs dispatch, turning a panic into an error so the executor
+// loop logs it and retries instead of stopping the backend. The running-set
+// bookkeeping stays consistent: dispatch hands an operation to its worker
+// (which owns the matching end) right after begin, with nothing that can
+// panic in between, so a panic only ever abandons operations it has not
+// begun, and those stay queued for the next pass.
+func (c *Controller) safeDispatch(ctx context.Context) (started bool, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			c.Log.Error("operation dispatch panicked", "panic", p, "stack", string(debug.Stack()))
+			err = fmt.Errorf("operation dispatch panicked: %v", p)
+		}
+	}()
+	return c.dispatch(ctx)
 }
 
 // dispatch starts every queued operation that can run now, oldest first, up
