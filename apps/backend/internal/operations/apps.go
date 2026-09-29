@@ -957,13 +957,27 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 		validate []string
 		reload   []string
 	}{
-		{ch.Frontend, runtime.ScopeFrontend, "local nginx",
-			[]string{"nginx", "-t", "-q", "-e", "stderr", "-c", "/etc/bento/nginx.conf"},
-			[]string{"nginx", "-e", "stderr", "-c", "/etc/bento/nginx.conf", "-s", "reload"}},
-		{ch.Pool, runtime.ScopePool, "php-fpm", []string{"php-fpm", "-t", "--fpm-config", "/etc/bento/php-fpm.conf"},
-			[]string{"/package/admin/s6/command/s6-svc", "-r", "/run/service/php-fpm"}},
-		{ch.Scheduler, runtime.ScopeScheduler, "scheduler", []string{"minicrond", "validate", "/etc/bento/minicrond.toml"},
-			[]string{"minicrond", "reload"}},
+		{
+			changed:  ch.Frontend,
+			scope:    runtime.ScopeFrontend,
+			name:     "local nginx",
+			validate: []string{"nginx", "-t", "-q", "-e", "stderr", "-c", "/etc/bento/nginx.conf"},
+			reload:   []string{"nginx", "-e", "stderr", "-c", "/etc/bento/nginx.conf", "-s", "reload"},
+		},
+		{
+			changed:  ch.Pool,
+			scope:    runtime.ScopePool,
+			name:     "php-fpm",
+			validate: []string{"php-fpm", "-t", "--fpm-config", "/etc/bento/php-fpm.conf"},
+			reload:   []string{"/package/admin/s6/command/s6-svc", "-r", "/run/service/php-fpm"},
+		},
+		{
+			changed:  ch.Scheduler,
+			scope:    runtime.ScopeScheduler,
+			name:     "scheduler",
+			validate: []string{"minicrond", "validate", "/etc/bento/minicrond.toml"},
+			reload:   []string{"minicrond", "reload"},
+		},
 	}
 	for _, s := range steps {
 		if !s.changed {

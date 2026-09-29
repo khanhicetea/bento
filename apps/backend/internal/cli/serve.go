@@ -78,17 +78,17 @@ func DefaultOrigins(host string, port int) []string {
 	return out
 }
 
+// validateOrigin accepts only a bare http(s) origin: scheme and host, an
+// optional trailing slash, no path or query.
 func validateOrigin(o string) error {
-	u, err := url.Parse(o)
-	if err != nil {
-		return fmt.Errorf("invalid origin %q (expected scheme://host[:port])", o)
+	if u, err := url.Parse(o); err == nil {
+		validScheme := u.Scheme == "http" || u.Scheme == "https"
+		bareHost := u.Host != "" && (u.Path == "" || u.Path == "/") && u.RawQuery == ""
+		if validScheme && bareHost {
+			return nil
+		}
 	}
-	validScheme := u.Scheme == "http" || u.Scheme == "https"
-	bareHost := u.Host != "" && (u.Path == "" || u.Path == "/") && u.RawQuery == ""
-	if !validScheme || !bareHost {
-		return fmt.Errorf("invalid origin %q (expected scheme://host[:port])", o)
-	}
-	return nil
+	return fmt.Errorf("invalid origin %q (expected scheme://host[:port])", o)
 }
 
 func Serve(opts ServeOptions) error {
