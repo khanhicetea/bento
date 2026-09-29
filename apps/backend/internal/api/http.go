@@ -6,6 +6,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,8 @@ import (
 
 // MaxBodyBytes bounds JSON request bodies.
 const MaxBodyBytes = 1 << 20
+
+const statusClientClosedRequest = 499
 
 var errUnsupportedMedia = errors.New("content type must be application/json")
 
@@ -126,6 +129,9 @@ func writeError(w http.ResponseWriter, log *slog.Logger, err error) {
 		ae = &apiError{status: http.StatusConflict, code: dto.ErrorCodeConflict, msg: err.Error()}
 	case errors.As(err, &oe):
 		ae = &apiError{status: http.StatusServiceUnavailable, code: dto.ErrorCodeUnavailable, msg: oe.Message}
+	case errors.Is(err, context.Canceled):
+		log.Debug("request canceled by client", "err", err)
+		ae = &apiError{status: statusClientClosedRequest, code: dto.ErrorCodeUnavailable, msg: "request canceled"}
 	default:
 		log.Error("request failed", "err", err)
 		ae = &apiError{status: http.StatusInternalServerError, code: dto.ErrorCodeInternal, msg: "internal error; see backend log"}
