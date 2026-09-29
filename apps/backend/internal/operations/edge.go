@@ -307,13 +307,11 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	gens := c.edgeGenerations()
 	changed := !gens.Same(files)
 	if changed {
-		if _, ok, err := c.Engine.ImageID(ctx, domain.EdgeImage); err != nil {
-			return err
-		} else if !ok {
+		if err := docker.EnsureImage(ctx, c.Engine, domain.EdgeImage, func() error {
 			r.Info(ctx, "pulling edge image")
-			if err := c.Engine.PullImage(ctx, domain.EdgeImage, nil); err != nil {
-				return err
-			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		cand, err := gens.Stage(files)
 		if err != nil {
@@ -472,12 +470,8 @@ func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 			return err
 		}
 	}
-	if _, ok, err := c.Engine.ImageID(ctx, domain.TunnelImage); err != nil {
+	if err := docker.EnsureImage(ctx, c.Engine, domain.TunnelImage, nil); err != nil {
 		return err
-	} else if !ok {
-		if err := c.Engine.PullImage(ctx, domain.TunnelImage, nil); err != nil {
-			return err
-		}
 	}
 	id, err := c.Engine.Create(ctx, spec)
 	if err != nil {

@@ -130,10 +130,7 @@ func (d Deps) checkRemote(remote string) error {
 }
 
 func (d Deps) ensureRcloneImage(ctx context.Context) error {
-	if _, ok, err := d.Engine.ImageID(ctx, domain.RcloneImage); err != nil || ok {
-		return err
-	}
-	return d.Engine.PullImage(ctx, domain.RcloneImage, nil)
+	return docker.EnsureImage(ctx, d.Engine, domain.RcloneImage, nil)
 }
 
 // rcloneSpec is the hardened shape shared by upload, test, and shell

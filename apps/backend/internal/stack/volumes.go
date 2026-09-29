@@ -20,12 +20,8 @@ func restoreVolume(
 	names runtime.Names,
 	image, volume, dir, file string,
 ) error {
-	if _, ok, err := engine.ImageID(ctx, image); err != nil {
+	if err := docker.EnsureImage(ctx, engine, image, nil); err != nil {
 		return err
-	} else if !ok {
-		if err := engine.PullImage(ctx, image, nil); err != nil {
-			return err
-		}
 	}
 	opID := "import-" + platform.RandomHex(5)
 	id, err := engine.Create(ctx, docker.ContainerSpec{

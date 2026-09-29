@@ -163,6 +163,21 @@ type Engine interface {
 	Top(ctx context.Context, id string) ([]Process, error)
 }
 
+// EnsureImage pulls ref when it is not present locally. beforePull, when not
+// nil, runs only when a pull is needed (to record progress or honor
+// cancellation first); its error aborts the pull.
+func EnsureImage(ctx context.Context, e Engine, ref string, beforePull func() error) error {
+	if _, ok, err := e.ImageID(ctx, ref); err != nil || ok {
+		return err
+	}
+	if beforePull != nil {
+		if err := beforePull(); err != nil {
+			return err
+		}
+	}
+	return e.PullImage(ctx, ref, nil)
+}
+
 // SDK implements Engine with the moby client.
 type SDK struct {
 	c *client.Client

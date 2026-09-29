@@ -234,15 +234,10 @@ func (c *Controller) applyDBAdmin(ctx context.Context, r *Run) error {
 			return err
 		}
 	}
-	if _, ok, err := c.Engine.ImageID(ctx, domain.AdminerImage); err != nil {
+	if err := docker.EnsureImage(ctx, c.Engine, domain.AdminerImage, func() error {
+		return r.Phase(ctx, "pull-image")
+	}); err != nil {
 		return err
-	} else if !ok {
-		if err := r.Phase(ctx, "pull-image"); err != nil {
-			return err
-		}
-		if err := c.Engine.PullImage(ctx, domain.AdminerImage, nil); err != nil {
-			return err
-		}
 	}
 	id, err := c.Engine.Create(ctx, spec)
 	if err != nil {
