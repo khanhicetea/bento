@@ -35,3 +35,17 @@ func TestServeRejectsOutOfRangeOpConcurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateOriginAcceptsBareOriginsWithStableMessage(t *testing.T) {
+	for _, ok := range []string{"http://localhost:5173", "https://bento.example.com", "https://bento.example.com/"} {
+		if err := validateOrigin(ok); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"%zz", "ftp://host", "http://host?q=1", "http://host/path"} {
+		want := `invalid origin "` + bad + `" (expected scheme://host[:port])`
+		if err := validateOrigin(bad); err == nil || err.Error() != want {
+			t.Errorf("%s: got %v, want %s", bad, err, want)
+		}
+	}
+}

@@ -99,3 +99,49 @@ func TestEdgeSpecRejectsPersistedBadBind(t *testing.T) {
 		t.Fatalf("expected edge-settings-invalid, got %v", err)
 	}
 }
+
+// The tunnel pulls its image only when missing, recreates only its own
+// container on token rotation, and is removed when disabled.
+func TestTunnelApplyPullsRotatesAndRemoves(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	name := h.c.Names.TunnelContainer()
+	h.mustSucceed(h.c.SetTunnelToken(ctx, strings.Repeat("a", 40), ""))
+	if n := h.fake.CallCount("PullImage " + domain.TunnelImage); n != 1 {
+		t.Fatalf("missing tunnel image must be pulled once, pulled %d", n)
+	}
+	first, _ := h.fake.Inspect(ctx, name)
+	if first == nil || !first.State.Running {
+		t.Fatal("tunnel container not running")
+	}
+	h.mustSucceed(h.c.SetTunnelToken(ctx, strings.Repeat("b", 40), ""))
+	second, _ := h.fake.Inspect(ctx, name)
+	if second == nil || second.ID == first.ID || !second.State.Running {
+		t.Fatal("token rotation must recreate the tunnel container")
+	}
+	if n := h.fake.CallCount("PullImage"); n != 1 {
+		t.Fatalf("present image must not be pulled again, pulled %d", n)
+	}
+	h.mustSucceed(h.c.SetTunnelToken(ctx, "", ""))
+	if gone, _ := h.fake.Inspect(ctx, name); gone != nil {
+		t.Fatal("disabling the tunnel must remove its container")
+	}
+}
+
+// A failed tunnel image pull fails the operation before any container exists.
+func TestTunnelApplyPullFailure(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	h.fake.FailOn = map[string]error{"PullImage": errors.New("registry down")}
+	op, err := h.c.SetTunnelToken(ctx, strings.Repeat("a", 40), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := h.wait(op)
+	if got.State != store.OpFailed || !strings.Contains(got.ErrorMessage, "registry down") {
+		t.Fatalf("want pull failure, got %s %s", got.State, got.ErrorMessage)
+	}
+	if h.fake.CallCount("Create") != 0 {
+		t.Fatal("no container may be created without the image")
+	}
+}
