@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -66,7 +67,7 @@ Client (requires the running backend):
   retired | retired prune APP_ID                      interactive; lists what will be deleted
   backup run [--app SLUG] [--compression zstd|gzip|none] [--upload]
   backup list | backup runs | backup restore --artifact PATH --app SLUG --database DB
-  backup schedule [--json FILE]
+  backup schedule list|show ID|create --json FILE|update ID --json FILE|enable ID|disable ID|delete ID
   export --to DIR
 
 Global flags: --json (machine output), --no-wait (return after acceptance)
@@ -1000,14 +1001,18 @@ func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
 	case "run":
 		fs, rest := sub("backup run", args[1:])
 		app := fs.String("app", "", "only this app")
-		comp := fs.String("compression", "zstd", "zstd, gzip, none")
-		upload := fs.Bool("upload", false, "upload new artifacts with rclone")
+		db := fs.String("database", "", "only these comma-separated databases of --app")
+		comp := fs.String("compression", "zstd", "zstd or gzip")
+		remote := fs.String("upload", "", "upload new artifacts to this rclone name:path")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		req := dto.BackupRequest{Scope: "all", Compression: *comp, Upload: *upload}
+		req := dto.BackupRequest{Scope: "all", Compression: *comp, RcloneRemote: *remote}
 		if *app != "" {
 			req.Scope, req.AppID = "app", *app
+		}
+		if *db != "" {
+			req.Scope, req.Databases = "database", strings.Split(*db, ",")
 		}
 		acc, err := c.Mutate(ctx, "POST", "/api/v1/backups", req, r.wait, r.out)
 		if err == nil && r.wait {
@@ -1054,25 +1059,83 @@ func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
 			r.out,
 		)
 		return err
-	case "schedule":
-		fs, rest := sub("backup schedule", args[1:])
+	case "schedule", "schedules":
+		return r.backupSchedule(ctx, c, args[1:])
+	}
+	return fmt.Errorf("unknown backup command %q", args[0])
+}
+
+func (r *runner) backupSchedule(ctx context.Context, c *Client, args []string) error {
+	const base = "/api/v1/backups/schedules"
+	usage := errors.New("usage: bento backup schedule list|show ID|create --json FILE|update ID --json FILE|enable ID|disable ID|delete ID")
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	var out dto.BackupSchedule
+	switch args[0] {
+	case "list":
+		var list dto.BackupScheduleList
+		if err := c.Do(ctx, "GET", base, nil, &list, nil); err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
+		fmt.Fprintf(tw, "ID\tNAME\tENABLED\tCRON (%s)\tSCOPE\tKEEP\tNEXT\tLAST\tSTATE\n", list.TimeZone)
+		for _, s := range list.Schedules {
+			fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\t%d\t%s\t%s\t%s\n", s.ID, s.Name, s.Enabled, s.Cron, s.Scope, s.Retain,
+				s.NextRun, s.LastRun, s.LastState)
+		}
+		return tw.Flush()
+	case "show", "delete", "enable", "disable":
+		if len(args) != 2 {
+			return usage
+		}
+		path := base + "/" + url.PathEscape(args[1])
+		switch args[0] {
+		case "show":
+			if err := c.Do(ctx, "GET", path, nil, &out, nil); err != nil {
+				return err
+			}
+		case "delete":
+			return c.Do(ctx, "DELETE", path, nil, nil, nil)
+		default:
+			req := dto.BackupScheduleEnable{Enabled: args[0] == "enable"}
+			if err := c.Do(ctx, "POST", path+"/enabled", req, &out, nil); err != nil {
+				return err
+			}
+		}
+	case "create", "update":
+		name := "backup schedule " + args[0]
+		rest := args[1:]
+		path := base
+		if args[0] == "update" {
+			if len(rest) == 0 {
+				return usage
+			}
+			path += "/" + url.PathEscape(rest[0])
+			rest = rest[1:]
+		}
+		fs, rest := sub(name, rest)
 		file := fs.String("json", "", "schedule JSON file")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		var s dto.BackupSchedule
-		if *file != "" {
-			if err := readJSONFile(*file, &s); err != nil {
-				return err
-			}
-			if err := c.Do(ctx, "PUT", "/api/v1/backups/schedule", s, &s, nil); err != nil {
-				return err
-			}
-		} else if err := c.Do(ctx, "GET", "/api/v1/backups/schedule", nil, &s, nil); err != nil {
+		if *file == "" {
+			return usage
+		}
+		var in dto.BackupSchedule
+		if err := readJSONFile(*file, &in); err != nil {
 			return err
 		}
-		printJSON(s)
-		return nil
+		method := "POST"
+		if args[0] == "update" {
+			method = "PUT"
+		}
+		if err := c.Do(ctx, method, path, in, &out, nil); err != nil {
+			return err
+		}
+	default:
+		return usage
 	}
-	return fmt.Errorf("unknown backup command %q", args[0])
+	printJSON(out)
+	return nil
 }

@@ -24,14 +24,21 @@ import (
 
 // BackupRequest is the persisted request of a backup operation.
 type BackupRequest struct {
-	Scope       string `json:"scope"`
-	AppID       string `json:"appId,omitempty"`
-	BindingID   string `json:"bindingId,omitempty"`
-	Compression string `json:"compression"`
-	Upload      bool   `json:"upload"`
-	Trigger     string `json:"trigger"`
-	// ScheduleID names the schedule whose retention and remote apply; empty
-	// means the default backup schedule.
+	// Scope is "all", "app", "binding", or "database" (Databases of AppID).
+	Scope       string   `json:"scope"`
+	AppID       string   `json:"appId,omitempty"`
+	BindingID   string   `json:"bindingId,omitempty"`
+	Databases   []string `json:"databases,omitempty"`
+	Compression string   `json:"compression"`
+	// Remote is the rclone destination new artifacts are uploaded to; empty
+	// means no upload.
+	Remote string `json:"remote,omitempty"`
+	// Upload is the pre-multi-schedule flag: upload to the default
+	// schedule's remote. Read only for operations queued by older versions.
+	Upload  bool   `json:"upload,omitempty"`
+	Trigger string `json:"trigger"`
+	// ScheduleID names the schedule that queued the batch. Its artifacts are
+	// tagged with it and its retention applies to them; empty for manual.
 	ScheduleID string `json:"scheduleId,omitempty"`
 }
 
@@ -50,11 +57,20 @@ type ScheduleState struct {
 	Missed    int
 }
 
+// BackupScheduleView is a backup schedule with its scheduler bookkeeping.
+type BackupScheduleView struct {
+	domain.BackupSchedule
+	State ScheduleState
+}
+
 // backupSpec is the spec_json of a "backup" schedule.
 type backupSpec struct {
-	Compression  string `json:"compression"`
-	Retain       int    `json:"retain"`
-	RcloneRemote string `json:"rcloneRemote"`
+	Scope        string   `json:"scope,omitempty"`
+	AppID        string   `json:"appId,omitempty"`
+	Databases    []string `json:"databases,omitempty"`
+	Compression  string   `json:"compression"`
+	Retain       int      `json:"retain"`
+	RcloneRemote string   `json:"rcloneRemote"`
 }
 
 func (c *Controller) BackupDeps(progress func(string)) backup.Deps {
@@ -97,51 +113,119 @@ func (c *Controller) BackupDeps(progress func(string)) backup.Deps {
 	}
 }
 
-// BackupSchedule returns the default backup schedule, or the built-in
-// default when none is stored.
-func (c *Controller) BackupSchedule(ctx context.Context) (domain.BackupSchedule, ScheduleState, error) {
-	return c.backupSchedule(ctx, store.BackupScheduleID)
-}
-
-func (c *Controller) backupSchedule(ctx context.Context, id string) (domain.BackupSchedule, ScheduleState, error) {
-	if id == "" {
-		id = store.BackupScheduleID
-	}
-	s := domain.DefaultBackupSchedule()
-	row, err := store.GetSchedule(ctx, c.Store.DB(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		return s, ScheduleState{}, nil
-	}
-	if err != nil {
-		return s, ScheduleState{}, err
-	}
+func backupScheduleFromRow(row store.Schedule) (BackupScheduleView, error) {
 	if row.Kind != "backup" {
-		return s, ScheduleState{}, fmt.Errorf("schedule %s is a %s schedule, not backup", id, row.Kind)
+		return BackupScheduleView{}, fmt.Errorf("%w: schedule %s is not a backup schedule", store.ErrNotFound, row.ID)
 	}
-	spec := backupSpec{Compression: s.Compression, Retain: s.Retain}
+	d := domain.DefaultBackupSchedule()
+	spec := backupSpec{Scope: d.Scope, Compression: d.Compression, Retain: d.Retain}
 	if err := row.DecodeSpec(&spec); err != nil {
-		return s, ScheduleState{}, err
+		return BackupScheduleView{}, err
 	}
-	s = domain.BackupSchedule{
-		Enabled: row.Enabled, Cron: row.Cron,
-		Compression: spec.Compression, Retain: spec.Retain, RcloneRemote: spec.RcloneRemote,
+	if spec.Scope == "" {
+		spec.Scope = "all"
 	}
-	st := ScheduleState{
-		LastSlot: row.LastSlot, LastRun: row.LastRunAt, LastState: row.LastState, LastOpID: row.LastOpID, Missed: row.Missed,
-	}
-	return s, st, nil
+	return BackupScheduleView{
+		BackupSchedule: domain.BackupSchedule{
+			ID: row.ID, Name: row.Name, Enabled: row.Enabled, Cron: row.Cron,
+			Scope: spec.Scope, AppID: spec.AppID, Databases: spec.Databases,
+			Compression: spec.Compression, Retain: spec.Retain, RcloneRemote: spec.RcloneRemote,
+		},
+		State: ScheduleState{
+			LastSlot: row.LastSlot, LastRun: row.LastRunAt, LastState: row.LastState, LastOpID: row.LastOpID,
+			Missed: row.Missed,
+		},
+	}, nil
 }
 
-func (c *Controller) SetBackupSchedule(ctx context.Context, s domain.BackupSchedule) error {
+// BackupSchedules lists every backup schedule.
+func (c *Controller) BackupSchedules(ctx context.Context) ([]BackupScheduleView, error) {
+	rows, err := store.ListSchedules(ctx, c.Store.DB(), false)
+	if err != nil {
+		return nil, err
+	}
+	out := []BackupScheduleView{}
+	for _, row := range rows {
+		if row.Kind != "backup" {
+			continue
+		}
+		v, err := backupScheduleFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// BackupSchedule returns one backup schedule.
+func (c *Controller) BackupSchedule(ctx context.Context, id string) (BackupScheduleView, error) {
+	row, err := store.GetSchedule(ctx, c.Store.DB(), id)
+	if err != nil {
+		return BackupScheduleView{}, err
+	}
+	return backupScheduleFromRow(row)
+}
+
+// validateBackupSelection checks a scope against the stack's apps and
+// normalizes fields the scope does not use.
+func (c *Controller) validateBackupSelection(
+	ctx context.Context,
+	errs *domain.ValidationErrors,
+	scope, appID string,
+	databases []string,
+) (string, []string) {
+	switch scope {
+	case "all":
+		return "", nil
+	case "app", "database":
+		app, err := store.GetApp(ctx, c.Store.DB(), appID)
+		if err != nil {
+			errs.Add("appId", "no such app")
+			return appID, databases
+		}
+		if scope == "app" {
+			return app.ID, nil
+		}
+		if len(databases) == 0 {
+			errs.Add("databases", "choose at least one database")
+		}
+		for _, db := range databases {
+			if _, _, err := findDatabase(app, db); err != nil {
+				errs.Add("databases", "%s is not a database of %s", db, app.Slug)
+			}
+		}
+		return app.ID, databases
+	}
+	errs.Add("scope", "must be all, app, or database")
+	return appID, databases
+}
+
+// SaveBackupSchedule creates (empty ID) or replaces a backup schedule.
+// Saving resets its slot bookkeeping so enabling never triggers catch-up.
+func (c *Controller) SaveBackupSchedule(ctx context.Context, s domain.BackupSchedule) (BackupScheduleView, error) {
+	if s.ID == "" {
+		s.ID = "backup-" + platform.RandomHex(4)
+	} else if _, err := c.BackupSchedule(ctx, s.ID); err != nil {
+		return BackupScheduleView{}, err
+	}
 	var errs domain.ValidationErrors
+	s.Name = strings.TrimSpace(s.Name)
+	if s.Name == "" || len(s.Name) > 80 {
+		errs.Add("name", "must be 1-80 characters")
+	}
 	if _, err := cron.ParseStandard(s.Cron); err != nil {
 		errs.Add("cron", "invalid 5-field cron expression")
 	}
+	if s.Scope == "" {
+		s.Scope = "all"
+	}
+	s.AppID, s.Databases = c.validateBackupSelection(ctx, &errs, s.Scope, s.AppID, s.Databases)
 	if s.Compression == "" {
 		s.Compression = "zstd"
 	}
-	if s.Compression != "zstd" && s.Compression != "gzip" && s.Compression != "none" {
-		errs.Add("compression", "must be zstd, gzip, or none")
+	if s.Compression != "zstd" && s.Compression != "gzip" {
+		errs.Add("compression", "must be zstd or gzip")
 	}
 	if s.Retain < 1 || s.Retain > 365 {
 		errs.Add("retain", "must be 1-365")
@@ -152,63 +236,80 @@ func (c *Controller) SetBackupSchedule(ctx context.Context, s domain.BackupSched
 		}
 	}
 	if err := errs.Err(); err != nil {
-		return err
+		return BackupScheduleView{}, err
 	}
-	spec, err := json.Marshal(backupSpec{Compression: s.Compression, Retain: s.Retain, RcloneRemote: s.RcloneRemote})
+	spec, err := json.Marshal(backupSpec{
+		Scope: s.Scope, AppID: s.AppID, Databases: s.Databases,
+		Compression: s.Compression, Retain: s.Retain, RcloneRemote: s.RcloneRemote,
+	})
 	if err != nil {
+		return BackupScheduleView{}, err
+	}
+	now := platform.FormatTime(time.Now())
+	if err := store.PutSchedule(ctx, c.Store.DB(), store.Schedule{
+		ID: s.ID, Kind: "backup", Name: s.Name, Cron: s.Cron, Enabled: s.Enabled, Spec: spec, LastSlot: now,
+	}, now); err != nil {
+		return BackupScheduleView{}, err
+	}
+	return c.BackupSchedule(ctx, s.ID)
+}
+
+// SetBackupScheduleEnabled turns a schedule on or off without other edits.
+func (c *Controller) SetBackupScheduleEnabled(ctx context.Context, id string, enabled bool) (BackupScheduleView, error) {
+	v, err := c.BackupSchedule(ctx, id)
+	if err != nil {
+		return v, err
+	}
+	v.Enabled = enabled
+	return c.SaveBackupSchedule(ctx, v.BackupSchedule)
+}
+
+// DeleteBackupSchedule removes a schedule. Its artifacts are kept.
+func (c *Controller) DeleteBackupSchedule(ctx context.Context, id string) error {
+	if _, err := c.BackupSchedule(ctx, id); err != nil {
 		return err
 	}
-	// Changing the schedule resets its slot bookkeeping to now so that
-	// enabling it never triggers a burst of catch-up runs.
-	now := platform.FormatTime(time.Now())
-	return store.PutSchedule(ctx, c.Store.DB(), store.Schedule{
-		ID: store.BackupScheduleID, Kind: "backup", Name: "All backups", Cron: s.Cron, Enabled: s.Enabled,
-		Spec: spec, LastSlot: now,
-	}, now)
+	return store.DeleteSchedule(ctx, c.Store.DB(), id)
 }
 
 // submitScheduledBackup queues the batch for a due "backup" schedule.
 func submitScheduledBackup(ctx context.Context, c *Controller, s store.Schedule) (store.Operation, error) {
-	sc, _, err := c.backupSchedule(ctx, s.ID)
+	v, err := backupScheduleFromRow(s)
 	if err != nil {
 		return store.Operation{}, err
 	}
 	return c.SubmitBackup(ctx, BackupRequest{
-		Scope: "all", Compression: sc.Compression, Trigger: "schedule", Upload: sc.RcloneRemote != "", ScheduleID: s.ID,
+		Scope: v.Scope, AppID: v.AppID, Databases: v.Databases, Compression: v.Compression,
+		Remote: v.RcloneRemote, Trigger: "schedule", ScheduleID: s.ID,
 	}, "")
 }
 
 // SubmitBackup validates scope and queues a backup batch.
 func (c *Controller) SubmitBackup(ctx context.Context, req BackupRequest, idem string) (store.Operation, error) {
-	switch req.Scope {
-	case "all":
-	case "app", "binding":
+	var errs domain.ValidationErrors
+	if req.Scope == "binding" {
 		if _, err := store.GetApp(ctx, c.Store.DB(), req.AppID); err != nil {
 			return store.Operation{}, err
 		}
-	default:
-		return store.Operation{}, domain.ValidationErrors{{Field: "scope", Message: "must be all, app, or binding"}}
+	} else {
+		req.AppID, req.Databases = c.validateBackupSelection(ctx, &errs, req.Scope, req.AppID, req.Databases)
 	}
 	if req.Compression == "" {
 		req.Compression = "zstd"
 	}
-	if req.Compression != "zstd" && req.Compression != "gzip" && req.Compression != "none" {
-		return store.Operation{}, domain.ValidationErrors{{Field: "compression", Message: "must be zstd, gzip, or none"}}
+	if req.Compression != "zstd" && req.Compression != "gzip" {
+		errs.Add("compression", "must be zstd or gzip")
+	}
+	if req.Remote != "" {
+		if _, err := backup.ValidateRemote(req.Remote); err != nil {
+			errs.Add("remote", "must be name:path using letters, digits, _ . / -")
+		}
+	}
+	if err := errs.Err(); err != nil {
+		return store.Operation{}, err
 	}
 	if req.Trigger == "" {
 		req.Trigger = "manual"
-	}
-	if req.Upload {
-		sched, _, err := c.backupSchedule(ctx, req.ScheduleID)
-		if err != nil {
-			return store.Operation{}, err
-		}
-		if sched.RcloneRemote == "" {
-			return store.Operation{}, domain.ValidationErrors{{
-				Field:   "upload",
-				Message: "set an rclone remote in the backup schedule first",
-			}}
-		}
 	}
 	op, _, err := c.Submit(
 		ctx,
@@ -238,11 +339,14 @@ func (c *Controller) backupTargets(ctx context.Context, req BackupRequest) ([]ba
 			if req.Scope == "binding" && b.ID != req.BindingID {
 				continue
 			}
+			dbs := b.Databases
 			if b.Engine == domain.EngineSQLite {
-				out = append(out, backup.Target{App: app, Binding: b, Database: b.SQLiteFileID})
-				continue
+				dbs = []string{b.SQLiteFileID}
 			}
-			for _, db := range b.Databases {
+			for _, db := range dbs {
+				if req.Scope == "database" && !slices.Contains(req.Databases, db) {
+					continue
+				}
 				out = append(out, backup.Target{App: app, Binding: b, Database: db})
 			}
 		}
@@ -294,6 +398,10 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 		return nil, err
 	}
 	deps := c.BackupDeps(func(s string) { r.Info(ctx, "%s", s) })
+	tag := ""
+	if req.ScheduleID != "" {
+		tag = backup.ScheduleTag(req.ScheduleID)
+	}
 	var arts []backup.Artifact
 	var failed []string
 	okKeys := map[string]bool{}
@@ -311,7 +419,7 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 			}
 		}
 		attempted++
-		a, err := deps.Dump(ctx, t, req.Compression)
+		a, err := deps.Dump(ctx, t, req.Compression, tag)
 		if err != nil {
 			// Continue with the remaining targets; this series keeps its
 			// older artifacts because retention skips it below.
@@ -333,21 +441,23 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 			msg,
 		)
 	}
-	sched, _, schedErr := c.backupSchedule(ctx, req.ScheduleID)
-	if schedErr != nil {
-		// Never prune with the default retention in place of the operator's.
-		r.Warn(ctx, "backup settings unreadable; retention skipped: %v", schedErr)
-	}
-	if schedErr == nil && (req.Trigger == "schedule" || req.Scope == "all") && len(okKeys) > 0 {
-		if err := r.Phase(ctx, "retention"); err != nil {
-			return nil, err
-		}
-		// Only series dumped successfully in this batch are pruned.
-		removed, err := backup.RetainKeys(c.Layout.BackupsDir(), sched.Retain, okKeys)
+	if req.ScheduleID != "" && len(okKeys) > 0 {
+		// Retention is read now so an edit made while queued applies; a
+		// deleted or unreadable schedule never prunes.
+		sched, err := c.BackupSchedule(ctx, req.ScheduleID)
 		if err != nil {
-			r.Warn(ctx, "retention: %v", err)
-		} else if len(removed) > 0 {
-			r.Info(ctx, "retention removed %d old artifact(s)", len(removed))
+			r.Warn(ctx, "schedule %s unreadable; retention skipped: %v", req.ScheduleID, err)
+		} else {
+			if err := r.Phase(ctx, "retention"); err != nil {
+				return nil, err
+			}
+			// Only series dumped successfully in this batch are pruned.
+			removed, err := backup.RetainKeys(c.Layout.BackupsDir(), sched.Retain, okKeys)
+			if err != nil {
+				r.Warn(ctx, "retention: %v", err)
+			} else if len(removed) > 0 {
+				r.Info(ctx, "retention removed %d old artifact(s)", len(removed))
+			}
 		}
 	}
 	state, msg := "succeeded", ""
@@ -363,12 +473,18 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 			msg,
 		)
 	}
+	remote := req.Remote
+	if remote == "" && req.Upload {
+		if sched, err := c.BackupSchedule(ctx, store.BackupScheduleID); err == nil {
+			remote = sched.RcloneRemote
+		}
+	}
 	var upload string
-	if req.Upload || (req.Trigger == "schedule" && sched.RcloneRemote != "") {
+	if remote != "" {
 		if err := r.Phase(ctx, "upload"); err != nil {
 			return nil, err
 		}
-		if err := deps.Upload(ctx, sched.RcloneRemote, arts); err != nil {
+		if err := deps.Upload(ctx, remote, arts); err != nil {
 			upload = "failed"
 			finish(state, upload, strings.TrimPrefix(msg+"; upload failed: "+err.Error(), "; "), arts)
 			if partialErr != nil {
@@ -529,7 +645,7 @@ func slashBase(p string) string {
 	return p
 }
 
-// NextBackup is the first slot of the backup schedule after now, or zero
+// NextBackup is the first slot of a backup schedule after now, or zero
 // when it is off or invalid.
 func NextBackup(s domain.BackupSchedule, now time.Time) time.Time {
 	return NextRun(store.Schedule{Enabled: s.Enabled, Cron: s.Cron}, now)
@@ -571,16 +687,8 @@ type RcloneTestRequest struct {
 	Remote string `json:"remote"`
 }
 
-// SubmitRcloneTest queues a read-only listing of remote, or of the schedule's
-// remote when none is given.
+// SubmitRcloneTest queues a read-only listing of remote.
 func (c *Controller) SubmitRcloneTest(ctx context.Context, remote, idem string) (store.Operation, error) {
-	if remote == "" {
-		sched, _, err := c.BackupSchedule(ctx)
-		if err != nil {
-			return store.Operation{}, err
-		}
-		remote = sched.RcloneRemote
-	}
 	if _, err := backup.ValidateRemote(remote); err != nil {
 		return store.Operation{}, domain.ValidationErrors{{Field: "remote", Message: err.Error()}}
 	}

@@ -1,12 +1,14 @@
 package operations
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -34,6 +36,7 @@ func TestBackupContinuesPastFailingTarget(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
 	good, bad, empty := h.createApp("good"), h.createApp("bad"), h.createApp("empty")
+	sched := saveSchedule(t, h, domain.BackupSchedule{Name: "nightly", Cron: "0 3 * * *", Retain: 1})
 	for _, app := range []domain.App{good, bad} {
 		b := sqliteBinding(t, app)
 		if err := os.WriteFile(filepath.Join(h.layout.SQLiteFileDir(b.SQLiteFileID), app.Slug+".db"), []byte("db"), 0o600); err != nil {
@@ -44,14 +47,13 @@ func TestBackupContinuesPastFailingTarget(t *testing.T) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "sqlite-"+b.SQLiteFileID+"-20200101T000000.000Z.db"), []byte("old"), 0o600); err != nil {
-			t.Fatal(err)
+		for _, n := range []string{"-20200101T000000.000Z~" + backup.ScheduleTag(sched.ID) + ".db", "-20190101T000000.000Z.db"} {
+			if err := os.WriteFile(filepath.Join(dir, "sqlite-"+b.SQLiteFileID+n), []byte("old"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	_ = empty // no database file on the host: must be skipped, not failed
-	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Cron: "0 3 * * *", Compression: "none", Retain: 1}); err != nil {
-		t.Fatal(err)
-	}
 	badDir := sqliteBinding(t, bad).SQLiteContainerDir()
 	h.fake.ExecHook = func(id string, req docker.ExecRequest) docker.ExecResult {
 		if len(req.Cmd) == 0 || req.Cmd[0] != "sqlite3" {
@@ -69,7 +71,7 @@ func TestBackupContinuesPastFailingTarget(t *testing.T) {
 		return docker.ExecResult{}
 	}
 
-	op, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all", Compression: "none"}, "backup-partial-1")
+	op, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all", Compression: "gzip", ScheduleID: sched.ID}, "backup-partial-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +83,15 @@ func TestBackupContinuesPastFailingTarget(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0].State != "partial" || len(runs[0].Artifacts) != 1 || !strings.HasPrefix(runs[0].Artifacts[0], "good/") {
 		t.Fatalf("runs: %+v %v", runs, err)
 	}
-	// Retention pruned only the successful series.
+	// Retention pruned only the successful series of this schedule; the
+	// untagged (manual) artifacts are never pruned.
 	goodFiles, _ := os.ReadDir(filepath.Join(h.layout.BackupsDir(), "good"))
 	badFiles, _ := os.ReadDir(filepath.Join(h.layout.BackupsDir(), "bad"))
-	if len(goodFiles) != 1 || strings.Contains(goodFiles[0].Name(), "2020") {
+	if len(goodFiles) != 2 || !strings.Contains(goodFiles[0].Name(), "2019") || strings.Contains(goodFiles[1].Name(), "2020") ||
+		!strings.HasSuffix(goodFiles[1].Name(), "~"+backup.ScheduleTag(sched.ID)+".db.gz") {
 		t.Fatalf("good series not retained to newest: %v", goodFiles)
 	}
-	if len(badFiles) != 1 || !strings.Contains(badFiles[0].Name(), "2020") {
+	if len(badFiles) != 2 {
 		t.Fatalf("failed series must keep its older artifact: %v", badFiles)
 	}
 }
@@ -101,7 +105,7 @@ func TestBackupAllTargetsFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.fake.FailOn = map[string]error{"Create": os.ErrPermission}
-	op, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all", Compression: "none"}, "backup-fail-1")
+	op, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all"}, "backup-fail-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,14 +119,77 @@ func TestBackupAllTargetsFailed(t *testing.T) {
 	}
 }
 
-func TestManualUploadNeedsScheduleRemote(t *testing.T) {
+func TestBackupValidation(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	if _, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "all", Upload: true}, ""); err == nil || !strings.Contains(err.Error(), "rclone remote") {
-		t.Fatalf("upload without a remote must be refused, got %v", err)
+	app := h.createApp("shop")
+	db := sqliteBinding(t, app).SQLiteFileID
+	bad := []BackupRequest{
+		{Scope: "all", Compression: "none"},
+		{Scope: "all", Remote: "s3:b --config=/x"},
+		{Scope: "database", AppID: app.ID},
+		{Scope: "database", AppID: app.ID, Databases: []string{"other"}},
+		{Scope: "app", AppID: "missing"},
+		{Scope: "bogus"},
 	}
-	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Cron: "0 3 * * *", Retain: 1, RcloneRemote: "s3:b --config=/x"}); err == nil {
-		t.Fatal("remote with flags accepted")
+	for _, req := range bad {
+		if _, err := h.c.SubmitBackup(ctx, req, ""); err == nil {
+			t.Errorf("accepted %+v", req)
+		}
+	}
+	if _, err := h.c.SubmitBackup(ctx, BackupRequest{Scope: "database", AppID: app.ID, Databases: []string{db}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []domain.BackupSchedule{
+		{Name: "x", Cron: "0 3 * * *", Retain: 1, RcloneRemote: "s3:b --config=/x"},
+		{Name: "x", Cron: "0 3 * * *", Retain: 1, Compression: "none"},
+		{Name: "x", Cron: "0 3 * * *", Retain: 0},
+		{Name: "", Cron: "0 3 * * *", Retain: 1},
+		{Name: "x", Cron: "bad", Retain: 1},
+		{Name: "x", Cron: "0 3 * * *", Retain: 1, Scope: "database", AppID: app.ID},
+		{ID: "backup-missing", Name: "x", Cron: "0 3 * * *", Retain: 1},
+	} {
+		if _, err := h.c.SaveBackupSchedule(ctx, s); err == nil {
+			t.Errorf("schedule accepted %+v", s)
+		}
+	}
+}
+
+// Several schedules coexist, each with its own scope, and can be toggled
+// and deleted independently.
+func TestMultipleBackupSchedules(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	app := h.createApp("shop")
+	db := sqliteBinding(t, app).SQLiteFileID
+	a := saveSchedule(t, h, domain.BackupSchedule{Name: "all", Enabled: true, Cron: "0 3 * * *", Retain: 7})
+	b := saveSchedule(t, h, domain.BackupSchedule{Name: "shop db", Cron: "0 * * * *", Retain: 24, Scope: "database",
+		AppID: app.ID, Databases: []string{db}, Compression: "gzip", RcloneRemote: "s3:bucket/shop"})
+	list, err := h.c.BackupSchedules(ctx)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list %+v %v", list, err)
+	}
+	if b.Scope != "database" || b.Databases[0] != db || b.Compression != "gzip" || a.Compression != "zstd" {
+		t.Fatalf("saved %+v", b)
+	}
+	v, err := h.c.SetBackupScheduleEnabled(ctx, b.ID, true)
+	if err != nil || !v.Enabled || v.RcloneRemote != "s3:bucket/shop" {
+		t.Fatalf("enable %+v %v", v, err)
+	}
+	start := time.Date(2026, 9, 28, 1, 0, 0, 0, time.UTC)
+	setLastSlot(t, h, b.ID, start)
+	h.c.checkSchedules(ctx, start.Add(time.Hour+10*time.Second))
+	v, _ = h.c.BackupSchedule(ctx, b.ID)
+	op, err := store.GetOperation(ctx, h.store.DB(), v.State.LastOpID)
+	if err != nil || !strings.Contains(string(op.Request), `"scope":"database"`) ||
+		!strings.Contains(string(op.Request), `"remote":"s3:bucket/shop"`) {
+		t.Fatalf("scheduled op %s %v", op.Request, err)
+	}
+	if err := h.c.DeleteBackupSchedule(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.DeleteBackupSchedule(ctx, a.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
 	}
 }
 
@@ -138,10 +205,7 @@ func TestRcloneTestOperation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.layout.RcloneDir(), "rclone.conf"), []byte("[s3]\ntype = s3\nsecret_access_key = hidden\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Cron: "0 3 * * *", Retain: 1, RcloneRemote: "s3:bucket/bento"}); err != nil {
-		t.Fatal(err)
-	}
-	op, err := h.c.SubmitRcloneTest(ctx, "", "rclone-test-1")
+	op, err := h.c.SubmitRcloneTest(ctx, "s3:bucket/bento", "rclone-test-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,10 +243,7 @@ func TestScheduleUsesServerLocalTime(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
 	ict := time.FixedZone("ICT", 7*3600)
-	s := domain.BackupSchedule{Enabled: true, Cron: "30 9 * * *", Compression: "none", Retain: 1}
-	if err := h.c.SetBackupSchedule(ctx, s); err != nil {
-		t.Fatal(err)
-	}
+	s := saveSchedule(t, h, domain.BackupSchedule{Name: "daily", Enabled: true, Cron: "30 9 * * *", Retain: 1}).BackupSchedule
 	before := time.Date(2026, 9, 28, 9, 29, 0, 0, ict)
 	if got := NextBackup(s, before); !got.Equal(time.Date(2026, 9, 28, 9, 30, 0, 0, ict)) {
 		t.Fatalf("next run %s", got)
@@ -190,24 +251,25 @@ func TestScheduleUsesServerLocalTime(t *testing.T) {
 	if !NextBackup(domain.BackupSchedule{Cron: s.Cron}, before).IsZero() {
 		t.Fatal("a disabled schedule has no next run")
 	}
-	setLastSlot(t, h, store.BackupScheduleID, before)
+	setLastSlot(t, h, s.ID, before)
 	h.c.checkSchedules(ctx, before.Add(30*time.Second))
-	if _, st, _ := h.c.BackupSchedule(ctx); st.LastRun != "" {
-		t.Fatalf("fired early: %+v", st)
+	if v, _ := h.c.BackupSchedule(ctx, s.ID); v.State.LastRun != "" {
+		t.Fatalf("fired early: %+v", v.State)
 	}
 	h.c.checkSchedules(ctx, time.Date(2026, 9, 28, 9, 30, 20, 0, ict))
-	_, st, err := h.c.BackupSchedule(ctx)
+	v, err := h.c.BackupSchedule(ctx, s.ID)
+	st := v.State
 	if err != nil || st.LastState != "submitted" || st.LastOpID == "" || st.LastSlot != "2026-09-28T02:30:00.000Z" {
 		t.Fatalf("did not fire at 09:30 local: %+v %v", st, err)
 	}
 	op, err := store.GetOperation(ctx, h.store.DB(), st.LastOpID)
-	if err != nil || !strings.Contains(string(op.Request), `"scheduleId":"`+store.BackupScheduleID+`"`) {
+	if err != nil || !strings.Contains(string(op.Request), `"scheduleId":"`+s.ID+`"`) {
 		t.Fatalf("scheduled op %s %v", op.Request, err)
 	}
 	// The next slot is skipped, not stacked, while that run is still queued.
 	h.c.checkSchedules(ctx, time.Date(2026, 9, 29, 9, 30, 20, 0, ict))
-	_, st2, _ := h.c.BackupSchedule(ctx)
-	if st2.LastState != "skipped" || st2.LastOpID != st.LastOpID || st2.Missed != 1 {
+	v2, _ := h.c.BackupSchedule(ctx, s.ID)
+	if st2 := v2.State; st2.LastState != "skipped" || st2.LastOpID != st.LastOpID || st2.Missed != 1 {
 		t.Fatalf("overlapping run not skipped: %+v", st2)
 	}
 }
@@ -217,27 +279,34 @@ func TestScheduleUsesServerLocalTime(t *testing.T) {
 func TestScheduleMissedSlotAndConcurrentEdit(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Enabled: true, Cron: "0 * * * *", Retain: 1}); err != nil {
-		t.Fatal(err)
-	}
+	sc := saveSchedule(t, h, domain.BackupSchedule{Name: "hourly", Enabled: true, Cron: "0 * * * *", Retain: 1})
 	start := time.Date(2026, 9, 28, 1, 0, 0, 0, time.UTC)
-	setLastSlot(t, h, store.BackupScheduleID, start)
+	setLastSlot(t, h, sc.ID, start)
 	h.c.checkSchedules(ctx, start.Add(3*time.Hour+30*time.Minute))
-	_, st, _ := h.c.BackupSchedule(ctx)
+	v, _ := h.c.BackupSchedule(ctx, sc.ID)
+	st := v.State
 	if st.LastState != "missed" || st.LastOpID != "" || st.Missed != 3 {
 		t.Fatalf("missed slots: %+v", st)
 	}
-	row, err := store.GetSchedule(ctx, h.store.DB(), store.BackupScheduleID)
+	row, err := store.GetSchedule(ctx, h.store.DB(), sc.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Enabled: true, Cron: "0 5 * * *", Retain: 1}); err != nil {
-		t.Fatal(err)
-	}
+	sc.Cron = "0 5 * * *"
+	saveSchedule(t, h, sc.BackupSchedule)
 	row.LastState = "stale"
 	if ok, err := store.SaveScheduleState(ctx, h.store.DB(), row); err != nil || ok {
 		t.Fatalf("stale bookkeeping overwrote an edit: %v %v", ok, err)
 	}
+}
+
+func saveSchedule(t *testing.T, h *harness, s domain.BackupSchedule) BackupScheduleView {
+	t.Helper()
+	v, err := h.c.SaveBackupSchedule(t.Context(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 func setLastSlot(t *testing.T, h *harness, id string, at time.Time) {

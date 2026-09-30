@@ -167,8 +167,16 @@ export const api = {
     restore: (body: T.RestoreRequest) => mutate("POST", "/api/v1/backups/restore", body),
     remove: (body: T.BackupDeleteRequest) => mutate("POST", "/api/v1/backups/delete", body),
     downloadUrl: (path: string) => `/api/v1/backups/download?path=${enc(path)}`,
-    schedule: (signal?: AbortSignal) => get<T.BackupSchedule>("/api/v1/backups/schedule", signal),
-    setSchedule: (body: T.BackupSchedule) => request<T.BackupSchedule>("PUT", "/api/v1/backups/schedule", body),
+    schedules: (signal?: AbortSignal) => get<T.BackupScheduleList>("/api/v1/backups/schedules", signal),
+    saveSchedule: (body: T.BackupSchedule) =>
+      body.id
+        ? request<T.BackupSchedule>("PUT", `/api/v1/backups/schedules/${enc(body.id)}`, body)
+        : request<T.BackupSchedule>("POST", "/api/v1/backups/schedules", body),
+    enableSchedule: (id: string, enabled: boolean) =>
+      request<T.BackupSchedule>("POST", `/api/v1/backups/schedules/${enc(id)}/enabled`, {
+        enabled,
+      } satisfies T.BackupScheduleEnable),
+    removeSchedule: (id: string) => request<void>("DELETE", `/api/v1/backups/schedules/${enc(id)}`),
     rclone: (signal?: AbortSignal) => get<T.RcloneStatus>("/api/v1/backups/rclone", signal),
     rcloneTest: (body: T.RcloneTestRequest) => mutate("POST", "/api/v1/backups/rclone/test", body),
     rcloneTerminalPath: "/api/v1/backups/rclone/terminal",

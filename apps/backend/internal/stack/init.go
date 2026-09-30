@@ -186,12 +186,14 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 // seedBackupSchedule stores the default (disabled) backup schedule.
 func seedBackupSchedule(ctx context.Context, q store.Q) error {
 	d := domain.DefaultBackupSchedule()
-	spec, err := json.Marshal(map[string]any{"compression": d.Compression, "retain": d.Retain, "rcloneRemote": d.RcloneRemote})
+	spec, err := json.Marshal(map[string]any{
+		"scope": d.Scope, "compression": d.Compression, "retain": d.Retain, "rcloneRemote": d.RcloneRemote,
+	})
 	if err != nil {
 		return err
 	}
 	now := platform.FormatTime(time.Now())
 	return store.PutSchedule(ctx, q, store.Schedule{
-		ID: store.BackupScheduleID, Kind: "backup", Name: "All backups", Cron: d.Cron, Enabled: d.Enabled, Spec: spec,
+		ID: store.BackupScheduleID, Kind: "backup", Name: d.Name, Cron: d.Cron, Enabled: d.Enabled, Spec: spec,
 	}, now)
 }

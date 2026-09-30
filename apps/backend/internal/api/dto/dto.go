@@ -579,12 +579,15 @@ type RetiredList struct {
 // ---- backups ----
 
 type BackupRequest struct {
-	// Scope is "all", "app", or "binding".
-	Scope       string `json:"scope"`
-	AppID       string `json:"appId,omitempty"`
-	BindingID   string `json:"bindingId,omitempty"`
+	// Scope is "all", "app", "binding", or "database" (Databases of AppID).
+	Scope     string   `json:"scope"`
+	AppID     string   `json:"appId,omitempty"`
+	BindingID string   `json:"bindingId,omitempty"`
+	Databases []string `json:"databases,omitempty"`
+	// Compression is "zstd" (default) or "gzip".
 	Compression string `json:"compression,omitempty"`
-	Upload      bool   `json:"upload"`
+	// RcloneRemote uploads new artifacts to this name:path; empty skips it.
+	RcloneRemote string `json:"rcloneRemote,omitempty"`
 }
 
 type BackupArtifact struct {
@@ -615,18 +618,39 @@ type BackupRunList struct {
 	Runs []BackupRun `json:"runs"`
 }
 
+// BackupSchedule is one backup schedule. Scope is "all", "app" (every
+// database of AppID), or "database" (Databases of AppID). Retain is how many
+// artifacts this schedule keeps per database. ID, NextRun, LastRun,
+// LastState, LastOpID and TimeZone are ignored on write.
 type BackupSchedule struct {
-	Enabled      bool   `json:"enabled"`
-	Cron         string `json:"cron"`
-	Compression  string `json:"compression"`
-	Retain       int    `json:"retain"`
-	RcloneRemote string `json:"rcloneRemote"`
-	NextRun      string `json:"nextRun,omitempty"`
-	LastRun      string `json:"lastRun,omitempty"`
-	LastState    string `json:"lastState,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Enabled      bool     `json:"enabled"`
+	Cron         string   `json:"cron"`
+	Scope        string   `json:"scope"`
+	AppID        string   `json:"appId,omitempty"`
+	Databases    []string `json:"databases"`
+	Compression  string   `json:"compression"`
+	Retain       int      `json:"retain"`
+	RcloneRemote string   `json:"rcloneRemote"`
+	NextRun      string   `json:"nextRun,omitempty"`
+	LastRun      string   `json:"lastRun,omitempty"`
+	LastState    string   `json:"lastState,omitempty"`
+	LastOpID     string   `json:"lastOpId,omitempty"`
 	// TimeZone is the server's zone that cron fields are read in, for
 	// example "UTC+07:00". Ignored on write.
 	TimeZone string `json:"timeZone,omitempty"`
+}
+
+type BackupScheduleList struct {
+	Schedules []BackupSchedule `json:"schedules"`
+	// TimeZone is the server's zone that cron fields are read in.
+	TimeZone string `json:"timeZone"`
+}
+
+// BackupScheduleEnable turns a schedule on or off.
+type BackupScheduleEnable struct {
+	Enabled bool `json:"enabled"`
 }
 
 // RcloneRemote is a configured rclone remote. Only its name and backend type
@@ -645,8 +669,7 @@ type RcloneStatus struct {
 	Error     string         `json:"error,omitempty"`
 }
 
-// RcloneTestRequest lists a remote without changing it; an empty remote
-// tests the schedule's remote.
+// RcloneTestRequest lists a remote without changing it.
 type RcloneTestRequest struct {
 	Remote string `json:"remote"`
 }

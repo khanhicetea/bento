@@ -24,7 +24,10 @@ export function OverviewPage() {
   });
   const edge = useQuery({ queryKey: keys.edge, queryFn: ({ signal }) => api.edge.get(signal) });
   const tunnel = useQuery({ queryKey: keys.tunnel, queryFn: ({ signal }) => api.tunnel.get(signal) });
-  const schedule = useQuery({ queryKey: keys.backups.schedule, queryFn: ({ signal }) => api.backups.schedule(signal) });
+  const schedules = useQuery({
+    queryKey: keys.backups.schedules,
+    queryFn: ({ signal }) => api.backups.schedules(signal),
+  });
 
   if (system.isPending || apps.isPending) return <DomainLoading label="overview" />;
   if (system.error || apps.error)
@@ -43,6 +46,11 @@ export function OverviewPage() {
   const running = allApps.filter((app) => app.observed.state === "healthy" || app.observed.state === "starting").length;
   const activeOps = allOps.filter((op) => !isTerminal(op.state)).length;
   const recent = allOps.slice(0, 8);
+  const enabledSchedules = (schedules.data?.schedules ?? []).filter((schedule) => schedule.enabled);
+  // The state of the enabled schedule that ran most recently.
+  const lastBackup = enabledSchedules
+    .filter((schedule) => schedule.lastRun)
+    .sort((a, b) => (b.lastRun ?? "").localeCompare(a.lastRun ?? ""))[0];
 
   const serviceState = (
     query: { isPending: boolean; error: unknown },
@@ -61,7 +69,7 @@ export function OverviewPage() {
     ["Docker", "/system", system.data?.dockerError ? ["failed", "Down"] : ["healthy", "Connected"]],
     ["Edge", "/ingress", serviceState(edge, edge.data?.settings.enabled, edge.data?.state)],
     ["Tunnel", "/ingress", serviceState(tunnel, tunnel.data?.enabled, tunnel.data?.state)],
-    ["Backups", "/backups", serviceState(schedule, schedule.data?.enabled, schedule.data?.lastState)],
+    ["Backups", "/backups", serviceState(schedules, enabledSchedules.length > 0, lastBackup?.lastState)],
   ];
 
   return (

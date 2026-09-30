@@ -43,12 +43,15 @@ type Target struct {
 
 // Artifact is one published backup file.
 type Artifact struct {
-	Path      string        `json:"path"` // relative to the backups dir
-	AppSlug   string        `json:"appSlug"`
-	Engine    domain.Engine `json:"engine"`
-	Database  string        `json:"database"`
-	SizeBytes int64         `json:"sizeBytes"`
-	CreatedAt time.Time     `json:"createdAt"`
+	Path     string        `json:"path"` // relative to the backups dir
+	AppSlug  string        `json:"appSlug"`
+	Engine   domain.Engine `json:"engine"`
+	Database string        `json:"database"`
+	// Tag names the schedule that produced the artifact; empty for manual
+	// backups, which retention never prunes.
+	Tag       string    `json:"tag,omitempty"`
+	SizeBytes int64     `json:"sizeBytes"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type Deps struct {
@@ -69,10 +72,8 @@ func ext(compression string) (string, error) {
 		return ".zst", nil
 	case "gzip":
 		return ".gz", nil
-	case "none":
-		return "", nil
 	}
-	return "", errors.New("compression must be zstd, gzip, or none")
+	return "", errors.New("compression must be zstd or gzip")
 }
 
 type compressor struct {
@@ -92,7 +93,7 @@ func newCompressor(w io.Writer, compression string) (*compressor, error) {
 		g := gzip.NewWriter(w)
 		return &compressor{Writer: g, close: g.Close}, nil
 	}
-	return &compressor{Writer: w, close: func() error { return nil }}, nil
+	return nil, errors.New("compression must be zstd or gzip")
 }
 
 // Decompress opens an artifact for reading by extension.
@@ -135,7 +136,22 @@ var safeName = regexp.MustCompile(`[^a-z0-9_.-]`)
 // stampLayout is the artifact timestamp, at millisecond resolution.
 const stampLayout = "20060102T150405.000Z"
 
-var artifactPattern = regexp.MustCompile(`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}\.\d{3}Z)\.(sql|db)(\.zst|\.gz)?$`)
+// artifactPattern matches published artifacts. An optional "~<tag>" after
+// the stamp names the producing schedule; uncompressed files are legacy.
+var artifactPattern = regexp.MustCompile(
+	`^(mysql|postgres|sqlite)-(.+)-(\d{8}T\d{6}\.\d{3}Z)(?:~([a-z0-9]{1,40}))?\.(sql|db)(\.zst|\.gz)?$`,
+)
+
+var tagName = regexp.MustCompile(`[^a-z0-9]`)
+
+// ScheduleTag is the artifact tag of a schedule id.
+func ScheduleTag(scheduleID string) string {
+	t := tagName.ReplaceAllString(strings.ToLower(scheduleID), "")
+	if len(t) > 40 {
+		t = t[:40]
+	}
+	return t
+}
 
 func parseStamp(s string) time.Time {
 	ts, _ := time.Parse(stampLayout, s)
@@ -175,8 +191,9 @@ func (d Deps) appDir(slug string) (string, error) {
 	return dir, platform.EnsureDir(dir, 0o700, platform.RootOwner)
 }
 
-// Dump writes one target's artifact.
-func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact, error) {
+// Dump writes one target's artifact; tag (see ScheduleTag) marks a
+// scheduled artifact and is empty for manual ones.
+func (d Deps) Dump(ctx context.Context, t Target, compression, tag string) (Artifact, error) {
 	e, err := ext(compression)
 	if err != nil {
 		return Artifact{}, err
@@ -187,6 +204,9 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 	}
 	now := time.Now().UTC()
 	stamp := now.Format(stampLayout)
+	if tag != "" {
+		stamp += "~" + tag
+	}
 	var final string
 	switch t.Binding.Engine {
 	case domain.EngineMySQL, domain.EnginePostgres:
@@ -243,6 +263,7 @@ func (d Deps) Dump(ctx context.Context, t Target, compression string) (Artifact,
 		AppSlug:   t.App.Slug,
 		Engine:    t.Binding.Engine,
 		Database:  t.Database,
+		Tag:       tag,
 		SizeBytes: size,
 		CreatedAt: now,
 	}, nil
@@ -466,31 +487,25 @@ func ListArtifacts(backupsDir string) ([]Artifact, error) {
 			}
 			ts := parseStamp(m[3])
 			out = append(out, Artifact{Path: app.Name() + "/" + f.Name(), AppSlug: app.Name(), Engine: domain.Engine(m[1]),
-				Database: m[2], SizeBytes: info.Size(), CreatedAt: ts})
+				Database: m[2], Tag: m[4], SizeBytes: info.Size(), CreatedAt: ts})
 		}
 	}
 	slices.SortFunc(out, func(a, b Artifact) int { return b.CreatedAt.Compare(a.CreatedAt) })
 	return out, nil
 }
 
-// RetentionKey identifies the (app, engine, database) series an artifact
-// belongs to for retention.
+// RetentionKey identifies the (app, engine, database, schedule tag) series
+// an artifact belongs to for retention.
 func RetentionKey(a Artifact) string {
-	return a.AppSlug + "/" + string(a.Engine) + "/" + a.Database
+	return a.AppSlug + "/" + string(a.Engine) + "/" + a.Database + "~" + a.Tag
 }
 
-// Retain keeps the newest keep artifacts per (app, engine, database) and
-// deletes older ones. Call only after a fully successful batch.
-func Retain(backupsDir string, keep int) ([]string, error) {
-	return RetainKeys(backupsDir, keep, nil)
-}
-
-// RetainKeys applies Retain only to the series named in keys (see
-// RetentionKey). A nil keys map means every series; an empty map means none.
-// Use it after a partial batch so series whose newest dump failed keep their
-// older artifacts.
+// RetainKeys keeps the newest keep artifacts of each series named in keys
+// (see RetentionKey) and deletes older ones. Untagged (manual) series are
+// never pruned. An empty map means none; pass only series dumped
+// successfully so a failing series keeps its older artifacts.
 func RetainKeys(backupsDir string, keep int, keys map[string]bool) ([]string, error) {
-	if keep < 1 || (keys != nil && len(keys) == 0) {
+	if keep < 1 || len(keys) == 0 {
 		return nil, nil
 	}
 	arts, err := ListArtifacts(backupsDir)
@@ -501,7 +516,7 @@ func RetainKeys(backupsDir string, keep int, keys map[string]bool) ([]string, er
 	var removed []string
 	for _, a := range arts {
 		key := RetentionKey(a)
-		if keys != nil && !keys[key] {
+		if a.Tag == "" || !keys[key] {
 			continue
 		}
 		seen[key]++

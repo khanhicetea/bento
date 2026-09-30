@@ -6,7 +6,7 @@ sidebar:
 ---
 
 ```bash
-bento backup run [--app shop] [--compression zstd|gzip|none] [--upload]
+bento backup run [--app shop [--database shop,shop_logs]] [--compression zstd|gzip] [--upload remote:bucket/path]
 bento backup list
 bento backup restore --artifact shop/mysql-shop-20260101T020000.000Z.sql.zst --app shop --database shop
 ```
@@ -14,26 +14,40 @@ bento backup restore --artifact shop/mysql-shop-20260101T020000.000Z.sql.zst --a
 - One batch at a time. MySQL uses `mysqldump --single-transaction`, PostgreSQL `pg_dump`, SQLite the online
   `.backup` API in a scoped container that only sees that database directory.
 - Each artifact is written privately and published atomically only if the dump succeeded and is non-empty.
-- Retention (keep the newest N per database) runs only after a whole batch succeeds.
+- Artifacts are compressed with zstd (default) or gzip. Older uncompressed artifacts can still be restored.
+- Retention belongs to schedules: each schedule keeps the newest N files **per database that it made** (its files
+  carry a `~<schedule>` tag in the name). A database whose dump failed keeps its older files. Manual backups are never
+  pruned.
 - Restore asks for `replace <database>` and only targets that app's own databases. It is not atomic per object; restore
   into a scratch database first when in doubt. SQLite restores require the app to be stopped.
 
 ## Schedule and upload
 
-`bento backup schedule --json s.json` with `{"enabled":true,"cron":"30 2 * * *","compression":"zstd","retain":7,"rcloneRemote":"remote:bucket/bento"}`.
-The backend evaluates the schedule every 30 seconds, reading cron fields in the **server's local time zone** (as
-crontab does; the Schedule tab shows it, for example `UTC+07:00`). Slots missed while it was down are **recorded, not
+A stack can have any number of backup schedules, each with its own cron expression, databases (`all`, every database
+of one app, or named databases of one app), files kept per database, compression, and upload destination:
+
+```bash
+bento backup schedule list                     # enabled, next run, last run and state
+bento backup schedule create --json s.json
+bento backup schedule update <id> --json s.json
+bento backup schedule enable|disable|delete <id>
+```
+
+with `{"name":"shop hourly","enabled":true,"cron":"0 * * * *","scope":"database","appId":"<app id>","databases":["shop"],"compression":"zstd","retain":24,"rcloneRemote":"remote:bucket/bento"}`
+(`scope` `all` needs no `appId`; `app` needs no `databases`). Deleting a schedule keeps its files.
+The backend evaluates schedules every 30 seconds, reading cron fields in the **server's local time zone** (as
+crontab does; the Schedules tab shows it, for example `UTC+07:00`). Slots missed while it was down are **recorded, not
 replayed**. Uploads run
 `rclone copy` in a throwaway container of the pinned `rclone/rclone` image; the host needs no rclone install. The
 container sees the `rclone/` config directory and the new artifacts (read-only), nothing else. A failed upload keeps
-the local artifacts and marks the run. `--upload` is refused while no remote is set.
+the local artifacts and marks the run.
 
 Uploads use `copy`, not `sync`: local retention never deletes anything from the remote. Expire old copies with the
 bucket's own lifecycle rules.
 
 ## Configuring remotes
 
-In the UI, open **Backups → Schedule** and press **Open rclone shell** on the rclone remotes card. It is a throwaway
+In the UI, open **Backups → Schedules**, edit a schedule, and press **Open rclone shell** in its Upload section. It is a throwaway
 container of the same rclone image that mounts only `rclone/`, so you configure and check remotes with the normal rclone
 CLI:
 

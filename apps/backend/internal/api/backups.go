@@ -63,7 +63,7 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 	op, err := s.C.SubmitBackup(
 		r.Context(),
 		operations.BackupRequest{Scope: req.Scope, AppID: req.AppID, BindingID: req.BindingID,
-			Compression: req.Compression, Upload: req.Upload, Trigger: "manual"},
+			Databases: req.Databases, Compression: req.Compression, Remote: req.RcloneRemote, Trigger: "manual"},
 		idem,
 	)
 	if err != nil {
@@ -97,16 +97,22 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	s.accepted(w, op, nil)
 }
 
-func scheduleDTO(sc domain.BackupSchedule, st operations.ScheduleState, now time.Time) dto.BackupSchedule {
+func scheduleDTO(v operations.BackupScheduleView, now time.Time) dto.BackupSchedule {
 	return dto.BackupSchedule{
-		Enabled:      sc.Enabled,
-		Cron:         sc.Cron,
-		Compression:  sc.Compression,
-		Retain:       sc.Retain,
-		RcloneRemote: sc.RcloneRemote,
-		NextRun:      platform.FormatTime(operations.NextBackup(sc, now)),
-		LastRun:      st.LastRun,
-		LastState:    st.LastState,
+		ID:           v.ID,
+		Name:         v.Name,
+		Enabled:      v.Enabled,
+		Cron:         v.Cron,
+		Scope:        v.Scope,
+		AppID:        v.AppID,
+		Databases:    nonNil(v.Databases),
+		Compression:  v.Compression,
+		Retain:       v.Retain,
+		RcloneRemote: v.RcloneRemote,
+		NextRun:      platform.FormatTime(operations.NextBackup(v.BackupSchedule, now)),
+		LastRun:      v.State.LastRun,
+		LastState:    v.State.LastState,
+		LastOpID:     v.State.LastOpID,
 		TimeZone:     zoneLabel(now),
 	}
 }
@@ -120,33 +126,75 @@ func zoneLabel(now time.Time) string {
 	return "UTC" + now.Format("-07:00")
 }
 
-func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
-	sc, st, err := s.C.BackupSchedule(r.Context())
+func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
+	list, err := s.C.BackupSchedules(r.Context())
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, scheduleDTO(sc, st, time.Now()))
+	now := time.Now()
+	out := dto.BackupScheduleList{Schedules: []dto.BackupSchedule{}, TimeZone: zoneLabel(now)}
+	for _, v := range list {
+		out.Schedules = append(out.Schedules, scheduleDTO(v, now))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handlePutSchedule(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
+	v, err := s.C.BackupSchedule(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, scheduleDTO(v, time.Now()))
+}
+
+// handleSaveSchedule creates (POST) or replaces (PUT {id}) a schedule.
+func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	var req dto.BackupSchedule
 	if err := decode(w, r, &req); err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	sc := domain.BackupSchedule{
+	v, err := s.C.SaveBackupSchedule(r.Context(), domain.BackupSchedule{
+		ID:           r.PathValue("id"),
+		Name:         req.Name,
 		Enabled:      req.Enabled,
 		Cron:         req.Cron,
+		Scope:        req.Scope,
+		AppID:        req.AppID,
+		Databases:    req.Databases,
 		Compression:  req.Compression,
 		Retain:       req.Retain,
 		RcloneRemote: req.RcloneRemote,
-	}
-	if err := s.C.SetBackupSchedule(r.Context(), sc); err != nil {
+	})
+	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	s.handleGetSchedule(w, r)
+	writeJSON(w, http.StatusOK, scheduleDTO(v, time.Now()))
+}
+
+func (s *Server) handleEnableSchedule(w http.ResponseWriter, r *http.Request) {
+	var req dto.BackupScheduleEnable
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	v, err := s.C.SetBackupScheduleEnabled(r.Context(), r.PathValue("id"), req.Enabled)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, scheduleDTO(v, time.Now()))
+}
+
+func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	if err := s.C.DeleteBackupSchedule(r.Context(), r.PathValue("id")); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRcloneStatus reports remote names and types only; rclone.conf values

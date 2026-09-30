@@ -21,7 +21,7 @@ Types are defined in Go (`apps/backend/internal/api/dto`) and generated for Type
 | Operations | `GET /operations`, `GET /operations/{id}`, `GET /operations/{id}/events` (SSE), `POST /operations/{id}/cancel` |
 | Data | `GET/POST /services`, `GET /retired`, `POST /retired/{id}/prune` |
 | Ingress | `GET/PUT /edge`, `GET /tunnel`, `PUT /tunnel/token`, `GET/POST /proxies`, `DELETE /proxies/{name}` |
-| Backups | `GET /backups/artifacts`, `GET /backups/runs`, `POST /backups`, `POST /backups/restore`, `GET/PUT /backups/schedule`, `GET /backups/rclone`, `POST /backups/rclone/test`, `GET /backups/rclone/terminal` (WebSocket), `POST /stack/export` |
+| Backups | `GET /backups/artifacts`, `GET /backups/runs`, `POST /backups`, `POST /backups/restore`, `GET/POST /backups/schedules`, `GET/PUT/DELETE /backups/schedules/{id}`, `POST /backups/schedules/{id}/enabled`, `GET /backups/rclone`, `POST /backups/rclone/test`, `GET /backups/rclone/terminal` (WebSocket), `POST /stack/export` |
 
 The scheduler UI is not part of the JSON API: it is proxied at `/apps/<slug>/scheduler/…` on the management listener and
 needs a browser session. Writes need an exact allowed `Origin` (no CSRF header).

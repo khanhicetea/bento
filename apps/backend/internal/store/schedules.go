@@ -7,8 +7,8 @@ import (
 	"errors"
 )
 
-// BackupScheduleID is the schedule that carries the stack-wide backup
-// settings.
+// BackupScheduleID is the backup schedule seeded by init. It is an
+// ordinary, deletable backup schedule.
 const BackupScheduleID = "backup-default"
 
 // Schedule is one durable, operator-editable scheduled job. The backend
@@ -110,4 +110,17 @@ func SaveScheduleState(ctx context.Context, q Q, s Schedule) (bool, error) {
 	}
 	n, err := res.RowsAffected()
 	return n == 1, err
+}
+
+// DeleteSchedule removes a schedule; a missing one is ErrNotFound.
+func DeleteSchedule(ctx context.Context, q Q, id string) error {
+	res, err := q.ExecContext(ctx, "DELETE FROM schedules WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
+		err = ErrNotFound
+	}
+	return err
 }

@@ -22,21 +22,37 @@ func TestPublishRefusesEmpty(t *testing.T) {
 	}
 }
 
-func TestRetentionKeepsNewestPerDatabase(t *testing.T) {
+func TestRetentionKeepsNewestPerDatabaseAndSchedule(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "shop"), 0o700)
 	for _, n := range []string{
-		"mysql-shop-20250101T000000.000Z.sql.zst", "mysql-shop-20250102T000000.000Z.sql.zst", "mysql-shop-20250103T000000.000Z.sql.zst",
-		"mysql-other-20250101T000000.000Z.sql.zst", ".partial-abc",
+		"mysql-shop-20250101T000000.000Z~daily.sql.zst", "mysql-shop-20250102T000000.000Z~daily.sql.zst",
+		"mysql-shop-20250103T000000.000Z~daily.sql.zst",
+		"mysql-shop-20250101T000000.000Z~hourly.sql.zst", "mysql-shop-20250102T000000.000Z~hourly.sql.zst",
+		"mysql-shop-20250100T000000.000Z.sql.zst", // manual: never pruned
+		"mysql-other-20250101T000000.000Z~daily.sql.zst", ".partial-abc",
 	} {
 		os.WriteFile(filepath.Join(dir, "shop", n), []byte("x"), 0o600)
 	}
-	removed, err := Retain(dir, 2)
+	arts, err := ListArtifacts(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed) != 1 || removed[0] != "shop/mysql-shop-20250101T000000.000Z.sql.zst" {
+	keys := map[string]bool{}
+	for _, a := range arts {
+		if a.Database == "shop" {
+			keys[RetentionKey(a)] = true
+		}
+	}
+	removed, err := RetainKeys(dir, 2, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "shop/mysql-shop-20250101T000000.000Z~daily.sql.zst" {
 		t.Fatalf("removed %v", removed)
+	}
+	if ScheduleTag("backup-Daily_1") != "backupdaily1" {
+		t.Fatal(ScheduleTag("backup-Daily_1"))
 	}
 }
 

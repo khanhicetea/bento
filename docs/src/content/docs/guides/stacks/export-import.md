@@ -15,7 +15,7 @@ volumes are consistent, snapshots the state database with `VACUUM INTO`, archive
 restarts exactly what was running. The export directory contains secrets and data: protect it.
 
 Import requires an empty root and a compatible architecture. The imported stack gets a new stack ID and new networks.
-It starts with **all apps stopped and unpublished**, the edge, tunnel, and backup schedule disabled, and no pending
+It starts with **all apps stopped and unpublished**, the edge, tunnel, and backup schedules disabled, and no pending
 operations. Use `--name` to clone on the same host, and `--uid-first/--uid-last` to move future UID allocations to a
 range that does not overlap the source stack. If import fails, it removes only the root contents and volumes it
 created.

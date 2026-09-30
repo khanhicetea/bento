@@ -32,7 +32,7 @@ export const keys = {
     all: ["backups"] as const,
     artifacts: ["backups", "artifacts"] as const,
     runs: ["backups", "runs"] as const,
-    schedule: ["backups", "schedule"] as const,
+    schedules: ["backups", "schedules"] as const,
     rclone: ["backups", "rclone"] as const,
   },
 };

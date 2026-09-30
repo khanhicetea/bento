@@ -722,7 +722,7 @@ func TestRcloneEndpoints(t *testing.T) {
 func TestScheduleReportsNextRunAndZone(t *testing.T) {
 	c, _ := newServer(t)
 	c.login()
-	resp, body := c.write("PUT", "/api/v1/backups/schedule", `{"enabled":true,"cron":"*/5 * * * *","compression":"zstd","retain":3,"rcloneRemote":""}`)
+	resp, body := c.write("POST", "/api/v1/backups/schedules", `{"name":"often","enabled":true,"cron":"*/5 * * * *","scope":"all","compression":"zstd","retain":3,"rcloneRemote":""}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("put %d %s", resp.StatusCode, body)
 	}
@@ -735,9 +735,28 @@ func TestScheduleReportsNextRunAndZone(t *testing.T) {
 		t.Fatalf("nextRun %q timeZone %q", s.NextRun, s.TimeZone)
 	}
 	// The whole object round-trips, including read-only fields.
-	resp, body = c.write("PUT", "/api/v1/backups/schedule", body)
+	resp, body = c.write("PUT", "/api/v1/backups/schedules/"+s.ID, body)
 	if resp.StatusCode != 200 {
 		t.Fatalf("round-trip put %d %s", resp.StatusCode, body)
+	}
+	resp, body = c.write("POST", "/api/v1/backups/schedules/"+s.ID+"/enabled", `{"enabled":false}`)
+	if resp.StatusCode != 200 || !strings.Contains(body, `"enabled":false`) || strings.Contains(body, "nextRun") {
+		t.Fatalf("disable %d %s", resp.StatusCode, body)
+	}
+	for _, bad := range []string{`{"name":"x","cron":"* * * * *","retain":3,"compression":"none"}`, `{"name":"x","cron":"* * * * *","retain":3,"unknown":1}`} {
+		if resp, body := c.write("POST", "/api/v1/backups/schedules", bad); resp.StatusCode < 400 {
+			t.Errorf("accepted %s: %d %s", bad, resp.StatusCode, body)
+		}
+	}
+	if resp, _ := c.write("PUT", "/api/v1/backups/schedules/nope", `{"name":"x","cron":"* * * * *","retain":3}`); resp.StatusCode != 404 {
+		t.Errorf("put missing -> %d", resp.StatusCode)
+	}
+	resp, _ = c.do("DELETE", "/api/v1/backups/schedules/"+s.ID, "", map[string]string{"Origin": "http://evil.test"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("delete foreign origin -> %d", resp.StatusCode)
+	}
+	if resp, body := c.write("DELETE", "/api/v1/backups/schedules/"+s.ID, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %d %s", resp.StatusCode, body)
 	}
 }
 

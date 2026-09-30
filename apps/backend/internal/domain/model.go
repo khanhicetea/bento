@@ -281,16 +281,24 @@ type TunnelSettings struct {
 	TokenGeneration int64 `json:"tokenGeneration"`
 }
 
+// BackupSchedule is one of the stack's backup schedules. Scope selects the
+// databases: "all", every database of one app ("app"), or named databases
+// of one app ("database").
 type BackupSchedule struct {
-	Enabled      bool   `json:"enabled"`
-	Cron         string `json:"cron"`
-	Compression  string `json:"compression"`
-	Retain       int    `json:"retain"`
-	RcloneRemote string `json:"rcloneRemote"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Enabled      bool     `json:"enabled"`
+	Cron         string   `json:"cron"`
+	Scope        string   `json:"scope"`
+	AppID        string   `json:"appId,omitempty"`
+	Databases    []string `json:"databases,omitempty"`
+	Compression  string   `json:"compression"`
+	Retain       int      `json:"retain"`
+	RcloneRemote string   `json:"rcloneRemote"`
 }
 
 func DefaultBackupSchedule() BackupSchedule {
-	return BackupSchedule{Enabled: false, Cron: "30 2 * * *", Compression: "zstd", Retain: 7}
+	return BackupSchedule{Name: "All backups", Enabled: false, Cron: "30 2 * * *", Scope: "all", Compression: "zstd", Retain: 7}
 }
 
 // UIDRange is the configured inclusive allocation range; UID == GID.

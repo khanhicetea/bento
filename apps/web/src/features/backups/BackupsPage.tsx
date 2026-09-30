@@ -1,10 +1,20 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, Cloud, Download, RotateCcw, SquareTerminal, Trash2 } from "lucide-react";
+import {
+  Archive,
+  CalendarClock,
+  ChevronRight,
+  Cloud,
+  Download,
+  Pencil,
+  Plus,
+  RotateCcw,
+  SquareTerminal,
+  Trash2,
+} from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
-  Cell,
   DomainError,
   DomainLoading,
   EmptyState,
@@ -30,8 +40,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "artifacts" | "runs" | "schedule";
-const tabLabels: Record<Tab, string> = { artifacts: "Files", runs: "Runs", schedule: "Schedule" };
+type Tab = "artifacts" | "runs" | "schedules";
+const tabLabels: Record<Tab, string> = { artifacts: "Files", runs: "Runs", schedules: "Schedules" };
 
 export function BackupsPage() {
   const [tab, setTab] = useState<Tab>("artifacts");
@@ -42,7 +52,7 @@ export function BackupsPage() {
     <>
       <PageHeader title="Backups" actions={<Button onClick={() => setRunOpen(true)}>Back up now</Button>} />
       <div className="seg mb-5" role="tablist" aria-label="Backup sections">
-        {(["artifacts", "runs", "schedule"] as const).map((value) => (
+        {(["artifacts", "runs", "schedules"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
             {tabLabels[value]}
           </button>
@@ -50,7 +60,7 @@ export function BackupsPage() {
       </div>
       {tab === "artifacts" && <ArtifactsTab onRestore={setRestoreTarget} onDelete={setDeleteTarget} />}
       {tab === "runs" && <RunsTab />}
-      {tab === "schedule" && <ScheduleForm />}
+      {tab === "schedules" && <SchedulesTab />}
       {runOpen && <BackupNowDialog onClose={() => setRunOpen(false)} />}
       {restoreTarget && <RestoreDialog artifact={restoreTarget} onClose={() => setRestoreTarget(null)} />}
       {deleteTarget && <DeleteDialog artifact={deleteTarget} onClose={() => setDeleteTarget(null)} />}
@@ -185,58 +195,36 @@ function RunsTab() {
 
 function BackupNowDialog({ onClose }: { onClose: () => void }) {
   const [compression, setCompression] = useState("zstd");
-  // Upload whenever a remote is set, unless the operator opts out.
-  const [skipUpload, setSkipUpload] = useState(false);
-  const schedule = useQuery({ queryKey: keys.backups.schedule, queryFn: ({ signal }) => api.backups.schedule(signal) });
+  const [rcloneRemote, setRcloneRemote] = useState("");
   const rclone = useQuery({ queryKey: keys.backups.rclone, queryFn: ({ signal }) => api.backups.rclone(signal) });
-  const remote = schedule.data?.rcloneRemote ?? "";
-  const upload = remote !== "" && !skipUpload;
-  const run = useOperationMutation(() => api.backups.run({ scope: "all", compression, upload }));
+  const run = useOperationMutation(() => api.backups.run({ scope: "all", compression, rcloneRemote }));
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Back up now</DialogTitle>
-          <DialogDescription>Every app database.</DialogDescription>
+          <DialogDescription>Every app database. Manual backups are never removed by retention.</DialogDescription>
         </DialogHeader>
         <Field label="Compression">
-          <NativeSelect className="w-full" value={compression} onChange={(event) => setCompression(event.target.value)}>
-            <option value="zstd">zstd</option>
-            <option value="gzip">gzip</option>
-            <option value="none">none</option>
-          </NativeSelect>
+          <CompressionSelect value={compression} onChange={setCompression} />
         </Field>
-        <div className="grid gap-1">
-          <label className="check">
-            <Checkbox
-              checked={upload}
-              disabled={remote === ""}
-              onCheckedChange={(checked) => setSkipUpload(checked !== true)}
-            />
-            {remote ? (
-              <span>
-                Upload to <code>{remote}</code>
-              </span>
-            ) : (
-              "Upload to rclone remote"
-            )}
-          </label>
-          {schedule.isSuccess && remote === "" && (
-            <span className="note">Set an rclone remote in the Schedule tab to upload.</span>
-          )}
-          {upload && rclone.data?.encrypted && (
-            <span className="note note--bad">The rclone config is encrypted, so this upload will fail.</span>
-          )}
-        </div>
+        <Field label="Upload to" hint="rclone name:path — leave empty to keep the files on this host only">
+          <Input
+            className="font-mono"
+            value={rcloneRemote}
+            placeholder="remote:bucket/path"
+            onChange={(event) => setRcloneRemote(event.target.value)}
+          />
+        </Field>
+        {rcloneRemote && rclone.data?.encrypted && (
+          <span className="note note--bad">The rclone config is encrypted, so this upload will fail.</span>
+        )}
         {run.error && <Alert variant="destructive">{messageOf(run.error)}</Alert>}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            disabled={run.isPending || schedule.isPending}
-            onClick={() => run.mutate(undefined, { onSuccess: onClose })}
-          >
+          <Button disabled={run.isPending} onClick={() => run.mutate(undefined, { onSuccess: onClose })}>
             Start
           </Button>
         </DialogFooter>
@@ -245,114 +233,304 @@ function BackupNowDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ScheduleForm() {
-  // Polled so "Next run" and "Last run" move on after a slot fires.
-  const query = useQuery({
-    queryKey: keys.backups.schedule,
-    queryFn: ({ signal }) => api.backups.schedule(signal),
-    refetchInterval: 30_000,
-  });
-  if (query.isPending) return <DomainLoading label="schedule" />;
-  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
-  return <ScheduleEditor initial={query.data} />;
+function CompressionSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <NativeSelect className="w-full" value={value} onChange={(event) => onChange(event.target.value)}>
+      <option value="zstd">zstd</option>
+      <option value="gzip">gzip</option>
+    </NativeSelect>
+  );
 }
 
-function ScheduleEditor({ initial }: { initial: T.BackupSchedule }) {
+const newSchedule: T.BackupSchedule = {
+  id: "",
+  name: "",
+  enabled: true,
+  cron: "30 2 * * *",
+  scope: "all",
+  databases: [],
+  compression: "zstd",
+  retain: 7,
+  rcloneRemote: "",
+};
+
+function SchedulesTab() {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState<T.BackupSchedule | null>(null);
+  const [deleting, setDeleting] = useState<T.BackupSchedule | null>(null);
+  // Polled so "Next run" and "Last run" move on after a slot fires.
+  const query = useQuery({
+    queryKey: keys.backups.schedules,
+    queryFn: ({ signal }) => api.backups.schedules(signal),
+    refetchInterval: 30_000,
+  });
+  const apps = useApplicationList();
+  const toggle = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.backups.enableSchedule(id, enabled),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.backups.schedules }),
+  });
+  if (query.isPending) return <DomainLoading label="schedules" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  const appSlug = (id?: string) => apps.data?.apps.find((app) => app.id === id)?.slug ?? id ?? "";
+  const scopeLabel = (schedule: T.BackupSchedule) =>
+    schedule.scope === "all"
+      ? "All databases"
+      : schedule.scope === "app"
+        ? `App ${appSlug(schedule.appId)}`
+        : `${appSlug(schedule.appId)}: ${schedule.databases.join(", ")}`;
+  const schedules = query.data.schedules;
+  return (
+    <>
+      <p className="note mb-3">Cron uses server time ({query.data.timeZone}). Missed runs are not replayed.</p>
+      {toggle.error && <Alert variant="destructive">{messageOf(toggle.error)}</Alert>}
+      <div className="box">
+        <div className="tiles">
+          {schedules.map((schedule) => (
+            <article
+              key={schedule.id}
+              className={`cell tile ${schedule.enabled && schedule.lastState === "submit-failed" ? "cell--alert" : ""}`}
+              aria-label={schedule.name}
+            >
+              <div className="tile__top">
+                <span className={`mono mono--lg ${schedule.enabled ? "" : "opacity-50"}`} aria-hidden="true">
+                  <CalendarClock className="size-5" />
+                </span>
+                <div className="tile__name">
+                  <strong title={schedule.name}>{schedule.name}</strong>
+                  <small className="font-mono" title={schedule.cron}>
+                    {formatCron(schedule.cron)}
+                  </small>
+                </div>
+                <label className="check shrink-0 text-sm">
+                  <Checkbox
+                    aria-label={`${schedule.enabled ? "Disable" : "Enable"} ${schedule.name}`}
+                    checked={schedule.enabled}
+                    disabled={toggle.isPending}
+                    onCheckedChange={(checked) => toggle.mutate({ id: schedule.id, enabled: checked === true })}
+                  />
+                  {schedule.enabled ? "On" : "Off"}
+                </label>
+              </div>
+              <dl className="facts">
+                <div>
+                  <dt>Next run</dt>
+                  <dd title={schedule.nextRun ? new Date(schedule.nextRun).toLocaleString() : undefined}>
+                    {schedule.nextRun ? formatRelative(schedule.nextRun) : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last run</dt>
+                  <dd title={schedule.lastRun} className="flex flex-wrap items-center gap-1.5">
+                    {schedule.lastRun ? formatRelative(schedule.lastRun) : "—"}
+                    {schedule.lastState && <StateBadge state={schedule.lastState} />}
+                  </dd>
+                </div>
+                <div className="facts__wide">
+                  <dt>Databases</dt>
+                  <dd>{scopeLabel(schedule)}</dd>
+                </div>
+                <div>
+                  <dt>Keep</dt>
+                  <dd>{schedule.retain} per database</dd>
+                </div>
+                <div>
+                  <dt>Compression</dt>
+                  <dd>{schedule.compression}</dd>
+                </div>
+                <div className="facts__wide">
+                  <dt>Upload</dt>
+                  <dd className="inline-flex min-w-0 items-center gap-1">
+                    <Cloud className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    {schedule.rcloneRemote ? (
+                      <code className="truncate">{schedule.rcloneRemote}</code>
+                    ) : (
+                      <span className="text-muted-foreground">This host only</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-auto flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setEditing(schedule)}>
+                  <Pencil /> Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Delete ${schedule.name}`}
+                  onClick={() => setDeleting(schedule)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            </article>
+          ))}
+          <button type="button" className="cell tile tile--add" onClick={() => setEditing(newSchedule)}>
+            <Plus aria-hidden="true" />
+            New schedule
+          </button>
+        </div>
+      </div>
+      {editing && <ScheduleDialog initial={editing} onClose={() => setEditing(null)} />}
+      {deleting && <DeleteScheduleDialog schedule={deleting} onClose={() => setDeleting(null)} />}
+    </>
+  );
+}
+
+function ScheduleDialog({ initial, onClose }: { initial: T.BackupSchedule; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [schedule, setSchedule] = useState(initial);
+  const apps = useApplicationList();
+  const detail = useApplication(schedule.scope === "all" || !schedule.appId ? null : schedule.appId);
   const save = useMutation({
-    mutationFn: api.backups.setSchedule,
-    onSuccess: (data) => {
-      queryClient.setQueryData(keys.backups.schedule, data);
-      setSchedule(data);
+    mutationFn: api.backups.saveSchedule,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.backups.schedules });
+      onClose();
     },
   });
-  // Only editable fields count; nextRun and lastRun change on every poll.
-  const editable = ({ enabled, cron, compression, retain, rcloneRemote }: T.BackupSchedule) =>
-    JSON.stringify([enabled, cron, compression, retain, rcloneRemote]);
-  const dirty = editable(schedule) !== editable(initial);
+  const databases = (detail.data?.bindings ?? [])
+    .flatMap((binding) => (binding.engine === "sqlite" ? [sqliteFileId(binding.sqlitePath)] : binding.databases))
+    .filter((value): value is string => !!value);
+  const toggleDatabase = (db: string, on: boolean) =>
+    setSchedule({
+      ...schedule,
+      databases: on ? [...schedule.databases, db] : schedule.databases.filter((value) => value !== db),
+    });
   return (
-    <div className="box box--3">
-      <Cell>
-        <div className="metric">
-          <strong className="text-xl!">{initial.enabled ? formatCron(initial.cron) : "Off"}</strong>
-          <span>Schedule</span>
-        </div>
-      </Cell>
-      <Cell>
-        <div className="metric">
-          <strong className="text-xl!" title={initial.nextRun ? new Date(initial.nextRun).toLocaleString() : undefined}>
-            {initial.nextRun ? formatRelative(initial.nextRun) : "—"}
-          </strong>
-          <span>Next run</span>
-        </div>
-      </Cell>
-      <Cell>
-        <div className="metric">
-          <strong className="text-xl!">{initial.lastRun ? formatRelative(initial.lastRun) : "—"}</strong>
-          <span>Last run{initial.lastState ? ` · ${initial.lastState}` : ""}</span>
-        </div>
-      </Cell>
-      <Cell className="cell--wide">
-        <div className="grid gap-4">
-          <label className="check">
-            <Checkbox
-              checked={schedule.enabled}
-              onCheckedChange={(checked) => setSchedule({ ...schedule, enabled: checked === true })}
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{initial.id ? `Edit ${initial.name}` : "New backup schedule"}</DialogTitle>
+          <DialogDescription>
+            Retention keeps the newest files of each database made by this schedule; other schedules and manual backups
+            are not affected.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          <Field label="Name">
+            <Input value={schedule.name} onChange={(event) => setSchedule({ ...schedule, name: event.target.value })} />
+          </Field>
+          <Field label="Cron" hint={`${formatCron(schedule.cron)}${initial.timeZone ? ` · ${initial.timeZone}` : ""}`}>
+            <Input
+              className="font-mono"
+              value={schedule.cron}
+              onChange={(event) => setSchedule({ ...schedule, cron: event.target.value })}
             />
-            Enabled
-          </label>
-          <div className="grid items-start gap-4 sm:grid-cols-3">
-            <Field
-              label="Cron"
-              hint={`${formatCron(schedule.cron)}${initial.timeZone ? ` · ${initial.timeZone}` : ""}`}
+          </Field>
+          <Field label="Databases">
+            <NativeSelect
+              className="w-full"
+              value={schedule.scope}
+              onChange={(event) => setSchedule({ ...schedule, scope: event.target.value, databases: [] })}
             >
-              <Input
-                className="font-mono"
-                value={schedule.cron}
-                onChange={(event) => setSchedule({ ...schedule, cron: event.target.value })}
-              />
-            </Field>
-            <Field label="Keep per database">
-              <Input
-                type="number"
-                min="1"
-                value={schedule.retain}
-                onChange={(event) => setSchedule({ ...schedule, retain: Number(event.target.value) })}
-              />
-            </Field>
-            <Field label="Compression">
+              <option value="all">All apps</option>
+              <option value="app">One app</option>
+              <option value="database">Specific databases</option>
+            </NativeSelect>
+          </Field>
+          {schedule.scope !== "all" && (
+            <Field label="App">
               <NativeSelect
                 className="w-full"
-                value={schedule.compression}
-                onChange={(event) => setSchedule({ ...schedule, compression: event.target.value })}
+                value={schedule.appId ?? ""}
+                onChange={(event) => setSchedule({ ...schedule, appId: event.target.value, databases: [] })}
               >
-                <option value="zstd">zstd</option>
-                <option value="gzip">gzip</option>
-                <option value="none">none</option>
+                <option value="" disabled>
+                  Select an app
+                </option>
+                {(apps.data?.apps ?? []).map((app) => (
+                  <option key={app.id} value={app.id}>
+                    {app.slug}
+                  </option>
+                ))}
               </NativeSelect>
             </Field>
-          </div>
+          )}
+          {schedule.scope === "database" && schedule.appId && (
+            <div className="grid gap-2 sm:col-span-2">
+              {detail.isPending && <DomainLoading label="databases" />}
+              {detail.data && databases.length === 0 && <span className="note">This app has no databases.</span>}
+              {databases.map((db) => (
+                <label key={db} className="check">
+                  <Checkbox
+                    checked={schedule.databases.includes(db)}
+                    onCheckedChange={(checked) => toggleDatabase(db, checked === true)}
+                  />
+                  <code>{db}</code>
+                </label>
+              ))}
+            </div>
+          )}
+          <Field label="Keep per database">
+            <Input
+              type="number"
+              min="1"
+              max="365"
+              value={schedule.retain}
+              onChange={(event) => setSchedule({ ...schedule, retain: Number(event.target.value) })}
+            />
+          </Field>
+          <Field label="Compression">
+            <CompressionSelect
+              value={schedule.compression}
+              onChange={(compression) => setSchedule({ ...schedule, compression })}
+            />
+          </Field>
         </div>
-      </Cell>
-      <Cell className="cell--wide">
         <UploadSection
           remote={schedule.rcloneRemote}
           onRemoteChange={(rcloneRemote) => setSchedule({ ...schedule, rcloneRemote })}
         />
-      </Cell>
-      <div className="cell cell--wide cell--muted flex flex-wrap items-center justify-end gap-3 py-3!">
-        {save.error ? (
-          <span className="note note--bad mr-auto">{messageOf(save.error)}</span>
-        ) : (
-          <span className="note mr-auto">Cron uses server time. Missed runs are not replayed.</span>
-        )}
-        {dirty && <span className="note">Unsaved</span>}
-        <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(schedule)}>
-          Save
-        </Button>
-      </div>
-    </div>
+        <label className="check">
+          <Checkbox
+            checked={schedule.enabled}
+            onCheckedChange={(checked) => setSchedule({ ...schedule, enabled: checked === true })}
+          />
+          Enabled
+        </label>
+        {save.error && <Alert variant="destructive">{messageOf(save.error)}</Alert>}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={save.isPending} onClick={() => save.mutate(schedule)}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteScheduleDialog({ schedule, onClose }: { schedule: T.BackupSchedule; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => api.backups.removeSchedule(schedule.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.backups.schedules });
+      onClose();
+    },
+  });
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete schedule {schedule.name}?</DialogTitle>
+          <DialogDescription>
+            No more backups will run for it. Files it already made are kept until you delete them.
+          </DialogDescription>
+        </DialogHeader>
+        {remove.error && <Alert variant="destructive">{messageOf(remove.error)}</Alert>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            No
+          </Button>
+          <Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>
+            Yes, delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

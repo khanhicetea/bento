@@ -516,13 +516,20 @@ export interface RetiredList {
 }
 export interface BackupRequest {
   /**
-   * Scope is "all", "app", or "binding".
+   * Scope is "all", "app", "binding", or "database" (Databases of AppID).
    */
   scope: string;
   appId?: string;
   bindingId?: string;
+  databases?: string[];
+  /**
+   * Compression is "zstd" (default) or "gzip".
+   */
   compression?: string;
-  upload: boolean;
+  /**
+   * RcloneRemote uploads new artifacts to this name:path; empty skips it.
+   */
+  rcloneRemote?: string;
 }
 export interface BackupArtifact {
   path: string;
@@ -548,20 +555,45 @@ export interface BackupRun {
 export interface BackupRunList {
   runs: BackupRun[];
 }
+/**
+ * BackupSchedule is one backup schedule. Scope is "all", "app" (every
+ * database of AppID), or "database" (Databases of AppID). Retain is how many
+ * artifacts this schedule keeps per database. ID, NextRun, LastRun,
+ * LastState, LastOpID and TimeZone are ignored on write.
+ */
 export interface BackupSchedule {
+  id: string;
+  name: string;
   enabled: boolean;
   cron: string;
+  scope: string;
+  appId?: string;
+  databases: string[];
   compression: string;
   retain: number /* int */;
   rcloneRemote: string;
   nextRun?: string;
   lastRun?: string;
   lastState?: string;
+  lastOpId?: string;
   /**
    * TimeZone is the server's zone that cron fields are read in, for
    * example "UTC+07:00". Ignored on write.
    */
   timeZone?: string;
+}
+export interface BackupScheduleList {
+  schedules: BackupSchedule[];
+  /**
+   * TimeZone is the server's zone that cron fields are read in.
+   */
+  timeZone: string;
+}
+/**
+ * BackupScheduleEnable turns a schedule on or off.
+ */
+export interface BackupScheduleEnable {
+  enabled: boolean;
 }
 /**
  * RcloneRemote is a configured rclone remote. Only its name and backend type
@@ -582,8 +614,7 @@ export interface RcloneStatus {
   error?: string;
 }
 /**
- * RcloneTestRequest lists a remote without changing it; an empty remote
- * tests the schedule's remote.
+ * RcloneTestRequest lists a remote without changing it.
  */
 export interface RcloneTestRequest {
   remote: string;
