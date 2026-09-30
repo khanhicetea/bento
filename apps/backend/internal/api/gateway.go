@@ -19,7 +19,7 @@ import (
 // minicrond's UI is served on the management origin under
 // runtime.SchedulerBasePath (/apps/<slug>/scheduler/), so it sits beside the
 // Bento UI and needs no separate listener. minicrond escapes and locks down
-// its own UI (strict CSP, no framing), and the gateway adds the parts only it
+// its own UI (strict CSP, framing only when MINICRON_ALLOW_IFRAME is set), and the gateway adds the parts only it
 // can enforce: an operator session, an exact Origin on writes, the app's slug
 // and desired-running state, and stripping every credential before the request
 // crosses the app's UID-matched relay. The CSRF token is not required: the UI
@@ -65,6 +65,11 @@ func (s *Server) schedulerGateway() http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
+		// Only the scheduler page may be framed, and only by this origin: the
+		// Scheduler tab embeds it. Everything else keeps DENY / 'none'.
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Content-Security-Policy", strings.Replace(
+			w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'", "frame-ancestors 'self'", 1))
 		slug := r.PathValue("slug")
 		if !schedulerSlugPattern.MatchString(slug) || strings.Contains(r.URL.Path, "/../") ||
 			strings.HasSuffix(r.URL.Path, "/..") {

@@ -435,7 +435,8 @@ changes its own UID and never execs into containers per request. Relays idle for
   then a binding-scoped grant re-checked against the live session on every request), and the scheduler UI (the same
   ticket/grant scheme, scoped to one app slug). Never add Bento's own UI, login, or management routes to it.
 - App-controlled content (the scheduler UI) is never served on the management origin; the management UI sets
-  `frame-src 'none'` and `frame-ancestors 'none'`, and `Origin: null` never passes the origin check.
+  `frame-src 'self'` and `frame-ancestors 'none'` (only the scheduler gateway relaxes the latter to `'self'`, so the
+  Scheduler tab can embed it; the app runs with `MINICRON_ALLOW_IFRAME=1`), and `Origin: null` never passes the origin check.
 - The Adminer container holds no credentials, joins only the data network, and refuses requests without the
   gateway token. The gateway injects one binding's app-user credentials per request; URL parameters cannot select
   another server, driver, user, or database.

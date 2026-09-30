@@ -150,7 +150,7 @@ var envKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // reservedEnvKeys are set by Bento or the image and cannot be overridden.
 var reservedEnvKeys = map[string]bool{
 	"HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "PATH": true, "TZ": true,
-	"BASE_PATH": true, "MINICRON_DATA": true, "MINICRON_CONFIG": true,
+	"BASE_PATH": true, "MINICRON_DATA": true, "MINICRON_CONFIG": true, "MINICRON_ALLOW_IFRAME": true,
 }
 
 // ValidateEnv checks operator-defined app environment variables.

@@ -510,20 +510,20 @@ function Scheduler({ app }: { app: T.App }) {
         </div>
       </div>
     );
+  const src = `/apps/${encodeURIComponent(app.slug)}/scheduler/`;
   return (
     <div className="box">
-      <div className="cell empty">
-        <strong>Scheduler</strong>
-        <p>
-          The scheduler UI is served by the app's own minicrond under this control plane's address, behind your Bento
-          session.
-        </p>
-        {/* A plain anchor: the scheduler is a separate page, not a client route. */}
-        <Button asChild>
-          <a href={`/apps/${encodeURIComponent(app.slug)}/scheduler/`}>
-            <ExternalLink /> Open scheduler
-          </a>
-        </Button>
+      <div className="cell">
+        <div className="scheduler-bar">
+          <strong>Scheduler</strong>
+          {/* A plain anchor: the scheduler is a separate page, not a client route. */}
+          <Button asChild>
+            <a href={src} target="_blank" rel="noopener">
+              <ExternalLink /> Open in new tab
+            </a>
+          </Button>
+        </div>
+        <iframe className="scheduler-frame" title={`${app.slug} scheduler`} src={src} />
       </div>
     </div>
   );
