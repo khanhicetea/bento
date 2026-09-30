@@ -11,7 +11,7 @@ This document explains how the Go backend is put together and why.
    process owns a stack at a time;
 3. opens the store (refuses foreign/old/future schema) and connects to Docker (a Docker outage is logged, not fatal);
 4. marks operations left `running` by a previous process as `interrupted` (`Controller.Recover`);
-5. starts the operation executor, the reconciler, the backup schedule loop, and the relay reaper;
+5. starts the operation executor, the reconciler, the scheduler loop (`Controller.RunSchedules`), and the relay reaper;
 6. serves the same HTTP handler on two listeners:
    - TCP on a **loopback-only** address (`cli.ValidateListen` rejects anything else) for the browser;
    - `run/bento.sock` (`0600`) for the CLI, wrapped by `Server.LocalOnly`, which admits only peers whose
@@ -58,11 +58,11 @@ One SQLite file (`bento.db`, `0600`) opened with `modernc.org/sqlite` (pure Go),
 connection, and `BEGIN IMMEDIATE` transactions.
 
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
-  version (currently 1). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older,
+  version (currently 2). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older,
   newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). There are no migrations yet; a future version adds
   them and bumps `SchemaVersion`.
-- **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel, backup schedule,
-  network plan, operator password hash), `uid_ledger`, `apps`, `domains` (one owner per name, one primary per owner),
+- **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
+  network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `domains` (one owner per name, one primary per owner),
   `proxies`, `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
   `operation_events` (≤200 events each), `sessions`, `images`, `backup_runs`.
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
@@ -320,9 +320,24 @@ new artifacts (read-only). Before any rclone container runs, `backup.checkRemote
 regular, unencrypted file that defines the remote; the API only ever reads section names and `type`. The rclone shell
 (`GET /backups/rclone/terminal`) is the same terminal machinery as app shells (`serveTerminal`, keyed by scope) over an
 idle `sleep` container of that image that mounts only `rclone/`; `backup.rclone-test` runs `rclone lsf --max-depth 1`
-and treats exit 3 (directory not found) as reachable. The schedule is evaluated by
-`Controller.RunSchedule` every 30 seconds in the server's local time zone (`LastSlot` is stored in UTC and converted
-back before `cron.Next`); slots missed by more than 10 minutes are counted as missed, never replayed.
+and treats exit 3 (directory not found) as reachable. The stack-wide backup settings are the `backup-default` row of
+`schedules` (kind `backup`; spec: compression, retain, rclone remote); a backup request's `scheduleId` selects whose
+retention and remote apply.
+
+## Scheduler: `operations/schedules.go`
+
+Platform jobs are rows in `schedules` (`id`, `kind`, `cron`, `enabled`, `spec_json`, bookkeeping). App jobs are not:
+they run in each app's own minicrond as the app UID. `Controller.RunSchedules` ticks every 30 seconds, evaluates
+enabled rows in the server's local time zone (`last_slot` is stored in UTC and converted back before `cron.Next`), and
+for a due slot calls the kind's `Submit`, which only queues a durable operation. Rules:
+
+- Slots missed by more than 10 minutes are counted as missed and skipped, unless the kind sets `CatchUp` (run once).
+- A slot is skipped (`last_state=skipped`) while the schedule's previous operation (`last_op_id`) is not terminal.
+- Bookkeeping is saved only if `revision` is unchanged, so a concurrent edit (which resets `last_slot` to now) wins.
+- Unknown kinds are left untouched. Import disables every schedule and clears its bookkeeping.
+
+To add a kind: register it in `scheduleKinds`, validate its spec where it is edited, and submit an existing or new
+operation kind (with its claims) from `Submit`.
 
 ## Transfer
 

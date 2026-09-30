@@ -144,7 +144,7 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 		if err := store.PutSetting(ctx, q, "edge", domain.DefaultEdgeSettings()); err != nil {
 			return err
 		}
-		if err := store.PutSetting(ctx, q, "backup_schedule", domain.DefaultBackupSchedule()); err != nil {
+		if err := seedBackupSchedule(ctx, q); err != nil {
 			return err
 		}
 		for _, svc := range services {
@@ -181,4 +181,17 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 		return id, err
 	}
 	return id, nil
+}
+
+// seedBackupSchedule stores the default (disabled) backup schedule.
+func seedBackupSchedule(ctx context.Context, q store.Q) error {
+	d := domain.DefaultBackupSchedule()
+	spec, err := json.Marshal(map[string]any{"compression": d.Compression, "retain": d.Retain, "rcloneRemote": d.RcloneRemote})
+	if err != nil {
+		return err
+	}
+	now := platform.FormatTime(time.Now())
+	return store.PutSchedule(ctx, q, store.Schedule{
+		ID: store.BackupScheduleID, Kind: "backup", Name: "All backups", Cron: d.Cron, Enabled: d.Enabled, Spec: spec,
+	}, now)
 }

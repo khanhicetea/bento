@@ -190,16 +190,60 @@ func TestScheduleUsesServerLocalTime(t *testing.T) {
 	if !NextBackup(domain.BackupSchedule{Cron: s.Cron}, before).IsZero() {
 		t.Fatal("a disabled schedule has no next run")
 	}
-	if err := store.PutSetting(ctx, h.store.DB(), scheduleStateKey, ScheduleState{LastSlot: platform.FormatTime(before)}); err != nil {
-		t.Fatal(err)
-	}
-	h.c.checkSchedule(ctx, before.Add(30*time.Second))
+	setLastSlot(t, h, store.BackupScheduleID, before)
+	h.c.checkSchedules(ctx, before.Add(30*time.Second))
 	if _, st, _ := h.c.BackupSchedule(ctx); st.LastRun != "" {
 		t.Fatalf("fired early: %+v", st)
 	}
-	h.c.checkSchedule(ctx, time.Date(2026, 9, 28, 9, 30, 20, 0, ict))
+	h.c.checkSchedules(ctx, time.Date(2026, 9, 28, 9, 30, 20, 0, ict))
 	_, st, err := h.c.BackupSchedule(ctx)
-	if err != nil || !strings.HasPrefix(st.LastState, "submitted ") || st.LastSlot != "2026-09-28T02:30:00.000Z" {
+	if err != nil || st.LastState != "submitted" || st.LastOpID == "" || st.LastSlot != "2026-09-28T02:30:00.000Z" {
 		t.Fatalf("did not fire at 09:30 local: %+v %v", st, err)
+	}
+	op, err := store.GetOperation(ctx, h.store.DB(), st.LastOpID)
+	if err != nil || !strings.Contains(string(op.Request), `"scheduleId":"`+store.BackupScheduleID+`"`) {
+		t.Fatalf("scheduled op %s %v", op.Request, err)
+	}
+	// The next slot is skipped, not stacked, while that run is still queued.
+	h.c.checkSchedules(ctx, time.Date(2026, 9, 29, 9, 30, 20, 0, ict))
+	_, st2, _ := h.c.BackupSchedule(ctx)
+	if st2.LastState != "skipped" || st2.LastOpID != st.LastOpID || st2.Missed != 1 {
+		t.Fatalf("overlapping run not skipped: %+v", st2)
+	}
+}
+
+// Slots missed while the backend was down are recorded, not replayed, and an
+// edit made while a check is in flight is never overwritten by bookkeeping.
+func TestScheduleMissedSlotAndConcurrentEdit(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Enabled: true, Cron: "0 * * * *", Retain: 1}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 9, 28, 1, 0, 0, 0, time.UTC)
+	setLastSlot(t, h, store.BackupScheduleID, start)
+	h.c.checkSchedules(ctx, start.Add(3*time.Hour+30*time.Minute))
+	_, st, _ := h.c.BackupSchedule(ctx)
+	if st.LastState != "missed" || st.LastOpID != "" || st.Missed != 3 {
+		t.Fatalf("missed slots: %+v", st)
+	}
+	row, err := store.GetSchedule(ctx, h.store.DB(), store.BackupScheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.SetBackupSchedule(ctx, domain.BackupSchedule{Enabled: true, Cron: "0 5 * * *", Retain: 1}); err != nil {
+		t.Fatal(err)
+	}
+	row.LastState = "stale"
+	if ok, err := store.SaveScheduleState(ctx, h.store.DB(), row); err != nil || ok {
+		t.Fatalf("stale bookkeeping overwrote an edit: %v %v", ok, err)
+	}
+}
+
+func setLastSlot(t *testing.T, h *harness, id string, at time.Time) {
+	t.Helper()
+	if _, err := h.store.DB().ExecContext(t.Context(), "UPDATE schedules SET last_slot = ? WHERE id = ?",
+		platform.FormatTime(at), id); err != nil {
+		t.Fatal(err)
 	}
 }

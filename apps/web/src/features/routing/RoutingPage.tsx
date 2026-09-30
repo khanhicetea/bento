@@ -14,7 +14,8 @@ import {
   PageHeader,
   StateBadge,
 } from "../../components/DomainState.tsx";
-import { useOperationMutation } from "../applications/useApplications.ts";
+import { Link } from "wouter";
+import { useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,8 +30,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "edge" | "tunnel" | "proxies" | "utils";
-const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", proxies: "Proxies", utils: "Utils" };
+type Tab = "edge" | "tunnel" | "utils";
+const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", utils: "Utils" };
 
 export function RoutingPage() {
   const [tab, setTab] = useState<Tab>("edge");
@@ -38,7 +39,7 @@ export function RoutingPage() {
     <>
       <PageHeader title="Ingress" />
       <div className="seg mb-5" role="tablist" aria-label="Ingress sections">
-        {(["edge", "tunnel", "proxies", "utils"] as const).map((value) => (
+        {(["edge", "tunnel", "utils"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
             {tabLabels[value]}
           </button>
@@ -46,7 +47,6 @@ export function RoutingPage() {
       </div>
       {tab === "edge" && <EdgePanel />}
       {tab === "tunnel" && <TunnelPanel />}
-      {tab === "proxies" && <ProxiesPanel />}
       {tab === "utils" && <UtilsPanel />}
     </>
   );
@@ -58,8 +58,12 @@ function EdgePanel() {
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   return (
     <>
-      <EdgeForm status={query.data} />
       {query.data.state === "healthy" && <EdgeMetricsCell />}
+      <EdgeForm status={query.data} />
+      <SectionTitle title="Proxies" hint="Route edge domains to upstreams outside Bento." />
+      <ProxiesPanel />
+      <SectionTitle title="Routes" hint="What the edge is serving right now." />
+      <RoutesBox status={query.data} />
     </>
   );
 }
@@ -158,84 +162,189 @@ function compact(n: number) {
   return compactFormat.format(n);
 }
 
+function SectionTitle({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="mb-2 mt-2 flex flex-wrap items-baseline gap-x-3 px-1">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    </div>
+  );
+}
+
 function EdgeForm({ status }: { status: T.EdgeStatus }) {
   const [settings, setSettings] = useState(status.settings);
   const save = useOperationMutation(() => api.edge.set(settings));
   const dirty = JSON.stringify(settings) !== JSON.stringify(status.settings);
+  const set = (next: Partial<T.EdgeSettings>) => setSettings({ ...settings, ...next });
   return (
-    <div className="box box--main">
-      <Cell title="Edge" action={<StateBadge state={status.state} />}>
+    <div className="box box--2">
+      <Cell title="Edge" className="cell--wide" action={<StateBadge state={status.state} />}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="check items-start rounded-lg border p-3">
+            <Checkbox checked={settings.enabled} onCheckedChange={(checked) => set({ enabled: checked === true })} />
+            <span className="grid gap-0.5">
+              <span className="text-sm font-medium">Enabled</span>
+              <span className="text-xs text-muted-foreground">
+                Run the shared nginx edge for managed apps and proxies.
+              </span>
+            </span>
+          </label>
+          <label className="check items-start rounded-lg border p-3">
+            <Checkbox checked={settings.http3} onCheckedChange={(checked) => set({ http3: checked === true })} />
+            <span className="grid gap-0.5">
+              <span className="text-sm font-medium">HTTP/3</span>
+              <span className="text-xs text-muted-foreground">Advertise QUIC on the HTTPS port (UDP).</span>
+            </span>
+          </label>
+        </div>
+      </Cell>
+      <Cell title="Listener">
         <div className="grid gap-4">
-          <div className="flex flex-wrap gap-5">
-            <label className="check">
-              <Checkbox
-                checked={settings.enabled}
-                onCheckedChange={(checked) => setSettings({ ...settings, enabled: checked === true })}
-              />
-              Enabled
-            </label>
-            <label className="check">
-              <Checkbox
-                checked={settings.http3}
-                onCheckedChange={(checked) => setSettings({ ...settings, http3: checked === true })}
-              />
-              HTTP/3
-            </label>
-          </div>
-          <div className="grid-3">
-            <Field label="Bind">
-              <Input
-                value={settings.bind}
-                onChange={(event) => setSettings({ ...settings, bind: event.target.value })}
-              />
-            </Field>
-            <Field label="HTTP">
+          <Field label="Bind address" hint="Interface the edge listens on.">
+            <Input value={settings.bind} spellCheck={false} onChange={(event) => set({ bind: event.target.value })} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="HTTP port">
               <Input
                 type="number"
                 value={settings.httpPort}
-                onChange={(event) => setSettings({ ...settings, httpPort: Number(event.target.value) })}
+                onChange={(event) => set({ httpPort: Number(event.target.value) })}
               />
             </Field>
-            <Field label="HTTPS">
+            <Field label="HTTPS port">
               <Input
                 type="number"
                 value={settings.httpsPort}
-                onChange={(event) => setSettings({ ...settings, httpsPort: Number(event.target.value) })}
+                onChange={(event) => set({ httpsPort: Number(event.target.value) })}
               />
             </Field>
-          </div>
-          <div className="grid-2">
-            <Field label="ACME email">
-              <Input
-                value={settings.acmeEmail}
-                onChange={(event) => setSettings({ ...settings, acmeEmail: event.target.value })}
-              />
-            </Field>
-            <Field label="ACME directory">
-              <Input
-                value={settings.acmeUrl}
-                onChange={(event) => setSettings({ ...settings, acmeUrl: event.target.value })}
-              />
-            </Field>
-          </div>
-          <div className="actions items-center">
-            {save.error && <span className="note note--bad mr-auto">{messageOf(save.error)}</span>}
-            {dirty && <span className="note">Unsaved</span>}
-            <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
-              Save
-            </Button>
           </div>
         </div>
       </Cell>
-      <Cell title={`Routes · ${status.routes.length}`}>
-        {status.routes.length === 0 ? (
-          <p className="note">None active</p>
+      <Cell title="Certificates (ACME)">
+        <div className="grid gap-4">
+          <Field label="Contact email" hint="Used for expiry notices from the certificate authority.">
+            <Input
+              type="email"
+              value={settings.acmeEmail}
+              placeholder="ops@example.com"
+              onChange={(event) => set({ acmeEmail: event.target.value })}
+            />
+          </Field>
+          <Field label="Directory URL" hint="Leave the default for Let's Encrypt production.">
+            <Input
+              value={settings.acmeUrl}
+              spellCheck={false}
+              onChange={(event) => set({ acmeUrl: event.target.value })}
+            />
+          </Field>
+        </div>
+      </Cell>
+      <Cell className="cell--wide">
+        <div className="actions items-center">
+          {save.error && <span className="note note--bad mr-auto">{messageOf(save.error)}</span>}
+          {dirty && <span className="note">Unsaved changes</span>}
+          <Button variant="outline" disabled={!dirty || save.isPending} onClick={() => setSettings(status.settings)}>
+            Reset
+          </Button>
+          <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
+            Save
+          </Button>
+        </div>
+      </Cell>
+    </div>
+  );
+}
+
+type RouteRow = {
+  key: string;
+  type: "App" | "Proxy";
+  name: string;
+  detail: string;
+  domain: string;
+  published: boolean;
+  href?: string;
+};
+
+function RoutesBox({ status }: { status: T.EdgeStatus }) {
+  const apps = useApplicationList();
+  const proxies = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
+  const active = new Set(status.routes);
+  const rows: RouteRow[] = [];
+  for (const app of apps.data?.apps ?? []) {
+    if (app.ingress !== "managed") continue;
+    rows.push({
+      key: `app-${app.slug}`,
+      type: "App",
+      name: app.slug,
+      detail: app.kind,
+      domain: app.primaryDomain,
+      published: active.has(`app-${app.slug}`),
+      href: `/apps/${app.slug}`,
+    });
+  }
+  for (const proxy of proxies.data?.proxies ?? []) {
+    rows.push({
+      key: `proxy-${proxy.name}`,
+      type: "Proxy",
+      name: proxy.name,
+      detail: `${proxy.upstreams.length} upstream${proxy.upstreams.length === 1 ? "" : "s"}`,
+      domain: proxy.domains.find((domain) => domain.primary)?.name ?? proxy.domains[0]?.name ?? "",
+      published: active.has(`proxy-${proxy.name}`),
+    });
+  }
+  // Routes the edge serves that no app or proxy claims (stale files).
+  const known = new Set(rows.map((row) => row.key));
+  for (const route of status.routes) {
+    if (!known.has(route)) {
+      rows.push({
+        key: route,
+        type: route.startsWith("proxy-") ? "Proxy" : "App",
+        name: route,
+        detail: "unknown",
+        domain: "",
+        published: true,
+      });
+    }
+  }
+  rows.sort((a, b) => Number(b.published) - Number(a.published) || a.name.localeCompare(b.name));
+  const live = rows.filter((row) => row.published).length;
+  return (
+    <div className="box">
+      <Cell title={`Routes · ${live} active`}>
+        {apps.error || proxies.error ? (
+          <DomainError
+            message={messageOf(apps.error ?? proxies.error)}
+            onRetry={() => {
+              void apps.refetch();
+              void proxies.refetch();
+            }}
+          />
+        ) : rows.length === 0 ? (
+          <p className="note">No apps or proxies use the edge yet.</p>
         ) : (
-          <div className="grid gap-1.5">
-            {status.routes.map((route) => (
-              <code key={route} className="chip justify-start truncate rounded-md!">
-                {route}
-              </code>
+          <div className="grid divide-y">
+            {rows.map((row) => (
+              <div key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 first:pt-0 last:pb-0">
+                <span className="w-14 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {row.type}
+                </span>
+                <div className="grid min-w-40 flex-1 gap-0.5">
+                  {row.href ? (
+                    <Link href={row.href} className="truncate text-sm font-medium">
+                      {row.name}
+                    </Link>
+                  ) : (
+                    <span className="truncate text-sm font-medium">{row.name}</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">{row.detail}</span>
+                </div>
+                <code className="min-w-0 flex-1 truncate text-xs">{row.domain || "no domain"}</code>
+                <StateBadge
+                  state={row.published ? "published" : "stopped"}
+                  label={row.published ? "Published" : "Not published"}
+                />
+              </div>
             ))}
           </div>
         )}

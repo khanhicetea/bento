@@ -24,7 +24,7 @@ const ApplicationID = 0x424E5431
 
 // SchemaVersion is the current baseline. Older or newer versions are refused
 // without modifying the file.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -120,7 +120,7 @@ func Create(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err := tx.Exec(schemaV1); err != nil {
+	if _, err := tx.Exec(schema); err != nil {
 		tx.Rollback()
 		db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
@@ -198,7 +198,7 @@ func (s *Store) SnapshotTo(ctx context.Context, dest string) error {
 	return err
 }
 
-const schemaV1 = `
+const schema = `
 CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -361,5 +361,22 @@ CREATE TABLE backup_runs (
   artifacts_json TEXT NOT NULL DEFAULT '[]',
   upload_state  TEXT NOT NULL DEFAULT '',
   error_message TEXT NOT NULL DEFAULT ''
+) STRICT;
+
+CREATE TABLE schedules (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  name         TEXT NOT NULL DEFAULT '',
+  cron         TEXT NOT NULL,
+  enabled      INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  spec_json    TEXT NOT NULL DEFAULT '{}',
+  last_slot    TEXT NOT NULL DEFAULT '',
+  last_run_at  TEXT NOT NULL DEFAULT '',
+  last_op_id   TEXT NOT NULL DEFAULT '',
+  last_state   TEXT NOT NULL DEFAULT '',
+  missed_count INTEGER NOT NULL DEFAULT 0,
+  revision     INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
 ) STRICT;
 `

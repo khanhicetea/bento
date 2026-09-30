@@ -2,12 +2,12 @@ package operations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -22,11 +22,6 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
-const (
-	scheduleSettingKey = "backup_schedule"
-	scheduleStateKey   = "backup_schedule_state"
-)
-
 // BackupRequest is the persisted request of a backup operation.
 type BackupRequest struct {
 	Scope       string `json:"scope"`
@@ -35,6 +30,9 @@ type BackupRequest struct {
 	Compression string `json:"compression"`
 	Upload      bool   `json:"upload"`
 	Trigger     string `json:"trigger"`
+	// ScheduleID names the schedule whose retention and remote apply; empty
+	// means the default backup schedule.
+	ScheduleID string `json:"scheduleId,omitempty"`
 }
 
 type RestoreRequest struct {
@@ -43,12 +41,20 @@ type RestoreRequest struct {
 	Database string `json:"database"`
 }
 
-// ScheduleState records scheduler bookkeeping (never replayed).
+// ScheduleState is the scheduler bookkeeping reported for a schedule.
 type ScheduleState struct {
-	LastSlot  string `json:"lastSlot"`
-	LastRun   string `json:"lastRun"`
-	LastState string `json:"lastState"`
-	Missed    int    `json:"missed"`
+	LastSlot  string
+	LastRun   string
+	LastState string
+	LastOpID  string
+	Missed    int
+}
+
+// backupSpec is the spec_json of a "backup" schedule.
+type backupSpec struct {
+	Compression  string `json:"compression"`
+	Retain       int    `json:"retain"`
+	RcloneRemote string `json:"rcloneRemote"`
 }
 
 func (c *Controller) BackupDeps(progress func(string)) backup.Deps {
@@ -91,14 +97,39 @@ func (c *Controller) BackupDeps(progress func(string)) backup.Deps {
 	}
 }
 
+// BackupSchedule returns the default backup schedule, or the built-in
+// default when none is stored.
 func (c *Controller) BackupSchedule(ctx context.Context) (domain.BackupSchedule, ScheduleState, error) {
-	s := domain.DefaultBackupSchedule()
-	var st ScheduleState
-	if _, err := store.GetSetting(ctx, c.Store.DB(), scheduleSettingKey, &s); err != nil {
-		return s, st, err
+	return c.backupSchedule(ctx, store.BackupScheduleID)
+}
+
+func (c *Controller) backupSchedule(ctx context.Context, id string) (domain.BackupSchedule, ScheduleState, error) {
+	if id == "" {
+		id = store.BackupScheduleID
 	}
-	_, err := store.GetSetting(ctx, c.Store.DB(), scheduleStateKey, &st)
-	return s, st, err
+	s := domain.DefaultBackupSchedule()
+	row, err := store.GetSchedule(ctx, c.Store.DB(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		return s, ScheduleState{}, nil
+	}
+	if err != nil {
+		return s, ScheduleState{}, err
+	}
+	if row.Kind != "backup" {
+		return s, ScheduleState{}, fmt.Errorf("schedule %s is a %s schedule, not backup", id, row.Kind)
+	}
+	spec := backupSpec{Compression: s.Compression, Retain: s.Retain}
+	if err := row.DecodeSpec(&spec); err != nil {
+		return s, ScheduleState{}, err
+	}
+	s = domain.BackupSchedule{
+		Enabled: row.Enabled, Cron: row.Cron,
+		Compression: spec.Compression, Retain: spec.Retain, RcloneRemote: spec.RcloneRemote,
+	}
+	st := ScheduleState{
+		LastSlot: row.LastSlot, LastRun: row.LastRunAt, LastState: row.LastState, LastOpID: row.LastOpID, Missed: row.Missed,
+	}
+	return s, st, nil
 }
 
 func (c *Controller) SetBackupSchedule(ctx context.Context, s domain.BackupSchedule) error {
@@ -123,19 +154,28 @@ func (c *Controller) SetBackupSchedule(ctx context.Context, s domain.BackupSched
 	if err := errs.Err(); err != nil {
 		return err
 	}
-	return c.Store.Tx(ctx, func(q store.Q) error {
-		// Changing the schedule resets its slot bookkeeping to now so that
-		// enabling it never triggers a burst of catch-up runs.
-		if err := store.PutSetting(
-			ctx,
-			q,
-			scheduleStateKey,
-			ScheduleState{LastSlot: platform.FormatTime(time.Now())},
-		); err != nil {
-			return err
-		}
-		return store.PutSetting(ctx, q, scheduleSettingKey, s)
-	})
+	spec, err := json.Marshal(backupSpec{Compression: s.Compression, Retain: s.Retain, RcloneRemote: s.RcloneRemote})
+	if err != nil {
+		return err
+	}
+	// Changing the schedule resets its slot bookkeeping to now so that
+	// enabling it never triggers a burst of catch-up runs.
+	now := platform.FormatTime(time.Now())
+	return store.PutSchedule(ctx, c.Store.DB(), store.Schedule{
+		ID: store.BackupScheduleID, Kind: "backup", Name: "All backups", Cron: s.Cron, Enabled: s.Enabled,
+		Spec: spec, LastSlot: now,
+	}, now)
+}
+
+// submitScheduledBackup queues the batch for a due "backup" schedule.
+func submitScheduledBackup(ctx context.Context, c *Controller, s store.Schedule) (store.Operation, error) {
+	sc, _, err := c.backupSchedule(ctx, s.ID)
+	if err != nil {
+		return store.Operation{}, err
+	}
+	return c.SubmitBackup(ctx, BackupRequest{
+		Scope: "all", Compression: sc.Compression, Trigger: "schedule", Upload: sc.RcloneRemote != "", ScheduleID: s.ID,
+	}, "")
 }
 
 // SubmitBackup validates scope and queues a backup batch.
@@ -159,7 +199,7 @@ func (c *Controller) SubmitBackup(ctx context.Context, req BackupRequest, idem s
 		req.Trigger = "manual"
 	}
 	if req.Upload {
-		sched, _, err := c.BackupSchedule(ctx)
+		sched, _, err := c.backupSchedule(ctx, req.ScheduleID)
 		if err != nil {
 			return store.Operation{}, err
 		}
@@ -293,7 +333,7 @@ func (c *Controller) handleBackupRun(ctx context.Context, r *Run) (any, error) {
 			msg,
 		)
 	}
-	sched, _, schedErr := c.BackupSchedule(ctx)
+	sched, _, schedErr := c.backupSchedule(ctx, req.ScheduleID)
 	if schedErr != nil {
 		// Never prune with the default retention in place of the operator's.
 		r.Warn(ctx, "backup settings unreadable; retention skipped: %v", schedErr)
@@ -489,108 +529,10 @@ func slashBase(p string) string {
 	return p
 }
 
-var scheduleParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-
-// NextBackup is the first slot after now, or zero when the schedule is off
-// or invalid. Cron fields are wall-clock time in now's location (the server's
-// local time zone, as with crontab).
+// NextBackup is the first slot of the backup schedule after now, or zero
+// when it is off or invalid.
 func NextBackup(s domain.BackupSchedule, now time.Time) time.Time {
-	if !s.Enabled {
-		return time.Time{}
-	}
-	sched, err := scheduleParser.Parse(s.Cron)
-	if err != nil {
-		return time.Time{}
-	}
-	return sched.Next(now)
-}
-
-// RunSchedule evaluates the backup schedule every 30 seconds. Missed slots
-// (for example while the backend was down) are counted, not replayed.
-func (c *Controller) RunSchedule(ctx context.Context) {
-	tick := time.NewTicker(30 * time.Second)
-	defer tick.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
-		c.safeCheckSchedule(ctx, time.Now())
-	}
-}
-
-// safeCheckSchedule keeps a panic in one schedule check from stopping the
-// resident backend; the next tick retries.
-func (c *Controller) safeCheckSchedule(ctx context.Context, now time.Time) {
-	defer func() {
-		if p := recover(); p != nil {
-			c.Log.Error("backup schedule check panicked", "panic", p, "stack", string(debug.Stack()))
-		}
-	}()
-	c.checkSchedule(ctx, now)
-}
-
-// checkSchedule submits at most one backup for the latest slot at or before
-// now. Slots are computed in now's location: LastSlot is stored in UTC and
-// must be converted back, or cron fields would be read as UTC wall-clock.
-func (c *Controller) checkSchedule(ctx context.Context, now time.Time) {
-	s, st, err := c.BackupSchedule(ctx)
-	if err != nil || !s.Enabled {
-		return
-	}
-	sched, err := scheduleParser.Parse(s.Cron)
-	if err != nil {
-		return
-	}
-	last := platform.ParseTime(st.LastSlot)
-	if last.IsZero() {
-		last = now
-	}
-	due := sched.Next(last.In(now.Location()))
-	if due.After(now) {
-		if st.LastSlot == "" {
-			st.LastSlot = platform.FormatTime(now)
-			c.saveScheduleState(ctx, st)
-		}
-		return
-	}
-	// Count slots missed beyond the most recent one; run only once.
-	var missed int
-	for next := sched.Next(due); !next.After(now) && missed < 10000; next = sched.Next(next) {
-		missed++
-		due = next
-	}
-	st.Missed += missed
-	st.LastSlot = platform.FormatTime(due)
-	if now.Sub(due) > 10*time.Minute {
-		// The backend was down across this slot: record, do not replay.
-		st.Missed++
-		st.LastState = "missed"
-		c.saveScheduleState(ctx, st)
-		c.Log.Warn("scheduled backup slot missed while backend was unavailable", "slot", due)
-		return
-	}
-	st.LastRun = platform.FormatTime(now)
-	op, err := c.SubmitBackup(
-		ctx,
-		BackupRequest{Scope: "all", Compression: s.Compression, Trigger: "schedule", Upload: s.RcloneRemote != ""},
-		"",
-	)
-	if err != nil {
-		st.LastState = "submit-failed"
-	} else {
-		st.LastState = "submitted " + op.ID
-	}
-	c.saveScheduleState(ctx, st)
-}
-
-// saveScheduleState persists the scheduler's bookkeeping. It runs on the
-// background ticker, so a failure is logged rather than returned.
-func (c *Controller) saveScheduleState(ctx context.Context, st ScheduleState) {
-	if err := store.PutSetting(ctx, c.Store.DB(), scheduleStateKey, st); err != nil && !errors.Is(err, context.Canceled) {
-		c.Log.Warn("schedule state", "err", err)
-	}
+	return NextRun(store.Schedule{Enabled: s.Enabled, Cron: s.Cron}, now)
 }
 
 // SubmitBackupDelete removes one published artifact. It requires the literal

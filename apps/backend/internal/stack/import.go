@@ -205,7 +205,9 @@ func rewriteImportedState(
 		"UPDATE operations SET state='cancelled', error_code='imported', error_message='not replayed after import' WHERE state IN ('queued','running')",
 		"DELETE FROM sessions",
 		// New networks are planned for this host.
-		"DELETE FROM settings WHERE key IN ('network', 'backup_schedule_state')",
+		"DELETE FROM settings WHERE key = 'network'",
+		// Schedules stay configured but off; bookkeeping restarts on this host.
+		"UPDATE schedules SET enabled=0, last_slot='', last_run_at='', last_op_id='', last_state='', missed_count=0",
 	}
 	for _, st := range stmts {
 		if _, err := q.ExecContext(ctx, st); err != nil {
@@ -216,9 +218,6 @@ func rewriteImportedState(
 		return err
 	}
 	if err := store.PutSetting(ctx, q, "tunnel", map[string]any{"enabled": false, "tokenGeneration": 0}); err != nil {
-		return err
-	}
-	if err := disableSetting(ctx, q, "backup_schedule"); err != nil {
 		return err
 	}
 	for _, svc := range m.Services {
