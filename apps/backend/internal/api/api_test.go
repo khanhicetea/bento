@@ -429,7 +429,7 @@ func TestWebhookEndpoints(t *testing.T) {
 	}
 	bearer := map[string]string{"Authorization": "Bearer " + hook.Secret}
 	// The utils listener serves nothing but self-authenticating routes.
-	for _, p := range []string{"/api/v1/apps", "/api/v1/session", "/", "/scheduler/apps/shop/"} {
+	for _, p := range []string{"/api/v1/apps", "/api/v1/session", "/", "/apps/shop/scheduler/"} {
 		if code, _ := post(p, `{}`, bearer); code != http.StatusNotFound {
 			t.Errorf("utils listener served %s -> %d", p, code)
 		}

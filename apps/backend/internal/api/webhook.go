@@ -20,12 +20,11 @@ var hookIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 // UI, or management routes: every route must authenticate itself.
 // /_bento/webhook/* is authenticated by a per-app secret and can at most queue a
 // deploy of the configured branch; /_bento/dbadmin/* by a single-use ticket issued
-// to an operator session (see dbadmin.go).
+// to an operator session (see dbadmin.go). The scheduler UI is not served here.
 func (s *Server) UtilsHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+domain.WebhookPathPrefix+"deploy/{hook}", s.handleDeployWebhook)
 	mux.Handle(dbadminPathPrefix, s.dbadminGateway())
-	mux.Handle(schedulerPathPrefix, s.schedulerGateway())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeHookJSON(w, http.StatusNotFound, map[string]string{"result": "not-found"})
 	})

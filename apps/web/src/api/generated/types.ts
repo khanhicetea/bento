@@ -331,16 +331,6 @@ export interface DBAdminTicket {
   expiresAt: string;
 }
 /**
- * SchedulerTicket opens one app's scheduler UI on the utils listener. The
- * fields mean the same as in DBAdminTicket.
- */
-export interface SchedulerTicket {
-  path: string;
-  baseUrl: string;
-  loopbackPort: number /* int */;
-  expiresAt: string;
-}
-/**
  * Webhook is an app's deploy webhook. The secret is never part of this shape;
  * it is returned once, in WebhookSecret, by the call that generates it.
  */

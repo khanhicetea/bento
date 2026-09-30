@@ -145,9 +145,6 @@ export const api = {
     ticket: (appId: string, bindingId: string) =>
       request<T.DBAdminTicket>("POST", `/api/v1/apps/${enc(appId)}/bindings/${enc(bindingId)}/dbadmin`, {}),
   },
-  scheduler: {
-    ticket: (appId: string) => request<T.SchedulerTicket>("POST", `/api/v1/apps/${enc(appId)}/scheduler/ticket`, {}),
-  },
   tunnel: {
     get: (signal?: AbortSignal) => get<T.TunnelStatus>("/api/v1/tunnel", signal),
     setToken: (token: string) => mutate("PUT", "/api/v1/tunnel/token", { token } satisfies T.SetTunnelTokenRequest),

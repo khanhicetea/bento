@@ -25,8 +25,8 @@ const (
 )
 
 // SchedulerBasePath is the URL prefix minicrond serves under; the backend's
-// scheduler gateway on the utils listener forwards exactly this prefix.
-func SchedulerBasePath(slug string) string { return "/_bento/scheduler/a/" + slug + "/" }
+// scheduler gateway on the management listener forwards exactly this prefix.
+func SchedulerBasePath(slug string) string { return "/apps/" + slug + "/scheduler" }
 
 // SQLiteFile is the database file path inside the container.
 func SQLiteFile(b domain.Binding, slug string) string {

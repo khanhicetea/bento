@@ -32,7 +32,8 @@ and reconciliation pause.
 - **Ingress your way.** Bento's edge, Cloudflare Tunnel straight to `http://app-<id>:<port>`, or your own proxy on the
   app network. Only edge routes are Bento-controlled, and the UI says so.
 - **Per-app scheduler.** [minicrond](https://github.com/khanhicetea/minicrond) runs inside each app. Its UI is served
-  through an authenticated same-origin gateway and a UID-matched relay, never with a token handed to the browser.
+  at `/apps/<slug>/scheduler/` on the management origin, through a session-authenticated gateway and a UID-matched
+  relay, never with a token handed to the browser.
 - **Data.** Add-only MySQL/PostgreSQL/SQLite bindings, per-app Redis ACL users, logical backups with atomic
   publication and retention, exact-confirmed restores, and consistent stack export/import.
 

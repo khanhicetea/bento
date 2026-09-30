@@ -101,6 +101,11 @@ minicrond 0.2.6: the scheduler UI loads as a single bundle with relative asset p
 (stylesheet and script) resolves under `/scheduler/apps/<slug>/` through the gateway, and the scheduler API answers
 through the per-app relay.
 
+minicrond 0.3.2 (standalone binary, unix socket, `BASE_PATH=/apps/shop/scheduler`, not yet inside a built runtime image):
+the UI and `/healthz` answer under the base path, the bare path 301-redirects to the slash form, and responses carry a
+strict CSP with `frame-ancestors 'none'` and `X-Frame-Options: DENY`, so the UI cannot be iframed and Bento links to it.
+The gateway is covered by `TestSchedulerGateway` against a missing relay (502); a real proxied session is unverified.
+
 ## Release
 
 The compiled binary, run from `/` with `PATH=/nonexistent`, served the API, the CLI, and the embedded UI. With the

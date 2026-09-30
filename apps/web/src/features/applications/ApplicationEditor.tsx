@@ -58,8 +58,8 @@ export function ApplicationEditor({ app }: { app: T.App }) {
   const managed = ingress === "managed";
   return (
     <form onSubmit={submit}>
-      <div className="box box--2">
-        <Cell title={kind === "php-fpm" ? "PHP runtime" : "HTTP process"} className="cell--wide">
+      <div className="box">
+        <Cell title={kind === "php-fpm" ? "PHP runtime settings" : "App runtime settings"} className="cell--wide">
           {kind === "php-fpm" ? (
             <div className="grid-3">
               <Field label="Version">
@@ -148,40 +148,46 @@ export function ApplicationEditor({ app }: { app: T.App }) {
           )}
         </Cell>
         {kind === "php-fpm" && (
-          <Cell title="PHP performance" className="cell--wide">
+          <Cell title="PHP performance settings" className="cell--wide">
             <PHPPerformance php={php} onChange={setPhp} resources={resources} catalog={catalog.data} />
           </Cell>
         )}
-        <Cell title="Routing">
+      </div>
+      <div className="box box--3">
+        <Cell title="Ingress settings">
           <div className="grid gap-4">
-            <div className="grid-2">
-              <Field label="Ingress">
-                <NativeSelect
-                  className="w-full"
-                  value={ingress}
-                  onChange={(e) => setIngress(e.target.value as T.IngressMode)}
-                >
-                  <option value="managed">Managed</option>
-                  <option value="external">External</option>
-                  <option value="none">Private</option>
-                </NativeSelect>
-              </Field>
-              <Field label="TLS">
-                <NativeSelect
-                  className="w-full"
-                  value={route.tls}
-                  onChange={(e) => {
-                    const tls = e.target.value as T.TLSMode;
-                    setRoute({ ...route, tls, redirectHttps: tls === "none" ? false : route.redirectHttps });
-                  }}
-                >
-                  <option value="none">None</option>
-                  <option value="self-signed">Self-signed</option>
-                  <option value="acme">ACME</option>
-                  <option value="external">External cert</option>
-                </NativeSelect>
-              </Field>
-            </div>
+            <Field label="Ingress">
+              <NativeSelect
+                className="w-full"
+                value={ingress}
+                onChange={(e) => setIngress(e.target.value as T.IngressMode)}
+              >
+                <option value="managed">Managed</option>
+                <option value="external">External</option>
+                <option value="none">Private</option>
+              </NativeSelect>
+            </Field>
+            <DomainsInput state={domains} />
+            {managed && domains.list.length === 0 && <p className="note note--bad">Managed ingress needs a domain.</p>}
+          </div>
+        </Cell>
+        <Cell title="TLS & edge settings">
+          <div className="grid gap-4">
+            <Field label="TLS">
+              <NativeSelect
+                className="w-full"
+                value={route.tls}
+                onChange={(e) => {
+                  const tls = e.target.value as T.TLSMode;
+                  setRoute({ ...route, tls, redirectHttps: tls === "none" ? false : route.redirectHttps });
+                }}
+              >
+                <option value="none">None</option>
+                <option value="self-signed">Self-signed</option>
+                <option value="acme">ACME</option>
+                <option value="external">External cert</option>
+              </NativeSelect>
+            </Field>
             {route.tls === "external" && (
               <Field label="Certificate name" hint="edge/certs/external/<name>/">
                 <Input
@@ -190,8 +196,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                 />
               </Field>
             )}
-            <DomainsInput state={domains} />
-            <div className="flex flex-wrap gap-5">
+            <div className="grid gap-3">
               <label className="check">
                 <Checkbox
                   checked={route.redirectHttps}
@@ -218,10 +223,9 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                 Edge static cache
               </label>
             </div>
-            {managed && domains.list.length === 0 && <p className="note note--bad">Managed ingress needs a domain.</p>}
           </div>
         </Cell>
-        <Cell title="Limits">
+        <Cell title="Container settings">
           <div className="grid gap-4">
             <Field label="Memory (MB)">
               <Input
@@ -246,6 +250,8 @@ export function ApplicationEditor({ app }: { app: T.App }) {
             </Field>
           </div>
         </Cell>
+      </div>
+      <div className="box">
         <Cell title="Environment" className="cell--wide">
           <EnvEditor state={env} />
         </Cell>

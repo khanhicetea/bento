@@ -453,11 +453,11 @@ function BindingRow({ appId, binding, showService }: { appId: string; binding: T
 }
 
 /**
- * Opens a utils-listener page (database browser, scheduler) in a new tab. The
+ * Opens a utils-listener page (the database browser) in a new tab. The
  * tab is opened synchronously (popup blockers) and pointed at the single-use
  * ticket once it is issued.
  */
-function useUtilsTab(issue: () => Promise<T.DBAdminTicket | T.SchedulerTicket>) {
+function useUtilsTab(issue: () => Promise<T.DBAdminTicket>) {
   const mutation = useMutation({
     mutationFn: async (tab: Window | null) => {
       try {
@@ -501,7 +501,6 @@ function ServiceOptions() {
 }
 
 function Scheduler({ app }: { app: T.App }) {
-  const open = useUtilsTab(() => api.scheduler.ticket(app.id));
   if (app.desiredRuntime !== "running")
     return (
       <div className="box">
@@ -516,13 +515,15 @@ function Scheduler({ app }: { app: T.App }) {
       <div className="cell empty">
         <strong>Scheduler</strong>
         <p>
-          The scheduler UI is served by the app, so it opens in its own tab on the utils listener, isolated from this
-          control plane.
+          The scheduler UI is served by the app's own minicrond under this control plane's address, behind your Bento
+          session.
         </p>
-        <Button onClick={open.open} disabled={open.isPending}>
-          <ExternalLink /> Open scheduler
+        {/* A plain anchor: the scheduler is a separate page, not a client route. */}
+        <Button asChild>
+          <a href={`/apps/${encodeURIComponent(app.slug)}/scheduler/`}>
+            <ExternalLink /> Open scheduler
+          </a>
         </Button>
-        {open.error && <p className="note note--bad">{messageOf(open.error)}</p>}
       </div>
     </div>
   );

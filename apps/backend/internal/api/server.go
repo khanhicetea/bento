@@ -42,7 +42,6 @@ type Server struct {
 	limiter   loginLimiter
 	terminals terminalRegistry
 	dbadmin   dbadminGate
-	scheduler dbadminGate // same ticket/grant mechanics; bindingID holds the app slug
 	edgeStats edgeSampler
 }
 
@@ -87,7 +86,6 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/apps/{id}/logs", s.handleAppLogs)
 	api("POST /api/v1/apps/{id}/exec", s.handleExec)
 	api("POST /api/v1/apps/{id}/scheduler/command", s.handleSchedulerCommand)
-	api("POST /api/v1/apps/{id}/scheduler/ticket", s.handleSchedulerTicket)
 	api("GET /api/v1/apps/{id}/terminal", s.handleTerminal)
 
 	api("GET /api/v1/operations", s.handleListOps)
@@ -127,6 +125,12 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/v1/backups/rclone/test", s.handleRcloneTest)
 	api("GET /api/v1/backups/rclone/terminal", s.handleRcloneTerminal)
 	api("POST /api/v1/stack/export", s.handleExport)
+
+	// minicrond's UI, served under runtime.SchedulerBasePath. The bare
+	// /apps/{slug}/scheduler stays a client route of the web UI; registering
+	// it keeps ServeMux from redirecting it into the proxy.
+	mux.Handle("/apps/{slug}/scheduler", s.webUI())
+	mux.Handle("/apps/{slug}/scheduler/", s.schedulerGateway())
 
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, notFound("no such endpoint"))

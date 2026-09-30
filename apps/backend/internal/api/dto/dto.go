@@ -378,15 +378,6 @@ type DBAdminTicket struct {
 	ExpiresAt    string `json:"expiresAt"`
 }
 
-// SchedulerTicket opens one app's scheduler UI on the utils listener. The
-// fields mean the same as in DBAdminTicket.
-type SchedulerTicket struct {
-	Path         string `json:"path"`
-	BaseURL      string `json:"baseUrl"`
-	LoopbackPort int    `json:"loopbackPort"`
-	ExpiresAt    string `json:"expiresAt"`
-}
-
 // ---- deploy webhook ----
 
 // Webhook is an app's deploy webhook. The secret is never part of this shape;

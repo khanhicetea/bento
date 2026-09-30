@@ -9,8 +9,8 @@ Every app container runs [minicrond](https://github.com/khanhicetea/minicrond) a
 scheduled jobs, long-running workers, run history, and logs under `~/.local/share/minicron`. Bento does not store your
 jobs.
 
-- **Web UI:** Applications → app → Scheduler. The view is proxied through Bento with your session; the browser never
-  receives a scheduler token. Each app has its own relay process running as that app's UID, so one app's scheduler
+- **Web UI:** Applications → app → Scheduler. The UI is served at `/apps/<slug>/scheduler/` on Bento's own address, proxied with your session; the
+  browser never receives a scheduler token. Each app has its own relay process running as that app's UID, so one app's scheduler
   cannot reach another's.
 - **CLI:** `bento app minicrond <slug> -- list`, `-- import /home/<slug>/jobs.toml`, `-- run <name>`, `-- logs <name>`.
   Starting a second daemon is refused.

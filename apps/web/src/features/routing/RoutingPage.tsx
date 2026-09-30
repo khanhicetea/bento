@@ -274,7 +274,7 @@ function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
         >
           <Field
             label="Base URL"
-            hint="Where your ingress exposes Bento's utils routes (/_bento/webhook/*, /_bento/dbadmin/*, /_bento/scheduler/*). Used for full webhook URLs, database browser, and scheduler links."
+            hint="Where your ingress exposes Bento's utils routes (/_bento/webhook/* and /_bento/dbadmin/*). Used for full webhook URLs and the database browser."
           >
             <Input
               value={baseUrl}
@@ -293,8 +293,8 @@ function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
       </Cell>
       <Cell title="Utils listener" className="cell--muted">
         <p className="note mb-3">
-          Route <code>/_bento/webhook/*</code>, <code>/_bento/dbadmin/*</code>, and <code>/_bento/scheduler/*</code> on
-          that host to one of these. The edge forwards <code>/_bento/webhook/*</code> automatically for its domains.
+          Route <code>/_bento/webhook/*</code> and <code>/_bento/dbadmin/*</code> on that host to one of these. The edge
+          forwards <code>/_bento/webhook/*</code> automatically for its domains.
         </p>
         {settings.targets.length ? (
           <KeyValues

@@ -17,8 +17,8 @@ This document explains how the Go backend is put together and why.
    - `run/bento.sock` (`0600`) for the CLI, wrapped by `Server.LocalOnly`, which admits only peers whose
      `SO_PEERCRED` uid is 0 or the backend's own uid.
    - **utils** TCP listeners (`--utils-listen`, default `127.0.0.1:7781` and `apps:7781`) serving
-     `Server.UtilsHandler` only: self-authenticating routes under `/_bento/webhook/*`, the ticketed database browser
-     under `/_bento/dbadmin/*`, and the ticketed scheduler UI under `/_bento/scheduler/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
+     `Server.UtilsHandler` only: self-authenticating routes under `/_bento/webhook/*`, and the ticketed database browser
+     under `/_bento/dbadmin/*`, and nothing else (no UI, operator login, or management API). `apps:PORT` binds the host's address on the apps bridge (`NetworkSettings.AppsGateway`,
      read from the host's interfaces because Docker picks it, usually `.128`) once the bridge exists and follows the
      network plan, so the edge and cloudflared
      can reach it; the loopback address is for host proxies. Operators may bind any address because nothing on
@@ -278,7 +278,7 @@ When the utils listener binds the apps network, every managed route (app or prox
 `location ^~ /_bento/webhook/`, proxied through the shared `bento_utils` upstream (`<apps-gateway>:<port>`,
 `keepalive 2`) with an 8 MiB body limit; it never reaches the
 upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
-Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils listener itself. `/_bento/dbadmin/*` and `/_bento/scheduler/*` are never reserved on app routes.
+Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils listener itself. `/_bento/dbadmin/*` is never reserved on app routes.
 
 ### Git deploy and webhooks
 
@@ -375,19 +375,20 @@ path. Tickets and grants do not survive a backend restart.
 
 ## Scheduler UI gateway: `api/gateway.go`
 
-minicrond's UI is app-controlled, so it is never served on the management origin (it could otherwise read the CSRF
-token from `GET /api/v1/session` and drive the API). `POST /api/v1/apps/{id}/scheduler/ticket` (browser session +
-CSRF, app desired running) issues a one-minute single-use ticket held in memory by token hash.
-`GET /_bento/scheduler/t/<ticket>` on the utils listener redeems it for a grant cookie (`bento_scheduler`, HttpOnly,
-SameSite=Lax, path `/_bento/scheduler/a/<slug>/`, 30 minutes idle) and redirects. Each `/_bento/scheduler/a/<slug>/…`
-request checks the grant (bound to that slug), `GetLiveSession` for the issuing session, same-origin fetch metadata on
-writes, and that the app is desired running; then it forwards the full path over the app's relay. minicrond serves
-under `runtime.SchedulerBasePath` = `/_bento/scheduler/a/<slug>/` (`BENTO_SCHEDULER_BASE_PATH`), so no path rewriting
-happens. Cookie, authorization, CSRF, and forwarding headers are stripped; `Set-Cookie` is dropped; responses get
-`X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, `Cross-Origin-Resource-Policy: same-origin`, and
-`Referrer-Policy: no-referrer`. The UI opens it in a new tab (it is not framed). Streaming uses `FlushInterval: -1`;
-bodies are capped at 10 MB. Tickets and grants do not survive a backend restart. A compromised app's UI can reach only
-its own scheduler grant path on the utils origin.
+minicrond's UI is served on the management origin at `runtime.SchedulerBasePath` = `/apps/<slug>/scheduler`
+(`BENTO_SCHEDULER_BASE_PATH`); the bare path without a trailing slash stays a client route of the web UI, and
+`/apps/{slug}/scheduler/` is the proxy. minicrond escapes its own UI and sends a strict CSP with no framing; the gateway
+adds what only it can enforce. Each request needs a live operator session cookie (a missing session is a plain-text
+401), the slug must be an app's slug (not its id) that is desired running, and writes need an exact allowed `Origin`
+plus same-origin fetch metadata. The CSRF token is deliberately not required: minicrond's UI is app-served and is never
+given it. Cookie, authorization, CSRF, and forwarding headers are stripped before the request crosses the relay;
+`Set-Cookie` and duplicate `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy` headers are dropped, and
+responses get `Cache-Control: no-store` and `Cross-Origin-Resource-Policy: same-origin`. minicrond's own
+`Content-Security-Policy` is kept next to the management one, so the browser applies the intersection. It is not
+framed. Streaming uses `FlushInterval: -1`; bodies are capped at 10 MB. **Trust boundary:** the app owns its minicrond
+socket directory, so a compromised app can put its own server behind the relay, and that content then runs on the
+management origin and can read the session's CSRF token from `GET /api/v1/session`. The CSP (`script-src 'self'`) does
+not prevent that; the scheduler is only as trustworthy as the app's UID.
 
 ## Scheduler relay: `scheduler`
 
