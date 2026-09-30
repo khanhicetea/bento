@@ -202,12 +202,18 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 		if p.Routing != RoutingFrontController && p.Routing != RoutingLegacy {
 			errs.Add("runtime.php.routing", "must be front-controller or legacy")
 		}
-		if p.Pool == "" {
-			p.Pool = "small"
+		if p.Mode == "" {
+			p.Mode = PHPModeStandard
 		}
-		if _, ok := PoolProfiles[p.Pool]; !ok {
-			errs.Add("runtime.php.pool", "unknown pool profile")
+		if _, ok := PHPModes[p.Mode]; !ok {
+			errs.Add("runtime.php.mode", "must be one of %s", strings.Join(SortedKeys(PHPModes), ", "))
 		}
+		optionalRange(errs, "runtime.php.maxWorkers", p.MaxWorkers, 1, PHPMaxWorkers)
+		optionalRange(errs, "runtime.php.webMemoryLimitMb", p.WebMemoryLimitMB, 16, 4096)
+		optionalRange(errs, "runtime.php.cliMemoryLimitMb", p.CLIMemoryLimitMB, 16, 8192)
+		// Must end before the edge proxy_read_timeout (300s).
+		optionalRange(errs, "runtime.php.maxExecutionSeconds", p.MaxExecutionSeconds, 1, 280)
+		optionalRange(errs, "runtime.php.maxInputVars", p.MaxInputVars, 100, 100000)
 		if p.ReadyPath != "" && !readyPathRegexp.MatchString(p.ReadyPath) {
 			errs.Add("runtime.php.readyPath", "must be an absolute URL path")
 		}
@@ -331,4 +337,11 @@ func ValidateIngress(mode IngressMode) error {
 		return nil
 	}
 	return errors.New("must be managed, external, or none")
+}
+
+// optionalRange checks an optional integer: zero means unset.
+func optionalRange(errs *ValidationErrors, field string, v, lo, hi int) {
+	if v != 0 && (v < lo || v > hi) {
+		errs.Add(field, "must be between %d and %d, or empty for the default", lo, hi)
+	}
 }

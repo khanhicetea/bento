@@ -207,7 +207,7 @@ Recovery of missing durable data is refused by the handlers themselves (`verifyH
 | `credentials.env` — `DB_*`, `BENTO_DB_<n>_*`, `REDIS_*` | boot (via credentials generation) |
 | `app.argv` — NUL-separated argv (HTTP apps) | boot |
 | `nginx.conf`, `fastcgi.conf` (PHP) | frontend reload |
-| `php-fpm.conf` (PHP) | pool restart |
+| `php-fpm.conf`, `php.d/zz-app.ini` (PHP; the ini is on the image's `PHP_INI_SCAN_DIR`) | pool restart |
 | `minicrond.toml` — config-owned `bento-internal-*` tasks | scheduler reload |
 
 plus `apps/<appId>/identity/{passwd,group}`: the image's own files (read once per image ID via a created-not-started

@@ -11,7 +11,7 @@ cat > shop.json <<'JSON'
 {
   "slug": "shop",
   "runtime": { "kind": "php-fpm",
-    "php": { "version": "8.4", "documentRoot": "public", "routing": "front-controller", "pool": "small", "uploadLimitMb": 64 } },
+    "php": { "version": "8.4", "documentRoot": "public", "routing": "front-controller", "mode": "standard", "uploadLimitMb": 64 } },
   "domains": ["shop.example.com"],
   "route": { "tls": "acme", "redirectHttps": true, "accessLog": false },
   "bindings": [{ "engine": "mysql", "service": "mysql84" }]

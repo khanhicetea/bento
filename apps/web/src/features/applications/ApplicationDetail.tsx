@@ -248,7 +248,7 @@ function Overview({ app }: { app: T.App }) {
                 app.runtime.http ? (
                   <code>{app.runtime.http.argv.join(" ")}</code>
                 ) : (
-                  `PHP ${app.runtime.php?.version} · ${app.runtime.php?.pool}`
+                  `PHP ${app.runtime.php?.version} · ${app.runtime.php?.mode}`
                 ),
               ],
             ]}

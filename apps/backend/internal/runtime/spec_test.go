@@ -16,7 +16,7 @@ import (
 func testApp() domain.App {
 	return domain.App{
 		ID: "aabc123", Slug: "shop", UID: 10000, GID: 10000,
-		Runtime:   domain.Runtime{Kind: domain.RuntimePHP, PHP: &domain.PHPRuntime{Version: "8.4", DocumentRoot: "public", Routing: "front-controller", Pool: "small", UploadLimitMB: 64}},
+		Runtime:   domain.Runtime{Kind: domain.RuntimePHP, PHP: &domain.PHPRuntime{Version: "8.4", DocumentRoot: "public", Routing: "front-controller", Mode: "standard", UploadLimitMB: 64}},
 		Resources: domain.Resources{MemoryMB: 512, CPUMillis: 1000, PIDs: 256},
 		Redis:     domain.RedisIdentity{Mode: "acl", Prefix: "shop:", Username: "app-aabc123", Password: "redissecret123"},
 		Bindings: []domain.Binding{
@@ -169,6 +169,17 @@ func TestRenderedConfig(t *testing.T) {
 	if strings.Contains(files["php-fpm.conf"], "\nuser =") {
 		t.Fatal("pool must not switch identity")
 	}
+	for _, want := range []string{"pm = ondemand\n", "pm.max_children = 6\n", "pm.process_idle_timeout = 10s\n", "php_value[memory_limit] = 128M\n", "php_value[max_execution_time] = 60\n", "php_value[max_input_vars] = 1000\n"} {
+		if !strings.Contains(files["php-fpm.conf"], want) {
+			t.Errorf("php-fpm.conf missing %q", want)
+		}
+	}
+	if !strings.Contains(files[PHPIniFile], "memory_limit = 256M\n") {
+		t.Fatalf("CLI ini: %s", files[PHPIniFile])
+	}
+	if !strings.Contains(files["fastcgi.conf"], "fastcgi_read_timeout 120s;") {
+		t.Fatal("fastcgi timeout must keep its 120s floor")
+	}
 	if !strings.Contains(files["minicrond.toml"], `name = "bento-internal-sqlite-vacuum-shop-0123456789"`) || !strings.Contains(files["minicrond.toml"], `schedule = "3 2 * * 1"`) {
 		t.Fatal(files["minicrond.toml"])
 	}
@@ -243,5 +254,30 @@ func TestAppConfigDriftDetectsTemplateOutputChanges(t *testing.T) {
 	}
 	if drift, err := AppConfigDrift(app, ctx); err != nil || !drift {
 		t.Fatalf("stale frontend config must drift: %v %v", drift, err)
+	}
+}
+
+func TestPHPLimitsFollowOverrides(t *testing.T) {
+	app := testApp()
+	app.Runtime.PHP.Mode = domain.PHPModeHighConcurrency
+	app.Runtime.PHP.MaxExecutionSeconds = 250
+	app.Runtime.PHP.CLIMemoryLimitMB = 1024
+	cfg, _, _, err := RenderAppConfig(app, AppContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, f := range cfg {
+		files[f.name] = string(f.data)
+	}
+	if !strings.Contains(files["php-fpm.conf"], "pm.max_children = 18\n") || !strings.Contains(files["php-fpm.conf"], "php_value[memory_limit] = 48M\n") {
+		t.Fatal(files["php-fpm.conf"])
+	}
+	if !strings.Contains(files["fastcgi.conf"], "fastcgi_read_timeout 260s;") || !strings.Contains(files[PHPIniFile], "memory_limit = 1024M") {
+		t.Fatal("fastcgi timeout and CLI ini must follow overrides")
+	}
+	app.Runtime.PHP.Mode = "small"
+	if _, _, _, err := RenderAppConfig(app, AppContext{}); err == nil {
+		t.Fatal("a stored app with an unknown mode must fail to render")
 	}
 }

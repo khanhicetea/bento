@@ -38,6 +38,12 @@ func TestRuntimeUnionVariantConstraints(t *testing.T) {
 		{"php missing variant", Runtime{Kind: RuntimePHP}, false},
 		{"php bad version", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "7.0"}}, false},
 		{"php docroot escape", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", DocumentRoot: "../x"}}, false},
+		{"php high-concurrency", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", Mode: PHPModeHighConcurrency}}, true},
+		{"php old pool name", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", Mode: "small"}}, false},
+		{"php overrides", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxWorkers: 20, WebMemoryLimitMB: 256, CLIMemoryLimitMB: 1024, MaxExecutionSeconds: 280, MaxInputVars: 5000}}, true},
+		{"php too many workers", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxWorkers: PHPMaxWorkers + 1}}, false},
+		{"php execution past edge timeout", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxExecutionSeconds: 300}}, false},
+		{"php tiny memory limit", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", WebMemoryLimitMB: 8}}, false},
 		{"php absolute docroot", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", DocumentRoot: "/etc"}}, false},
 		{"php hidden docroot", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", DocumentRoot: ".git"}}, false},
 		{"php bad routing", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", Routing: "any"}}, false},
@@ -115,5 +121,40 @@ func TestDatabaseSuffixKeepsAppNamespacesDisjoint(t *testing.T) {
 		if ValidateDatabaseSuffix(bad) == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestResolvePHP(t *testing.T) {
+	res := Resources{MemoryMB: 512, CPUMillis: 1000, PIDs: 256}
+	std, err := ResolvePHP(PHPRuntime{Mode: PHPModeStandard}, res)
+	if err != nil || std.Workers != 6 || std.WebMemoryLimitMB != 128 || std.CLIMemoryLimitMB != 256 || std.IdleTimeout != "10s" {
+		t.Fatalf("standard at 512MB: %+v %v", std, err)
+	}
+	hc, _ := ResolvePHP(PHPRuntime{Mode: PHPModeHighConcurrency}, res)
+	if hc.Workers != 18 || hc.WebMemoryLimitMB != 48 {
+		t.Fatalf("high-concurrency at 512MB: %+v", hc)
+	}
+	for _, c := range []struct {
+		res  Resources
+		mode string
+		want int
+	}{
+		{Resources{MemoryMB: 64, PIDs: 256}, PHPModeStandard, PHPMinWorkers},
+		{Resources{MemoryMB: 1024, PIDs: 256}, PHPModeStandard, 12},
+		{Resources{MemoryMB: 8192, PIDs: 256}, PHPModeStandard, 102},
+		{Resources{MemoryMB: 8192, PIDs: 1000}, PHPModeHighConcurrency, PHPMaxWorkers},
+		{Resources{MemoryMB: 512, PIDs: 32}, PHPModeHighConcurrency, 16},
+	} {
+		got, _ := ResolvePHP(PHPRuntime{Mode: c.mode}, c.res)
+		if got.Workers != c.want {
+			t.Errorf("%s %+v: workers %d, want %d", c.mode, c.res, got.Workers, c.want)
+		}
+	}
+	over, _ := ResolvePHP(PHPRuntime{Mode: PHPModeStandard, MaxWorkers: 3, WebMemoryLimitMB: 512, MaxExecutionSeconds: 200}, res)
+	if over.Workers != 3 || over.WebMemoryLimitMB != 512 || over.MaxExecutionSeconds != 200 || over.MaxInputVars != 1000 {
+		t.Fatalf("overrides: %+v", over)
+	}
+	if _, err := ResolvePHP(PHPRuntime{Mode: ""}, res); err == nil {
+		t.Fatal("an unset mode must be refused, not defaulted, at render time")
 	}
 }

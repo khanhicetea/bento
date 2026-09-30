@@ -136,8 +136,15 @@ type PHPRuntime struct {
 	Version      string `json:"version"`
 	DocumentRoot string `json:"documentRoot"`
 	Routing      string `json:"routing"`
-	Pool         string `json:"pool"`
-	ReadyPath    string `json:"readyPath,omitempty"`
+	// Mode is a PHPModes key. The optional overrides below are zero when the
+	// mode default (or, for MaxWorkers, memory-based sizing) applies.
+	Mode                string `json:"mode"`
+	MaxWorkers          int    `json:"maxWorkers,omitempty"`
+	WebMemoryLimitMB    int    `json:"webMemoryLimitMb,omitempty"`
+	CLIMemoryLimitMB    int    `json:"cliMemoryLimitMb,omitempty"`
+	MaxExecutionSeconds int    `json:"maxExecutionSeconds,omitempty"`
+	MaxInputVars        int    `json:"maxInputVars,omitempty"`
+	ReadyPath           string `json:"readyPath,omitempty"`
 	// ReleaseSymlink optionally names a symlink below the code directory (for
 	// example "current") that the document root may traverse deliberately.
 	ReleaseSymlink string `json:"releaseSymlink,omitempty"`

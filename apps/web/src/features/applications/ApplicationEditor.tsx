@@ -4,6 +4,7 @@ import { Cell, Field } from "../../components/DomainState.tsx";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { ArgvEditor, DomainsInput, useDomainDraft } from "./CreateApplicationPage.tsx";
 import { EnvEditor, useEnvDraft } from "./EnvEditor.tsx";
+import { PHPPerformance, phpPerformanceValid } from "./PHPPerformance.tsx";
 import { useCatalog, useOperationMutation } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,7 +22,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
       version: "8.4",
       documentRoot: "public",
       routing: "front-controller",
-      pool: "small",
+      mode: "standard",
       uploadLimitMb: 64,
     },
   );
@@ -46,10 +47,11 @@ export function ApplicationEditor({ app }: { app: T.App }) {
     }),
   );
   const argvValid = kind !== "http-process" || (http.argv.length > 0 && http.argv.every((arg) => arg.trim() !== ""));
+  const phpValid = kind !== "php-fpm" || phpPerformanceValid(php);
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (argvValid) save.mutate(undefined);
+    if (argvValid && phpValid) save.mutate(undefined);
   }
 
   const toolchains = catalog.data?.toolchains ?? {};
@@ -71,17 +73,6 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                   ))}
                 </NativeSelect>
               </Field>
-              <Field label="Pool">
-                <NativeSelect
-                  className="w-full"
-                  value={php.pool}
-                  onChange={(e) => setPhp({ ...php, pool: e.target.value })}
-                >
-                  {(catalog.data?.poolProfiles ?? [php.pool]).map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </NativeSelect>
-              </Field>
               <Field label="Routing">
                 <NativeSelect
                   className="w-full"
@@ -100,13 +91,6 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                   placeholder="optional"
                   value={php.releaseSymlink ?? ""}
                   onChange={(e) => setPhp({ ...php, releaseSymlink: e.target.value || undefined })}
-                />
-              </Field>
-              <Field label="Upload limit (MB)">
-                <Input
-                  type="number"
-                  value={php.uploadLimitMb}
-                  onChange={(e) => setPhp({ ...php, uploadLimitMb: Number(e.target.value) })}
                 />
               </Field>
             </div>
@@ -163,6 +147,11 @@ export function ApplicationEditor({ app }: { app: T.App }) {
             </div>
           )}
         </Cell>
+        {kind === "php-fpm" && (
+          <Cell title="PHP performance" className="cell--wide">
+            <PHPPerformance php={php} onChange={setPhp} resources={resources} catalog={catalog.data} />
+          </Cell>
+        )}
         <Cell title="Routing">
           <div className="grid gap-4">
             <div className="grid-2">
@@ -268,7 +257,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
               "Running apps may restart."
             )}
           </span>
-          <Button type="submit" disabled={save.isPending || active.active || !argvValid}>
+          <Button type="submit" disabled={save.isPending || active.active || !argvValid || !phpValid}>
             Save changes
           </Button>
         </div>

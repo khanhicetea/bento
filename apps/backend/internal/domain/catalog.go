@@ -99,23 +99,80 @@ var PostgresVersions = map[string]string{
 	"18": "ghcr.io/pglayers/pglayers-full:18@sha256:c71d1b7bd757dfb6049a85a1cdaaf5610675c215549ccfa31351133189f335e0",
 }
 
-// PoolProfile is a named FPM capacity profile for the app's single pool.
-type PoolProfile struct {
-	Manager            string
-	MaxChildren        int
-	StartServers       int
-	MinSpare           int
-	MaxSpare           int
-	ProcessIdleTimeout string
+// PHP performance modes. Both run one ondemand FPM pool: workers are forked
+// per request (about 1ms) and reaped when idle, so an idle app holds no
+// workers. Modes differ only in worker count and per-request PHP limits.
+// Measurements behind these numbers: apps/backend/docs/evidence.md.
+const (
+	PHPModeStandard        = "standard"
+	PHPModeHighConcurrency = "high-concurrency"
+)
+
+// PHPMode holds a mode's defaults. Worker count is derived from the app's
+// memory limit, because FPM shares it with nginx, cron jobs and workers.
+type PHPMode struct {
+	WorkerMultiplier    int
+	WebMemoryLimitMB    int
+	CLIMemoryLimitMB    int
+	MaxExecutionSeconds int
+	MaxInputVars        int
 }
 
-var PoolProfiles = map[string]PoolProfile{
-	"tiny":     {Manager: "dynamic", MaxChildren: 5, StartServers: 1, MinSpare: 1, MaxSpare: 3},
-	"small":    {Manager: "dynamic", MaxChildren: 10, StartServers: 2, MinSpare: 1, MaxSpare: 5},
-	"medium":   {Manager: "dynamic", MaxChildren: 25, StartServers: 4, MinSpare: 2, MaxSpare: 10},
-	"large":    {Manager: "dynamic", MaxChildren: 50, StartServers: 8, MinSpare: 4, MaxSpare: 20},
-	"xlarge":   {Manager: "dynamic", MaxChildren: 100, StartServers: 16, MinSpare: 8, MaxSpare: 40},
-	"ondemand": {Manager: "ondemand", MaxChildren: 10, ProcessIdleTimeout: "10s"},
+var PHPModes = map[string]PHPMode{
+	PHPModeStandard:        {WorkerMultiplier: 1, WebMemoryLimitMB: 128, CLIMemoryLimitMB: 256, MaxExecutionSeconds: 60, MaxInputVars: 1000},
+	PHPModeHighConcurrency: {WorkerMultiplier: 3, WebMemoryLimitMB: 48, CLIMemoryLimitMB: 256, MaxExecutionSeconds: 30, MaxInputVars: 1000},
+}
+
+// Auto worker sizing: FPM gets PHPWebSharePercent of the app memory limit at
+// PHPWorkerMemoryMB per typical worker; the rest stays with nginx, jobs and
+// workers. The web UI mirrors this formula for its estimate.
+const (
+	PHPWebSharePercent = 60
+	PHPWorkerMemoryMB  = 48
+	PHPMinWorkers      = 2
+	PHPMaxWorkers      = 200
+	PHPIdleTimeout     = "10s"
+)
+
+// PHPSettings is the effective FPM pool and PHP configuration of one app.
+type PHPSettings struct {
+	Workers             int
+	IdleTimeout         string
+	WebMemoryLimitMB    int
+	CLIMemoryLimitMB    int
+	MaxExecutionSeconds int
+	MaxInputVars        int
+}
+
+// AutoPHPWorkers is the worker count a mode gets for a memory and PID limit.
+// Workers never take more than half of the PID limit, which jobs share.
+func AutoPHPWorkers(mode PHPMode, res Resources) int {
+	n := res.MemoryMB * PHPWebSharePercent / 100 / PHPWorkerMemoryMB
+	n = max(n, PHPMinWorkers) * mode.WorkerMultiplier
+	return max(min(n, res.PIDs/2, PHPMaxWorkers), 1)
+}
+
+// ResolvePHP applies mode defaults to unset fields. An unknown mode is
+// refused, never guessed.
+func ResolvePHP(p PHPRuntime, res Resources) (PHPSettings, error) {
+	mode, ok := PHPModes[p.Mode]
+	if !ok {
+		return PHPSettings{}, fmt.Errorf("unknown PHP mode %q", p.Mode)
+	}
+	pick := func(v, def int) int {
+		if v > 0 {
+			return v
+		}
+		return def
+	}
+	return PHPSettings{
+		Workers:             pick(p.MaxWorkers, AutoPHPWorkers(mode, res)),
+		IdleTimeout:         PHPIdleTimeout,
+		WebMemoryLimitMB:    pick(p.WebMemoryLimitMB, mode.WebMemoryLimitMB),
+		CLIMemoryLimitMB:    pick(p.CLIMemoryLimitMB, mode.CLIMemoryLimitMB),
+		MaxExecutionSeconds: pick(p.MaxExecutionSeconds, mode.MaxExecutionSeconds),
+		MaxInputVars:        pick(p.MaxInputVars, mode.MaxInputVars),
+	}, nil
 }
 
 // Default resource profiles, selected from the phase-1 measurements recorded

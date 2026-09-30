@@ -92,7 +92,16 @@ export interface PHPRuntime {
   version: string;
   documentRoot: string;
   routing: string;
-  pool: string;
+  /**
+   * Mode is "standard" or "high-concurrency". Zero-valued overrides use the
+   * mode default; maxWorkers 0 sizes workers from the app memory limit.
+   */
+  mode: string;
+  maxWorkers?: number /* int */;
+  webMemoryLimitMb?: number /* int */;
+  cliMemoryLimitMb?: number /* int */;
+  maxExecutionSeconds?: number /* int */;
+  maxInputVars?: number /* int */;
   readyPath?: string;
   releaseSymlink?: string;
   uploadLimitMb: number /* int */;
@@ -608,7 +617,30 @@ export interface Catalog {
   toolchains: { [key: string]: string[]};
   mysqlVersions: string[];
   postgresVersions: string[];
-  poolProfiles: string[];
+  phpModes: PHPMode[];
+  phpSizing: PHPSizing;
+}
+/**
+ * PHPMode is one PHP performance mode and its defaults.
+ */
+export interface PHPMode {
+  name: string;
+  workerMultiplier: number /* int */;
+  webMemoryLimitMb: number /* int */;
+  cliMemoryLimitMb: number /* int */;
+  maxExecutionSeconds: number /* int */;
+  maxInputVars: number /* int */;
+}
+/**
+ * PHPSizing is the automatic worker formula:
+ * clamp(max(memoryMb*webSharePercent/100/workerMemoryMb, minWorkers) *
+ * workerMultiplier, 1, min(pids/2, maxWorkers)).
+ */
+export interface PHPSizing {
+  webSharePercent: number /* int */;
+  workerMemoryMb: number /* int */;
+  minWorkers: number /* int */;
+  maxWorkers: number /* int */;
 }
 export interface SystemStatus {
   stackId: string;

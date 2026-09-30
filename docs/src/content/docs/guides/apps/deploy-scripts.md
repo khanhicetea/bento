@@ -33,7 +33,7 @@ Both examples are for Laravel; adapt the artisan lines for other frameworks.
 Runtime (unchanged from a normal app):
 
 ```json
-{ "kind": "php-fpm", "php": { "version": "8.4", "documentRoot": "public", "routing": "front-controller", "pool": "small" } }
+{ "kind": "php-fpm", "php": { "version": "8.4", "documentRoot": "public", "routing": "front-controller", "mode": "standard" } }
 ```
 
 Untracked files in `~/app` survive every deploy (`.env`, `vendor/`, `node_modules/`, `storage/*` content), so they
@@ -90,7 +90,7 @@ Runtime: serve through the `current` symlink. `releaseSymlink` lets local Nginx 
 
 ```json
 { "kind": "php-fpm", "php": { "version": "8.4", "documentRoot": "current/public", "releaseSymlink": "current",
-  "routing": "front-controller", "pool": "small" } }
+  "routing": "front-controller", "mode": "standard" } }
 ```
 
 One-time setup (in `bento app shell shop`): put the production `.env` at `~/shared/.env`. Run the first deploy before

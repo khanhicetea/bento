@@ -110,7 +110,7 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 	m.SchedulerHash = platform.SHA256Hex(sched)
 
 	if app.Runtime.Kind == domain.RuntimePHP && app.Runtime.PHP != nil {
-		frontend, fastcgi, pool, err := renderPHP(app, ctx)
+		frontend, fastcgi, pool, ini, err := renderPHP(app, ctx)
 		if err != nil {
 			return nil, nil, m, err
 		}
@@ -119,9 +119,10 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 			file{"nginx.conf", frontend, 0o440},
 			file{"fastcgi.conf", fastcgi, 0o440},
 			file{"php-fpm.conf", pool, 0o440},
+			file{PHPIniFile, ini, 0o440},
 		)
 		m.FrontendHash = platform.SHA256HexConcat(frontend, fastcgi)
-		m.PoolHash = platform.SHA256Hex(pool)
+		m.PoolHash = platform.SHA256HexConcat(pool, ini)
 	}
 
 	passwd, group := identityFiles(app, ctx.ImagePasswd, ctx.ImageGroup)
@@ -228,10 +229,15 @@ func (c *Changes) MarkApplied(scopes ...string) error {
 // instance loads all generated config at boot.
 func (c *Changes) MarkAllApplied() error { return c.MarkApplied(Scopes...) }
 
+// PHPIniFile is the app's PHP ini, in the directory the PHP image lists in
+// PHP_INI_SCAN_DIR (/etc/bento/php.d). FPM reads it at start, so it belongs
+// to the pool scope.
+const PHPIniFile = "php.d/zz-app.ini"
+
 // FrontendFiles, PoolFiles and SchedulerFiles name scoped-reload inputs.
 var (
 	FrontendFiles  = []string{"nginx.conf", "fastcgi.conf"}
-	PoolFiles      = []string{"php-fpm.conf"}
+	PoolFiles      = []string{"php-fpm.conf", PHPIniFile}
 	SchedulerFiles = []string{"minicrond.toml"}
 )
 
@@ -285,6 +291,13 @@ func WriteAppConfigChanges(app domain.App, ctx AppContext) (Materialized, Change
 	cfgDir := ctx.Layout.AppConfigDir(app.ID)
 	if err := platform.EnsureDir(cfgDir, 0o750, owner); err != nil {
 		return m, ch, err
+	}
+	for _, f := range config {
+		if d := filepath.Dir(f.name); d != "." {
+			if err := platform.EnsureDir(filepath.Join(cfgDir, d), 0o750, owner); err != nil {
+				return m, ch, err
+			}
+		}
 	}
 	ch.dir, ch.owner = cfgDir, owner
 	applied, err := loadApplied(ctx, app.ID)
@@ -459,7 +472,7 @@ func renderScheduler(app domain.App) ([]byte, error) {
 	return assets.Render("minicrond.toml.tmpl", map[string]any{"Slug": app.Slug, "AppID": app.ID, "Jobs": jobs})
 }
 
-func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool []byte, err error) {
+func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool, ini []byte, err error) {
 	p := app.Runtime.PHP
 	home := app.ContainerHome()
 	code := app.ContainerCode()
@@ -471,28 +484,35 @@ func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool []byte, 
 		symlinkFrom = path.Join(code, p.ReleaseSymlink)
 		rel := strings.TrimPrefix(p.DocumentRoot, p.ReleaseSymlink)
 		if p.DocumentRoot != p.ReleaseSymlink && !strings.HasPrefix(p.DocumentRoot, p.ReleaseSymlink+"/") {
-			return nil, nil, nil, fmt.Errorf("document root must be inside the release symlink %q", p.ReleaseSymlink)
+			return nil, nil, nil, nil, fmt.Errorf("document root must be inside the release symlink %q", p.ReleaseSymlink)
 		}
 		docRoot = path.Join(symlinkFrom, strings.TrimPrefix(rel, "/"))
 	}
-	profile := domain.PoolProfiles[p.Pool]
+	settings, err := domain.ResolvePHP(*p, app.Resources)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	data := map[string]any{
 		"Slug": app.Slug, "AppID": app.ID, "UID": app.UID, "Home": home,
 		"Port": domain.PHPFrontendPort, "DocumentRoot": docRoot, "SymlinkFrom": symlinkFrom,
 		"Routing": p.Routing, "UploadLimitMB": p.UploadLimitMB, "AccessLog": app.Route.AccessLog,
-		"TrustedProxies": ctx.TrustedProxies, "Workers": 1, "Pool": profile,
-		"OpenBasedir": openBasedir(app),
+		"TrustedProxies": ctx.TrustedProxies, "Workers": 1, "PHP": settings,
+		"FastCGIReadTimeout": max(120, settings.MaxExecutionSeconds+10),
+		"OpenBasedir":        openBasedir(app),
 	}
 	if frontend, err = assets.Render("app-nginx.conf.tmpl", data); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if fastcgi, err = assets.Render("app-fastcgi.conf.tmpl", data); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if pool, err = assets.Render("php-fpm.conf.tmpl", data); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return frontend, fastcgi, pool, nil
+	if ini, err = assets.Render("php-app.ini.tmpl", data); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return frontend, fastcgi, pool, ini, nil
 }
 
 func openBasedir(app domain.App) string {

@@ -203,6 +203,26 @@ backend stopped, edge traffic and scheduled jobs continued.
   services; parallel deploys against a real git host; two different runtime images building concurrently on real
   Docker; behaviour under a real host reboot with many apps; throughput gain (only overlap was measured).
 
+## PHP performance modes (2026-09-30; live Docker 29.8.1, amd64, PHP 8.4 runtime image)
+
+- Method: disposable copies of a dev PHP app container (same image, generated nginx/FPM config, 512 MB / 1 CPU /
+  256 PIDs, read-only root), one at a time, changing only the pool; a Go load generator against the app's port 8080.
+  Request shapes: typical page (15 ms busy loop + 40 ms sleep), 2 s sleep, 5 MB body, 64 MB allocation.
+- Old profiles: at equal `max_children`, `ondemand` and `dynamic` had the same steady-state throughput and latency;
+  `ondemand` handled a burst from idle better (50 concurrent: 100 vs 62 rps at 10 workers, 154 vs 93 at 50), idled at
+  19 MB / 18 PIDs regardless of size, and cost about 1 ms extra on a first request. Every profile with 10 or more
+  workers (including the default `small` and `ondemand`) returned about 95/100 502s for 20 concurrent 64 MB requests
+  with 92–96 cgroup OOM kills; only `tiny` (5 workers) served all 100.
+- New modes, rendered by `RenderAppConfig`: `standard` (6 workers at 512 MB) served all 100 64 MB requests with no
+  OOM kill; web requests saw `memory_limit` 128M, `max_execution_time` 60, `max_input_vars` 1000 while CLI saw 256M from
+  `php.d/zz-app.ini`. `high-concurrency` (18 workers, 48M) stopped the 64 MB request at the PHP limit, with no OOM kill,
+  and served 8.5 rps of 2 s requests against 3.0 for `standard`. `TestIntegrationAppLifecycle` passes with the new
+  config.
+- Found while testing: the PHP image does not set `display_errors`, so a fatal error (here the memory limit) renders
+  the message and script path with HTTP 200.
+- Not verified: arm64; real framework apps; true CPU saturation (the busy loop is wall-clock, so CFS throttling
+  lengthens it instead of capping throughput); single run per profile on a host also running a dev stack.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).

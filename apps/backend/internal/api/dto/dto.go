@@ -126,13 +126,20 @@ type RuntimeSpec struct {
 }
 
 type PHPRuntime struct {
-	Version        string `json:"version"`
-	DocumentRoot   string `json:"documentRoot"`
-	Routing        string `json:"routing"`
-	Pool           string `json:"pool"`
-	ReadyPath      string `json:"readyPath,omitempty"`
-	ReleaseSymlink string `json:"releaseSymlink,omitempty"`
-	UploadLimitMB  int    `json:"uploadLimitMb"`
+	Version      string `json:"version"`
+	DocumentRoot string `json:"documentRoot"`
+	Routing      string `json:"routing"`
+	// Mode is "standard" or "high-concurrency". Zero-valued overrides use the
+	// mode default; maxWorkers 0 sizes workers from the app memory limit.
+	Mode                string `json:"mode"`
+	MaxWorkers          int    `json:"maxWorkers,omitempty"`
+	WebMemoryLimitMB    int    `json:"webMemoryLimitMb,omitempty"`
+	CLIMemoryLimitMB    int    `json:"cliMemoryLimitMb,omitempty"`
+	MaxExecutionSeconds int    `json:"maxExecutionSeconds,omitempty"`
+	MaxInputVars        int    `json:"maxInputVars,omitempty"`
+	ReadyPath           string `json:"readyPath,omitempty"`
+	ReleaseSymlink      string `json:"releaseSymlink,omitempty"`
+	UploadLimitMB       int    `json:"uploadLimitMb"`
 }
 
 type HTTPRuntime struct {
@@ -674,7 +681,28 @@ type Catalog struct {
 	Toolchains       map[string][]string `json:"toolchains"`
 	MySQLVersions    []string            `json:"mysqlVersions"`
 	PostgresVersions []string            `json:"postgresVersions"`
-	PoolProfiles     []string            `json:"poolProfiles"`
+	PHPModes         []PHPMode           `json:"phpModes"`
+	PHPSizing        PHPSizing           `json:"phpSizing"`
+}
+
+// PHPMode is one PHP performance mode and its defaults.
+type PHPMode struct {
+	Name                string `json:"name"`
+	WorkerMultiplier    int    `json:"workerMultiplier"`
+	WebMemoryLimitMB    int    `json:"webMemoryLimitMb"`
+	CLIMemoryLimitMB    int    `json:"cliMemoryLimitMb"`
+	MaxExecutionSeconds int    `json:"maxExecutionSeconds"`
+	MaxInputVars        int    `json:"maxInputVars"`
+}
+
+// PHPSizing is the automatic worker formula:
+// clamp(max(memoryMb*webSharePercent/100/workerMemoryMb, minWorkers) *
+// workerMultiplier, 1, min(pids/2, maxWorkers)).
+type PHPSizing struct {
+	WebSharePercent int `json:"webSharePercent"`
+	WorkerMemoryMB  int `json:"workerMemoryMb"`
+	MinWorkers      int `json:"minWorkers"`
+	MaxWorkers      int `json:"maxWorkers"`
 }
 
 type SystemStatus struct {

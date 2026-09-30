@@ -307,10 +307,22 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	for name, versions := range domain.HTTPToolchains {
 		tc[name] = domain.SortedKeys(versions)
 	}
+	var modes []dto.PHPMode
+	for _, name := range []string{domain.PHPModeStandard, domain.PHPModeHighConcurrency} {
+		m := domain.PHPModes[name]
+		modes = append(modes, dto.PHPMode{
+			Name: name, WorkerMultiplier: m.WorkerMultiplier, WebMemoryLimitMB: m.WebMemoryLimitMB,
+			CLIMemoryLimitMB: m.CLIMemoryLimitMB, MaxExecutionSeconds: m.MaxExecutionSeconds, MaxInputVars: m.MaxInputVars,
+		})
+	}
 	writeJSON(w, http.StatusOK, dto.Catalog{
 		PHPVersions: domain.SortedKeys(domain.PHPVersions), Toolchains: tc,
 		MySQLVersions: domain.SortedKeys(domain.MySQLVersions), PostgresVersions: domain.SortedKeys(domain.PostgresVersions),
-		PoolProfiles: domain.SortedKeys(domain.PoolProfiles),
+		PHPModes: modes,
+		PHPSizing: dto.PHPSizing{
+			WebSharePercent: domain.PHPWebSharePercent, WorkerMemoryMB: domain.PHPWorkerMemoryMB,
+			MinWorkers: domain.PHPMinWorkers, MaxWorkers: domain.PHPMaxWorkers,
+		},
 	})
 }
 

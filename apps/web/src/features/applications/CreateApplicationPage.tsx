@@ -6,6 +6,7 @@ import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { Cell, Field, KeyValues, PageHeader } from "../../components/DomainState.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
+import { PHPPerformance, phpPerformanceValid } from "./PHPPerformance.tsx";
 import { useCatalog, useOperationMutation } from "./useApplications.ts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -65,7 +66,7 @@ export function CreateApplicationPage() {
     version: "8.4",
     documentRoot: "public",
     routing: "front-controller",
-    pool: "small",
+    mode: "standard",
     uploadLimitMb: 64,
   });
   const [http, setHttp] = useState<T.HTTPRuntime>({
@@ -102,6 +103,7 @@ export function CreateApplicationPage() {
       ? php.version !== "" &&
         php.uploadLimitMb >= 1 &&
         php.uploadLimitMb <= 4096 &&
+        phpPerformanceValid(php) &&
         validRelativePath(php.documentRoot) &&
         validRelativePath(php.releaseSymlink ?? "")
       : http.toolchain !== "" &&
@@ -186,64 +188,49 @@ export function CreateApplicationPage() {
 
           {step === 1 &&
             (kind === "php-fpm" ? (
-              <Cell title="PHP">
-                <div className="grid-3">
-                  <Field label="Version">
-                    <NativeSelect
-                      className="w-full"
-                      value={php.version}
-                      onChange={(event) => setPhp({ ...php, version: event.target.value })}
-                    >
-                      {(catalog.data?.phpVersions ?? [php.version]).map((version) => (
-                        <option key={version}>{version}</option>
-                      ))}
-                    </NativeSelect>
-                  </Field>
-                  <Field label="Pool">
-                    <NativeSelect
-                      className="w-full"
-                      value={php.pool}
-                      onChange={(event) => setPhp({ ...php, pool: event.target.value })}
-                    >
-                      {(catalog.data?.poolProfiles ?? [php.pool]).map((pool) => (
-                        <option key={pool}>{pool}</option>
-                      ))}
-                    </NativeSelect>
-                  </Field>
-                  <Field label="Routing">
-                    <NativeSelect
-                      className="w-full"
-                      value={php.routing}
-                      onChange={(event) => setPhp({ ...php, routing: event.target.value })}
-                    >
-                      <option value="front-controller">Front controller</option>
-                      <option value="legacy">Legacy .php files</option>
-                    </NativeSelect>
-                  </Field>
-                  <Field label="Document root">
-                    <Input
-                      value={php.documentRoot}
-                      onChange={(event) => setPhp({ ...php, documentRoot: event.target.value })}
-                    />
-                  </Field>
-                  <Field label="Release symlink">
-                    <Input
-                      placeholder="optional"
-                      value={php.releaseSymlink ?? ""}
-                      onChange={(event) => setPhp({ ...php, releaseSymlink: event.target.value || undefined })}
-                    />
-                  </Field>
-                  <Field label="Upload limit (MB)">
-                    <Input
-                      type="number"
-                      min="1"
-                      max="4096"
-                      value={php.uploadLimitMb}
-                      onChange={(event) => setPhp({ ...php, uploadLimitMb: Number(event.target.value) })}
-                    />
-                  </Field>
-                </div>
-              </Cell>
+              <>
+                <Cell title="PHP">
+                  <div className="grid-3">
+                    <Field label="Version">
+                      <NativeSelect
+                        className="w-full"
+                        value={php.version}
+                        onChange={(event) => setPhp({ ...php, version: event.target.value })}
+                      >
+                        {(catalog.data?.phpVersions ?? [php.version]).map((version) => (
+                          <option key={version}>{version}</option>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                    <Field label="Routing">
+                      <NativeSelect
+                        className="w-full"
+                        value={php.routing}
+                        onChange={(event) => setPhp({ ...php, routing: event.target.value })}
+                      >
+                        <option value="front-controller">Front controller</option>
+                        <option value="legacy">Legacy .php files</option>
+                      </NativeSelect>
+                    </Field>
+                    <Field label="Document root">
+                      <Input
+                        value={php.documentRoot}
+                        onChange={(event) => setPhp({ ...php, documentRoot: event.target.value })}
+                      />
+                    </Field>
+                    <Field label="Release symlink">
+                      <Input
+                        placeholder="optional"
+                        value={php.releaseSymlink ?? ""}
+                        onChange={(event) => setPhp({ ...php, releaseSymlink: event.target.value || undefined })}
+                      />
+                    </Field>
+                  </div>
+                </Cell>
+                <Cell title="Performance">
+                  <PHPPerformance php={php} onChange={setPhp} resources={resources} catalog={catalog.data} />
+                </Cell>
+              </>
             ) : (
               <>
                 <Cell title="Toolchain">
@@ -490,7 +477,7 @@ export function CreateApplicationPage() {
                   [
                     "Runtime",
                     kind === "php-fpm"
-                      ? `PHP ${php.version} · ${php.pool}`
+                      ? `PHP ${php.version} · ${php.mode}`
                       : `${http.toolchain} ${http.version} · ${http.argv.join(" ")}`,
                   ],
                   ["Access", `${ingress}${domains.list.length ? ` · ${domains.list.join(", ")}` : ""}`],

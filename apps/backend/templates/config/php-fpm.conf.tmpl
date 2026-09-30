@@ -9,15 +9,12 @@ daemonize = no
 [{{.Slug}}]
 listen = /run/php/fpm.sock
 listen.mode = 0600
-pm = {{.Pool.Manager}}
-pm.max_children = {{.Pool.MaxChildren}}
-{{- if eq .Pool.Manager "dynamic"}}
-pm.start_servers = {{.Pool.StartServers}}
-pm.min_spare_servers = {{.Pool.MinSpare}}
-pm.max_spare_servers = {{.Pool.MaxSpare}}
-{{- else}}
-pm.process_idle_timeout = {{.Pool.ProcessIdleTimeout}}
-{{- end}}
+; Ondemand: workers fork per request and exit after {{.PHP.IdleTimeout}} idle, so an idle
+; app holds none. max_children is sized from the app memory limit, which FPM
+; shares with nginx, cron jobs and workers.
+pm = ondemand
+pm.max_children = {{.PHP.Workers}}
+pm.process_idle_timeout = {{.PHP.IdleTimeout}}
 pm.max_requests = 1000
 ping.path = /fpm-ping
 ping.response = pong
@@ -31,3 +28,8 @@ php_admin_value[session.save_path] = {{.Home}}/tmp/sessions
 php_admin_value[upload_tmp_dir] = /tmp
 php_admin_value[upload_max_filesize] = {{.UploadLimitMB}}M
 php_admin_value[post_max_size] = {{.UploadLimitMB}}M
+; Web request limits. php_value, not php_admin_value: the app may still raise
+; them for itself with ini_set() or .user.ini.
+php_value[memory_limit] = {{.PHP.WebMemoryLimitMB}}M
+php_value[max_execution_time] = {{.PHP.MaxExecutionSeconds}}
+php_value[max_input_vars] = {{.PHP.MaxInputVars}}
