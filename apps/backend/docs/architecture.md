@@ -100,12 +100,13 @@ operations on the same resource keep FIFO order and nothing overtakes a waiting 
 | `app.reconcile`, `app.start`, `app.restart`, `app.update`, `app.deploy` | exclusive `app:<id>`, shared `service:<name>` for each bound service (and `redis`) |
 | `app.stop` | exclusive `app:<id>` |
 | `service.create`, `service.reconcile` | exclusive `service:<name>` |
+| `image.prepare` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
 | everything else, and any unclassified kind | **global**: runs alone, after everything before it, before anything after it |
 
 An `app.start` or `app.update` of an unprovisioned app is global because provisioning writes grants on shared data
 services. The reasons for each global kind are the shared state it rewrites: the edge settings or several routes at once
 (`edge.apply`, `app.publish|unpublish|remove`), data services and their grants (`app.provision`, `binding.add`,
-`database.add`), the image set (`image.prune`), home ownership (`app.permissions`), or every app at once
+`database.add`), removing from the image set (`image.prune`), home ownership (`app.permissions`), or every app at once
 (`stack.export`, `backup.*`).
 
 A dispatch pass loads every app once (for the claims of app operations) and records, for each queued operation that is
@@ -120,8 +121,8 @@ Parallel handlers share five things, each serialized inside the handlers:
 - **Network plan and creation** — `netMu` in `NetworkPlan`/`EnsureNetworks` (read-then-write of the plan setting and
   check-then-create of the Docker networks).
 - **Runtime image builds** — `ImageManager` locks per image tag: concurrent `Ensure` calls for one tag build it once;
-  different tags (for example a PHP and a Node image) build concurrently. `Remove` (image prune) excludes every
-  `Ensure`.
+  different tags (for example a PHP and a Node image) build concurrently, at most `MaxConcurrentBuilds` (2) at a time
+  from any operation. `Remove` (image prune) excludes every `Ensure`.
 - **Redis ACL** — `aclMu` in `syncRedisACL`, which reads every app's identity, rewrites the ACL file and reloads Redis.
   `app.update` and `service.reconcile` of Redis may call it in parallel.
 - **Route activation of a booting app** — while an operation is (re)starting an app's instance and has not seen it ready,
@@ -177,6 +178,12 @@ debounces triggers for 2 s, and also runs a full `Pass` every 60 s. A pass:
 - for provisioned apps: desired `stopped` but running → submit `app.reconcile`; desired `running` but missing, not
   running, or with a different planned fingerprint (`Controller.PlannedGeneration`, computed without writing files)
   → submit `app.reconcile`. Health alone never triggers action;
+- for a running app whose planned runtime image is not built (a changed image template or pinned artifact, such as a
+  minicrond bump) → submit one `image.prepare` per runtime key instead, and leave the instance serving on its current
+  image. The app is reconciled (replaced) only on a pass after the build has succeeded; the reconciler watches its
+  pending prepares and triggers that pass as soon as one finishes. A failed build keeps the old instance and backs off
+  under the `image:<key>` target. Apps that are missing or stopped build inline in `app.reconcile`, since nothing is
+  serving;
 - ensures the edge and tunnel exist when enabled;
 - removes exited tool containers owned by the stack.
 

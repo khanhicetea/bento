@@ -7,11 +7,15 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
-const KindImagePrune = "image.prune"
+const (
+	KindImagePrune   = "image.prune"
+	KindImagePrepare = "image.prepare"
+)
 
 var imageDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -52,4 +56,25 @@ func (c *Controller) handleImagePrune(ctx context.Context, r *Run) (any, error) 
 	}
 	r.Info(ctx, "removed image %s (%s)", r.Op.TargetID, strings.Join(img.Tags, ", "))
 	return map[string]any{"image": r.Op.TargetID, "tags": img.Tags}, nil
+}
+
+// handleImagePrepare builds the planned image for one runtime key (the
+// target id, in ImageKey.String form) ahead of any app rollout. It touches no
+// app: running instances keep serving on their current image, and the
+// reconciler replaces them only once this has succeeded.
+func (c *Controller) handleImagePrepare(ctx context.Context, r *Run) (any, error) {
+	key, ok := domain.ParseImageKey(r.Op.TargetID)
+	if !ok {
+		return nil, Fail("image-key", "The runtime is no longer supported; update the apps that use it.",
+			"unknown runtime image key %q", r.Op.TargetID)
+	}
+	if err := r.Phase(ctx, "build-image"); err != nil {
+		return nil, err
+	}
+	id, spec, err := c.Images.Ensure(ctx, key, func(s string) { r.Info(ctx, "%s", s) })
+	if err != nil {
+		return nil, Fail("image", "Check Docker connectivity and build output; running apps keep their current image.",
+			"managed image: %v", err)
+	}
+	return map[string]any{"key": key.String(), "tag": spec.Tag(), "image": id}, nil
 }

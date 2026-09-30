@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
@@ -21,7 +22,16 @@ type claims struct {
 	global bool
 	excl   []string
 	shared []string
+	// pool names a bounded slot pool: at most poolLimits[pool] operations of
+	// the pool run at once, even when their other claims are disjoint.
+	pool string
 }
+
+// imageBuildPool bounds image.prepare operations to the runtime's own build
+// limit, so a waiting prepare never occupies an executor slot.
+const imageBuildPool = "image-build"
+
+var poolLimits = map[string]int{imageBuildPool: runtime.MaxConcurrentBuilds}
 
 // globalClaims runs alone: nothing starts before it finishes and it starts
 // only when nothing else is running.
@@ -29,6 +39,7 @@ var globalClaims = claims{global: true}
 
 func appClaim(id string) string       { return "app:" + id }
 func serviceClaim(name string) string { return "service:" + name }
+func imageClaim(key string) string    { return "image:" + key }
 
 // conflicts reports whether a and b must not run at the same time. Shared
 // claims coexist; an exclusive claim conflicts with any claim on the resource.
@@ -79,6 +90,9 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //     update of an unprovisioned app provisions (grants on shared data
 //     services) and therefore runs alone.
 //   - service.create|reconcile hold their own service exclusively.
+//   - image.prepare holds its runtime key exclusively, in the image-build
+//     pool. It only builds (ImageManager serializes per tag and excludes
+//     prune); image.prune stays global.
 //
 // Everything else runs alone: edge/tunnel/dbadmin apply, provision, publish,
 // unpublish, remove, bindings, permissions, backup, restore, export, image
@@ -103,6 +117,8 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 		return cl
 	case KindServiceCreate, KindServiceEnsure:
 		return claims{excl: []string{serviceClaim(op.TargetID)}}
+	case KindImagePrepare:
+		return claims{excl: []string{imageClaim(op.TargetID)}, pool: imageBuildPool}
 	}
 	return globalClaims
 }

@@ -471,6 +471,18 @@ func (f *Fake) Delete(nameOrID string) {
 	}
 }
 
+// SetImage simulates a local image tag pointing at id; an empty id removes
+// the tag (a pruned image or one never built).
+func (f *Fake) SetImage(tag, id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id == "" {
+		delete(f.Images, tag)
+		return
+	}
+	f.Images[tag] = id
+}
+
 // CallCount counts recorded calls with the given method prefix.
 func (f *Fake) CallCount(prefix string) int {
 	f.mu.Lock()

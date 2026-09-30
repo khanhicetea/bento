@@ -193,6 +193,24 @@ type ImageKey struct {
 
 func (k ImageKey) String() string { return fmt.Sprintf("%s-%s", k.Toolchain, k.Version) }
 
+// ParseImageKey resolves the String form of a supported runtime image key.
+// Only catalog entries match, so an unknown or retired key is refused.
+func ParseImageKey(s string) (ImageKey, bool) {
+	for v := range PHPVersions {
+		if k := (ImageKey{Kind: RuntimePHP, Toolchain: "php", Version: v}); k.String() == s {
+			return k, true
+		}
+	}
+	for t, versions := range HTTPToolchains {
+		for v := range versions {
+			if k := (ImageKey{Kind: RuntimeHTTP, Toolchain: t, Version: v}); k.String() == s {
+				return k, true
+			}
+		}
+	}
+	return ImageKey{}, false
+}
+
 func (r Runtime) ImageKey() ImageKey {
 	if r.Kind == RuntimePHP && r.PHP != nil {
 		return ImageKey{Kind: RuntimePHP, Toolchain: "php", Version: r.PHP.Version}

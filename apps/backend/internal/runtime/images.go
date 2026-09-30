@@ -67,18 +67,34 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	return ImageSpec{Key: key, ContextKind: kind, Context: ctxBytes, Args: args, Hash: platform.SHA256Hex(h.Bytes())}, nil
 }
 
+// MaxConcurrentBuilds bounds runtime image builds running at once, whichever
+// operation needs them: a build is CPU- and I/O-heavy and shares the host
+// with the apps it will replace.
+const MaxConcurrentBuilds = 2
+
 // ImageManager resolves managed images and caches their identity files.
 // Operations run in parallel: builds of the same tag are serialized (one
-// builds, the rest find it), builds of different tags run concurrently, and
-// Remove excludes every Ensure.
+// builds, the rest find it), builds of different tags run concurrently up to
+// MaxConcurrentBuilds, and Remove excludes every Ensure.
 type ImageManager struct {
 	Engine docker.Engine
 	Layout platform.Layout
 	Names  Names
 
-	prune sync.RWMutex // Ensure holds it shared, Remove exclusively
-	mu    sync.Mutex   // guards tags
-	tags  map[string]*sync.Mutex
+	prune  sync.RWMutex // Ensure holds it shared, Remove exclusively
+	mu     sync.Mutex   // guards tags and builds
+	tags   map[string]*sync.Mutex
+	builds chan struct{}
+}
+
+// buildSlots returns the semaphore that bounds concurrent builds.
+func (m *ImageManager) buildSlots() chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.builds == nil {
+		m.builds = make(chan struct{}, MaxConcurrentBuilds)
+	}
+	return m.builds
 }
 
 func (m *ImageManager) tagLock(tag string) *sync.Mutex {
@@ -116,6 +132,20 @@ func (m *ImageManager) Ensure(
 	} else if ok {
 		return id, spec, nil
 	}
+	slots := m.buildSlots()
+	select {
+	case slots <- struct{}{}:
+	default:
+		if progress != nil {
+			progress("waiting for a free image build slot")
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			return "", spec, ctx.Err()
+		}
+	}
+	defer func() { <-slots }()
 	if progress != nil {
 		progress("building managed image " + spec.Tag())
 	}

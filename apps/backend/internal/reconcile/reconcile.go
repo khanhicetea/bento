@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -138,6 +139,7 @@ func (r *Reconciler) Run(ctx context.Context) {
 	defer wg.Wait()
 	wg.Go(func() { r.watchEvents(ctx) })
 	wg.Go(func() { r.pruneHistory(ctx) })
+	wg.Go(func() { r.watchImageOps(ctx) })
 	ticker := time.NewTicker(r.Interval)
 	defer ticker.Stop()
 	r.Trigger()
@@ -332,6 +334,75 @@ func (r *Reconciler) submit(ctx context.Context, t *target, kind, targetKind, id
 	r.Log.Info("reconcile submitted", "kind", kind, "target", id, "op", op.ID)
 }
 
+// imageTargetPrefix keys image.prepare targets, whose id is an ImageKey
+// string.
+const imageTargetPrefix = "image:"
+
+// settleImages folds the outcome of every submitted image.prepare, including
+// those whose image is now built and that no app will look up again.
+func (r *Reconciler) settleImages(ctx context.Context) {
+	for id, t := range r.work {
+		if strings.HasPrefix(id, imageTargetPrefix) {
+			r.settle(ctx, t)
+		}
+	}
+}
+
+// forgetImages drops settled image targets whose image no running app still
+// misses, so a key built by other means leaves no stale failure behind.
+func (r *Reconciler) forgetImages(missing map[string]bool) {
+	for id, t := range r.work {
+		key, ok := strings.CutPrefix(id, imageTargetPrefix)
+		if ok && t.PendingOp == "" && !missing[key] {
+			delete(r.work, id)
+		}
+	}
+}
+
+// prepareImage submits one image.prepare per runtime key. Apps sharing the
+// key wait for the same build; the executor bounds how many run at once.
+func (r *Reconciler) prepareImage(ctx context.Context, key string) error {
+	t := r.get(imageTargetPrefix+key, 0)
+	if t.PendingOp != "" {
+		return nil // settled at the start of the pass; still in flight
+	}
+	busy, err := store.ActiveForTarget(ctx, r.C.Store.DB(), key)
+	if err != nil || busy {
+		return err
+	}
+	r.submit(ctx, t, operations.KindImagePrepare, "image", key)
+	return nil
+}
+
+// watchImageOps triggers a pass when a pending image.prepare changes state,
+// so apps roll out as soon as their image is built rather than on the next
+// periodic pass.
+func (r *Reconciler) watchImageOps(ctx context.Context) {
+	ch, cancel := r.C.Subscribe()
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case id := <-ch:
+			if r.pendingImageOp(id) {
+				r.Trigger()
+			}
+		}
+	}
+}
+
+func (r *Reconciler) pendingImageOp(opID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, t := range r.targets {
+		if strings.HasPrefix(id, imageTargetPrefix) && t.PendingOp == opID {
+			return true
+		}
+	}
+	return false
+}
+
 // ResetBudget clears a target's failure budget (explicit operator action).
 func (r *Reconciler) ResetBudget(id string) {
 	r.mu.Lock()
@@ -380,6 +451,8 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	r.settleImages(ctx)
+	missing := map[string]bool{}
 	for _, app := range apps {
 		t := r.get(app.ID, app.ConfigGeneration)
 		if !r.settle(ctx, t) {
@@ -406,17 +479,35 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		case domain.DesiredRunning:
 			if !obs.Exists || !obs.Running {
 				need = true
-			} else if need, err = r.C.RunningAppDrift(ctx, app, obs.Generation); err != nil {
+				break
+			}
+			drift, err := r.C.RunningAppDrift(ctx, app, obs.Generation)
+			if err != nil {
 				// Unhealthy readiness alone never triggers recreation: only a
 				// missing image, a changed fingerprint or config drift does.
 				t.LastError = err.Error()
 				continue
 			}
+			if drift == operations.DriftImageMissing {
+				// The instance keeps serving on its current image while the
+				// planned one builds; it is replaced only once the build has
+				// succeeded.
+				key := app.Runtime.ImageKey().String()
+				missing[key] = true
+				if err := r.prepareImage(ctx, key); err != nil {
+					return err
+				}
+				continue
+			}
+			need = drift == operations.DriftReplace
 		}
 		if need {
 			r.submit(ctx, t, operations.KindAppReconcile, "app", app.ID)
 		}
 	}
+	// Only after a complete app scan: an aborted pass must not drop the
+	// backoff of an image some app still misses.
+	r.forgetImages(missing)
 	if err := r.edgeAndTunnel(ctx); err != nil {
 		return err
 	}

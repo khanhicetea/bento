@@ -420,7 +420,7 @@ func (c *Controller) runningCount() int {
 }
 
 // blocker returns the id of a running operation whose claims conflict with
-// cl, or "".
+// cl, or that fills cl's slot pool, or "".
 func (c *Controller) blocker(cl claims) string {
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
@@ -429,10 +429,17 @@ func (c *Controller) blocker(cl claims) string {
 		ids = append(ids, id)
 	}
 	slices.Sort(ids) // deterministic answer when several conflict
+	var inPool []string
 	for _, id := range ids {
 		if cl.conflicts(c.running[id]) {
 			return id
 		}
+		if cl.pool != "" && c.running[id].pool == cl.pool {
+			inPool = append(inPool, id)
+		}
+	}
+	if cl.pool != "" && len(inPool) >= max(poolLimits[cl.pool], 1) {
+		return inPool[0]
 	}
 	return ""
 }

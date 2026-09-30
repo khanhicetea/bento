@@ -139,6 +139,7 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 	parallel := map[string]bool{
 		KindAppReconcile: true, KindAppStart: true, KindAppRestart: true, KindAppStop: true,
 		KindAppUpdate: true, KindAppDeploy: true, KindServiceCreate: true, KindServiceEnsure: true,
+		KindImagePrepare: true,
 	}
 	for kind := range h.c.handlers {
 		cl := h.c.claimsFor(t.Context(), store.Operation{Kind: kind, TargetID: "x"})

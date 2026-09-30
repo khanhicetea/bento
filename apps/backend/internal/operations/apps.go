@@ -77,6 +77,7 @@ func (c *Controller) registerHandlers() {
 		KindPermissions:   c.handlePermissions,
 		KindAppDeploy:     c.handleDeploy,
 		KindImagePrune:    c.handleImagePrune,
+		KindImagePrepare:  c.handleImagePrepare,
 	}
 }
 
@@ -1442,29 +1443,46 @@ func (c *Controller) AppConfigDrift(ctx context.Context, app domain.App) (bool, 
 	return runtime.AppConfigDrift(app, actx)
 }
 
-// RunningAppDrift reports whether a running app whose container carries
-// observedGen needs reconciling: the managed image is missing, the planned
-// fingerprint differs, or (template-only changes, applied by scoped reloads)
-// the generated config drifted. It is PlannedGeneration followed by
+// AppDrift classifies what a running app needs from the reconciler.
+type AppDrift int
+
+const (
+	// DriftNone: the instance matches its plan.
+	DriftNone AppDrift = iota
+	// DriftImageMissing: the planned image is not built. Build it first
+	// (image.prepare); the instance keeps serving on its current image.
+	DriftImageMissing
+	// DriftReplace: the planned fingerprint or the generated config changed.
+	DriftReplace
+)
+
+// RunningAppDrift reports what a running app whose container carries
+// observedGen needs: its managed image built, or reconciling because the
+// planned fingerprint differs or (template-only changes, applied by scoped
+// reloads) the generated config drifted. It is PlannedGeneration followed by
 // AppConfigDrift, resolving the image id, identity base and network plan
 // once instead of twice: the reconciler runs it for every running app on
 // every pass, and the image lookup is a Docker round trip.
-func (c *Controller) RunningAppDrift(ctx context.Context, app domain.App, observedGen string) (bool, error) {
+func (c *Controller) RunningAppDrift(ctx context.Context, app domain.App, observedGen string) (AppDrift, error) {
 	imageID, actx, ok, err := c.planContext(ctx, app)
 	if err != nil {
-		return false, err
+		return DriftNone, err
 	}
 	if !ok {
-		return true, nil
+		return DriftImageMissing, nil
 	}
 	gen, err := c.plannedGeneration(app, imageID, actx)
 	if err != nil {
-		return false, err
+		return DriftNone, err
 	}
 	if gen != observedGen {
-		return true, nil
+		return DriftReplace, nil
 	}
-	return runtime.AppConfigDrift(app, actx)
+	drift, err := runtime.AppConfigDrift(app, actx)
+	if err != nil || !drift {
+		return DriftNone, err
+	}
+	return DriftReplace, nil
 }
 
 // Observe exposes observed state to status readers.
