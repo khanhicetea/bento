@@ -208,7 +208,7 @@ Recovery of missing durable data is refused by the handlers themselves (`verifyH
 | `app.argv` — NUL-separated argv (HTTP apps) | boot |
 | `nginx.conf`, `fastcgi.conf` (PHP) | frontend reload |
 | `php-fpm.conf`, `php.d/zz-app.ini` (PHP; the ini is on the image's `PHP_INI_SCAN_DIR`) | pool restart |
-| `minicrond.toml` — config-owned `bento-internal-*` tasks | scheduler reload |
+| `minicrond.toml` — config-owned `zz-bento-*` tasks | scheduler reload |
 
 plus `apps/<appId>/identity/{passwd,group}`: the image's own files (read once per image ID via a created-not-started
 container and cached) with the app user appended. They are mounted as single files and are boot-static.

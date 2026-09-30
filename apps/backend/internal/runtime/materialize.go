@@ -452,7 +452,7 @@ type schedJob struct {
 }
 
 // Reserved internal task names; minicrond refuses registry collisions.
-const internalTaskPrefix = "bento-internal-"
+const internalTaskPrefix = "zz-bento-"
 
 func renderScheduler(app domain.App) ([]byte, error) {
 	var jobs []schedJob

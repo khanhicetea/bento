@@ -16,6 +16,6 @@ jobs.
   Starting a second daemon is refused.
 - Jobs keep running while the app is unpublished. Stopping or restarting the app stops or restarts its jobs and
   workers too.
-- Bento adds read-only internal tasks named `bento-internal-*` (weekly SQLite `VACUUM` for each SQLite binding).
+- Bento adds read-only internal tasks named `zz-bento-*` (weekly SQLite `VACUUM` for each SQLite binding).
 
 The scheduler UI shares Bento's browser origin: only run scheduler content you trust.
