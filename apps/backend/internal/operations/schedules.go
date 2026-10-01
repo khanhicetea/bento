@@ -32,7 +32,8 @@ type scheduleKind struct {
 }
 
 var scheduleKinds = map[string]scheduleKind{
-	"backup": {Submit: submitScheduledBackup},
+	"backup":     {Submit: submitScheduledBackup},
+	"app-backup": {Submit: submitScheduledResticBackup},
 }
 
 // NextRun is the first slot of s after now, or zero when it is disabled or

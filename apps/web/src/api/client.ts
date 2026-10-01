@@ -116,6 +116,20 @@ export const api = {
     webhook: (id: string, signal?: AbortSignal) => get<T.Webhook>(`/api/v1/apps/${enc(id)}/webhook`, signal),
     enableWebhook: (id: string) => request<T.WebhookSecret>("POST", `/api/v1/apps/${enc(id)}/webhook`, {}),
     disableWebhook: (id: string) => request<T.Webhook>("DELETE", `/api/v1/apps/${enc(id)}/webhook`),
+    restic: {
+      get: (id: string, signal?: AbortSignal) => get<T.Restic>(`/api/v1/apps/${enc(id)}/restic`, signal),
+      save: (id: string, body: T.ResticSettings) => request<T.Restic>("PUT", `/api/v1/apps/${enc(id)}/restic`, body),
+      init: (id: string) => mutate<T.ResticKeyAccepted>("POST", `/api/v1/apps/${enc(id)}/restic/init`),
+      connect: (id: string, key: string) =>
+        mutate("POST", `/api/v1/apps/${enc(id)}/restic/connect`, { key } satisfies T.ResticConnectRequest),
+      action: (id: string, action: "backup" | "refresh" | "check" | "unlock") =>
+        mutate("POST", `/api/v1/apps/${enc(id)}/restic/${action}`),
+      restore: (id: string, body: T.ResticRestoreRequest) =>
+        mutate("POST", `/api/v1/apps/${enc(id)}/restic/restore`, body),
+      addKey: (id: string, body: T.ResticKeyAddRequest) =>
+        mutate<T.ResticKeyAccepted>("POST", `/api/v1/apps/${enc(id)}/restic/keys`, body),
+      removeKey: (id: string, keyId: string) => mutate("DELETE", `/api/v1/apps/${enc(id)}/restic/keys/${enc(keyId)}`),
+    },
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
     terminalPath: (id: string, mode: "tool" | "running") => `/api/v1/apps/${enc(id)}/terminal?mode=${mode}`,
@@ -163,6 +177,7 @@ export const api = {
   backups: {
     artifacts: (signal?: AbortSignal) => get<T.BackupArtifactList>("/api/v1/backups/artifacts", signal),
     runs: (signal?: AbortSignal) => get<T.BackupRunList>("/api/v1/backups/runs", signal),
+    apps: (signal?: AbortSignal) => get<T.AppBackupOverview>("/api/v1/backups/apps", signal),
     run: (body: T.BackupRequest) => mutate("POST", "/api/v1/backups", body),
     restore: (body: T.RestoreRequest) => mutate("POST", "/api/v1/backups/restore", body),
     remove: (body: T.BackupDeleteRequest) => mutate("POST", "/api/v1/backups/delete", body),

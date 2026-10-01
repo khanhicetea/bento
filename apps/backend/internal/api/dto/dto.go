@@ -846,3 +846,123 @@ type AppMetrics struct {
 	Processes    []AppProcess `json:"processes"`
 	ProcessTotal int          `json:"processTotal"`
 }
+
+// ---- app restic backups ----
+
+type ResticRetention struct {
+	Hourly  int `json:"hourly"`
+	Daily   int `json:"daily"`
+	Weekly  int `json:"weekly"`
+	Monthly int `json:"monthly"`
+}
+
+type ResticSchedule struct {
+	Enabled bool   `json:"enabled"`
+	Cron    string `json:"cron"`
+}
+
+// ResticSettings is an app's restic configuration. Paths, excludes and
+// sqlitePaths are relative to the app home.
+type ResticSettings struct {
+	// Repository is an rclone "remote:path".
+	Repository      string          `json:"repository"`
+	Paths           []string        `json:"paths"`
+	Excludes        []string        `json:"excludes"`
+	DefaultExcludes bool            `json:"defaultExcludes"`
+	SQLitePaths     []string        `json:"sqlitePaths"`
+	Retention       ResticRetention `json:"retention"`
+	Schedule        ResticSchedule  `json:"schedule"`
+}
+
+type ResticSnapshot struct {
+	ID      string   `json:"id"`
+	ShortID string   `json:"shortId"`
+	Time    string   `json:"time"`
+	Tags    []string `json:"tags"`
+}
+
+type ResticKey struct {
+	ID       string `json:"id"`
+	Current  bool   `json:"current"`
+	UserName string `json:"userName"`
+	Created  string `json:"created"`
+}
+
+type ResticRunResult struct {
+	OpID       string  `json:"opId"`
+	Trigger    string  `json:"trigger"`
+	At         string  `json:"at"`
+	OK         bool    `json:"ok"`
+	SnapshotID string  `json:"snapshotId"`
+	BytesAdded int64   `json:"bytesAdded"`
+	FilesNew   int64   `json:"filesNew"`
+	FilesTotal int64   `json:"filesTotal"`
+	Seconds    float64 `json:"seconds"`
+	Error      string  `json:"error"`
+}
+
+type Restic struct {
+	Configured  bool             `json:"configured"`
+	Initialized bool             `json:"initialized"`
+	Settings    ResticSettings   `json:"settings"`
+	Snapshots   []ResticSnapshot `json:"snapshots"`
+	Keys        []ResticKey      `json:"keys"`
+	RefreshedAt string           `json:"refreshedAt"`
+	LastBackup  *ResticRunResult `json:"lastBackup"`
+	LastCheck   *ResticRunResult `json:"lastCheck"`
+	LastPruneAt string           `json:"lastPruneAt"`
+	NextRun     string           `json:"nextRun"`
+	// DefaultExcludes are applied when settings.defaultExcludes is on.
+	DefaultExcludes []string `json:"defaultExcludes"`
+}
+
+type ResticConnectRequest struct {
+	Key string `json:"key"`
+}
+
+type ResticKeyAddRequest struct {
+	Label   string `json:"label"`
+	Confirm string `json:"confirm"`
+}
+
+type ResticRestoreRequest struct {
+	Snapshot  string `json:"snapshot"`
+	Files     bool   `json:"files"`
+	Databases bool   `json:"databases"`
+	Confirm   string `json:"confirm"`
+}
+
+// ResticKeyAccepted carries a repository key exactly once, in the response
+// that created it.
+type ResticKeyAccepted struct {
+	Accepted `tstype:",extends"`
+	Key      string `json:"key"`
+}
+
+// AppBackupSummary is one app's restic backup state for the Backups page.
+type AppBackupSummary struct {
+	AppID           string           `json:"appId"`
+	Slug            string           `json:"slug"`
+	Repository      string           `json:"repository"`
+	Initialized     bool             `json:"initialized"`
+	ScheduleEnabled bool             `json:"scheduleEnabled"`
+	Cron            string           `json:"cron"`
+	NextRun         string           `json:"nextRun"`
+	Paths           []string         `json:"paths"`
+	SnapshotCount   int              `json:"snapshotCount"`
+	LastBackup      *ResticRunResult `json:"lastBackup"`
+	LastCheck       *ResticRunResult `json:"lastCheck"`
+}
+
+// AppBackupRun is one restic backup run of an app, newest first.
+type AppBackupRun struct {
+	AppID string          `json:"appId"`
+	Slug  string          `json:"slug"`
+	Run   ResticRunResult `json:"run"`
+}
+
+type AppBackupOverview struct {
+	Apps     []AppBackupSummary `json:"apps"`
+	Runs     []AppBackupRun     `json:"runs"`
+	TimeZone string             `json:"timeZone"`
+}

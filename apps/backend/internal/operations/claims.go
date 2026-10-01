@@ -31,7 +31,7 @@ type claims struct {
 // limit, so a waiting prepare never occupies an executor slot.
 const imageBuildPool = "image-build"
 
-var poolLimits = map[string]int{imageBuildPool: runtime.MaxConcurrentBuilds}
+var poolLimits = map[string]int{imageBuildPool: runtime.MaxConcurrentBuilds, resticPool: 2}
 
 // globalClaims runs alone: nothing starts before it finishes and it starts
 // only when nothing else is running.
@@ -90,6 +90,10 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //     update of an unprovisioned app provisions (grants on shared data
 //     services) and therefore runs alone.
 //   - service.create|reconcile hold their own service exclusively.
+//   - restic.backup shares its app (the app keeps running; lifecycle
+//     operations wait) and every bound data service, and holds the app's
+//     repository exclusively, in the restic pool. restic.restore holds the
+//     app exclusively. Other restic.* kinds hold only the repository.
 //   - image.prepare holds its runtime key exclusively, in the image-build
 //     pool. It only builds (ImageManager serializes per tag and excludes
 //     prune); image.prune stays global.
@@ -117,6 +121,23 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 		return cl
 	case KindServiceCreate, KindServiceEnsure:
 		return claims{excl: []string{serviceClaim(op.TargetID)}}
+	case KindResticBackup, KindResticRestore:
+		app, err := lookup(op.TargetID)
+		if errors.Is(err, store.ErrNotFound) {
+			return claims{excl: []string{resticClaim(op.TargetID)}}
+		}
+		if err != nil {
+			return globalClaims
+		}
+		cl := claims{excl: []string{resticClaim(op.TargetID)}, shared: serviceDeps(app), pool: resticPool}
+		if op.Kind == KindResticBackup {
+			cl.shared = append(cl.shared, appClaim(op.TargetID))
+		} else {
+			cl.excl = append(cl.excl, appClaim(op.TargetID))
+		}
+		return cl
+	case KindResticInit, KindResticConnect, KindResticRefresh, KindResticKeyAdd, KindResticKeyRemove, KindResticCheck, KindResticUnlock:
+		return claims{excl: []string{resticClaim(op.TargetID)}}
 	case KindImagePrepare:
 		return claims{excl: []string{imageClaim(op.TargetID)}, pool: imageBuildPool}
 	}

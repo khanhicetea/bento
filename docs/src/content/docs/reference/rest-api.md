@@ -22,6 +22,7 @@ Types are defined in Go (`apps/backend/internal/api/dto`) and generated for Type
 | Data | `GET/POST /services`, `GET /retired`, `POST /retired/{id}/prune` |
 | Ingress | `GET/PUT /edge`, `GET /tunnel`, `PUT /tunnel/token`, `GET/POST /proxies`, `DELETE /proxies/{name}` |
 | Backups | `GET /backups/artifacts`, `GET /backups/runs`, `POST /backups`, `POST /backups/restore`, `GET/POST /backups/schedules`, `GET/PUT/DELETE /backups/schedules/{id}`, `POST /backups/schedules/{id}/enabled`, `GET /backups/rclone`, `POST /backups/rclone/test`, `GET /backups/rclone/terminal` (WebSocket), `POST /stack/export` |
+| App backups (restic) | `GET /backups/apps` (every app's summary and recent runs), `GET/PUT /apps/{id}/restic`, `POST /apps/{id}/restic/init` (returns the key once), `POST /apps/{id}/restic/connect`, `POST /apps/{id}/restic/backup`, `POST /apps/{id}/restic/refresh`, `POST /apps/{id}/restic/check`, `POST /apps/{id}/restic/unlock`, `POST /apps/{id}/restic/restore` (`restore <slug>`), `POST /apps/{id}/restic/keys` (`export <slug>`; returns the key once), `DELETE /apps/{id}/restic/keys/{keyId}` |
 
 The scheduler UI is not part of the JSON API: it is proxied at `/apps/<slug>/scheduler/…` on the management listener and
 needs a browser session. Writes need an exact allowed `Origin` (no CSRF header).

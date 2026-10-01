@@ -212,3 +212,49 @@ func (m *ImageManager) IdentityBase(ctx context.Context, imageID string) ([]byte
 	_ = platform.AtomicWrite(cachePath, raw, 0o600, platform.RootOwner)
 	return passwd, group, nil
 }
+
+// ResticImageSpec plans the app backup image: the pinned rclone image with a
+// pinned restic binary. Its tag is content-addressed like runtime images.
+func ResticImageSpec() (ImageSpec, error) {
+	ctxBytes, ctxHash, err := assets.StandaloneContext("restic")
+	if err != nil {
+		return ImageSpec{}, err
+	}
+	args := map[string]string{"RCLONE_IMAGE": domain.RcloneImage}
+	maps.Copy(args, domain.ResticArtifacts)
+	keys := slices.Sorted(maps.Keys(args))
+	var h bytes.Buffer
+	h.WriteString(ctxHash)
+	for _, k := range keys {
+		fmt.Fprintf(&h, "\n%s=%s", k, args[k])
+	}
+	return ImageSpec{ContextKind: "restic", Context: ctxBytes, Args: args, Hash: platform.SHA256Hex(h.Bytes())}, nil
+}
+
+// ResticTag is the deterministic tag of the app backup image.
+func (s ImageSpec) ResticTag() string {
+	return "bento-backup/restic:" + s.Args["RESTIC_VERSION"] + "-" + s.Hash[:12]
+}
+
+// EnsureRestic returns the app backup image ID, building it once per tag.
+func (m *ImageManager) EnsureRestic(ctx context.Context, progress func(string)) (string, string, error) {
+	spec, err := ResticImageSpec()
+	if err != nil {
+		return "", "", err
+	}
+	tag := spec.ResticTag()
+	m.prune.RLock()
+	defer m.prune.RUnlock()
+	l := m.tagLock(tag)
+	l.Lock()
+	defer l.Unlock()
+	if id, ok, err := m.Engine.ImageID(ctx, tag); err != nil || ok {
+		return id, tag, err
+	}
+	if progress != nil {
+		progress("building backup image " + tag)
+	}
+	labels := map[string]string{LabelManaged: "true", "io.bento.context-hash": spec.Hash}
+	id, err := m.Engine.BuildImage(ctx, tag, bytes.NewReader(spec.Context), spec.Args, labels, progress)
+	return id, tag, err
+}

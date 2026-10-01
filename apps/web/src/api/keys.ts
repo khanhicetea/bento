@@ -12,6 +12,7 @@ export const keys = {
     webhooks: ["apps", "webhook"] as const,
     webhook: (id: string) => ["apps", "webhook", id] as const,
     metrics: (id: string) => ["apps", "metrics", id] as const,
+    restic: (id: string) => ["apps", "restic", id] as const,
   },
   operations: {
     all: ["operations"] as const,
@@ -32,6 +33,7 @@ export const keys = {
     all: ["backups"] as const,
     artifacts: ["backups", "artifacts"] as const,
     runs: ["backups", "runs"] as const,
+    apps: ["backups", "apps"] as const,
     schedules: ["backups", "schedules"] as const,
     rclone: ["backups", "rclone"] as const,
   },

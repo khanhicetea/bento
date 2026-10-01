@@ -306,6 +306,11 @@ func DeleteApp(ctx context.Context, q Q, id string) error {
 	); err != nil {
 		return err
 	}
+	// The app's restic schedule stops with it. Its repository settings and
+	// key file are retained data: the backups outlive the app.
+	if _, err := q.ExecContext(ctx, "DELETE FROM schedules WHERE id=? AND kind='app-backup'", "restic-"+id); err != nil {
+		return err
+	}
 	_, err := q.ExecContext(ctx, "DELETE FROM apps WHERE id=?", id)
 	return err
 }

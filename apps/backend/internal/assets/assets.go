@@ -43,8 +43,18 @@ func executable(name string) bool {
 // images/common/* overlaid with images/<kind>/*. It returns the tar bytes and
 // the content hash that identifies them.
 func BuildContext(kind string) ([]byte, string, error) {
+	return buildContext(kind, "images/common", "images/"+kind)
+}
+
+// StandaloneContext assembles the build context of a non-runtime image from
+// images-standalone/<name>/* alone.
+func StandaloneContext(name string) ([]byte, string, error) {
+	return buildContext(name, "images-standalone/"+name)
+}
+
+func buildContext(kind string, roots ...string) ([]byte, string, error) {
 	files := map[string][]byte{}
-	for _, root := range []string{"images/common", "images/" + kind} {
+	for _, root := range roots {
 		err := fs.WalkDir(FS, root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err

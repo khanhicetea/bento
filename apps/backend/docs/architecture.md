@@ -346,6 +346,31 @@ for a due slot calls the kind's `Submit`, which only queues a durable operation.
 To add a kind: register it in `scheduleKinds`, validate its spec where it is edited, and submit an existing or new
 operation kind (with its claims) from `Submit`.
 
+## App backups (restic): `operations/restic.go`, `backup/restic.go`
+
+Each app may have one restic repository on an rclone remote: operator settings under `settings` key `restic:<appId>`,
+operation bookkeeping (repository id, cached snapshots/keys, last runs) under `restic-state:<appId>`, schedule row
+`restic-<appId>` of kind `app-backup`. The key lives in `secrets/restic/<appId>.key` (`0400`). Init and key-add
+generate a key at submission, write it to a `*.pending-*.key` file named (not contained) in the request, and return it
+once in the `202`. The operation consumes and deletes the pending file. Connect verifies an operator key with
+`restic cat config` before adopting it. Every job checks the repository id against the recorded one.
+
+restic runs by exec in an idle job container of `bento-backup/restic:<version>-<hash>` (built by
+`ImageManager.EnsureRestic` from `templates/images-standalone/restic`: the pinned rclone image plus a SHA-256-pinned
+restic). The container mounts a read-only ctl dir (key copy, generated exclude file), the restic cache, `rclone/`, and
+either the home and staging data read-only at `/backup/home` and `/backup/bento` (backup: `CapAdd DAC_READ_SEARCH`
+only) or an empty staging restore target (restore: `CHOWN`, `FOWNER`, `DAC_OVERRIDE`). It never mounts the live home
+writable.
+
+`restic.backup` (shares `app:<id>` and bound services, `restic:<id>` exclusive, pool of 2): plain dumps first
+(`DumpPlain`), then `.backup` copies of minicrond's and listed home SQLite files (`SnapshotHomeSQLite`, as the app
+UID, network `none`), `app.json` (env values with secret-looking names redacted) and `manifest.json`, then one
+`restic backup` with the sidecar and live SQLite files excluded, then `forget` (and `--prune` at most weekly).
+`restic.restore` (exclusive app, app must be stopped): `restic restore` into staging, validate the manifest,
+map dumps to bound databases (same name or the single one of that engine; relational versions must match exactly),
+`ChownTree` the restored tree to the app, move replaced paths to `homes/.pre-restore-<slug>-<time>/`, keep the live
+identity sidecar, then reuse `RestoreRelational`/`RestoreSQLite`.
+
 ## Transfer
 
 `stack.export` stops running apps and services, takes `VACUUM INTO state.db`, archives the root (excluding the live DB,

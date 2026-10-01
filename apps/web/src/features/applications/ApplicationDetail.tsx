@@ -20,6 +20,7 @@ import { keys } from "../../api/keys.ts";
 import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
+import { BackupPanel } from "./BackupPanel.tsx";
 import { DeployPanel } from "./DeployPanel.tsx";
 import { LogsPanel } from "./LogsPanel.tsx";
 import { MonitoringPanel } from "./MonitoringPanel.tsx";
@@ -35,7 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "overview" | "deploy" | "monitoring" | "logs" | "terminal" | "data" | "scheduler" | "settings";
+type Tab = "overview" | "deploy" | "monitoring" | "logs" | "terminal" | "data" | "backup" | "scheduler" | "settings";
 const tabs: Array<[Tab, string]> = [
   ["overview", "Overview"],
   ["deploy", "Deploy"],
@@ -43,6 +44,7 @@ const tabs: Array<[Tab, string]> = [
   ["logs", "Logs"],
   ["terminal", "Terminal"],
   ["data", "Data"],
+  ["backup", "Backup"],
   ["scheduler", "Scheduler"],
   ["settings", "Settings"],
 ];
@@ -86,6 +88,7 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
         />
       )}
       {tab === "data" && <DataBindings app={app} />}
+      {tab === "backup" && <BackupPanel app={app} />}
       {tab === "scheduler" && <Scheduler app={app} />}
       {tab === "settings" && <Settings app={app} onRemoved={() => navigate("/apps")} />}
     </>

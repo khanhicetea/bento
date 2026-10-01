@@ -26,7 +26,7 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
     case "app":
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });
       if (op.kind === "app.remove") void queryClient.invalidateQueries({ queryKey: keys.retired });
-      if (op.kind === "backup.restore" || op.kind === "backup.delete")
+      if (op.kind === "backup.restore" || op.kind === "backup.delete" || op.kind.startsWith("restic."))
         void queryClient.invalidateQueries({ queryKey: keys.backups.all });
       break;
     case "retired-app":

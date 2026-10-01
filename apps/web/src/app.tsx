@@ -30,6 +30,7 @@ export function App() {
           <Route path="/apps/:slug/logs">{(params) => <ApplicationPage slug={params.slug} tab="logs" />}</Route>
           <Route path="/apps/:slug/terminal">{(params) => <ApplicationPage slug={params.slug} tab="terminal" />}</Route>
           <Route path="/apps/:slug/data">{(params) => <ApplicationPage slug={params.slug} tab="data" />}</Route>
+          <Route path="/apps/:slug/backup">{(params) => <ApplicationPage slug={params.slug} tab="backup" />}</Route>
           <Route path="/apps/:slug/scheduler">
             {(params) => <ApplicationPage slug={params.slug} tab="scheduler" />}
           </Route>

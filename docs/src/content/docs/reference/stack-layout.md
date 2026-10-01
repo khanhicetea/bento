@@ -14,6 +14,8 @@ description: Files and directories in a stack root.
 | `edge/conf/{live,previous}` | Edge Nginx generations. `edge/custom/` holds your drop-ins; `edge/certs/` certificates; `edge/acme/` ACME state. |
 | `cloudflared/token` | Tunnel token (`0440`). |
 | `backups/<slug>/` | Backup artifacts. |
+| `secrets/restic/<appId>.key` | Restic repository key of an app backup (`0400`). Kept when the app is removed. |
+| `homes/.pre-restore-<slug>-<time>/` | Files replaced by an app-backup restore. Delete once the restore is verified. |
 | `rclone/rclone.conf` | rclone remote configuration (yours; editable in the UI's rclone shell). Must not be encrypted. |
 | `run/`, `locks/`, `cache/`, `staging/` | Runtime coordination; not durable. |
 

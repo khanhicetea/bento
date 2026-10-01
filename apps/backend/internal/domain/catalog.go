@@ -63,6 +63,14 @@ var RuntimeArtifacts = map[string]string{
 	"COMPOSER_SHA256":          "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6",
 }
 
+// ResticArtifacts pin the restic binary layered onto RcloneImage to build the
+// app backup image (restic's rclone backend runs the rclone next to it).
+var ResticArtifacts = map[string]string{
+	"RESTIC_VERSION":      "0.19.1",
+	"RESTIC_AMD64_SHA256": "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c",
+	"RESTIC_ARM64_SHA256": "a5f64aaab53d51e311fa3829124c5b703f2d14cf187d8640b6be3b2b49376465",
+}
+
 // Pulled infrastructure images.
 const (
 	EdgeImage    = "nginx:stable-trixie@sha256:b972f831f200b19ef0767938224f9711e74cd783718738cd7405d5cabf75c442"

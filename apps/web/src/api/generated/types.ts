@@ -779,3 +779,118 @@ export interface AppMetrics {
   processes: AppProcess[];
   processTotal: number /* int */;
 }
+export interface ResticRetention {
+  hourly: number /* int */;
+  daily: number /* int */;
+  weekly: number /* int */;
+  monthly: number /* int */;
+}
+export interface ResticSchedule {
+  enabled: boolean;
+  cron: string;
+}
+/**
+ * ResticSettings is an app's restic configuration. Paths, excludes and
+ * sqlitePaths are relative to the app home.
+ */
+export interface ResticSettings {
+  /**
+   * Repository is an rclone "remote:path".
+   */
+  repository: string;
+  paths: string[];
+  excludes: string[];
+  defaultExcludes: boolean;
+  sqlitePaths: string[];
+  retention: ResticRetention;
+  schedule: ResticSchedule;
+}
+export interface ResticSnapshot {
+  id: string;
+  shortId: string;
+  time: string;
+  tags: string[];
+}
+export interface ResticKey {
+  id: string;
+  current: boolean;
+  userName: string;
+  created: string;
+}
+export interface ResticRunResult {
+  opId: string;
+  trigger: string;
+  at: string;
+  ok: boolean;
+  snapshotId: string;
+  bytesAdded: number /* int64 */;
+  filesNew: number /* int64 */;
+  filesTotal: number /* int64 */;
+  seconds: number /* float64 */;
+  error: string;
+}
+export interface Restic {
+  configured: boolean;
+  initialized: boolean;
+  settings: ResticSettings;
+  snapshots: ResticSnapshot[];
+  keys: ResticKey[];
+  refreshedAt: string;
+  lastBackup?: ResticRunResult;
+  lastCheck?: ResticRunResult;
+  lastPruneAt: string;
+  nextRun: string;
+  /**
+   * DefaultExcludes are applied when settings.defaultExcludes is on.
+   */
+  defaultExcludes: string[];
+}
+export interface ResticConnectRequest {
+  key: string;
+}
+export interface ResticKeyAddRequest {
+  label: string;
+  confirm: string;
+}
+export interface ResticRestoreRequest {
+  snapshot: string;
+  files: boolean;
+  databases: boolean;
+  confirm: string;
+}
+/**
+ * ResticKeyAccepted carries a repository key exactly once, in the response
+ * that created it.
+ */
+export interface ResticKeyAccepted extends Accepted {
+  key: string;
+}
+/**
+ * AppBackupSummary is one app's restic backup state for the Backups page.
+ */
+export interface AppBackupSummary {
+  appId: string;
+  slug: string;
+  repository: string;
+  initialized: boolean;
+  scheduleEnabled: boolean;
+  cron: string;
+  nextRun: string;
+  paths: string[];
+  snapshotCount: number /* int */;
+  lastBackup?: ResticRunResult;
+  lastCheck?: ResticRunResult;
+}
+/**
+ * AppBackupRun is one restic backup run of an app, newest first.
+ */
+export interface AppBackupRun {
+  appId: string;
+  slug: string;
+  run: ResticRunResult;
+}
+export interface AppBackupOverview {
+  apps: AppBackupSummary[];
+  runs: AppBackupRun[];
+  timeZone: string;
+}

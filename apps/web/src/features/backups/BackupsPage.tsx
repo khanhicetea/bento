@@ -12,6 +12,7 @@ import {
   SquareTerminal,
   Trash2,
 } from "lucide-react";
+import { Link } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
@@ -40,8 +41,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 
-type Tab = "artifacts" | "runs" | "schedules";
-const tabLabels: Record<Tab, string> = { artifacts: "Files", runs: "Runs", schedules: "Schedules" };
+type Tab = "artifacts" | "apps" | "runs" | "schedules";
+const tabLabels: Record<Tab, string> = {
+  artifacts: "Files",
+  apps: "App backups",
+  runs: "Runs",
+  schedules: "Schedules",
+};
 
 export function BackupsPage() {
   const [tab, setTab] = useState<Tab>("artifacts");
@@ -52,13 +58,14 @@ export function BackupsPage() {
     <>
       <PageHeader title="Backups" actions={<Button onClick={() => setRunOpen(true)}>Back up now</Button>} />
       <div className="seg mb-5" role="tablist" aria-label="Backup sections">
-        {(["artifacts", "runs", "schedules"] as const).map((value) => (
+        {(["artifacts", "apps", "runs", "schedules"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
             {tabLabels[value]}
           </button>
         ))}
       </div>
       {tab === "artifacts" && <ArtifactsTab onRestore={setRestoreTarget} onDelete={setDeleteTarget} />}
+      {tab === "apps" && <AppBackupsTab />}
       {tab === "runs" && <RunsTab />}
       {tab === "schedules" && <SchedulesTab />}
       {runOpen && <BackupNowDialog onClose={() => setRunOpen(false)} />}
@@ -151,45 +158,210 @@ function ArtifactsTab({
   );
 }
 
+/** Polled overview of app (restic) backups, shared by the App backups, Runs and Schedules tabs. */
+function useAppBackups() {
+  return useQuery({
+    queryKey: keys.backups.apps,
+    queryFn: ({ signal }) => api.backups.apps(signal),
+    refetchInterval: 30_000,
+  });
+}
+
+function AppBackupsTab() {
+  const query = useAppBackups();
+  if (query.isPending) return <DomainLoading label="app backups" />;
+  if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  const apps = query.data.apps;
+  if (apps.length === 0) {
+    return (
+      <div className="box">
+        <div className="cell">
+          <EmptyState
+            icon={<Archive />}
+            title="No app backups"
+            body="Open an app's Backup tab to back up its files, databases and scheduler into an encrypted restic repository."
+          />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <>
+      <p className="note mb-3">
+        Whole-app snapshots (home, databases, scheduler) in each app's restic repository. Cron uses server time (
+        {query.data.timeZone}).
+      </p>
+      <div className="box">
+        <div className="tiles">
+          {apps.map((summary) => (
+            <AppBackupTile key={summary.appId} summary={summary} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AppBackupTile({ summary, compact = false }: { summary: T.AppBackupSummary; compact?: boolean }) {
+  const last = summary.lastBackup;
+  return (
+    <article
+      className={`cell tile ${last && !last.ok ? "cell--alert" : ""}`}
+      aria-label={`App backup of ${summary.slug}`}
+    >
+      <div className="tile__top">
+        <span className={`mono mono--lg ${summary.scheduleEnabled ? "" : "opacity-50"}`} aria-hidden="true">
+          <Archive className="size-5" />
+        </span>
+        <div className="tile__name">
+          <strong>{summary.slug}</strong>
+          <small className="font-mono" title={summary.cron}>
+            {summary.cron ? formatCron(summary.cron) : "no schedule"}
+            {summary.cron && !summary.scheduleEnabled && " (off)"}
+          </small>
+        </div>
+        {!summary.initialized && <StateBadge state="pending" label="not set up" />}
+      </div>
+      <dl className="facts">
+        <div>
+          <dt>Next run</dt>
+          <dd title={summary.nextRun ? new Date(summary.nextRun).toLocaleString() : undefined}>
+            {summary.nextRun ? formatRelative(summary.nextRun) : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>Last backup</dt>
+          <dd title={last?.at} className="flex flex-wrap items-center gap-1.5">
+            {last ? formatRelative(last.at) : "—"}
+            {last && <StateBadge state={last.ok ? "succeeded" : "failed"} />}
+          </dd>
+        </div>
+        {!compact && (
+          <>
+            <div>
+              <dt>Snapshots</dt>
+              <dd>{summary.snapshotCount}</dd>
+            </div>
+            <div>
+              <dt>Added</dt>
+              <dd>{last?.ok ? formatBytes(last.bytesAdded) : "—"}</dd>
+            </div>
+            <div className="facts__wide">
+              <dt>What</dt>
+              <dd>{summary.paths.includes(".") ? "Whole home" : summary.paths.join(", ")} + databases + scheduler</dd>
+            </div>
+            <div>
+              <dt>Verified</dt>
+              <dd>
+                {summary.lastCheck
+                  ? `${summary.lastCheck.ok ? "ok" : "failed"} ${formatRelative(summary.lastCheck.at)}`
+                  : "never"}
+              </dd>
+            </div>
+          </>
+        )}
+        <div className="facts__wide">
+          <dt>Repository</dt>
+          <dd className="inline-flex min-w-0 items-center gap-1">
+            <Cloud className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <code className="truncate">{summary.repository}</code>
+          </dd>
+        </div>
+      </dl>
+      {last && !last.ok && <p className="note note--bad line-clamp-2">{last.error}</p>}
+      <div className="mt-auto flex justify-end">
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/apps/${summary.slug}/backup`}>
+            <Pencil /> Open in app
+          </Link>
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+type RunItem = { at: string; db?: T.BackupRun; app?: T.AppBackupRun };
+
 function RunsTab() {
   const query = useQuery({ queryKey: keys.backups.runs, queryFn: ({ signal }) => api.backups.runs(signal) });
-  if (query.isPending) return <DomainLoading label="runs" />;
+  const appRuns = useAppBackups();
+  if (query.isPending || appRuns.isPending) return <DomainLoading label="runs" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
+  if (appRuns.error) return <DomainError message={messageOf(appRuns.error)} onRetry={() => void appRuns.refetch()} />;
+  const items: RunItem[] = [
+    ...query.data.runs.map((run) => ({ at: run.startedAt, db: run })),
+    ...appRuns.data.runs.map((run) => ({ at: run.run.at, app: run })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
   return (
     <div className="box">
       <div className="cell">
-        {query.data.runs.length === 0 ? (
+        {items.length === 0 ? (
           <EmptyState icon={<Archive />} title="No runs yet" />
         ) : (
           <div className="rows rows--lined">
-            {query.data.runs.map((run) => (
-              <details key={run.id} className="group">
-                <summary className="row cursor-pointer list-none">
-                  <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden="true" />
-                  <span className="row__main">
-                    <strong className="capitalize">{run.trigger}</strong>
-                    <small title={run.startedAt}>
-                      {formatRelative(run.startedAt)} · {formatDuration(run.startedAt, run.finishedAt)} ·{" "}
-                      {run.artifacts.length} files
-                      {run.uploadState && ` · upload ${run.uploadState}`}
-                    </small>
-                  </span>
-                  <StateBadge state={run.state} />
-                </summary>
-                <div className="grid gap-2 pb-3 pl-9">
-                  {run.error && <p className="note note--bad">{run.error}</p>}
-                  {run.artifacts.map((artifact) => (
-                    <code key={artifact} className="note truncate">
-                      {artifact}
-                    </code>
-                  ))}
-                </div>
-              </details>
-            ))}
+            {items.map(({ db: run, app }) =>
+              app ? (
+                <AppRunRow key={`app-${app.appId}-${app.run.opId || app.run.at}`} entry={app} />
+              ) : (
+                run && (
+                  <details key={run.id} className="group">
+                    <summary className="row cursor-pointer list-none">
+                      <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden="true" />
+                      <span className="row__main">
+                        <strong className="capitalize">{run.trigger}</strong>
+                        <small title={run.startedAt}>
+                          {formatRelative(run.startedAt)} · {formatDuration(run.startedAt, run.finishedAt)} ·{" "}
+                          {run.artifacts.length} files
+                          {run.uploadState && ` · upload ${run.uploadState}`}
+                        </small>
+                      </span>
+                      <StateBadge state={run.state} />
+                    </summary>
+                    <div className="grid gap-2 pb-3 pl-9">
+                      {run.error && <p className="note note--bad">{run.error}</p>}
+                      {run.artifacts.map((artifact) => (
+                        <code key={artifact} className="note truncate">
+                          {artifact}
+                        </code>
+                      ))}
+                    </div>
+                  </details>
+                )
+              ),
+            )}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function AppRunRow({ entry }: { entry: T.AppBackupRun }) {
+  const run = entry.run;
+  return (
+    <details className="group">
+      <summary className="row cursor-pointer list-none">
+        <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden="true" />
+        <span className="row__main">
+          <strong>
+            App backup · {entry.slug}{" "}
+            <span className="font-normal capitalize text-muted-foreground">{run.trigger}</span>
+          </strong>
+          <small title={run.at}>
+            {formatRelative(run.at)} · {Math.round(run.seconds)}s
+            {run.ok && ` · ${run.filesTotal} files (${run.filesNew} new), ${formatBytes(run.bytesAdded)} added`}
+          </small>
+        </span>
+        <StateBadge state={run.ok ? "succeeded" : "failed"} />
+      </summary>
+      <div className="grid gap-2 pb-3 pl-9">
+        {run.error && <p className="note note--bad">{run.error}</p>}
+        {run.snapshotId && <code className="note">snapshot {run.snapshotId.slice(0, 8)}</code>}
+        <Link className="note underline" href={`/apps/${entry.slug}/backup`}>
+          Open {entry.slug} → Backup
+        </Link>
+      </div>
+    </details>
   );
 }
 
@@ -265,6 +437,7 @@ function SchedulesTab() {
     refetchInterval: 30_000,
   });
   const apps = useApplicationList();
+  const appBackups = useAppBackups();
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.backups.enableSchedule(id, enabled),
     onSettled: () => queryClient.invalidateQueries({ queryKey: keys.backups.schedules }),
@@ -364,6 +537,11 @@ function SchedulesTab() {
               </div>
             </article>
           ))}
+          {(appBackups.data?.apps ?? [])
+            .filter((summary) => summary.cron)
+            .map((summary) => (
+              <AppBackupTile key={`app-${summary.appId}`} summary={summary} compact />
+            ))}
           <button type="button" className="cell tile tile--add" onClick={() => setEditing(newSchedule)}>
             <Plus aria-hidden="true" />
             New schedule

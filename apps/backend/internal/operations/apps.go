@@ -78,6 +78,16 @@ func (c *Controller) registerHandlers() {
 		KindAppDeploy:     c.handleDeploy,
 		KindImagePrune:    c.handleImagePrune,
 		KindImagePrepare:  c.handleImagePrepare,
+
+		KindResticInit:      c.handleResticInit,
+		KindResticConnect:   c.handleResticConnect,
+		KindResticBackup:    c.handleResticBackup,
+		KindResticRestore:   c.handleResticRestore,
+		KindResticRefresh:   c.handleResticRefresh,
+		KindResticKeyAdd:    c.handleResticKeyAdd,
+		KindResticKeyRemove: c.handleResticKeyRemove,
+		KindResticCheck:     c.handleResticCheck,
+		KindResticUnlock:    c.handleResticUnlock,
 	}
 }
 
