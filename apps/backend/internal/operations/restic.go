@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +12,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/backup"
@@ -23,14 +23,14 @@ import (
 // App-scoped restic backups. Each app has its own repository on an rclone
 // remote. A snapshot holds the app home (minus excludes, with live SQLite
 // files replaced by .backup copies) and a Bento directory with app.json,
-// manifest.json and plain database dumps, so it restores into the same app or
-// into an app of another stack.
+// manifest.json and plain database dumps (and secrets.json when the app opts
+// in). Snapshots are never restored over the live app; they restore only into
+// a new app.
 
 const (
 	KindResticInit      = "restic.init"
 	KindResticConnect   = "restic.connect"
 	KindResticBackup    = "restic.backup"
-	KindResticRestore   = "restic.restore"
 	KindResticRefresh   = "restic.refresh"
 	KindResticKeyAdd    = "restic.key-add"
 	KindResticKeyRemove = "restic.key-remove"
@@ -42,7 +42,10 @@ const (
 const lockLeakWarning = "restic could not delete its repository lock: the remote refused a delete. Grant the rclone remote's credentials delete permission on the repository path (restic also needs it for retention), then use Remove stale locks."
 
 // ResticFormatVersion versions the Bento directory inside snapshots.
-const ResticFormatVersion = 1
+const ResticFormatVersion = 2
+
+// ResticSecretsTag marks snapshots that include secrets.json.
+const ResticSecretsTag = "secrets=1"
 
 // resticPruneEvery bounds how often a backup also prunes the repository.
 const resticPruneEvery = 7 * 24 * time.Hour
@@ -52,8 +55,8 @@ func resticStateKey(appID string) string    { return "restic-state:" + appID }
 func resticScheduleID(appID string) string  { return "restic-" + appID }
 func resticClaim(appID string) string       { return "restic:" + appID }
 
-// resticPool bounds concurrent restic backups/restores: each reads a whole
-// home and uploads.
+// resticPool bounds concurrent restic backups: each reads a whole home and
+// uploads.
 const resticPool = "restic"
 
 // ResticView is an app's restic configuration and what Bento knows about its
@@ -240,12 +243,6 @@ type ResticBackupRequest struct {
 	Trigger string `json:"trigger"`
 }
 
-type ResticRestoreRequest struct {
-	Snapshot  string `json:"snapshot"`
-	Files     bool   `json:"files"`
-	Databases bool   `json:"databases"`
-}
-
 var pendingKeyName = regexp.MustCompile(`^a[0-9a-f]+\.pending-[0-9a-f]{12}\.key$`)
 var keyLabel = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,40}$`)
 
@@ -413,34 +410,6 @@ func (c *Controller) SubmitResticSimple(ctx context.Context, kind, appID, idem s
 	return op, err
 }
 
-// SubmitResticRestore restores a snapshot into the app. It needs the exact
-// confirmation "restore <slug>" and a stopped app.
-func (c *Controller) SubmitResticRestore(
-	ctx context.Context,
-	appID string,
-	req ResticRestoreRequest,
-	confirm, idem string,
-) (store.Operation, error) {
-	app, _, err := c.requireResticRepo(ctx, appID)
-	if err != nil {
-		return store.Operation{}, err
-	}
-	if confirm != "restore "+app.Slug {
-		return store.Operation{}, fmt.Errorf(
-			"%w: type exactly %q; restore replaces the app's files and databases", ErrConfirmation, "restore "+app.Slug)
-	}
-	if !domain.ResticSnapshotID.MatchString(req.Snapshot) {
-		return store.Operation{}, domain.ValidationErrors{{Field: "snapshot", Message: "choose a snapshot"}}
-	}
-	if !req.Files && !req.Databases {
-		return store.Operation{}, domain.ValidationErrors{{Field: "files", Message: "restore files, databases, or both"}}
-	}
-	op, _, err := c.Submit(ctx, Submission{
-		Kind: KindResticRestore, TargetKind: "app", TargetID: appID, IdempotencyKey: idem, Request: req,
-	})
-	return op, err
-}
-
 // ---- job plumbing ----
 
 // resticEnv is one operation's private staging: ctl (key, excludes; mounted
@@ -516,10 +485,11 @@ func resticFail(err error, what string) error {
 	return Fail("restic-failed", "See the operation log; the repository is unchanged unless stated.", "%s: %v", what, re)
 }
 
-func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, appID string) error {
+// listSnapshots returns the repository's snapshots, newest first (at most 500).
+func listSnapshots(ctx context.Context, job *backup.ResticJob) ([]domain.ResticSnapshot, error) {
 	raw, err := job.RunJSON(ctx, []string{"snapshots", "--no-lock"})
 	if err != nil {
-		return resticFail(err, "list snapshots")
+		return nil, resticFail(err, "list snapshots")
 	}
 	var snaps []struct {
 		ID       string    `json:"id"`
@@ -529,9 +499,25 @@ func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, a
 		Hostname string    `json:"hostname"`
 	}
 	if err := json.Unmarshal(raw, &snaps); err != nil {
-		return fmt.Errorf("parse snapshots: %w", err)
+		return nil, fmt.Errorf("parse snapshots: %w", err)
 	}
-	raw, err = job.RunJSON(ctx, []string{"key", "list", "--no-lock"})
+	out := make([]domain.ResticSnapshot, 0, len(snaps))
+	for _, s := range snaps {
+		out = append(out, domain.ResticSnapshot{ID: s.ID, ShortID: s.ShortID, Time: s.Time, Tags: s.Tags, Hostname: s.Hostname})
+	}
+	slices.SortFunc(out, func(a, b domain.ResticSnapshot) int { return b.Time.Compare(a.Time) })
+	if len(out) > 500 {
+		out = out[:500]
+	}
+	return out, nil
+}
+
+func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, appID string) error {
+	out, err := listSnapshots(ctx, job)
+	if err != nil {
+		return err
+	}
+	raw, err := job.RunJSON(ctx, []string{"key", "list", "--no-lock"})
 	if err != nil {
 		return resticFail(err, "list keys")
 	}
@@ -551,14 +537,6 @@ func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, a
 		created, _ := time.Parse(time.DateTime, k.Created)
 		keys = append(keys, domain.ResticKey{ID: k.ID, Current: k.Current, UserName: k.UserName, HostName: k.HostName,
 			Created: created})
-	}
-	out := make([]domain.ResticSnapshot, 0, len(snaps))
-	for _, s := range snaps {
-		out = append(out, domain.ResticSnapshot{ID: s.ID, ShortID: s.ShortID, Time: s.Time, Tags: s.Tags, Hostname: s.Hostname})
-	}
-	slices.SortFunc(out, func(a, b domain.ResticSnapshot) int { return b.Time.Compare(a.Time) })
-	if len(out) > 500 {
-		out = out[:500]
 	}
 	c.updateResticState(ctx, appID, func(s *domain.ResticState) {
 		s.Snapshots, s.Keys, s.RefreshedAt = out, keys, time.Now().UTC()
@@ -867,18 +845,30 @@ type AppSpecBinding struct {
 	SQLiteID  string        `json:"sqliteFileId,omitempty"`
 }
 
-// ResticManifest describes a snapshot's Bento directory.
+// ResticManifest describes a snapshot's Bento directory (format 2).
 type ResticManifest struct {
-	FormatVersion int          `json:"formatVersion"`
-	StackID       string       `json:"stackId"`
-	AppID         string       `json:"appId"`
-	Slug          string       `json:"slug"`
-	CreatedAt     time.Time    `json:"createdAt"`
-	Paths         []string     `json:"paths"`
-	Dumps         []ResticDump `json:"dumps"`
+	FormatVersion int       `json:"formatVersion"`
+	StackID       string    `json:"stackId"`
+	AppID         string    `json:"appId"`
+	Slug          string    `json:"slug"`
+	CreatedAt     time.Time `json:"createdAt"`
+	// HomePath is the source's in-container home (format 2); a clone keeps it.
+	HomePath string       `json:"homePath,omitempty"`
+	Paths    []string     `json:"paths"`
+	Dumps    []ResticDump `json:"dumps"`
 	// HomeSQLite are home-relative SQLite files stored as .backup copies
 	// under home-sqlite/.
 	HomeSQLite []string `json:"homeSqlite"`
+	// Minicron locates minicrond's jobs database among the home-sqlite
+	// copies; absent when the app has none.
+	Minicron *ResticMinicron `json:"minicron,omitempty"`
+	// Secrets is true when secrets.json is in the snapshot.
+	Secrets bool `json:"secrets,omitempty"`
+}
+
+// ResticMinicron names minicrond's jobs database inside the Bento directory.
+type ResticMinicron struct {
+	DB string `json:"db"`
 }
 
 type ResticDump struct {
@@ -887,6 +877,76 @@ type ResticDump struct {
 	Service  string        `json:"service,omitempty"`
 	Version  string        `json:"version,omitempty"`
 	Database string        `json:"database"`
+	// Binding is the index of the binding in the app's binding list.
+	Binding int `json:"binding"`
+	// Suffix is the database name without the "<slug>_" prefix (relational).
+	Suffix string `json:"suffix,omitempty"`
+	// Username is the binding's database user (relational).
+	Username string `json:"username,omitempty"`
+	// FileID and FileName locate a SQLite binding's file (SQLite).
+	FileID   string `json:"fileId,omitempty"`
+	FileName string `json:"fileName,omitempty"`
+}
+
+// ResticSecrets is secrets.json: the values app.json redacts, stored only
+// when the app's includeSecrets setting is on. Env holds the env vars whose
+// values app.json redacts.
+type ResticSecrets struct {
+	Env      []domain.EnvVar       `json:"env"`
+	Bindings []ResticSecretBinding `json:"bindings"`
+}
+
+type ResticSecretBinding struct {
+	Index    int    `json:"index"`
+	Password string `json:"password"`
+}
+
+// dumpSuffix strips the "<slug>_" prefix from a database name.
+// Database names replace "-" in the slug with "_" (dbName), so both forms
+// are accepted.
+func dumpSuffix(slug, db string) string {
+	for _, prefix := range []string{slug + "_", strings.ReplaceAll(slug, "-", "_") + "_"} {
+		if s, ok := strings.CutPrefix(db, prefix); ok && s != "" {
+			return s
+		}
+	}
+	return db
+}
+
+// resticSecrets collects the secrets of an app for secrets.json.
+func resticSecrets(app domain.App) ResticSecrets {
+	out := ResticSecrets{Env: []domain.EnvVar{}, Bindings: []ResticSecretBinding{}}
+	for _, e := range app.Runtime.Env {
+		if domain.SensitiveEnvKey(e.Key) {
+			out.Env = append(out.Env, e)
+		}
+	}
+	for i, b := range app.Bindings {
+		if b.Password != "" {
+			out.Bindings = append(out.Bindings, ResticSecretBinding{Index: i, Password: b.Password})
+		}
+	}
+	return out
+}
+
+// secretRedactor replaces every value that can land in secrets.json (and the
+// Redis password) in operation output.
+func secretRedactor(app domain.App) *strings.Replacer {
+	var pairs []string
+	for _, e := range app.Runtime.Env {
+		if domain.SensitiveEnvKey(e.Key) && e.Value != "" {
+			pairs = append(pairs, e.Value, domain.RedactedEnvValue)
+		}
+	}
+	for _, b := range app.Bindings {
+		if b.Password != "" {
+			pairs = append(pairs, b.Password, domain.RedactedEnvValue)
+		}
+	}
+	if app.Redis.Password != "" {
+		pairs = append(pairs, app.Redis.Password, domain.RedactedEnvValue)
+	}
+	return strings.NewReplacer(pairs...)
 }
 
 func redactedEnv(env []domain.EnvVar) []domain.EnvVar {
@@ -937,19 +997,13 @@ func (c *Controller) serviceVersions(ctx context.Context, app domain.App) map[st
 }
 
 // homeSQLiteFiles lists SQLite files to snapshot with .backup: minicrond's
-// data files plus the operator's SQLitePaths that exist.
+// jobs database (never its log database) plus the operator's SQLitePaths.
 func (c *Controller) homeSQLiteFiles(app domain.App, s domain.ResticSettings) []string {
 	home := c.Layout.AppHome(app.Slug)
 	var out []string
 	dir := filepath.Join(home, domain.MinicronDataDir)
-	if platform.NoSymlinkBetween(home, dir) == nil {
-		entries, _ := os.ReadDir(dir)
-		for _, e := range entries {
-			rel := domain.MinicronDataDir + "/" + e.Name()
-			if e.Type().IsRegular() && backup.IsSQLiteFile(filepath.Join(dir, e.Name())) {
-				out = append(out, rel)
-			}
-		}
+	if platform.NoSymlinkBetween(home, dir) == nil && backup.IsSQLiteFile(filepath.Join(dir, domain.MinicronDBFile)) {
+		out = append(out, domain.MinicronDataDir+"/"+domain.MinicronDBFile)
 	}
 	for _, p := range s.SQLitePaths {
 		if !slices.Contains(out, p) {
@@ -971,9 +1025,12 @@ func (c *Controller) handleResticBackup(ctx context.Context, r *Run) (any, error
 	started := time.Now()
 	res, err := c.resticBackup(ctx, r, app, v, req.Trigger)
 	res.OpID, res.Trigger = r.Op.ID, req.Trigger
-	res.At, res.OK, res.Seconds = time.Now().UTC(), err == nil, time.Since(started).Seconds()
+	// A partial run (restic exit 3) created a snapshot but is not OK.
+	res.At, res.OK, res.Seconds = time.Now().UTC(), err == nil && !res.Partial, time.Since(started).Seconds()
 	if err != nil {
-		res.Error = err.Error()
+		redact := secretRedactor(app)
+		res.Error = redact.Replace(err.Error())
+		err = redactOpError(err, redact)
 	}
 	c.updateResticState(context.WithoutCancel(ctx), app.ID, func(s *domain.ResticState) {
 		s.LastBackup = &res
@@ -1011,15 +1068,17 @@ func (c *Controller) resticBackup(
 	// Databases first: files captured afterwards include every upload the
 	// dumped rows can reference.
 	versions := c.serviceVersions(ctx, app)
+	redact := secretRedactor(app)
 	man := ResticManifest{FormatVersion: ResticFormatVersion, StackID: c.Stack.ID, AppID: app.ID, Slug: app.Slug,
-		CreatedAt: time.Now().UTC(), Paths: v.Settings.Paths, Dumps: []ResticDump{}, HomeSQLite: []string{}}
+		CreatedAt: time.Now().UTC(), HomePath: app.ContainerHome(), Paths: v.Settings.Paths, Dumps: []ResticDump{},
+		HomeSQLite: []string{}}
 	deps := c.BackupDeps(func(s string) { r.Info(ctx, "%s", s) })
 	for _, sub := range []string{"db", "sqlite", "home-sqlite"} {
 		if err := platform.EnsureDir(filepath.Join(env.data, sub), 0o700, platform.RootOwner); err != nil {
 			return res, err
 		}
 	}
-	for _, b := range app.Bindings {
+	for bi, b := range app.Bindings {
 		dbs := b.Databases
 		if b.Engine == domain.EngineSQLite {
 			dbs = []string{b.SQLiteFileID}
@@ -1028,8 +1087,9 @@ func (c *Controller) resticBackup(
 			if err := r.Phase(ctx, "dump "+db); err != nil {
 				return res, err
 			}
-			d := ResticDump{Engine: b.Engine, Service: b.Service, Version: versions[b.Service], Database: db}
+			d := ResticDump{Engine: b.Engine, Service: b.Service, Version: versions[b.Service], Database: db, Binding: bi}
 			if b.Engine == domain.EngineSQLite {
+				d.FileID, d.FileName = b.SQLiteFileID, app.Slug+".db"
 				dbFile := filepath.Join(c.Layout.SQLiteFileDir(b.SQLiteFileID), app.Slug+".db")
 				if _, err := os.Lstat(dbFile); errors.Is(err, fs.ErrNotExist) {
 					r.Info(ctx, "skipped SQLite %s: database file does not exist yet", db)
@@ -1037,6 +1097,7 @@ func (c *Controller) resticBackup(
 				}
 				d.Service, d.File = "", "sqlite/"+db+".db"
 			} else {
+				d.Suffix, d.Username = dumpSuffix(app.Slug, db), b.Username
 				d.File = fmt.Sprintf("db/%s-%s-%s.sql", b.Engine, b.Service, db)
 			}
 			if err := deps.DumpPlain(ctx, backup.Target{App: app, Binding: b, Database: db},
@@ -1063,12 +1124,24 @@ func (c *Controller) resticBackup(
 			man.HomeSQLite = append(man.HomeSQLite, f)
 		}
 	}
-	spec := c.appSpec(ctx, app, versions)
-	for name, val := range map[string]any{"app.json": spec, "manifest.json": man} {
+	if minicronRel := domain.MinicronDataDir + "/" + domain.MinicronDBFile; slices.Contains(man.HomeSQLite, minicronRel) {
+		man.Minicron = &ResticMinicron{DB: "home-sqlite/" + minicronRel}
+	}
+	writeJSON := func(name string, val any) error {
 		raw, _ := json.MarshalIndent(val, "", "  ")
-		if err := platform.AtomicWrite(filepath.Join(env.data, name), append(raw, '\n'), 0o600, platform.RootOwner); err != nil {
+		return platform.AtomicWrite(filepath.Join(env.data, name), append(raw, '\n'), 0o600, platform.RootOwner)
+	}
+	if v.Settings.IncludeSecrets {
+		if err := writeJSON("secrets.json", resticSecrets(app)); err != nil {
 			return res, err
 		}
+		man.Secrets = true
+	}
+	if err := writeJSON("app.json", c.appSpec(ctx, app, versions)); err != nil {
+		return res, err
+	}
+	if err := writeJSON("manifest.json", man); err != nil {
+		return res, err
 	}
 	excludes := domain.ResticExcludeLines(v.Settings, backup.ResticHomeMount, sqliteFiles)
 	if err := platform.AtomicWrite(filepath.Join(env.ctl, backup.ResticExcludeFile),
@@ -1079,9 +1152,13 @@ func (c *Controller) resticBackup(
 	if err := r.Phase(ctx, "snapshot"); err != nil {
 		return res, err
 	}
-	args := []string{"backup", "--host", "bento", "--tag", "app=" + app.ID, "--tag", "slug=" + app.Slug,
-		"--tag", "trigger=" + trigger, "--exclude-file", "/run/bento-ctl/" + backup.ResticExcludeFile,
+	args := []string{"backup", "--host", "bento", "--tag", "app=" + app.ID, "--tag", "stack=" + c.Stack.ID,
+		"--tag", "slug=" + app.Slug, "--tag", "trigger=" + trigger, "--exclude-file", "/run/bento-ctl/" + backup.ResticExcludeFile,
 		"--exclude-caches", "--exclude-if-present", ".nobackup", "--json"}
+	if man.Secrets {
+		// Lets the snapshot list show which snapshots keep secrets.
+		args = append(args, "--tag", ResticSecretsTag)
+	}
 	for _, p := range v.Settings.Paths {
 		if p == "." {
 			args = append(args, backup.ResticHomeMount)
@@ -1098,6 +1175,7 @@ func (c *Controller) resticBackup(
 		Duration   float64 `json:"total_duration"`
 	}
 	var lastProgress time.Time
+	unreadable := 0
 	lw := &backup.LineWriter{Fn: func(line []byte) {
 		var m struct {
 			Type    string  `json:"message_type"`
@@ -1114,7 +1192,8 @@ func (c *Controller) resticBackup(
 		case "summary":
 			_ = json.Unmarshal(line, &summary)
 		case "error":
-			r.Warn(ctx, "%s: %s", strings.TrimPrefix(m.Item, backup.ResticHomeMount), m.Error.Message)
+			unreadable++
+			r.Warn(ctx, "%s: %s", strings.TrimPrefix(m.Item, backup.ResticHomeMount), redact.Replace(m.Error.Message))
 		case "status":
 			if time.Since(lastProgress) > 30*time.Second {
 				lastProgress = time.Now()
@@ -1128,6 +1207,8 @@ func (c *Controller) resticBackup(
 		if !errors.As(err, &re) || re.Exit != 3 || summary.SnapshotID == "" {
 			return res, resticFail(err, "backup")
 		}
+		res.Partial = true
+		res.Error = fmt.Sprintf("snapshot %s is partial: %d files could not be read", short(summary.SnapshotID), unreadable)
 		r.Warn(ctx, "snapshot %s is missing files that could not be read", summary.SnapshotID)
 	}
 	res.SnapshotID, res.FilesNew, res.FilesTotal, res.BytesAdded =
@@ -1139,7 +1220,7 @@ func (c *Controller) resticBackup(
 		return res, err
 	}
 	ret := v.Settings.Retention
-	fargs := []string{"forget", "--tag", "app=" + app.ID, "--group-by", "host"}
+	fargs := []string{"forget", "--tag", "app=" + app.ID + ",stack=" + c.Stack.ID, "--group-by", "host"}
 	for flag, n := range map[string]int{"--keep-hourly": ret.Hourly, "--keep-daily": ret.Daily,
 		"--keep-weekly": ret.Weekly, "--keep-monthly": ret.Monthly} {
 		if n > 0 {
@@ -1176,173 +1257,35 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// ---- restore ----
+// ---- manifest ----
 
-// mapDump picks the target database for a dump: the same name bound to the
-// app, else the app's only database of that engine when the snapshot has
-// only one too. Relational versions must match exactly (for example MySQL
-// 8.4 or PostgreSQL 18).
-func mapDump(app domain.App, man ResticManifest, d ResticDump, versions map[string]string) (domain.Binding, string, error) {
-	var candidates []struct {
-		b  domain.Binding
-		db string
-	}
-	for _, b := range app.Bindings {
-		if b.Engine != d.Engine {
-			continue
-		}
-		dbs := b.Databases
-		if b.Engine == domain.EngineSQLite {
-			dbs = []string{b.SQLiteFileID}
-		}
-		for _, db := range dbs {
-			candidates = append(candidates, struct {
-				b  domain.Binding
-				db string
-			}{b, db})
-		}
-	}
-	pick := -1
-	for i, cand := range candidates {
-		if cand.db == d.Database {
-			pick = i
-		}
-	}
-	sameEngine := 0
-	for _, x := range man.Dumps {
-		if x.Engine == d.Engine {
-			sameEngine++
-		}
-	}
-	if pick < 0 && len(candidates) == 1 && sameEngine == 1 {
-		pick = 0
-	}
-	if pick < 0 {
-		return domain.Binding{}, "", fmt.Errorf("no %s database of %s matches %s; bind one with that name", d.Engine, app.Slug, d.Database)
-	}
-	cand := candidates[pick]
-	if d.Engine != domain.EngineSQLite && d.Version != "" && versions[cand.b.Service] != d.Version {
-		return domain.Binding{}, "", fmt.Errorf("%s was dumped from %s %s but %s runs %s %s; bind a service of the same version",
-			d.Database, d.Engine, d.Version, cand.b.Service, d.Engine, versions[cand.b.Service])
-	}
-	return cand.b, cand.db, nil
-}
-
-func (c *Controller) handleResticRestore(ctx context.Context, r *Run) (any, error) {
-	var req ResticRestoreRequest
-	if err := r.Decode(&req); err != nil {
-		return nil, err
-	}
-	app, v, err := c.loadResticApp(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-	obs, err := c.observe(ctx, app)
-	if err != nil {
-		return nil, err
-	}
-	if obs.Running {
-		return nil, Fail("app-running", "Stop the app before restoring, then start it again afterwards.", "app %s is running", app.Slug)
-	}
-	if req.Files {
-		if err := c.verifyHomeIdentity(app); err != nil {
-			return nil, err
-		}
-	}
-	env, job, err := c.resticJobFor(ctx, r, app, v, func(env *resticEnv) backup.ResticMounts {
-		return backup.ResticMounts{CtlDir: env.ctl, RestoreDir: env.data}
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer env.close()
-	defer job.Close(ctx)
-
-	if err := r.Phase(ctx, "download"); err != nil {
-		return nil, err
-	}
-	rargs := []string{"restore", req.Snapshot, "--target", backup.ResticRestoreMount}
-	if !req.Files {
-		rargs = append(rargs, "--include", backup.ResticBentoMount)
-	}
-	if err := job.Run(ctx, rargs, nil); err != nil {
-		return nil, resticFail(err, "restore")
-	}
-	job.Close(ctx)
-	restored := filepath.Join(env.data, "backup")
-	bentoDir := filepath.Join(restored, "bento")
-	man, err := readManifest(bentoDir)
-	if err != nil {
-		return nil, Fail("snapshot-invalid", "Choose a snapshot taken by Bento's app backup.", "%v", err)
-	}
-	if man.Slug != app.Slug || man.AppID != app.ID {
-		r.Warn(ctx, "snapshot was taken from app %s (%s, stack %s); restoring into %s", man.Slug, man.AppID, man.StackID, app.Slug)
-	}
-	versions := c.serviceVersions(ctx, app)
-	type plan struct {
-		d  ResticDump
-		b  domain.Binding
-		db string
-	}
-	var plans []plan
-	if req.Databases {
-		for _, d := range man.Dumps {
-			b, db, err := mapDump(app, man, d, versions)
-			if err != nil {
-				return nil, Fail("database-mismatch", "Bind matching databases to the app, or restore files only.", "%v", err)
-			}
-			plans = append(plans, plan{d, b, db})
-		}
-	}
-	owner := platform.Owner{UID: app.UID, GID: app.GID}
-	if req.Files {
-		if err := r.Phase(ctx, "restore-files"); err != nil {
-			return nil, err
-		}
-		kept, err := c.swapHomePaths(app, filepath.Join(restored, "home"), man.Paths)
-		if err != nil {
-			return nil, Fail("restore-files-failed", "The previous files are kept in "+kept+"; move them back if needed.", "%v", err)
-		}
-		r.Info(ctx, "previous files kept in %s (delete it once the restore is verified)", kept)
-		for _, rel := range man.HomeSQLite {
-			if err := c.restoreHomeSQLite(app, bentoDir, rel, owner); err != nil {
-				return nil, Fail("restore-files-failed", "Restore again; the file may be partially restored.", "%s: %v", rel, err)
-			}
-		}
-	}
-	deps := c.BackupDeps(nil)
-	for _, p := range plans {
-		if err := r.Phase(ctx, "restore "+p.db); err != nil {
-			return nil, err
-		}
-		src, err := platform.ContainedPath(bentoDir, filepath.FromSlash(p.d.File))
-		if err != nil {
-			return nil, err
-		}
-		if p.d.Engine == domain.EngineSQLite {
-			err = deps.RestoreSQLite(app, p.b, src)
-		} else {
-			err = deps.RestoreRelational(ctx, app, p.b, p.db, src)
-		}
-		if err != nil {
-			return nil, Fail("restore-failed", "The database may be partially restored; restore again.", "%s: %v", p.db, err)
-		}
-		r.Info(ctx, "restored %s into %s", p.d.Database, p.db)
-	}
-	return map[string]any{"snapshot": req.Snapshot, "files": req.Files, "databases": len(plans)}, nil
-}
-
+// readManifest loads and validates a snapshot's manifest.json. It accepts
+// format 1 (before secrets, home path and dump bindings) and the current
+// format; unknown fields are refused.
 func readManifest(dir string) (ResticManifest, error) {
-	var m ResticManifest
 	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
-		return m, fmt.Errorf("snapshot has no Bento manifest: %w", err)
+		return ResticManifest{}, fmt.Errorf("snapshot has no Bento manifest: %w", err)
 	}
-	if err := json.Unmarshal(raw, &m); err != nil {
+	return parseManifest(raw)
+}
+
+// parseManifest decodes and validates manifest.json bytes (see readManifest).
+func parseManifest(raw []byte) (ResticManifest, error) {
+	var m ResticManifest
+	var head struct {
+		FormatVersion int `json:"formatVersion"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
 		return m, fmt.Errorf("manifest: %w", err)
 	}
-	if m.FormatVersion != ResticFormatVersion {
-		return m, fmt.Errorf("unsupported snapshot format %d (supported %d)", m.FormatVersion, ResticFormatVersion)
+	if head.FormatVersion < 1 || head.FormatVersion > ResticFormatVersion {
+		return m, fmt.Errorf("unsupported snapshot format %d (supported 1-%d)", head.FormatVersion, ResticFormatVersion)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
+		return m, fmt.Errorf("manifest: %w", err)
 	}
 	for _, p := range m.Paths {
 		if _, bad := domain.CleanHomeRel(p, true); bad != "" {
@@ -1359,155 +1302,10 @@ func readManifest(dir string) (ResticManifest, error) {
 			return m, fmt.Errorf("manifest dump %q is unsafe", d.File)
 		}
 	}
+	if m.Minicron != nil {
+		if m.Minicron.DB == "" || strings.Contains(m.Minicron.DB, "..") || strings.HasPrefix(m.Minicron.DB, "/") {
+			return m, fmt.Errorf("manifest minicron db %q is unsafe", m.Minicron.DB)
+		}
+	}
 	return m, nil
-}
-
-// swapHomePaths moves restored paths into the live home. The replaced paths
-// are moved, never deleted, into homes/.pre-restore-<slug>-<stamp>, which is
-// returned. Restored files are re-owned to the app (restic restores the
-// source UID, which differs on another stack); symlinks are re-owned, never
-// followed. The home's identity record stays the live one.
-func (c *Controller) swapHomePaths(app domain.App, restoredHome string, paths []string) (string, error) {
-	home := c.Layout.AppHome(app.Slug)
-	owner := platform.Owner{UID: app.UID, GID: app.GID}
-	kept := filepath.Join(c.Layout.HomesDir(), ".pre-restore-"+app.Slug+"-"+time.Now().UTC().Format("20060102T150405Z"))
-	if err := platform.EnsureDir(kept, 0o700, platform.RootOwner); err != nil {
-		return kept, err
-	}
-	info, err := os.Lstat(restoredHome)
-	if err != nil || !info.IsDir() {
-		return kept, errors.New("snapshot holds no home directory")
-	}
-	if _, err := platform.ChownTree(restoredHome, owner, false, 0); err != nil {
-		return kept, fmt.Errorf("re-own restored files: %w", err)
-	}
-	if slices.Contains(paths, ".") {
-		homeOwner, mode, err := platform.StatOwner(home)
-		if err != nil {
-			return kept, err
-		}
-		sidecar, err := os.ReadFile(c.Layout.HomeSidecar(app.Slug))
-		if err != nil {
-			return kept, err
-		}
-		_ = os.Remove(filepath.Join(restoredHome, domain.HomeSidecarName))
-		if err := platform.AtomicWrite(filepath.Join(restoredHome, domain.HomeSidecarName), sidecar, 0o444, platform.RootOwner); err != nil {
-			return kept, err
-		}
-		if err := os.Chmod(restoredHome, mode.Perm()); err != nil {
-			return kept, err
-		}
-		if err := os.Lchown(restoredHome, homeOwner.UID, homeOwner.GID); err != nil {
-			return kept, err
-		}
-		if err := renameNoCross(home, filepath.Join(kept, "home")); err != nil {
-			return kept, err
-		}
-		if err := renameNoCross(restoredHome, home); err != nil {
-			// Put the original back; the restore did not happen.
-			_ = os.Rename(filepath.Join(kept, "home"), home)
-			return kept, err
-		}
-		return kept, nil
-	}
-	for _, p := range paths {
-		src := filepath.Join(restoredHome, filepath.FromSlash(p))
-		if _, err := os.Lstat(src); errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		dst, err := platform.ContainedPath(home, filepath.FromSlash(p))
-		if err != nil {
-			return kept, err
-		}
-		if err := platform.NoSymlinkBetween(home, dst); err != nil {
-			return kept, err
-		}
-		if _, err := os.Lstat(dst); err == nil {
-			aside := filepath.Join(kept, "home", filepath.FromSlash(p))
-			if err := os.MkdirAll(filepath.Dir(aside), 0o700); err != nil {
-				return kept, err
-			}
-			if err := renameNoCross(dst, aside); err != nil {
-				return kept, err
-			}
-		}
-		if err := c.ensureHomeParents(home, filepath.Dir(dst), owner); err != nil {
-			return kept, err
-		}
-		if err := renameNoCross(src, dst); err != nil {
-			return kept, err
-		}
-	}
-	return kept, nil
-}
-
-// ensureHomeParents creates missing directories between home and dir as the
-// app owner.
-func (c *Controller) ensureHomeParents(home, dir string, owner platform.Owner) error {
-	rel, err := filepath.Rel(home, dir)
-	if err != nil || rel == "." {
-		return err
-	}
-	cur := home
-	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
-		cur = filepath.Join(cur, part)
-		info, err := os.Lstat(cur)
-		if errors.Is(err, fs.ErrNotExist) {
-			if err := os.Mkdir(cur, 0o750); err != nil {
-				return err
-			}
-			if err := os.Lchown(cur, owner.UID, owner.GID); err != nil {
-				return err
-			}
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is not a directory", cur)
-		}
-	}
-	return nil
-}
-
-func renameNoCross(from, to string) error {
-	err := os.Rename(from, to)
-	if errors.Is(err, syscall.EXDEV) {
-		return fmt.Errorf("staging and homes are on different filesystems; restore needs them on one: %w", err)
-	}
-	return err
-}
-
-// restoreHomeSQLite installs a .backup copy at its home path, discarding the
-// live file's journals so they are not replayed against it.
-func (c *Controller) restoreHomeSQLite(app domain.App, bentoDir, rel string, owner platform.Owner) error {
-	src, err := platform.ContainedPath(filepath.Join(bentoDir, "home-sqlite"), filepath.FromSlash(rel))
-	if err != nil {
-		return err
-	}
-	if !backup.IsSQLiteFile(src) {
-		return errors.New("snapshot copy is not a SQLite database")
-	}
-	home := c.Layout.AppHome(app.Slug)
-	dst, err := platform.ContainedPath(home, filepath.FromSlash(rel))
-	if err != nil {
-		return err
-	}
-	if err := platform.NoSymlinkBetween(home, dst); err != nil {
-		return err
-	}
-	if err := c.ensureHomeParents(home, filepath.Dir(dst), owner); err != nil {
-		return err
-	}
-	for _, sfx := range []string{"-wal", "-shm", "-journal"} {
-		if err := os.Remove(dst + sfx); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	}
-	tmp := filepath.Join(filepath.Dir(dst), ".bento-restore-"+platform.RandomHex(6))
-	if err := platform.CopyFile(src, tmp, 0o600, owner); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
 }

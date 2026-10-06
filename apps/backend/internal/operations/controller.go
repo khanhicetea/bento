@@ -266,7 +266,14 @@ func (c *Controller) Recover(ctx context.Context) error {
 	for _, o := range ops {
 		c.Log.Warn("operation interrupted by previous shutdown", "op", o.ID, "kind", o.Kind, "phase", o.Phase)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// Interrupted operations are never replayed, so their pending keys are stale.
+	if _, serr := c.SweepPendingResticKeys(ctx); serr != nil {
+		c.Log.Warn("sweep pending restic keys", "err", serr)
+	}
+	return nil
 }
 
 // Start runs the executor until ctx is cancelled or Shutdown is called.

@@ -1,6 +1,6 @@
 ---
 title: App backups (restic)
-description: Back up a whole app (files, databases, scheduler) into an encrypted restic repository and restore it here or on another stack.
+description: Back up a whole app (files, databases, scheduler) into an encrypted restic repository and keep point-in-time history of it.
 sidebar:
   order: 4
 ---
@@ -10,8 +10,21 @@ consistent copies of its SQLite files and scheduler database, a plain dump of ev
 of the app (`app.json`). Each app has its own encrypted, deduplicated repository on any rclone remote. After the first
 run, a backup only uploads what changed.
 
-Use it to keep point-in-time history of an app, or to move an app to another Bento. The
+Use it to keep point-in-time history of an app. The
 [database backups](/guides/data/backup-restore/) stay available as the lighter option.
+
+## The Backup tab
+
+An app's **Backup** tab has two cards, one per method, under a short chooser:
+
+- Files on S3 or another object store → **Database backup** is enough.
+- Uploads or generated files in the app home → **App backup**.
+- Both on → database dumps for fast in-place rollback, app backups for full recovery or migration.
+
+The **Database backup** card lists the schedules that cover the app (scope all, app, or database), the last dump of
+each database, **Back up now**, and **Add schedule for this app** (scope app, prefilled). The **App backup** card holds
+the repository, schedule, retention, inclusions, the **Include secrets** switch, the last snapshot, and **Restore into
+a new app**. The methods share no settings, schedules, history or storage; disabling one leaves the other running.
 
 ## Set up
 
@@ -38,7 +51,7 @@ The app keeps running. In order:
 1. Dumps every bound MySQL/PostgreSQL database as plain SQL (`--single-transaction` for MySQL) and copies SQLite
    bindings with `.backup`. Databases go first, so the files captured afterwards include every upload the dumped
    rows can reference.
-2. Copies the scheduler database and the listed SQLite files in the home with `.backup`.
+2. Copies the scheduler's jobs database (`minicron.db`) and the listed SQLite files in the home with `.backup`.
 3. Writes `app.json` (runtime, resources, domains, bindings, git source). Env vars are included, but values whose
    names contain `_KEY`, `KEY`, `SECRET`, `PASSWORD`, or `TOKEN` are redacted. Credentials, IDs, and UIDs are never
    included.
@@ -71,27 +84,40 @@ reversible on the storage side: see [Protect app backups from deletion](/guides/
 
 ## Restore
 
-Stop the app, open **Backup → Snapshots**, choose **Restore**, pick files and/or databases, and type
-`restore <slug>`.
+An app backup is never restored over the live app. It always becomes a new app (a clone) that is left stopped. Use
+[database backups](/guides/data/backup-restore/) (`replace <db>`) to roll back a single database in place.
 
-- **Files**: the backed-up paths replace the live ones. The previous files are moved, not deleted, to
-  `homes/.pre-restore-<slug>-<time>/`. Delete that directory once you've checked the restore. Restored files are
-  owned by this app's UID, whatever UID they had when backed up.
-- **Databases**: each dump replaces a database bound to this app with the same name, or the app's only database of
-  that engine when the snapshot has only one. The service version must match exactly (for example MySQL `8.4` or
-  PostgreSQL `18`).
+### From another stack
 
-## Move an app to another stack
+To restore on a different stack, add the repository's rclone remote to that stack's rclone config, create a key on the
+source app (**Add key**) and use **Apps → From app backup**, or:
 
-1. On the source app, **Access keys → Add key** (type `export <slug>`). Copy the new key.
-2. On the target Bento, create the app with the same runtime and the same database engines and versions. Add the same
-   rclone remote.
-3. In the new app's **Backup** tab, set the same repository, then **Connect** with the key.
-4. Restore a snapshot (files and databases), then start the app.
-5. Remove the handover key on the source when you're done.
+```bash
+bento app restore-from-backup --repo s3:bucket/shop --key-file ./shop.key --slug shop-staging
+```
 
-Don't let both apps back up to the same repository with different retention settings, since each would expire the
-other's snapshots. Point the new app at a new repository once the move is done.
+The key is held in a private file while the clone runs and is deleted afterwards. Choose
+`--backup-after same-repo` to keep backing up to that repository with that key instead (the new app's schedule stays
+off); `new-repo` prepares a separate repository path without keeping the key. The clone needs a MySQL or PostgreSQL
+service of the same engine and version on the target stack. Across stacks the source's database user is reused when it
+is free (`--keep-username`).
+
+## Include secrets
+
+By default a snapshot holds no secrets: `app.json` redacts env values with secret-looking names, and database
+passwords are not stored. Turn on **Include secrets** in **Backup settings** to also store `secrets.json` (unredacted
+env values and database passwords) in the encrypted snapshot, so a restored app can keep them. Anyone with a
+repository key can read them. The setting applies to snapshots taken after the change.
+
+## Snapshot format
+
+Each snapshot has a `bento/` directory with `manifest.json` (format 2: the source's in-container home path, each
+dump's binding, database suffix and user, SQLite file ids, the scheduler database, and whether `secrets.json` is
+present), `app.json`, the dumps, and optionally `secrets.json`. Snapshots are tagged `app=<id>`, `stack=<id>`, `slug`,
+and `trigger`; retention only touches snapshots with both the app and stack tags, so snapshots taken before this
+format (without a `stack` tag) are no longer expired by retention. Only the scheduler's `minicron.db` is backed up;
+its log database and socket are skipped. If restic can't read some files (exit code 3) the run is recorded as
+**partial**, not OK.
 
 ## Removal
 

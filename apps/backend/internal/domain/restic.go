@@ -25,6 +25,9 @@ type ResticSettings struct {
 	SQLitePaths []string        `json:"sqlitePaths"`
 	Retention   ResticRetention `json:"retention"`
 	Schedule    ResticSchedule  `json:"schedule"`
+	// IncludeSecrets stores unredacted env values and database passwords in
+	// the snapshot (secrets.json). Off by default; applies to later snapshots.
+	IncludeSecrets bool `json:"includeSecrets"`
 }
 
 type ResticRetention struct {
@@ -86,16 +89,19 @@ type ResticKey struct {
 const ResticHistoryLimit = 50
 
 type ResticRunResult struct {
-	OpID       string    `json:"opId,omitempty"`
-	Trigger    string    `json:"trigger,omitempty"`
-	At         time.Time `json:"at"`
-	OK         bool      `json:"ok"`
-	SnapshotID string    `json:"snapshotId,omitempty"`
-	BytesAdded int64     `json:"bytesAdded,omitempty"`
-	FilesNew   int64     `json:"filesNew,omitempty"`
-	FilesTotal int64     `json:"filesTotal,omitempty"`
-	Seconds    float64   `json:"seconds,omitempty"`
-	Error      string    `json:"error,omitempty"`
+	OpID    string    `json:"opId,omitempty"`
+	Trigger string    `json:"trigger,omitempty"`
+	At      time.Time `json:"at"`
+	OK      bool      `json:"ok"`
+	// Partial marks a snapshot restic created although some files were
+	// unreadable (exit 3). Partial runs are not OK.
+	Partial    bool    `json:"partial,omitempty"`
+	SnapshotID string  `json:"snapshotId,omitempty"`
+	BytesAdded int64   `json:"bytesAdded,omitempty"`
+	FilesNew   int64   `json:"filesNew,omitempty"`
+	FilesTotal int64   `json:"filesTotal,omitempty"`
+	Seconds    float64 `json:"seconds,omitempty"`
+	Error      string  `json:"error,omitempty"`
 }
 
 // ResticSnapshotID matches a full or short restic snapshot id.
@@ -111,6 +117,19 @@ var ResticDefaultExcludes = []string{".cache", ".npm/_cacache", ".composer/cache
 
 // MinicronDataDir is minicrond's data directory relative to the app home.
 const MinicronDataDir = ".local/share/minicron"
+
+// MinicronDBFile is minicrond's jobs, workers and settings database in
+// MinicronDataDir. It is the only minicrond file an app backup keeps.
+const MinicronDBFile = "minicron.db"
+
+// ResticMinicronExcludes are minicrond files never backed up (relative to
+// the home): the log database and its journals, and the control socket.
+var ResticMinicronExcludes = []string{
+	MinicronDataDir + "/minicron-logs.db",
+	MinicronDataDir + "/minicron-logs.db-wal",
+	MinicronDataDir + "/minicron-logs.db-shm",
+	MinicronDataDir + "/minicron.sock",
+}
 
 // HomeSidecarName is the Bento identity record inside each home; it belongs
 // to one stack incarnation and is never backed up or restored.
@@ -211,6 +230,9 @@ func ResticExcludeLines(s ResticSettings, homeMount string, sqliteFiles []string
 		return neg + p
 	}
 	lines := []string{homeMount + "/" + HomeSidecarName}
+	for _, p := range ResticMinicronExcludes {
+		lines = append(lines, homeMount+"/"+p)
+	}
 	if s.DefaultExcludes {
 		for _, p := range ResticDefaultExcludes {
 			lines = append(lines, homeMount+"/"+p)

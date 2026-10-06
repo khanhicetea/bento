@@ -385,6 +385,34 @@ func (e *AdoptionRefused) Error() string {
 	return fmt.Sprintf("database %s already exists and is not owned by this binding; refusing to adopt it", e.Database)
 }
 
+// UserExists reports whether a relational user (role) exists on the service.
+func (m *Manager) UserExists(ctx context.Context, s domain.DataService, containerID, user string) (bool, error) {
+	u, err := ident(user)
+	if err != nil {
+		return false, err
+	}
+	q := fmt.Sprintf("SELECT COUNT(*) FROM mysql.user WHERE User = '%s';\n", u)
+	if s.Engine == domain.EnginePostgres {
+		q = fmt.Sprintf("SELECT COUNT(*) FROM pg_roles WHERE rolname = '%s';\n", u)
+	}
+	out, err := m.SQL(ctx, s, containerID, "", q)
+	return out != "0" && out != "", err
+}
+
+// DatabaseExists reports whether a relational database exists on the service.
+func (m *Manager) DatabaseExists(ctx context.Context, s domain.DataService, containerID, name string) (bool, error) {
+	db, err := ident(name)
+	if err != nil {
+		return false, err
+	}
+	q := fmt.Sprintf("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '%s';\n", db)
+	if s.Engine == domain.EnginePostgres {
+		q = fmt.Sprintf("SELECT COUNT(*) FROM pg_database WHERE datname = '%s';\n", db)
+	}
+	out, err := m.SQL(ctx, s, containerID, "", q)
+	return out != "0" && out != "", err
+}
+
 // DropBinding permanently drops an app's databases and user (prune only).
 func (m *Manager) DropBinding(ctx context.Context, s domain.DataService, id, user string, databases []string) error {
 	u, err := ident(user)

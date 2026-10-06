@@ -245,6 +245,16 @@ func (j *ResticJob) RunJSON(ctx context.Context, args []string) ([]byte, error) 
 	return out.Bytes(), nil
 }
 
+// Output runs a metadata command (bounded by ResticQuickTimeout) and returns
+// at most limit bytes of its stdout.
+func (j *ResticJob) Output(ctx context.Context, args []string, limit int) ([]byte, error) {
+	var out bytes.Buffer
+	if err := j.RunQuick(ctx, args, &limitWriter{w: &out, n: limit}); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
 // LineWriter calls fn for each complete line written to it. Lines longer
 // than 64 KiB are split.
 type LineWriter struct {

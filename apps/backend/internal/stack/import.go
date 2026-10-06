@@ -109,7 +109,7 @@ func readExport(
 	if m, err = transfer.ReadManifest(from); err != nil {
 		return "", m, "", fmt.Errorf("read manifest: %w", err)
 	}
-	if err := m.Validate(store.SchemaVersion); err != nil {
+	if err := m.Validate(store.MigratableFromVersion, store.SchemaVersion); err != nil {
 		return "", m, "", err
 	}
 	if v, verr := engine.Version(ctx); verr == nil && m.Arch != "" && v.Arch != m.Arch {

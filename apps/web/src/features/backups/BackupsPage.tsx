@@ -349,7 +349,8 @@ function AppRunRow({ entry }: { entry: T.AppBackupRun }) {
           </strong>
           <small title={run.at}>
             {formatRelative(run.at)} · {Math.round(run.seconds)}s
-            {run.ok && ` · ${run.filesTotal} files (${run.filesNew} new), ${formatBytes(run.bytesAdded)} added`}
+            {(run.ok || run.partial) &&
+              ` · ${run.filesTotal} files (${run.filesNew} new), ${formatBytes(run.bytesAdded)} added`}
           </small>
         </span>
         <StateBadge state={run.ok ? "succeeded" : "failed"} />
@@ -414,7 +415,7 @@ function CompressionSelect({ value, onChange }: { value: string; onChange: (valu
   );
 }
 
-const newSchedule: T.BackupSchedule = {
+export const newSchedule: T.BackupSchedule = {
   id: "",
   name: "",
   enabled: true,
@@ -554,7 +555,7 @@ function SchedulesTab() {
   );
 }
 
-function ScheduleDialog({ initial, onClose }: { initial: T.BackupSchedule; onClose: () => void }) {
+export function ScheduleDialog({ initial, onClose }: { initial: T.BackupSchedule; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [schedule, setSchedule] = useState(initial);
   const apps = useApplicationList();

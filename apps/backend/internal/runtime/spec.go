@@ -109,7 +109,7 @@ type fingerprintInput struct {
 }
 
 // specVersion changes when the planner itself changes container shape.
-const specVersion = 2
+const specVersion = 3
 
 // Fingerprint returns the non-secret configuration fingerprint recorded in
 // the io.bento.generation label.

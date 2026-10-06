@@ -66,6 +66,17 @@ func ValidateSlug(slug string) error {
 	return nil
 }
 
+// ValidateHomePath checks a stored in-container home path: /home/ followed by
+// a slug-shaped name (reserved names are allowed; the source app's slug was
+// already checked when it was created).
+func ValidateHomePath(p string) error {
+	name, ok := strings.CutPrefix(p, "/home/")
+	if !ok || !slugPattern.MatchString(name) || strings.Contains(name, "--") {
+		return errors.New("must be /home/ followed by a slug-shaped name")
+	}
+	return nil
+}
+
 // NormalizeDomain lowercases and validates a DNS host name. Wildcards and IP
 // literals are not accepted.
 func NormalizeDomain(name string) (string, error) {

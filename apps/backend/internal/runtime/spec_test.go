@@ -189,6 +189,60 @@ func TestRenderedConfig(t *testing.T) {
 	}
 }
 
+// A kept home path changes only the in-container paths; the host directory
+// stays homes/<slug>, and the container is replaced (fingerprint changes).
+func TestHomePathChangesContainerPathsOnly(t *testing.T) {
+	base := testApp()
+	clone := testApp()
+	clone.Slug = "shop-copy"
+	clone.HomePath = "/home/shop"
+
+	spec, _ := AppContainerSpec(inputs(t, clone), true)
+	var mounted bool
+	for _, m := range spec.HostConfig.Mounts {
+		if m.Target == "/home/shop" {
+			mounted = true
+			if m.Source != "/srv/stack/homes/shop-copy" {
+				t.Fatalf("host home source %s", m.Source)
+			}
+		}
+		if m.Target == "/home/shop-copy" {
+			t.Fatal("default home target mounted despite HomePath")
+		}
+	}
+	if !mounted {
+		t.Fatal("kept home path not mounted")
+	}
+	env := strings.Join(spec.Config.Env, "\n")
+	if !strings.Contains(env, "HOME=/home/shop\n") || !strings.Contains(env, "USER=shop-copy\n") {
+		t.Fatalf("env %s", env)
+	}
+	if spec.Config.WorkingDir != "/home/shop/app" {
+		t.Fatalf("workdir %s", spec.Config.WorkingDir)
+	}
+
+	cfg, id, _, err := RenderAppConfig(clone, AppContext{TrustedProxies: []string{"10.200.0.2"}, ImagePasswd: []byte("root:x:0:0::/root:/bin/bash\n"), ImageGroup: []byte("root:x:0:\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	passwd := string(id[0].data)
+	if !strings.Contains(passwd, "shop-copy:x:10000:10000:Bento app shop-copy:/home/shop:/bin/bash") {
+		t.Fatalf("passwd must keep the new name and the kept home: %s", passwd)
+	}
+	for _, f := range cfg {
+		if f.name == "nginx.conf" && !strings.Contains(string(f.data), "root /home/shop/app/public") {
+			t.Fatal("nginx root must use the kept home path")
+		}
+	}
+
+	// Same slug, different home path: a different container shape.
+	same := testApp()
+	same.HomePath = "/home/other"
+	if Fingerprint(inputs(t, same)) == Fingerprint(inputs(t, base)) {
+		t.Fatal("home path must change the fingerprint")
+	}
+}
+
 func TestHTTPWorkdirIsRelativeToCodeDirectory(t *testing.T) {
 	app := testApp()
 	app.Runtime = domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{

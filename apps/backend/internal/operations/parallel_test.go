@@ -140,8 +140,9 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 		KindAppReconcile: true, KindAppStart: true, KindAppRestart: true, KindAppStop: true,
 		KindAppUpdate: true, KindAppDeploy: true, KindServiceCreate: true, KindServiceEnsure: true,
 		KindImagePrepare: true,
-		KindResticInit:   true, KindResticConnect: true, KindResticBackup: true, KindResticRestore: true,
-		KindResticRefresh: true, KindResticKeyAdd: true, KindResticKeyRemove: true, KindResticCheck: true, KindResticUnlock: true,
+		KindResticInit:   true, KindResticConnect: true, KindResticBackup: true,
+		KindResticRefresh: true, KindResticKeyAdd: true, KindResticKeyRemove: true, KindResticCheck: true, KindResticUnlock: true, KindResticInspect: true,
+		KindResticInspectRemote: true,
 	}
 	for kind := range h.c.handlers {
 		cl := h.c.claimsFor(t.Context(), store.Operation{Kind: kind, TargetID: "x"})

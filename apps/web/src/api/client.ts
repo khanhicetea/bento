@@ -116,6 +116,11 @@ export const api = {
     webhook: (id: string, signal?: AbortSignal) => get<T.Webhook>(`/api/v1/apps/${enc(id)}/webhook`, signal),
     enableWebhook: (id: string) => request<T.WebhookSecret>("POST", `/api/v1/apps/${enc(id)}/webhook`, {}),
     disableWebhook: (id: string) => request<T.Webhook>("DELETE", `/api/v1/apps/${enc(id)}/webhook`),
+    restoreFromBackup: {
+      inspect: (body: T.RestoreFromBackupInspectRequest) =>
+        mutate("POST", "/api/v1/apps/restore-from-backup/inspect", body),
+      clone: (body: T.RestoreFromBackupRequest) => mutate("POST", "/api/v1/apps/restore-from-backup", body),
+    },
     restic: {
       get: (id: string, signal?: AbortSignal) => get<T.Restic>(`/api/v1/apps/${enc(id)}/restic`, signal),
       save: (id: string, body: T.ResticSettings) => request<T.Restic>("PUT", `/api/v1/apps/${enc(id)}/restic`, body),
@@ -124,11 +129,12 @@ export const api = {
         mutate("POST", `/api/v1/apps/${enc(id)}/restic/connect`, { key } satisfies T.ResticConnectRequest),
       action: (id: string, action: "backup" | "refresh" | "check" | "unlock") =>
         mutate("POST", `/api/v1/apps/${enc(id)}/restic/${action}`),
-      restore: (id: string, body: T.ResticRestoreRequest) =>
-        mutate("POST", `/api/v1/apps/${enc(id)}/restic/restore`, body),
       addKey: (id: string, body: T.ResticKeyAddRequest) =>
         mutate<T.ResticKeyAccepted>("POST", `/api/v1/apps/${enc(id)}/restic/keys`, body),
       removeKey: (id: string, keyId: string) => mutate("DELETE", `/api/v1/apps/${enc(id)}/restic/keys/${enc(keyId)}`),
+      inspect: (id: string, body: T.ResticInspectRequest) =>
+        mutate("POST", `/api/v1/apps/${enc(id)}/restic/inspect`, body),
+      clone: (id: string, body: T.ResticCloneRequest) => mutate("POST", `/api/v1/apps/${enc(id)}/restic/clone`, body),
     },
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,

@@ -207,6 +207,10 @@ export interface BindingSummary {
 export interface App extends AppSummary {
   gid: number /* int */;
   home: string;
+  /**
+   * HomePath is the stored in-container home; empty means /home/<slug>. Read-only.
+   */
+  homePath?: string;
   runtime: RuntimeSpec;
   route: Route;
   env: EnvVar[];
@@ -804,6 +808,11 @@ export interface ResticSettings {
   sqlitePaths: string[];
   retention: ResticRetention;
   schedule: ResticSchedule;
+  /**
+   * IncludeSecrets stores env values and database passwords in snapshots
+   * taken after the change.
+   */
+  includeSecrets: boolean;
 }
 export interface ResticSnapshot {
   id: string;
@@ -822,6 +831,11 @@ export interface ResticRunResult {
   trigger: string;
   at: string;
   ok: boolean;
+  /**
+   * Partial is true when restic exited 3: a snapshot exists but some files
+   * were unreadable.
+   */
+  partial: boolean;
   snapshotId: string;
   bytesAdded: number /* int64 */;
   filesNew: number /* int64 */;
@@ -852,18 +866,143 @@ export interface ResticKeyAddRequest {
   label: string;
   confirm: string;
 }
-export interface ResticRestoreRequest {
-  snapshot: string;
-  files: boolean;
-  databases: boolean;
-  confirm: string;
-}
 /**
  * ResticKeyAccepted carries a repository key exactly once, in the response
  * that created it.
  */
 export interface ResticKeyAccepted extends Accepted {
   key: string;
+}
+/**
+ * ResticInspectRequest previews a snapshot (operation kind restic.inspect).
+ * With a slug the preview shows the real target names.
+ */
+export interface ResticInspectRequest {
+  snapshot: string;
+  slug: string;
+  keepUsername: boolean;
+}
+/**
+ * ResticCloneRequest restores a snapshot into a new app on this stack. The
+ * confirmation is exactly "clone <slug>".
+ */
+export interface ResticCloneRequest {
+  snapshot: string;
+  slug: string;
+  keepUsername: boolean;
+  /**
+   * BackupAfter is "none" (default) or "new-repo".
+   */
+  backupAfter: string;
+  confirm: string;
+}
+/**
+ * RestoreFromBackupInspectRequest previews a snapshot of an app backup made
+ * on another stack (operation kind restic.inspect-remote). Repository is an
+ * rclone remote path (name:path) and Key one of the repository's keys; it is
+ * kept in a pending file for the operation and deleted at its end. An empty
+ * snapshot means the newest; the result lists all snapshots.
+ */
+export interface RestoreFromBackupInspectRequest {
+  repository: string;
+  key: string;
+  snapshot: string;
+  slug: string;
+  keepUsername: boolean;
+}
+/**
+ * RestoreFromBackupRequest clones a snapshot of another stack's app backup
+ * into a new app on this stack (operation kind app.restore-from-backup). The
+ * confirmation is exactly "clone <slug>".
+ */
+export interface RestoreFromBackupRequest {
+  repository: string;
+  key: string;
+  snapshot: string;
+  slug: string;
+  keepUsername: boolean;
+  /**
+   * BackupAfter is "none" (default), "new-repo", or "same-repo" (keep
+   * backing up to this repository with this key).
+   */
+  backupAfter: string;
+  confirm: string;
+}
+export interface ResticCloneDatabase {
+  engine: Engine;
+  service: string;
+  version: string;
+  source: string;
+  target: string;
+  sourceUsername: string;
+  username: string;
+  usernameKept: boolean;
+  usernameNote: string;
+  passwordKept: boolean;
+}
+export interface ResticCloneSQLite {
+  source: string;
+  target: string;
+}
+export interface ResticCloneDomain {
+  name: string;
+  inUse: boolean;
+}
+/**
+ * ResticClonePreview is the result of restic.inspect.
+ */
+export interface ResticClonePreview {
+  snapshot: string;
+  snapshotTime: string;
+  formatVersion: number /* int */;
+  sizeBytes: number /* int64 */;
+  sourceSlug: string;
+  sourceAppId: string;
+  stackId: string;
+  slug: string;
+  secrets: boolean;
+  runtimeKind: string;
+  runtimeVersion: string;
+  resources: Resources;
+  envKeys: string[];
+  emptyEnv: string[];
+  homePath: string;
+  databases: ResticCloneDatabase[];
+  sqlite: ResticCloneSQLite[];
+  minicron: boolean;
+  domains: ResticCloneDomain[];
+  git: boolean;
+  notes: string[];
+  blockers: string[];
+  /**
+   * Snapshots lists a remote repository's snapshots, newest first (empty
+   * for a same-stack preview).
+   */
+  snapshots: ResticSnapshot[];
+}
+/**
+ * ResticCloneResult is the result of app.clone-from-backup: the checklist of
+ * what to check before starting the stopped clone.
+ */
+export interface ResticCloneResult {
+  appId: string;
+  slug: string;
+  sourceSlug: string;
+  sourceAppId: string;
+  snapshot: string;
+  snapshotTime: string;
+  stopped: boolean;
+  homePath: string;
+  databases: ResticCloneDatabase[];
+  sqlite: ResticCloneSQLite[];
+  emptyEnv: string[];
+  minicron: boolean;
+  /**
+   * DeployKey is the new public deploy key to add to the git host.
+   */
+  deployKey: string;
+  domains: ResticCloneDomain[];
+  checklist: string[];
 }
 /**
  * AppBackupSummary is one app's restic backup state for the Backups page.

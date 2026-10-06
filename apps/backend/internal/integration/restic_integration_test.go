@@ -2,13 +2,11 @@ package integration
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -16,9 +14,8 @@ import (
 )
 
 // TestIntegrationResticAppBackup backs an app up into a restic repository
-// on a local rclone remote, restores it in place, then restores the same
-// snapshot into a second app (another UID) connected with the key, as a new
-// stack would.
+// on a local rclone remote, checks it, and connects a second app with an
+// added key. App backups are never restored over the live app.
 func TestIntegrationResticAppBackup(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
@@ -57,33 +54,17 @@ func TestIntegrationResticAppBackup(t *testing.T) {
 		t.Fatal("added key must be new")
 	}
 
-	// In place: a deleted upload and a damaged SQLite file come back.
-	if err := os.Remove(filepath.Join(home, "app", "storage", "u.jpg")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "app", "data.sqlite"), []byte("garbage"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	e.wait(e.c.SubmitResticRestore(ctx, app.ID, operations.ResticRestoreRequest{Snapshot: snap, Files: true, Databases: true},
-		"restore shop", ""))
-	assertOwned(t, filepath.Join(home, "app", "storage", "u.jpg"), app.UID, "image")
-	if !backup.IsSQLiteFile(filepath.Join(home, "app", "data.sqlite")) {
-		t.Fatal("SQLite file not restored from its .backup copy")
-	}
-	if _, err := os.Stat(filepath.Join(home, "app", "node_modules")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("excluded path must not be in the snapshot")
-	}
-
-	// Another app connects with the handed-over key and restores.
+	// Another app connects with the handed-over key and sees the snapshot.
 	other := e.create("copy", rt)
 	settings.Schedule.Enabled = false
 	if _, err := e.c.SaveResticSettings(ctx, other.ID, settings); err != nil {
 		t.Fatal(err)
 	}
 	e.wait(e.c.SubmitResticConnect(ctx, other.ID, extra, ""))
-	e.wait(e.c.SubmitResticRestore(ctx, other.ID, operations.ResticRestoreRequest{Snapshot: snap, Files: true},
-		"restore copy", ""))
-	assertOwned(t, filepath.Join(e.layout.AppHome("copy"), "app", "storage", "u.jpg"), other.UID, "image")
+	ov, _ := e.c.ResticSettings(ctx, other.ID)
+	if len(ov.State.Snapshots) != 1 || ov.State.Snapshots[0].ID != snap {
+		t.Fatalf("connected app should list the source snapshot: %+v", ov.State.Snapshots)
+	}
 }
 
 func assertOwned(t *testing.T, path string, uid int, body string) {

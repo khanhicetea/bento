@@ -5,6 +5,14 @@ sidebar:
   order: 3
 ---
 
+Bento has two independent backup methods, both on an app's **Backup** tab. Turning one on or off never changes the other.
+
+- Files on S3 or another object store → **Database backup** (this page) is enough.
+- Uploads or generated files in the app home → [**App backup**](/guides/data/app-backups/).
+- Both on → database dumps for fast in-place rollback, app backups for full recovery or migration.
+
+Database backups restore in place, per database. App backups restore only into a new app.
+
 ```bash
 bento backup run [--app shop [--database shop,shop_logs]] [--compression zstd|gzip] [--upload remote:bucket/path]
 bento backup list

@@ -35,7 +35,11 @@ type env struct {
 	sdk    *docker.SDK
 }
 
-func setup(t *testing.T) *env {
+func setup(t *testing.T) *env { return setupWithUIDs(t, 40000) }
+
+// setupWithUIDs creates a disposable stack whose app UIDs start at first, so
+// two stacks in one test never hand out the same host UID.
+func setupWithUIDs(t *testing.T, first int) *env {
 	t.Helper()
 	if os.Getenv("BENTO_DOCKER_TESTS") != "1" || os.Geteuid() != 0 {
 		t.Skip("set BENTO_DOCKER_TESTS=1 and run as root for real Docker integration tests")
@@ -43,7 +47,7 @@ func setup(t *testing.T) *env {
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "stack")
 	name := "it" + platform.RandomHex(3)
-	id, err := stack.Init(ctx, stack.InitOptions{Root: root, Name: name, UIDRange: domain.UIDRange{First: 40000, Last: 40999}})
+	id, err := stack.Init(ctx, stack.InitOptions{Root: root, Name: name, UIDRange: domain.UIDRange{First: first, Last: first + 999}})
 	if err != nil {
 		t.Fatal(err)
 	}

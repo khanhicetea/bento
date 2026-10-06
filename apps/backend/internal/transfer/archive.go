@@ -47,15 +47,17 @@ type Manifest struct {
 	Services      []ServiceEntry `json:"services"`
 }
 
-func (m Manifest) Validate(schemaVersion int) error {
+// Validate checks the manifest; its state schema must be one of the accepted
+// versions.
+func (m Manifest) Validate(schemaVersions ...int) error {
 	if m.Format != FormatName {
 		return fmt.Errorf("not a Bento transfer (format %q)", m.Format)
 	}
 	if m.Version != FormatVersion {
 		return fmt.Errorf("unsupported transfer format version %d (supported %d)", m.Version, FormatVersion)
 	}
-	if m.SchemaVersion != schemaVersion {
-		return fmt.Errorf("transfer holds state schema %d; this Bento supports %d", m.SchemaVersion, schemaVersion)
+	if !slices.Contains(schemaVersions, m.SchemaVersion) {
+		return fmt.Errorf("transfer holds state schema %d; this Bento supports %v", m.SchemaVersion, schemaVersions)
 	}
 	for _, f := range append([]string{m.StateFile, m.RootArchive}, volumeFiles(m)...) {
 		if f == "" || strings.ContainsAny(f, "/\\") || strings.HasPrefix(f, ".") {

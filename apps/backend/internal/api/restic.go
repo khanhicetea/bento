@@ -20,7 +20,7 @@ func resticToDTO(v operations.ResticView, now time.Time) dto.Restic {
 		Initialized: v.State.RepositoryID != "",
 		Settings: dto.ResticSettings{
 			Repository: s.Repository, Paths: nonNil(s.Paths), Excludes: nonNil(s.Excludes),
-			DefaultExcludes: s.DefaultExcludes, SQLitePaths: nonNil(s.SQLitePaths),
+			DefaultExcludes: s.DefaultExcludes, SQLitePaths: nonNil(s.SQLitePaths), IncludeSecrets: s.IncludeSecrets,
 			Retention: dto.ResticRetention{Hourly: s.Retention.Hourly, Daily: s.Retention.Daily,
 				Weekly: s.Retention.Weekly, Monthly: s.Retention.Monthly},
 			Schedule: dto.ResticSchedule{Enabled: s.Schedule.Enabled, Cron: s.Schedule.Cron},
@@ -86,7 +86,7 @@ func runResultDTO(r *domain.ResticRunResult) *dto.ResticRunResult {
 	if r == nil {
 		return nil
 	}
-	return &dto.ResticRunResult{OpID: r.OpID, Trigger: r.Trigger, At: platform.FormatTime(r.At), OK: r.OK, SnapshotID: r.SnapshotID,
+	return &dto.ResticRunResult{OpID: r.OpID, Trigger: r.Trigger, At: platform.FormatTime(r.At), OK: r.OK, Partial: r.Partial, SnapshotID: r.SnapshotID,
 		BytesAdded: r.BytesAdded, FilesNew: r.FilesNew, FilesTotal: r.FilesTotal, Seconds: r.Seconds, Error: r.Error}
 }
 
@@ -122,7 +122,7 @@ func (s *Server) handlePutRestic(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := s.C.SaveResticSettings(r.Context(), app.ID, domain.ResticSettings{
 		Repository: req.Repository, Paths: req.Paths, Excludes: req.Excludes, DefaultExcludes: req.DefaultExcludes,
-		SQLitePaths: req.SQLitePaths,
+		SQLitePaths: req.SQLitePaths, IncludeSecrets: req.IncludeSecrets,
 		Retention: domain.ResticRetention{Hourly: req.Retention.Hourly, Daily: req.Retention.Daily,
 			Weekly: req.Retention.Weekly, Monthly: req.Retention.Monthly},
 		Schedule: domain.ResticSchedule{Enabled: req.Schedule.Enabled, Cron: req.Schedule.Cron},
@@ -268,12 +268,12 @@ func (s *Server) resticSimple(kind string) http.HandlerFunc {
 	}
 }
 
-func (s *Server) handleResticRestore(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleResticInspect(w http.ResponseWriter, r *http.Request) {
 	app, ok := s.loadApp(w, r)
 	if !ok {
 		return
 	}
-	var req dto.ResticRestoreRequest
+	var req dto.ResticInspectRequest
 	if err := decode(w, r, &req); err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -283,8 +283,74 @@ func (s *Server) handleResticRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, err := s.C.SubmitResticRestore(r.Context(), app.ID, operations.ResticRestoreRequest{
-		Snapshot: req.Snapshot, Files: req.Files, Databases: req.Databases}, req.Confirm, idem)
+	op, err := s.C.SubmitResticInspect(r.Context(), app.ID, operations.ResticInspectRequest{
+		Snapshot: req.Snapshot, Slug: req.Slug, KeepUsername: req.KeepUsername}, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleRestoreFromBackupInspect(w http.ResponseWriter, r *http.Request) {
+	var req dto.RestoreFromBackupInspectRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.SubmitResticInspectRemote(r.Context(), operations.ResticRemoteInput{
+		Repository: req.Repository, Key: req.Key, Snapshot: req.Snapshot, Slug: req.Slug, KeepUsername: req.KeepUsername}, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleRestoreFromBackup(w http.ResponseWriter, r *http.Request) {
+	var req dto.RestoreFromBackupRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.SubmitRestoreFromBackup(r.Context(), operations.ResticRemoteInput{
+		Repository: req.Repository, Key: req.Key, Snapshot: req.Snapshot, Slug: req.Slug, KeepUsername: req.KeepUsername,
+		BackupAfter: req.BackupAfter}, req.Confirm, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleResticClone(w http.ResponseWriter, r *http.Request) {
+	app, ok := s.loadApp(w, r)
+	if !ok {
+		return
+	}
+	var req dto.ResticCloneRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.SubmitResticClone(r.Context(), app.ID, operations.ResticCloneRequest{
+		Snapshot: req.Snapshot, Slug: req.Slug, KeepUsername: req.KeepUsername, BackupAfter: req.BackupAfter},
+		req.Confirm, idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return

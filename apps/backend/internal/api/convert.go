@@ -196,6 +196,7 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	}
 	out.GID = app.GID
 	out.Home = app.ContainerHome()
+	out.HomePath = app.HomePath
 	out.Runtime = runtimeToDTO(app.Runtime)
 	out.Route = routeToDTO(app.Route)
 	out.Env = []dto.EnvVar{}

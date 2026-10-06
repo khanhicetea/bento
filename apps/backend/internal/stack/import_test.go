@@ -2,6 +2,7 @@ package stack
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -123,6 +124,44 @@ func openImported(t *testing.T, root string) *store.Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+// A schema 2 export (state.db without apps.home_path) imports and is migrated
+// to the current schema.
+func TestImportMigratesSchema2State(t *testing.T) {
+	exp := writeExport(t)
+	ctx := t.Context()
+	statePath := filepath.Join(exp.dir, "state.db")
+	db, err := sql.Open("sqlite", statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"ALTER TABLE apps DROP COLUMN home_path", "PRAGMA user_version = 2"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	m, err := transfer.ReadManifest(exp.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.SchemaVersion = 2
+	if err := transfer.WriteManifest(exp.dir, m); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "clone")
+	rng := &domain.UIDRange{First: 50000, Last: 59999}
+	if err := Import(ctx, docker.NewFake(), discard, ImportOptions{Root: root, From: exp.dir, Name: "clone", NewUIDRange: rng}); err != nil {
+		t.Fatal(err)
+	}
+	if _, v, err := store.Inspect(platform.Layout{Root: root}.Database()); err != nil || v != store.SchemaVersion {
+		t.Fatalf("imported schema version %d %v", v, err)
+	}
+	app, err := store.GetApp(ctx, openImported(t, root).DB(), exp.app.ID)
+	if err != nil || app.ContainerHome() != "/home/shop" {
+		t.Fatalf("app %+v %v", app, err)
+	}
 }
 
 func TestImportNeutralizesStateAndRestoresVolumes(t *testing.T) {

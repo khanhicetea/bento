@@ -57,6 +57,9 @@ Client (requires the running backend):
   app minicrond SLUG -- ARGS...
   app permissions SLUG --mode check|dry-run|shallow|recursive
   app git SLUG [--repo URL --branch B [--rotate-key] | --remove]   shows the deploy key to add to the repo
+  app clone-from-backup SRC_SLUG --snapshot ID|latest --slug NEW [--keep-username] [--backup-after none|new-repo]
+  app restore-from-backup --repo REMOTE:PATH --key-file FILE --slug NEW [--snapshot ID|latest] [--keep-username] [--backup-after none|new-repo|same-repo]
+                                                      restore an app backup into a new, stopped app (prompts for "clone NEW")
   app deploy SLUG                                     clones or resets to the branch, runs ~/deploy.sh, reloads
   app webhook SLUG [--enable | --rotate | --disable]  push-to-deploy URL, secret (shown once) and recent deliveries
   ops [--target ID] | op ID | op cancel ID
@@ -535,13 +538,62 @@ func (r *runner) run(args []string) error {
 	return fmt.Errorf("unknown command %q (see bento help)", args[0])
 }
 
+// restoreFromBackup clones a snapshot of an app backup made on another
+// stack. The key is read from a file, never from argv.
+func (r *runner) restoreFromBackup(ctx context.Context, c *Client, args []string) error {
+	fs, rest := sub("app restore-from-backup", args)
+	repo := fs.String("repo", "", "rclone remote path of the repository (name:path)")
+	keyFile := fs.String("key-file", "", "file holding a repository key (from Add key on the source app)")
+	newSlug := fs.String("slug", "", "slug of the new app")
+	snapshot := fs.String("snapshot", "latest", "snapshot id or latest")
+	keep := fs.Bool("keep-username", false, "reuse the source database user when it is free")
+	after := fs.String("backup-after", "none", "none, new-repo, or same-repo (keep backing up to this repository)")
+	if err := fs.Parse(rest); err != nil {
+		return err
+	}
+	if *repo == "" || *keyFile == "" || *newSlug == "" {
+		return errors.New("usage: bento app restore-from-backup --repo REMOTE:PATH --key-file FILE --slug NEW [--snapshot ID|latest]")
+	}
+	raw, err := os.ReadFile(*keyFile)
+	if err != nil {
+		return fmt.Errorf("read key file: %w", err)
+	}
+	key := strings.TrimSpace(string(raw))
+	if key == "" {
+		return errors.New("the key file is empty")
+	}
+	fmt.Fprintln(os.Stderr, "Creates a new app from the snapshot. The new app is left stopped and unpublished.")
+	got, err := confirmPrompt("clone " + *newSlug)
+	if err != nil {
+		return err
+	}
+	acc, err := c.Mutate(ctx, "POST", "/api/v1/apps/restore-from-backup", dto.RestoreFromBackupRequest{
+		Repository: *repo, Key: key, Snapshot: *snapshot, Slug: *newSlug, KeepUsername: *keep, BackupAfter: *after,
+		Confirm: got}, r.wait, r.out)
+	if err != nil {
+		return err
+	}
+	if r.json {
+		printJSON(acc.Operation.Result)
+		return nil
+	}
+	if list, ok := acc.Operation.Result["checklist"].([]any); ok {
+		fmt.Fprintln(r.out, "Check before starting:")
+		for _, line := range list {
+			fmt.Fprintf(r.out, "  - %v\n", line)
+		}
+		fmt.Fprintf(r.out, "Start it with `bento app start %s`.\n", *newSlug)
+	}
+	return nil
+}
+
 type multiFlag []string
 
 func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
 func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 
 func (r *runner) app(ctx context.Context, c *Client, args []string) error {
-	if len(args) < 2 && !(len(args) == 1 && args[0] == "create") {
+	if len(args) < 2 && !(len(args) == 1 && (args[0] == "create" || args[0] == "restore-from-backup")) {
 		return errors.New("usage: bento app <command> SLUG (see bento help)")
 	}
 	cmd := args[0]
@@ -568,6 +620,8 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			)
 		}
 		return err
+	case "restore-from-backup":
+		return r.restoreFromBackup(ctx, c, args[1:])
 	}
 	slug := args[1]
 	base := "/api/v1/apps/" + slug
@@ -608,6 +662,51 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		}
 		_, err = c.Mutate(ctx, "DELETE", base, dto.ConfirmRequest{Confirm: got}, r.wait, r.out)
 		return err
+	case "clone-from-backup":
+		fs, rest := sub("app clone-from-backup", args[2:])
+		snapshot := fs.String("snapshot", "latest", "snapshot id (as in the app's Backup tab) or latest")
+		newSlug := fs.String("slug", "", "slug of the new app")
+		keep := fs.Bool("keep-username", false, "reuse the source database user when it is free")
+		after := fs.String("backup-after", "none", "none or new-repo")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *newSlug == "" {
+			return errors.New("usage: bento app clone-from-backup SRC_SLUG --snapshot ID|latest --slug NEW")
+		}
+		snap := *snapshot
+		if snap == "latest" {
+			var rv dto.Restic
+			if err := c.Do(ctx, "GET", base+"/restic", nil, &rv, nil); err != nil {
+				return err
+			}
+			if len(rv.Snapshots) == 0 {
+				return errors.New("the app has no snapshots (refresh the repository first)")
+			}
+			snap = rv.Snapshots[0].ID
+		}
+		fmt.Fprintln(os.Stderr, "Creates a new app from the snapshot. The new app is left stopped and unpublished.")
+		got, err := confirmPrompt("clone " + *newSlug)
+		if err != nil {
+			return err
+		}
+		acc, err := c.Mutate(ctx, "POST", base+"/restic/clone", dto.ResticCloneRequest{
+			Snapshot: snap, Slug: *newSlug, KeepUsername: *keep, BackupAfter: *after, Confirm: got}, r.wait, r.out)
+		if err != nil {
+			return err
+		}
+		if r.json {
+			printJSON(acc.Operation.Result)
+			return nil
+		}
+		if list, ok := acc.Operation.Result["checklist"].([]any); ok {
+			fmt.Fprintln(r.out, "Check before starting:")
+			for _, line := range list {
+				fmt.Fprintf(r.out, "  - %v\n", line)
+			}
+			fmt.Fprintf(r.out, "Start it with `bento app start %s`.\n", *newSlug)
+		}
+		return nil
 	case "bind":
 		fs, rest := sub("app bind", args[2:])
 		engine := fs.String("engine", "", "mysql, postgres, or sqlite")

@@ -245,9 +245,11 @@ type BindingSummary struct {
 }
 
 type App struct {
-	AppSummary  `tstype:",extends"`
-	GID         int         `json:"gid"`
-	Home        string      `json:"home"`
+	AppSummary `tstype:",extends"`
+	GID        int    `json:"gid"`
+	Home       string `json:"home"`
+	// HomePath is the stored in-container home; empty means /home/<slug>. Read-only.
+	HomePath    string      `json:"homePath,omitempty"`
 	Runtime     RuntimeSpec `json:"runtime"`
 	Route       Route       `json:"route"`
 	Env         []EnvVar    `json:"env"`
@@ -872,6 +874,9 @@ type ResticSettings struct {
 	SQLitePaths     []string        `json:"sqlitePaths"`
 	Retention       ResticRetention `json:"retention"`
 	Schedule        ResticSchedule  `json:"schedule"`
+	// IncludeSecrets stores env values and database passwords in snapshots
+	// taken after the change.
+	IncludeSecrets bool `json:"includeSecrets"`
 }
 
 type ResticSnapshot struct {
@@ -889,10 +894,13 @@ type ResticKey struct {
 }
 
 type ResticRunResult struct {
-	OpID       string  `json:"opId"`
-	Trigger    string  `json:"trigger"`
-	At         string  `json:"at"`
-	OK         bool    `json:"ok"`
+	OpID    string `json:"opId"`
+	Trigger string `json:"trigger"`
+	At      string `json:"at"`
+	OK      bool   `json:"ok"`
+	// Partial is true when restic exited 3: a snapshot exists but some files
+	// were unreadable.
+	Partial    bool    `json:"partial"`
 	SnapshotID string  `json:"snapshotId"`
 	BytesAdded int64   `json:"bytesAdded"`
 	FilesNew   int64   `json:"filesNew"`
@@ -925,18 +933,135 @@ type ResticKeyAddRequest struct {
 	Confirm string `json:"confirm"`
 }
 
-type ResticRestoreRequest struct {
-	Snapshot  string `json:"snapshot"`
-	Files     bool   `json:"files"`
-	Databases bool   `json:"databases"`
-	Confirm   string `json:"confirm"`
-}
-
 // ResticKeyAccepted carries a repository key exactly once, in the response
 // that created it.
 type ResticKeyAccepted struct {
 	Accepted `tstype:",extends"`
 	Key      string `json:"key"`
+}
+
+// ResticInspectRequest previews a snapshot (operation kind restic.inspect).
+// With a slug the preview shows the real target names.
+type ResticInspectRequest struct {
+	Snapshot     string `json:"snapshot"`
+	Slug         string `json:"slug"`
+	KeepUsername bool   `json:"keepUsername"`
+}
+
+// ResticCloneRequest restores a snapshot into a new app on this stack. The
+// confirmation is exactly "clone <slug>".
+type ResticCloneRequest struct {
+	Snapshot     string `json:"snapshot"`
+	Slug         string `json:"slug"`
+	KeepUsername bool   `json:"keepUsername"`
+	// BackupAfter is "none" (default) or "new-repo".
+	BackupAfter string `json:"backupAfter"`
+	Confirm     string `json:"confirm"`
+}
+
+// RestoreFromBackupInspectRequest previews a snapshot of an app backup made
+// on another stack (operation kind restic.inspect-remote). Repository is an
+// rclone remote path (name:path) and Key one of the repository's keys; it is
+// kept in a pending file for the operation and deleted at its end. An empty
+// snapshot means the newest; the result lists all snapshots.
+type RestoreFromBackupInspectRequest struct {
+	Repository   string `json:"repository"`
+	Key          string `json:"key"`
+	Snapshot     string `json:"snapshot"`
+	Slug         string `json:"slug"`
+	KeepUsername bool   `json:"keepUsername"`
+}
+
+// RestoreFromBackupRequest clones a snapshot of another stack's app backup
+// into a new app on this stack (operation kind app.restore-from-backup). The
+// confirmation is exactly "clone <slug>".
+type RestoreFromBackupRequest struct {
+	Repository   string `json:"repository"`
+	Key          string `json:"key"`
+	Snapshot     string `json:"snapshot"`
+	Slug         string `json:"slug"`
+	KeepUsername bool   `json:"keepUsername"`
+	// BackupAfter is "none" (default), "new-repo", or "same-repo" (keep
+	// backing up to this repository with this key).
+	BackupAfter string `json:"backupAfter"`
+	Confirm     string `json:"confirm"`
+}
+
+// The types below describe the result of the restic.inspect and
+// app.clone-from-backup operations (Operation.result). They never carry
+// secret values.
+
+type ResticCloneDatabase struct {
+	Engine         Engine `json:"engine"`
+	Service        string `json:"service"`
+	Version        string `json:"version"`
+	Source         string `json:"source"`
+	Target         string `json:"target"`
+	SourceUsername string `json:"sourceUsername"`
+	Username       string `json:"username"`
+	UsernameKept   bool   `json:"usernameKept"`
+	UsernameNote   string `json:"usernameNote"`
+	PasswordKept   bool   `json:"passwordKept"`
+}
+
+type ResticCloneSQLite struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type ResticCloneDomain struct {
+	Name  string `json:"name"`
+	InUse bool   `json:"inUse"`
+}
+
+// ResticClonePreview is the result of restic.inspect.
+type ResticClonePreview struct {
+	Snapshot       string                `json:"snapshot"`
+	SnapshotTime   string                `json:"snapshotTime"`
+	FormatVersion  int                   `json:"formatVersion"`
+	SizeBytes      int64                 `json:"sizeBytes"`
+	SourceSlug     string                `json:"sourceSlug"`
+	SourceAppID    string                `json:"sourceAppId"`
+	StackID        string                `json:"stackId"`
+	Slug           string                `json:"slug"`
+	Secrets        bool                  `json:"secrets"`
+	RuntimeKind    string                `json:"runtimeKind"`
+	RuntimeVersion string                `json:"runtimeVersion"`
+	Resources      Resources             `json:"resources"`
+	EnvKeys        []string              `json:"envKeys"`
+	EmptyEnv       []string              `json:"emptyEnv"`
+	HomePath       string                `json:"homePath"`
+	Databases      []ResticCloneDatabase `json:"databases"`
+	SQLite         []ResticCloneSQLite   `json:"sqlite"`
+	Minicron       bool                  `json:"minicron"`
+	Domains        []ResticCloneDomain   `json:"domains"`
+	Git            bool                  `json:"git"`
+	Notes          []string              `json:"notes"`
+	Blockers       []string              `json:"blockers"`
+	// Snapshots lists a remote repository's snapshots, newest first (empty
+	// for a same-stack preview).
+	Snapshots []ResticSnapshot `json:"snapshots"`
+}
+
+// ResticCloneResult is the result of app.clone-from-backup: the checklist of
+// what to check before starting the stopped clone.
+type ResticCloneResult struct {
+	AppID        string                `json:"appId"`
+	Slug         string                `json:"slug"`
+	SourceSlug   string                `json:"sourceSlug"`
+	SourceAppID  string                `json:"sourceAppId"`
+	Snapshot     string                `json:"snapshot"`
+	SnapshotTime string                `json:"snapshotTime"`
+	Stopped      bool                  `json:"stopped"`
+	HomePath     string                `json:"homePath"`
+	Databases    []ResticCloneDatabase `json:"databases"`
+	SQLite       []ResticCloneSQLite   `json:"sqlite"`
+	EmptyEnv     []string              `json:"emptyEnv"`
+	Minicron     bool                  `json:"minicron"`
+	// DeployKey is the new public deploy key to add to the git host.
+	DeployKey string              `json:"deployKey"`
+	Domains   []ResticCloneDomain `json:"domains"`
+	Checklist []string            `json:"checklist"`
 }
 
 // AppBackupSummary is one app's restic backup state for the Backups page.

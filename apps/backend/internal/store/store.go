@@ -22,9 +22,12 @@ import (
 // refused.
 const ApplicationID = 0x424E5431
 
-// SchemaVersion is the current baseline. Older or newer versions are refused
-// without modifying the file.
-const SchemaVersion = 2
+// SchemaVersion is the current schema. Version 2 databases are migrated to it
+// by Open; every other version is refused without modifying the file.
+const SchemaVersion = 3
+
+// MigratableFromVersion is the only older schema Open upgrades.
+const MigratableFromVersion = 2
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -57,7 +60,9 @@ func Inspect(path string) (appID int64, version int64, err error) {
 	return appID, version, nil
 }
 
-// CheckCompatible refuses foreign, old, or future state with guidance.
+// CheckCompatible refuses foreign, old, or future state with guidance. It
+// accepts MigratableFromVersion (Open migrates it) and SchemaVersion, and
+// never writes.
 func CheckCompatible(path string) error {
 	appID, version, err := Inspect(path)
 	if err != nil {
@@ -71,8 +76,8 @@ func CheckCompatible(path string) error {
 			appID,
 		)
 	}
-	if version < SchemaVersion {
-		return fmt.Errorf("%w: schema version %d is older than supported %d", ErrUnsupportedState, version, SchemaVersion)
+	if version < MigratableFromVersion {
+		return fmt.Errorf("%w: schema version %d is older than supported %d", ErrUnsupportedState, version, MigratableFromVersion)
 	}
 	if version > SchemaVersion {
 		return fmt.Errorf(
@@ -163,7 +168,44 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("%w: integrity check failed (%s %v); refusing to continue", ErrUnsupportedState, check, err)
 	}
+	var version int64
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrate(db, version); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, path: path}, nil
+}
+
+// migrate upgrades a schema 2 database to SchemaVersion in one transaction.
+// The version is re-read inside the transaction, so a migration runs only from
+// MigratableFromVersion; a failure leaves the database at its old version.
+func migrate(db *sql.DB, version int64) error {
+	if version == SchemaVersion {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var current int64
+	if err := tx.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
+		return err
+	}
+	if current != MigratableFromVersion {
+		return fmt.Errorf("%w: cannot migrate schema version %d", ErrUnsupportedState, current)
+	}
+	if _, err := tx.Exec("ALTER TABLE apps ADD COLUMN home_path TEXT"); err != nil {
+		return fmt.Errorf("migrate schema 2 to 3: %w", err)
+	}
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
+		return fmt.Errorf("migrate schema 2 to 3: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -238,6 +280,7 @@ CREATE TABLE apps (
   provisioned            INTEGER NOT NULL DEFAULT 0,
   created_at             TEXT NOT NULL,
   updated_at             TEXT NOT NULL,
+  home_path              TEXT,
   CHECK (uid = gid),
   CHECK (publication = 'unpublished' OR ingress = 'managed')
 ) STRICT;

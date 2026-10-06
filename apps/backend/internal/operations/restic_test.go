@@ -5,13 +5,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
-	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
@@ -243,81 +244,12 @@ func TestResticFailedBackupIsInHistory(t *testing.T) {
 	}
 }
 
-func TestResticRestoreSwapsHomeAndKeepsPrevious(t *testing.T) {
-	h, app := resticHarness(t, nil)
-	ctx := t.Context()
-	home := h.layout.AppHome(app.Slug)
-	if err := os.WriteFile(filepath.Join(home, "old.txt"), []byte("old"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sidecar, _ := os.ReadFile(h.layout.HomeSidecar(app.Slug))
-	h.fake.ExecHook = wrapHook(h.fake.ExecHook, func(a []string, _ docker.ExecRequest) (docker.ExecResult, bool) {
-		if a[0] != "restore" {
-			return docker.ExecResult{}, false
-		}
-		dirs, _ := filepath.Glob(filepath.Join(h.layout.StagingDir(), "restic-*", "data"))
-		for _, d := range dirs {
-			must(t, os.MkdirAll(filepath.Join(d, "backup", "home", "app", "storage"), 0o755))
-			must(t, os.WriteFile(filepath.Join(d, "backup", "home", "app", "storage", "u.jpg"), []byte("img"), 0o644))
-			// A sidecar from the source stack must not replace the live one.
-			must(t, os.WriteFile(filepath.Join(d, "backup", "home", domain.HomeSidecarName), []byte("{}"), 0o644))
-			must(t, os.MkdirAll(filepath.Join(d, "backup", "bento"), 0o700))
-			raw, _ := json.Marshal(ResticManifest{FormatVersion: ResticFormatVersion, AppID: "aother", Slug: "shop",
-				Paths: []string{"."}, Dumps: []ResticDump{}, HomeSQLite: []string{}})
-			must(t, os.WriteFile(filepath.Join(d, "backup", "bento", "manifest.json"), raw, 0o600))
-		}
-		return docker.ExecResult{}, true
-	})
-	h.resticInit(app)
-	if _, err := h.c.SubmitResticRestore(ctx, app.ID, ResticRestoreRequest{Snapshot: "aaaaaaaa", Files: true},
-		"restore", ""); !errors.Is(err, ErrConfirmation) {
-		t.Fatalf("want confirmation error, got %v", err)
-	}
-	op, err := h.c.SubmitResticRestore(ctx, app.ID, ResticRestoreRequest{Snapshot: "aaaaaaaa", Files: true},
-		"restore shop", "")
-	h.mustSucceed(op, err)
-	restored := filepath.Join(home, "app", "storage", "u.jpg")
-	o, _, err := platform.StatOwner(restored)
-	if err != nil || o.UID != app.UID {
-		t.Fatalf("restored file owner %+v %v", o, err)
-	}
-	if _, err := os.Stat(filepath.Join(home, "old.txt")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("whole-home restore must replace the home")
-	}
-	if got, _ := os.ReadFile(h.layout.HomeSidecar(app.Slug)); string(got) != string(sidecar) {
-		t.Fatal("live identity record must be kept")
-	}
-	kept, _ := filepath.Glob(filepath.Join(h.layout.HomesDir(), ".pre-restore-shop-*", "home", "old.txt"))
-	if len(kept) != 1 {
-		t.Fatal("previous home must be kept aside")
-	}
-	if err := h.c.verifyHomeIdentity(app); err != nil {
-		t.Fatalf("restored home must still verify: %v", err)
-	}
-}
-
-func TestMapDumpRequiresSameVersion(t *testing.T) {
-	app := domain.App{Slug: "shop", Bindings: []domain.Binding{
-		{Engine: domain.EngineMySQL, Service: "mysql", Databases: []string{"shop_main"}},
-	}}
-	man := ResticManifest{Dumps: []ResticDump{{Engine: domain.EngineMySQL, Version: "8.4", Database: "legacy"}}}
-	b, db, err := mapDump(app, man, man.Dumps[0], map[string]string{"mysql": "8.4"})
-	if err != nil || db != "shop_main" || b.Service != "mysql" {
-		t.Fatalf("single database should map: %v %s", err, db)
-	}
-	if _, _, err := mapDump(app, man, man.Dumps[0], map[string]string{"mysql": "8.0"}); err == nil {
-		t.Fatal("a different major version must be refused")
-	}
-	man.Dumps = append(man.Dumps, ResticDump{Engine: domain.EngineMySQL, Version: "8.4", Database: "other"})
-	if _, _, err := mapDump(app, man, man.Dumps[0], map[string]string{"mysql": "8.4"}); err == nil {
-		t.Fatal("ambiguous mapping must be refused")
-	}
-}
-
 func TestReadManifestRejectsUnsafePaths(t *testing.T) {
 	dir := t.TempDir()
 	for _, m := range []ResticManifest{
 		{FormatVersion: 99},
+		{FormatVersion: 0},
+		{FormatVersion: ResticFormatVersion, Minicron: &ResticMinicron{DB: "../x.db"}},
 		{FormatVersion: ResticFormatVersion, Paths: []string{"../x"}},
 		{FormatVersion: ResticFormatVersion, HomeSQLite: []string{"/etc/shadow"}},
 		{FormatVersion: ResticFormatVersion, Dumps: []ResticDump{{File: "../../x.sql"}}},
@@ -344,10 +276,6 @@ func TestResticClaims(t *testing.T) {
 	other := classify(store.Operation{Kind: KindResticBackup, TargetID: "a2"}, lookup)
 	if bk.conflicts(other) {
 		t.Fatal("backups of different apps run in parallel")
-	}
-	rs := classify(store.Operation{Kind: KindResticRestore, TargetID: "a1"}, lookup)
-	if !slices.Contains(rs.excl, appClaim("a1")) {
-		t.Fatalf("restore claims %+v", rs)
 	}
 }
 
@@ -430,4 +358,222 @@ func TestResticBackupWarnsWhenLockCannotBeDeleted(t *testing.T) {
 		}
 	}
 	t.Fatalf("no lock warning in %+v", events)
+}
+
+// backupCapture runs one backup and returns what the backup exec saw: the
+// staged Bento directory files, the exclude file and the restic arguments.
+type backupCapture struct {
+	manifest ResticManifest
+	spec     AppSpec
+	secrets  []byte
+	excludes string
+	args     [][]string
+}
+
+func runCapturedBackup(t *testing.T, h *harness, app domain.App, onBackup func(args []string, req docker.ExecRequest)) *backupCapture {
+	t.Helper()
+	cap := &backupCapture{}
+	h.fake.ExecHook = wrapHook(h.fake.ExecHook, func(a []string, req docker.ExecRequest) (docker.ExecResult, bool) {
+		switch a[0] {
+		case "forget":
+			cap.args = append(cap.args, a)
+		case "backup":
+			cap.args = append(cap.args, a)
+			dirs, _ := filepath.Glob(filepath.Join(h.layout.StagingDir(), "restic-*"))
+			for _, d := range dirs {
+				readJSON(t, filepath.Join(d, "data", "manifest.json"), &cap.manifest)
+				readJSON(t, filepath.Join(d, "data", "app.json"), &cap.spec)
+				cap.secrets, _ = os.ReadFile(filepath.Join(d, "data", "secrets.json"))
+				if info, err := os.Stat(filepath.Join(d, "data", "secrets.json")); err == nil && info.Mode().Perm() != 0o600 {
+					t.Errorf("secrets.json mode %v", info.Mode().Perm())
+				}
+				b, _ := os.ReadFile(filepath.Join(d, "ctl", "excludes"))
+				cap.excludes = string(b)
+			}
+			if onBackup != nil {
+				onBackup(a, req)
+			}
+			return docker.ExecResult{}, onBackupDone(req)
+		}
+		return docker.ExecResult{}, false
+	})
+	h.resticInit(app)
+	op, err := h.c.SubmitResticBackup(t.Context(), app.ID, "manual", "")
+	h.mustSucceed(op, err)
+	return cap
+}
+
+func onBackupDone(req docker.ExecRequest) bool {
+	_, _ = req.Stdout.Write([]byte(`{"message_type":"summary","snapshot_id":"cccccccc","files_new":1,"total_files_processed":1,"data_added":1}` + "\n"))
+	return true
+}
+
+func TestResticBackupSecretsOffByDefault(t *testing.T) {
+	h, app := resticHarness(t, nil)
+	app.Runtime.Env = []domain.EnvVar{{Key: "APP_KEY", Value: "base64:secret"}, {Key: "APP_ENV", Value: "production"}}
+	must(t, store.UpdateApp(t.Context(), h.store.DB(), app))
+	cap := runCapturedBackup(t, h, app, nil)
+	if cap.secrets != nil || cap.manifest.Secrets {
+		t.Fatalf("secrets must be off by default: %q %+v", cap.secrets, cap.manifest)
+	}
+	if cap.manifest.FormatVersion != 2 || cap.manifest.HomePath != app.ContainerHome() {
+		t.Fatalf("manifest %+v", cap.manifest)
+	}
+	for _, e := range cap.spec.Runtime.Env {
+		if e.Key == "APP_KEY" && e.Value != domain.RedactedEnvValue {
+			t.Fatal("app.json must stay redacted")
+		}
+	}
+}
+
+func TestResticBackupIncludeSecretsWritesSecretsJSON(t *testing.T) {
+	h, app := resticHarness(t, nil)
+	ctx := t.Context()
+	app.Runtime.Env = []domain.EnvVar{{Key: "APP_KEY", Value: "base64:secret"}, {Key: "APP_ENV", Value: "production"}}
+	must(t, store.UpdateApp(ctx, h.store.DB(), app))
+	v, _ := h.c.ResticSettings(ctx, app.ID)
+	s := v.Settings
+	s.IncludeSecrets = true
+	if _, err := h.c.SaveResticSettings(ctx, app.ID, s); err != nil {
+		t.Fatal(err)
+	}
+	cap := runCapturedBackup(t, h, app, nil)
+	if !cap.manifest.Secrets {
+		t.Fatalf("manifest must flag secrets: %+v", cap.manifest)
+	}
+	var sec ResticSecrets
+	must(t, json.Unmarshal(cap.secrets, &sec))
+	if len(sec.Env) != 1 || sec.Env[0].Key != "APP_KEY" || sec.Env[0].Value != "base64:secret" {
+		t.Fatalf("secrets env %+v", sec.Env)
+	}
+	if len(sec.Bindings) != 0 {
+		t.Fatalf("secrets bindings %+v", sec.Bindings)
+	}
+	if strings.Contains(string(cap.secrets), "production") {
+		t.Fatal("only redacted values belong in secrets.json")
+	}
+	raw, _ := json.Marshal(cap.spec)
+	if strings.Contains(string(raw), "base64:secret") {
+		t.Fatal("app.json leaked a secret")
+	}
+}
+
+func TestResticSecretsAndRedactorCoverBindingPasswords(t *testing.T) {
+	app := domain.App{
+		Runtime: domain.Runtime{Env: []domain.EnvVar{{Key: "APP_KEY", Value: "k-123"}, {Key: "APP_ENV", Value: "production"}}},
+		Bindings: []domain.Binding{
+			{Engine: domain.EngineSQLite, SQLiteFileID: "f1"},
+			{Engine: domain.EngineMySQL, Username: "u7", Password: "dbpass-1"},
+		},
+	}
+	sec := resticSecrets(app)
+	if len(sec.Bindings) != 1 || sec.Bindings[0].Index != 1 || sec.Bindings[0].Password != "dbpass-1" ||
+		len(sec.Env) != 1 || sec.Env[0].Value != "k-123" {
+		t.Fatalf("secrets %+v", sec)
+	}
+	got := secretRedactor(app).Replace("failed with dbpass-1 and k-123 in production")
+	if strings.Contains(got, "dbpass-1") || strings.Contains(got, "k-123") || !strings.Contains(got, "production") {
+		t.Fatalf("redactor output %q", got)
+	}
+	if dumpSuffix("shop", "shop_analytics") != "analytics" || dumpSuffix("shop", "legacy") != "legacy" {
+		t.Fatal("dump suffix")
+	}
+}
+
+func TestResticBackupTagsStackAndFiltersForget(t *testing.T) {
+	h, app := resticHarness(t, nil)
+	cap := runCapturedBackup(t, h, app, nil)
+	var backupArgs, forgetArgs []string
+	for _, a := range cap.args {
+		if a[0] == "backup" {
+			backupArgs = a
+		} else {
+			forgetArgs = a
+		}
+	}
+	stack := h.c.Stack.ID
+	if !slices.Contains(backupArgs, "stack="+stack) || !slices.Contains(backupArgs, "app="+app.ID) {
+		t.Fatalf("backup tags %v", backupArgs)
+	}
+	if !slices.Contains(forgetArgs, "app="+app.ID+",stack="+stack) {
+		t.Fatalf("forget filter %v", forgetArgs)
+	}
+}
+
+func TestResticBackupExit3IsPartial(t *testing.T) {
+	h, app := resticHarness(t, func(a []string, req docker.ExecRequest) (docker.ExecResult, bool) {
+		if a[0] != "backup" {
+			return docker.ExecResult{}, false
+		}
+		_, _ = req.Stdout.Write([]byte(`{"message_type":"error","item":"/backup/home/x","error":{"message":"permission denied"}}` + "\n"))
+		_, _ = req.Stdout.Write([]byte(`{"message_type":"summary","snapshot_id":"dddddddd","files_new":1,"total_files_processed":2,"data_added":1}` + "\n"))
+		return docker.ExecResult{ExitCode: 3}, true
+	})
+	h.resticInit(app)
+	op, err := h.c.SubmitResticBackup(t.Context(), app.ID, "manual", "")
+	h.mustSucceed(op, err)
+	v, _ := h.c.ResticSettings(t.Context(), app.ID)
+	got := v.State.LastBackup
+	if got == nil || got.OK || !got.Partial || got.SnapshotID != "dddddddd" || !strings.Contains(got.Error, "1 files") {
+		t.Fatalf("partial run %+v", got)
+	}
+}
+
+func TestResticManifestRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	in := ResticManifest{
+		FormatVersion: ResticFormatVersion, StackID: "stk", AppID: "a1", Slug: "shop",
+		CreatedAt: time.Date(2026, 10, 6, 3, 30, 0, 0, time.UTC), HomePath: "/home/shop", Paths: []string{"."},
+		Dumps: []ResticDump{
+			{File: "db/mysql-mysql84-shop_main.sql", Engine: domain.EngineMySQL, Service: "mysql84", Version: "8.4",
+				Database: "shop_main", Binding: 1, Suffix: "main", Username: "u7"},
+			{File: "sqlite/f1.db", Engine: domain.EngineSQLite, Database: "f1", Binding: 2, FileID: "f1", FileName: "shop.db"},
+		},
+		HomeSQLite: []string{".local/share/minicron/minicron.db"},
+		Minicron:   &ResticMinicron{DB: "home-sqlite/.local/share/minicron/minicron.db"},
+		Secrets:    true,
+	}
+	raw, _ := json.Marshal(in)
+	must(t, os.WriteFile(filepath.Join(dir, "manifest.json"), raw, 0o600))
+	got, err := readManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, in) {
+		t.Fatalf("round trip differs:\n got %+v\nwant %+v", got, in)
+	}
+	// Format 1 manifests still load, without the new fields.
+	v1 := `{"formatVersion":1,"stackId":"s","appId":"a1","slug":"shop","createdAt":"2026-10-01T00:00:00Z","paths":["."],"dumps":[{"file":"db/x.sql","engine":"mysql","database":"d"}],"homeSqlite":[]}`
+	must(t, os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(v1), 0o600))
+	m1, err := readManifest(dir)
+	if err != nil || m1.HomePath != "" || m1.Secrets || m1.Minicron != nil {
+		t.Fatalf("format 1: %+v %v", m1, err)
+	}
+	must(t, os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"formatVersion":2,"bogus":1}`), 0o600))
+	if _, err := readManifest(dir); err == nil {
+		t.Fatal("unknown manifest fields must be refused")
+	}
+}
+
+func TestResticBackupMinicronSelectionAndExcludes(t *testing.T) {
+	h, app := resticHarness(t, nil)
+	dir := filepath.Join(h.layout.AppHome(app.Slug), domain.MinicronDataDir)
+	must(t, os.MkdirAll(dir, 0o755))
+	for _, f := range []string{"minicron.db", "minicron-logs.db"} {
+		must(t, os.WriteFile(filepath.Join(dir, f), append([]byte("SQLite format 3\x00"), make([]byte, 64)...), 0o600))
+	}
+	got := h.c.homeSQLiteFiles(app, domain.DefaultResticSettings())
+	if !slices.Equal(got, []string{domain.MinicronDataDir + "/minicron.db"}) {
+		t.Fatalf("minicrond selection %v", got)
+	}
+	// The fake engine cannot run sqlite3 .backup; run the backup without the files.
+	for _, f := range []string{"minicron.db", "minicron-logs.db"} {
+		must(t, os.Remove(filepath.Join(dir, f)))
+	}
+	cap := runCapturedBackup(t, h, app, nil)
+	for _, want := range []string{"minicron-logs.db", "minicron-logs.db-wal", "minicron-logs.db-shm", "minicron.sock"} {
+		if !strings.Contains(cap.excludes, "/backup/home/"+domain.MinicronDataDir+"/"+want+"\n") {
+			t.Errorf("exclude %s missing:\n%s", want, cap.excludes)
+		}
+	}
 }

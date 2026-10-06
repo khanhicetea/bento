@@ -14,12 +14,12 @@ The fix is to let the credential delete while making deletes **reversible** on t
 every overwritten or deleted object as an old version for a fixed number of days, and the Bento credential is not
 allowed to touch those old versions or change the bucket's rules.
 
-| Threat | Without protection | With this setup |
-| --- | --- | --- |
-| restic deletes a lock / prunes old packs | object gone | object becomes a noncurrent version, removed after the window |
-| Attacker on the host runs `rclone purge` / `restic forget --prune` | backups gone | only delete markers; every version restorable for the window |
-| Attacker tries to delete old versions or disable versioning | possible | denied by IAM (and by Object Lock, if enabled) |
-| Attacker silently stops backups | not noticed | the Backups page shows failed/overdue runs; keep watching it |
+| Threat                                                             | Without protection | With this setup                                               |
+| ------------------------------------------------------------------ | ------------------ | ------------------------------------------------------------- |
+| restic deletes a lock / prunes old packs                           | object gone        | object becomes a noncurrent version, removed after the window |
+| Attacker on the host runs `rclone purge` / `restic forget --prune` | backups gone       | only delete markers; every version restorable for the window  |
+| Attacker tries to delete old versions or disable versioning        | possible           | denied by IAM (and by Object Lock, if enabled)                |
+| Attacker silently stops backups                                    | not noticed        | the Backups page shows failed/overdue runs; keep watching it  |
 
 ## S3 (AWS and compatible)
 
@@ -148,13 +148,13 @@ works.
 
 ## Other providers
 
-| Provider | Versioning / history | Notes |
-| --- | --- | --- |
-| Backblaze B2 | Keeps all versions by default; set the bucket lifecycle to "Keep prior versions for N days" | Through the S3 API a delete hides the file (like a delete marker). Object Lock is available. Restrict the application key to the bucket and prefix. |
-| Wasabi | Versioning + Object Lock (S3 API) | Same S3 policy; Wasabi bills a minimum storage duration. |
-| Cloudflare R2 | No object versioning | Use bucket lock rules (retention) on the prefix, or choose another provider for protected backups. |
-| MinIO / Garage / self-hosted S3 | Versioning and Object Lock in MinIO | Same S3 policy. |
-| SFTP / local disk | None | Use filesystem snapshots (ZFS, btrfs) on the storage host, which the Bento host can't reach. |
+| Provider                        | Versioning / history                                                                        | Notes                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backblaze B2                    | Keeps all versions by default; set the bucket lifecycle to "Keep prior versions for N days" | Through the S3 API a delete hides the file (like a delete marker). Object Lock is available. Restrict the application key to the bucket and prefix. |
+| Wasabi                          | Versioning + Object Lock (S3 API)                                                           | Same S3 policy; Wasabi bills a minimum storage duration.                                                                                            |
+| Cloudflare R2                   | No object versioning                                                                        | Use bucket lock rules (retention) on the prefix, or choose another provider for protected backups.                                                  |
+| MinIO / Garage / self-hosted S3 | Versioning and Object Lock in MinIO                                                         | Same S3 policy.                                                                                                                                     |
+| SFTP / local disk               | None                                                                                        | Use filesystem snapshots (ZFS, btrfs) on the storage host, which the Bento host can't reach.                                                        |
 
 ## Recovering after deletion
 

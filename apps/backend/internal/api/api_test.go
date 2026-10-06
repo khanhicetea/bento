@@ -819,3 +819,83 @@ func TestQueuedOperationReportsWaitingOn(t *testing.T) {
 		t.Fatalf("finished operation still waiting on %q", got.WaitingOn)
 	}
 }
+
+func TestResticCloneEndpointsRefuseBadRequests(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}}}`)
+	var acc dto.Accepted
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+
+	for _, path := range []string{"/api/v1/apps/shop/restic/inspect", "/api/v1/apps/shop/restic/clone"} {
+		// Writes need the session CSRF token and exact origin.
+		resp, _ := c.do("POST", path, `{"snapshot":"aaaaaaaa","slug":"shop-copy","confirm":"clone shop-copy"}`, map[string]string{"Origin": origin})
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s without csrf -> %d", path, resp.StatusCode)
+		}
+		// Unknown fields are refused.
+		resp, _ = c.write("POST", path, `{"snapshot":"aaaaaaaa","slug":"shop-copy","extra":1}`)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s with unknown field -> %d", path, resp.StatusCode)
+		}
+		// The app has no repository yet.
+		valid := `{"snapshot":"aaaaaaaa","slug":"shop-copy","confirm":"clone shop-copy"}`
+		if strings.HasSuffix(path, "/inspect") {
+			valid = `{"snapshot":"aaaaaaaa","slug":"shop-copy"}`
+		}
+		resp, _ = c.write("POST", path, valid)
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("%s without a repository -> %d", path, resp.StatusCode)
+		}
+		resp, _ = c.write("POST", strings.Replace(path, "/shop/", "/missing/", 1), `{"snapshot":"aaaaaaaa","slug":"shop-copy"}`)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s for an unknown app -> %d", path, resp.StatusCode)
+		}
+	}
+	// The removed in-place restore stays gone.
+	resp, _ := c.write("POST", "/api/v1/apps/shop/restic/restore", `{}`)
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("in-place restore -> %d", resp.StatusCode)
+	}
+}
+
+func TestRestoreFromBackupEndpointsRefuseBadRequests(t *testing.T) {
+	c, _ := newServer(t)
+	c.login()
+	for _, path := range []string{"/api/v1/apps/restore-from-backup/inspect", "/api/v1/apps/restore-from-backup"} {
+		valid := `{"repository":"b2:bucket/shop","key":"a-key","snapshot":"","slug":"shop-copy","confirm":"clone shop-copy"}`
+		if strings.HasSuffix(path, "/inspect") {
+			valid = `{"repository":"b2:bucket/shop","key":"a-key","snapshot":"","slug":"shop-copy"}`
+		}
+		// Writes need the session CSRF token and exact origin.
+		resp, _ := c.do("POST", path, valid, map[string]string{"Origin": origin})
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s without csrf -> %d", path, resp.StatusCode)
+		}
+		// Unknown fields are refused.
+		resp, _ = c.write("POST", path, `{"repository":"b2:bucket/shop","key":"a-key","extra":1}`)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s with unknown field -> %d", path, resp.StatusCode)
+		}
+		// Invalid input (no key, a repository that is not an rclone remote path).
+		resp, body := c.write("POST", path, `{"repository":"not a remote","key":"","slug":"Bad Slug"}`)
+		if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("%s with invalid input -> %d %s", path, resp.StatusCode, body)
+		}
+		if strings.Contains(body, "a-key") {
+			t.Fatalf("%s echoed the key", path)
+		}
+		// A remote missing from the rclone config is refused.
+		resp, _ = c.write("POST", path, valid)
+		if resp.StatusCode == http.StatusAccepted {
+			t.Fatalf("%s accepted a remote that is not configured", path)
+		}
+	}
+	// A wrong confirmation is refused before anything is queued.
+	resp, _ := c.write("POST", "/api/v1/apps/restore-from-backup",
+		`{"repository":"b2:bucket/shop","key":"a-key","slug":"shop-copy","confirm":"clone other"}`)
+	if resp.StatusCode == http.StatusAccepted {
+		t.Fatalf("wrong confirmation -> %d", resp.StatusCode)
+	}
+}

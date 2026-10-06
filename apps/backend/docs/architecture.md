@@ -58,9 +58,14 @@ One SQLite file (`bento.db`, `0600`) opened with `modernc.org/sqlite` (pure Go),
 connection, and `BEGIN IMMEDIATE` transactions.
 
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
-  version (currently 2). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older,
-  newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). There are no migrations yet; a future version adds
-  them and bumps `SchemaVersion`.
+  version (currently 3). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older
+  than 2, newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). It accepts 2 (to migrate) and 3.
+- **Migrations:** the first one is v2 → v3: `store.Open` runs `ALTER TABLE apps ADD COLUMN home_path TEXT` and
+  `PRAGMA user_version = 3` in one transaction, only from v2 (the version is re-read inside the transaction); a failure
+  leaves the file at v2. `stack.Import` copies the archived `state.db` and opens it through the same path, so a v2
+  export imports and migrates. `apps.home_path` (NULL = `/home/<slug>`) is the in-container home
+  (`domain.App.HomePath`, returned by `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as
+  `/home/<slug-shaped>`, written only at insert, and exposed read-only as the App DTO's `homePath`.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `domains` (one owner per name, one primary per owner),
   `proxies`, `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
@@ -348,6 +353,10 @@ operation kind (with its claims) from `Submit`.
 
 ## App backups (restic): `operations/restic.go`, `backup/restic.go`
 
+The web Backup tab (`BackupPanel.tsx`) shows two independent cards: Database backup (`DatabaseBackupCard.tsx`, reads
+the stack's `backup` schedules and artifacts through the existing `/backups` endpoints) and App backup (the restic
+settings, repository, snapshots, keys). The cards share no state, and the tab adds no backend behaviour.
+
 Each app may have one restic repository on an rclone remote: operator settings under `settings` key `restic:<appId>`,
 operation bookkeeping (repository id, cached snapshots/keys, last runs) under `restic-state:<appId>`, schedule row
 `restic-<appId>` of kind `app-backup`. The key lives in `secrets/restic/<appId>.key` (`0400`). Init and key-add
@@ -365,11 +374,14 @@ writable.
 `restic.backup` (shares `app:<id>` and bound services, `restic:<id>` exclusive, pool of 2): plain dumps first
 (`DumpPlain`), then `.backup` copies of minicrond's and listed home SQLite files (`SnapshotHomeSQLite`, as the app
 UID, network `none`), `app.json` (env values with secret-looking names redacted) and `manifest.json`, then one
-`restic backup` with the sidecar and live SQLite files excluded, then `forget` (and `--prune` at most weekly).
-`restic.restore` (exclusive app, app must be stopped): `restic restore` into staging, validate the manifest,
-map dumps to bound databases (same name or the single one of that engine; relational versions must match exactly),
-`ChownTree` the restored tree to the app, move replaced paths to `homes/.pre-restore-<slug>-<time>/`, keep the live
-identity sidecar, then reuse `RestoreRelational`/`RestoreSQLite`.
+`restic backup` with the sidecar, live SQLite files, and minicrond's log database/socket excluded (tags `app=`,
+`stack=`, `slug=`, `trigger=`), then `forget` filtered on `app=<id>,stack=<id>` (and `--prune` at most weekly). Only
+minicrond's `minicron.db` is snapshotted. `manifest.json` is format 2 (`homePath` from `ContainerHome()`, per-dump
+binding/suffix/username, SQLite `fileId`/`fileName`, `minicron`, `secrets`); `readManifest` still reads format 1.
+When the app's `includeSecrets` setting is on, `secrets.json` (`0600` in staging) holds the redacted env values and
+binding passwords; `app.json` stays redacted, and `secretRedactor` scrubs those values from operation output. Restic
+exit 3 records the run as `partial` (not OK). There is no in-place restore: app backups restore only into a new app
+(clone, planned).
 
 ## Transfer
 

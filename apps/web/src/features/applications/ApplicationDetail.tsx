@@ -76,6 +76,7 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
         ))}
       </nav>
       <OperationBanner app={app} />
+      {tab === "overview" && <CloneNote appId={app.id} />}
       {tab === "overview" && <Overview app={app} />}
       {tab === "deploy" && <DeployPanel app={app} />}
       {tab === "monitoring" && <MonitoringPanel app={app} />}
@@ -207,6 +208,27 @@ function OperationBanner({ app }: { app: T.App }) {
   );
 }
 
+// The clone is recorded only in the result of the app.clone-from-backup operation, which targets the
+// source app; find the one whose result names this app.
+function CloneNote({ appId }: { appId: string }) {
+  const ops = useQuery({
+    queryKey: keys.operations.list(),
+    queryFn: ({ signal }) => api.operations.list(undefined, signal),
+  });
+  const clone = ops.data?.operations.find(
+    (op) => op.kind === "app.clone-from-backup" && op.state === "succeeded" && op.result?.appId === appId,
+  );
+  const source = clone?.result?.sourceSlug;
+  const time = clone?.result?.snapshotTime;
+  if (typeof source !== "string" || typeof time !== "string") return null;
+  const at = Date.parse(time);
+  return (
+    <p className="mb-4 text-sm text-muted-foreground">
+      Cloned from {source} @ {Number.isFinite(at) ? new Date(at).toLocaleString() : time}
+    </p>
+  );
+}
+
 function Overview({ app }: { app: T.App }) {
   return (
     <>
@@ -246,6 +268,9 @@ function Overview({ app }: { app: T.App }) {
               ["Container", app.observed.containerId ? <CopyableCode value={app.observed.containerId} /> : "—"],
               ["Started", <span title={app.observed.startedAt}>{formatRelative(app.observed.startedAt)}</span>],
               ["Generation", `${app.configGeneration}${app.observed.generationCurrent ? "" : " · pending"}`],
+              ...(app.homePath
+                ? [["Home inside the container", <code>{app.homePath}</code>] as [string, React.ReactNode]]
+                : []),
               [
                 "Command",
                 app.runtime.http ? (

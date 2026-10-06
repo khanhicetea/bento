@@ -61,6 +61,9 @@ type App struct {
 	Provisioned           bool
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	// HomePath is the in-container home when it differs from /home/<slug>
+	// (set only when an app is created from a backup). Empty means the default.
+	HomePath string
 
 	Bindings []Binding
 	Domains  []DomainLink
@@ -81,7 +84,12 @@ func (a App) Redactor() *strings.Replacer {
 }
 
 // ContainerHome is the home path inside containers.
-func (a App) ContainerHome() string { return "/home/" + a.Slug }
+func (a App) ContainerHome() string {
+	if a.HomePath != "" {
+		return a.HomePath
+	}
+	return "/home/" + a.Slug
+}
 
 // ContainerCode is the fixed source-code directory inside containers.
 func (a App) ContainerCode() string { return a.ContainerHome() + "/app" }

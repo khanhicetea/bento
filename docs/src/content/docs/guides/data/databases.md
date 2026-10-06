@@ -20,6 +20,7 @@ a missing volume is **blocked** instead of started empty — restore the volume 
 
 Every database is named `<slug>_<name>`, with hyphens in the slug written as `_`. Slugs and `<name>` never contain `_`
 (`<name>` is 1-30 lowercase letters or digits, and `main` is reserved), so two apps can never produce the same name.
+
 - `bento app bind <slug> --engine sqlite` — a private directory mounted at `/var/lib/bento/sqlite/<id>/<slug>.db`,
   with a weekly randomized `VACUUM` task in the app's scheduler.
 

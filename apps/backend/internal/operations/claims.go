@@ -92,15 +92,16 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //   - service.create|reconcile hold their own service exclusively.
 //   - restic.backup shares its app (the app keeps running; lifecycle
 //     operations wait) and every bound data service, and holds the app's
-//     repository exclusively, in the restic pool. restic.restore holds the
-//     app exclusively. Other restic.* kinds hold only the repository.
+//     repository exclusively, in the restic pool. Other restic.* kinds hold
+//     only the repository. restic.inspect and restic.inspect-remote (read-only) share it.
+//     app.restore-from-backup is global like app.clone-from-backup.
 //   - image.prepare holds its runtime key exclusively, in the image-build
 //     pool. It only builds (ImageManager serializes per tag and excludes
 //     prune); image.prune stays global.
 //
 // Everything else runs alone: edge/tunnel/dbadmin apply, provision, publish,
-// unpublish, remove, bindings, permissions, backup, restore, export, image
-// prune.
+// unpublish, remove, bindings, permissions, backup, restore, app.clone-from-backup
+// (it creates an app and provisions databases), export, image prune.
 func classify(op store.Operation, lookup func(id string) (domain.App, error)) claims {
 	switch op.Kind {
 	case KindAppReconcile, KindAppStart, KindAppRestart, KindAppUpdate, KindAppDeploy, KindAppStop:
@@ -121,7 +122,7 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 		return cl
 	case KindServiceCreate, KindServiceEnsure:
 		return claims{excl: []string{serviceClaim(op.TargetID)}}
-	case KindResticBackup, KindResticRestore:
+	case KindResticBackup:
 		app, err := lookup(op.TargetID)
 		if errors.Is(err, store.ErrNotFound) {
 			return claims{excl: []string{resticClaim(op.TargetID)}}
@@ -129,15 +130,16 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 		if err != nil {
 			return globalClaims
 		}
-		cl := claims{excl: []string{resticClaim(op.TargetID)}, shared: serviceDeps(app), pool: resticPool}
-		if op.Kind == KindResticBackup {
-			cl.shared = append(cl.shared, appClaim(op.TargetID))
-		} else {
-			cl.excl = append(cl.excl, appClaim(op.TargetID))
-		}
-		return cl
+		return claims{excl: []string{resticClaim(op.TargetID)}, shared: append(serviceDeps(app), appClaim(op.TargetID)),
+			pool: resticPool}
 	case KindResticInit, KindResticConnect, KindResticRefresh, KindResticKeyAdd, KindResticKeyRemove, KindResticCheck, KindResticUnlock:
 		return claims{excl: []string{resticClaim(op.TargetID)}}
+	case KindResticInspect:
+		// Read-only: it only needs the repository to stay unchanged.
+		return claims{shared: []string{resticClaim(op.TargetID)}}
+	case KindResticInspectRemote:
+		// Read-only on a repository of another stack, named by the target id.
+		return claims{shared: []string{"restic-remote:" + op.TargetID}}
 	case KindImagePrepare:
 		return claims{excl: []string{imageClaim(op.TargetID)}, pool: imageBuildPool}
 	}

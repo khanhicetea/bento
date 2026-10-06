@@ -66,6 +66,17 @@ func TestResticExcludeLines(t *testing.T) {
 	}
 }
 
+func TestResticExcludeLinesAlwaysSkipMinicronLogsAndSocket(t *testing.T) {
+	for _, defaults := range []bool{true, false} {
+		got := ResticExcludeLines(ResticSettings{DefaultExcludes: defaults}, "/backup/home", nil)
+		for _, f := range []string{"minicron-logs.db", "minicron-logs.db-wal", "minicron-logs.db-shm", "minicron.sock"} {
+			if !slices.Contains(got, "/backup/home/"+MinicronDataDir+"/"+f) {
+				t.Errorf("defaults=%v: %s not excluded in %q", defaults, f, got)
+			}
+		}
+	}
+}
+
 func TestSensitiveEnvKey(t *testing.T) {
 	for _, k := range []string{"APP_KEY", "AWS_SECRET_ACCESS_KEY", "DB_PASSWORD", "stripe_secret", "GITHUB_TOKEN", "APIKEY"} {
 		if !SensitiveEnvKey(k) {

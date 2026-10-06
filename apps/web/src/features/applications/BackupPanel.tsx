@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, History, KeyRound, RefreshCw, ShieldCheck, Unlock } from "lucide-react";
+import { Archive, KeyRound, RefreshCw, ShieldCheck, Unlock } from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
@@ -8,13 +8,40 @@ import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
 import { Cell, CopyableCode, DomainError, DomainLoading, Field, KeyValues } from "../../components/DomainState.tsx";
 import { formatBytes, formatRelative } from "../../lib/format.ts";
 import { useTrackOperation } from "../operations/OperationTracker.tsx";
+import { CloneFromBackupDialog } from "./CloneFromBackupDialog.tsx";
+import { DatabaseBackupCard } from "./DatabaseBackupCard.tsx";
 import { useOperationMutation } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 
-/** App-scoped restic backups: one encrypted repository per app on an rclone remote. */
+/**
+ * The app's Backup tab: two independent methods. Database backup is the stack's dump schedules shown per app; app
+ * backup is a restic repository per app on an rclone remote.
+ */
 export function BackupPanel({ app }: { app: T.App }) {
+  return (
+    <div className="grid gap-6">
+      <div className="note">
+        <ul className="grid gap-1">
+          <li>
+            Files on S3 or another object store → <strong>Database backup</strong> is enough.
+          </li>
+          <li>
+            Uploads or generated files in the app home → <strong>App backup</strong>.
+          </li>
+          <li>Both on → database dumps for fast in-place rollback, app backups for full recovery or migration.</li>
+        </ul>
+      </div>
+      <div className="box">
+        <DatabaseBackupCard app={app} />
+      </div>
+      <AppBackupCard app={app} />
+    </div>
+  );
+}
+
+function AppBackupCard({ app }: { app: T.App }) {
   const query = useQuery({
     queryKey: keys.apps.restic(app.id),
     queryFn: ({ signal }) => api.apps.restic.get(app.id, signal),
@@ -23,7 +50,7 @@ export function BackupPanel({ app }: { app: T.App }) {
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   const restic = query.data;
   return (
-    <div className="box box--2">
+    <div className="box box--2" aria-label="App backup">
       <SettingsCell app={app} restic={restic} />
       {restic.configured && <RepositoryCell app={app} restic={restic} />}
       {restic.initialized && <SnapshotsCell app={app} restic={restic} />}
@@ -48,6 +75,7 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const [defaultExcludes, setDefaultExcludes] = useState(current.defaultExcludes);
   const [retention, setRetention] = useState(current.retention);
   const [schedule, setSchedule] = useState(current.schedule);
+  const [includeSecrets, setIncludeSecrets] = useState(current.includeSecrets);
   const rclone = useQuery({ queryKey: keys.backups.rclone, queryFn: ({ signal }) => api.backups.rclone(signal) });
   const save = useMutation({
     mutationFn: () =>
@@ -57,6 +85,7 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
         excludes: lines(excludes),
         sqlitePaths: lines(sqlitePaths),
         defaultExcludes,
+        includeSecrets,
         retention,
         schedule: { enabled: schedule.enabled, cron: schedule.cron.trim() },
       }),
@@ -65,7 +94,7 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const remotes = rclone.data?.remotes ?? [];
   const textarea = "min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm";
   return (
-    <Cell title="Backup settings" className="cell--wide">
+    <Cell title="App backup" className="cell--wide">
       <form
         className="grid gap-3"
         onSubmit={(event) => {
@@ -121,6 +150,16 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
             <label className="check">
               <Checkbox checked={defaultExcludes} onCheckedChange={(checked) => setDefaultExcludes(checked === true)} />
               Skip caches ({restic.defaultExcludes.join(", ")})
+            </label>
+            <label className="check">
+              <Checkbox checked={includeSecrets} onCheckedChange={(checked) => setIncludeSecrets(checked === true)} />
+              <span>
+                Include secrets
+                <small className="block text-muted-foreground">
+                  Store env values and database passwords in the encrypted backup, so a restored app keeps them. Anyone
+                  with a repository key can read them. Applies to later snapshots.
+                </small>
+              </span>
             </label>
             <Field label="Keep snapshots" hint="Hourly, daily, weekly, monthly.">
               <div className="grid grid-cols-4 gap-2">
@@ -242,6 +281,10 @@ function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
             last ? (
               last.ok ? (
                 `${formatRelative(last.at)} · ${last.filesTotal} files, ${formatBytes(last.bytesAdded)} added`
+              ) : last.partial ? (
+                <span className="note--bad">
+                  partial {formatRelative(last.at)}: {last.error}
+                </span>
               ) : (
                 <span className="note--bad">
                   failed {formatRelative(last.at)}: {last.error}
@@ -294,14 +337,9 @@ function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
 
 function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const [target, setTarget] = useState<T.ResticSnapshot | null>(null);
-  const [files, setFiles] = useState(true);
-  const [databases, setDatabases] = useState(true);
-  const restore = useOperationMutation((confirm: string) =>
-    api.apps.restic.restore(app.id, { snapshot: target?.id ?? "", files, databases, confirm }),
-  );
-  const running = app.desiredRuntime === "running";
   return (
     <Cell title="Snapshots" className="cell--wide">
+      <CloneFromBackupDialog app={app} snapshot={target} onClose={() => setTarget(null)} />
       {restic.snapshots.length === 0 ? (
         <p className="note">No snapshots yet.</p>
       ) : (
@@ -312,7 +350,7 @@ function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
                 <th className="py-1 pr-3 font-medium">Snapshot</th>
                 <th className="py-1 pr-3 font-medium">Taken</th>
                 <th className="py-1 pr-3 font-medium">Trigger</th>
-                <th />
+                <th className="py-1 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -320,6 +358,14 @@ function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
                 <tr key={snapshot.id} className="border-t">
                   <td>
                     <code>{snapshot.shortId}</code>
+                    {snapshot.tags.includes("secrets=1") && (
+                      <span
+                        className="ml-2 rounded border px-1 text-xs text-muted-foreground"
+                        title="Includes env values and database passwords"
+                      >
+                        secrets
+                      </span>
+                    )}
                   </td>
                   <td title={snapshot.time}>{formatRelative(snapshot.time)}</td>
                   <td>
@@ -328,43 +374,15 @@ function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
                       .map((tag) => tag.split("=")[1])
                       .join(" · ")}
                   </td>
-                  <td className="text-right">
+                  <td className="py-1 text-right">
                     <Button size="sm" variant="outline" onClick={() => setTarget(snapshot)}>
-                      <History /> Restore
+                      Restore into a new app
                     </Button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-      <ConfirmDialog
-        open={target !== null}
-        onOpenChange={(open) => !open && setTarget(null)}
-        title={`Restore snapshot ${target?.shortId ?? ""}?`}
-        description={
-          running
-            ? "Stop the app first: restore replaces its files and databases and refuses to run while the app is running."
-            : "Files: the home (or the backed-up paths) is replaced; the previous files are kept under homes/.pre-restore-*. Databases: each bound database is replaced by its dump; the service version must match the snapshot's."
-        }
-        confirmLabel="Restore"
-        phrase={`restore ${app.slug}`}
-        destructive
-        pending={restore.isPending}
-        error={restore.error}
-        onConfirm={(typed) => restore.mutate(typed, { onSuccess: () => setTarget(null) })}
-      />
-      {target && (
-        <div className="mt-3 flex gap-5">
-          <label className="check">
-            <Checkbox checked={files} onCheckedChange={(checked) => setFiles(checked === true)} />
-            Restore files
-          </label>
-          <label className="check">
-            <Checkbox checked={databases} onCheckedChange={(checked) => setDatabases(checked === true)} />
-            Restore databases
-          </label>
         </div>
       )}
     </Cell>

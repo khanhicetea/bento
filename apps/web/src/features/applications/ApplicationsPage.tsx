@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Boxes, ExternalLink, Globe, Lock, Plus, Search } from "lucide-react";
+import { Archive, Boxes, ExternalLink, Globe, Lock, Plus, Search } from "lucide-react";
 import { Link } from "wouter";
 import { messageOf, type T } from "../../api/client.ts";
 import { DomainError, DomainLoading, EmptyState, PageHeader, StateBadge } from "../../components/DomainState.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
+import { RestoreFromBackupDialog } from "./CloneFromBackupDialog.tsx";
 import { useApplicationList } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,7 @@ export function ApplicationsPage() {
   const list = useApplicationList();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [restoring, setRestoring] = useState(false);
   const needle = query.trim().toLowerCase();
   const apps = (list.data?.apps ?? []).filter((app) => {
     const matchesText = `${app.slug} ${app.primaryDomain}`.toLowerCase().includes(needle);
@@ -57,13 +59,19 @@ export function ApplicationsPage() {
       <PageHeader
         title="Apps"
         actions={
-          <Button asChild>
-            <Link href="/apps/new">
-              <Plus /> New app
-            </Link>
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setRestoring(true)}>
+              <Archive /> From app backup
+            </Button>
+            <Button asChild>
+              <Link href="/apps/new">
+                <Plus /> New app
+              </Link>
+            </Button>
+          </>
         }
       />
+      <RestoreFromBackupDialog open={restoring} onClose={() => setRestoring(false)} />
       <div className="toolbar">
         <label className="toolbar__search">
           <Search aria-hidden="true" />
