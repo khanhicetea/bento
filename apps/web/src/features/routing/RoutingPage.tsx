@@ -79,6 +79,7 @@ function EdgeMetricsCell() {
       <Cell
         title="Traffic"
         icon={<Activity />}
+        className="flex flex-col"
         action={
           m && (
             <span className="label flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -93,7 +94,7 @@ function EdgeMetricsCell() {
         ) : !m ? (
           <DomainLoading label="edge metrics" />
         ) : (
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="grid flex-1 grid-cols-2 gap-2 lg:grid-cols-4">
             <MetricCard
               label="Requests / s"
               value={m.requestsPerSecond.toFixed(1)}
@@ -102,7 +103,7 @@ function EdgeMetricsCell() {
             <MetricCard label="Connections" value={m.active} hint={`${m.acceptsPerSecond.toFixed(1)} new / s`} />
             <MetricCard
               label="Connection states"
-              value={`${m.reading} · ${m.writing} · ${m.waiting}`}
+              value={`${m.reading}·${m.writing}·${m.waiting}`}
               hint="reading · writing · idle"
             >
               <StateBar reading={m.reading} writing={m.writing} waiting={m.waiting} />
@@ -135,10 +136,10 @@ function MetricCard({
 }) {
   const valueColor = tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "";
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-[0.875rem] bg-background p-3.5">
+    <div className="flex min-w-0 flex-col justify-between gap-2 rounded-[0.875rem] bg-background p-4">
       <span className="label text-[0.6875rem] text-muted-foreground">{label}</span>
       <span
-        className={`truncate font-mono text-[1.75rem] leading-none font-semibold tracking-tight tabular-nums ${valueColor}`}
+        className={`truncate font-mono text-[2.25rem] leading-none font-semibold tracking-tight tabular-nums ${valueColor}`}
       >
         {value}
       </span>
@@ -188,19 +189,24 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
   return (
     <>
       <section className="box box--edge" aria-label="Edge">
-        <Cell title="Edge" icon={<Network />}>
-          <div className="flex items-start justify-between gap-3">
-            <StateBadge state={status.settings.enabled ? status.state : "absent"} />
-            <Mascot mood={status.settings.enabled ? moodOf(status.state) : "idle"} size={80} />
-          </div>
-          <div className="mt-3 grid gap-3">
-            <div className="flex items-center gap-3">
-              <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
-              <span className="label text-xs">Enabled</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
-              <span className="label text-xs">HTTP/3 · QUIC</span>
+        <Cell
+          title="Edge"
+          icon={<Network />}
+          action={<StateBadge state={status.settings.enabled ? status.state : "absent"} />}
+        >
+          <div className="grid gap-3">
+            <div className="flex items-center gap-4">
+              <Mascot mood={status.settings.enabled ? moodOf(status.state) : "idle"} size={64} />
+              <div className="grid gap-2.5">
+                <div className="flex items-center gap-3">
+                  <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
+                  <span className="label text-xs">Enabled</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
+                  <span className="label text-xs">HTTP/3 · QUIC</span>
+                </div>
+              </div>
             </div>
             <dl className="kv kv--edit">
               <div>
