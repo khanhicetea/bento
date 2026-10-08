@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Archive, Server, Trash2 } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -57,30 +57,40 @@ function Overview() {
         <Cell>
           <div className="flex items-start justify-between gap-3">
             <div className="metric">
+              <span>Bento</span>
               <strong className="text-[1.75rem]!">{status.version}</strong>
-              <span>Bento · up {formatRelative(status.startedAt).replace(/ ago$/, "")}</span>
+              <small className="font-mono text-xs text-muted-foreground">
+                up {formatRelative(status.startedAt).replace(/ ago$/, "")}
+              </small>
             </div>
             <Mascot mood={status.dockerError ? "alert" : "ok"} size={64} />
           </div>
         </Cell>
         <Cell kind={status.dockerError ? "ume" : "gohan"}>
           <div className="metric">
+            <span>Docker</span>
             <strong className="text-[1.75rem]!">{status.dockerError ? "Down" : status.dockerVersion}</strong>
-            <span>Docker{status.dockerError ? "" : ` · API ${status.dockerApi}`}</span>
+            <StateBadge
+              state={status.dockerError ? "failed" : "connected"}
+              label={status.dockerError ? "Unreachable" : `Connected · API ${status.dockerApi}`}
+            />
           </div>
         </Cell>
         <Cell>
           <div className="metric">
-            <strong className="text-[1.75rem]!">{status.arch}</strong>
             <span>Architecture</span>
+            <strong className="text-[1.75rem]!">{status.arch}</strong>
           </div>
         </Cell>
       </div>
-      <ReconcileTargets />
-      <DataServices />
-      <div className="box">
+      <div className="box box--2">
+        <ReconcileTargets />
+        <DataServices />
+      </div>
+      <div className="box box--2">
         <Cell
           title="Stack"
+          icon={<Server />}
           action={
             <StateBadge
               state={status.dockerError ? "failed" : "healthy"}
@@ -101,8 +111,8 @@ function Overview() {
             ]}
           />
         </Cell>
+        <RetainedData />
       </div>
-      <RetainedData />
     </>
   );
 }
@@ -113,8 +123,13 @@ function RetainedData() {
   const prune = useOperationMutation((confirm: string) => api.retired.prune(target?.appId ?? "", confirm));
   const pending = (query.data?.retired ?? []).filter((app) => !app.prunedAt);
   return (
-    <div className="box">
-      <Cell title="Retained data" kind={pending.length > 0 ? "tamago" : "gohan"}>
+    <>
+      <Cell
+        title="Retained data"
+        icon={<Archive />}
+        kind={pending.length > 0 ? "tamago" : "gohan"}
+        action={<span className="label text-xs text-[var(--tamago-ink)]">Kept after removal</span>}
+      >
         {query.error ? (
           <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
         ) : pending.length === 0 ? (
@@ -123,7 +138,6 @@ function RetainedData() {
           <div className="rows rows--lined">
             {pending.map((app) => (
               <div key={app.appId} className="row">
-                <span className="mono">{app.slug.slice(0, 1).toUpperCase()}</span>
                 <span className="row__main">
                   <strong>
                     {app.slug} <span className="font-normal text-muted-foreground">· uid {app.uid}</span>
@@ -135,7 +149,7 @@ function RetainedData() {
                 <span className="row__meta max-sm:hidden" title={app.retiredAt}>
                   {formatRelative(app.retiredAt)}
                 </span>
-                <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setTarget(app)}>
+                <Button variant="danger" onClick={() => setTarget(app)}>
                   <Trash2 /> Prune
                 </Button>
               </div>
@@ -155,6 +169,6 @@ function RetainedData() {
         error={prune.error}
         onConfirm={(typed) => prune.mutate(typed, { onSuccess: () => setTarget(null) })}
       />
-    </div>
+    </>
   );
 }

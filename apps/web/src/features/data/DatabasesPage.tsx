@@ -4,7 +4,7 @@ import { Database, Plus } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
-import { DomainError, DomainLoading, StateBadge } from "../../components/DomainState.tsx";
+import { Cell, DomainError, DomainLoading, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -19,113 +19,74 @@ export function DataServices() {
   const catalog = useCatalog();
   const [engine, setEngine] = useState<T.Engine>("mysql");
   const [version, setVersion] = useState("");
-  const [adding, setAdding] = useState(false);
   const versions = engine === "mysql" ? catalog.data?.mysqlVersions : catalog.data?.postgresVersions;
   const selectedVersion = version || versions?.at(-1) || "";
   const create = useOperationMutation(() => api.services.create({ engine, version: selectedVersion }));
   return (
-    <section id="data" aria-labelledby="data-services-title">
-      <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
-        <h2 id="data-services-title" className="text-lg font-semibold">
-          Data services
-        </h2>
-        <p className="text-sm text-muted-foreground max-sm:hidden">
-          Shared databases on the private network. Volumes are never removed.
-        </p>
-      </div>
+    <Cell title="Data services" icon={<Database />} className="flex flex-col">
       {q.isPending && <DomainLoading label="services" />}
       {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
       {q.data && (
-        <div className="box">
-          <div className="tiles">
-            {q.data.services.map((s) => (
-              <article key={s.name} className="cell tile">
-                <div className="tile__top">
-                  <span className="mono mono--lg">
-                    <EngineLogo engine={s.engine} className="size-5" />
-                  </span>
-                  <div className="tile__name">
-                    <strong>{s.name}</strong>
-                    <small>
-                      {s.engine === "mysql" ? "MySQL" : "PostgreSQL"} {s.version}
-                    </small>
-                  </div>
-                  <StateBadge
-                    state={s.initialized ? s.state : "starting"}
-                    title={s.message}
-                    label={s.initialized ? undefined : "Initializing"}
-                  />
-                </div>
-                <dl className="facts facts--1">
-                  <div>
-                    <dt>Image</dt>
-                    <dd>
-                      <code>{s.image}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Volume</dt>
-                    <dd>
-                      <code>{s.volume}</code>
-                    </dd>
-                  </div>
-                </dl>
-                {s.message && s.state !== "healthy" && <p className="note note--bad">{s.message}</p>}
-              </article>
-            ))}
-            {adding ? (
-              <section className="cell cell--muted tile tile--add-form" aria-label="Add service">
-                <div className="cell__title mb-0!">
-                  <h2>Add service</h2>
-                </div>
-                <div className="grid-2">
-                  <NativeSelect
-                    className="w-full"
-                    aria-label="Engine"
-                    value={engine}
-                    onChange={(e) => {
-                      setEngine(e.target.value as T.Engine);
-                      setVersion("");
-                    }}
-                  >
-                    <option value="mysql">MySQL</option>
-                    <option value="postgres">PostgreSQL</option>
-                  </NativeSelect>
-                  <NativeSelect
-                    className="w-full"
-                    aria-label="Version"
-                    value={selectedVersion}
-                    disabled={!versions?.length}
-                    onChange={(e) => setVersion(e.target.value)}
-                  >
-                    {!versions?.length && <option value="">{catalog.isPending ? "Loading…" : "None"}</option>}
-                    {(versions ?? []).map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </NativeSelect>
-                </div>
-                <div className="actions">
-                  <Button variant="ghost" onClick={() => setAdding(false)} disabled={create.isPending}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={() => create.mutate(undefined, { onSuccess: () => setAdding(false) })}
-                    disabled={!selectedVersion || create.isPending}
-                  >
-                    <Plus /> Add
-                  </Button>
-                </div>
-                {create.error && <p className="note note--bad">{messageOf(create.error)}</p>}
-              </section>
-            ) : (
-              <button type="button" className="cell tile tile--add" onClick={() => setAdding(true)}>
-                {q.data.services.length === 0 ? <Database aria-hidden="true" /> : <Plus aria-hidden="true" />}
-                {q.data.services.length === 0 ? "No services yet · Add one" : "Add service"}
-              </button>
-            )}
-          </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {q.data.services.map((s) => (
+            <article key={s.name} className="grid justify-items-start gap-2 rounded-[0.875rem] bg-background p-3.5">
+              <span className="label flex items-center gap-2 text-xs">
+                <EngineLogo engine={s.engine} className="size-4" />
+                {s.name} <span className="font-mono tracking-normal">{s.version}</span>
+              </span>
+              <StateBadge
+                state={s.initialized ? s.state : "starting"}
+                title={s.message}
+                label={s.initialized ? undefined : "Initializing"}
+              />
+              <code className="truncate text-xs text-muted-foreground" title={s.image}>
+                {s.volume}
+              </code>
+              {s.message && s.state !== "healthy" && <p className="note note--bad">{s.message}</p>}
+            </article>
+          ))}
+          {q.data.services.length === 0 && <p className="note">No services · add one below</p>}
         </div>
       )}
-    </section>
+      <p className="note mt-3">Volumes are never removed.</p>
+      <div className="mt-auto grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 border-t border-border pt-3">
+        <label className="field">
+          <span>Engine</span>
+          <NativeSelect
+            className="w-full"
+            value={engine}
+            onChange={(e) => {
+              setEngine(e.target.value as T.Engine);
+              setVersion("");
+            }}
+          >
+            <option value="mysql">MySQL</option>
+            <option value="postgres">PostgreSQL</option>
+          </NativeSelect>
+        </label>
+        <label className="field">
+          <span>Version</span>
+          <NativeSelect
+            className="w-full"
+            value={selectedVersion}
+            disabled={!versions?.length}
+            onChange={(e) => setVersion(e.target.value)}
+          >
+            {!versions?.length && <option value="">{catalog.isPending ? "Loading…" : "None"}</option>}
+            {(versions ?? []).map((v) => (
+              <option key={v}>{v}</option>
+            ))}
+          </NativeSelect>
+        </label>
+        <Button
+          variant="outline"
+          onClick={() => create.mutate(undefined)}
+          disabled={!selectedVersion || create.isPending}
+        >
+          <Plus /> Add
+        </Button>
+      </div>
+      {create.error && <p className="note note--bad mt-2">{messageOf(create.error)}</p>}
+    </Cell>
   );
 }

@@ -28,35 +28,33 @@ export function ReconcileTargets() {
     (id.startsWith("service:") ? `Service ${id.slice("service:".length)}` : `App ${slugs.get(id) ?? id}`);
   const targets = query.data?.targets ?? [];
   return (
-    <div className="box">
-      <Cell
-        title="Reconciliation"
-        icon={<RotateCw />}
-        kind={targets.length > 0 ? "tamago" : "gohan"}
-        action={
-          targets.length > 0 && (
-            <span className="label text-xs text-[var(--tamago-ink)]">{targets.length} not converged</span>
-          )
-        }
-      >
-        {query.error ? (
-          <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
-        ) : query.isPending ? (
-          <p className="note">Loading…</p>
-        ) : targets.length === 0 ? (
-          <div className="flex items-center gap-3">
-            <Mascot mood="ok" size={56} />
-            <StateBadge state="healthy" label="All converged" />
-          </div>
-        ) : (
-          <div className="rows rows--lined">
-            {targets.map((target) => (
-              <TargetRow key={target.id} target={target} label={label(target.id)} />
-            ))}
-          </div>
-        )}
-      </Cell>
-    </div>
+    <Cell
+      title="Reconciliation"
+      icon={<RotateCw />}
+      kind={targets.length > 0 ? "tamago" : "gohan"}
+      action={
+        targets.length > 0 && (
+          <span className="label text-xs text-[var(--tamago-ink)]">{targets.length} not converged</span>
+        )
+      }
+    >
+      {query.error ? (
+        <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
+      ) : query.isPending ? (
+        <p className="note">Loading…</p>
+      ) : targets.length === 0 ? (
+        <div className="flex items-center gap-3">
+          <Mascot mood="ok" size={56} />
+          <StateBadge state="healthy" label="All converged" />
+        </div>
+      ) : (
+        <div className="rows rows--lined">
+          {targets.map((target) => (
+            <TargetRow key={target.id} target={target} label={label(target.id)} />
+          ))}
+        </div>
+      )}
+    </Cell>
   );
 }
 
