@@ -195,18 +195,15 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
           action={<StateBadge state={status.settings.enabled ? status.state : "absent"} />}
         >
           <div className="grid gap-3">
-            <div className="flex items-center gap-4">
-              <Mascot mood={status.settings.enabled ? moodOf(status.state) : "idle"} size={64} />
-              <div className="grid gap-2.5">
-                <div className="flex items-center gap-3">
-                  <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
-                  <span className="label text-xs">Enabled</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
-                  <span className="label text-xs">HTTP/3 · QUIC</span>
-                </div>
-              </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              <span className="flex items-center gap-3">
+                <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
+                <span className="label text-xs">Enabled</span>
+              </span>
+              <span className="flex items-center gap-3">
+                <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
+                <span className="label text-xs">HTTP/3 · QUIC</span>
+              </span>
             </div>
             <dl className="kv kv--edit">
               <div>
@@ -248,7 +245,7 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
         {status.state === "healthy" ? (
           <EdgeMetricsCell />
         ) : (
-          <Cell kind="kara">
+          <Cell kind="kara" className="grid place-items-center">
             <EmptyState title="No traffic" body="Edge is not running." />
           </Cell>
         )}

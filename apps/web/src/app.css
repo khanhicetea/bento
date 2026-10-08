@@ -1921,3 +1921,12 @@ button.row:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* A kara cell is already the empty slot: don't draw a second outline inside it. */
+.cell--muted:has(> .empty) {
+  box-shadow: inset 0 0 0 2px var(--kara-line);
+}
+.cell--muted > .empty {
+  box-shadow: none;
+  background: transparent;
+  padding: 0.5rem;
+}
