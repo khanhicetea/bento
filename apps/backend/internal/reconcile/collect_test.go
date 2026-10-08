@@ -73,3 +73,47 @@ func TestCollectToolsHonoursGraceAndActiveOperations(t *testing.T) {
 		t.Fatal("app runtime container must never be collected")
 	}
 }
+
+// Restic and SQLite snapshot jobs idle while running; a crashed backend
+// leaves them running, so a running backup job of a finished operation is
+// collected. Running jobs of active operations, and labels that are not
+// operation ids (volume transfers), are left alone.
+func TestCollectToolsRemovesRunningJobsOfFinishedOperations(t *testing.T) {
+	h, r, _ := setup(t)
+	ctx := t.Context()
+	n := h.C.Names
+	op := func(finish bool) string {
+		o, _, err := store.InsertOperation(ctx, h.Store.DB(), store.Operation{ID: platform.NewOperationID(), Kind: "restic.backup", TargetKind: "app", TargetID: "a"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.MarkRunning(ctx, h.Store.DB(), o.ID); err != nil {
+			t.Fatal(err)
+		}
+		if finish {
+			if err := store.FinishOperation(ctx, h.Store.DB(), o.ID, store.OpInterrupted, nil, "interrupted", "x", ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return o.ID
+	}
+	job := func(id string) map[string]string {
+		return n.Labels(runtime.RoleBackup, map[string]string{runtime.LabelOperation: id})
+	}
+	addEphemeral(t, h, "running-job-finished-op", job(op(true)), "running", time.Hour)
+	addEphemeral(t, h, "running-job-active-op", job(op(false)), "running", time.Hour)
+	addEphemeral(t, h, "running-volume-transfer", job("vol-abcde"), "running", time.Hour)
+	addEphemeral(t, h, "running-tool-finished-op", n.Labels(runtime.RoleTool, map[string]string{runtime.LabelOperation: op(true)}), "running", time.Hour)
+
+	if err := r.collectTools(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]bool{
+		"running-job-finished-op": false, "running-job-active-op": true,
+		"running-volume-transfer": true, "running-tool-finished-op": true,
+	} {
+		if got := exists(h, name); got != want {
+			t.Errorf("%s exists=%v, want %v", name, got, want)
+		}
+	}
+}

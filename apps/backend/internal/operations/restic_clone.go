@@ -48,7 +48,8 @@ type ResticInspectRequest struct {
 }
 
 // ResticCloneRequest is the persisted intent of a clone. AppID is allocated at
-// submission so an interrupted attempt can be recognized and cleaned up.
+// submission so the partial app of an interrupted attempt can be recognized
+// and removed by restic.recover after a restart.
 type ResticCloneRequest struct {
 	Snapshot     string `json:"snapshot"`
 	Slug         string `json:"slug"`
@@ -340,18 +341,26 @@ type clonePlan struct {
 
 const previewSlug = "<new-slug>"
 
-func pickCloneService(svcs []store.ServiceRow, sb AppSpecBinding) *store.ServiceRow {
+// pickCloneService finds the service a source binding is cloned onto: the
+// service of the same name, engine and version, else any of the same engine
+// and version. Services already taken by another binding of the clone are
+// skipped: an app has at most one binding per service (one user, one
+// password). taken reports whether a matching service exists but is taken.
+func pickCloneService(svcs []store.ServiceRow, sb AppSpecBinding, used map[string]bool) (svc *store.ServiceRow, taken bool) {
 	for i := range svcs {
-		if svcs[i].Name == sb.Service && svcs[i].Engine == sb.Engine && svcs[i].Version == sb.Version {
-			return &svcs[i]
+		if svcs[i].Name == sb.Service && svcs[i].Engine == sb.Engine && svcs[i].Version == sb.Version && !used[svcs[i].Name] {
+			return &svcs[i], false
 		}
 	}
 	for i := range svcs {
 		if svcs[i].Engine == sb.Engine && svcs[i].Version == sb.Version {
-			return &svcs[i]
+			if !used[svcs[i].Name] {
+				return &svcs[i], false
+			}
+			taken = true
 		}
 	}
-	return nil
+	return nil, taken
 }
 
 // canKeepUsername applies the §4d rule: the source database user is reused
@@ -443,8 +452,10 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	}
 	for _, e := range rt.Env {
 		p.EnvKeys = append(p.EnvKeys, e.Key)
-		if domain.SensitiveEnvKey(e.Key) {
-			if val, ok := secretEnv[e.Key]; ok {
+		// app.json holds every secret value as RedactedEnvValue; the backup
+		// decided what was secret, so the clone does not guess again.
+		if val, ok := secretEnv[e.Key]; ok || e.Value == domain.RedactedEnvValue {
+			if ok {
 				e.Value = val
 			} else if in.Secrets == nil && in.Man.Secrets {
 				// Preview of a snapshot that keeps its secrets.
@@ -495,6 +506,7 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 			secretPW[b.Index] = b.Password
 		}
 	}
+	usedSvc := map[string]bool{}
 	for i, sb := range in.Spec.Bindings {
 		bm := bindingMap{src: sb, newIdx: -1, dbs: map[string]string{}}
 		b := domain.Binding{ID: "b" + platform.RandomHex(6), AppID: in.AppID, Engine: sb.Engine, CreatedAt: now}
@@ -507,12 +519,18 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 				Target: b.SQLiteContainerDir() + "/" + slug + ".db",
 			})
 		case domain.EngineMySQL, domain.EnginePostgres:
-			svc := pickCloneService(svcs, sb)
+			svc, taken := pickCloneService(svcs, sb, usedSvc)
 			if svc == nil {
-				block("no %s service of version %s on this stack (add it first)", sb.Engine, sb.Version)
+				if taken {
+					block("the snapshot's app has several %s %s bindings; add another %s service of version %s first",
+						sb.Engine, sb.Version, sb.Engine, sb.Version)
+				} else {
+					block("no %s service of version %s on this stack (add it first)", sb.Engine, sb.Version)
+				}
 				p.maps = append(p.maps, bm)
 				continue
 			}
+			usedSvc[svc.Name] = true
 			b.Service = svc.Name
 			srcUser := ""
 			if in.Man.FormatVersion >= 2 {
@@ -668,6 +686,51 @@ func (c *Controller) checkCloneTargets(ctx context.Context, p *clonePlan) ([]str
 	return out, nil
 }
 
+// checkDumpSpace checks that the volume of each data service the clone
+// imports into has room for its dumps (twice their size: compressed dumps and
+// indexes grow on import). The staging check before the download does not
+// cover Docker's data root.
+func (c *Controller) checkDumpSpace(ctx context.Context, r *Run, man ResticManifest, p *clonePlan, bentoDir string) error {
+	need := map[string]int64{}
+	for _, d := range man.Dumps {
+		if d.Engine == domain.EngineSQLite {
+			continue
+		}
+		b, _, err := p.resolveDump(man, d)
+		if err != nil {
+			continue // reported when the dump is restored
+		}
+		path, err := platform.ContainedPath(bentoDir, filepath.FromSlash(d.File))
+		if err != nil {
+			continue
+		}
+		if info, err := os.Lstat(path); err == nil {
+			need[b.Service] += info.Size()
+		}
+	}
+	for name, size := range need {
+		svc, err := store.GetService(ctx, c.Store.DB(), name)
+		if err != nil {
+			return err
+		}
+		vol, err := c.Engine.VolumeInspect(ctx, svc.Volume)
+		if err != nil || vol == nil || vol.Mountpoint == "" {
+			r.Warn(ctx, "free space on %s's volume is unknown; the database import is not checked", name)
+			continue
+		}
+		free, err := freeBytes(vol.Mountpoint)
+		if err != nil {
+			r.Warn(ctx, "free space on %s's volume is unknown: %v", name, err)
+			continue
+		}
+		if free < uint64(2*size) {
+			return Fail("disk-full", "Free disk space where Docker keeps volumes, then retry.",
+				"importing into %s needs about %s but only %s is free", name, humanBytes(2*size), humanBytes(int64(free)))
+		}
+	}
+	return nil
+}
+
 func runtimeLabel(rt domain.Runtime) (string, string) {
 	switch {
 	case rt.PHP != nil:
@@ -773,6 +836,21 @@ func redactOpError(err error, rep *strings.Replacer) error {
 	return err
 }
 
+// addGuidance appends a sentence to an operation error's guidance.
+// Cancellation is left as is.
+func addGuidance(err error, more string) error {
+	if errors.Is(err, ErrCancelled) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	var oe *OpError
+	if errors.As(err, &oe) {
+		cp := *oe
+		cp.Guidance = strings.TrimSpace(cp.Guidance + " " + more)
+		return &cp
+	}
+	return Fail("clone-failed", more, "%v", err)
+}
+
 func cloneSecretRedactor(s *ResticSecrets) *strings.Replacer {
 	var pairs []string
 	if s != nil {
@@ -827,12 +905,6 @@ func (c *Controller) runClone(
 	req ResticCloneRequest,
 	open func() (cloneRepo, error),
 ) (result any, err error) {
-	// An earlier attempt of this operation that was interrupted left its app.
-	if prev, perr := store.GetApp(ctx, c.Store.DB(), req.AppID); perr == nil && prev.ID == req.AppID {
-		c.rollbackClone(context.WithoutCancel(ctx), r.Uncancellable(), prev)
-		return nil, Fail("clone-interrupted", "The partial clone was removed. Submit the clone again.",
-			"an earlier attempt of this clone was interrupted")
-	}
 	if _, perr := store.GetApp(ctx, c.Store.DB(), req.Slug); perr == nil {
 		return nil, Fail("slug-taken", "Choose another slug.", "app %s already exists", req.Slug)
 	}
@@ -874,6 +946,12 @@ func (c *Controller) runClone(
 	}
 	restored := filepath.Join(env.data, "backup")
 	bentoDir := filepath.Join(restored, "bento")
+	// restic recreates symlinks as stored. Every file Bento reads from the
+	// bento/ tree must be a plain file reached through plain directories, or a
+	// crafted snapshot could make the clone read host files as root.
+	if err := rejectLinkedTree(bentoDir); err != nil {
+		return nil, Fail("snapshot-invalid", "Choose a snapshot taken by Bento's app backup.", "%v", err)
+	}
 
 	man, err := readManifest(bentoDir)
 	if err != nil {
@@ -904,6 +982,14 @@ func (c *Controller) runClone(
 	redact := cloneSecretRedactor(secrets)
 	defer func() { err = redactOpError(err, redact) }()
 
+	// The download ran beside other operations. Planning, creating the app
+	// and provisioning grants on shared data services need the stack alone.
+	if err := r.Phase(ctx, "wait-exclusive"); err != nil {
+		return nil, err
+	}
+	if err := r.Escalate(ctx); err != nil {
+		return nil, err
+	}
 	if err := r.Phase(ctx, "plan"); err != nil {
 		return nil, err
 	}
@@ -922,6 +1008,9 @@ func (c *Controller) runClone(
 	if len(plan.Blockers) > 0 {
 		return nil, Fail("clone-blocked", "Fix the listed problems (see the preview), then clone again.", "%s",
 			strings.Join(plan.Blockers, "; "))
+	}
+	if err := c.checkDumpSpace(ctx, r, man, plan, bentoDir); err != nil {
+		return nil, err
 	}
 
 	// Step 1-2: the new app and its bindings.
@@ -977,7 +1066,11 @@ func (c *Controller) runClone(
 	defer func() {
 		if err != nil {
 			r.Warn(ctx, "clone failed; removing the new app %s", app.Slug)
-			c.rollbackClone(context.WithoutCancel(ctx), r.Uncancellable(), app)
+			if c.rollbackClone(context.WithoutCancel(ctx), r.Uncancellable(), app, r.Op.ID) {
+				err = addGuidance(err, "The partly created app "+app.Slug+" was removed.")
+			} else {
+				err = addGuidance(err, "Removing the partly created app "+app.Slug+" was incomplete; see the warnings.")
+			}
 		}
 	}()
 
@@ -1003,6 +1096,9 @@ func (c *Controller) runClone(
 			return nil, err
 		}
 		dump, perr := platform.ContainedPath(bentoDir, filepath.FromSlash(d.File))
+		if perr == nil {
+			perr = platform.NoSymlinkBetween(bentoDir, dump)
+		}
 		if perr != nil {
 			return nil, perr
 		}
@@ -1012,7 +1108,7 @@ func (c *Controller) runClone(
 			err = deps.RestoreRelational(ctx, app, b, target, dump)
 		}
 		if err != nil {
-			return nil, Fail("restore-failed", "The new app is removed; try again.", "%s: %v", target, err)
+			return nil, Fail("restore-failed", "Try again.", "%s: %v", target, err)
 		}
 		r.Info(ctx, "restored %s into %s", d.Database, target)
 	}
@@ -1022,7 +1118,7 @@ func (c *Controller) runClone(
 		return nil, err
 	}
 	if err = c.installRestoredHome(app, filepath.Join(restored, "home"), man.Paths, r.Op.ID); err != nil {
-		return nil, Fail("restore-files-failed", "The new app is removed; try again.", "%v", err)
+		return nil, Fail("restore-files-failed", "Try again.", "%v", err)
 	}
 	if err = c.ensureHome(app); err != nil {
 		return nil, err
@@ -1039,7 +1135,7 @@ func (c *Controller) runClone(
 			continue
 		}
 		if err = c.restoreHomeSQLite(app, bentoDir, rel, owner); err != nil {
-			return nil, Fail("restore-files-failed", "The new app is removed; try again.", "%s: %v", rel, err)
+			return nil, Fail("restore-files-failed", "Try again.", "%s: %v", rel, err)
 		}
 	}
 
@@ -1171,6 +1267,31 @@ func rejectSpecialFiles(root string) error {
 	})
 }
 
+// rejectLinkedTree refuses a restored Bento metadata tree (and the
+// directories above it in the staging area) unless it holds only directories
+// and regular files.
+func rejectLinkedTree(root string) error {
+	for _, dir := range []string{filepath.Dir(root), root} {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return fmt.Errorf("snapshot holds no Bento metadata: %w", err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("the snapshot's %s is not a directory", filepath.Base(dir))
+		}
+	}
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && !d.Type().IsRegular() {
+			rel, _ := filepath.Rel(root, path)
+			return fmt.Errorf("the snapshot's Bento metadata holds a link or special file (%s)", rel)
+		}
+		return nil
+	})
+}
+
 // installRestoredHome puts the restored home tree in place of the new app's
 // freshly provisioned home. Restored files are re-owned to the new UID
 // (symlinks re-owned, never followed); the home keeps the new identity
@@ -1192,6 +1313,8 @@ func (c *Controller) installRestoredHome(app domain.App, restoredHome string, pa
 		return fmt.Errorf("re-own restored files: %w", err)
 	}
 	home := c.Layout.AppHome(app.Slug)
+	// Older snapshots may list nested paths; each tree is moved once.
+	paths = domain.TopmostRels(paths)
 	if slices.Contains(paths, ".") {
 		homeOwner, mode, err := platform.StatOwner(home)
 		if err != nil {
@@ -1224,7 +1347,15 @@ func (c *Controller) installRestoredHome(app domain.App, restoredHome string, pa
 		return os.RemoveAll(aside)
 	}
 	for _, p := range paths {
-		src := filepath.Join(restoredHome, filepath.FromSlash(p))
+		src, err := platform.ContainedPath(restoredHome, filepath.FromSlash(p))
+		if err != nil {
+			return err
+		}
+		// rename follows symlinked parents: a restored "x -> /etc" with the path
+		// "x/passwd" would move a host file. The last component may be a link.
+		if err := platform.NoSymlinkBetween(restoredHome, filepath.Dir(src)); err != nil {
+			return fmt.Errorf("restored path %s: %w", p, err)
+		}
 		if _, err := os.Lstat(src); errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
@@ -1306,8 +1437,12 @@ func (c *Controller) dropMinicronLogs(app domain.App) {
 // restoreHomeSQLite installs a .backup copy at its home path (0600, app
 // owner), discarding any journals so they are not replayed against it.
 func (c *Controller) restoreHomeSQLite(app domain.App, bentoDir, rel string, owner platform.Owner) error {
-	src, err := platform.ContainedPath(filepath.Join(bentoDir, "home-sqlite"), filepath.FromSlash(rel))
+	srcDir := filepath.Join(bentoDir, "home-sqlite")
+	src, err := platform.ContainedPath(srcDir, filepath.FromSlash(rel))
 	if err != nil {
+		return err
+	}
+	if err := platform.NoSymlinkBetween(bentoDir, src); err != nil {
 		return err
 	}
 	if !backup.IsSQLiteFile(src) {
@@ -1344,7 +1479,13 @@ func (c *Controller) restoreHomeSQLite(app domain.App, bentoDir, rel string, own
 // app row. Its UID is marked burned and never reused. Every destructive step
 // first checks that the resource belongs to this app. Failures are logged and
 // the remaining steps still run.
-func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App) {
+// opID is the clone operation, whose aside home may be left behind.
+func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App, opID string) (clean bool) {
+	clean = true
+	warn := func(format string, args ...any) {
+		clean = false
+		r.Warn(ctx, format, args...)
+	}
 	if cur, err := store.GetApp(ctx, c.Store.DB(), app.ID); err == nil {
 		app = cur
 	}
@@ -1357,7 +1498,7 @@ func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App) 
 				continue
 			}
 			if err := c.Engine.Remove(ctx, t.ID); err != nil {
-				r.Warn(ctx, "rollback: remove container: %v", err)
+				warn("rollback: remove container: %v", err)
 			}
 		}
 	}
@@ -1367,7 +1508,7 @@ func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App) 
 			if o, mode, err := platform.StatOwner(dir); err == nil && mode.IsDir() && o.UID == app.UID &&
 				platform.NoSymlinkBetween(c.Layout.SQLiteDir(), dir) == nil {
 				if err := os.RemoveAll(dir); err != nil {
-					r.Warn(ctx, "rollback: remove %s: %v", dir, err)
+					warn("rollback: remove %s: %v", dir, err)
 				}
 			}
 			continue
@@ -1380,7 +1521,7 @@ func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App) 
 			}
 		}
 		if err != nil {
-			r.Warn(ctx, "rollback: could not drop %s databases %v and user %s: %v", b.Service, b.Databases, b.Username, err)
+			warn("rollback: could not drop %s databases %v and user %s: %v", b.Service, b.Databases, b.Username, err)
 		}
 	}
 	home := c.Layout.AppHome(app.Slug)
@@ -1388,11 +1529,11 @@ func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App) 
 		var sc HomeSidecar
 		if json.Unmarshal(raw, &sc) == nil && sc.AppID == app.ID && sc.StackID == c.Stack.ID {
 			if err := os.RemoveAll(home); err != nil {
-				r.Warn(ctx, "rollback: remove home: %v", err)
+				warn("rollback: remove home: %v", err)
 			}
 		}
 	}
-	_ = os.RemoveAll(filepath.Join(c.Layout.HomesDir(), ".clone-"+r.Op.ID))
+	_ = os.RemoveAll(filepath.Join(c.Layout.HomesDir(), ".clone-"+opID))
 	err := c.Store.Tx(ctx, func(q store.Q) error {
 		if err := store.DeleteGitSource(ctx, q, app.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
@@ -1403,12 +1544,13 @@ func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App) 
 		return store.SetLedgerState(ctx, q, app.UID, "burned")
 	})
 	if err != nil {
-		r.Warn(ctx, "rollback: remove app record: %v", err)
+		warn("rollback: remove app record: %v", err)
 	}
 	if err := os.RemoveAll(c.Layout.AppDir(app.ID)); err != nil {
-		r.Warn(ctx, "rollback: remove generated config: %v", err)
+		warn("rollback: remove generated config: %v", err)
 	}
 	if err := c.syncRedisACL(ctx); err != nil {
-		r.Warn(ctx, "rollback: redis ACL not refreshed: %v", err)
+		warn("rollback: redis ACL not refreshed: %v", err)
 	}
+	return clean
 }

@@ -814,6 +814,13 @@ export interface ResticSettings {
    */
   includeSecrets: boolean;
 }
+/**
+ * ResticSettingsRequest saves an app's backup settings. Changing the
+ * repository of an initialized app needs Confirm "disconnect <slug>".
+ */
+export interface ResticSettingsRequest extends ResticSettings {
+  confirm?: string;
+}
 export interface ResticSnapshot {
   id: string;
   shortId: string;

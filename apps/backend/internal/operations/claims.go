@@ -31,7 +31,12 @@ type claims struct {
 // limit, so a waiting prepare never occupies an executor slot.
 const imageBuildPool = "image-build"
 
-var poolLimits = map[string]int{imageBuildPool: runtime.MaxConcurrentBuilds, resticPool: 2}
+// clonePool holds at most one clone at a time: clones escalate to global
+// claims (Run.Escalate), and two escalating operations would wait on each
+// other.
+const clonePool = "restic-clone"
+
+var poolLimits = map[string]int{imageBuildPool: runtime.MaxConcurrentBuilds, resticPool: 2, clonePool: 1}
 
 // globalClaims runs alone: nothing starts before it finishes and it starts
 // only when nothing else is running.
@@ -94,14 +99,16 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //     operations wait) and every bound data service, and holds the app's
 //     repository exclusively, in the restic pool. Other restic.* kinds hold
 //     only the repository. restic.inspect and restic.inspect-remote (read-only) share it.
-//     app.restore-from-backup is global like app.clone-from-backup.
+//   - app.clone-from-backup and app.restore-from-backup share the repository
+//     they read, in the clone pool (one at a time), while they download the
+//     snapshot into private staging. They then escalate to global claims
+//     (Run.Escalate) before creating and provisioning the new app.
 //   - image.prepare holds its runtime key exclusively, in the image-build
 //     pool. It only builds (ImageManager serializes per tag and excludes
 //     prune); image.prune stays global.
 //
 // Everything else runs alone: edge/tunnel/dbadmin apply, provision, publish,
-// unpublish, remove, bindings, permissions, backup, restore, app.clone-from-backup
-// (it creates an app and provisions databases), export, image prune.
+// unpublish, remove, bindings, permissions, backup, restore, export, image prune.
 func classify(op store.Operation, lookup func(id string) (domain.App, error)) claims {
 	switch op.Kind {
 	case KindAppReconcile, KindAppStart, KindAppRestart, KindAppUpdate, KindAppDeploy, KindAppStop:
@@ -140,6 +147,10 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 	case KindResticInspectRemote:
 		// Read-only on a repository of another stack, named by the target id.
 		return claims{shared: []string{"restic-remote:" + op.TargetID}}
+	case KindAppCloneFromBackup:
+		return claims{shared: []string{resticClaim(op.TargetID)}, pool: clonePool}
+	case KindAppRestoreFromBackup:
+		return claims{shared: []string{"restic-remote:" + op.TargetID}, pool: clonePool}
 	case KindImagePrepare:
 		return claims{excl: []string{imageClaim(op.TargetID)}, pool: imageBuildPool}
 	}

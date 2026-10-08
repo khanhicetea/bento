@@ -123,7 +123,8 @@ export const api = {
     },
     restic: {
       get: (id: string, signal?: AbortSignal) => get<T.Restic>(`/api/v1/apps/${enc(id)}/restic`, signal),
-      save: (id: string, body: T.ResticSettings) => request<T.Restic>("PUT", `/api/v1/apps/${enc(id)}/restic`, body),
+      save: (id: string, body: T.ResticSettingsRequest) =>
+        request<T.Restic>("PUT", `/api/v1/apps/${enc(id)}/restic`, body),
       init: (id: string) => mutate<T.ResticKeyAccepted>("POST", `/api/v1/apps/${enc(id)}/restic/init`),
       connect: (id: string, key: string) =>
         mutate("POST", `/api/v1/apps/${enc(id)}/restic/connect`, { key } satisfies T.ResticConnectRequest),

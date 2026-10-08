@@ -378,13 +378,18 @@ func (f *definerFilter) Flush() error {
 }
 
 // limitWriter keeps at most n bytes of diagnostic output (stderr excerpts in
-// memory). It always reports success so the producer is never interrupted.
+// memory). It always reports success so the producer is never interrupted;
+// truncated records that output was dropped.
 type limitWriter struct {
-	w io.Writer
-	n int
+	w         io.Writer
+	n         int
+	truncated bool
 }
 
 func (l *limitWriter) Write(p []byte) (int, error) {
+	if len(p) > l.n {
+		l.truncated = true
+	}
 	if l.n <= 0 {
 		return len(p), nil
 	}

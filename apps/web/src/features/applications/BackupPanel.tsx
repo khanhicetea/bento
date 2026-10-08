@@ -51,7 +51,8 @@ function AppBackupCard({ app }: { app: T.App }) {
   const restic = query.data;
   return (
     <div className="box box--2" aria-label="App backup">
-      <SettingsCell app={app} restic={restic} />
+      {/* Re-mounted when the saved settings change (another tab, a clone adopting the repository). */}
+      <SettingsCell key={JSON.stringify(restic.settings)} app={app} restic={restic} />
       {restic.configured && <RepositoryCell app={app} restic={restic} />}
       {restic.initialized && <SnapshotsCell app={app} restic={restic} />}
       {restic.initialized && <KeysCell app={app} restic={restic} />}
@@ -65,6 +66,8 @@ const lines = (value: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
+const retentionUnits = ["hourly", "daily", "weekly", "monthly"] as const;
+
 function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const queryClient = useQueryClient();
   const current = restic.settings;
@@ -73,12 +76,20 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const [excludes, setExcludes] = useState(current.excludes.join("\n"));
   const [sqlitePaths, setSqlitePaths] = useState(current.sqlitePaths.join("\n"));
   const [defaultExcludes, setDefaultExcludes] = useState(current.defaultExcludes);
-  const [retention, setRetention] = useState(current.retention);
+  // Raw field text, so an emptied field is not silently saved as 0.
+  const [retention, setRetention] = useState<Record<(typeof retentionUnits)[number], string>>({
+    hourly: String(current.retention.hourly),
+    daily: String(current.retention.daily),
+    weekly: String(current.retention.weekly),
+    monthly: String(current.retention.monthly),
+  });
+  const [retentionError, setRetentionError] = useState("");
+  const [confirmRepo, setConfirmRepo] = useState(false);
   const [schedule, setSchedule] = useState(current.schedule);
   const [includeSecrets, setIncludeSecrets] = useState(current.includeSecrets);
   const rclone = useQuery({ queryKey: keys.backups.rclone, queryFn: ({ signal }) => api.backups.rclone(signal) });
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: ({ kept, confirm }: { kept: T.ResticRetention; confirm?: string }) =>
       api.apps.restic.save(app.id, {
         repository: repository.trim(),
         paths: lines(paths),
@@ -86,11 +97,25 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
         sqlitePaths: lines(sqlitePaths),
         defaultExcludes,
         includeSecrets,
-        retention,
+        retention: kept,
         schedule: { enabled: schedule.enabled, cron: schedule.cron.trim() },
+        confirm,
       }),
-    onSuccess: (next) => queryClient.setQueryData(keys.apps.restic(app.id), next),
+    onSuccess: (next) => {
+      setConfirmRepo(false);
+      queryClient.setQueryData(keys.apps.restic(app.id), next);
+    },
   });
+  function parsedRetention(): T.ResticRetention | null {
+    const out = { hourly: 0, daily: 0, weekly: 0, monthly: 0 };
+    for (const unit of retentionUnits) {
+      const raw = retention[unit].trim();
+      if (!/^\d+$/.test(raw)) return null;
+      out[unit] = Number(raw);
+    }
+    return out;
+  }
+  const repoChanges = restic.initialized && repository.trim() !== current.repository;
   const remotes = rclone.data?.remotes ?? [];
   const textarea = "min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm";
   return (
@@ -99,7 +124,11 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
         className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          save.mutate();
+          const kept = parsedRetention();
+          setRetentionError(kept ? "" : "Enter a whole number for each period (0 keeps none of that period).");
+          if (!kept) return;
+          if (repoChanges) setConfirmRepo(true);
+          else save.mutate({ kept });
         }}
       >
         <Field
@@ -163,14 +192,14 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
             </label>
             <Field label="Keep snapshots" hint="Hourly, daily, weekly, monthly.">
               <div className="grid grid-cols-4 gap-2">
-                {(["hourly", "daily", "weekly", "monthly"] as const).map((unit) => (
+                {retentionUnits.map((unit) => (
                   <Input
                     key={unit}
                     type="number"
                     min={0}
                     aria-label={`Keep ${unit}`}
                     value={retention[unit]}
-                    onChange={(event) => setRetention({ ...retention, [unit]: Number(event.target.value) })}
+                    onChange={(event) => setRetention({ ...retention, [unit]: event.target.value })}
                   />
                 ))}
               </div>
@@ -199,8 +228,24 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
             {restic.configured ? "Save" : "Save settings"}
           </Button>
         </div>
-        {save.error && <p className="note note--bad">{messageOf(save.error)}</p>}
+        {retentionError && <p className="note note--bad">{retentionError}</p>}
+        {save.error && !confirmRepo && <p className="note note--bad">{messageOf(save.error)}</p>}
       </form>
+      <ConfirmDialog
+        open={confirmRepo}
+        onOpenChange={setConfirmRepo}
+        title="Disconnect the current repository?"
+        description={`The app stops using ${current.repository} and its snapshots are no longer listed here. The repository and its snapshots are not deleted; Bento keeps its key on the server. Create or connect the new repository afterwards.`}
+        confirmLabel="Change repository"
+        phrase={`disconnect ${app.slug}`}
+        destructive
+        pending={save.isPending}
+        error={save.error}
+        onConfirm={(typed) => {
+          const kept = parsedRetention();
+          if (kept) save.mutate({ kept, confirm: typed });
+        }}
+      />
     </Cell>
   );
 }
@@ -237,7 +282,8 @@ function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
       <Cell title="Repository" className="cell--wide">
         <p className="note mb-3">
           Create a new encrypted repository at <code>{restic.settings.repository}</code>, or connect one that already
-          exists (for example to restore another stack's backup into this app) with one of its keys.
+          holds this app's backups with one of its keys. To restore another stack's backup, use Apps → New → From app
+          backup.
         </p>
         {keyNotice}
         <div className="grid gap-3 md:grid-cols-2">
@@ -404,6 +450,7 @@ function KeysCell({ app, restic }: { app: T.App; restic: T.Restic }) {
     },
   });
   const remove = useOperationMutation((keyId: string) => api.apps.restic.removeKey(app.id, keyId));
+  const [removing, setRemoving] = useState<T.ResticKey | null>(null);
   return (
     <Cell title="Access keys" className="cell--wide">
       <p className="note mb-3">
@@ -418,7 +465,7 @@ function KeysCell({ app, restic }: { app: T.App; restic: T.Restic }) {
             {key.current ? (
               <span className="note">used by Bento</span>
             ) : (
-              <Button size="sm" variant="outline" disabled={remove.isPending} onClick={() => remove.mutate(key.id)}>
+              <Button size="sm" variant="outline" disabled={remove.isPending} onClick={() => setRemoving(key)}>
                 Remove
               </Button>
             )}
@@ -448,7 +495,19 @@ function KeysCell({ app, restic }: { app: T.App; restic: T.Restic }) {
           <KeyRound /> Add key
         </Button>
       </form>
-      {remove.error && <p className="note note--bad mt-2">{messageOf(remove.error)}</p>}
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => !open && setRemoving(null)}
+        title={`Remove key ${removing?.id.slice(0, 8) ?? ""}?`}
+        description={`Whoever holds this key (${removing?.userName ?? "unknown"}) can no longer open the repository. This cannot be undone.`}
+        confirmLabel="Remove key"
+        destructive
+        pending={remove.isPending}
+        error={remove.error}
+        onConfirm={() => {
+          if (removing) remove.mutate(removing.id, { onSuccess: () => setRemoving(null) });
+        }}
+      />
       <ConfirmDialog
         open={addOpen}
         onOpenChange={setAddOpen}

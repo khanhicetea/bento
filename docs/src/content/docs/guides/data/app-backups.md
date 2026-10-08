@@ -52,9 +52,11 @@ The app keeps running. In order:
    bindings with `.backup`. Databases go first, so the files captured afterwards include every upload the dumped
    rows can reference.
 2. Copies the scheduler's jobs database (`minicron.db`) and the listed SQLite files in the home with `.backup`.
-3. Writes `app.json` (runtime, resources, domains, bindings, git source). Env vars are included, but values whose
-   names contain `_KEY`, `KEY`, `SECRET`, `PASSWORD`, or `TOKEN` are redacted. Credentials, IDs, and UIDs are never
-   included.
+3. Writes `app.json` (runtime, resources, domains, bindings, git source). Env vars are included, but secret-looking
+   values are redacted: names containing `PASSWORD`, `PASSWD`, `PASSPHRASE`, `SECRET`, `TOKEN` or `CREDENTIAL`;
+   names with a word `PASS`, `PWD`, `PW`, `AUTH`, `CREDS`, `PRIVATE`, `SALT`, `COOKIE`, `CERT`, `DSN` or `APIKEY`;
+   names ending in `KEY` or `KEYS` (`APP_KEY`, not `CACHE_KEY_PREFIX`); and any value that is a URL with a password
+   (`DATABASE_URL=mysql://user:pw@…`). Credentials, IDs, and UIDs are never included.
 4. Runs `restic backup` of the home and those files as one snapshot, then applies retention. It prunes at most once a
    week.
 
@@ -86,6 +88,15 @@ reversible on the storage side: see [Protect app backups from deletion](/guides/
 
 An app backup is never restored over the live app. It always becomes a new app (a clone) that is left stopped. Use
 [database backups](/guides/data/backup-restore/) (`replace <db>`) to roll back a single database in place.
+
+The snapshot is downloaded while other operations keep running (one clone at a time). Creating the new app, its
+databases and its files then runs alone: operations submitted meanwhile wait until the clone finishes. If the backend
+stops during a clone, it removes the partly created app, the downloaded snapshot and leftover job containers when it
+starts again; submit the clone again.
+
+Changing the repository of an app whose repository is set up needs the confirmation `disconnect <slug>`. The old
+repository and its snapshots are not touched, and the key Bento held for it is kept on the server under
+`secrets/restic/`. Pruning a removed app deletes its app backup settings and those keys, never the repository.
 
 ### From another stack
 

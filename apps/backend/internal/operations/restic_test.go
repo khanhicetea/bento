@@ -54,7 +54,7 @@ func resticHarness(t *testing.T, onExec func(args []string, req docker.ExecReque
 	s := domain.DefaultResticSettings()
 	s.Repository = "b2:bento/apps/shop"
 	s.Schedule.Enabled = true
-	if _, err := h.c.SaveResticSettings(t.Context(), app.ID, s); err != nil {
+	if _, err := h.c.SaveResticSettings(t.Context(), app.ID, s, ""); err != nil {
 		t.Fatal(err)
 	}
 	return h, app
@@ -73,7 +73,7 @@ func TestResticSettingsValidationAndSchedule(t *testing.T) {
 	bad := domain.DefaultResticSettings()
 	bad.Repository = "missing:path"
 	var verrs domain.ValidationErrors
-	if _, err := h.c.SaveResticSettings(ctx, app.ID, bad); !errors.As(err, &verrs) {
+	if _, err := h.c.SaveResticSettings(ctx, app.ID, bad, ""); !errors.As(err, &verrs) {
 		t.Fatalf("a remote absent from rclone.conf must be refused, got %v", err)
 	}
 	sch, err := store.GetSchedule(ctx, h.store.DB(), resticScheduleID(app.ID))
@@ -434,7 +434,7 @@ func TestResticBackupIncludeSecretsWritesSecretsJSON(t *testing.T) {
 	v, _ := h.c.ResticSettings(ctx, app.ID)
 	s := v.Settings
 	s.IncludeSecrets = true
-	if _, err := h.c.SaveResticSettings(ctx, app.ID, s); err != nil {
+	if _, err := h.c.SaveResticSettings(ctx, app.ID, s, ""); err != nil {
 		t.Fatal(err)
 	}
 	cap := runCapturedBackup(t, h, app, nil)

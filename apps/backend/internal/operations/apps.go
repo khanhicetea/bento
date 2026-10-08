@@ -93,6 +93,7 @@ func (c *Controller) registerHandlers() {
 
 		KindResticInspectRemote:  c.handleResticInspectRemote,
 		KindAppRestoreFromBackup: c.handleAppRestoreFromBackup,
+		KindResticRecover:        c.handleResticRecover,
 	}
 }
 
@@ -1290,6 +1291,12 @@ func (c *Controller) handlePrune(ctx context.Context, r *Run) (any, error) {
 		} else {
 			r.Warn(ctx, "home %s belongs to another incarnation; left in place", home)
 		}
+	}
+	if err := r.Phase(ctx, "remove-backup-settings"); err != nil {
+		return nil, err
+	}
+	if err := c.forgetResticApp(ctx, r, ret.AppID); err != nil {
+		return nil, err
 	}
 	if err := store.MarkPruned(ctx, c.Store.DB(), ret.AppID); err != nil {
 		return nil, err

@@ -223,7 +223,7 @@ func (c *Controller) openRemoteRepo(
 	if err != nil {
 		return fail(resticFail(err, "open repository"))
 	}
-	snaps, err := listSnapshots(ctx, job)
+	snaps, err := listSnapshots(ctx, job, "")
 	if err != nil {
 		return fail(err)
 	}
@@ -322,10 +322,10 @@ func (c *Controller) adoptCloneRepository(ctx context.Context, repo cloneRepo, a
 		_ = os.Remove(c.resticKeyPath(app.ID))
 		return "App backup could not keep the repository: " + err.Error()
 	}
-	c.updateResticState(ctx, app.ID, func(st *domain.ResticState) {
+	c.updateResticState(ctx, app.ID, "", func(st *domain.ResticState) {
 		*st = domain.ResticState{RepositoryID: repo.repoID, InitializedAt: time.Now().UTC()}
 	})
-	if err := c.resticRefresh(ctx, repo.job, app.ID); err != nil {
+	if err := c.resticRefresh(ctx, repo.job, app.ID, repo.repoID); err != nil {
 		return "App backup of the new app now uses repository " + s.Repository + " (refresh it on the Backup tab)."
 	}
 	return "App backup of the new app now writes to " + s.Repository + ", the repository it was restored from. " +

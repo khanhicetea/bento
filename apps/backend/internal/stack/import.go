@@ -217,6 +217,9 @@ func rewriteImportedState(
 	if err := disableSetting(ctx, q, "edge"); err != nil {
 		return err
 	}
+	if err := disableResticSchedules(ctx, q); err != nil {
+		return err
+	}
 	if err := store.PutSetting(ctx, q, "tunnel", map[string]any{"enabled": false, "tokenGeneration": 0}); err != nil {
 		return err
 	}
@@ -232,6 +235,45 @@ func rewriteImportedState(
 	}
 	if uidRange != nil {
 		return moveUIDRange(ctx, q, *uidRange)
+	}
+	return nil
+}
+
+// disableResticSchedules turns off the schedule inside every app backup
+// setting (restic:<appId>) to match the disabled schedule rows, so the Backup
+// tab does not promise runs that never happen and the next settings save does
+// not silently re-enable a schedule writing into the source stack's repository.
+func disableResticSchedules(ctx context.Context, q store.Q) error {
+	rows, err := q.QueryContext(ctx, "SELECT key FROM settings WHERE key LIKE 'restic:%'")
+	if err != nil {
+		return err
+	}
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			rows.Close()
+			return err
+		}
+		keys = append(keys, k)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range keys {
+		var v map[string]any
+		if _, err := store.GetSetting(ctx, q, k, &v); err != nil {
+			return err
+		}
+		sched, ok := v["schedule"].(map[string]any)
+		if !ok {
+			continue
+		}
+		sched["enabled"] = false
+		if err := store.PutSetting(ctx, q, k, v); err != nil {
+			return err
+		}
 	}
 	return nil
 }

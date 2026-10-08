@@ -402,7 +402,6 @@ function CloneSteps({ source, onClose }: { source: CloneSource; onClose: () => v
         <Alert variant="destructive">
           {cloneOp.errorMessage}
           {cloneOp.guidance ? `\n${cloneOp.guidance}` : ""}
-          {"\nThe partly created app was removed."}
         </Alert>
       )}
       {result && <Checklist result={result} />}

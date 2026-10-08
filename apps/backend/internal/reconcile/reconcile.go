@@ -598,7 +598,10 @@ const orphanGrace = 2 * time.Minute
 
 // collectTools removes non-running ephemeral containers (tool, backup job,
 // image probe) this stack owns once they are past the grace period and no
-// active operation claims them.
+// active operation claims them. A running backup job container is removed
+// too once the operation named by its label has finished: restic and SQLite
+// snapshot jobs idle indefinitely and would otherwise outlive a crashed
+// backend, holding repository locks.
 func (r *Reconciler) collectTools(ctx context.Context) error {
 	list, err := r.C.Engine.List(ctx, map[string]string{runtime.LabelStackID: r.C.Stack.ID})
 	if err != nil {
@@ -606,9 +609,6 @@ func (r *Reconciler) collectTools(ctx context.Context) error {
 	}
 	now := time.Now()
 	for _, t := range list {
-		if !collectable(string(t.State)) {
-			continue
-		}
 		role := runtime.Role(t.Labels[runtime.LabelRole])
 		if role != runtime.RoleTool && role != runtime.RoleBackup && role != runtime.RoleProbe {
 			continue
@@ -617,6 +617,22 @@ func (r *Reconciler) collectTools(ctx context.Context) error {
 			continue
 		}
 		if t.Created == 0 || now.Sub(time.Unix(t.Created, 0)) < orphanGrace {
+			continue
+		}
+		if !collectable(string(t.State)) {
+			// Running: only a backup job of a known, finished operation. Labels
+			// that are not operation ids (volume transfers) never match.
+			opID := t.Labels[runtime.LabelOperation]
+			if role != runtime.RoleBackup || opID == "" {
+				continue
+			}
+			op, err := store.GetOperation(ctx, r.C.Store.DB(), opID)
+			if err != nil || !op.State.Terminal() {
+				continue
+			}
+			if err := r.C.Engine.Remove(ctx, t.ID); err != nil {
+				r.Log.Warn("remove orphaned backup job container", "container", t.ID, "err", err)
+			}
 			continue
 		}
 		if opID := t.Labels[runtime.LabelOperation]; opID != "" {

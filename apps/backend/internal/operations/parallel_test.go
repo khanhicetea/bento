@@ -143,6 +143,9 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 		KindResticInit:   true, KindResticConnect: true, KindResticBackup: true,
 		KindResticRefresh: true, KindResticKeyAdd: true, KindResticKeyRemove: true, KindResticCheck: true, KindResticUnlock: true, KindResticInspect: true,
 		KindResticInspectRemote: true,
+		// Clones download in parallel and escalate (Run.Escalate) before
+		// creating the app.
+		KindAppCloneFromBackup: true, KindAppRestoreFromBackup: true,
 	}
 	for kind := range h.c.handlers {
 		cl := h.c.claimsFor(t.Context(), store.Operation{Kind: kind, TargetID: "x"})

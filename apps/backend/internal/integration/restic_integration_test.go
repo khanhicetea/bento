@@ -36,7 +36,7 @@ func TestIntegrationResticAppBackup(t *testing.T) {
 	settings.Repository = "dest:/config/rclone/repo"
 	settings.Excludes = []string{"node_modules"}
 	settings.SQLitePaths = []string{"app/data.sqlite"}
-	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings); err != nil {
+	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
 	op, key, err := e.c.SubmitResticInit(ctx, app.ID, "")
@@ -54,16 +54,18 @@ func TestIntegrationResticAppBackup(t *testing.T) {
 		t.Fatal("added key must be new")
 	}
 
-	// Another app connects with the handed-over key and sees the snapshot.
+	// Another app connects with the handed-over key. Its Backup tab lists only
+	// its own snapshots (tag app=<id>); the source's is restored through
+	// restore-from-backup instead.
 	other := e.create("copy", rt)
 	settings.Schedule.Enabled = false
-	if _, err := e.c.SaveResticSettings(ctx, other.ID, settings); err != nil {
+	if _, err := e.c.SaveResticSettings(ctx, other.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
 	e.wait(e.c.SubmitResticConnect(ctx, other.ID, extra, ""))
 	ov, _ := e.c.ResticSettings(ctx, other.ID)
-	if len(ov.State.Snapshots) != 1 || ov.State.Snapshots[0].ID != snap {
-		t.Fatalf("connected app should list the source snapshot: %+v", ov.State.Snapshots)
+	if ov.State.RepositoryID != v.State.RepositoryID || len(ov.State.Snapshots) != 0 {
+		t.Fatalf("connected app must list only its own snapshots, not %s: %+v", snap, ov.State.Snapshots)
 	}
 }
 
@@ -92,7 +94,7 @@ func TestIntegrationResticUnreachableRemoteFailsFast(t *testing.T) {
 	app := e.create("shop", rt)
 	settings := domain.DefaultResticSettings()
 	settings.Repository = "dead:nobucket/shop"
-	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings); err != nil {
+	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
 	started := time.Now()

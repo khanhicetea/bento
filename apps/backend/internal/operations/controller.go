@@ -273,6 +273,11 @@ func (c *Controller) Recover(ctx context.Context) error {
 	if _, serr := c.SweepPendingResticKeys(ctx); serr != nil {
 		c.Log.Warn("sweep pending restic keys", "err", serr)
 	}
+	// Partial clones, decrypted staging and orphaned job containers are
+	// removed by an operation, not here.
+	if serr := c.submitResticRecovery(ctx, ops); serr != nil {
+		c.Log.Warn("submit restic recovery", "err", serr)
+	}
 	return nil
 }
 
@@ -654,6 +659,48 @@ func (r *Run) Phase(ctx context.Context, phase string) error {
 	}
 	r.event(ctx, "info", "phase: "+phase)
 	return nil
+}
+
+// Escalate turns the running operation's claims global for the rest of its
+// run: no other operation starts from now on, and Escalate returns once every
+// other running operation has finished. It lets a long operation do its
+// read-only part (a download into private staging) under narrow claims and
+// hold the whole stack only for the short part that needs it. Kinds that
+// escalate must share a pool of size 1 so two of them never wait on each
+// other.
+func (r *Run) Escalate(ctx context.Context) error {
+	c := r.c
+	c.runMu.Lock()
+	if _, ok := c.running[r.Op.ID]; ok {
+		c.running[r.Op.ID] = globalClaims
+	}
+	c.runMu.Unlock()
+	announced := false
+	for {
+		c.runMu.Lock()
+		others := 0
+		for id := range c.running {
+			if id != r.Op.ID {
+				others++
+			}
+		}
+		c.runMu.Unlock()
+		if others == 0 {
+			return nil
+		}
+		if !announced {
+			r.Info(ctx, "waiting for %d running operation(s) to finish", others)
+			announced = true
+		}
+		if r.Cancelled(ctx) {
+			return ErrCancelled
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 // Cancelled reports whether cancellation was requested. Handlers may call it

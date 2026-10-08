@@ -143,7 +143,7 @@ function RetainedData() {
         open={target !== null}
         onOpenChange={(open) => !open && setTarget(null)}
         title={`Prune ${target?.slug ?? "app"}?`}
-        description="Permanently deletes its home, SQLite files and databases. UIDs are never reused."
+        description="Permanently deletes its home, SQLite files and databases, and its app backup settings and the repository key Bento kept (the repository itself is not touched). UIDs are never reused."
         phrase="delete"
         destructive
         confirmLabel="Prune forever"

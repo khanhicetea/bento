@@ -879,6 +879,13 @@ type ResticSettings struct {
 	IncludeSecrets bool `json:"includeSecrets"`
 }
 
+// ResticSettingsRequest saves an app's backup settings. Changing the
+// repository of an initialized app needs Confirm "disconnect <slug>".
+type ResticSettingsRequest struct {
+	ResticSettings `tstype:",extends"`
+	Confirm        string `json:"confirm,omitempty"`
+}
+
 type ResticSnapshot struct {
 	ID      string   `json:"id"`
 	ShortID string   `json:"shortId"`

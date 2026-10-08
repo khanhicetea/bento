@@ -115,7 +115,7 @@ func (s *Server) handlePutRestic(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req dto.ResticSettings
+	var req dto.ResticSettingsRequest
 	if err := decode(w, r, &req); err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -126,7 +126,7 @@ func (s *Server) handlePutRestic(w http.ResponseWriter, r *http.Request) {
 		Retention: domain.ResticRetention{Hourly: req.Retention.Hourly, Daily: req.Retention.Daily,
 			Weekly: req.Retention.Weekly, Monthly: req.Retention.Monthly},
 		Schedule: domain.ResticSchedule{Enabled: req.Schedule.Enabled, Cron: req.Schedule.Cron},
-	})
+	}, req.Confirm)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return

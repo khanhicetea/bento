@@ -72,6 +72,46 @@ func (c *Controller) resticKeyPath(appID string) string {
 	return filepath.Join(c.resticKeyDir(), appID+".key")
 }
 
+// forgetResticApp removes what app backup kept for a removed app once it is
+// pruned: its settings, its state and its key files (current and retired).
+// The repository itself is never touched.
+func (c *Controller) forgetResticApp(ctx context.Context, r *Run, appID string) error {
+	for _, k := range []string{resticSettingsKey(appID), resticStateKey(appID)} {
+		if err := store.DeleteSetting(ctx, c.Store.DB(), k); err != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(c.resticKeyDir())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		n := e.Name()
+		if n == appID+".key" || (strings.HasPrefix(n, appID+".retired-") && strings.HasSuffix(n, ".key")) {
+			if err := os.Remove(filepath.Join(c.resticKeyDir(), n)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			r.Info(ctx, "removed app backup key %s; the repository is unchanged", n)
+		}
+	}
+	return nil
+}
+
+// retireResticKey keeps the app's current key, if any, as
+// <app>.retired-<unix>.key before a new one replaces it: it may be the only
+// key Bento holds for a repository the operator disconnected.
+func (c *Controller) retireResticKey(appID string) error {
+	cur := c.resticKeyPath(appID)
+	if _, err := os.Lstat(cur); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	old := filepath.Join(c.resticKeyDir(), fmt.Sprintf("%s.retired-%d.key", appID, time.Now().UnixNano()))
+	return os.Rename(cur, old)
+}
+
 // ResticSettings returns an app's restic configuration (defaults when unset).
 func (c *Controller) ResticSettings(ctx context.Context, appID string) (ResticView, error) {
 	if _, err := store.GetApp(ctx, c.Store.DB(), appID); err != nil {
@@ -127,12 +167,20 @@ func (c *Controller) ResticOverview(ctx context.Context) ([]AppResticView, error
 
 // SaveResticSettings validates and stores an app's restic settings and its
 // backup schedule. Changing the repository of an initialized app forgets the
-// repository state: it must be initialized or connected again.
-func (c *Controller) SaveResticSettings(ctx context.Context, appID string, s domain.ResticSettings) (ResticView, error) {
-	if _, err := store.GetApp(ctx, c.Store.DB(), appID); err != nil {
+// repository state: it must be initialized or connected again, so it needs the
+// exact confirmation "disconnect <slug>". The key of the old repository is
+// kept on disk (see retireResticKey) when a new one is adopted.
+func (c *Controller) SaveResticSettings(
+	ctx context.Context,
+	appID string,
+	s domain.ResticSettings,
+	confirm string,
+) (ResticView, error) {
+	app, err := store.GetApp(ctx, c.Store.DB(), appID)
+	if err != nil {
 		return ResticView{}, err
 	}
-	s.Paths = normalizeRels(s.Paths, true)
+	s.Paths = domain.TopmostRels(normalizeRels(s.Paths, true))
 	s.SQLitePaths = normalizeRels(s.SQLitePaths, false)
 	if s.Excludes == nil {
 		s.Excludes = []string{}
@@ -154,12 +202,16 @@ func (c *Controller) SaveResticSettings(ctx context.Context, appID string, s dom
 	if err := errs.Err(); err != nil {
 		return ResticView{}, err
 	}
-	err := c.Store.Tx(ctx, func(q store.Q) error {
+	err = c.Store.Tx(ctx, func(q store.Q) error {
 		prev, err := c.resticView(ctx, q, appID)
 		if err != nil {
 			return err
 		}
 		if prev.Configured && prev.Settings.Repository != s.Repository && prev.State.RepositoryID != "" {
+			if confirm != "disconnect "+app.Slug {
+				return fmt.Errorf("%w: type exactly %q; this disconnects repository %s and its snapshots from the app",
+					ErrConfirmation, "disconnect "+app.Slug, prev.Settings.Repository)
+			}
 			if err := store.PutSetting(ctx, q, resticStateKey(appID), domain.ResticState{}); err != nil {
 				return err
 			}
@@ -215,11 +267,17 @@ func submitScheduledResticBackup(ctx context.Context, c *Controller, s store.Sch
 	return c.SubmitResticBackup(ctx, spec.AppID, "schedule", "")
 }
 
-func (c *Controller) updateResticState(ctx context.Context, appID string, fn func(*domain.ResticState)) {
+// updateResticState applies fn to the stored state. With a repoID the update
+// is dropped when the state now belongs to another repository (the operator
+// changed the repository while the operation ran); "" always applies.
+func (c *Controller) updateResticState(ctx context.Context, appID, repoID string, fn func(*domain.ResticState)) {
 	err := c.Store.Tx(ctx, func(q store.Q) error {
 		v, err := c.resticView(ctx, q, appID)
 		if err != nil {
 			return err
+		}
+		if repoID != "" && v.State.RepositoryID != repoID {
+			return nil
 		}
 		fn(&v.State)
 		return store.PutSetting(ctx, q, resticStateKey(appID), v.State)
@@ -486,8 +544,18 @@ func resticFail(err error, what string) error {
 }
 
 // listSnapshots returns the repository's snapshots, newest first (at most 500).
-func listSnapshots(ctx context.Context, job *backup.ResticJob) ([]domain.ResticSnapshot, error) {
-	raw, err := job.RunJSON(ctx, []string{"snapshots", "--no-lock"})
+// listSnapshots lists a repository's snapshots, newest first. With a tag
+// ("app=<id>") only matching snapshots are listed: a shared or adopted
+// repository also holds other apps' snapshots.
+// unreadableWarnLimit is how many unreadable files a backup reports by name.
+const unreadableWarnLimit = 20
+
+func listSnapshots(ctx context.Context, job *backup.ResticJob, tag string) ([]domain.ResticSnapshot, error) {
+	args := []string{"snapshots", "--no-lock"}
+	if tag != "" {
+		args = append(args, "--tag", tag)
+	}
+	raw, err := job.RunJSON(ctx, args)
 	if err != nil {
 		return nil, resticFail(err, "list snapshots")
 	}
@@ -512,8 +580,8 @@ func listSnapshots(ctx context.Context, job *backup.ResticJob) ([]domain.ResticS
 	return out, nil
 }
 
-func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, appID string) error {
-	out, err := listSnapshots(ctx, job)
+func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, appID, repoID string) error {
+	out, err := listSnapshots(ctx, job, "app="+appID)
 	if err != nil {
 		return err
 	}
@@ -538,7 +606,7 @@ func (c *Controller) resticRefresh(ctx context.Context, job *backup.ResticJob, a
 		keys = append(keys, domain.ResticKey{ID: k.ID, Current: k.Current, UserName: k.UserName, HostName: k.HostName,
 			Created: created})
 	}
-	c.updateResticState(ctx, appID, func(s *domain.ResticState) {
+	c.updateResticState(ctx, appID, repoID, func(s *domain.ResticState) {
 		s.Snapshots, s.Keys, s.RefreshedAt = out, keys, time.Now().UTC()
 	})
 	return nil
@@ -632,13 +700,16 @@ func (c *Controller) adoptKey(ctx context.Context, r *Run, create bool) (any, er
 	if err != nil {
 		return nil, resticFail(err, "open repository")
 	}
+	if err := c.retireResticKey(app.ID); err != nil {
+		return nil, err
+	}
 	if err := platform.CopyFile(pending, c.resticKeyPath(app.ID), 0o400, platform.RootOwner); err != nil {
 		return nil, err
 	}
-	c.updateResticState(ctx, app.ID, func(s *domain.ResticState) {
+	c.updateResticState(ctx, app.ID, "", func(s *domain.ResticState) {
 		*s = domain.ResticState{RepositoryID: id, InitializedAt: time.Now().UTC()}
 	})
-	if err := c.resticRefresh(ctx, job, app.ID); err != nil {
+	if err := c.resticRefresh(ctx, job, app.ID, id); err != nil {
 		r.Warn(ctx, "repository ready but listing failed: %v", err)
 	}
 	r.Info(ctx, "repository %s ready (id %s)", v.Settings.Repository, id[:8])
@@ -704,7 +775,7 @@ func (c *Controller) handleResticRefresh(ctx context.Context, r *Run) (any, erro
 	}
 	defer env.close()
 	defer job.Close(ctx)
-	return nil, c.resticRefresh(ctx, job, app.ID)
+	return nil, c.resticRefresh(ctx, job, app.ID, v.State.RepositoryID)
 }
 
 // handleResticUnlock removes stale locks only (restic unlock): locks older
@@ -752,7 +823,7 @@ func (c *Controller) handleResticCheck(ctx context.Context, r *Run) (any, error)
 	if err != nil {
 		res.Error = err.Error()
 	}
-	c.updateResticState(ctx, app.ID, func(s *domain.ResticState) { s.LastCheck = &res })
+	c.updateResticState(ctx, app.ID, v.State.RepositoryID, func(s *domain.ResticState) { s.LastCheck = &res })
 	if err != nil {
 		return nil, resticFail(err, "check")
 	}
@@ -790,7 +861,7 @@ func (c *Controller) handleResticKeyAdd(ctx context.Context, r *Run) (any, error
 		return nil, resticFail(err, "add key")
 	}
 	r.Info(ctx, "added key %q", req.Label)
-	return nil, c.resticRefresh(ctx, job, app.ID)
+	return nil, c.resticRefresh(ctx, job, app.ID, v.State.RepositoryID)
 }
 
 func (c *Controller) handleResticKeyRemove(ctx context.Context, r *Run) (any, error) {
@@ -814,7 +885,7 @@ func (c *Controller) handleResticKeyRemove(ctx context.Context, r *Run) (any, er
 		return nil, resticFail(err, "remove key")
 	}
 	r.Info(ctx, "removed key %s", req.KeyID)
-	return nil, c.resticRefresh(ctx, job, app.ID)
+	return nil, c.resticRefresh(ctx, job, app.ID, v.State.RepositoryID)
 }
 
 // ---- backup ----
@@ -917,7 +988,7 @@ func dumpSuffix(slug, db string) string {
 func resticSecrets(app domain.App) ResticSecrets {
 	out := ResticSecrets{Env: []domain.EnvVar{}, Bindings: []ResticSecretBinding{}}
 	for _, e := range app.Runtime.Env {
-		if domain.SensitiveEnvKey(e.Key) {
+		if domain.SensitiveEnv(e) {
 			out.Env = append(out.Env, e)
 		}
 	}
@@ -934,7 +1005,7 @@ func resticSecrets(app domain.App) ResticSecrets {
 func secretRedactor(app domain.App) *strings.Replacer {
 	var pairs []string
 	for _, e := range app.Runtime.Env {
-		if domain.SensitiveEnvKey(e.Key) && e.Value != "" {
+		if domain.SensitiveEnv(e) && e.Value != "" {
 			pairs = append(pairs, e.Value, domain.RedactedEnvValue)
 		}
 	}
@@ -952,7 +1023,7 @@ func secretRedactor(app domain.App) *strings.Replacer {
 func redactedEnv(env []domain.EnvVar) []domain.EnvVar {
 	out := make([]domain.EnvVar, 0, len(env))
 	for _, e := range env {
-		if domain.SensitiveEnvKey(e.Key) {
+		if domain.SensitiveEnv(e) {
 			e.Value = domain.RedactedEnvValue
 		}
 		out = append(out, e)
@@ -1032,7 +1103,7 @@ func (c *Controller) handleResticBackup(ctx context.Context, r *Run) (any, error
 		res.Error = redact.Replace(err.Error())
 		err = redactOpError(err, redact)
 	}
-	c.updateResticState(context.WithoutCancel(ctx), app.ID, func(s *domain.ResticState) {
+	c.updateResticState(context.WithoutCancel(ctx), app.ID, v.State.RepositoryID, func(s *domain.ResticState) {
 		s.LastBackup = &res
 		s.History = append([]domain.ResticRunResult{res}, s.History...)
 		if len(s.History) > domain.ResticHistoryLimit {
@@ -1112,7 +1183,7 @@ func (c *Controller) resticBackup(
 		if err := r.Phase(ctx, "snapshot-home-sqlite"); err != nil {
 			return res, err
 		}
-		skipped, err := deps.SnapshotHomeSQLite(ctx, app, sqliteFiles, filepath.Join(env.data, "home-sqlite"))
+		skipped, err := deps.SnapshotHomeSQLite(ctx, app, r.Op.ID, sqliteFiles, filepath.Join(env.data, "home-sqlite"))
 		if err != nil {
 			return res, Fail("sqlite-snapshot-failed", "Check the listed SQLite paths.", "%v", err)
 		}
@@ -1193,7 +1264,11 @@ func (c *Controller) resticBackup(
 			_ = json.Unmarshal(line, &summary)
 		case "error":
 			unreadable++
-			r.Warn(ctx, "%s: %s", strings.TrimPrefix(m.Item, backup.ResticHomeMount), redact.Replace(m.Error.Message))
+			// A permission problem can hit thousands of files: name the first
+			// few, then count.
+			if unreadable <= unreadableWarnLimit {
+				r.Warn(ctx, "%s: %s", strings.TrimPrefix(m.Item, backup.ResticHomeMount), redact.Replace(m.Error.Message))
+			}
 		case "status":
 			if time.Since(lastProgress) > 30*time.Second {
 				lastProgress = time.Now()
@@ -1201,7 +1276,11 @@ func (c *Controller) resticBackup(
 			}
 		}
 	}}
-	if err := job.Run(ctx, args, lw); err != nil {
+	err = job.Run(ctx, args, lw)
+	if unreadable > unreadableWarnLimit {
+		r.Warn(ctx, "%d more files could not be read", unreadable-unreadableWarnLimit)
+	}
+	if err != nil {
 		// Exit 3: snapshot created but some files were unreadable.
 		var re *backup.ResticError
 		if !errors.As(err, &re) || re.Exit != 3 || summary.SnapshotID == "" {
@@ -1233,9 +1312,9 @@ func (c *Controller) resticBackup(
 	if err := job.Run(ctx, fargs, nil); err != nil {
 		r.Warn(ctx, "snapshot saved; retention failed: %v", resticFail(err, "forget"))
 	} else if slices.Contains(fargs, "--prune") {
-		c.updateResticState(ctx, app.ID, func(s *domain.ResticState) { s.LastPruneAt = time.Now().UTC() })
+		c.updateResticState(ctx, app.ID, v.State.RepositoryID, func(s *domain.ResticState) { s.LastPruneAt = time.Now().UTC() })
 	}
-	if err := c.resticRefresh(ctx, job, app.ID); err != nil {
+	if err := c.resticRefresh(ctx, job, app.ID, v.State.RepositoryID); err != nil {
 		r.Warn(ctx, "snapshot saved; listing failed: %v", err)
 	}
 	if job.LockLeaked() {

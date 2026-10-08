@@ -228,6 +228,17 @@ backend stopped, edge traffic and scheduled jobs continued.
 - Not verified: arm64; real framework apps; true CPU saturation (the busy loop is wall-clock, so CFS throttling
   lengthens it instead of capping throughput); single run per profile on a host also running a dev stack.
 
+## App backup hardening (2026-10-08, linux/amd64, Docker 29.8.1)
+
+- `BENTO_DOCKER_TESTS=1 go test -run 'Restic|Clone|Restore' ./internal/integration/` as root: passed
+  `TestIntegrationResticCloneSameStack` (secrets on and off), `TestIntegrationResticAppBackup`,
+  `TestIntegrationResticUnreachableRemoteFailsFast` and `TestIntegrationResticRestoreFromAnotherStack`. They cover the
+  clone pool and `Run.Escalate`, the `bento/` symlink refusal on real `restic restore` output, the per-app snapshot
+  filter (`--tag app=<id>`), and the long-lived job container (`sleep 2147483647` on the rclone/BusyBox image).
+- Only fakes cover: recovery after a backend crash in the middle of a clone (`restic.recover`), collecting running
+  orphaned job containers, the data-volume free-space check, and crafted snapshots with symlinks (unit tests).
+- Not run: the full `make test-integration` (lifecycle and runtime image builds), arm64.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).

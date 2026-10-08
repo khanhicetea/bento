@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -89,8 +90,9 @@ func TestRestoreFromBackupSubmissionIsValidated(t *testing.T) {
 
 func TestRemoteClaims(t *testing.T) {
 	lookup := func(string) (domain.App, error) { return domain.App{}, store.ErrNotFound }
-	if cl := classify(store.Operation{Kind: KindAppRestoreFromBackup, TargetID: remoteRepo}, lookup); !cl.global {
-		t.Fatalf("restore-from-backup must run alone: %+v", cl)
+	if cl := classify(store.Operation{Kind: KindAppRestoreFromBackup, TargetID: remoteRepo}, lookup); cl.global ||
+		cl.pool != clonePool || !slices.Contains(cl.shared, "restic-remote:"+remoteRepo) {
+		t.Fatalf("restore-from-backup downloads in the clone pool, sharing the repository: %+v", cl)
 	}
 	a := classify(store.Operation{Kind: KindResticInspectRemote, TargetID: remoteRepo}, lookup)
 	b := classify(store.Operation{Kind: KindResticInspectRemote, TargetID: remoteRepo}, lookup)

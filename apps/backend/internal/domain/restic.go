@@ -145,6 +145,12 @@ func ValidateResticSettings(s ResticSettings) ValidationErrors {
 	if len(s.Paths) == 0 {
 		errs.Add("paths", "add at least one path (\".\" is the whole home)")
 	}
+	if len(s.Paths) > 200 {
+		errs.Add("paths", "at most 200 paths")
+	}
+	if len(s.SQLitePaths) > 200 {
+		errs.Add("sqlitePaths", "at most 200 files")
+	}
 	for _, p := range s.Paths {
 		if _, err := CleanHomeRel(p, true); err != "" {
 			errs.Add("paths", "%q %s", p, err)
@@ -177,6 +183,26 @@ func ValidateResticSettings(s ResticSettings) ValidationErrors {
 		errs.Add("schedule", "a cron expression is required when the schedule is enabled")
 	}
 	return errs
+}
+
+// TopmostRels drops every (already cleaned) home-relative path that lies inside
+// another one of the list ("app/storage" next to "app"), so restoring moves
+// each tree once. "." covers everything.
+func TopmostRels(rels []string) []string {
+	if slices.Contains(rels, ".") {
+		return []string{"."}
+	}
+	sorted := slices.Clone(rels)
+	slices.SortFunc(sorted, func(a, b string) int { return len(a) - len(b) })
+	out := []string{}
+	for _, p := range sorted {
+		covered := slices.ContainsFunc(out, func(q string) bool { return p == q || strings.HasPrefix(p, q+"/") })
+		if !covered {
+			out = append(out, p)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // CleanHomeRel normalizes a home-relative path. It returns a non-empty
@@ -214,6 +240,8 @@ func validExcludePattern(p string) string {
 	return ""
 }
 
+var globEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`, "[", `\[`)
+
 // ResticExcludeLines renders restic exclude-file lines for a home mounted at
 // homeMount. Patterns containing "/" are anchored at the home; others match a
 // name at any depth, as in restic.
@@ -239,6 +267,8 @@ func ResticExcludeLines(s ResticSettings, homeMount string, sqliteFiles []string
 		}
 	}
 	for _, f := range sqliteFiles {
+		// File names are literal; restic would read *, ? and [ as globs.
+		f = globEscaper.Replace(f)
 		for _, sfx := range []string{"", "-wal", "-shm", "-journal"} {
 			lines = append(lines, homeMount+"/"+f+sfx)
 		}
@@ -249,18 +279,50 @@ func ResticExcludeLines(s ResticSettings, homeMount string, sqliteFiles []string
 	return lines
 }
 
-// sensitiveEnv marks env keys whose values are redacted from app.json.
-var sensitiveEnv = []string{"_KEY", "SECRET", "PASSWORD", "TOKEN"}
+// sensitiveEnvParts mark a key as secret when they appear anywhere in it
+// ("DBPASSWORD", "MY_SECRET_X"). They are long enough not to occur by chance.
+var sensitiveEnvParts = []string{"PASSWORD", "PASSWD", "PASSPHRASE", "SECRET", "TOKEN", "CREDENTIAL"}
 
-// SensitiveEnvKey reports whether an env var's value is treated as a secret.
+// sensitiveEnvWords mark a key as secret when they are a whole word of it
+// (words are separated by "_", "-" or "."), so "PASS" matches "SMTP_PASS"
+// but not "COMPASS".
+var sensitiveEnvWords = []string{"PASS", "PWD", "PW", "AUTH", "CREDS", "PRIVATE", "SALT", "COOKIE", "COOKIES", "CERT",
+	"DSN", "APIKEY"}
+
+// sensitiveEnvLast mark a key as secret when they are its last word: "APP_KEY"
+// and "STRIPE_KEYS" but not "CACHE_KEY_PREFIX".
+var sensitiveEnvLast = []string{"KEY", "KEYS", "SECRETKEY", "ACCESSKEY", "PRIVATEKEY"}
+
+// urlUserinfoPassword matches a URL that carries a password in its userinfo,
+// such as "mysql://user:pw@host/db" or "redis://:pw@host".
+var urlUserinfoPassword = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@\s]*:[^/?#@\s]+@`)
+
+// SensitiveEnvKey reports whether an env var's name marks its value as a
+// secret.
 func SensitiveEnvKey(key string) bool {
 	k := strings.ToUpper(key)
-	for _, s := range sensitiveEnv {
+	for _, s := range sensitiveEnvParts {
 		if strings.Contains(k, s) {
 			return true
 		}
 	}
-	return strings.HasSuffix(k, "KEY")
+	words := strings.FieldsFunc(k, func(r rune) bool { return r == '_' || r == '-' || r == '.' })
+	if len(words) == 0 {
+		return false
+	}
+	for _, w := range words {
+		if slices.Contains(sensitiveEnvWords, w) {
+			return true
+		}
+	}
+	return slices.Contains(sensitiveEnvLast, words[len(words)-1])
+}
+
+// SensitiveEnv reports whether an env var's value is treated as a secret: by
+// its name, or because the value is a URL with an embedded password (for
+// example DATABASE_URL or REDIS_URL).
+func SensitiveEnv(e EnvVar) bool {
+	return SensitiveEnvKey(e.Key) || urlUserinfoPassword.MatchString(strings.TrimSpace(e.Value))
 }
 
 // RedactedEnvValue replaces sensitive env values in app.json.

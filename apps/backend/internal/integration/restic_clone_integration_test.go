@@ -111,7 +111,7 @@ timeout = 30
 	settings := domain.DefaultResticSettings()
 	settings.Repository = "dest:/config/rclone/repo"
 	settings.IncludeSecrets = secrets
-	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings); err != nil {
+	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
 	op, _, err = e.c.SubmitResticInit(ctx, app.ID, "")

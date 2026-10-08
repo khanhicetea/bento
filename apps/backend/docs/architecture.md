@@ -106,7 +106,15 @@ operations on the same resource keep FIFO order and nothing overtakes a waiting 
 | `app.stop` | exclusive `app:<id>` |
 | `service.create`, `service.reconcile` | exclusive `service:<name>` |
 | `image.prepare` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
+| `app.clone-from-backup`, `app.restore-from-backup` | shared `restic:<src>` / `restic-remote:<repo>`, in the `restic-clone` pool (one at a time) while downloading; then `Run.Escalate` turns them global before planning, creating and provisioning the clone |
 | everything else, and any unclassified kind | **global**: runs alone, after everything before it, before anything after it |
+
+`Run.Escalate` swaps the running operation's claims for global ones (so nothing new starts) and waits until every
+other running operation has finished. Only kinds in a pool of size 1 may escalate, so two escalating operations never
+wait on each other. After a restart, `Recover` submits `restic.recover` (global) when an interrupted clone or staging
+leftovers exist: it rolls back the partial app (its id is in the clone's request), removes `staging/restic-*`,
+`staging/home-sqlite-*` and `homes/.clone-*`, and removes backup job containers of finished operations. The reconciler
+also collects *running* backup job containers whose operation has finished.
 
 An `app.start` or `app.update` of an unprovisioned app is global because provisioning writes grants on shared data
 services. The reasons for each global kind are the shared state it rewrites: the edge settings or several routes at once

@@ -197,8 +197,13 @@ func TestParseCloneInputsAreStrict(t *testing.T) {
 func TestResticCloneClaimsAndConfirmation(t *testing.T) {
 	app := domain.App{ID: "a1"}
 	lookup := func(string) (domain.App, error) { return app, nil }
-	if cl := classify(store.Operation{Kind: KindAppCloneFromBackup, TargetID: "a1"}, lookup); !cl.global {
-		t.Fatalf("clone must run alone: %+v", cl)
+	cl := classify(store.Operation{Kind: KindAppCloneFromBackup, TargetID: "a1"}, lookup)
+	other := classify(store.Operation{Kind: KindAppRestoreFromBackup, TargetID: "b2:x"}, lookup)
+	if cl.global || cl.pool != clonePool || poolLimits[clonePool] != 1 || other.pool != clonePool {
+		t.Fatalf("clones download in the clone pool, one at a time: %+v %+v", cl, other)
+	}
+	if !cl.conflicts(classify(store.Operation{Kind: KindResticBackup, TargetID: "a1"}, lookup)) {
+		t.Fatal("a clone must not download while the repository is being backed up")
 	}
 	in := classify(store.Operation{Kind: KindResticInspect, TargetID: "a1"}, lookup)
 	bk := classify(store.Operation{Kind: KindResticBackup, TargetID: "a1"}, lookup)
@@ -548,7 +553,7 @@ func TestResticSnapshotTagMarksSecrets(t *testing.T) {
 		v, _ := h.c.ResticSettings(t.Context(), app.ID)
 		s := v.Settings
 		s.IncludeSecrets = on
-		if _, err := h.c.SaveResticSettings(t.Context(), app.ID, s); err != nil {
+		if _, err := h.c.SaveResticSettings(t.Context(), app.ID, s, ""); err != nil {
 			t.Fatal(err)
 		}
 		cap := runCapturedBackup(t, h, app, nil)

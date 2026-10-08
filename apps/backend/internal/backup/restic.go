@@ -102,7 +102,7 @@ func (d Deps) StartResticJob(
 	spec := d.rcloneSpec(d.Names.BackupContainer("restic-"+platform.RandomHex(5)), runtime.RoleBackup, opID, mounts)
 	spec.Config.Image = image
 	spec.Config.Entrypoint = []string{"sleep"}
-	spec.Config.Cmd = []string{"86400"}
+	spec.Config.Cmd = []string{jobSleepSeconds}
 	spec.Config.Env = append(spec.Config.Env,
 		"RESTIC_REPOSITORY=rclone:"+repository,
 		"RESTIC_PASSWORD_FILE="+resticCtlMount+"/"+ResticKeyFile,
@@ -242,15 +242,26 @@ func (j *ResticJob) RunJSON(ctx context.Context, args []string) ([]byte, error) 
 	if err := j.RunQuick(ctx, append(args, "--json"), lw); err != nil {
 		return nil, err
 	}
+	if lw.truncated {
+		return nil, fmt.Errorf("%w (restic %s, over 16 MiB)", ErrResticOutputTooLarge, args[0])
+	}
 	return out.Bytes(), nil
 }
+
+// ErrResticOutputTooLarge reports that a metadata command printed more than
+// Bento keeps in memory, so its output cannot be parsed.
+var ErrResticOutputTooLarge = errors.New("restic output too large")
 
 // Output runs a metadata command (bounded by ResticQuickTimeout) and returns
 // at most limit bytes of its stdout.
 func (j *ResticJob) Output(ctx context.Context, args []string, limit int) ([]byte, error) {
 	var out bytes.Buffer
-	if err := j.RunQuick(ctx, args, &limitWriter{w: &out, n: limit}); err != nil {
+	lw := &limitWriter{w: &out, n: limit}
+	if err := j.RunQuick(ctx, args, lw); err != nil {
 		return nil, err
+	}
+	if lw.truncated {
+		return nil, fmt.Errorf("%w (restic %s, over %d bytes)", ErrResticOutputTooLarge, args[0], limit)
 	}
 	return out.Bytes(), nil
 }
@@ -318,7 +329,7 @@ func (d Deps) DumpPlain(ctx context.Context, t Target, path string) error {
 // mounts only the home and an output directory. rels are clean
 // home-relative paths; out[i] receives a copy of rels[i]. Missing files are
 // skipped and reported in the returned list.
-func (d Deps) SnapshotHomeSQLite(ctx context.Context, app domain.App, rels []string, outDir string) ([]string, error) {
+func (d Deps) SnapshotHomeSQLite(ctx context.Context, app domain.App, opID string, rels []string, outDir string) ([]string, error) {
 	if len(rels) == 0 {
 		return nil, nil
 	}
@@ -340,8 +351,9 @@ func (d Deps) SnapshotHomeSQLite(ctx context.Context, app domain.App, rels []str
 	mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: staging, Target: "/bento-backup-out"})
 	spec.HostConfig.Mounts = mounts
 	spec.Config.Labels[runtime.LabelRole] = string(runtime.RoleBackup)
+	spec.Config.Labels[runtime.LabelOperation] = opID // collected if the operation dies
 	spec.Config.Entrypoint = []string{"sleep"}
-	spec.Config.Cmd = []string{"3600"}
+	spec.Config.Cmd = []string{jobSleepSeconds}
 	spec.Config.WorkingDir = "/"
 	spec.Name = d.Names.BackupContainer("home-sqlite-" + platform.RandomHex(5))
 	spec.Networking = nil
@@ -393,6 +405,12 @@ func (d Deps) SnapshotHomeSQLite(ctx context.Context, app domain.App, rels []str
 }
 
 // IsSQLiteFile reports whether path is a regular (non-symlink) file starting
+// jobSleepSeconds keeps a job container idle while commands are exec'd into
+// it. A backup or restore may run for days, so the container must not exit on
+// its own; it is removed when the job closes, and an orphan left by a crash is
+// collected by the reconciler. Both GNU and BusyBox sleep accept this value.
+const jobSleepSeconds = "2147483647"
+
 // with the SQLite header.
 func IsSQLiteFile(path string) bool {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
