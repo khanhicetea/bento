@@ -530,7 +530,7 @@ function SchedulesTab() {
       <p className="note mb-3">Cron uses server time ({query.data.timeZone}). Missed runs are not replayed.</p>
       {toggle.error && <Alert variant="destructive">{messageOf(toggle.error)}</Alert>}
       <div className="box">
-        <div className="tiles">
+        <div className="tiles tiles--3">
           {schedules.map((schedule) => (
             <article
               key={schedule.id}
