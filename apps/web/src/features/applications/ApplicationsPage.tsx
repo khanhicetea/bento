@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, Boxes, ExternalLink, Globe, Lock, Plus, Search } from "lucide-react";
+import { Archive, ExternalLink, Globe, Lock, Plus, Search } from "lucide-react";
 import { Link } from "wouter";
 import { messageOf, type T } from "../../api/client.ts";
 import { DomainError, DomainLoading, EmptyState, PageHeader, StateBadge } from "../../components/DomainState.tsx";
@@ -93,8 +93,7 @@ export function ApplicationsPage() {
           <div className="box">
             <div className="cell">
               <EmptyState
-                icon={<Boxes />}
-                title={list.data.apps.length === 0 ? "Your box is empty" : "No matches"}
+                title={list.data.apps.length === 0 ? "No apps" : "No matches"}
                 action={
                   list.data.apps.length === 0 ? (
                     <Button asChild>
@@ -138,7 +137,10 @@ function ApplicationTile({ app }: { app: T.AppSummary }) {
         ? "Private"
         : "External";
   return (
-    <article className={`cell tile ${attention ? "cell--alert" : ""}`} aria-label={app.slug}>
+    <article
+      className={`cell tile ${attention ? "cell--alert" : active.active ? "cell--caution" : ""}`}
+      aria-label={app.slug}
+    >
       <div className="tile__top">
         <span className={`mono mono--lg ${attention ? "mono--bad" : ""}`} aria-hidden="true">
           {app.slug.slice(0, 1).toUpperCase()}

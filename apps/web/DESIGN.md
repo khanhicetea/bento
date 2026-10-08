@@ -67,8 +67,8 @@ tints use the darker text variants (`#2F5F2B` on ok tint, `#2F5B87` on busy tint
 `#A8321F` on ume). Tints for pills: ok `#E3EDD6`, busy `#DCE7F2`, caution `#FBF0CF`, fail `#FBE3DC`, idle
 `#ECE6D8`.
 
-Dark theme keeps the same structure: rim `#0E0C0B`, ground `#12110F`, cell `#1B1916`, accent `#E2603F`, nori stays
-darkest. Fill meanings do not change between themes.
+Dark theme keeps the same structure: ground `#12110F`, rim `#3A332D` (lighter than the ground so seams stay
+visible), cell `#1D1A17`, accent `#E2603F`, nori stays darkest. Fill meanings do not change between themes.
 
 ### Type
 
@@ -80,6 +80,9 @@ darkest. Fill meanings do not change between themes.
 | Body    | Barlow 400–500               | 15 / 22     | Max one short line            |
 | Label   | Barlow Semi Condensed 600    | 12 / 16     | CAPS, letter-spacing 0.1em    |
 | Mono    | JetBrains Mono 400–600       | 12–14       | IDs, numbers, paths, commits  |
+
+Fonts are self-hosted from `public/fonts/` (latin subsets, SIL OFL; licences alongside). The management CSP is
+`default-src 'self'`, so never link a font CDN.
 
 ### Space and shape
 

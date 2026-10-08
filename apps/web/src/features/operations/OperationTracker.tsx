@@ -124,20 +124,20 @@ function TrackedOperation({
   }, [op.state, onDismiss]);
   if (!visible) return null;
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-border bg-card p-3.5 text-sm shadow-xl">
+    <div className="flex items-start gap-3 rounded-[1.125rem] bg-[var(--nori)] p-3.5 text-sm text-[var(--nori-ink)] shadow-[0_0_0_4px_var(--rim),0_20px_40px_-20px_rgb(0_0_0/0.6)]">
       <span className="mt-0.5">
         {!isTerminal(op.state) && <Spinner />}
-        {op.state === "succeeded" && <CheckCircle2 className="size-4 text-success" />}
-        {isTerminal(op.state) && op.state !== "succeeded" && <CircleAlert className="size-4 text-destructive" />}
+        {op.state === "succeeded" && <CheckCircle2 className="size-4 text-[#9cc27c]" />}
+        {isTerminal(op.state) && op.state !== "succeeded" && <CircleAlert className="size-4 text-[#ef7a66]" />}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="font-medium">
+        <div className="font-label text-[0.8125rem] font-semibold tracking-[0.08em] uppercase">
           <Link href={`/activity/${op.id}`} className="hover:underline">
             {describeOp(op)}
           </Link>{" "}
-          <span className="text-muted-foreground">· {op.state}</span>
+          <span className="text-[var(--nori-dim)]">· {op.state}</span>
         </div>
-        <div className="truncate text-xs text-muted-foreground">
+        <div className="truncate font-mono text-xs text-[var(--nori-dim)]">
           {failed
             ? op.errorMessage
             : op.waitingOn
@@ -147,7 +147,13 @@ function TrackedOperation({
         {failed && op.guidance && <div className="mt-1 text-xs">{op.guidance}</div>}
       </div>
       {isTerminal(op.state) && (
-        <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-[var(--nori-ink)] hover:bg-white/10"
+          aria-label="Dismiss"
+          onClick={onDismiss}
+        >
           <X />
         </Button>
       )}

@@ -72,7 +72,7 @@ export function EnvEditor({ state }: { state: ReturnType<typeof useEnvDraft> }) 
       </div>
       {mode === "text" ? (
         <textarea
-          className="min-h-40 w-full rounded-md border bg-transparent p-2 font-mono text-sm"
+          className="min-h-40 w-full rounded-xl border-2 border-input bg-white p-3 font-mono text-sm dark:bg-card"
           aria-label="Environment variables"
           spellCheck={false}
           placeholder={"APP_ENV=production\nLOG_LEVEL=info"}

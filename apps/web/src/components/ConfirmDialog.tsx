@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TriangleAlert } from "lucide-react";
 
 export function ConfirmDialog({
   open,
@@ -47,12 +48,24 @@ export function ConfirmDialog({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle className={destructive ? "flex items-center gap-2 text-destructive" : undefined}>
+            {destructive && <TriangleAlert className="size-4" aria-hidden="true" />}
+            {title}
+          </DialogTitle>
+          <DialogDescription
+            className={destructive ? "notice notice--warning notice--plain text-foreground" : undefined}
+          >
+            {description}
+          </DialogDescription>
         </DialogHeader>
         {phrase && (
-          <label className="grid gap-2 text-sm font-medium">
-            Type <code>{phrase}</code> to confirm
+          <label className="field">
+            <span>
+              Type{" "}
+              <code className="rounded-md bg-[var(--ume)] px-1.5 py-0.5 tracking-normal normal-case text-[var(--ume-ink)]">
+                {phrase}
+              </code>
+            </span>
             <Input value={typed} onChange={(event) => setTyped(event.target.value)} autoComplete="off" autoFocus />
           </label>
         )}

@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import { DomainError, DomainLoading, EmptyState, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import {
+  DomainError,
+  DomainLoading,
+  EmptyState,
+  moodOf,
+  PageHeader,
+  StateBadge,
+} from "../../components/DomainState.tsx";
+import { Mascot } from "../../components/Mascot.tsx";
 import { describeOp, formatDuration, formatRelative } from "../../lib/format.ts";
 import { isTerminal } from "./OperationTracker.tsx";
 import { Button } from "@/components/ui/button";
@@ -55,7 +63,7 @@ export function OperationsPage({ selectedId }: { selectedId?: string }) {
         <div className="box">
           <div className="cell">
             {operations.length === 0 ? (
-              <EmptyState icon={<Activity />} title="Nothing here" />
+              <EmptyState title="Nothing here" />
             ) : (
               <div className="rows rows--lined">
                 {operations.map((op) => (
@@ -105,11 +113,14 @@ function OperationDetail({ id }: { id: string }) {
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="flex flex-wrap items-center gap-2 pr-6">
-          {describeOp(op)} <StateBadge state={op.state} />
-        </DialogTitle>
+        <div className="flex items-center gap-4 pr-6">
+          <Mascot mood={moodOf(op.state)} size={64} />
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {describeOp(op)} <StateBadge state={op.state} />
+          </DialogTitle>
+        </div>
       </DialogHeader>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border bg-muted/40 p-4 text-sm sm:grid-cols-4">
+      <dl className="kv rounded-[0.875rem] bg-background p-4">
         {(
           [
             ["Origin", op.origin],
@@ -123,14 +134,14 @@ function OperationDetail({ id }: { id: string }) {
             ],
           ] as const
         ).map(([label, value]) => (
-          <div key={label} className="min-w-0">
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="mt-0.5 font-medium">{value}</dd>
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
           </div>
         ))}
       </dl>
       {op.waitingOn && (
-        <p className="rounded-lg border bg-muted/40 p-4 text-sm">
+        <p className="notice notice--caution notice--plain">
           Queued behind{" "}
           <Link href={`/activity/${op.waitingOn}`} className="font-medium underline">
             an earlier operation
@@ -139,17 +150,17 @@ function OperationDetail({ id }: { id: string }) {
         </p>
       )}
       {(op.errorMessage || op.guidance || cancel.error) && (
-        <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
-          {op.errorMessage && <p className="text-destructive">{op.errorMessage}</p>}
+        <div className="grid gap-2 rounded-[0.875rem] bg-[var(--ume)] p-4 text-sm">
+          {op.errorMessage && <p className="font-medium text-[var(--ume-ink)]">{op.errorMessage}</p>}
           {cancel.error && <p className="text-destructive">{messageOf(cancel.error)}</p>}
           {op.guidance && <p>{op.guidance}</p>}
         </div>
       )}
       <section className="grid min-h-0 gap-2">
-        <h3 className="text-sm font-semibold">
-          Timeline <span className="font-normal text-muted-foreground">{events.length}</span>
+        <h3 className="label text-xs">
+          Events <span className="font-mono text-muted-foreground">{events.length}</span>
         </h3>
-        <div className="max-h-[45vh] overflow-y-auto rounded-lg border px-3 py-1">
+        <div className="max-h-[45vh] overflow-y-auto rounded-[0.875rem] bg-background px-3 py-1">
           {events.length === 0 ? (
             <p className="note py-2">No events yet</p>
           ) : (

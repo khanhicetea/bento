@@ -110,12 +110,12 @@ function ArtifactsTab({
           )}
         </div>
         {artifacts.length === 0 ? (
-          <EmptyState icon={<Archive />} title="No backups yet" />
+          <EmptyState title="No backups yet" />
         ) : (
           <div className="rows rows--lined">
             {artifacts.map((artifact) => (
               <div key={artifact.path} className="row">
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg border bg-muted/40">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-background">
                   <EngineLogo engine={artifact.engine} />
                 </span>
                 <span className="row__main">
@@ -176,11 +176,7 @@ function AppBackupsTab() {
     return (
       <div className="box">
         <div className="cell">
-          <EmptyState
-            icon={<Archive />}
-            title="No app backups"
-            body="Open an app's Backup tab to back up its files, databases and scheduler into an encrypted restic repository."
-          />
+          <EmptyState title="No app backups" body="Set up from an app's Backup tab." />
         </div>
       </div>
     );
@@ -296,7 +292,7 @@ function RunsTab() {
     <div className="box">
       <div className="cell">
         {items.length === 0 ? (
-          <EmptyState icon={<Archive />} title="No runs yet" />
+          <EmptyState title="No runs yet" />
         ) : (
           <div className="rows rows--lined">
             {items.map(({ db: run, app }) =>

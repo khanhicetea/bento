@@ -1,17 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Plus } from "lucide-react";
+import { Activity, ArrowRight, Package, Plus, Server, TriangleAlert } from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
-import { Cell, DomainError, DomainLoading, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import { Cell, DomainError, DomainLoading, EmptyState, PageHeader, StateBadge } from "../../components/DomainState.tsx";
+import { Mascot } from "../../components/Mascot.tsx";
 import { describeOp, formatRelative } from "../../lib/format.ts";
 import { isTerminal } from "../operations/OperationTracker.tsx";
 import { Button } from "@/components/ui/button";
-
-function greeting() {
-  const hour = new Date().getHours();
-  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-}
 
 export function OverviewPage() {
   const system = useQuery({ queryKey: keys.system, queryFn: ({ signal }) => api.system.status(signal) });
@@ -72,10 +68,14 @@ export function OverviewPage() {
     ["Backups", "/backups", serviceState(schedules, enabledSchedules.length > 0, lastBackup?.lastState)],
   ];
 
+  const attention = allApps.filter((app) => ["failed", "unhealthy", "blocked"].includes(app.observed.state));
+  const failedOps = recent.filter((op) => op.state === "failed");
+  const issues = attention.length + (attention.length === 0 ? failedOps.length : 0);
+
   return (
     <>
       <PageHeader
-        title={greeting()}
+        title="Home"
         description={system.data?.stackName}
         actions={
           <Button asChild>
@@ -86,19 +86,113 @@ export function OverviewPage() {
         }
       />
 
-      <div className="box box--3">
+      <section className="box box--home" aria-label="Status">
+        <Cell
+          kind={issues > 0 ? "ume" : "gohan"}
+          className="home__attention"
+          title="Attention"
+          icon={<TriangleAlert />}
+        >
+          <div className="home__attention-head">
+            <div className="metric">
+              <strong>{issues}</strong>
+              <span>{issues > 0 ? "Needs you" : "All clear"}</span>
+            </div>
+            <Mascot mood={issues > 0 ? "alert" : activeOps > 0 ? "busy" : "ok"} size={104} />
+          </div>
+          <div className="home__issues">
+            {attention.slice(0, 3).map((app) => (
+              <Link key={app.id} href={`/apps/${encodeURIComponent(app.slug)}`} className="home__issue">
+                <span className="mono mono--bad" aria-hidden="true">
+                  {app.slug.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="row__main">
+                  <strong>{app.slug}</strong>
+                  <small>{app.observed.message || app.observed.state}</small>
+                </span>
+                <StateBadge state={app.observed.state} />
+              </Link>
+            ))}
+            {attention.length === 0 &&
+              failedOps.slice(0, 3).map((op) => (
+                <Link key={op.id} href={`/activity/${op.id}`} className="home__issue">
+                  <span className="row__main">
+                    <strong>{describeOp(op)}</strong>
+                    <small>{formatRelative(op.createdAt)}</small>
+                  </span>
+                  <StateBadge state={op.state} />
+                </Link>
+              ))}
+          </div>
+        </Cell>
         <MetricLink href="/apps" value={running} total={allApps.length} label="Apps running" />
+        <MetricLink
+          href="/activity"
+          value={operations.isPending ? "–" : activeOps}
+          label="In progress"
+          caution={activeOps > 0}
+        />
         <MetricLink
           href="/system"
           value={services.isPending ? "–" : (services.data?.services.length ?? 0)}
           label="Data services"
         />
-        <MetricLink href="/activity" value={operations.isPending ? "–" : activeOps} label="Operations in progress" />
-      </div>
+        <Cell title="Stack" icon={<Server />} className="home__stack">
+          <div className="home__services">
+            {stackServices.map(([name, href, [state, label]]) => (
+              <Link key={name} href={href} className="home__service">
+                <span className="label">{name}</span>
+                <StateBadge state={state} label={label} />
+              </Link>
+            ))}
+          </div>
+        </Cell>
+      </section>
 
-      <div className="box box--main">
+      <section className="box box--main" aria-label="Apps and activity">
         <Cell
-          title="Recent activity"
+          title="Apps"
+          icon={<Package />}
+          action={
+            <Link href="/apps">
+              All <ArrowRight className="size-3.5" />
+            </Link>
+          }
+        >
+          {allApps.length === 0 ? (
+            <EmptyState
+              title="No apps"
+              action={
+                <Button asChild>
+                  <Link href="/apps/new">
+                    <Plus /> New app
+                  </Link>
+                </Button>
+              }
+            />
+          ) : (
+            <div className="rows">
+              {allApps.slice(0, 6).map((app) => (
+                <Link key={app.id} href={`/apps/${encodeURIComponent(app.slug)}`} className="row">
+                  <span className="mono" aria-hidden="true">
+                    {app.slug.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="row__main">
+                    <strong>{app.slug}</strong>
+                    <small>
+                      {app.toolchain} {app.version}
+                    </small>
+                  </span>
+                  <span className="row__meta max-sm:hidden">{app.primaryDomain}</span>
+                  <StateBadge state={app.observed.state} />
+                </Link>
+              ))}
+            </div>
+          )}
+        </Cell>
+        <Cell
+          title="Activity"
+          icon={<Activity />}
           action={
             <Link href="/activity">
               All <ArrowRight className="size-3.5" />
@@ -112,10 +206,13 @@ export function OverviewPage() {
           ) : recent.length === 0 ? (
             <p className="note">Nothing yet</p>
           ) : (
-            <div className="rows">
+            <div className="rows rows--lined">
               {recent.map((op) => (
                 <Link key={op.id} href={`/activity/${op.id}`} className="row">
-                  <span className={`dot ${isTerminal(op.state) ? "" : "dot--wait"}`} />
+                  <span
+                    className={`dot ${isTerminal(op.state) ? (op.state === "failed" ? "dot--bad" : "") : "dot--wait"}`}
+                    aria-hidden="true"
+                  />
                   <span className="row__main">
                     <strong>{describeOp(op)}</strong>
                   </span>
@@ -125,19 +222,7 @@ export function OverviewPage() {
             </div>
           )}
         </Cell>
-        <Cell title="Stack">
-          <div className="rows">
-            {stackServices.map(([name, href, [state, label]]) => (
-              <Link key={name} href={href} className="row">
-                <span className="row__main">
-                  <strong>{name}</strong>
-                </span>
-                <StateBadge state={state} label={label} />
-              </Link>
-            ))}
-          </div>
-        </Cell>
-      </div>
+      </section>
     </>
   );
 }
@@ -147,14 +232,16 @@ function MetricLink({
   value,
   total,
   label,
+  caution = false,
 }: {
   href: string;
   value: number | string;
   total?: number;
   label: string;
+  caution?: boolean;
 }) {
   return (
-    <Link href={href} className="cell cell--link">
+    <Link href={href} className={`cell cell--link ${caution ? "cell--caution" : ""}`}>
       <div className="metric">
         <strong>
           {value}

@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, CircleHelp, Clock, Copy, Loader, Minus, Square, TriangleAlert, X } from "lucide-react";
 import { Link } from "wouter";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Mascot, type Mood } from "./Mascot.tsx";
 
 export function DomainLoading({ label }: { label: string }) {
   return (
@@ -26,20 +27,21 @@ export function DomainError({ message, onRetry }: { message: string; onRetry?: (
   );
 }
 
+/** Kara cell content: Ben asleep, a caps title, at most a short line and one action. */
 export function EmptyState({
-  icon,
   title,
   body,
   action,
+  mood = "idle",
 }: {
-  icon?: ReactNode;
   title: string;
   body?: string;
   action?: ReactNode;
+  mood?: Mood;
 }) {
   return (
     <div className="empty">
-      {icon}
+      <Mascot mood={mood} size={88} />
       <strong>{title}</strong>
       {body && <p>{body}</p>}
       {action}
@@ -78,23 +80,54 @@ export function Page({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** Cell kinds: fill colour is meaning (DESIGN.md §4). */
+export type CellKind = "gohan" | "ume" | "tamago" | "nori" | "kara";
+const kindClass: Record<CellKind, string> = {
+  gohan: "",
+  ume: "cell--alert",
+  tamago: "cell--caution",
+  nori: "cell--console",
+  kara: "cell--muted",
+};
+
+/** Mood that mirrors a state badge's tone. */
+export function moodOf(state: string): Mood {
+  const tone = tones[state] ?? "unknown";
+  return tone === "success"
+    ? "ok"
+    : tone === "info"
+      ? "busy"
+      : tone === "danger" || tone === "warning"
+        ? "alert"
+        : "idle";
+}
+
 /** One compartment of a bento box. */
 export function Cell({
   title,
+  icon,
+  kind = "gohan",
   action,
   children,
   className = "",
 }: {
   title?: string;
+  icon?: ReactNode;
+  kind?: CellKind;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
-    <section className={`cell ${className}`}>
+    <section className={`cell ${kindClass[kind]} ${className}`}>
       {(title || action) && (
         <div className="cell__title">
-          {title && <h2>{title}</h2>}
+          {title && (
+            <h2>
+              {icon}
+              {title}
+            </h2>
+          )}
           {action}
         </div>
       )}
@@ -103,7 +136,7 @@ export function Cell({
   );
 }
 
-type Tone = "success" | "info" | "warning" | "danger" | "neutral";
+type Tone = "success" | "info" | "warning" | "danger" | "neutral" | "unknown";
 const tones: Record<string, Tone> = {
   healthy: "success",
   succeeded: "success",
@@ -143,11 +176,24 @@ const labels: Record<string, string> = {
   drift: "Drift",
 };
 
+const glyphs: Record<Tone, ReactNode> = {
+  success: <Check />,
+  info: <Loader />,
+  warning: <TriangleAlert />,
+  danger: <X />,
+  neutral: <Square />,
+  unknown: <CircleHelp />,
+};
+
+/** Glyph + caps word; colour is never the only signal. Unknown states are shown as-is, outlined. */
 export function StateBadge({ state, title, label }: { state: string; title?: string; label?: string }) {
-  const tone = tones[state] ?? "neutral";
+  const tone = tones[state] ?? "unknown";
+  const glyph = state === "queued" ? <Clock /> : state === "absent" ? <Minus /> : glyphs[tone];
   return (
     <span className={`pill pill--${tone}`} title={title}>
-      <span className="dot" aria-hidden="true" />
+      <span aria-hidden="true" className="contents">
+        {glyph}
+      </span>
       {label ?? labels[state] ?? state}
     </span>
   );

@@ -7,6 +7,7 @@ import { keys } from "../api/keys.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { isTerminal } from "../features/operations/OperationTracker.tsx";
 import { useLogout } from "../features/session/useSession.ts";
+import { BentoMark } from "./Mascot.tsx";
 
 const navigation = [
   { href: "/", icon: LayoutGrid, label: "Home" },
@@ -84,7 +85,11 @@ export function AppShell({ children }: PropsWithChildren) {
         >
           <Icon className="size-4" aria-hidden="true" />
           <span className="nav__label">{item.label}</span>
-          {withBadge && item.href === "/activity" && activeOps > 0 && <span className="nav__badge">{activeOps}</span>}
+          {item.href === "/activity" && activeOps > 0 && (
+            <span className="nav__badge" aria-label={`${activeOps} active`}>
+              {withBadge ? activeOps : ""}
+            </span>
+          )}
         </Link>
       );
     });
@@ -93,7 +98,7 @@ export function AppShell({ children }: PropsWithChildren) {
     <div className="shell">
       <header className="topbar">
         <Link href="/" className="brand" aria-label="Bento home">
-          <img src="/bento-logo-3d.png" alt="" />
+          <BentoMark size={40} />
           <span>
             bento<b>.</b>
           </span>

@@ -136,7 +136,7 @@ function MetricCard({
   const valueColor =
     tone === "bad" ? "text-destructive" : tone === "good" ? "text-emerald-600 dark:text-emerald-400" : "";
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border bg-muted/40 p-3">
+    <div className="flex min-w-0 flex-col gap-1 rounded-[0.875rem] bg-background p-3">
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className={`truncate text-2xl font-semibold tabular-nums ${valueColor}`}>{value}</span>
       {children}
@@ -180,7 +180,7 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
     <div className="box box--2">
       <Cell title="Edge" className="cell--wide" action={<StateBadge state={status.state} />}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="check items-start rounded-lg border p-3">
+          <label className="check items-start rounded-[0.875rem] bg-background p-3">
             <Checkbox checked={settings.enabled} onCheckedChange={(checked) => set({ enabled: checked === true })} />
             <span className="grid gap-0.5">
               <span className="text-sm font-medium">Enabled</span>
@@ -189,7 +189,7 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
               </span>
             </span>
           </label>
-          <label className="check items-start rounded-lg border p-3">
+          <label className="check items-start rounded-[0.875rem] bg-background p-3">
             <Checkbox checked={settings.http3} onCheckedChange={(checked) => set({ http3: checked === true })} />
             <span className="grid gap-0.5">
               <span className="text-sm font-medium">HTTP/3</span>

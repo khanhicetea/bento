@@ -110,7 +110,7 @@ function RetainedData() {
   const pending = (query.data?.retired ?? []).filter((app) => !app.prunedAt);
   return (
     <div className="box">
-      <Cell title="Retained data">
+      <Cell title="Retained data" kind={pending.length > 0 ? "tamago" : "gohan"}>
         {query.error ? (
           <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
         ) : pending.length === 0 ? (
