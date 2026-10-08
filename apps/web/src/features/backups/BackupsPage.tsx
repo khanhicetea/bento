@@ -260,10 +260,14 @@ function AppBackupsTab() {
         {query.data.timeZone}).
       </p>
       <div className="box">
-        <div className="tiles">
+        <div className="tiles tiles--3">
           {apps.map((summary) => (
             <AppBackupTile key={summary.appId} summary={summary} />
           ))}
+          <Link href="/apps" className="cell tile tile--add">
+            <Plus aria-hidden="true" />
+            Set up in an app
+          </Link>
         </div>
       </div>
     </>

@@ -1930,3 +1930,19 @@ button.row:hover {
   background: transparent;
   padding: 0.5rem;
 }
+
+/* Three-up tiles: wide content (app backups) never goes four across. */
+@container (min-width: 84rem) {
+  .tiles--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tiles--3 > .tile--add:nth-child(n) {
+    grid-column: auto;
+  }
+  .tiles--3 > .tile--add:nth-child(3n + 1) {
+    grid-column: span 3;
+  }
+  .tiles--3 > .tile--add:nth-child(3n + 2) {
+    grid-column: span 2;
+  }
+}

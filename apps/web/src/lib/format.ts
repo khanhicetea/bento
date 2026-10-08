@@ -12,24 +12,29 @@ export function formatBytes(bytes: number): string {
   return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
 
+const shortUnits: Array<[number, string]> = [
+  [60, "sec"],
+  [60, "min"],
+  [24, "hr"],
+  [7, "day"],
+  [4.345, "wk"],
+  [12, "mo"],
+  [Number.POSITIVE_INFINITY, "yr"],
+];
+
+/** Short relative time in checklist voice: "now", "5 mins ago", "in 2 hrs". */
 export function formatRelative(value?: string): string {
   if (!value) return "—";
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return value;
   const seconds = Math.round((timestamp - Date.now()) / 1000);
-  const ranges: Array<[number, Intl.RelativeTimeFormatUnit]> = [
-    [60, "second"],
-    [60, "minute"],
-    [24, "hour"],
-    [7, "day"],
-    [4.345, "week"],
-    [12, "month"],
-    [Number.POSITIVE_INFINITY, "year"],
-  ];
-  let amount = seconds;
-  for (const [limit, unit] of ranges) {
-    if (Math.abs(amount) < limit)
-      return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(amount, unit);
+  if (Math.abs(seconds) < 10) return "now";
+  let amount = Math.abs(seconds);
+  for (const [limit, unit] of shortUnits) {
+    if (amount < limit) {
+      const label = `${amount} ${unit}${amount === 1 ? "" : "s"}`;
+      return seconds < 0 ? `${label} ago` : `in ${label}`;
+    }
     amount = Math.round(amount / limit);
   }
   return value;
