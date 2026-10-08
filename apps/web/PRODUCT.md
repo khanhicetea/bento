@@ -28,11 +28,11 @@ Preserve the existing REST API, routes, tasks, and exact confirmations. Retained
 
 ## Brand Commitments
 
-Keep the Bento name and existing logo. The requested identity is Japanese-inspired, friendly, minimal, and easy to use. Its Bento name should be visible in the interface's functional box-and-compartment layout, not just in its colors or logo; cultural references should serve usability, not become decorative stereotypes.
+Keep the Bento name, the vector mark (`public/bento-logo.svg`) and the mascot Ben (`public/bento-mascot-*.svg`), whose moods only ever signal state. The requested identity is Japanese-inspired, friendly, minimal, and easy to use. Its Bento name should be visible in the interface's functional box-and-compartment layout, not just in its colors or logo; cultural references should serve usability, not become decorative stereotypes.
 
 ## Evidence on Hand
 
-README.md and operator documentation in docs/ describe capabilities and limits. The existing React UI in apps/web/src and the committed logo in apps/web/public/bento-logo-3d.png provide real interface content and visual evidence. No customer testimonials, performance claims, or commercial proof are available.
+README.md and operator documentation in docs/ describe capabilities and limits. The existing React UI in apps/web/src and the committed brand assets in apps/web/public (vector mark, mascot, legacy bento-logo-3d.png) provide real interface content and visual evidence. No customer testimonials, performance claims, or commercial proof are available.
 
 ## Product Principles
 

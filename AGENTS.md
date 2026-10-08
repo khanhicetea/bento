@@ -30,6 +30,19 @@ operations, effects happen in operation handlers, ownership is verified before d
 never recreated empty, and secrets never reach argv, labels, logs, or API responses. After changing
 `apps/backend/internal/api/dto`, run `make -C apps/backend generate-types` and commit the output.
 
+## UI design
+
+- The design system is [`apps/web/DESIGN.md`](apps/web/DESIGN.md): tokens, bento shape rules, cell kinds,
+  components, voice, and screen layouts. Read it before changing any UI; product constraints are in
+  `apps/web/PRODUCT.md`. The visual reference canvas is linked at the top of `DESIGN.md`.
+- Layout is boxes of compartments: one topic per box, never a box inside a box, cell fill colour means kind
+  (gohan default, ume alert, tamago caution/in progress, nori console, kara empty slot).
+- Copy is checklist style: CAPS labels of at most two words, verb-first buttons, number + unit in mono, state as
+  icon + word. Shu is the only accent. No emoji, gradients, or food imagery.
+- Brand assets are `apps/web/public/bento-logo.svg` and `bento-mascot-{ok,busy,alert,idle}.svg`; the mascot's mood
+  always matches the state it sits next to.
+- New tokens, cell kinds, or components are added to `DESIGN.md` in the same change.
+
 ## React 19 and server state
 
 - Function components and React 19 APIs. Do not add `useMemo`, `useCallback`, or `React.memo`.
