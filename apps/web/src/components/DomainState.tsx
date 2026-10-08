@@ -186,15 +186,38 @@ const glyphs: Record<Tone, ReactNode> = {
 };
 
 /** Glyph + caps word; colour is never the only signal. Unknown states are shown as-is, outlined. */
-export function StateBadge({ state, title, label }: { state: string; title?: string; label?: string }) {
+export function StateBadge({
+  state,
+  title,
+  label,
+  iconOnly,
+}: {
+  state: string;
+  title?: string;
+  label?: string;
+  iconOnly?: boolean;
+}) {
   const tone = tones[state] ?? "unknown";
   const glyph = state === "queued" ? <Clock /> : state === "absent" ? <Minus /> : glyphs[tone];
+  const text = label ?? labels[state] ?? state;
+  if (iconOnly) {
+    return (
+      <span
+        className={`pill pill--${tone} pill--icon`}
+        role="img"
+        aria-label={text}
+        title={title ? `${text}: ${title}` : text}
+      >
+        {glyph}
+      </span>
+    );
+  }
   return (
     <span className={`pill pill--${tone}`} title={title}>
       <span aria-hidden="true" className="contents">
         {glyph}
       </span>
-      {label ?? labels[state] ?? state}
+      {text}
     </span>
   );
 }

@@ -884,6 +884,11 @@ button.row:hover {
   background: var(--idle-tint);
   color: var(--muted-foreground);
 }
+.pill--icon {
+  width: 1.625rem;
+  padding: 0;
+  justify-content: center;
+}
 .pill svg {
   width: 0.8rem;
   height: 0.8rem;
@@ -1075,6 +1080,16 @@ button.row:hover {
 }
 .tile__top > .pill {
   margin-top: 0.1rem;
+}
+/* Icon-only state sits on the tile's top-right edge so the name keeps the row. */
+.tile__top > .pill--icon {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  margin: 0;
+}
+.tile__top:has(> .pill--icon) {
+  padding-right: 1.5rem;
 }
 .tile__name {
   flex: 1;
@@ -1931,7 +1946,7 @@ button.row:hover {
   padding: 0.5rem;
 }
 
-/* Three-up tiles: wide content (app backups) never goes four across. */
+/* Three-up tiles: apps and app backups never go four across. */
 @container (min-width: 84rem) {
   .tiles--3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));

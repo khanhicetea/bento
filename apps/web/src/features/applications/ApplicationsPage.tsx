@@ -106,7 +106,7 @@ export function ApplicationsPage() {
           </div>
         ) : (
           <div className="box">
-            <div className="tiles">
+            <div className="tiles tiles--3">
               {apps.map((app) => (
                 <ApplicationTile key={app.id} app={app} />
               ))}
@@ -160,6 +160,7 @@ function ApplicationTile({ app }: { app: T.AppSummary }) {
           </small>
         </div>
         <StateBadge
+          iconOnly
           state={active.active ? "running" : status}
           title={app.observed.message}
           label={

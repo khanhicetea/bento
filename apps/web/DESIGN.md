@@ -49,12 +49,12 @@ when the two disagree, update both.
 - **Mascot "Ben":** `public/bento-mascot-{ok,busy,alert,idle}.svg`, the mark as a character with feet and
   chopstick antennae. Moods map to state and are the only place he appears:
 
-  | Mood    | Meaning                     | Used in                                     |
-  | ------- | --------------------------- | ------------------------------------------- |
-  | `ok`    | Healthy, done               | Status cells when everything is fine        |
-  | `busy`  | Operation in progress       | Running operation cells                     |
-  | `alert` | Failed, needs action        | Ume attention cells, "not set up" cells     |
-  | `idle`  | Stopped, empty, off         | Empty states, disabled features             |
+  | Mood    | Meaning               | Used in                                 |
+  | ------- | --------------------- | --------------------------------------- |
+  | `ok`    | Healthy, done         | Status cells when everything is fine    |
+  | `busy`  | Operation in progress | Running operation cells                 |
+  | `alert` | Failed, needs action  | Ume attention cells, "not set up" cells |
+  | `idle`  | Stopped, empty, off   | Empty states, disabled features         |
 
   Keep him at 64–128 px in cells, up to 250 px on the login screen. Never as a background pattern.
 
@@ -72,14 +72,14 @@ visible), cell `#1D1A17`, accent `#E2603F`, nori stays darkest. Fill meanings do
 
 ### Type
 
-| Role    | Font                         | Size / line | Notes                         |
-| ------- | ---------------------------- | ----------- | ----------------------------- |
-| Display | Barlow 600                   | 40 / 44     | Metric numbers use mono       |
-| Title   | Barlow 600                   | 28–32 / 34  | Page `h1`, one per page       |
-| Head    | Barlow 600                   | 18 / 24     | Item names in tiles           |
-| Body    | Barlow 400–500               | 15 / 22     | Max one short line            |
-| Label   | Barlow Semi Condensed 600    | 12 / 16     | CAPS, letter-spacing 0.1em    |
-| Mono    | JetBrains Mono 400–600       | 12–14       | IDs, numbers, paths, commits  |
+| Role    | Font                      | Size / line | Notes                        |
+| ------- | ------------------------- | ----------- | ---------------------------- |
+| Display | Barlow 600                | 40 / 44     | Metric numbers use mono      |
+| Title   | Barlow 600                | 28–32 / 34  | Page `h1`, one per page      |
+| Head    | Barlow 600                | 18 / 24     | Item names in tiles          |
+| Body    | Barlow 400–500            | 15 / 22     | Max one short line           |
+| Label   | Barlow Semi Condensed 600 | 12 / 16     | CAPS, letter-spacing 0.1em   |
+| Mono    | JetBrains Mono 400–600    | 12–14       | IDs, numbers, paths, commits |
 
 Fonts are self-hosted from `public/fonts/` (latin subsets, SIL OFL; licences alongside). The management CSP is
 `default-src 'self'`, so never link a font CDN.
@@ -105,13 +105,13 @@ above a hairline.
 
 **Cell kinds**
 
-| Kind     | Fill           | Means                                        |
-| -------- | -------------- | -------------------------------------------- |
-| Gohan    | `gohan`        | Default: facts, lists, metrics               |
-| Ume      | `ume`          | Alert: failed, needs action. Max one per box, top-left |
-| Tamago   | `tamago`       | Caution: pending, in progress, unsaved, near limit |
-| Nori     | `nori`         | Console: logs, terminal, raw output          |
-| Kara     | `washi` + 2 px dashed/inset `#B9AF9F` | Empty slot: "+ New …", fills the last row |
+| Kind   | Fill                                  | Means                                                  |
+| ------ | ------------------------------------- | ------------------------------------------------------ |
+| Gohan  | `gohan`                               | Default: facts, lists, metrics                         |
+| Ume    | `ume`                                 | Alert: failed, needs action. Max one per box, top-left |
+| Tamago | `tamago`                              | Caution: pending, in progress, unsaved, near limit     |
+| Nori   | `nori`                                | Console: logs, terminal, raw output                    |
+| Kara   | `washi` + 2 px dashed/inset `#B9AF9F` | Empty slot: "+ New …", fills the last row              |
 
 **Grid:** 12 columns. S = 3 (metric), M = 4 (tile), L = 6 (list), XL = 8 (main), full = 12. Row unit 120 px.
 Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one column.
@@ -127,33 +127,34 @@ Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one
 
 ## 5. Components
 
-| Component       | Spec                                                                                         |
-| --------------- | -------------------------------------------------------------------------------------------- |
-| Button          | 44 px, r12, Label type. Primary = shu fill (one per cell). Secondary = 2 px sumi inset. Ghost = text. Danger = 2 px fail inset; solid fail only inside a confirm. Busy = spinner + "-ING" verb, disabled. |
-| Icon button     | 44 × 44, same kinds, `aria-label` required                                                   |
-| Status pill     | 26–28 px, tint + glyph + CAPS word: ✓ RUNNING, ◌ STARTING/DEPLOYING, ▲ DEGRADED, ✕ FAILED, ■ STOPPED, ◷ QUEUED, ? UNKNOWN (outlined) |
-| Dot             | 10 px, dense rows only, always with a word; pulse ring only while busy                       |
-| Segments        | Square, sumi-filled active item: page sections (`role="tab"`). Round with counts: filters (`aria-pressed`) |
-| Field           | CAPS label above, 44 px input, 2 px `line` border, sumi on focus; error = fail border + `✕ REASON` |
-| Switch          | 52 × 30, ok when on, idle when off, label + ON/OFF word beside it                            |
-| Metric          | Mono number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 % |
-| Fact row        | `LABEL ······ value`: dotted leader between caption and mono value                          |
-| Operation       | Tamago cell: title + `n / m`, progress bar, step list ✓ done, ● current, ○ next              |
-| Notice          | Caution (tamago, ▲), Warning (ume, !), Note (busy tint, i): CAPS heading + one line          |
-| Toast           | Nori bar: ✓ + VERB + mono target + one link                                                  |
-| Empty state     | Kara cell, mascot `idle`, CAPS title, ≤ 4-word line, one primary action                     |
-| Confirm         | Lists what is Removed vs Retained as fact rows, then "Type `phrase`" field; destructive button disabled until exact match |
+| Component   | Spec                                                                                                                                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Button      | 44 px, r12, Label type. Primary = shu fill (one per cell). Secondary = 2 px sumi inset. Ghost = text. Danger = 2 px fail inset; solid fail only inside a confirm. Busy = spinner + "-ING" verb, disabled. |
+| Icon button | 44 × 44, same kinds, `aria-label` required                                                                                                                                                                |
+| Status pill | 26–28 px, tint + glyph + CAPS word: ✓ RUNNING, ◌ STARTING/DEPLOYING, ▲ DEGRADED, ✕ FAILED, ■ STOPPED, ◷ QUEUED, ? UNKNOWN (outlined)                                                                      |
+| Status dot  | 26 px round pill, tint + glyph only, word in `aria-label` and tooltip. Used on app tiles, pinned to the tile's top-right edge so the name gets the full row.                                              |
+| Dot         | 10 px, dense rows only, always with a word; pulse ring only while busy                                                                                                                                    |
+| Segments    | Square, sumi-filled active item: page sections (`role="tab"`). Round with counts: filters (`aria-pressed`)                                                                                                |
+| Field       | CAPS label above, 44 px input, 2 px `line` border, sumi on focus; error = fail border + `✕ REASON`                                                                                                        |
+| Switch      | 52 × 30, ok when on, idle when off, label + ON/OFF word beside it                                                                                                                                         |
+| Metric      | Mono number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 %                                                                                                         |
+| Fact row    | `LABEL ······ value`: dotted leader between caption and mono value                                                                                                                                        |
+| Operation   | Tamago cell: title + `n / m`, progress bar, step list ✓ done, ● current, ○ next                                                                                                                           |
+| Notice      | Caution (tamago, ▲), Warning (ume, !), Note (busy tint, i): CAPS heading + one line                                                                                                                       |
+| Toast       | Nori bar: ✓ + VERB + mono target + one link                                                                                                                                                               |
+| Empty state | Kara cell, mascot `idle`, CAPS title, ≤ 4-word line, one primary action                                                                                                                                   |
+| Confirm     | Lists what is Removed vs Retained as fact rows, then "Type `phrase`" field; destructive button disabled until exact match                                                                                 |
 
 ## 6. Voice
 
-| Part   | Rule                                    | Example                         |
-| ------ | --------------------------------------- | ------------------------------- |
-| Label  | Noun, caps, ≤ 2 words                   | `MEMORY`, `LAST BACKUP`         |
-| Button | Verb first                              | `DEPLOY`, `BACK UP NOW`         |
-| State  | Icon + word                             | `✕ FAILED`                      |
-| Value  | Number + unit, mono                     | `412 / 512 MB`                  |
-| Fact   | Item ····· value                        | `TLS ····· ✓ VALID · 61 D`      |
-| Risk   | Caution / Warning block, full sentence  | `Volume shop-data is kept after removal.` |
+| Part   | Rule                                   | Example                                   |
+| ------ | -------------------------------------- | ----------------------------------------- |
+| Label  | Noun, caps, ≤ 2 words                  | `MEMORY`, `LAST BACKUP`                   |
+| Button | Verb first                             | `DEPLOY`, `BACK UP NOW`                   |
+| State  | Icon + word                            | `✕ FAILED`                                |
+| Value  | Number + unit, mono                    | `412 / 512 MB`                            |
+| Fact   | Item ····· value                       | `TLS ····· ✓ VALID · 61 D`                |
+| Risk   | Caution / Warning block, full sentence | `Volume shop-data is kept after removal.` |
 
 Avoid "please", "successfully", "currently", "click here", and page descriptions. Unknown values are shown as
 `—`, never guessed.
@@ -164,7 +165,7 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   below 1060 px; below 640 px nav becomes a bottom rim tab bar.
 - **Home:** Ume attention cell (with mascot) → Apps / Operations / Data metrics → Stack services → Apps list +
   Activity.
-- **Apps:** search + round filters, tiles where fill = state (ume failed, tamago deploying), trailing Kara.
+- **Apps:** search + round filters, three-up tiles with a corner status dot, fill = state (ume failed, tamago deploying), trailing Kara.
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
   domains/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
