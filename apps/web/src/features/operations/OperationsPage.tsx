@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Activity, Search } from "lucide-react";
+import { Link } from "wouter";
 import { api, messageOf } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
+  Cell,
   DomainError,
   DomainLoading,
   EmptyState,
@@ -15,19 +16,20 @@ import {
 import { Mascot } from "../../components/Mascot.tsx";
 import { describeOp, formatDuration, formatRelative } from "../../lib/format.ts";
 import { isTerminal } from "./OperationTracker.tsx";
+import { useApplicationList } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 const stateFilters: Array<[string, string]> = [
   ["all", "All"],
-  ["running", "Running"],
-  ["succeeded", "Done"],
+  ["running", "Active"],
   ["failed", "Failed"],
+  ["succeeded", "Done"],
 ];
+const matchesState = (filter: string, state: string) =>
+  filter === "all" || state === filter || (filter === "running" && state === "queued");
 
 export function OperationsPage({ selectedId }: { selectedId?: string }) {
-  const [, navigate] = useLocation();
   const query = useQuery({
     queryKey: keys.operations.list(),
     queryFn: ({ signal }) => api.operations.list(undefined, signal),
@@ -35,14 +37,22 @@ export function OperationsPage({ selectedId }: { selectedId?: string }) {
   });
   const [state, setState] = useState("all");
   const [search, setSearch] = useState("");
-  const operations = (query.data?.operations ?? []).filter(
+  const all = query.data?.operations ?? [];
+  const operations = all.filter(
     (op) =>
-      (state === "all" || op.state === state || (state === "running" && op.state === "queued")) &&
+      matchesState(state, op.state) &&
       `${op.kind} ${op.targetId} ${op.origin}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const currentId = selectedId ?? operations[0]?.id;
   return (
     <>
-      <PageHeader title="Activity" />
+      <PageHeader
+        title={
+          <>
+            Activity <small className="font-mono text-sm text-muted-foreground">{all.length}</small>
+          </>
+        }
+      />
       <div className="toolbar">
         <label className="toolbar__search">
           <Search aria-hidden="true" />
@@ -51,8 +61,14 @@ export function OperationsPage({ selectedId }: { selectedId?: string }) {
         </label>
         <div className="seg" role="group" aria-label="Filter by state">
           {stateFilters.map(([value, label]) => (
-            <button key={value} type="button" aria-pressed={state === value} onClick={() => setState(value)}>
-              {label}
+            <button
+              key={value}
+              type="button"
+              aria-pressed={state === value}
+              className={value === "failed" && state !== value ? "text-destructive!" : undefined}
+              onClick={() => setState(value)}
+            >
+              {label} <span className="font-mono">{all.filter((op) => matchesState(value, op.state)).length}</span>
             </button>
           ))}
         </div>
@@ -60,42 +76,47 @@ export function OperationsPage({ selectedId }: { selectedId?: string }) {
       {query.isPending && <DomainLoading label="activity" />}
       {query.error && <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />}
       {query.data && (
-        <div className="box">
-          <div className="cell">
+        <section className="box box--activity" aria-label="Operations">
+          <Cell title="Operations" icon={<Activity />} action={<span className="label text-xs">Newest first</span>}>
             {operations.length === 0 ? (
               <EmptyState title="Nothing here" />
             ) : (
-              <div className="rows rows--lined">
+              <div className="rows">
                 {operations.map((op) => (
-                  <Link key={op.id} href={`/activity/${op.id}`} className="row">
+                  <Link
+                    key={op.id}
+                    href={`/activity/${op.id}`}
+                    className="row op-row"
+                    aria-current={op.id === currentId ? "true" : undefined}
+                  >
                     <span className="row__main">
                       <strong>{describeOp(op)}</strong>
-                      <small className={op.errorMessage ? "text-destructive!" : ""}>
-                        {op.errorMessage ||
-                          (op.waitingOn
-                            ? `${op.origin} · waiting for an earlier operation`
-                            : `${op.origin} · ${formatDuration(op.startedAt, op.finishedAt)}`)}
-                      </small>
-                    </span>
-                    <span className="row__meta max-sm:hidden" title={op.createdAt}>
-                      {formatRelative(op.createdAt)}
+                      {op.errorMessage && <small className="text-destructive!">{op.errorMessage}</small>}
                     </span>
                     <StateBadge state={op.state} />
+                    <span className="row__meta w-20 text-right max-sm:hidden" title={op.createdAt}>
+                      {formatRelative(op.createdAt)}
+                    </span>
                   </Link>
                 ))}
               </div>
             )}
-          </div>
-        </div>
+          </Cell>
+          {currentId ? (
+            <OperationDetail id={currentId} />
+          ) : (
+            <Cell kind="kara">
+              <EmptyState title="No operation" />
+            </Cell>
+          )}
+        </section>
       )}
-      <Dialog open={!!selectedId} onOpenChange={(open) => !open && navigate("/activity")}>
-        <DialogContent className="sm:max-w-2xl">{selectedId && <OperationDetail id={selectedId} />}</DialogContent>
-      </Dialog>
     </>
   );
 }
 
 function OperationDetail({ id }: { id: string }) {
+  const apps = useApplicationList();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: keys.operations.detail(id),
@@ -106,21 +127,32 @@ function OperationDetail({ id }: { id: string }) {
     mutationFn: () => api.operations.cancel(id),
     onSuccess: (op) => queryClient.setQueryData(keys.operations.detail(id), op),
   });
-  if (query.isPending) return <DomainLoading label="operation" />;
-  if (query.error) return <DomainError message={messageOf(query.error)} />;
+  if (query.isPending)
+    return (
+      <Cell>
+        <DomainLoading label="operation" />
+      </Cell>
+    );
+  if (query.error)
+    return (
+      <Cell>
+        <DomainError message={messageOf(query.error)} />
+      </Cell>
+    );
   const op = query.data;
   const events = op.events ?? [];
+  const appSlug = apps.data?.apps.find((app) => app.id === op.targetId)?.slug;
+  const kind = op.state === "failed" ? "ume" : isTerminal(op.state) ? "gohan" : "tamago";
   return (
-    <>
-      <DialogHeader>
-        <div className="flex items-center gap-4 pr-6">
-          <Mascot mood={moodOf(op.state)} size={64} />
-          <DialogTitle className="flex flex-wrap items-center gap-2">
-            {describeOp(op)} <StateBadge state={op.state} />
-          </DialogTitle>
+    <Cell kind={kind} className="grid content-start gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid justify-items-start gap-2">
+          <StateBadge state={op.state} />
+          <h2 className="text-2xl font-semibold">{describeOp(op)}</h2>
         </div>
-      </DialogHeader>
-      <dl className="kv rounded-[0.875rem] bg-background p-4">
+        <Mascot mood={moodOf(op.state)} size={84} />
+      </div>
+      <dl className="kv">
         {(
           [
             ["Origin", op.origin],
@@ -160,7 +192,7 @@ function OperationDetail({ id }: { id: string }) {
         <h3 className="label text-xs">
           Events <span className="font-mono text-muted-foreground">{events.length}</span>
         </h3>
-        <div className="max-h-[45vh] overflow-y-auto rounded-[0.875rem] bg-background px-3 py-1">
+        <div className="max-h-[50vh] overflow-y-auto">
           {events.length === 0 ? (
             <p className="note py-2">No events yet</p>
           ) : (
@@ -175,13 +207,18 @@ function OperationDetail({ id }: { id: string }) {
           )}
         </div>
       </section>
-      {!isTerminal(op.state) && (
-        <DialogFooter>
-          <Button variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+      <div className="flex flex-wrap gap-2 border-t border-foreground/10 pt-3">
+        {appSlug && (
+          <Button variant="outline" asChild>
+            <Link href={`/apps/${encodeURIComponent(appSlug)}`}>Open {appSlug} →</Link>
+          </Button>
+        )}
+        {!isTerminal(op.state) && (
+          <Button variant="danger" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
             Cancel operation
           </Button>
-        </DialogFooter>
-      )}
-    </>
+        )}
+      </div>
+    </Cell>
   );
 }
