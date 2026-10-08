@@ -1844,3 +1844,80 @@ button.row:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Ingress ---------- */
+
+.box--edge {
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+}
+.box--edge-routes {
+  grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+}
+.kv--edit dd input {
+  height: 2.25rem;
+  width: 8.5rem;
+  border-radius: 0.625rem;
+  font-family: var(--font-code);
+  font-size: 0.8125rem;
+  text-align: right;
+}
+.switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 3.25rem;
+  height: 1.875rem;
+  padding: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--idle);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch > span {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: #fffbf2;
+  transition: translate 0.15s;
+}
+.switch[aria-checked="true"] {
+  background: var(--success);
+}
+.switch[aria-checked="true"] > span {
+  translate: 1.375rem 0;
+}
+.routes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.routes th {
+  padding: 0 0.6rem 0.5rem;
+  text-align: left;
+  font-family: var(--font-caps);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.routes td {
+  padding: 0.7rem 0.6rem;
+  border-top: 1px solid var(--border);
+  white-space: nowrap;
+}
+.routes td.font-mono {
+  font-size: 0.8125rem;
+}
+.routes a {
+  text-decoration: none;
+}
+.routes a:hover {
+  color: var(--primary-deep);
+}
+@media (max-width: 1060px) {
+  .box--edge,
+  .box--edge-routes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

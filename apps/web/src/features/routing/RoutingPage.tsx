@@ -10,6 +10,7 @@ import {
   DomainError,
   DomainLoading,
   Field,
+  EmptyState,
   KeyValues,
   moodOf,
   PageHeader,
@@ -61,9 +62,6 @@ function EdgePanel() {
   return (
     <>
       <EdgeForm status={query.data} />
-      {query.data.state === "healthy" && <EdgeMetricsCell />}
-      <RoutesBox status={query.data} />
-      <SectionTitle title="Proxies" hint="Domain → upstream outside Bento" />
       <ProxiesPanel />
     </>
   );
@@ -77,7 +75,7 @@ function EdgeMetricsCell() {
   });
   const m = query.data;
   return (
-    <div className="box">
+    <>
       <Cell
         title="Traffic"
         icon={<Activity />}
@@ -95,7 +93,7 @@ function EdgeMetricsCell() {
         ) : !m ? (
           <DomainLoading label="edge metrics" />
         ) : (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <MetricCard
               label="Requests / s"
               value={m.requestsPerSecond.toFixed(1)}
@@ -118,7 +116,7 @@ function EdgeMetricsCell() {
           </div>
         )}
       </Cell>
-    </div>
+    </>
   );
 }
 
@@ -167,12 +165,18 @@ function compact(n: number) {
   return compactFormat.format(n);
 }
 
-function SectionTitle({ title, hint }: { title: string; hint?: string }) {
+function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange: (on: boolean) => void }) {
   return (
-    <div className="mb-2 mt-2 flex flex-wrap items-baseline gap-x-3 px-1">
-      <h2 className="label text-[0.8125rem]">{title}</h2>
-      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className="switch"
+      onClick={() => onChange(!checked)}
+    >
+      <span />
+    </button>
   );
 }
 
@@ -182,83 +186,102 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
   const dirty = JSON.stringify(settings) !== JSON.stringify(status.settings);
   const set = (next: Partial<T.EdgeSettings>) => setSettings({ ...settings, ...next });
   return (
-    <div className="box box--3">
-      <Cell title="Edge" icon={<Network />} action={<StateBadge state={status.state} />}>
-        <div className="mb-3 flex justify-center">
-          <Mascot mood={settings.enabled ? moodOf(status.state) : "idle"} size={88} />
-        </div>
-        <div className="grid gap-2">
-          <label className="check items-start rounded-[0.875rem] bg-background p-3">
-            <Checkbox checked={settings.enabled} onCheckedChange={(checked) => set({ enabled: checked === true })} />
-            <span className="grid gap-0.5">
+    <>
+      <section className="box box--edge" aria-label="Edge">
+        <Cell title="Edge" icon={<Network />}>
+          <div className="flex items-start justify-between gap-3">
+            <StateBadge state={status.settings.enabled ? status.state : "absent"} />
+            <Mascot mood={status.settings.enabled ? moodOf(status.state) : "idle"} size={80} />
+          </div>
+          <div className="mt-3 grid gap-3">
+            <div className="flex items-center gap-3">
+              <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
               <span className="label text-xs">Enabled</span>
-              <span className="text-xs text-muted-foreground">Shared nginx edge for apps and proxies</span>
-            </span>
-          </label>
-          <label className="check items-start rounded-[0.875rem] bg-background p-3">
-            <Checkbox checked={settings.http3} onCheckedChange={(checked) => set({ http3: checked === true })} />
-            <span className="grid gap-0.5">
-              <span className="label text-xs">HTTP/3</span>
-              <span className="text-xs text-muted-foreground">QUIC on the HTTPS port (UDP)</span>
-            </span>
-          </label>
-        </div>
-      </Cell>
-      <Cell title="Listener">
-        <div className="grid gap-4">
-          <Field label="Bind address">
-            <Input value={settings.bind} spellCheck={false} onChange={(event) => set({ bind: event.target.value })} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="HTTP port">
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
+              <span className="label text-xs">HTTP/3 · QUIC</span>
+            </div>
+            <dl className="kv kv--edit">
+              <div>
+                <dt>Bind</dt>
+                <dd>
+                  <Input
+                    aria-label="Bind address"
+                    value={settings.bind}
+                    spellCheck={false}
+                    onChange={(event) => set({ bind: event.target.value })}
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>HTTP</dt>
+                <dd>
+                  <Input
+                    aria-label="HTTP port"
+                    type="number"
+                    value={settings.httpPort}
+                    onChange={(event) => set({ httpPort: Number(event.target.value) })}
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>HTTPS</dt>
+                <dd>
+                  <Input
+                    aria-label="HTTPS port"
+                    type="number"
+                    value={settings.httpsPort}
+                    onChange={(event) => set({ httpsPort: Number(event.target.value) })}
+                  />
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </Cell>
+        {status.state === "healthy" ? (
+          <EdgeMetricsCell />
+        ) : (
+          <Cell kind="kara">
+            <EmptyState title="No traffic" body="Edge is not running." />
+          </Cell>
+        )}
+      </section>
+      <section className="box box--edge-routes" aria-label="Routes and certificates">
+        <RoutesCell status={status} />
+        <Cell title="Certificates · ACME" icon={<Lock />} kind={dirty ? "tamago" : "gohan"} className="flex flex-col">
+          <div className="grid gap-4">
+            <Field label="Contact email" hint="Expiry notices">
               <Input
-                type="number"
-                value={settings.httpPort}
-                onChange={(event) => set({ httpPort: Number(event.target.value) })}
+                type="email"
+                value={settings.acmeEmail}
+                placeholder="ops@example.com"
+                onChange={(event) => set({ acmeEmail: event.target.value })}
               />
             </Field>
-            <Field label="HTTPS port">
+            <Field label="Directory URL" hint="Default: Let's Encrypt production">
               <Input
-                type="number"
-                value={settings.httpsPort}
-                onChange={(event) => set({ httpsPort: Number(event.target.value) })}
+                value={settings.acmeUrl}
+                spellCheck={false}
+                onChange={(event) => set({ acmeUrl: event.target.value })}
               />
             </Field>
           </div>
-        </div>
-      </Cell>
-      <Cell title="Certificates · ACME" icon={<Lock />}>
-        <div className="grid gap-4">
-          <Field label="Contact email" hint="Expiry notices">
-            <Input
-              type="email"
-              value={settings.acmeEmail}
-              placeholder="ops@example.com"
-              onChange={(event) => set({ acmeEmail: event.target.value })}
-            />
-          </Field>
-          <Field label="Directory URL" hint="Default: Let's Encrypt production">
-            <Input
-              value={settings.acmeUrl}
-              spellCheck={false}
-              onChange={(event) => set({ acmeUrl: event.target.value })}
-            />
-          </Field>
-        </div>
-      </Cell>
-      <Cell className="cell--wide" kind={dirty ? "tamago" : "gohan"}>
-        <div className="actions items-center">
-          {save.error && <span className="note note--bad mr-auto">{messageOf(save.error)}</span>}
-          {dirty && <span className="label mr-auto text-xs text-[var(--tamago-ink)]">● Unsaved changes</span>}
-          <Button variant="outline" disabled={!dirty || save.isPending} onClick={() => setSettings(status.settings)}>
-            Reset
-          </Button>
-          <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
-            Save
-          </Button>
-        </div>
-      </Cell>
-    </div>
+          <div className="mt-auto grid gap-2 border-t border-foreground/10 pt-3">
+            {dirty && <span className="label text-xs text-[var(--tamago-ink)]">● Unsaved edge settings</span>}
+            {save.error && <span className="note note--bad">{messageOf(save.error)}</span>}
+            <div className="flex gap-2">
+              <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
+                Save
+              </Button>
+              <Button variant="ghost" disabled={!dirty || save.isPending} onClick={() => setSettings(status.settings)}>
+                Reset
+              </Button>
+            </div>
+          </div>
+        </Cell>
+      </section>
+    </>
   );
 }
 
@@ -272,7 +295,7 @@ type RouteRow = {
   href?: string;
 };
 
-function RoutesBox({ status }: { status: T.EdgeStatus }) {
+function RoutesCell({ status }: { status: T.EdgeStatus }) {
   const apps = useApplicationList();
   const proxies = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
   const active = new Set(status.routes);
@@ -316,46 +339,52 @@ function RoutesBox({ status }: { status: T.EdgeStatus }) {
   rows.sort((a, b) => Number(b.published) - Number(a.published) || a.name.localeCompare(b.name));
   const live = rows.filter((row) => row.published).length;
   return (
-    <div className="box">
-      <Cell title={`Routes · ${live} active`}>
-        {apps.error || proxies.error ? (
-          <DomainError
-            message={messageOf(apps.error ?? proxies.error)}
-            onRetry={() => {
-              void apps.refetch();
-              void proxies.refetch();
-            }}
-          />
-        ) : rows.length === 0 ? (
-          <p className="note">No apps or proxies use the edge yet.</p>
-        ) : (
-          <div className="grid divide-y">
-            {rows.map((row) => (
-              <div key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 first:pt-0 last:pb-0">
-                <span className="w-14 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {row.type}
-                </span>
-                <div className="grid min-w-40 flex-1 gap-0.5">
-                  {row.href ? (
-                    <Link href={row.href} className="truncate text-sm font-medium">
-                      {row.name}
-                    </Link>
-                  ) : (
-                    <span className="truncate text-sm font-medium">{row.name}</span>
-                  )}
-                  <span className="text-xs text-muted-foreground">{row.detail}</span>
-                </div>
-                <code className="min-w-0 flex-1 truncate text-xs">{row.domain || "no domain"}</code>
-                <StateBadge
-                  state={row.published ? "published" : "stopped"}
-                  label={row.published ? "Published" : "Not published"}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </Cell>
-    </div>
+    <Cell
+      title={`Routes · ${live} live`}
+      icon={<Globe />}
+      action={<span className="label text-xs text-muted-foreground">Serving now</span>}
+    >
+      {apps.error || proxies.error ? (
+        <DomainError
+          message={messageOf(apps.error ?? proxies.error)}
+          onRetry={() => {
+            void apps.refetch();
+            void proxies.refetch();
+          }}
+        />
+      ) : rows.length === 0 ? (
+        <EmptyState title="No routes" body="No apps or proxies use the edge yet." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="routes">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Target</th>
+                <th>State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key}>
+                  <td className="font-mono">{row.domain || "—"}</td>
+                  <td>
+                    <span className="label mr-1.5 text-[0.6875rem] text-muted-foreground">{row.type}</span>
+                    {row.href ? <Link href={row.href}>{row.name}</Link> : row.name}
+                  </td>
+                  <td>
+                    <StateBadge
+                      state={row.published ? "published" : "stopped"}
+                      label={row.published ? "Published" : "Not published"}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Cell>
   );
 }
 
@@ -563,7 +592,7 @@ function ProxiesPanel() {
           ))}
           <button type="button" className="cell tile tile--add" onClick={() => setEditing("new")}>
             {proxies.length === 0 ? <Waypoints aria-hidden="true" /> : <Plus aria-hidden="true" />}
-            {proxies.length === 0 ? "No proxies yet · Add one" : "Add proxy"}
+            {proxies.length === 0 ? "No proxies · New proxy" : "New proxy"}
           </button>
         </div>
       </div>
@@ -591,11 +620,6 @@ function ProxiesPanel() {
 function ProxyTile({ proxy, onEdit, onRemove }: { proxy: T.Proxy; onEdit: () => void; onRemove: () => void }) {
   const primary = proxy.domains.find((domain) => domain.primary) ?? proxy.domains[0];
   const scheme = proxy.route.tls === "none" ? "http" : "https";
-  const options = [
-    proxy.route.redirectHttps && "HTTPS redirect",
-    proxy.route.staticCache && "Static cache",
-    proxy.route.accessLog && "Access log",
-  ].filter(Boolean);
   return (
     <article className="cell tile" aria-label={proxy.name}>
       <div className="tile__top">
@@ -616,45 +640,43 @@ function ProxyTile({ proxy, onEdit, onRemove }: { proxy: T.Proxy; onEdit: () => 
         </div>
         <StateBadge state={proxy.enabled ? "published" : "stopped"} label={proxy.enabled ? "Enabled" : "Disabled"} />
       </div>
-      <dl className="facts">
-        <div className="facts__wide">
+      <dl className="kv">
+        <div>
           <dt>Upstreams</dt>
           <dd>
-            <span className="chips">
-              {proxy.upstreams.map((upstream) => (
-                <code key={upstream} className="chip">
-                  {upstream}
-                </code>
-              ))}
-            </span>
+            {proxy.upstreams.length}
+            {proxy.upstreams.length > 1 ? " · balanced" : ""}
           </dd>
         </div>
+      </dl>
+      <code className="block truncate rounded-[0.625rem] bg-background px-3 py-2 text-xs">
+        {proxy.upstreams.join("  ")}
+      </code>
+      <dl className="kv">
         <div>
           <dt>TLS</dt>
-          <dd className="inline-flex items-center gap-1">
-            {proxy.route.tls === "none" ? <Globe aria-hidden="true" /> : <Lock aria-hidden="true" />}
-            {tlsLabels[proxy.route.tls]}
-          </dd>
+          <dd>{tlsLabels[proxy.route.tls]}</dd>
         </div>
         <div>
           <dt>Domains</dt>
           <dd title={proxy.domains.map((domain) => domain.name).join(", ")}>{proxy.domains.length}</dd>
         </div>
+        <div>
+          <dt>Static cache</dt>
+          <dd>{proxy.route.staticCache ? "✓ On" : "— Off"}</dd>
+        </div>
+        <div>
+          <dt>HTTPS redirect</dt>
+          <dd>{proxy.route.redirectHttps ? "✓ On" : "— Off"}</dd>
+        </div>
       </dl>
-      <div className="flex items-center gap-1">
-        <span className="tags mr-auto">
-          {options.map((option) => (
-            <span key={option as string} className="tag">
-              {option}
-            </span>
-          ))}
-        </span>
-        <button type="button" className="icon-btn" aria-label={`Edit ${proxy.name}`} onClick={onEdit}>
-          <Pencil />
-        </button>
-        <button type="button" className="icon-btn" aria-label={`Remove ${proxy.name}`} onClick={onRemove}>
+      <div className="flex items-center gap-2 border-t border-border pt-3">
+        <Button variant="outline" onClick={onEdit}>
+          <Pencil /> Edit
+        </Button>
+        <Button variant="danger" size="icon" aria-label={`Remove ${proxy.name}`} onClick={onRemove}>
           <Trash2 />
-        </button>
+        </Button>
       </div>
     </article>
   );
