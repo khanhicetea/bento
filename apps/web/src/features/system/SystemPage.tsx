@@ -18,6 +18,7 @@ import { DataServices } from "../data/DatabasesPage.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { DockerInventory, type DockerKind } from "./DockerInventory.tsx";
+import { Mascot } from "../../components/Mascot.tsx";
 import { ReconcileTargets } from "./ReconcileTargets.tsx";
 
 type Tab = "overview" | DockerKind;
@@ -54,20 +55,23 @@ function Overview() {
     <>
       <div className="box box--3">
         <Cell>
-          <div className="metric">
-            <strong className="text-xl!">{status.version}</strong>
-            <span>Bento · up {formatRelative(status.startedAt).replace(/ ago$/, "")}</span>
+          <div className="flex items-start justify-between gap-3">
+            <div className="metric">
+              <strong className="text-[1.75rem]!">{status.version}</strong>
+              <span>Bento · up {formatRelative(status.startedAt).replace(/ ago$/, "")}</span>
+            </div>
+            <Mascot mood={status.dockerError ? "alert" : "ok"} size={64} />
           </div>
         </Cell>
-        <Cell className={status.dockerError ? "cell--alert" : ""}>
+        <Cell kind={status.dockerError ? "ume" : "gohan"}>
           <div className="metric">
-            <strong className="text-xl!">{status.dockerError ? "Down" : status.dockerVersion}</strong>
+            <strong className="text-[1.75rem]!">{status.dockerError ? "Down" : status.dockerVersion}</strong>
             <span>Docker{status.dockerError ? "" : ` · API ${status.dockerApi}`}</span>
           </div>
         </Cell>
         <Cell>
           <div className="metric">
-            <strong className="text-xl!">{status.arch}</strong>
+            <strong className="text-[1.75rem]!">{status.arch}</strong>
             <span>Architecture</span>
           </div>
         </Cell>

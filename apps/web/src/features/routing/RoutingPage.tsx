@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Globe, Lock, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
+import { Activity, ExternalLink, Globe, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -11,9 +11,11 @@ import {
   DomainLoading,
   Field,
   KeyValues,
+  moodOf,
   PageHeader,
   StateBadge,
 } from "../../components/DomainState.tsx";
+import { Mascot } from "../../components/Mascot.tsx";
 import { Link } from "wouter";
 import { useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
 import { Alert } from "@/components/ui/alert";
@@ -58,12 +60,11 @@ function EdgePanel() {
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   return (
     <>
-      {query.data.state === "healthy" && <EdgeMetricsCell />}
       <EdgeForm status={query.data} />
-      <SectionTitle title="Proxies" hint="Route edge domains to upstreams outside Bento." />
-      <ProxiesPanel />
-      <SectionTitle title="Routes" hint="What the edge is serving right now." />
+      {query.data.state === "healthy" && <EdgeMetricsCell />}
       <RoutesBox status={query.data} />
+      <SectionTitle title="Proxies" hint="Domain → upstream outside Bento" />
+      <ProxiesPanel />
     </>
   );
 }
@@ -79,11 +80,12 @@ function EdgeMetricsCell() {
     <div className="box">
       <Cell
         title="Traffic"
+        icon={<Activity />}
         action={
           m && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-              Live · 5s
+            <span className="label flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="dot dot--wait" aria-hidden="true" />
+              Live · 5 s
             </span>
           )
         }
@@ -133,14 +135,17 @@ function MetricCard({
   tone?: "good" | "bad";
   children?: React.ReactNode;
 }) {
-  const valueColor =
-    tone === "bad" ? "text-destructive" : tone === "good" ? "text-emerald-600 dark:text-emerald-400" : "";
+  const valueColor = tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "";
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-[0.875rem] bg-background p-3">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={`truncate text-2xl font-semibold tabular-nums ${valueColor}`}>{value}</span>
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-[0.875rem] bg-background p-3.5">
+      <span className="label text-[0.6875rem] text-muted-foreground">{label}</span>
+      <span
+        className={`truncate font-mono text-[1.75rem] leading-none font-semibold tracking-tight tabular-nums ${valueColor}`}
+      >
+        {value}
+      </span>
       {children}
-      <span className="truncate text-xs text-muted-foreground">{hint}</span>
+      <span className="truncate font-mono text-xs text-muted-foreground">{hint}</span>
     </div>
   );
 }
@@ -150,8 +155,8 @@ function StateBar({ reading, writing, waiting }: { reading: number; writing: num
   const part = (n: number, color: string) => <span className={color} style={{ width: `${(n / total) * 100}%` }} />;
   return (
     <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
-      {part(reading, "bg-sky-500")}
-      {part(writing, "bg-amber-500")}
+      {part(reading, "bg-info")}
+      {part(writing, "bg-warning")}
       {part(waiting, "bg-muted-foreground/40")}
     </div>
   );
@@ -165,7 +170,7 @@ function compact(n: number) {
 function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="mb-2 mt-2 flex flex-wrap items-baseline gap-x-3 px-1">
-      <h2 className="text-sm font-semibold">{title}</h2>
+      <h2 className="label text-[0.8125rem]">{title}</h2>
       {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </div>
   );
@@ -177,30 +182,31 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
   const dirty = JSON.stringify(settings) !== JSON.stringify(status.settings);
   const set = (next: Partial<T.EdgeSettings>) => setSettings({ ...settings, ...next });
   return (
-    <div className="box box--2">
-      <Cell title="Edge" className="cell--wide" action={<StateBadge state={status.state} />}>
-        <div className="grid gap-3 sm:grid-cols-2">
+    <div className="box box--3">
+      <Cell title="Edge" icon={<Network />} action={<StateBadge state={status.state} />}>
+        <div className="mb-3 flex justify-center">
+          <Mascot mood={settings.enabled ? moodOf(status.state) : "idle"} size={88} />
+        </div>
+        <div className="grid gap-2">
           <label className="check items-start rounded-[0.875rem] bg-background p-3">
             <Checkbox checked={settings.enabled} onCheckedChange={(checked) => set({ enabled: checked === true })} />
             <span className="grid gap-0.5">
-              <span className="text-sm font-medium">Enabled</span>
-              <span className="text-xs text-muted-foreground">
-                Run the shared nginx edge for managed apps and proxies.
-              </span>
+              <span className="label text-xs">Enabled</span>
+              <span className="text-xs text-muted-foreground">Shared nginx edge for apps and proxies</span>
             </span>
           </label>
           <label className="check items-start rounded-[0.875rem] bg-background p-3">
             <Checkbox checked={settings.http3} onCheckedChange={(checked) => set({ http3: checked === true })} />
             <span className="grid gap-0.5">
-              <span className="text-sm font-medium">HTTP/3</span>
-              <span className="text-xs text-muted-foreground">Advertise QUIC on the HTTPS port (UDP).</span>
+              <span className="label text-xs">HTTP/3</span>
+              <span className="text-xs text-muted-foreground">QUIC on the HTTPS port (UDP)</span>
             </span>
           </label>
         </div>
       </Cell>
       <Cell title="Listener">
         <div className="grid gap-4">
-          <Field label="Bind address" hint="Interface the edge listens on.">
+          <Field label="Bind address">
             <Input value={settings.bind} spellCheck={false} onChange={(event) => set({ bind: event.target.value })} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
@@ -221,9 +227,9 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
           </div>
         </div>
       </Cell>
-      <Cell title="Certificates (ACME)">
+      <Cell title="Certificates · ACME" icon={<Lock />}>
         <div className="grid gap-4">
-          <Field label="Contact email" hint="Used for expiry notices from the certificate authority.">
+          <Field label="Contact email" hint="Expiry notices">
             <Input
               type="email"
               value={settings.acmeEmail}
@@ -231,7 +237,7 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
               onChange={(event) => set({ acmeEmail: event.target.value })}
             />
           </Field>
-          <Field label="Directory URL" hint="Leave the default for Let's Encrypt production.">
+          <Field label="Directory URL" hint="Default: Let's Encrypt production">
             <Input
               value={settings.acmeUrl}
               spellCheck={false}
@@ -240,10 +246,10 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
           </Field>
         </div>
       </Cell>
-      <Cell className="cell--wide">
+      <Cell className="cell--wide" kind={dirty ? "tamago" : "gohan"}>
         <div className="actions items-center">
           {save.error && <span className="note note--bad mr-auto">{messageOf(save.error)}</span>}
-          {dirty && <span className="note">Unsaved changes</span>}
+          {dirty && <span className="label mr-auto text-xs text-[var(--tamago-ink)]">● Unsaved changes</span>}
           <Button variant="outline" disabled={!dirty || save.isPending} onClick={() => setSettings(status.settings)}>
             Reset
           </Button>
@@ -462,7 +468,7 @@ function TunnelPanel() {
   const [disableOpen, setDisableOpen] = useState(false);
   const mutation = useOperationMutation((value: string) => api.tunnel.setToken(value));
   return (
-    <div className="box">
+    <div className="box box--main">
       <Cell
         title="Cloudflare Tunnel"
         action={query.data && <StateBadge state={query.data.enabled ? query.data.state : "absent"} />}
@@ -471,7 +477,7 @@ function TunnelPanel() {
           {query.data?.note && <p className="note">{query.data.note}</p>}
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-60 flex-1">
-              <Field label="Token" hint="Stored privately, never shown again.">
+              <Field label="Token" hint="Stored privately · never shown again">
                 <Input
                   type="password"
                   autoComplete="off"
@@ -493,6 +499,15 @@ function TunnelPanel() {
             )}
           </div>
           {mutation.error && <p className="note note--bad">{messageOf(mutation.error)}</p>}
+        </div>
+      </Cell>
+      <Cell kind={query.data?.enabled ? "gohan" : "kara"}>
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+          <Mascot mood={query.data?.enabled ? moodOf(query.data.state) : "idle"} size={112} />
+          <span className="label text-sm">{query.data?.enabled ? "Tunnel on" : "Tunnel off"}</span>
+          <span className="text-sm text-muted-foreground">
+            {query.data?.enabled ? "Edge routes via Cloudflare" : "Edge serves on host ports"}
+          </span>
         </div>
       </Cell>
       <ConfirmDialog

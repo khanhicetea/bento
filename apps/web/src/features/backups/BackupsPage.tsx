@@ -16,6 +16,7 @@ import { Link } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
+  Cell,
   DomainError,
   DomainLoading,
   EmptyState,
@@ -24,6 +25,7 @@ import {
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
+import { Mascot } from "../../components/Mascot.tsx";
 import { keepEscapeInTerminal, TerminalView } from "../../components/TerminalDialog.tsx";
 import { formatBytes, formatCron, formatDuration, formatRelative } from "../../lib/format.ts";
 import { useApplication, useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
@@ -57,6 +59,7 @@ export function BackupsPage() {
   return (
     <>
       <PageHeader title="Backups" actions={<Button onClick={() => setRunOpen(true)}>Back up now</Button>} />
+      <BackupStatus />
       <div className="seg mb-5" role="tablist" aria-label="Backup sections">
         {(["artifacts", "apps", "runs", "schedules"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
@@ -72,6 +75,75 @@ export function BackupsPage() {
       {restoreTarget && <RestoreDialog artifact={restoreTarget} onClose={() => setRestoreTarget(null)} />}
       {deleteTarget && <DeleteDialog artifact={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     </>
+  );
+}
+
+/** Status row: last backup, next run, schedules, apps without an app backup. */
+function BackupStatus() {
+  const schedules = useQuery({
+    queryKey: keys.backups.schedules,
+    queryFn: ({ signal }) => api.backups.schedules(signal),
+  });
+  const appBackups = useQuery({ queryKey: keys.backups.apps, queryFn: ({ signal }) => api.backups.apps(signal) });
+  const apps = useApplicationList();
+  const enabled = (schedules.data?.schedules ?? []).filter((schedule) => schedule.enabled);
+  const summaries = appBackups.data?.apps ?? [];
+  const runs = [
+    ...enabled.filter((s) => s.lastRun).map((s) => ({ at: s.lastRun ?? "", ok: s.lastState === "succeeded" })),
+    ...summaries.filter((a) => a.lastBackup).map((a) => ({ at: a.lastBackup?.at ?? "", ok: !!a.lastBackup?.ok })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  const last = runs[0];
+  const next = [
+    ...enabled.map((s) => s.nextRun ?? ""),
+    ...summaries.filter((a) => a.scheduleEnabled).map((a) => a.nextRun),
+  ]
+    .filter(Boolean)
+    .sort()[0];
+  const covered = new Set(summaries.filter((a) => a.initialized).map((a) => a.appId));
+  const uncovered = (apps.data?.apps ?? []).filter((app) => !covered.has(app.id));
+  const coveredBySchedule = enabled.some((s) => s.scope === "all");
+  const pending = schedules.isPending || appBackups.isPending;
+  return (
+    <section className="box box--4" aria-label="Backup status">
+      <Cell kind={last && !last.ok ? "ume" : "gohan"}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="metric">
+            <strong className="text-[1.75rem]!">
+              {pending ? "–" : last ? formatRelative(last.at).replace(/ ago$/, "") : "—"}
+            </strong>
+            <span>Last backup</span>
+            {last && <StateBadge state={last.ok ? "succeeded" : "failed"} />}
+          </div>
+          <Mascot mood={pending ? "busy" : !last ? "idle" : last.ok ? "ok" : "alert"} size={72} />
+        </div>
+      </Cell>
+      <Cell>
+        <div className="metric">
+          <strong className="text-[1.75rem]!">{next ? formatRelative(next).replace(/^in /, "") : "—"}</strong>
+          <span>Next run</span>
+        </div>
+      </Cell>
+      <Cell>
+        <div className="metric">
+          <strong className="text-[1.75rem]!">{pending ? "–" : enabled.length}</strong>
+          <span>Schedules on</span>
+        </div>
+      </Cell>
+      <Cell kind={uncovered.length > 0 && !coveredBySchedule ? "tamago" : "gohan"}>
+        <div className="metric">
+          <strong className="text-[1.75rem]!">{apps.isPending ? "–" : uncovered.length}</strong>
+          <span>No app backup</span>
+          {uncovered.length > 0 && (
+            <small className="truncate font-mono text-xs text-muted-foreground">
+              {uncovered
+                .slice(0, 3)
+                .map((app) => app.slug)
+                .join(" · ")}
+            </small>
+          )}
+        </div>
+      </Cell>
+    </section>
   );
 }
 

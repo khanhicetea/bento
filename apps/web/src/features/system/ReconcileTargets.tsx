@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { RotateCw } from "lucide-react";
+import { Mascot } from "../../components/Mascot.tsx";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { Cell, DomainError, StateBadge } from "../../components/DomainState.tsx";
@@ -27,13 +29,25 @@ export function ReconcileTargets() {
   const targets = query.data?.targets ?? [];
   return (
     <div className="box">
-      <Cell title="Reconciliation">
+      <Cell
+        title="Reconciliation"
+        icon={<RotateCw />}
+        kind={targets.length > 0 ? "tamago" : "gohan"}
+        action={
+          targets.length > 0 && (
+            <span className="label text-xs text-[var(--tamago-ink)]">{targets.length} not converged</span>
+          )
+        }
+      >
         {query.error ? (
           <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />
         ) : query.isPending ? (
           <p className="note">Loading…</p>
         ) : targets.length === 0 ? (
-          <p className="note">Everything converged</p>
+          <div className="flex items-center gap-3">
+            <Mascot mood="ok" size={56} />
+            <StateBadge state="healthy" label="All converged" />
+          </div>
         ) : (
           <div className="rows rows--lined">
             {targets.map((target) => (
@@ -51,7 +65,7 @@ function TargetRow({ target, label }: { target: T.ReconcileTarget; label: string
   const state = blocked ? "blocked" : target.pendingOperation ? "queued" : "failed";
   const badge = blocked ? "Blocked" : target.pendingOperation ? "Repairing" : "Retrying";
   return (
-    <div className="row">
+    <div className="row rounded-[0.75rem] bg-card">
       <span className="row__main">
         <strong>
           {label}{" "}

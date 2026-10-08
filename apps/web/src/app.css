@@ -1821,3 +1821,7 @@ button.row:hover {
     grid-column: 1 / -1;
   }
 }
+.metric > .pill,
+.metric > small {
+  justify-self: start;
+}
