@@ -399,7 +399,7 @@ func TestAppWaitsForItsServiceButNotForOthers(t *testing.T) {
 	withDB, opDB, err := h.c.CreateApp(ctx, CreateAppInput{
 		Slug:    "dbapp",
 		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}},
-		Domains: []string{"dbapp.example.com"}, Bindings: []BindingRequest{{Engine: domain.EnginePostgres, Service: svc.Name}},
+		Hosts:   []AppHostInput{{Name: "dbapp.example.com"}}, Bindings: []BindingRequest{{Engine: domain.EnginePostgres, Service: svc.Name}},
 	}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -582,7 +582,7 @@ func TestBootingAppIsNotRoutedByAnotherOperation(t *testing.T) {
 			t.Fatal(err)
 		}
 		for name, body := range files {
-			if strings.Contains(name, "app-shop") {
+			if name == "sites/host-shop.example.com.conf" {
 				return !strings.Contains(string(body), "app currently unavailable")
 			}
 		}

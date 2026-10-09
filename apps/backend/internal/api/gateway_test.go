@@ -60,7 +60,7 @@ func TestSchedulerGateway(t *testing.T) {
 	c.login()
 	ctx := t.Context()
 	for _, slug := range []string{"shop", "blog"} {
-		_, body := c.write("POST", "/api/v1/apps", `{"slug":"`+slug+`","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["`+slug+`.example.com"]}`)
+		_, body := c.write("POST", "/api/v1/apps", `{"slug":"`+slug+`","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"`+slug+`.example.com"}]}`)
 		var acc dto.Accepted
 		json.Unmarshal([]byte(body), &acc)
 		h.Wait(acc.Operation.ID)

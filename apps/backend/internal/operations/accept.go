@@ -31,30 +31,42 @@ type CreateAppInput struct {
 	Runtime   domain.Runtime
 	Resources domain.Resources
 	Ingress   domain.IngressMode
-	Domains   []string
-	Route     domain.Route
-	Bindings  []BindingRequest
+	AccessLog bool
+	// Hosts seeds Ingress hosts that target the new app.
+	Hosts    []AppHostInput
+	Bindings []BindingRequest
 }
 
-func normalizeDomains(in []string, errs *domain.ValidationErrors) []domain.DomainLink {
-	seen := map[string]bool{}
-	var out []domain.DomainLink
+// AppHostInput is an Ingress host created together with its app.
+type AppHostInput struct {
+	Name  string
+	Route domain.Route
+}
+
+// appHosts validates hosts seeded for an app; names are normalized in place.
+func appHosts(in []AppHostInput, errs *domain.ValidationErrors) []domain.Host {
 	if len(in) > 50 {
-		errs.Add("domains", "at most 50 domains")
+		errs.Add("hosts", "at most 50 hosts")
 		return nil
 	}
-	for i, d := range in {
-		n, err := domain.NormalizeDomain(d)
-		if err != nil {
-			errs.Add(fmt.Sprintf("domains[%d]", i), "%s", err)
+	seen := map[string]bool{}
+	var out []domain.Host
+	for i, hi := range in {
+		h := domain.Host{Name: hi.Name, Target: domain.HostTargetApp, AppID: "pending", Route: hi.Route, Enabled: true}
+		var herrs domain.ValidationErrors
+		domain.ValidateHost(&h, &herrs)
+		for _, e := range herrs {
+			errs.Add(fmt.Sprintf("hosts[%d].%s", i, e.Field), "%s", e.Message)
+		}
+		if len(herrs) > 0 {
 			continue
 		}
-		if seen[n] {
-			errs.Add(fmt.Sprintf("domains[%d]", i), "duplicate domain")
+		if seen[h.Name] {
+			errs.Add(fmt.Sprintf("hosts[%d].name", i), "duplicate host")
 			continue
 		}
-		seen[n] = true
-		out = append(out, domain.DomainLink{Name: n, Primary: len(out) == 0})
+		seen[h.Name] = true
+		out = append(out, h)
 	}
 	return out
 }
@@ -125,8 +137,10 @@ func (c *Controller) CreateApp(
 	if err := domain.ValidateIngress(in.Ingress); err != nil {
 		errs.Add("ingress", "%s", err)
 	}
-	domain.ValidateRoute(&in.Route, "route", &errs)
-	links := normalizeDomains(in.Domains, &errs)
+	hosts := appHosts(in.Hosts, &errs)
+	if len(hosts) > 0 && in.Ingress != domain.IngressManaged {
+		errs.Add("hosts", "only apps with managed ingress take Ingress hosts")
+	}
 	if len(in.Bindings) > 16 {
 		errs.Add("bindings", "at most 16 bindings")
 	}
@@ -156,8 +170,8 @@ func (c *Controller) CreateApp(
 	now := time.Now().UTC()
 	app := domain.App{
 		ID: platform.NewAppID(), Slug: in.Slug, Runtime: in.Runtime, Resources: in.Resources,
-		DesiredRuntime: domain.DesiredStopped, Ingress: in.Ingress, Publication: domain.Unpublished, Route: in.Route,
-		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now, Domains: links,
+		DesiredRuntime: domain.DesiredStopped, Ingress: in.Ingress, Publication: domain.Unpublished,
+		AccessLog: in.AccessLog, ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	app.Redis = domain.RedisIdentity{
 		Mode:     "acl",
@@ -180,8 +194,11 @@ func (c *Controller) CreateApp(
 			if err := store.InsertApp(ctx, q, app); err != nil {
 				return err
 			}
-			if err := store.ReplaceDomains(ctx, q, "app", app.ID, links); err != nil {
-				return err
+			for _, h := range hosts {
+				h.AppID, h.CreatedAt = app.ID, now
+				if err := store.InsertHost(ctx, q, h); err != nil {
+					return err
+				}
 			}
 			var berrs domain.ValidationErrors
 			for i, br := range in.Bindings {
@@ -217,8 +234,7 @@ type UpdateAppInput struct {
 	Runtime            *domain.Runtime
 	Resources          *domain.Resources
 	Ingress            *domain.IngressMode
-	Domains            *[]string
-	Route              *domain.Route
+	AccessLog          *bool
 	Env                *[]domain.EnvVar
 }
 
@@ -249,15 +265,8 @@ func (c *Controller) UpdateApp(
 			errs.Add("ingress", "%s", err)
 		}
 	}
-	if in.Route != nil {
-		domain.ValidateRoute(in.Route, "route", &errs)
-	}
 	if in.Env != nil {
 		domain.ValidateEnv(*in.Env, &errs)
-	}
-	var links []domain.DomainLink
-	if in.Domains != nil {
-		links = normalizeDomains(*in.Domains, &errs)
 	}
 	if err := errs.Err(); err != nil {
 		return app, store.Operation{}, err
@@ -288,8 +297,8 @@ func (c *Controller) UpdateApp(
 			if in.Resources != nil {
 				cur.Resources = *in.Resources
 			}
-			if in.Route != nil {
-				cur.Route = *in.Route
+			if in.AccessLog != nil {
+				cur.AccessLog = *in.AccessLog
 			}
 			if in.Ingress != nil {
 				cur.Ingress = *in.Ingress
@@ -298,13 +307,7 @@ func (c *Controller) UpdateApp(
 				}
 			}
 			cur.ConfigGeneration++
-			if err := store.UpdateApp(ctx, q, cur); err != nil {
-				return err
-			}
-			if in.Domains != nil {
-				return store.ReplaceDomains(ctx, q, "app", cur.ID, links)
-			}
-			return nil
+			return store.UpdateApp(ctx, q, cur)
 		},
 	})
 	if err != nil {
@@ -670,78 +673,98 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 	return op, err
 }
 
-type ProxyInput struct {
-	Name      string
-	Upstreams []string
-	Domains   []string
-	Route     domain.Route
-	Enabled   bool
+// HostInput is an Ingress host to create or replace. App names the target
+// app by slug or id.
+type HostInput struct {
+	Name       string
+	Target     domain.HostTarget
+	App        string
+	Upstreams  []string
+	RedirectTo string
+	Route      domain.Route
+	Enabled    bool
 }
 
-// UpsertProxy manages an edge reverse-proxy route to an external upstream.
-func (c *Controller) UpsertProxy(
+// CreateHost adds an Ingress host; an existing name is a conflict.
+func (c *Controller) CreateHost(ctx context.Context, in HostInput, idem string) (domain.Host, store.Operation, error) {
+	return c.saveHost(ctx, in, idem, true)
+}
+
+// UpdateHost replaces an existing Ingress host's target and settings.
+func (c *Controller) UpdateHost(ctx context.Context, in HostInput, idem string) (domain.Host, store.Operation, error) {
+	return c.saveHost(ctx, in, idem, false)
+}
+
+func (c *Controller) saveHost(
 	ctx context.Context,
-	in ProxyInput,
+	in HostInput,
 	idem string,
-) (domain.Proxy, store.Operation, error) {
+	create bool,
+) (domain.Host, store.Operation, error) {
+	h := domain.Host{
+		Name: in.Name, Target: in.Target, Upstreams: in.Upstreams, RedirectTo: in.RedirectTo, Route: in.Route,
+		Enabled: in.Enabled, CreatedAt: time.Now().UTC(),
+	}
 	var errs domain.ValidationErrors
-	if err := domain.ValidateSlug(in.Name); err != nil {
-		errs.Add("name", "%s", err)
+	if in.Target == domain.HostTargetApp && in.App != "" {
+		// An unresolved app keeps its reference so ValidateHost reports only
+		// the error below.
+		h.AppID = in.App
+		app, err := store.GetApp(ctx, c.Store.DB(), in.App)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			errs.Add("target.app", "unknown app %q", in.App)
+		case err != nil:
+			return h, store.Operation{}, err
+		case app.Ingress != domain.IngressManaged:
+			errs.Add("target.app", "app %s does not use managed ingress", app.Slug)
+		default:
+			h.AppID = app.ID
+		}
+	} else if in.App != "" {
+		errs.Add("target", "only an app target takes an app")
 	}
-	if len(in.Upstreams) == 0 || len(in.Upstreams) > 16 {
-		errs.Add("upstreams", "1-16 upstream URLs required")
+	domain.ValidateHost(&h, &errs)
+	if err := errs.Err(); err != nil {
+		return h, store.Operation{}, err
 	}
-	for i, u := range in.Upstreams {
-		if err := domain.ValidateUpstream(u); err != nil {
-			errs.Add(fmt.Sprintf("upstreams[%d]", i), "%s", err)
+	if !create {
+		if _, err := store.GetHost(ctx, c.Store.DB(), h.Name); err != nil {
+			return h, store.Operation{}, err
 		}
 	}
-	domain.ValidateRoute(&in.Route, "route", &errs)
-	links := normalizeDomains(in.Domains, &errs)
-	if len(links) == 0 {
-		errs.Add("domains", "at least one domain is required")
-	}
-	if err := errs.Err(); err != nil {
-		return domain.Proxy{}, store.Operation{}, err
-	}
-	p, err := store.GetProxy(ctx, c.Store.DB(), in.Name)
-	if errors.Is(err, store.ErrNotFound) {
-		p = domain.Proxy{ID: "p" + platform.RandomHex(6), Name: in.Name, CreatedAt: time.Now().UTC()}
-	} else if err != nil {
-		return p, store.Operation{}, err
-	}
-	p.Upstreams, p.Route, p.Enabled = in.Upstreams, in.Route, in.Enabled
 	op, _, err := c.Submit(ctx, Submission{
-		Kind: KindEdgeApply, TargetKind: "proxy", TargetID: p.ID, IdempotencyKey: idem, Request: in,
+		Kind: KindEdgeApply, TargetKind: "host", TargetID: h.Name, IdempotencyKey: idem, Request: in,
 		Mutate: func(ctx context.Context, q store.Q) error {
-			if err := store.UpsertProxy(ctx, q, p); err != nil {
-				return err
+			if create {
+				return store.InsertHost(ctx, q, h)
 			}
-			return store.ReplaceDomains(ctx, q, "proxy", p.ID, links)
+			return store.UpdateHost(ctx, q, h)
 		},
 	})
 	if err != nil {
-		return p, op, err
+		return h, op, err
 	}
-	p, err = store.GetProxy(ctx, c.Store.DB(), p.ID)
-	return p, op, err
+	h, err = store.GetHost(ctx, c.Store.DB(), h.Name)
+	return h, op, err
 }
 
-func (c *Controller) DeleteProxy(ctx context.Context, name, confirm, idem string) (store.Operation, error) {
-	p, err := store.GetProxy(ctx, c.Store.DB(), name)
+// DeleteHost removes an Ingress host. It requires "delete <host>" exactly.
+func (c *Controller) DeleteHost(ctx context.Context, name, confirm, idem string) (store.Operation, error) {
+	h, err := store.GetHost(ctx, c.Store.DB(), strings.ToLower(name))
 	if err != nil {
 		return store.Operation{}, err
 	}
-	if confirm != "delete "+p.Name {
-		return store.Operation{}, fmt.Errorf("%w: type exactly %q", ErrConfirmation, "delete "+p.Name)
+	if confirm != "delete "+h.Name {
+		return store.Operation{}, fmt.Errorf("%w: type exactly %q", ErrConfirmation, "delete "+h.Name)
 	}
 	op, _, err := c.Submit(ctx, Submission{
 		Kind:           KindEdgeApply,
-		TargetKind:     "proxy",
-		TargetID:       p.ID,
+		TargetKind:     "host",
+		TargetID:       h.Name,
 		IdempotencyKey: idem,
-		Request:        map[string]any{"delete": p.Name},
-		Mutate:         func(ctx context.Context, q store.Q) error { return store.DeleteProxy(ctx, q, p.ID) },
+		Request:        map[string]any{"delete": h.Name},
+		Mutate:         func(ctx context.Context, q store.Q) error { return store.DeleteHost(ctx, q, h.Name) },
 	})
 	return op, err
 }

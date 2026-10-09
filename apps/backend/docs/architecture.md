@@ -58,17 +58,21 @@ One SQLite file (`bento.db`, `0600`) opened with `modernc.org/sqlite` (pure Go),
 connection, and `BEGIN IMMEDIATE` transactions.
 
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
-  version (currently 3). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older
-  than 2, newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). It accepts 2 (to migrate) and 3.
-- **Migrations:** the first one is v2 → v3: `store.Open` runs `ALTER TABLE apps ADD COLUMN home_path TEXT` and
-  `PRAGMA user_version = 3` in one transaction, only from v2 (the version is re-read inside the transaction); a failure
-  leaves the file at v2. `stack.Import` copies the archived `state.db` and opens it through the same path, so a v2
+  version (currently 4). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older
+  than 2, newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). It accepts 2 and 3 (to migrate) and 4.
+- **Migrations:** `store.Open` runs every step from the file's version up to the current one in one transaction (the
+  version is re-read inside it); a failure leaves the file at its old version. v2 → v3 adds `apps.home_path`. v3 → v4
+  moves domain ownership to Ingress: each `domains` row becomes a `hosts` row (app domains target their app, proxy
+  domains become upstream hosts carrying the proxy's upstreams and enabled flag), each with its former owner's
+  `route_json`; the former primary domain gets the lowest `position`. `apps.route_json` becomes
+  `apps.access_log` (the app-local Nginx log), and `domains` and `proxies` are dropped. A domain row whose owner is
+  missing refuses the migration. `stack.Import` copies the archived `state.db` and opens it through the same path, so a v2
   export imports and migrates. `apps.home_path` (NULL = `/home/<slug>`) is the in-container home
   (`domain.App.HomePath`, returned by `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as
   `/home/<slug-shaped>`, written only at insert, and exposed read-only as the App DTO's `homePath`.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
-  network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `domains` (one owner per name, one primary per owner),
-  `proxies`, `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
+  network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
+  target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
   `operation_events` (≤200 events each), `sessions`, `images`, `backup_runs`.
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
   across a Docker call.
@@ -282,8 +286,10 @@ join data only. Those two reserved addresses are the only `set_real_ip_from` sou
 
 The edge (`edge` package + `operations/edge.go`):
 
-1. `edge.Render` builds the full file set from current intent: only `managed` + `published` apps and enabled proxies.
-   App upstreams use `set $bento_upstream http://app-<id>:<port>; proxy_pass $bento_upstream;` with
+1. `edge.Render` builds the full file set from current intent: one `sites/host-<name>.conf` per enabled host whose
+   target is routable (an app host only while the app is `managed` + `published`), and one
+   `upstreams/app-<slug>.conf` per app that a served host targets, shared by all of the app's hosts. TLS is per host,
+   so each site has its own server blocks. Redirect hosts only `return 301`. App upstreams use `set $bento_upstream http://app-<id>:<port>; proxy_pass $bento_upstream;` with
    `resolver 127.0.0.11 valid=10s`, so a replaced container is re-resolved without a reload. Forwarding headers are
    overwritten, not appended.
 2. If the output differs from `edge/conf/live`, it is staged in `edge/conf/candidate-*`, validated with `nginx -t`
@@ -294,7 +300,7 @@ The edge (`edge` package + `operations/edge.go`):
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
-When the utils listener binds the apps network, every managed route (app or proxy) reserves
+When the utils listener binds the apps network, every app and upstream host reserves
 `location ^~ /_bento/webhook/`, proxied through the shared `bento_utils` upstream (`<apps-gateway>:<port>`,
 `keepalive 2`) with an 8 MiB body limit; it never reaches the
 upstream. Without an apps-network listener the path is left to the upstream. Other ingress (host nginx, a Cloudflare
@@ -317,8 +323,8 @@ enable/rotate response. `Controller.HandleWebhook` verifies `X-Hub-Signature-256
 configured branch deploys, and the payload never chooses what is fetched. A queued deploy absorbs further pushes
 (`coalesced`); a provider delivery id is the idempotency key (`duplicate`). The last 20 authenticated deliveries are
 kept with their result, the verifying credential, and the pusher. The `utils` setting's `baseUrl` (pure display
-intent, `PUT /api/v1/utils`) builds full webhook URLs and database browser links; without it the app's primary domain is used when the edge
-forwards webhooks. Removing the git source or the app destroys the webhook.
+intent, `PUT /api/v1/utils`) builds full webhook URLs and database browser links; without it the app's display host (its first enabled
+host) is used when the edge forwards webhooks. Removing the git source or the app destroys the webhook.
 
 ## Data services and backups
 

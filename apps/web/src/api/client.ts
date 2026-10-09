@@ -170,11 +170,12 @@ export const api = {
     get: (signal?: AbortSignal) => get<T.TunnelStatus>("/api/v1/tunnel", signal),
     setToken: (token: string) => mutate("PUT", "/api/v1/tunnel/token", { token } satisfies T.SetTunnelTokenRequest),
   },
-  proxies: {
-    list: (signal?: AbortSignal) => get<T.ProxyList>("/api/v1/proxies", signal),
-    upsert: (body: T.ProxyRequest) => mutate("POST", "/api/v1/proxies", body),
+  hosts: {
+    list: (signal?: AbortSignal) => get<T.HostList>("/api/v1/hosts", signal),
+    create: (body: T.HostRequest) => mutate("POST", "/api/v1/hosts", body),
+    update: (name: string, body: T.HostRequest) => mutate("PUT", `/api/v1/hosts/${enc(name)}`, body),
     remove: (name: string, confirm: string) =>
-      mutate("DELETE", `/api/v1/proxies/${enc(name)}`, { confirm } satisfies T.ConfirmRequest),
+      mutate("DELETE", `/api/v1/hosts/${enc(name)}`, { confirm } satisfies T.ConfirmRequest),
   },
   retired: {
     list: (signal?: AbortSignal) => get<T.RetiredList>("/api/v1/retired", signal),

@@ -25,6 +25,8 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
   switch (op.targetKind) {
     case "app":
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+      // Publication and removal change which hosts are live or exist.
+      void queryClient.invalidateQueries({ queryKey: keys.hosts });
       if (op.kind === "app.remove") void queryClient.invalidateQueries({ queryKey: keys.retired });
       if (op.kind === "backup.restore" || op.kind === "backup.delete" || op.kind.startsWith("restic."))
         void queryClient.invalidateQueries({ queryKey: keys.backups.all });
@@ -36,9 +38,9 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
       void queryClient.invalidateQueries({ queryKey: keys.services });
       break;
     case "edge":
-    case "proxy":
+    case "host":
       void queryClient.invalidateQueries({ queryKey: keys.edge });
-      void queryClient.invalidateQueries({ queryKey: keys.proxies });
+      void queryClient.invalidateQueries({ queryKey: keys.hosts });
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });
       break;
     case "tunnel":
@@ -70,6 +72,10 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
     // Acceptance itself changes intent (for example desired state).
     void queryClient.invalidateQueries({ queryKey: keys.operations.lists });
     if (accepted.operation.targetKind === "app") void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+    if (accepted.operation.targetKind === "host") {
+      void queryClient.invalidateQueries({ queryKey: keys.hosts });
+      void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+    }
     setTracked((current) => [accepted.operation, ...current.filter((op) => op.id !== accepted.operation.id)]);
   }
 

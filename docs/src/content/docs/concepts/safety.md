@@ -6,7 +6,7 @@ sidebar:
 ---
 
 - **Exact confirmations:** `delete <slug>` (remove app), `delete` (prune retained data), `replace <database>`
-  (restore), `export` (stack export), `delete <proxy>` (remove proxy).
+  (restore), `export` (stack export), `delete <host>` (remove an Ingress host).
 - **No destructive shortcuts:** Bento never removes data volumes, never replaces a missing volume with an empty one,
   never drops a database outside prune, and never rotates database passwords.
 - **Secrets** live in private files (`0400`/`0440`). They are passed over exec stdin or files — never in command

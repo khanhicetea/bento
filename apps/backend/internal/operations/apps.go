@@ -1074,8 +1074,13 @@ func (c *Controller) handlePublish(ctx context.Context, r *Run) (any, error) {
 			app.Slug,
 		)
 	}
-	if len(app.Domains) == 0 {
-		return nil, Fail("no-domain", "Add a primary domain first.", "app %s has no domains", app.Slug)
+	if _, ok := app.DisplayHost(); !ok {
+		return nil, Fail(
+			"no-domain",
+			"Add an enabled Ingress host that targets this app first.",
+			"app %s has no enabled Ingress host",
+			app.Slug,
+		)
 	}
 	if err := r.Phase(ctx, "verify-readiness"); err != nil {
 		return nil, err

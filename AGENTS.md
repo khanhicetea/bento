@@ -54,7 +54,7 @@ never recreated empty, and secrets never reach argv, labels, logs, or API respon
 
 ## Safety and compatibility
 
-- Never weaken exact confirmations (`delete <slug>`, `delete`, `replace <db>`, `export`, `delete <proxy>`).
+- Never weaken exact confirmations (`delete <slug>`, `delete`, `replace <db>`, `export`, `delete <host>`).
 - Unsupported or unknown state is refused, never rewritten or re-initialized.
 - The management listener is loopback-only; do not imply the UI is safe on an untrusted network.
 - Preserve the add-only binding model, UID non-reuse, and retained-data semantics on removal.

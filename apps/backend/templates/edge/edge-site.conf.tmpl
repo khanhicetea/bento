@@ -1,15 +1,6 @@
 # {{.Kind}} {{.Name}}{{if .Unavailable}} (published; app currently unavailable){{end}}
 {{- if .AppUpstream}}
-# The alias is re-resolved through Docker DNS (resolve), so a replaced app
-# container is picked up while idle connections are still reused.
-upstream {{.UpstreamName}} {
-  zone {{.UpstreamName}} 64k;
-  server {{.AppUpstream}} resolve;
-  keepalive 16;
-  # Below the app-local nginx's 30s keepalive_timeout so the edge never reuses
-  # a connection the app is closing.
-  keepalive_timeout 25s;
-}
+# Upstream {{.UpstreamName}} is shared by every host of the app (upstreams/).
 {{- end}}
 {{- if .ProxyUpstreams}}
 upstream {{.UpstreamName}} {
@@ -42,7 +33,9 @@ upstream {{.UpstreamName}} {
   access_log /dev/stdout bento_edge;
 {{- end}}
   client_max_body_size {{.MaxBodyMB}}m;
-  include /etc/bento-edge-custom/routes/{{.Name}}/*.conf;
+{{- range .Includes}}
+  include /etc/bento-edge-custom/routes/{{.}}/*.conf;
+{{- end}}
 {{- if .UtilsUpstream}}
   # Bento's utils routes (webhooks) go to the backend's utils listener,
   # never to the upstream.
@@ -99,11 +92,26 @@ upstream {{.UpstreamName}} {
   }
 {{- end}}
 
+{{- define "bento-redirect"}}
+  set $bento_route "{{.Name}}";
+{{- if .AccessLog}}
+  access_log /dev/stdout bento_edge;
+{{- end}}
+{{- range .Includes}}
+  include /etc/bento-edge-custom/routes/{{.}}/*.conf;
+{{- end}}
+  location / {
+    return 301 {{.RedirectURL}}$request_uri;
+  }
+{{- end}}
+
 server {
   listen 80;
   listen [::]:80;
   server_name {{.ServerNames}};
-{{- if .Redirect}}
+{{- if .RedirectURL}}
+{{- template "bento-redirect" .}}
+{{- else if .Redirect}}
   set $bento_route "{{.Name}}";
   location / {
     return 301 https://$host{{.HTTPSPortSuffix}}$request_uri;
@@ -133,6 +141,10 @@ server {
   ssl_certificate {{.CertFile}};
   ssl_certificate_key {{.KeyFile}};
 {{- end}}
+{{- if .RedirectURL}}
+{{- template "bento-redirect" .}}
+{{- else}}
 {{- template "bento-location" .}}
+{{- end}}
 }
 {{- end}}

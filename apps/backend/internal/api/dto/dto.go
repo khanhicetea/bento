@@ -165,11 +165,6 @@ type Route struct {
 	StaticCache   bool    `json:"staticCache,omitempty"`
 }
 
-type Domain struct {
-	Name    string `json:"name"`
-	Primary bool   `json:"primary"`
-}
-
 // Binding never carries a password.
 type Binding struct {
 	ID         string   `json:"id"`
@@ -220,19 +215,21 @@ type IngressInfo struct {
 }
 
 type AppSummary struct {
-	ID               string         `json:"id"`
-	Slug             string         `json:"slug"`
-	UID              int            `json:"uid"`
-	Kind             RuntimeKind    `json:"kind"`
-	Toolchain        string         `json:"toolchain"`
-	Version          string         `json:"version"`
-	DesiredRuntime   DesiredRuntime `json:"desiredRuntime"`
-	Ingress          IngressMode    `json:"ingress"`
-	Publication      Publication    `json:"publication"`
-	PrimaryDomain    string         `json:"primaryDomain"`
-	Provisioned      bool           `json:"provisioned"`
-	ConfigGeneration int            `json:"configGeneration"`
-	Observed         Observed       `json:"observed"`
+	ID             string         `json:"id"`
+	Slug           string         `json:"slug"`
+	UID            int            `json:"uid"`
+	Kind           RuntimeKind    `json:"kind"`
+	Toolchain      string         `json:"toolchain"`
+	Version        string         `json:"version"`
+	DesiredRuntime DesiredRuntime `json:"desiredRuntime"`
+	Ingress        IngressMode    `json:"ingress"`
+	Publication    Publication    `json:"publication"`
+	// Hosts are the names of the Ingress hosts that target the app, display
+	// host first (enabled before disabled).
+	Hosts            []string `json:"hosts"`
+	Provisioned      bool     `json:"provisioned"`
+	ConfigGeneration int      `json:"configGeneration"`
+	Observed         Observed `json:"observed"`
 	// BindingSummary lists data bindings without credentials, for list views.
 	BindingSummary []BindingSummary `json:"bindingSummary"`
 	Resources      Resources        `json:"resources"`
@@ -249,11 +246,11 @@ type App struct {
 	GID        int    `json:"gid"`
 	Home       string `json:"home"`
 	// HomePath is the stored in-container home; empty means /home/<slug>. Read-only.
-	HomePath    string      `json:"homePath,omitempty"`
-	Runtime     RuntimeSpec `json:"runtime"`
-	Route       Route       `json:"route"`
+	HomePath string      `json:"homePath,omitempty"`
+	Runtime  RuntimeSpec `json:"runtime"`
+	// AccessLog is the app-local Nginx access log; edge logs are per host.
+	AccessLog   bool        `json:"accessLog"`
 	Env         []EnvVar    `json:"env"`
-	Domains     []Domain    `json:"domains"`
 	Bindings    []Binding   `json:"bindings"`
 	RedisPrefix string      `json:"redisPrefix"`
 	RedisUser   string      `json:"redisUser"`
@@ -275,13 +272,20 @@ type BindingRequest struct {
 }
 
 type CreateAppRequest struct {
-	Slug      string           `json:"slug"`
-	Runtime   RuntimeSpec      `json:"runtime"`
-	Resources *Resources       `json:"resources,omitempty"`
-	Ingress   IngressMode      `json:"ingress,omitempty"`
-	Domains   []string         `json:"domains"`
-	Route     *Route           `json:"route,omitempty"`
-	Bindings  []BindingRequest `json:"bindings"`
+	Slug      string      `json:"slug"`
+	Runtime   RuntimeSpec `json:"runtime"`
+	Resources *Resources  `json:"resources,omitempty"`
+	Ingress   IngressMode `json:"ingress,omitempty"`
+	AccessLog bool        `json:"accessLog,omitempty"`
+	// Hosts are Ingress hosts created together with the app, targeting it.
+	Hosts    []AppHostRequest `json:"hosts"`
+	Bindings []BindingRequest `json:"bindings"`
+}
+
+// AppHostRequest is an Ingress host created with its app.
+type AppHostRequest struct {
+	Name  string `json:"name"`
+	Route *Route `json:"route,omitempty"`
 }
 
 type UpdateAppRequest struct {
@@ -289,8 +293,7 @@ type UpdateAppRequest struct {
 	Runtime            *RuntimeSpec `json:"runtime,omitempty"`
 	Resources          *Resources   `json:"resources,omitempty"`
 	Ingress            *IngressMode `json:"ingress,omitempty"`
-	Domains            *[]string    `json:"domains,omitempty"`
-	Route              *Route       `json:"route,omitempty"`
+	AccessLog          *bool        `json:"accessLog,omitempty"`
 	// Env, when present, replaces the app's environment variables.
 	Env *[]EnvVar `json:"env,omitempty"`
 }
@@ -531,27 +534,46 @@ type SetTunnelTokenRequest struct {
 	Token string `json:"token"`
 }
 
-type Proxy struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Upstreams []string `json:"upstreams"`
-	Domains   []Domain `json:"domains"`
-	Route     Route    `json:"route"`
-	Enabled   bool     `json:"enabled"`
-	CreatedAt string   `json:"createdAt"`
-	UpdatedAt string   `json:"updatedAt"`
+type HostTargetKind string
+
+const (
+	HostTargetKindApp      HostTargetKind = "app"
+	HostTargetKindUpstream HostTargetKind = "upstream"
+	HostTargetKindRedirect HostTargetKind = "redirect"
+)
+
+// HostTarget is where an Ingress host sends requests: an app (by slug), one or
+// more load-balanced upstream URLs, or another host name (permanent redirect).
+type HostTarget struct {
+	Kind       HostTargetKind `json:"kind"`
+	App        string         `json:"app,omitempty"`
+	Upstreams  []string       `json:"upstreams,omitempty"`
+	RedirectTo string         `json:"redirectTo,omitempty"`
 }
 
-type ProxyList struct {
-	Proxies []Proxy `json:"proxies"`
+// Host is one Ingress host name with its target and edge settings.
+type Host struct {
+	Name    string     `json:"name"`
+	Target  HostTarget `json:"target"`
+	Route   Route      `json:"route"`
+	Enabled bool       `json:"enabled"`
+	// Live reports whether the running edge generation serves this host.
+	Live      bool   `json:"live"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
-type ProxyRequest struct {
-	Name      string   `json:"name"`
-	Upstreams []string `json:"upstreams"`
-	Domains   []string `json:"domains"`
-	Route     *Route   `json:"route,omitempty"`
-	Enabled   bool     `json:"enabled"`
+type HostList struct {
+	Hosts []Host `json:"hosts"`
+}
+
+// HostRequest creates (POST) or replaces (PUT) an Ingress host. On PUT the
+// name must match the path.
+type HostRequest struct {
+	Name    string     `json:"name"`
+	Target  HostTarget `json:"target"`
+	Route   *Route     `json:"route,omitempty"`
+	Enabled bool       `json:"enabled"`
 }
 
 // ---- retained data ----

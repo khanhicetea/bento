@@ -239,6 +239,22 @@ backend stopped, edge traffic and scheduled jobs continued.
   orphaned job containers, the data-volume free-space check, and crafted snapshots with symlinks (unit tests).
 - Not run: the full `make test-integration` (lifecycle and runtime image builds), arm64.
 
+## Ingress hosts (2026-10-09, linux/amd64, Docker 29.8.1)
+
+- Upgrade path on a real stack: a stack created by the previous binary (schema 3) with app `shop` owning
+  `shop.test` (primary) and `www.shop.test` (self-signed, access log on), a reverse proxy `grafana` on `grafana.test`,
+  and an operator drop-in under `edge/custom/routes/app-shop/`. Opened with the new binary: the store migrated to
+  schema 4, the reconciler re-rendered the edge into `sites/host-*.conf` + `upstreams/app-shop.conf`, real `nginx -t`
+  accepted it, both app hosts served the app over HTTP and HTTPS, the `app-shop` drop-in header was still applied,
+  `shop.test` stayed the display host and the app kept its access log.
+- New behavior, live: re-pointing `www.shop.test` to a redirect returned `301 https://shop.test:18443/y?q=1`, and
+  after unpublishing the app `http://shop.test/y` (the target is no longer served); re-pointing `grafana.test` from
+  its upstream to the app served the app; `host add` on an existing name was refused with a conflict; `host remove`
+  refused an inexact confirmation and then removed the route. Ingress page, host dialog and app settings were checked
+  in Chrome at 1400 px and 390 px.
+- `make test-integration` as root passed (runtime images were already built, so that test only checked them).
+- Not verified: ACME issuance per host, external certificates per host, HTTP/3, arm64.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).

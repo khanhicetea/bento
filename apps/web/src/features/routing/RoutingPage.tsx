@@ -18,20 +18,11 @@ import {
 } from "../../components/DomainState.tsx";
 import { Mascot } from "../../components/Mascot.tsx";
 import { Link } from "wouter";
-import { useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
-import { Alert } from "@/components/ui/alert";
+import { useOperationMutation } from "../applications/useApplications.ts";
+import { HostDialogBody, targetLabels, tlsLabels } from "./HostDialog.tsx";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 
 type Tab = "edge" | "tunnel" | "utils";
 const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", utils: "Utils" };
@@ -62,7 +53,7 @@ function EdgePanel() {
   return (
     <>
       <EdgeForm status={query.data} />
-      <ProxiesPanel />
+      <HostsPanel />
     </>
   );
 }
@@ -288,98 +279,55 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
   );
 }
 
-type RouteRow = {
-  key: string;
-  type: "App" | "Proxy";
-  name: string;
-  detail: string;
-  domain: string;
-  published: boolean;
-  href?: string;
-};
-
 function RoutesCell({ status }: { status: T.EdgeStatus }) {
-  const apps = useApplicationList();
-  const proxies = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
-  const active = new Set(status.routes);
-  const rows: RouteRow[] = [];
-  for (const app of apps.data?.apps ?? []) {
-    if (app.ingress !== "managed") continue;
-    rows.push({
-      key: `app-${app.slug}`,
-      type: "App",
-      name: app.slug,
-      detail: app.kind,
-      domain: app.primaryDomain,
-      published: active.has(`app-${app.slug}`),
-      href: `/apps/${app.slug}`,
-    });
-  }
-  for (const proxy of proxies.data?.proxies ?? []) {
-    rows.push({
-      key: `proxy-${proxy.name}`,
-      type: "Proxy",
-      name: proxy.name,
-      detail: `${proxy.upstreams.length} upstream${proxy.upstreams.length === 1 ? "" : "s"}`,
-      domain: proxy.domains.find((domain) => domain.primary)?.name ?? proxy.domains[0]?.name ?? "",
-      published: active.has(`proxy-${proxy.name}`),
-    });
-  }
-  // Routes the edge serves that no app or proxy claims (stale files).
-  const known = new Set(rows.map((row) => row.key));
-  for (const route of status.routes) {
-    if (!known.has(route)) {
-      rows.push({
-        key: route,
-        type: route.startsWith("proxy-") ? "Proxy" : "App",
-        name: route,
-        detail: "unknown",
-        domain: "",
-        published: true,
-      });
-    }
-  }
-  rows.sort((a, b) => Number(b.published) - Number(a.published) || a.name.localeCompare(b.name));
-  const live = rows.filter((row) => row.published).length;
+  const hosts = useQuery({ queryKey: keys.hosts, queryFn: ({ signal }) => api.hosts.list(signal) });
+  const rows = [...(hosts.data?.hosts ?? [])];
+  // Routes the edge serves that no host claims (stale files).
+  const known = new Set(rows.map((host) => `host-${host.name}`));
+  const stale = status.routes.filter((route) => !known.has(route));
+  rows.sort((a, b) => Number(b.live) - Number(a.live) || a.name.localeCompare(b.name));
+  const live = rows.filter((host) => host.live).length + stale.length;
   return (
     <Cell
       title={`Routes · ${live} live`}
       icon={<Globe />}
       action={<span className="label text-xs text-muted-foreground">Serving now</span>}
     >
-      {apps.error || proxies.error ? (
-        <DomainError
-          message={messageOf(apps.error ?? proxies.error)}
-          onRetry={() => {
-            void apps.refetch();
-            void proxies.refetch();
-          }}
-        />
-      ) : rows.length === 0 ? (
-        <EmptyState title="No routes" body="No apps or proxies use the edge yet." />
+      {hosts.error ? (
+        <DomainError message={messageOf(hosts.error)} onRetry={() => void hosts.refetch()} />
+      ) : rows.length === 0 && stale.length === 0 ? (
+        <EmptyState title="No routes" body="No hosts use the edge yet." />
       ) : (
         <div className="overflow-x-auto">
           <table className="routes">
             <thead>
               <tr>
-                <th>Domain</th>
+                <th>Host</th>
                 <th>Target</th>
                 <th>State</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.key}>
-                  <td className="font-mono">{row.domain || "—"}</td>
+              {rows.map((host) => (
+                <tr key={host.name}>
+                  <td className="font-mono">{host.name}</td>
                   <td>
-                    <span className="label mr-1.5 text-[0.6875rem] text-muted-foreground">{row.type}</span>
-                    {row.href ? <Link href={row.href}>{row.name}</Link> : row.name}
+                    <HostTargetText host={host} />
                   </td>
                   <td>
                     <StateBadge
-                      state={row.published ? "published" : "stopped"}
-                      label={row.published ? "Published" : "Not published"}
+                      state={host.live ? "published" : "stopped"}
+                      label={host.live ? "Live" : host.enabled ? "Not live" : "Disabled"}
                     />
+                  </td>
+                </tr>
+              ))}
+              {stale.map((route) => (
+                <tr key={route}>
+                  <td className="font-mono">{route}</td>
+                  <td>—</td>
+                  <td>
+                    <StateBadge state="published" label="Live · unknown" />
                   </td>
                 </tr>
               ))}
@@ -388,6 +336,25 @@ function RoutesCell({ status }: { status: T.EdgeStatus }) {
         </div>
       )}
     </Cell>
+  );
+}
+
+/** One-line description of where a host points. */
+function HostTargetText({ host }: { host: T.Host }) {
+  const { target } = host;
+  return (
+    <>
+      <span className="label mr-1.5 text-[0.6875rem] text-muted-foreground">{targetLabels[target.kind]}</span>
+      {target.kind === "app" ? (
+        <Link href={`/apps/${target.app}`}>{target.app}</Link>
+      ) : target.kind === "redirect" ? (
+        <span className="font-mono">→ {target.redirectTo}</span>
+      ) : (
+        <span className="font-mono">
+          {target.upstreams?.length ?? 0} upstream{target.upstreams?.length === 1 ? "" : "s"}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -556,62 +523,47 @@ function TunnelPanel() {
   );
 }
 
-type ProxyForm = { name: string; upstreams: string; domains: string; route: T.Route; enabled: boolean };
-const blankProxy: ProxyForm = {
-  name: "",
-  upstreams: "",
-  domains: "",
-  route: { tls: "none", redirectHttps: false, accessLog: false, staticCache: false },
-  enabled: true,
-};
-const tlsLabels: Record<T.TLSMode, string> = {
-  none: "HTTP only",
-  "self-signed": "Self-signed",
-  acme: "ACME",
-  external: "External cert",
-};
-
-function ProxiesPanel() {
-  const query = useQuery({ queryKey: keys.proxies, queryFn: ({ signal }) => api.proxies.list(signal) });
-  // null: dialog closed; "new" | proxy name: adding or editing.
+function HostsPanel() {
+  const query = useQuery({ queryKey: keys.hosts, queryFn: ({ signal }) => api.hosts.list(signal) });
+  // null: dialog closed; "new" | host name: adding or editing.
   const [editing, setEditing] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<T.Proxy | null>(null);
-  const remove = useOperationMutation((confirm: string) => api.proxies.remove(removeTarget?.name ?? "", confirm));
-  if (query.isPending) return <DomainLoading label="proxies" />;
+  const [removeTarget, setRemoveTarget] = useState<T.Host | null>(null);
+  const remove = useOperationMutation((confirm: string) => api.hosts.remove(removeTarget?.name ?? "", confirm));
+  if (query.isPending) return <DomainLoading label="hosts" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
-  const proxies = query.data.proxies;
-  const current = proxies.find((proxy) => proxy.name === editing);
+  const hosts = query.data.hosts;
+  const current = hosts.find((host) => host.name === editing);
   return (
     <>
       <div className="box">
         <div className="tiles">
-          {proxies.map((proxy) => (
-            <ProxyTile
-              key={proxy.id}
-              proxy={proxy}
-              onEdit={() => setEditing(proxy.name)}
-              onRemove={() => setRemoveTarget(proxy)}
+          {hosts.map((host) => (
+            <HostTile
+              key={host.name}
+              host={host}
+              onEdit={() => setEditing(host.name)}
+              onRemove={() => setRemoveTarget(host)}
             />
           ))}
           <button type="button" className="cell tile tile--add" onClick={() => setEditing("new")}>
-            {proxies.length === 0 ? <Waypoints aria-hidden="true" /> : <Plus aria-hidden="true" />}
-            {proxies.length === 0 ? "No proxies · New proxy" : "New proxy"}
+            {hosts.length === 0 ? <Waypoints aria-hidden="true" /> : <Plus aria-hidden="true" />}
+            {hosts.length === 0 ? "No hosts · Add host" : "Add host"}
           </button>
         </div>
       </div>
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent>
-          {editing !== null && <ProxyDialogBody key={editing} proxy={current} onDone={() => setEditing(null)} />}
+          {editing !== null && <HostDialogBody key={editing} host={current} onDone={() => setEditing(null)} />}
         </DialogContent>
       </Dialog>
       <ConfirmDialog
         open={removeTarget !== null}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
         title={`Remove ${removeTarget?.name ?? ""}?`}
-        description="Its edge routes are removed permanently."
+        description="The edge stops serving this host. Its target is not changed."
         phrase={removeTarget ? `delete ${removeTarget.name}` : ""}
         destructive
-        confirmLabel="Remove proxy"
+        confirmLabel="Remove host"
         pending={remove.isPending}
         error={remove.error}
         onConfirm={(typed) => remove.mutate(typed, { onSuccess: () => setRemoveTarget(null) })}
@@ -620,200 +572,73 @@ function ProxiesPanel() {
   );
 }
 
-function ProxyTile({ proxy, onEdit, onRemove }: { proxy: T.Proxy; onEdit: () => void; onRemove: () => void }) {
-  const primary = proxy.domains.find((domain) => domain.primary) ?? proxy.domains[0];
-  const scheme = proxy.route.tls === "none" ? "http" : "https";
+function HostTile({ host, onEdit, onRemove }: { host: T.Host; onEdit: () => void; onRemove: () => void }) {
+  const scheme = host.route.tls === "none" ? "http" : "https";
+  const redirect = host.target.kind === "redirect";
   return (
-    <article className="cell tile" aria-label={proxy.name}>
+    <article className="cell tile" aria-label={host.name}>
       <div className="tile__top">
         <span className="mono mono--lg" aria-hidden="true">
-          {proxy.name.slice(0, 1).toUpperCase()}
+          {host.name.slice(0, 1).toUpperCase()}
         </span>
         <div className="tile__name">
-          <strong>{proxy.name}</strong>
+          <strong className="truncate" title={host.name}>
+            {host.name}
+          </strong>
           <small>
-            {primary ? (
-              <a href={`${scheme}://${primary.name}`} target="_blank" rel="noreferrer">
-                {primary.name} <ExternalLink className="inline size-3" aria-hidden="true" />
-              </a>
-            ) : (
-              "No domain"
-            )}
+            <a href={`${scheme}://${host.name}`} target="_blank" rel="noreferrer">
+              Open <ExternalLink className="inline size-3" aria-hidden="true" />
+            </a>
           </small>
         </div>
-        <StateBadge state={proxy.enabled ? "published" : "stopped"} label={proxy.enabled ? "Enabled" : "Disabled"} />
+        <StateBadge
+          state={host.live ? "published" : "stopped"}
+          label={host.live ? "Live" : host.enabled ? "Not live" : "Disabled"}
+        />
       </div>
       <dl className="kv">
         <div>
-          <dt>Upstreams</dt>
+          <dt>Target</dt>
           <dd>
-            {proxy.upstreams.length}
-            {proxy.upstreams.length > 1 ? " · balanced" : ""}
+            <HostTargetText host={host} />
           </dd>
         </div>
       </dl>
-      <code className="block truncate rounded-[0.625rem] bg-background px-3 py-2 text-xs">
-        {proxy.upstreams.join("  ")}
-      </code>
+      {host.target.kind === "upstream" && (
+        <code className="block truncate rounded-[0.625rem] bg-background px-3 py-2 text-xs">
+          {(host.target.upstreams ?? []).join("  ")}
+        </code>
+      )}
       <dl className="kv">
         <div>
           <dt>TLS</dt>
-          <dd>{tlsLabels[proxy.route.tls]}</dd>
+          <dd>{tlsLabels[host.route.tls]}</dd>
         </div>
+        {!redirect && (
+          <div>
+            <dt>HTTPS redirect</dt>
+            <dd>{host.route.redirectHttps ? "✓ On" : "— Off"}</dd>
+          </div>
+        )}
+        {!redirect && (
+          <div>
+            <dt>Static cache</dt>
+            <dd>{host.route.staticCache ? "✓ On" : "— Off"}</dd>
+          </div>
+        )}
         <div>
-          <dt>Domains</dt>
-          <dd title={proxy.domains.map((domain) => domain.name).join(", ")}>{proxy.domains.length}</dd>
-        </div>
-        <div>
-          <dt>Static cache</dt>
-          <dd>{proxy.route.staticCache ? "✓ On" : "— Off"}</dd>
-        </div>
-        <div>
-          <dt>HTTPS redirect</dt>
-          <dd>{proxy.route.redirectHttps ? "✓ On" : "— Off"}</dd>
+          <dt>Access log</dt>
+          <dd>{host.route.accessLog ? "✓ On" : "— Off"}</dd>
         </div>
       </dl>
       <div className="flex items-center gap-2 border-t border-border pt-3">
         <Button variant="outline" onClick={onEdit}>
           <Pencil /> Edit
         </Button>
-        <Button variant="danger" size="icon" aria-label={`Remove ${proxy.name}`} onClick={onRemove}>
+        <Button variant="danger" size="icon" aria-label={`Remove ${host.name}`} onClick={onRemove}>
           <Trash2 />
         </Button>
       </div>
     </article>
-  );
-}
-
-function ProxyDialogBody({ proxy, onDone }: { proxy?: T.Proxy; onDone: () => void }) {
-  const [form, setForm] = useState<ProxyForm>(
-    proxy
-      ? {
-          name: proxy.name,
-          upstreams: proxy.upstreams.join(" "),
-          domains: proxy.domains.map((domain) => domain.name).join(" "),
-          route: proxy.route,
-          enabled: proxy.enabled,
-        }
-      : blankProxy,
-  );
-  const route = form.route;
-  const setRoute = (next: Partial<T.Route>) => setForm({ ...form, route: { ...route, ...next } });
-  const save = useOperationMutation(() =>
-    api.proxies.upsert({
-      name: form.name.trim(),
-      upstreams: form.upstreams.split(/\s+/).filter(Boolean),
-      domains: form.domains.split(/[\s,]+/).filter(Boolean),
-      route: route.tls === "none" ? { ...route, redirectHttps: false } : route,
-      enabled: form.enabled,
-    }),
-  );
-  return (
-    <form
-      className="grid gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate(undefined, { onSuccess: onDone });
-      }}
-    >
-      <DialogHeader>
-        <DialogTitle>{proxy ? `Edit ${proxy.name}` : "Add proxy"}</DialogTitle>
-        <DialogDescription>Route edge domains to an upstream outside Bento.</DialogDescription>
-      </DialogHeader>
-      <Field label="Name" hint={proxy ? "The name identifies the proxy and cannot change." : undefined}>
-        <Input
-          value={form.name}
-          disabled={proxy !== undefined}
-          spellCheck={false}
-          autoFocus={!proxy}
-          onChange={(event) => setForm({ ...form, name: event.target.value })}
-        />
-      </Field>
-      <Field label="Upstreams" hint="Space-separated; several are load-balanced.">
-        <Input
-          placeholder="http://10.0.0.5:8080"
-          spellCheck={false}
-          value={form.upstreams}
-          onChange={(event) => setForm({ ...form, upstreams: event.target.value })}
-        />
-      </Field>
-      <Field label="Domains">
-        <Input
-          placeholder="a.example.com b.example.com"
-          spellCheck={false}
-          value={form.domains}
-          onChange={(event) => setForm({ ...form, domains: event.target.value })}
-        />
-      </Field>
-      <div className={route.tls === "external" ? "grid-2" : undefined}>
-        <Field label="TLS">
-          <NativeSelect
-            className="w-full"
-            value={route.tls}
-            onChange={(event) => {
-              const tls = event.target.value as T.TLSMode;
-              setRoute({ tls, certName: tls === "external" ? route.certName : undefined });
-            }}
-          >
-            <option value="none">None</option>
-            <option value="self-signed">Self-signed</option>
-            <option value="acme">ACME</option>
-            <option value="external">External certificate</option>
-          </NativeSelect>
-        </Field>
-        {route.tls === "external" && (
-          <Field label="Certificate name">
-            <Input
-              value={route.certName ?? ""}
-              spellCheck={false}
-              onChange={(event) => setRoute({ certName: event.target.value })}
-            />
-          </Field>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-5">
-        <label className="check">
-          <Checkbox
-            checked={form.enabled}
-            onCheckedChange={(checked) => setForm({ ...form, enabled: checked === true })}
-          />
-          Enabled
-        </label>
-        <label className="check">
-          <Checkbox
-            checked={route.redirectHttps}
-            disabled={route.tls === "none"}
-            onCheckedChange={(checked) => setRoute({ redirectHttps: checked === true })}
-          />
-          HTTPS redirect
-        </label>
-        <label className="check">
-          <Checkbox
-            checked={route.accessLog}
-            onCheckedChange={(checked) => setRoute({ accessLog: checked === true })}
-          />
-          Access log
-        </label>
-        <label
-          className="check"
-          title="Cache public static files (css, js, images, fonts) at the edge. Responses the upstream marks private, no-store, or that set cookies are never cached."
-        >
-          <Checkbox
-            checked={route.staticCache ?? false}
-            onCheckedChange={(checked) => setRoute({ staticCache: checked === true })}
-          />
-          Edge static cache
-        </label>
-      </div>
-      {save.error && <Alert variant="destructive">{messageOf(save.error)}</Alert>}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={!form.name.trim() || !form.upstreams.trim() || save.isPending}>
-          {proxy ? "Save" : "Add proxy"}
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }

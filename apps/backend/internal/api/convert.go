@@ -76,10 +76,31 @@ func routeToDTO(r domain.Route) dto.Route {
 	}
 }
 
-func domainsToDTO(ds []domain.DomainLink) []dto.Domain {
-	out := []dto.Domain{}
-	for _, d := range ds {
-		out = append(out, dto.Domain{Name: d.Name, Primary: d.Primary})
+func hostToDTO(h domain.Host, appSlug string, live bool) dto.Host {
+	t := dto.HostTarget{Kind: dto.HostTargetKind(h.Target), RedirectTo: h.RedirectTo}
+	switch h.Target {
+	case domain.HostTargetApp:
+		t.App = appSlug
+	case domain.HostTargetUpstream:
+		t.Upstreams = nonNil(h.Upstreams)
+	}
+	return dto.Host{
+		Name: h.Name, Target: t, Route: routeToDTO(h.Route), Enabled: h.Enabled, Live: live,
+		CreatedAt: platform.FormatTime(h.CreatedAt), UpdatedAt: platform.FormatTime(h.UpdatedAt),
+	}
+}
+
+func hostFromDTO(r dto.HostRequest) operations.HostInput {
+	return operations.HostInput{
+		Name: r.Name, Target: domain.HostTarget(r.Target.Kind), App: r.Target.App, Upstreams: r.Target.Upstreams,
+		RedirectTo: r.Target.RedirectTo, Route: routeFromDTO(r.Route), Enabled: r.Enabled,
+	}
+}
+
+func hostNames(hs []domain.Host) []string {
+	out := []string{}
+	for _, h := range hs {
+		out = append(out, h.Name)
 	}
 	return out
 }
@@ -144,7 +165,7 @@ func ingressInfo(app domain.App) dto.IngressInfo {
 	switch app.Ingress {
 	case domain.IngressManaged:
 		info.BentoControls = true
-		info.Note = "Bento's edge owns this route; publish/unpublish and stop control it."
+		info.Note = "Bento's edge serves the Ingress hosts that target this app; publish/unpublish and stop control them."
 	case domain.IngressExternal:
 		info.Note = "The public route is operator-owned (cloudflared or an external proxy targeting the internal URL). " +
 			"Bento cannot remove it: stop makes the app unavailable, but the route may remain and return errors. " +
@@ -177,7 +198,7 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 		DesiredRuntime:   dto.DesiredRuntime(app.DesiredRuntime),
 		Ingress:          dto.IngressMode(app.Ingress),
 		Publication:      dto.Publication(app.Publication),
-		PrimaryDomain:    app.PrimaryDomain(),
+		Hosts:            hostNames(app.Hosts),
 		Provisioned:      app.Provisioned,
 		ConfigGeneration: int(app.ConfigGeneration),
 		Observed:         observedToDTO(app, obs, planned, rec),
@@ -198,12 +219,11 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.Home = app.ContainerHome()
 	out.HomePath = app.HomePath
 	out.Runtime = runtimeToDTO(app.Runtime)
-	out.Route = routeToDTO(app.Route)
+	out.AccessLog = app.AccessLog
 	out.Env = []dto.EnvVar{}
 	for _, e := range app.Runtime.Env {
 		out.Env = append(out.Env, dto.EnvVar(e))
 	}
-	out.Domains = domainsToDTO(app.Domains)
 	out.Bindings = []dto.Binding{}
 	for _, b := range app.Bindings {
 		db := dto.Binding{
@@ -263,19 +283,6 @@ func opToDTO(o store.Operation, events []store.OpEvent) dto.Operation {
 		out.Events = append(out.Events, dto.OperationEvent{Seq: e.Seq, At: e.At, Level: e.Level, Message: e.Message})
 	}
 	return out
-}
-
-func proxyToDTO(p domain.Proxy) dto.Proxy {
-	return dto.Proxy{
-		ID:        p.ID,
-		Name:      p.Name,
-		Upstreams: nonNil(p.Upstreams),
-		Domains:   domainsToDTO(p.Domains),
-		Route:     routeToDTO(p.Route),
-		Enabled:   p.Enabled,
-		CreatedAt: platform.FormatTime(p.CreatedAt),
-		UpdatedAt: platform.FormatTime(p.UpdatedAt),
-	}
 }
 
 func gitSourceToDTO(g domain.GitSource, configured bool) dto.GitSource {

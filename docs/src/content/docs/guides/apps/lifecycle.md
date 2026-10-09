@@ -27,5 +27,5 @@ app network. A readiness failure fails the operation with a log excerpt; it does
 
 ## Update payload
 
-`app update` accepts any subset of `runtime`, `resources`, `ingress`, `domains`, `route`, and an optional
+`app update` accepts any subset of `runtime`, `resources`, `ingress`, `accessLog`, and an optional
 `expectedGeneration` to refuse a stale edit. The runtime kind cannot change; create a new app instead.

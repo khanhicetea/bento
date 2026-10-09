@@ -167,9 +167,11 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   Activity.
 - **Apps:** search + round filters, three-up tiles with a corner status dot, fill = state (ume failed, tamago deploying), trailing Kara.
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
-  domains/data facts, nori log; Settings shows Removed vs Retained before delete.
+  hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
-- **Ingress:** Edge / Tunnel / Utils. Edge status + traffic metrics, routes, ACME, proxy tiles + Kara.
+- **Ingress:** Edge / Tunnel / Utils. Edge status + traffic metrics, routes, ACME, host tiles + Kara. Ingress owns
+  domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
+  hosts and adds one through the same host dialog.
 - **Backups:** status row (last, next, schedules, not covered) then Files / App backups / Runs / Schedules.
   Restore requires `replace <db>`.
 - **System:** Overview (Bento, Docker, arch; reconciliation; data services; stack; retained data with
@@ -181,4 +183,4 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - Do use fact rows for facts and metrics for single numbers.
 - Don't nest boxes, add borders or left stripes to cells, use gradients, emoji or food imagery.
 - Don't introduce another accent colour or a new cell kind without adding it here.
-- Don't shorten exact confirmations: `delete <slug>`, `delete`, `replace <db>`, `export`, `delete <proxy>`.
+- Don't shorten exact confirmations: `delete <slug>`, `delete`, `replace <db>`, `export`, `delete <host>`.

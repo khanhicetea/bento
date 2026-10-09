@@ -183,8 +183,14 @@ func TestParseCloneInputsAreStrict(t *testing.T) {
 	if _, err := parseAppSpec([]byte(`{"formatVersion":2,"slug":"x","bogus":1}`)); err == nil {
 		t.Fatal("unknown app.json field accepted")
 	}
-	if _, err := parseAppSpec([]byte(`{"formatVersion":3,"slug":"x"}`)); err == nil {
+	if _, err := parseAppSpec([]byte(`{"formatVersion":4,"slug":"x"}`)); err == nil {
 		t.Fatal("future app.json format accepted")
+	}
+	// Format 2 snapshots, written when apps owned their domains, still parse.
+	old, err := parseAppSpec([]byte(`{"formatVersion":2,"slug":"x","ingress":"managed","domains":["a.example.com"],
+		"primaryDomain":"a.example.com","route":{"tls":"acme","redirectHttps":true,"accessLog":true},"bindings":[]}`))
+	if err != nil || old.Route == nil || !old.Route.AccessLog || old.PrimaryDomain != "a.example.com" {
+		t.Fatalf("format 2 app.json: %+v %v", old, err)
 	}
 	if _, err := parseResticSecrets([]byte(`{"env":[],"bindings":[],"extra":true}`)); err == nil {
 		t.Fatal("unknown secrets.json field accepted")
@@ -278,7 +284,7 @@ func newCloneFixture(t *testing.T, secrets, breakSQLite bool) *cloneFixture {
 		HomeSQLite: []string{".local/share/minicron/minicron.db"},
 		Minicron:   &ResticMinicron{DB: "home-sqlite/.local/share/minicron/minicron.db"}, Secrets: secrets}
 	spec := AppSpec{FormatVersion: ResticFormatVersion, Slug: "shop", Runtime: src.Runtime, Resources: src.Resources,
-		Ingress: domain.IngressManaged, Route: src.Route, Domains: []string{"shop.example.com"},
+		Ingress: domain.IngressManaged, AccessLog: src.AccessLog, Domains: []string{"shop.example.com"},
 		Bindings: []AppSpecBinding{{Engine: domain.EngineSQLite, SQLiteID: fileID}}}
 	spec.Runtime.Env = []domain.EnvVar{{Key: "APP_KEY", Value: domain.RedactedEnvValue}, {Key: "APP_ENV", Value: "production"}}
 	h.fake.ExecHook = wrapHook(h.fake.ExecHook, func(a []string, req docker.ExecRequest) (docker.ExecResult, bool) {
@@ -361,7 +367,7 @@ func TestCloneFromBackupCreatesStoppedApp(t *testing.T) {
 			clone, err := store.GetApp(ctx, h.store.DB(), "shop-copy")
 			must(t, err)
 			if clone.ID == f.src.ID || clone.UID == f.src.UID || clone.DesiredRuntime != domain.DesiredStopped ||
-				clone.Publication != domain.Unpublished || !clone.Provisioned || len(clone.Domains) != 0 {
+				clone.Publication != domain.Unpublished || !clone.Provisioned || len(clone.Hosts) != 0 {
 				t.Fatalf("clone %+v", clone)
 			}
 			if clone.HomePath != "/home/shop" || clone.ContainerHome() != "/home/shop" {
@@ -495,7 +501,7 @@ func TestResticInspectReturnsPreview(t *testing.T) {
 	var pv ResticClonePreview
 	must(t, json.Unmarshal(got.Result, &pv))
 	if pv.SourceSlug != "shop" || pv.Slug != "shop-copy" || !pv.Secrets || pv.HomePath != "/home/shop" ||
-		pv.SizeBytes != 4096 || !pv.Minicron || len(pv.SQLite) != 1 || len(pv.Blockers) != 0 || pv.FormatVersion != 2 {
+		pv.SizeBytes != 4096 || !pv.Minicron || len(pv.SQLite) != 1 || len(pv.Blockers) != 0 || pv.FormatVersion != ResticFormatVersion {
 		t.Fatalf("preview %+v", pv)
 	}
 	if !slices.Equal(pv.EnvKeys, []string{"APP_KEY", "APP_ENV"}) || len(pv.EmptyEnv) != 0 {

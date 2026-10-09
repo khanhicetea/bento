@@ -119,16 +119,16 @@ function AppHeader({ app }: { app: T.App }) {
         description={
           <span className="flex flex-wrap items-center gap-2">
             {app.toolchain} {app.version}
-            {app.primaryDomain && (
+            {app.hosts[0] && (
               <>
                 <span aria-hidden="true">·</span>
                 <a
                   className="inline-flex items-center gap-1"
-                  href={`//${app.primaryDomain}`}
+                  href={`//${app.hosts[0]}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  {app.primaryDomain}
+                  {app.hosts[0]}
                   <ExternalLink className="size-3" />
                 </a>
               </>
@@ -288,13 +288,12 @@ function Overview({ app }: { app: T.App }) {
               ["Ingress", `${app.ingressInfo.mode} · ${app.publication}`],
               ["Internal", <CopyableCode value={app.ingressInfo.internalUrl} />],
               [
-                "Domains",
-                app.domains.length ? (
+                "Hosts",
+                app.hosts.length ? (
                   <span className="chips">
-                    {app.domains.map((domain) => (
-                      <span key={domain.name} className="chip">
-                        {domain.name}
-                        {domain.primary && <b className="text-primary">•</b>}
+                    {app.hosts.map((host) => (
+                      <span key={host} className="chip">
+                        {host}
                       </span>
                     ))}
                   </span>
@@ -302,7 +301,7 @@ function Overview({ app }: { app: T.App }) {
                   "—"
                 ),
               ],
-              ["TLS", `${app.route.tls}${app.route.redirectHttps ? " · HTTPS redirect" : ""}`],
+              ["Access log", app.accessLog ? "✓ On" : "— Off"],
             ]}
           />
         </Cell>

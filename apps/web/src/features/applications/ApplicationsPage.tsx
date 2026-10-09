@@ -42,7 +42,7 @@ export function ApplicationsPage() {
   const [restoring, setRestoring] = useState(false);
   const needle = query.trim().toLowerCase();
   const apps = (list.data?.apps ?? []).filter((app) => {
-    const matchesText = `${app.slug} ${app.primaryDomain}`.toLowerCase().includes(needle);
+    const matchesText = `${app.slug} ${app.hosts.join(" ")}`.toLowerCase().includes(needle);
     const observedRunning = app.observed.state === "healthy" || app.observed.state === "starting";
     const drift = app.desiredRuntime !== (observedRunning ? "running" : "stopped");
     const needsAttention = drift || ["blocked", "failed", "unhealthy"].includes(app.observed.state);
@@ -150,12 +150,12 @@ function ApplicationTile({ app }: { app: T.AppSummary }) {
             {app.slug}
           </Link>
           <small>
-            {app.primaryDomain ? (
-              <a href={`//${app.primaryDomain}`} target="_blank" rel="noreferrer">
-                {app.primaryDomain} <ExternalLink className="inline size-3" aria-hidden="true" />
+            {app.hosts[0] ? (
+              <a href={`//${app.hosts[0]}`} target="_blank" rel="noreferrer">
+                {app.hosts[0]} <ExternalLink className="inline size-3" aria-hidden="true" />
               </a>
             ) : (
-              "No domain"
+              "No host"
             )}
           </small>
         </div>

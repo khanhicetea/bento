@@ -42,16 +42,18 @@ const PHPFrontendPort = 8080
 // App is one immutable app incarnation. Slug and home are stable; ID, UID, and
 // GID never change for the incarnation.
 type App struct {
-	ID               string
-	Slug             string
-	UID              int
-	GID              int
-	Runtime          Runtime
-	Resources        Resources
-	DesiredRuntime   DesiredRuntime
-	Ingress          IngressMode
-	Publication      Publication
-	Route            Route
+	ID             string
+	Slug           string
+	UID            int
+	GID            int
+	Runtime        Runtime
+	Resources      Resources
+	DesiredRuntime DesiredRuntime
+	Ingress        IngressMode
+	Publication    Publication
+	// AccessLog enables the app-local Nginx access log (PHP apps). Edge access
+	// logs are per host.
+	AccessLog        bool
 	Redis            RedisIdentity
 	ConfigGeneration int64
 	// CredentialsGeneration increments whenever secret material mounted into
@@ -66,7 +68,9 @@ type App struct {
 	HomePath string
 
 	Bindings []Binding
-	Domains  []DomainLink
+	// Hosts are the Ingress hosts that target this app, display host first.
+	// They are loaded with the app; Ingress owns them.
+	Hosts []Host
 }
 
 // Redactor replaces the app's known secret values in app-controlled output.
@@ -115,13 +119,15 @@ func (a App) ReadyPath() string {
 	return "/"
 }
 
-func (a App) PrimaryDomain() string {
-	for _, d := range a.Domains {
-		if d.Primary {
-			return d.Name
+// DisplayHost is the host shown as the app's address: its first enabled
+// host, else "".
+func (a App) DisplayHost() (Host, bool) {
+	for _, h := range a.Hosts {
+		if h.Enabled {
+			return h, true
 		}
 	}
-	return ""
+	return Host{}, false
 }
 
 // Runtime is a finite, validated union discriminated by Kind.
@@ -188,7 +194,7 @@ const (
 	TLSExternal   TLSMode = "external"
 )
 
-// Route holds managed-edge presentation settings for an app or proxy.
+// Route holds managed-edge presentation settings for one host.
 type Route struct {
 	TLS           TLSMode `json:"tls"`
 	CertName      string  `json:"certName,omitempty"`
@@ -240,9 +246,31 @@ type VacuumSlot struct {
 // SQLiteContainerDir is where a SQLite binding directory is mounted.
 func (b Binding) SQLiteContainerDir() string { return "/var/lib/bento/sqlite/" + b.SQLiteFileID }
 
-type DomainLink struct {
-	Name    string
-	Primary bool
+// HostTarget says where an Ingress host sends its requests.
+type HostTarget string
+
+const (
+	HostTargetApp      HostTarget = "app"
+	HostTargetUpstream HostTarget = "upstream"
+	HostTargetRedirect HostTarget = "redirect"
+)
+
+// Host is one Ingress host name. Ingress owns host names: each name is unique
+// and points at exactly one target, with its own TLS and edge settings.
+type Host struct {
+	Name   string
+	Target HostTarget
+	// AppID is set only for app targets.
+	AppID string
+	// Upstreams are set only for upstream targets (load-balanced).
+	Upstreams []string
+	// RedirectTo is set only for redirect targets: the host name requests are
+	// permanently redirected to, keeping the path and query.
+	RedirectTo string
+	Route      Route
+	Enabled    bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type DataService struct {
@@ -252,17 +280,6 @@ type DataService struct {
 	Image     string
 	Volume    string
 	CreatedAt time.Time
-}
-
-type Proxy struct {
-	ID        string
-	Name      string
-	Upstreams []string
-	Route     Route
-	Enabled   bool
-	Domains   []DomainLink
-	CreatedAt time.Time
-	UpdatedAt time.Time
 }
 
 type EdgeSettings struct {

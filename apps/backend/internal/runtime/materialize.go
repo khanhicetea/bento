@@ -495,7 +495,7 @@ func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool, ini []b
 	data := map[string]any{
 		"Slug": app.Slug, "AppID": app.ID, "UID": app.UID, "Home": home,
 		"Port": domain.PHPFrontendPort, "DocumentRoot": docRoot, "SymlinkFrom": symlinkFrom,
-		"Routing": p.Routing, "UploadLimitMB": p.UploadLimitMB, "AccessLog": app.Route.AccessLog,
+		"Routing": p.Routing, "UploadLimitMB": p.UploadLimitMB, "AccessLog": app.AccessLog,
 		"TrustedProxies": ctx.TrustedProxies, "Workers": 1, "PHP": settings,
 		"FastCGIReadTimeout": max(120, settings.MaxExecutionSeconds+10),
 		"OpenBasedir":        openBasedir(app),

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Bento runs several applications on **one Linux server** you own. You describe each app — its runtime, domains, and
+Bento runs several applications on **one Linux server** you own. You describe each app — its runtime, Ingress hosts, and
 databases — and Bento creates and supervises one Docker container for it.
 
 - **Backend:** `bento serve` is a small resident Go process. It stores intent in `bento.db` (SQLite), talks to the

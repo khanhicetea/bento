@@ -7,7 +7,7 @@ sidebar:
 
 ## Intent and observation
 
-`bento.db` holds **intent**: apps, identities, domains, bindings, desired runtime (`running`/`stopped`), ingress mode,
+`bento.db` holds **intent**: apps, identities, Ingress hosts, bindings, desired runtime (`running`/`stopped`), ingress mode,
 publication, settings, and the operation journal. Docker holds **observations**: whether a container exists, runs, and
 is healthy. The UI shows both side by side; health never rewrites intent.
 

@@ -66,7 +66,7 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
    ports, no Docker socket, only the app's own home/SQLite/config/identity mounts. `TestPersistentSpecSecurityInvariants`
    must keep passing.
 8. **Exact confirmations are enforced server-side** in `accept.go` (`delete <slug>`, `delete`, `replace <db>`,
-   `export`, `delete <proxy>`). Never loosen them or move them only to the UI/CLI.
+   `export`, `delete <host>`). Never loosen them or move them only to the UI/CLI.
 9. **Unknown state is refused, not rewritten.** `store.CheckCompatible` must stay read-only. Schema changes bump
    `store.SchemaVersion` and add an explicit migration.
 10. **Loopback only.** `cli.ValidateListen` must keep rejecting non-loopback addresses. Browser writes need session +

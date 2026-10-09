@@ -17,6 +17,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/edge"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/reconcile"
@@ -120,9 +121,10 @@ func (s *Server) Handler() http.Handler {
 	api("PUT /api/v1/utils", s.handlePutUtils)
 	api("GET /api/v1/dbadmin", s.handleGetDBAdmin)
 	api("PUT /api/v1/dbadmin", s.handlePutDBAdmin)
-	api("GET /api/v1/proxies", s.handleListProxies)
-	api("POST /api/v1/proxies", s.handleUpsertProxy)
-	api("DELETE /api/v1/proxies/{name}", s.handleDeleteProxy)
+	api("GET /api/v1/hosts", s.handleListHosts)
+	api("POST /api/v1/hosts", s.handleCreateHost)
+	api("PUT /api/v1/hosts/{name}", s.handleUpdateHost)
+	api("DELETE /api/v1/hosts/{name}", s.handleDeleteHost)
 
 	api("GET /api/v1/retired", s.handleListRetired)
 	api("POST /api/v1/retired/{id}/prune", s.handlePrune)
@@ -424,11 +426,13 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := operations.CreateAppInput{
-		Slug:    req.Slug,
-		Runtime: runtimeFromDTO(req.Runtime),
-		Ingress: domain.IngressMode(req.Ingress),
-		Domains: req.Domains,
-		Route:   routeFromDTO(req.Route),
+		Slug:      req.Slug,
+		Runtime:   runtimeFromDTO(req.Runtime),
+		Ingress:   domain.IngressMode(req.Ingress),
+		AccessLog: req.AccessLog,
+	}
+	for _, h := range req.Hosts {
+		in.Hosts = append(in.Hosts, operations.AppHostInput{Name: h.Name, Route: routeFromDTO(h.Route)})
 	}
 	if req.Resources != nil {
 		in.Resources = domain.Resources(*req.Resources)
@@ -464,7 +468,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	in := operations.UpdateAppInput{ExpectedGeneration: int64(req.ExpectedGeneration), Domains: req.Domains}
+	in := operations.UpdateAppInput{ExpectedGeneration: int64(req.ExpectedGeneration), AccessLog: req.AccessLog}
 	if req.Runtime != nil {
 		rt := runtimeFromDTO(*req.Runtime)
 		in.Runtime = &rt
@@ -476,10 +480,6 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	if req.Ingress != nil {
 		m := domain.IngressMode(*req.Ingress)
 		in.Ingress = &m
-	}
-	if req.Route != nil {
-		rt := routeFromDTO(req.Route)
-		in.Route = &rt
 	}
 	if req.Env != nil {
 		env := make([]domain.EnvVar, 0, len(*req.Env))
@@ -746,7 +746,8 @@ func (s *Server) handlePutUtils(w http.ResponseWriter, r *http.Request) {
 }
 
 // webhookBase is the configured utils base URL; failing that, the origin of
-// the app's primary domain when the edge forwards /_bento/webhook/* to Bento; else "".
+// the app's display host when the edge forwards /_bento/webhook/* to Bento
+// (it does on every app host); else "".
 func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 	if ps, err := s.C.UtilsSettings(r.Context()); err == nil && ps.BaseURL != "" {
 		return ps.BaseURL
@@ -758,16 +759,14 @@ func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 	if app.Ingress != domain.IngressManaged || app.Publication != domain.Published {
 		return ""
 	}
-	for _, d := range app.Domains {
-		if !d.Primary {
-			continue
-		}
-		if app.Route.TLS == domain.TLSNone {
-			return "http://" + d.Name + portSuffix(es.HTTPPort, 80)
-		}
-		return "https://" + d.Name + portSuffix(es.HTTPSPort, 443)
+	h, ok := app.DisplayHost()
+	if !ok {
+		return ""
 	}
-	return ""
+	if h.Route.TLS == domain.TLSNone {
+		return "http://" + h.Name + portSuffix(es.HTTPPort, 80)
+	}
+	return "https://" + h.Name + portSuffix(es.HTTPSPort, 443)
 }
 
 // utilsTargets are the utils listener origins a proxy can forward to.
@@ -955,11 +954,10 @@ func (s *Server) handleGetEdge(w http.ResponseWriter, r *http.Request) {
 		State:    s.containerState(r.Context(), s.C.Names.EdgeContainer()),
 		Routes:   []string{},
 	}
-	if entries, err := os.ReadDir(s.Layout.EdgeConfDir() + "/live/sites"); err == nil {
-		for _, e := range entries {
-			st.Routes = append(st.Routes, strings.TrimSuffix(e.Name(), ".conf"))
-		}
+	for route := range s.liveRoutes() {
+		st.Routes = append(st.Routes, route)
 	}
+	slices.Sort(st.Routes)
 	writeJSON(w, http.StatusOK, st)
 }
 
@@ -1032,21 +1030,56 @@ func (s *Server) handlePutTunnel(w http.ResponseWriter, r *http.Request) {
 	s.accepted(w, op, nil)
 }
 
-func (s *Server) handleListProxies(w http.ResponseWriter, r *http.Request) {
-	ps, err := store.ListProxies(r.Context(), s.Store.DB())
+// liveRoutes is the set of edge routes in the live generation.
+func (s *Server) liveRoutes() map[string]bool {
+	out := map[string]bool{}
+	if entries, err := os.ReadDir(s.Layout.EdgeConfDir() + "/live/sites"); err == nil {
+		for _, e := range entries {
+			out[strings.TrimSuffix(e.Name(), ".conf")] = true
+		}
+	}
+	return out
+}
+
+func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
+	hs, err := store.ListHosts(r.Context(), s.Store.DB())
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	out := dto.ProxyList{Proxies: []dto.Proxy{}}
-	for _, p := range ps {
-		out.Proxies = append(out.Proxies, proxyToDTO(p))
+	apps, err := store.ListApps(r.Context(), s.Store.DB())
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	slugs := make(map[string]string, len(apps))
+	for _, a := range apps {
+		slugs[a.ID] = a.Slug
+	}
+	live := s.liveRoutes()
+	out := dto.HostList{Hosts: []dto.Host{}}
+	for _, h := range hs {
+		out.Hosts = append(out.Hosts, hostToDTO(h, slugs[h.AppID], live[edge.RouteName(h.Name)]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) handleUpsertProxy(w http.ResponseWriter, r *http.Request) {
-	var req dto.ProxyRequest
+func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+	s.saveHost(w, r, "")
+}
+
+func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
+	name, err := hostPath(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.saveHost(w, r, name)
+}
+
+// saveHost creates a host, or replaces the host named in the path.
+func (s *Server) saveHost(w http.ResponseWriter, r *http.Request, pathName string) {
+	var req dto.HostRequest
 	if err := decode(w, r, &req); err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -1056,12 +1089,19 @@ func (s *Server) handleUpsertProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	_, op, err := s.C.UpsertProxy(
-		r.Context(),
-		operations.ProxyInput{Name: req.Name, Upstreams: req.Upstreams, Domains: req.Domains,
-			Route: routeFromDTO(req.Route), Enabled: req.Enabled},
-		idem,
-	)
+	in := hostFromDTO(req)
+	save := s.C.CreateHost
+	if pathName != "" {
+		if req.Name != "" {
+			if n, _ := domain.NormalizeDomain(req.Name); n != pathName {
+				writeError(w, s.Log, badRequest("host name in the body does not match the path"))
+				return
+			}
+		}
+		in.Name = pathName
+		save = s.C.UpdateHost
+	}
+	_, op, err := save(r.Context(), in, idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -1069,8 +1109,8 @@ func (s *Server) handleUpsertProxy(w http.ResponseWriter, r *http.Request) {
 	s.accepted(w, op, nil)
 }
 
-func (s *Server) handleDeleteProxy(w http.ResponseWriter, r *http.Request) {
-	name, err := pathID(r, "name")
+func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
+	name, err := hostPath(r)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
@@ -1085,12 +1125,21 @@ func (s *Server) handleDeleteProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, err := s.C.DeleteProxy(r.Context(), name, req.Confirm, idem)
+	op, err := s.C.DeleteHost(r.Context(), name, req.Confirm, idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
 	s.accepted(w, op, nil)
+}
+
+// hostPath reads and normalizes the {name} host path segment.
+func hostPath(r *http.Request) (string, error) {
+	n, err := domain.NormalizeDomain(r.PathValue("name"))
+	if err != nil {
+		return "", badRequest("invalid host name in path")
+	}
+	return n, nil
 }
 
 // ---- retained data ----

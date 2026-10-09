@@ -15,7 +15,7 @@ app git|deploy|webhook SLUG
 ops [--target ID] | op ID | op cancel ID
 services | service add --engine E --version V
 edge | edge set --json FILE | tunnel | tunnel set-token | tunnel disable
-proxies | proxy set --json FILE | proxy remove NAME
+hosts | host add --json FILE | host set --json FILE | host remove NAME
 retired | retired prune APP_ID
 backup run|list|runs|restore|schedule
 export --to DIR

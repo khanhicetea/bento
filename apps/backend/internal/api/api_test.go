@@ -170,7 +170,7 @@ func TestSessionExpiry(t *testing.T) {
 func TestStrictDecoding(t *testing.T) {
 	c, _ := newServer(t)
 	c.login()
-	valid := `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"],"workdir":"","port":3000}},"domains":[],"bindings":[]}`
+	valid := `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"],"workdir":"","port":3000}},"hosts":[],"bindings":[]}`
 	cases := map[string]struct {
 		body   string
 		status int
@@ -179,9 +179,9 @@ func TestStrictDecoding(t *testing.T) {
 		"trailing data":      {valid + ` {}`, 400},
 		"wrong type":         {`{"slug":123}`, 400},
 		"out of range int":   {`{"slug":"x","resources":{"memoryMb":99999999999999999999}}`, 400},
-		"invalid enum":       {`{"slug":"shop","runtime":{"kind":"docker"},"domains":[],"bindings":[]}`, 422},
+		"invalid enum":       {`{"slug":"shop","runtime":{"kind":"docker"},"hosts":[],"bindings":[]}`, 422},
 		"invalid slug":       {strings.Replace(valid, `"shop"`, `"../etc"`, 1), 422},
-		"variant mismatch":   {`{"slug":"shop","runtime":{"kind":"php-fpm","http":{"toolchain":"node"}},"domains":[],"bindings":[]}`, 422},
+		"variant mismatch":   {`{"slug":"shop","runtime":{"kind":"php-fpm","http":{"toolchain":"node"}},"hosts":[],"bindings":[]}`, 422},
 		"invalid engine ref": {strings.Replace(valid, `"bindings":[]`, `"bindings":[{"engine":"oracle"}]`, 1), 422},
 		"not json":           {`slug=shop`, 400},
 		"too large":          {`{"slug":"` + strings.Repeat("a", MaxBodyBytes) + `"}`, 413},
@@ -230,7 +230,7 @@ func TestIdempotencyKeyOverHTTP(t *testing.T) {
 func TestSecretsNeverInResponses(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"],"bindings":[{"engine":"sqlite"}]}`)
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"shop.example.com"}],"bindings":[{"engine":"sqlite"}]}`)
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
 	h.Wait(acc.Operation.ID)
@@ -262,9 +262,9 @@ func TestWireFidelity(t *testing.T) {
 	if err != nil {
 		t.Skip("generated types not present")
 	}
-	app := dto.App{AppSummary: dto.AppSummary{ID: "a1", Slug: "s", Observed: dto.Observed{State: dto.ObservedStateHealthy},
+	app := dto.App{AppSummary: dto.AppSummary{ID: "a1", Slug: "s", Hosts: []string{}, Observed: dto.Observed{State: dto.ObservedStateHealthy},
 		BindingSummary: []dto.BindingSummary{{Engine: dto.EngineSQLite}}},
-		Env: []dto.EnvVar{}, Domains: []dto.Domain{}, Bindings: []dto.Binding{{ID: "b", Engine: dto.EngineSQLite, Databases: []string{}}}}
+		Env: []dto.EnvVar{}, Bindings: []dto.Binding{{ID: "b", Engine: dto.EngineSQLite, Databases: []string{}}}}
 	raw, _ := json.Marshal(app)
 	var m map[string]any
 	json.Unmarshal(raw, &m)
@@ -304,7 +304,7 @@ func TestSPAFallbackDoesNotMaskMissingAssets(t *testing.T) {
 func TestGitSourceEndpoints(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"]}`)
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"shop.example.com"}]}`)
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
 	h.Wait(acc.Operation.ID)
@@ -366,7 +366,7 @@ func TestGitSourceEndpoints(t *testing.T) {
 func TestWebhookEndpoints(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
-	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"]}`)
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"shop.example.com"}]}`)
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
 	h.Wait(acc.Operation.ID)
@@ -465,7 +465,7 @@ func TestDBAdminTicketGateway(t *testing.T) {
 	c, h := newServer(t)
 	c.login()
 	ctx := t.Context()
-	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"domains":["shop.example.com"]}`)
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"shop.example.com"}]}`)
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
 	h.Wait(acc.Operation.ID)
@@ -897,5 +897,77 @@ func TestRestoreFromBackupEndpointsRefuseBadRequests(t *testing.T) {
 		`{"repository":"b2:bucket/shop","key":"a-key","slug":"shop-copy","confirm":"clone other"}`)
 	if resp.StatusCode == http.StatusAccepted {
 		t.Fatalf("wrong confirmation -> %d", resp.StatusCode)
+	}
+}
+
+func TestHostEndpoints(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"shop.example.com","route":{"tls":"acme","redirectHttps":true,"accessLog":false}}]}`)
+	var acc dto.Accepted
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+	redirect := `{"name":"www.shop.example.com","target":{"kind":"redirect","redirectTo":"shop.example.com"},"enabled":true}`
+
+	// Writes need the browser session's Origin and CSRF token.
+	resp, _ := c.do("POST", "/api/v1/hosts", redirect, map[string]string{"Content-Type": "application/json"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("host write without origin/CSRF -> %d", resp.StatusCode)
+	}
+	for name, tc := range map[string]struct {
+		method, path, body string
+		status             int
+	}{
+		"unknown field":   {"POST", "/api/v1/hosts", `{"name":"a.example.com","bogus":1}`, 400},
+		"bad target":      {"POST", "/api/v1/hosts", `{"name":"a.example.com","target":{"kind":"proxy"}}`, 422},
+		"unknown app":     {"POST", "/api/v1/hosts", `{"name":"a.example.com","target":{"kind":"app","app":"nope"}}`, 422},
+		"taken name":      {"POST", "/api/v1/hosts", `{"name":"Shop.Example.com","target":{"kind":"redirect","redirectTo":"b.example.com"}}`, 409},
+		"bad path name":   {"PUT", "/api/v1/hosts/not_a_host", redirect, 400},
+		"path mismatch":   {"PUT", "/api/v1/hosts/shop.example.com", redirect, 400},
+		"update missing":  {"PUT", "/api/v1/hosts/www.shop.example.com", redirect, 404},
+		"inexact confirm": {"DELETE", "/api/v1/hosts/shop.example.com", `{"confirm":"delete"}`, 0},
+		"delete bad name": {"DELETE", "/api/v1/hosts/..", `{"confirm":"delete .."}`, 0},
+		"delete missing":  {"DELETE", "/api/v1/hosts/gone.example.com", `{"confirm":"delete gone.example.com"}`, 404},
+	} {
+		resp, body := c.write(tc.method, tc.path, tc.body)
+		if tc.status == 0 {
+			if resp.StatusCode < 400 {
+				t.Errorf("%s -> %d %s", name, resp.StatusCode, body)
+			}
+			continue
+		}
+		if resp.StatusCode != tc.status {
+			t.Errorf("%s -> %d (want %d) %s", name, resp.StatusCode, tc.status, body)
+		}
+	}
+	resp, body = c.write("POST", "/api/v1/hosts", redirect)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create redirect host -> %d %s", resp.StatusCode, body)
+	}
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+
+	resp, body = c.do("GET", "/api/v1/hosts", "", nil)
+	var list dto.HostList
+	if resp.StatusCode != 200 || json.Unmarshal([]byte(body), &list) != nil || len(list.Hosts) != 2 {
+		t.Fatalf("list -> %d %s", resp.StatusCode, body)
+	}
+	app := list.Hosts[0]
+	if app.Name != "shop.example.com" || app.Target.Kind != dto.HostTargetKindApp || app.Target.App != "shop" ||
+		app.Route.TLS != dto.TLSModeACME || app.Target.Upstreams != nil {
+		t.Fatalf("app host: %+v", app)
+	}
+	if strings.Contains(body, "null") {
+		t.Fatalf("host list must not serialize null: %s", body)
+	}
+	_, body = c.do("GET", "/api/v1/apps/shop", "", nil)
+	var detail dto.App
+	json.Unmarshal([]byte(body), &detail)
+	if len(detail.Hosts) != 1 || detail.Hosts[0] != "shop.example.com" {
+		t.Fatalf("app hosts: %+v", detail.Hosts)
+	}
+	resp, body = c.write("DELETE", "/api/v1/hosts/www.shop.example.com", `{"confirm":"delete www.shop.example.com"}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("delete -> %d %s", resp.StatusCode, body)
 	}
 }

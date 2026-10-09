@@ -12,7 +12,7 @@ import (
 )
 
 // seedApps inserts n apps, each with a MySQL binding (two databases), a
-// SQLite binding and two domains, plus one proxy domain that must not leak
+// SQLite binding and two hosts, plus one upstream host that must not leak
 // into any app.
 func seedApps(tb testing.TB, s *Store, n int) {
 	tb.Helper()
@@ -52,12 +52,17 @@ func seedApps(tb testing.TB, s *Store, n int) {
 				tb.Fatal(err)
 			}
 		}
-		links := []domain.DomainLink{{Name: slug + ".example.com", Primary: true}, {Name: "www." + slug + ".example.com"}}
-		if err := ReplaceDomains(ctx, db, "app", id, links); err != nil {
-			tb.Fatal(err)
+		for _, name := range []string{slug + ".example.com", "www." + slug + ".example.com"} {
+			h := domain.Host{Name: name, Target: domain.HostTargetApp, AppID: id, Enabled: true, CreatedAt: created,
+				Route: domain.Route{TLS: domain.TLSACME}}
+			if err := InsertHost(ctx, db, h); err != nil {
+				tb.Fatal(err)
+			}
 		}
 	}
-	if err := ReplaceDomains(ctx, db, "proxy", "app000", []domain.DomainLink{{Name: "proxy.example.com", Primary: true}}); err != nil {
+	proxy := domain.Host{Name: "proxy.example.com", Target: domain.HostTargetUpstream,
+		Upstreams: []string{"http://10.0.0.5:80"}, Enabled: true, Route: domain.Route{TLS: domain.TLSNone}}
+	if err := InsertHost(ctx, db, proxy); err != nil {
 		tb.Fatal(err)
 	}
 }
@@ -83,7 +88,8 @@ func TestListAppsMatchesGetApp(t *testing.T) {
 		if !reflect.DeepEqual(a, one) {
 			t.Fatalf("ListApps and GetApp disagree for %s:\n%+v\n%+v", a.ID, a, one)
 		}
-		if len(a.Bindings) != 2 || len(a.Bindings[0].Databases) != 2 || len(a.Domains) != 2 || !a.Domains[0].Primary {
+		if len(a.Bindings) != 2 || len(a.Bindings[0].Databases) != 2 || len(a.Hosts) != 2 ||
+			a.Hosts[0].Name != a.Slug+".example.com" {
 			t.Fatalf("unexpected relations for %s: %+v", a.ID, a)
 		}
 	}
@@ -105,45 +111,58 @@ func BenchmarkListApps(b *testing.B) {
 	}
 }
 
-func TestListProxiesMatchesGetProxy(t *testing.T) {
+func TestHostsCRUD(t *testing.T) {
 	s := newStore(t)
 	ctx := t.Context()
 	db := s.DB()
-	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	for i, name := range []string{"beta", "alpha", "gamma"} {
-		p := domain.Proxy{ID: fmt.Sprintf("px%d", i), Name: name, Upstreams: []string{"10.0.0.1:80"}, Enabled: true, CreatedAt: created}
-		if err := UpsertProxy(ctx, db, p); err != nil {
-			t.Fatal(err)
-		}
-		if name == "gamma" {
-			continue // a proxy without domains keeps nil Domains
-		}
-		links := []domain.DomainLink{{Name: "z." + name + ".example.com"}, {Name: name + ".example.com", Primary: true}}
-		if err := ReplaceDomains(ctx, db, "proxy", p.ID, links); err != nil {
-			t.Fatal(err)
-		}
+	seedApps(t, s, 2)
+	up := domain.Host{Name: "proxy.example.com", Target: domain.HostTargetUpstream,
+		Upstreams: []string{"http://10.0.0.1:3000"}, Enabled: true, Route: domain.Route{TLS: domain.TLSNone}}
+	if err := InsertHost(ctx, db, up); err == nil {
+		t.Fatal("an existing host name must conflict, never be overwritten")
 	}
-	// An app domain whose owner id collides with a proxy id must not leak.
-	if err := ReplaceDomains(ctx, db, "app", "px0", []domain.DomainLink{{Name: "app.example.com", Primary: true}}); err != nil {
+	up.Name = "grafana2.example.com"
+	if err := InsertHost(ctx, db, up); err != nil {
 		t.Fatal(err)
 	}
-	proxies, err := ListProxies(ctx, db)
-	if err != nil {
+	got, err := GetHost(ctx, db, up.Name)
+	if err != nil || got.Target != domain.HostTargetUpstream || len(got.Upstreams) != 1 || got.AppID != "" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	// Moving a host to another app places it after that app's hosts.
+	moved := domain.Host{Name: "slug-000.example.com", Target: domain.HostTargetApp, AppID: "app001", Enabled: true,
+		Route: domain.Route{TLS: domain.TLSSelfSigned}}
+	if err := UpdateHost(ctx, db, moved); err != nil {
 		t.Fatal(err)
 	}
-	if len(proxies) != 3 {
-		t.Fatalf("got %d proxies", len(proxies))
+	a0, _ := GetApp(ctx, db, "app000")
+	a1, _ := GetApp(ctx, db, "app001")
+	if len(a0.Hosts) != 1 || len(a1.Hosts) != 3 || a1.Hosts[2].Name != moved.Name ||
+		a1.Hosts[2].Route.TLS != domain.TLSSelfSigned {
+		t.Fatalf("move: %+v / %+v", a0.Hosts, a1.Hosts)
 	}
-	for _, p := range proxies {
-		one, err := GetProxy(ctx, db, p.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(p, one) {
-			t.Fatalf("ListProxies and GetProxy disagree for %s:\n%+v\n%+v", p.Name, p, one)
-		}
+	// A disabled host sorts after enabled ones, so it is never the display host.
+	first := a1.Hosts[0]
+	first.Enabled = false
+	if err := UpdateHost(ctx, db, first); err != nil {
+		t.Fatal(err)
 	}
-	if len(proxies[0].Domains) != 2 || !proxies[0].Domains[0].Primary || proxies[2].Domains != nil {
-		t.Fatalf("unexpected domains: %+v", proxies)
+	a1, _ = GetApp(ctx, db, "app001")
+	if h, ok := a1.DisplayHost(); !ok || h.Name == first.Name || a1.Hosts[2].Name != first.Name {
+		t.Fatalf("display host: %+v", a1.Hosts)
+	}
+	if err := DeleteHost(ctx, db, "missing.example.com"); err != ErrNotFound {
+		t.Fatalf("delete missing: %v", err)
+	}
+	// Deleting an app deletes the hosts that target it.
+	if err := DeleteApp(ctx, db, "app001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GetHost(ctx, db, moved.Name); err != ErrNotFound {
+		t.Fatalf("host of a deleted app survived: %v", err)
+	}
+	all, err := ListHosts(ctx, db)
+	if err != nil || len(all) != 3 {
+		t.Fatalf("hosts after delete: %+v %v", all, err)
 	}
 }

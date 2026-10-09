@@ -126,10 +126,6 @@ export interface Route {
   accessLog: boolean;
   staticCache?: boolean;
 }
-export interface Domain {
-  name: string;
-  primary: boolean;
-}
 /**
  * Binding never carries a password.
  */
@@ -189,7 +185,11 @@ export interface AppSummary {
   desiredRuntime: DesiredRuntime;
   ingress: IngressMode;
   publication: Publication;
-  primaryDomain: string;
+  /**
+   * Hosts are the names of the Ingress hosts that target the app, display
+   * host first (enabled before disabled).
+   */
+  hosts: string[];
   provisioned: boolean;
   configGeneration: number /* int */;
   observed: Observed;
@@ -212,9 +212,11 @@ export interface App extends AppSummary {
    */
   homePath?: string;
   runtime: RuntimeSpec;
-  route: Route;
+  /**
+   * AccessLog is the app-local Nginx access log; edge logs are per host.
+   */
+  accessLog: boolean;
   env: EnvVar[];
-  domains: Domain[];
   bindings: Binding[];
   redisPrefix: string;
   redisUser: string;
@@ -235,17 +237,26 @@ export interface CreateAppRequest {
   runtime: RuntimeSpec;
   resources?: Resources;
   ingress?: IngressMode;
-  domains: string[];
-  route?: Route;
+  accessLog?: boolean;
+  /**
+   * Hosts are Ingress hosts created together with the app, targeting it.
+   */
+  hosts: AppHostRequest[];
   bindings: BindingRequest[];
+}
+/**
+ * AppHostRequest is an Ingress host created with its app.
+ */
+export interface AppHostRequest {
+  name: string;
+  route?: Route;
 }
 export interface UpdateAppRequest {
   expectedGeneration?: number /* int */;
   runtime?: RuntimeSpec;
   resources?: Resources;
   ingress?: IngressMode;
-  domains?: string[];
-  route?: Route;
+  accessLog?: boolean;
   /**
    * Env, when present, replaces the app's environment variables.
    */
@@ -479,23 +490,45 @@ export interface TunnelStatus {
 export interface SetTunnelTokenRequest {
   token: string;
 }
-export interface Proxy {
-  id: string;
+export const HostTargetKindApp = "app";
+export const HostTargetKindUpstream = "upstream";
+export const HostTargetKindRedirect = "redirect";
+export type HostTargetKind = typeof HostTargetKindApp | typeof HostTargetKindUpstream | typeof HostTargetKindRedirect;
+/**
+ * HostTarget is where an Ingress host sends requests: an app (by slug), one or
+ * more load-balanced upstream URLs, or another host name (permanent redirect).
+ */
+export interface HostTarget {
+  kind: HostTargetKind;
+  app?: string;
+  upstreams?: string[];
+  redirectTo?: string;
+}
+/**
+ * Host is one Ingress host name with its target and edge settings.
+ */
+export interface Host {
   name: string;
-  upstreams: string[];
-  domains: Domain[];
+  target: HostTarget;
   route: Route;
   enabled: boolean;
+  /**
+   * Live reports whether the running edge generation serves this host.
+   */
+  live: boolean;
   createdAt: string;
   updatedAt: string;
 }
-export interface ProxyList {
-  proxies: Proxy[];
+export interface HostList {
+  hosts: Host[];
 }
-export interface ProxyRequest {
+/**
+ * HostRequest creates (POST) or replaces (PUT) an Ingress host. On PUT the
+ * name must match the path.
+ */
+export interface HostRequest {
   name: string;
-  upstreams: string[];
-  domains: string[];
+  target: HostTarget;
   route?: Route;
   enabled: boolean;
 }

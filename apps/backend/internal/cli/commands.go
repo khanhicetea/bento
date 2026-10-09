@@ -66,7 +66,7 @@ Client (requires the running backend):
   services | service add --engine mysql|postgres --version V
   edge | edge set --json FILE
   tunnel | tunnel set-token (stdin) | tunnel disable
-  proxies | proxy set --json FILE | proxy remove NAME
+  hosts | host add --json FILE | host set --json FILE | host remove NAME
   retired | retired prune APP_ID                      interactive; lists what will be deleted
   backup run [--app SLUG] [--compression zstd|gzip|none] [--upload]
   backup list | backup runs | backup restore --artifact PATH --app SLUG --database DB
@@ -329,7 +329,7 @@ func (r *runner) run(args []string) error {
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "SLUG\tID\tUID\tRUNTIME\tDESIRED\tOBSERVED\tINGRESS\tPUBLICATION\tDOMAIN")
+		fmt.Fprintln(tw, "SLUG\tID\tUID\tRUNTIME\tDESIRED\tOBSERVED\tINGRESS\tPUBLICATION\tHOST")
 		for _, a := range list.Apps {
 			fmt.Fprintf(
 				tw,
@@ -343,7 +343,7 @@ func (r *runner) run(args []string) error {
 				a.Observed.State,
 				a.Ingress,
 				a.Publication,
-				a.PrimaryDomain,
+				firstOr(a.Hosts, "-"),
 			)
 		}
 		return tw.Flush()
@@ -480,36 +480,56 @@ func (r *runner) run(args []string) error {
 		}
 		printJSON(st)
 		return nil
-	case "proxies":
-		var list dto.ProxyList
-		if err := c.Do(ctx, "GET", "/api/v1/proxies", nil, &list, nil); err != nil {
+	case "hosts":
+		var list dto.HostList
+		if err := c.Do(ctx, "GET", "/api/v1/hosts", nil, &list, nil); err != nil {
 			return err
 		}
-		printJSON(list)
-		return nil
-	case "proxy":
+		if r.json {
+			printJSON(list)
+			return nil
+		}
+		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "HOST\tTARGET\tTLS\tENABLED\tLIVE")
+		for _, h := range list.Hosts {
+			target := h.Target.App
+			switch h.Target.Kind {
+			case dto.HostTargetKindUpstream:
+				target = strings.Join(h.Target.Upstreams, " ")
+			case dto.HostTargetKindRedirect:
+				target = "→ " + h.Target.RedirectTo
+			}
+			fmt.Fprintf(tw, "%s\t%s %s\t%s\t%t\t%t\n", h.Name, h.Target.Kind, target, h.Route.TLS, h.Enabled, h.Live)
+		}
+		return tw.Flush()
+	case "host":
 		if len(args) >= 3 && args[1] == "remove" {
 			got, err := confirmPrompt("delete " + args[2])
 			if err != nil {
 				return err
 			}
-			_, err = c.Mutate(ctx, "DELETE", "/api/v1/proxies/"+args[2], dto.ConfirmRequest{Confirm: got}, r.wait, r.out)
+			_, err = c.Mutate(ctx, "DELETE", "/api/v1/hosts/"+url.PathEscape(args[2]), dto.ConfirmRequest{Confirm: got},
+				r.wait, r.out)
 			return err
 		}
-		if len(args) >= 2 && args[1] == "set" {
-			fs, rest := sub("proxy set", args[2:])
-			file := fs.String("json", "", "proxy JSON file")
+		if len(args) >= 2 && (args[1] == "add" || args[1] == "set") {
+			fs, rest := sub("host "+args[1], args[2:])
+			file := fs.String("json", "", "host JSON file")
 			if err := fs.Parse(rest); err != nil {
 				return err
 			}
-			var p dto.ProxyRequest
-			if err := readJSONFile(*file, &p); err != nil {
+			var h dto.HostRequest
+			if err := readJSONFile(*file, &h); err != nil {
 				return err
 			}
-			_, err := c.Mutate(ctx, "POST", "/api/v1/proxies", p, r.wait, r.out)
+			method, path := "POST", "/api/v1/hosts"
+			if args[1] == "set" {
+				method, path = "PUT", "/api/v1/hosts/"+url.PathEscape(h.Name)
+			}
+			_, err := c.Mutate(ctx, method, path, h, r.wait, r.out)
 			return err
 		}
-		return errors.New("usage: bento proxy set --json FILE | bento proxy remove NAME")
+		return errors.New("usage: bento host add --json FILE | bento host set --json FILE | bento host remove NAME")
 	case "retired":
 		return r.retired(ctx, c, args[1:])
 	case "backup":
@@ -1237,4 +1257,11 @@ func (r *runner) backupSchedule(ctx context.Context, c *Client, args []string) e
 	}
 	printJSON(out)
 	return nil
+}
+
+func firstOr(s []string, fallback string) string {
+	if len(s) == 0 {
+		return fallback
+	}
+	return s[0]
 }

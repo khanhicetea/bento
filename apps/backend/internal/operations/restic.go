@@ -41,8 +41,10 @@ const (
 // lockLeakWarning explains a lock restic could not delete.
 const lockLeakWarning = "restic could not delete its repository lock: the remote refused a delete. Grant the rclone remote's credentials delete permission on the repository path (restic also needs it for retention), then use Remove stale locks."
 
-// ResticFormatVersion versions the Bento directory inside snapshots.
-const ResticFormatVersion = 2
+// ResticFormatVersion versions the Bento directory inside snapshots. Format 3
+// moved route settings to Ingress hosts (app.json carries accessLog instead
+// of route); formats 1-2 are still read.
+const ResticFormatVersion = 3
 
 // ResticSecretsTag marks snapshots that include secrets.json.
 const ResticSecretsTag = "secrets=1"
@@ -899,13 +901,18 @@ type AppSpec struct {
 	Runtime       domain.Runtime     `json:"runtime"`
 	Resources     domain.Resources   `json:"resources"`
 	Ingress       domain.IngressMode `json:"ingress"`
-	Route         domain.Route       `json:"route"`
-	Domains       []string           `json:"domains"`
-	PrimaryDomain string             `json:"primaryDomain,omitempty"`
-	Bindings      []AppSpecBinding   `json:"bindings"`
-	GitRepoURL    string             `json:"gitRepoUrl,omitempty"`
-	GitBranch     string             `json:"gitBranch,omitempty"`
-	GitCommit     string             `json:"gitCommit,omitempty"`
+	AccessLog     bool               `json:"accessLog,omitempty"`
+	// Domains are the Ingress host names that targeted the app, display host
+	// first. A clone only lists them; hosts are re-pointed in Ingress.
+	Domains  []string         `json:"domains"`
+	Bindings []AppSpecBinding `json:"bindings"`
+	// Route and PrimaryDomain are written by format 1-2 snapshots, when an
+	// app owned its domains. They are read, never written.
+	Route         *domain.Route `json:"route,omitempty"`
+	PrimaryDomain string        `json:"primaryDomain,omitempty"`
+	GitRepoURL    string        `json:"gitRepoUrl,omitempty"`
+	GitBranch     string        `json:"gitBranch,omitempty"`
+	GitCommit     string        `json:"gitCommit,omitempty"`
 }
 
 type AppSpecBinding struct {
@@ -1036,13 +1043,10 @@ func (c *Controller) appSpec(ctx context.Context, app domain.App, versions map[s
 	rt.Env = redactedEnv(rt.Env)
 	s := AppSpec{
 		FormatVersion: ResticFormatVersion, Slug: app.Slug, Runtime: rt, Resources: app.Resources,
-		Ingress: app.Ingress, Route: app.Route, Domains: []string{}, Bindings: []AppSpecBinding{},
+		Ingress: app.Ingress, AccessLog: app.AccessLog, Domains: []string{}, Bindings: []AppSpecBinding{},
 	}
-	for _, d := range app.Domains {
-		s.Domains = append(s.Domains, d.Name)
-		if d.Primary {
-			s.PrimaryDomain = d.Name
-		}
+	for _, h := range app.Hosts {
+		s.Domains = append(s.Domains, h.Name)
 	}
 	for _, b := range app.Bindings {
 		s.Bindings = append(s.Bindings, AppSpecBinding{Engine: b.Engine, Service: b.Service, Version: versions[b.Service],

@@ -9,7 +9,7 @@ const commands = [
   { href: "/apps", label: "Apps", keywords: "applications runtimes", icon: Boxes },
   { href: "/apps/new", label: "New app", keywords: "create application", icon: Plus },
   { href: "/activity", label: "Activity", keywords: "operations events", icon: Activity },
-  { href: "/ingress", label: "Ingress", keywords: "edge tunnel proxies routes", icon: Network },
+  { href: "/ingress", label: "Ingress", keywords: "edge tunnel hosts domains proxies routes", icon: Network },
   { href: "/backups", label: "Backups", keywords: "artifacts restore schedule", icon: Archive },
   { href: "/system", label: "System", keywords: "docker retained data services mysql postgres database", icon: Server },
 ] as const;

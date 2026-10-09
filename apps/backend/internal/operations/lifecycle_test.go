@@ -105,7 +105,7 @@ func (h *harness) createApp(slug string) domain.App {
 	app, op, err := h.c.CreateApp(h.t.Context(), CreateAppInput{
 		Slug:    slug,
 		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}},
-		Domains: []string{slug + ".example.com"}, Bindings: []BindingRequest{{Engine: domain.EngineSQLite}},
+		Hosts:   []AppHostInput{{Name: slug + ".example.com"}}, Bindings: []BindingRequest{{Engine: domain.EngineSQLite}},
 	}, "")
 	if err != nil {
 		h.t.Fatal(err)

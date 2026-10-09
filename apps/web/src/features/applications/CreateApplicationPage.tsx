@@ -91,8 +91,9 @@ export function CreateApplicationPage() {
       runtime,
       resources,
       ingress,
-      domains: domains.list,
-      route,
+      accessLog: route.accessLog,
+      // Each domain becomes an Ingress host targeting the new app.
+      hosts: ingress === "managed" ? domains.list.map((name) => ({ name, route })) : [],
       bindings: binding === "none" ? [] : [{ engine: engine as T.Engine, service }],
     });
   });
@@ -325,9 +326,9 @@ export function CreateApplicationPage() {
                       detail="No public route"
                     />
                   </div>
-                  <DomainsInput state={domains} />
                   {managed && (
                     <>
+                      <DomainsInput state={domains} />
                       <div className="grid-2">
                         <Field label="TLS">
                           <NativeSelect
@@ -480,8 +481,8 @@ export function CreateApplicationPage() {
                       ? `PHP ${php.version} · ${php.mode}`
                       : `${http.toolchain} ${http.version} · ${http.argv.join(" ")}`,
                   ],
-                  ["Access", `${ingress}${domains.list.length ? ` · ${domains.list.join(", ")}` : ""}`],
-                  ["TLS", route.tls],
+                  ["Access", `${ingress}${managed && domains.list.length ? ` · ${domains.list.join(", ")}` : ""}`],
+                  ["TLS", managed ? route.tls : "—"],
                   ["Data", binding === "none" ? "None" : binding],
                   ["Limits", `${resources.memoryMb} MB · ${resources.cpuMillis}m CPU · ${resources.pids} pids`],
                 ]}

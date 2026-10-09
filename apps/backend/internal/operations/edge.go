@@ -211,7 +211,7 @@ func (c *Controller) renderEdge(
 	if err != nil {
 		return nil, err
 	}
-	proxies, err := store.ListProxies(ctx, c.Store.DB())
+	hosts, err := store.ListHosts(ctx, c.Store.DB())
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func (c *Controller) renderEdge(
 	return edge.Render(edge.Input{
 		Settings:      s,
 		Apps:          apps,
-		Proxies:       proxies,
+		Hosts:         hosts,
 		Running:       runningApps,
 		UtilsUpstream: upstream,
 	})

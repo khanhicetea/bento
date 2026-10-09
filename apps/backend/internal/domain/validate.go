@@ -342,6 +342,52 @@ func ValidateUpstream(raw string) error {
 	return nil
 }
 
+// ValidateHost normalizes and checks an Ingress host in place. The app
+// target's existence is checked by the caller.
+func ValidateHost(h *Host, errs *ValidationErrors) {
+	n, err := NormalizeDomain(h.Name)
+	if err != nil {
+		errs.Add("name", "%s", err)
+	}
+	h.Name = n
+	switch h.Target {
+	case HostTargetApp:
+		if h.AppID == "" {
+			errs.Add("target.app", "an app is required")
+		}
+		if len(h.Upstreams) > 0 || h.RedirectTo != "" {
+			errs.Add("target", "an app target takes no upstreams or redirect")
+		}
+	case HostTargetUpstream:
+		if len(h.Upstreams) == 0 || len(h.Upstreams) > 16 {
+			errs.Add("target.upstreams", "1-16 upstream URLs required")
+		}
+		for i, u := range h.Upstreams {
+			if err := ValidateUpstream(u); err != nil {
+				errs.Add(fmt.Sprintf("target.upstreams[%d]", i), "%s", err)
+			}
+		}
+		if h.AppID != "" || h.RedirectTo != "" {
+			errs.Add("target", "an upstream target takes no app or redirect")
+		}
+	case HostTargetRedirect:
+		to, err := NormalizeDomain(h.RedirectTo)
+		switch {
+		case err != nil:
+			errs.Add("target.redirectTo", "%s", err)
+		case to == h.Name:
+			errs.Add("target.redirectTo", "must differ from the host itself")
+		}
+		h.RedirectTo = to
+		if h.AppID != "" || len(h.Upstreams) > 0 {
+			errs.Add("target", "a redirect target takes no app or upstreams")
+		}
+	default:
+		errs.Add("target.kind", "must be app, upstream, or redirect")
+	}
+	ValidateRoute(&h.Route, "route", errs)
+}
+
 func ValidateIngress(mode IngressMode) error {
 	switch mode {
 	case IngressManaged, IngressExternal, IngressNone:

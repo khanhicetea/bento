@@ -469,7 +469,10 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	}
 	rt.Env = env
 	res := in.Spec.Resources
-	route := in.Spec.Route
+	accessLog := in.Spec.AccessLog
+	if in.Spec.Route != nil {
+		accessLog = in.Spec.Route.AccessLog
+	}
 	ingress := in.Spec.Ingress
 	if ingress == "" {
 		ingress = domain.IngressManaged
@@ -477,7 +480,6 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	var errs domain.ValidationErrors
 	domain.ValidateRuntime(&rt, &errs)
 	domain.ValidateResources(&res, rt.Kind, &errs)
-	domain.ValidateRoute(&route, "route", &errs)
 	domain.ValidateEnv(rt.Env, &errs)
 	if err := domain.ValidateIngress(ingress); err != nil {
 		errs.Add("ingress", "%s", err)
@@ -489,7 +491,7 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	now := time.Now().UTC()
 	app := domain.App{
 		ID: in.AppID, Slug: slug, Runtime: rt, Resources: res, DesiredRuntime: domain.DesiredStopped,
-		Ingress: ingress, Publication: domain.Unpublished, Route: route, HomePath: stored,
+		Ingress: ingress, Publication: domain.Unpublished, AccessLog: accessLog, HomePath: stored,
 		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
 		Redis: domain.RedisIdentity{Mode: "acl", Prefix: slug + ":", Username: "app-" + in.AppID,
 			Password: platform.RandomPassword(32)},
@@ -590,11 +592,9 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	}
 
 	used := map[string]bool{}
-	if apps, err := store.ListApps(ctx, c.Store.DB()); err == nil {
-		for _, a := range apps {
-			for _, d := range a.Domains {
-				used[d.Name] = true
-			}
+	if hosts, err := store.ListHosts(ctx, c.Store.DB()); err == nil {
+		for _, h := range hosts {
+			used[h.Name] = true
 		}
 	}
 	p.Domains = []CloneDomain{}
@@ -1236,7 +1236,7 @@ func (c *Controller) cloneResult(
 			}
 			names = append(names, d.Name)
 		}
-		add("Attach domains after checking the clone: %s.", strings.Join(names, ", "))
+		add("After checking the clone, point these Ingress hosts at it: %s.", strings.Join(names, ", "))
 	}
 	add("Redis keys are not backed up; the clone uses the prefix %s.", app.Redis.Prefix)
 	res.Checklist = append(res.Checklist, p.Notes...)

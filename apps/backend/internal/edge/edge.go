@@ -6,8 +6,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -69,62 +71,118 @@ type Route struct {
 	// UtilsUpstream is the backend's utils listener (host:port) that
 	// /_bento/webhook/* is proxied to; "" leaves the path to the upstream.
 	UtilsUpstream string
+	// RedirectURL is set for redirect hosts: the scheme://host[:port] base
+	// that every request is permanently redirected to.
+	RedirectURL string
+	// Includes are the operator drop-in route directories included in the
+	// server block: the host's own, plus app-<slug> for app targets.
+	Includes []string
+}
+
+// AppUpstream is one app's shared upstream block. It is rendered once per app
+// however many hosts target it.
+type AppUpstream struct {
+	Name   string
+	Server string
 }
 
 // Input is everything needed to render one edge generation.
 type Input struct {
 	Settings domain.EdgeSettings
 	Apps     []domain.App
-	Proxies  []domain.Proxy
+	Hosts    []domain.Host
 	// Running reports which published apps currently have a running instance.
 	Running map[string]bool
 	// UtilsUpstream is the backend's utils listener on the apps network.
 	UtilsUpstream string
 }
 
-// Render produces the full candidate file set, keyed by relative path.
+// RouteName is the edge route (site file and drop-in directory) of a host.
+func RouteName(host string) string { return "host-" + host }
+
+// Render produces the full candidate file set, keyed by relative path: one
+// site per enabled host whose target is routable, and one upstream per app
+// that at least one host routes to.
 func Render(in Input) (map[string][]byte, error) {
 	s := in.Settings
-	var suffix string
+	var suffix, httpSuffix string
 	if s.HTTPSPort != 443 {
 		suffix = ":" + strconv.Itoa(s.HTTPSPort)
 	}
-	var routes []Route
-	var anyACME bool
-	for _, a := range in.Apps {
-		if a.Ingress != domain.IngressManaged || a.Publication != domain.Published || len(a.Domains) == 0 {
-			continue
-		}
-		r := baseRoute("app", "app-"+a.Slug, a.Domains, a.Route, s, suffix)
-		r.UtilsUpstream = in.UtilsUpstream
-		r.AppUpstream = fmt.Sprintf("%s:%d", runtime.AppAlias(a.ID), a.HTTPPort())
-		r.UpstreamName = "bento_app_" + strings.ReplaceAll(a.Slug, "-", "_")
-		r.UpstreamScheme = "http"
-		r.MaxBodyMB = 64
-		if a.Runtime.PHP != nil && a.Runtime.PHP.UploadLimitMB > 0 {
-			r.MaxBodyMB = a.Runtime.PHP.UploadLimitMB
-		}
-		r.StaticCache = a.Route.StaticCache
-		r.Unavailable = !in.Running[a.ID]
-		anyACME = anyACME || r.ACME
-		routes = append(routes, r)
+	if s.HTTPPort != 80 && s.HTTPPort != 0 {
+		httpSuffix = ":" + strconv.Itoa(s.HTTPPort)
 	}
-	for _, p := range in.Proxies {
-		if !p.Enabled || len(p.Domains) == 0 || len(p.Upstreams) == 0 {
+	apps := make(map[string]domain.App, len(in.Apps))
+	for _, a := range in.Apps {
+		apps[a.ID] = a
+	}
+	// routable reports whether a host is served at all.
+	routable := func(h domain.Host) bool {
+		if !h.Enabled {
+			return false
+		}
+		switch h.Target {
+		case domain.HostTargetApp:
+			a, ok := apps[h.AppID]
+			return ok && a.Ingress == domain.IngressManaged && a.Publication == domain.Published
+		case domain.HostTargetUpstream:
+			return len(h.Upstreams) > 0
+		case domain.HostTargetRedirect:
+			return h.RedirectTo != ""
+		}
+		return false
+	}
+	served := map[string]domain.Host{}
+	for _, h := range in.Hosts {
+		if routable(h) {
+			served[h.Name] = h
+		}
+	}
+	var routes []Route
+	upstreams := map[string]AppUpstream{}
+	var anyACME bool
+	for _, h := range in.Hosts {
+		if _, ok := served[h.Name]; !ok {
 			continue
 		}
-		r := baseRoute("proxy", "proxy-"+p.Name, p.Domains, p.Route, s, suffix)
+		r := baseRoute(string(h.Target), RouteName(h.Name), h.Name, h.Route, s, suffix)
 		r.UtilsUpstream = in.UtilsUpstream
-		r.UpstreamName = "bento_proxy_" + strings.ReplaceAll(p.Name, "-", "_")
-		scheme, uri := "http", ""
-		for _, u := range p.Upstreams {
-			sch, host, path := splitUpstream(u)
-			scheme, uri = sch, path
-			r.ProxyUpstreams = append(r.ProxyUpstreams, host)
-		}
-		r.UpstreamScheme, r.UpstreamURI = scheme, uri
 		r.MaxBodyMB = 64
-		r.StaticCache = p.Route.StaticCache
+		r.StaticCache = h.Route.StaticCache
+		switch h.Target {
+		case domain.HostTargetApp:
+			a := apps[h.AppID]
+			r.UpstreamName = "bento_app_" + strings.ReplaceAll(a.Slug, "-", "_")
+			r.AppUpstream = fmt.Sprintf("%s:%d", runtime.AppAlias(a.ID), a.HTTPPort())
+			r.UpstreamScheme = "http"
+			if a.Runtime.PHP != nil && a.Runtime.PHP.UploadLimitMB > 0 {
+				r.MaxBodyMB = a.Runtime.PHP.UploadLimitMB
+			}
+			r.Unavailable = !in.Running[a.ID]
+			r.Includes = append(r.Includes, "app-"+a.Slug)
+			upstreams[a.Slug] = AppUpstream{Name: r.UpstreamName, Server: r.AppUpstream}
+		case domain.HostTargetUpstream:
+			r.UpstreamName = "bento_host_" + upstreamIdent(h.Name)
+			scheme, uri := "http", ""
+			for _, u := range h.Upstreams {
+				sch, host, path := splitUpstream(u)
+				scheme, uri = sch, path
+				r.ProxyUpstreams = append(r.ProxyUpstreams, host)
+			}
+			r.UpstreamScheme, r.UpstreamURI = scheme, uri
+		case domain.HostTargetRedirect:
+			// A redirect to a host the edge serves uses that host's scheme
+			// and port; any other host keeps the request's scheme.
+			r.UtilsUpstream, r.StaticCache = "", false
+			r.RedirectURL = "$scheme://" + h.RedirectTo
+			if to, ok := served[h.RedirectTo]; ok {
+				if to.Route.TLS == domain.TLSNone {
+					r.RedirectURL = "http://" + h.RedirectTo + httpSuffix
+				} else {
+					r.RedirectURL = "https://" + h.RedirectTo + suffix
+				}
+			}
+		}
 		anyACME = anyACME || r.ACME
 		routes = append(routes, r)
 	}
@@ -138,6 +196,13 @@ func Render(in Input) (map[string][]byte, error) {
 		return nil, err
 	}
 	files["nginx.conf"] = main
+	for slug, u := range upstreams {
+		b, err := assets.Render("edge-upstream.conf.tmpl", u)
+		if err != nil {
+			return nil, err
+		}
+		files["upstreams/app-"+slug+".conf"] = b
+	}
 	for _, r := range routes {
 		b, err := assets.Render("edge-site.conf.tmpl", r)
 		if err != nil {
@@ -148,20 +213,23 @@ func Render(in Input) (map[string][]byte, error) {
 	return files, nil
 }
 
+// upstreamIdent makes a host name a unique nginx upstream identifier: dots
+// and dashes both become "_", so a short hash keeps "a-b.c" and "a.b-c" apart.
+func upstreamIdent(host string) string {
+	sum := sha256.Sum256([]byte(host))
+	return strings.NewReplacer(".", "_", "-", "_").Replace(host) + "_" + hex.EncodeToString(sum[:4])
+}
+
 func baseRoute(
-	kind, name string,
-	domains []domain.DomainLink,
+	kind, name, host string,
 	route domain.Route,
 	s domain.EdgeSettings,
 	suffix string,
 ) Route {
-	var names []string
-	for _, d := range domains {
-		names = append(names, d.Name)
-	}
 	r := Route{
-		Kind: kind, Name: name, ServerNames: strings.Join(names, " "), AccessLog: route.AccessLog,
+		Kind: kind, Name: name, ServerNames: host, AccessLog: route.AccessLog,
 		HTTP3: s.HTTP3, HTTPSPortSuffix: suffix, HTTPSAdvertisedPort: s.HTTPSPort,
+		Includes: []string{name},
 	}
 	switch route.TLS {
 	case domain.TLSSelfSigned:
@@ -204,8 +272,10 @@ func (g Generations) Live() string { return filepath.Join(g.Dir, "live") }
 func (g Generations) Stage(files map[string][]byte) (string, error) {
 	name := "candidate-" + platform.RandomHex(6)
 	dir := filepath.Join(g.Dir, name)
-	if err := os.MkdirAll(filepath.Join(dir, "sites"), 0o755); err != nil {
-		return "", err
+	for _, sub := range []string{"sites", "upstreams"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			return "", err
+		}
 	}
 	for rel, data := range files {
 		if err := platform.AtomicWrite(filepath.Join(dir, rel), data, 0o644, platform.RootOwner); err != nil {

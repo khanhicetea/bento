@@ -183,7 +183,7 @@ export function OverviewPage() {
                       {app.toolchain} {app.version}
                     </small>
                   </span>
-                  <span className="row__meta max-sm:hidden">{app.primaryDomain}</span>
+                  <span className="row__meta max-sm:hidden">{app.hosts[0] ?? ""}</span>
                   <StateBadge state={app.observed.state} />
                 </Link>
               ))}

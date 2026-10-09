@@ -52,7 +52,7 @@ The app keeps running. In order:
    bindings with `.backup`. Databases go first, so the files captured afterwards include every upload the dumped
    rows can reference.
 2. Copies the scheduler's jobs database (`minicron.db`) and the listed SQLite files in the home with `.backup`.
-3. Writes `app.json` (runtime, resources, domains, bindings, git source). Env vars are included, but secret-looking
+3. Writes `app.json` (runtime, resources, the app's Ingress host names, bindings, git source). Env vars are included, but secret-looking
    values are redacted: names containing `PASSWORD`, `PASSWD`, `PASSPHRASE`, `SECRET`, `TOKEN` or `CREDENTIAL`;
    names with a word `PASS`, `PWD`, `PW`, `AUTH`, `CREDS`, `PRIVATE`, `SALT`, `COOKIE`, `CERT`, `DSN` or `APIKEY`;
    names ending in `KEY` or `KEYS` (`APP_KEY`, not `CACHE_KEY_PREFIX`); and any value that is a URL with a password

@@ -1,0 +1,10 @@
+# The alias is re-resolved through Docker DNS (resolve), so a replaced app
+# container is picked up while idle connections are still reused.
+upstream {{.Name}} {
+  zone {{.Name}} 64k;
+  server {{.Server}} resolve;
+  keepalive 16;
+  # Below the app-local nginx's 30s keepalive_timeout so the edge never reuses
+  # a connection the app is closing.
+  keepalive_timeout 25s;
+}

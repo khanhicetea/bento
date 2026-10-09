@@ -258,17 +258,21 @@ func TestCancelledQueuedOperationIsNotClaimed(t *testing.T) {
 	}
 }
 
-func TestDomainOwnershipUnique(t *testing.T) {
+func TestHostNamesUnique(t *testing.T) {
 	s := newStore(t)
 	ctx := t.Context()
-	links := []domain.DomainLink{{Name: "a.example.com", Primary: true}}
-	if err := ReplaceDomains(ctx, s.DB(), "app", "a1", links); err != nil {
+	h := domain.Host{Name: "a.example.com", Target: domain.HostTargetUpstream, Upstreams: []string{"http://10.0.0.1"},
+		Enabled: true}
+	if err := InsertHost(ctx, s.DB(), h); err != nil {
 		t.Fatal(err)
 	}
-	if err := ReplaceDomains(ctx, s.DB(), "proxy", "p1", links); !errors.Is(err, ErrConflict) {
+	h.Target, h.Upstreams, h.RedirectTo = domain.HostTargetRedirect, nil, "b.example.com"
+	if err := InsertHost(ctx, s.DB(), h); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected conflict, got %v", err)
 	}
-	if err := ReplaceDomains(ctx, s.DB(), "app", "a2", []domain.DomainLink{{Name: "b.example.com"}}); err == nil {
-		t.Fatal("expected exactly-one-primary refusal")
+	// An app target must reference an existing app.
+	orphan := domain.Host{Name: "c.example.com", Target: domain.HostTargetApp, AppID: "missing", Enabled: true}
+	if err := InsertHost(ctx, s.DB(), orphan); err == nil {
+		t.Fatal("expected a foreign key refusal")
 	}
 }

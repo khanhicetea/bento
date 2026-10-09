@@ -207,16 +207,16 @@ func ListLedger(ctx context.Context, q Q) ([]LedgerEntry, error) {
 // ---- apps ----
 
 const appColumns = `id, slug, uid, gid, runtime_json, resources_json, desired_runtime, ingress, publication,
-	route_json, redis_json, config_generation, credentials_generation, provisioned, created_at, updated_at, home_path`
+	access_log, redis_json, config_generation, credentials_generation, provisioned, created_at, updated_at, home_path`
 
 func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	var a domain.App
-	var runtimeJSON, resourcesJSON, routeJSON, redisJSON, created, updated string
-	var provisioned int
+	var runtimeJSON, resourcesJSON, redisJSON, created, updated string
+	var provisioned, accessLog int
 	var homePath sql.NullString
 	err := row.Scan(
 		&a.ID, &a.Slug, &a.UID, &a.GID, &runtimeJSON, &resourcesJSON, &a.DesiredRuntime, &a.Ingress, &a.Publication,
-		&routeJSON, &redisJSON, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
+		&accessLog, &redisJSON, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
 		&homePath,
 	)
 	if err != nil {
@@ -229,13 +229,11 @@ func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	if err := json.Unmarshal([]byte(resourcesJSON), &a.Resources); err != nil {
 		return a, err
 	}
-	if err := json.Unmarshal([]byte(routeJSON), &a.Route); err != nil {
-		return a, err
-	}
 	if err := json.Unmarshal([]byte(redisJSON), &a.Redis); err != nil {
 		return a, err
 	}
 	a.Provisioned = provisioned == 1
+	a.AccessLog = accessLog == 1
 	a.CreatedAt = platform.ParseTime(created)
 	a.UpdatedAt = platform.ParseTime(updated)
 	return a, nil
@@ -265,7 +263,7 @@ func InsertApp(ctx context.Context, q Q, a domain.App) error {
 	}
 	_, err := q.ExecContext(ctx, `INSERT INTO apps(`+appColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.Slug, a.UID, a.GID, mustJSON(a.Runtime), mustJSON(a.Resources), a.DesiredRuntime, a.Ingress,
-		a.Publication, mustJSON(a.Route), mustJSON(a.Redis), a.ConfigGeneration, a.CredentialsGeneration, provisioned,
+		a.Publication, boolInt(a.AccessLog), mustJSON(a.Redis), a.ConfigGeneration, a.CredentialsGeneration, provisioned,
 		platform.FormatTime(a.CreatedAt), platform.FormatTime(a.UpdatedAt), homePath)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: app slug or uid already exists", ErrConflict)
@@ -282,13 +280,13 @@ func UpdateApp(ctx context.Context, q Q, a domain.App) error {
 	res, err := q.ExecContext(
 		ctx,
 		`UPDATE apps SET runtime_json=?, resources_json=?, desired_runtime=?, ingress=?, publication=?,
-		route_json=?, redis_json=?, config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
+		access_log=?, redis_json=?, config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
 		mustJSON(a.Runtime),
 		mustJSON(a.Resources),
 		a.DesiredRuntime,
 		a.Ingress,
 		a.Publication,
-		mustJSON(a.Route),
+		boolInt(a.AccessLog),
 		mustJSON(a.Redis),
 		a.ConfigGeneration,
 		a.CredentialsGeneration,
@@ -306,7 +304,8 @@ func UpdateApp(ctx context.Context, q Q, a domain.App) error {
 }
 
 func DeleteApp(ctx context.Context, q Q, id string) error {
-	if _, err := q.ExecContext(ctx, "DELETE FROM domains WHERE owner_kind='app' AND owner_id=?", id); err != nil {
+	// Hosts that target the app go with it.
+	if _, err := q.ExecContext(ctx, "DELETE FROM hosts WHERE app_id=?", id); err != nil {
 		return err
 	}
 	// The deploy key and webhook secret die with the app.
@@ -327,7 +326,7 @@ func DeleteApp(ctx context.Context, q Q, id string) error {
 	return err
 }
 
-// GetApp loads an app by id or slug, including bindings and domains.
+// GetApp loads an app by id or slug, including bindings and hosts.
 func GetApp(ctx context.Context, q Q, idOrSlug string) (domain.App, error) {
 	a, err := scanApp(q.QueryRowContext(
 		ctx,
@@ -379,13 +378,13 @@ func ListApps(ctx context.Context, q Q) ([]domain.App, error) {
 	for _, b := range bindings {
 		byApp[b.AppID] = append(byApp[b.AppID], b)
 	}
-	domains, err := domainsByOwner(ctx, q, "app")
+	hosts, err := hostsByApp(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 	for i := range apps {
 		apps[i].Bindings = byApp[apps[i].ID]
-		apps[i].Domains = domains[apps[i].ID]
+		apps[i].Hosts = hosts[apps[i].ID]
 	}
 	return apps, nil
 }
@@ -395,7 +394,7 @@ func loadAppRelations(ctx context.Context, q Q, a *domain.App) error {
 	if a.Bindings, err = ListBindings(ctx, q, a.ID); err != nil {
 		return err
 	}
-	a.Domains, err = ListDomains(ctx, q, "app", a.ID)
+	a.Hosts, err = queryHosts(ctx, q, "WHERE app_id = ? ORDER BY enabled DESC, position, created_at, name", a.ID)
 	return err
 }
 
@@ -528,228 +527,152 @@ func AddBindingDatabase(ctx context.Context, q Q, bindingID, name string) error 
 	return err
 }
 
-// ---- domains ----
+// ---- hosts ----
 
-func ListDomains(ctx context.Context, q Q, ownerKind, ownerID string) ([]domain.DomainLink, error) {
-	rows, err := q.QueryContext(
-		ctx,
-		"SELECT name, is_primary FROM domains WHERE owner_kind = ? AND owner_id = ? ORDER BY is_primary DESC, name",
-		ownerKind,
-		ownerID,
-	)
+const hostColumns = `name, target_kind, app_id, upstreams_json, redirect_to, route_json, enabled, position,
+	created_at, updated_at`
+
+func queryHosts(ctx context.Context, q Q, tail string, args ...any) ([]domain.Host, error) {
+	rows, err := q.QueryContext(ctx, "SELECT "+hostColumns+" FROM hosts "+tail, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.DomainLink
+	var out []domain.Host
 	for rows.Next() {
-		var d domain.DomainLink
-		var p int
-		if err := rows.Scan(&d.Name, &p); err != nil {
+		var h domain.Host
+		var appID sql.NullString
+		var ups, route, created, updated string
+		var enabled, position int
+		if err := rows.Scan(&h.Name, &h.Target, &appID, &ups, &h.RedirectTo, &route, &enabled, &position, &created,
+			&updated); err != nil {
 			return nil, err
 		}
-		d.Primary = p == 1
-		out = append(out, d)
+		h.AppID = appID.String
+		if err := json.Unmarshal([]byte(ups), &h.Upstreams); err != nil {
+			return nil, fmt.Errorf("host %s upstreams: %w", h.Name, err)
+		}
+		if err := json.Unmarshal([]byte(route), &h.Route); err != nil {
+			return nil, fmt.Errorf("host %s route: %w", h.Name, err)
+		}
+		h.Enabled = enabled == 1
+		h.CreatedAt = platform.ParseTime(created)
+		h.UpdatedAt = platform.ParseTime(updated)
+		out = append(out, h)
 	}
 	return out, rows.Err()
 }
 
-// domainsByOwner returns every domain of ownerKind grouped by owner id, each
-// group in ListDomains order.
-func domainsByOwner(ctx context.Context, q Q, ownerKind string) (map[string][]domain.DomainLink, error) {
-	rows, err := q.QueryContext(
+// ListHosts returns every Ingress host ordered by name.
+func ListHosts(ctx context.Context, q Q) ([]domain.Host, error) {
+	return queryHosts(ctx, q, "ORDER BY name")
+}
+
+// hostsByApp groups app-target hosts by app id, each group display host first.
+func hostsByApp(ctx context.Context, q Q) (map[string][]domain.Host, error) {
+	hs, err := queryHosts(
 		ctx,
-		"SELECT owner_id, name, is_primary FROM domains WHERE owner_kind = ? ORDER BY owner_id, is_primary DESC, name",
-		ownerKind,
+		q,
+		"WHERE app_id IS NOT NULL ORDER BY app_id, enabled DESC, position, created_at, name",
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make(map[string][]domain.DomainLink)
-	for rows.Next() {
-		var owner string
-		var d domain.DomainLink
-		var p int
-		if err := rows.Scan(&owner, &d.Name, &p); err != nil {
-			return nil, err
-		}
-		d.Primary = p == 1
-		out[owner] = append(out[owner], d)
-	}
-	return out, rows.Err()
-}
-
-type DomainOwner struct {
-	Name      string
-	OwnerKind string
-	OwnerID   string
-	Primary   bool
-}
-
-func DomainOwnerOf(ctx context.Context, q Q, name string) (DomainOwner, error) {
-	var d DomainOwner
-	var p int
-	err := q.QueryRowContext(
-		ctx,
-		"SELECT name, owner_kind, owner_id, is_primary FROM domains WHERE name = ?",
-		name,
-	).Scan(&d.Name, &d.OwnerKind, &d.OwnerID, &p)
-	if errors.Is(err, sql.ErrNoRows) {
-		return d, ErrNotFound
-	}
-	d.Primary = p == 1
-	return d, err
-}
-
-// ReplaceDomains sets an owner's domain links. Every name must be unowned or
-// already owned by this owner; exactly one link is primary.
-func ReplaceDomains(ctx context.Context, q Q, ownerKind, ownerID string, links []domain.DomainLink) error {
-	var primaries int
-	for _, l := range links {
-		if l.Primary {
-			primaries++
-		}
-		owner, err := DomainOwnerOf(ctx, q, l.Name)
-		if err == nil && (owner.OwnerKind != ownerKind || owner.OwnerID != ownerID) {
-			return fmt.Errorf("%w: domain %s is already claimed by another %s", ErrConflict, l.Name, owner.OwnerKind)
-		}
-		if err != nil && !errors.Is(err, ErrNotFound) {
-			return err
-		}
-	}
-	if len(links) > 0 && primaries != 1 {
-		return errors.New("exactly one primary domain is required")
-	}
-	if _, err := q.ExecContext(
-		ctx,
-		"DELETE FROM domains WHERE owner_kind = ? AND owner_id = ?",
-		ownerKind,
-		ownerID,
-	); err != nil {
-		return err
-	}
-	for _, l := range links {
-		var p int
-		if l.Primary {
-			p = 1
-		}
-		if _, err := q.ExecContext(
-			ctx,
-			"INSERT INTO domains(name, owner_kind, owner_id, is_primary, created_at) VALUES(?,?,?,?,?)",
-			l.Name,
-			ownerKind,
-			ownerID,
-			p,
-			now(),
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// ---- proxies ----
-
-func scanProxy(row interface{ Scan(...any) error }) (domain.Proxy, error) {
-	var p domain.Proxy
-	var ups, route, created, updated string
-	var enabled int
-	if err := row.Scan(&p.ID, &p.Name, &ups, &route, &enabled, &created, &updated); err != nil {
-		return p, err
-	}
-	if err := json.Unmarshal([]byte(ups), &p.Upstreams); err != nil {
-		return p, err
-	}
-	if err := json.Unmarshal([]byte(route), &p.Route); err != nil {
-		return p, err
-	}
-	p.Enabled = enabled == 1
-	p.CreatedAt = platform.ParseTime(created)
-	p.UpdatedAt = platform.ParseTime(updated)
-	return p, nil
-}
-
-func ListProxies(ctx context.Context, q Q) ([]domain.Proxy, error) {
-	rows, err := q.QueryContext(
-		ctx,
-		"SELECT id, name, upstreams_json, route_json, enabled, created_at, updated_at FROM proxies ORDER BY name",
-	)
-	if err != nil {
-		return nil, err
-	}
-	var out []domain.Proxy
-	for rows.Next() {
-		p, err := scanProxy(rows)
-		if err != nil {
-			rows.Close()
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return out, nil
-	}
-	domains, err := domainsByOwner(ctx, q, "proxy")
-	if err != nil {
-		return nil, err
-	}
-	for i := range out {
-		out[i].Domains = domains[out[i].ID]
+	out := make(map[string][]domain.Host)
+	for _, h := range hs {
+		out[h.AppID] = append(out[h.AppID], h)
 	}
 	return out, nil
 }
 
-func GetProxy(ctx context.Context, q Q, idOrName string) (domain.Proxy, error) {
-	p, err := scanProxy(q.QueryRowContext(
-		ctx,
-		"SELECT id, name, upstreams_json, route_json, enabled, created_at, updated_at FROM proxies WHERE id = ? OR name = ?",
-		idOrName,
-		idOrName,
-	))
-	if errors.Is(err, sql.ErrNoRows) {
-		return p, ErrNotFound
-	}
+func GetHost(ctx context.Context, q Q, name string) (domain.Host, error) {
+	hs, err := queryHosts(ctx, q, "WHERE name = ?", name)
 	if err != nil {
-		return p, err
+		return domain.Host{}, err
 	}
-	p.Domains, err = ListDomains(ctx, q, "proxy", p.ID)
-	return p, err
+	if len(hs) == 0 {
+		return domain.Host{}, ErrNotFound
+	}
+	return hs[0], nil
 }
 
-func UpsertProxy(ctx context.Context, q Q, p domain.Proxy) error {
-	var enabled int
-	if p.Enabled {
-		enabled = 1
+// InsertHost adds a new host. A name that already exists is a conflict: host
+// names are never silently moved between targets. App-target hosts are placed
+// after the app's existing hosts.
+func InsertHost(ctx context.Context, q Q, h domain.Host) error {
+	var position int
+	if h.AppID != "" {
+		if err := q.QueryRowContext(
+			ctx,
+			"SELECT COALESCE(MAX(position) + 1, 0) FROM hosts WHERE app_id = ?",
+			h.AppID,
+		).Scan(&position); err != nil {
+			return err
+		}
 	}
-	_, err := q.ExecContext(
-		ctx,
-		`INSERT INTO proxies(id, name, upstreams_json, route_json, enabled, created_at, updated_at) VALUES(?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET upstreams_json=excluded.upstreams_json, route_json=excluded.route_json, enabled=excluded.enabled, updated_at=excluded.updated_at`,
-		p.ID,
-		p.Name,
-		mustJSON(p.Upstreams),
-		mustJSON(p.Route),
-		enabled,
-		platform.FormatTime(p.CreatedAt),
-		now(),
-	)
+	_, err := q.ExecContext(ctx, "INSERT INTO hosts("+hostColumns+") VALUES(?,?,?,?,?,?,?,?,?,?)",
+		h.Name, h.Target, nullString(h.AppID), mustJSON(nonNilStrings(h.Upstreams)), h.RedirectTo, mustJSON(h.Route),
+		boolInt(h.Enabled), position, platform.FormatTime(h.CreatedAt), now())
 	if isUniqueViolation(err) {
-		return fmt.Errorf("%w: proxy name already exists", ErrConflict)
+		return fmt.Errorf("%w: host %s already exists", ErrConflict, h.Name)
 	}
 	return err
 }
 
-func DeleteProxy(ctx context.Context, q Q, id string) error {
-	if _, err := q.ExecContext(ctx, "DELETE FROM domains WHERE owner_kind='proxy' AND owner_id=?", id); err != nil {
+// UpdateHost replaces an existing host's target and settings. Moving a host to
+// another app places it after that app's hosts.
+func UpdateHost(ctx context.Context, q Q, h domain.Host) error {
+	cur, err := GetHost(ctx, q, h.Name)
+	if err != nil {
 		return err
 	}
-	_, err := q.ExecContext(ctx, "DELETE FROM proxies WHERE id=?", id)
+	if h.AppID != "" && h.AppID != cur.AppID {
+		if err := DeleteHost(ctx, q, h.Name); err != nil {
+			return err
+		}
+		h.CreatedAt = cur.CreatedAt
+		return InsertHost(ctx, q, h)
+	}
+	_, err = q.ExecContext(
+		ctx,
+		`UPDATE hosts SET target_kind=?, app_id=?, upstreams_json=?, redirect_to=?, route_json=?, enabled=?, updated_at=?
+		WHERE name=?`,
+		h.Target, nullString(h.AppID), mustJSON(nonNilStrings(h.Upstreams)), h.RedirectTo, mustJSON(h.Route),
+		boolInt(h.Enabled), now(), h.Name,
+	)
 	return err
+}
+
+func DeleteHost(ctx context.Context, q Q, name string) error {
+	res, err := q.ExecContext(ctx, "DELETE FROM hosts WHERE name=?", name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func nullString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // ---- data services ----

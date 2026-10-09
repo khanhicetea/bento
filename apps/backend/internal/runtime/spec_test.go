@@ -115,7 +115,7 @@ func TestFingerprintStableAndScoped(t *testing.T) {
 	// Frontend-only changes use a scoped reload, not recreation.
 	b := testApp()
 	b.Runtime.PHP.Routing = "legacy"
-	b.Route.AccessLog = true
+	b.AccessLog = true
 	if Fingerprint(inputs(t, b)) != g1 {
 		t.Fatal("frontend change must not change the boot fingerprint")
 	}

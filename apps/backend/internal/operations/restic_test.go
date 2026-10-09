@@ -416,7 +416,7 @@ func TestResticBackupSecretsOffByDefault(t *testing.T) {
 	if cap.secrets != nil || cap.manifest.Secrets {
 		t.Fatalf("secrets must be off by default: %q %+v", cap.secrets, cap.manifest)
 	}
-	if cap.manifest.FormatVersion != 2 || cap.manifest.HomePath != app.ContainerHome() {
+	if cap.manifest.FormatVersion != ResticFormatVersion || cap.manifest.HomePath != app.ContainerHome() {
 		t.Fatalf("manifest %+v", cap.manifest)
 	}
 	for _, e := range cap.spec.Runtime.Env {

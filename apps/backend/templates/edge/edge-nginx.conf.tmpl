@@ -130,6 +130,7 @@ http {
     return 404;
   }
 
+  include upstreams/*.conf;
   include sites/*.conf;
   include /etc/bento-edge-custom/sites.d/*.conf;
 }
