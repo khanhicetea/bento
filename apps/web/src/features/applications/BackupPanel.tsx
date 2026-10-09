@@ -1,11 +1,31 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, KeyRound, RefreshCw, ShieldCheck, Unlock } from "lucide-react";
+import {
+  Archive,
+  History,
+  KeyRound,
+  Link2,
+  RefreshCw,
+  RotateCcw,
+  Settings2,
+  ShieldCheck,
+  Trash2,
+  TriangleAlert,
+  Unlock,
+} from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
-import { Cell, CopyableCode, DomainError, DomainLoading, Field, KeyValues } from "../../components/DomainState.tsx";
+import {
+  Cell,
+  CopyableCode,
+  DomainError,
+  DomainLoading,
+  Field,
+  KeyValues,
+  StateBadge,
+} from "../../components/DomainState.tsx";
 import { formatBytes, formatRelative } from "../../lib/format.ts";
 import { useTrackOperation } from "../operations/OperationTracker.tsx";
 import { CloneFromBackupDialog } from "./CloneFromBackupDialog.tsx";
@@ -16,32 +36,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 
 /**
- * The app's Backup tab: two independent methods. Database backup is the stack's dump schedules shown per app; app
- * backup is a restic repository per app on an rclone remote.
+ * The app's Backup tab: two independent methods, one box each. Database backup is the stack's dump schedules shown
+ * per app; app backup is a restic repository per app on an rclone remote.
  */
 export function BackupPanel({ app }: { app: T.App }) {
   return (
-    <div className="grid gap-6">
-      <div className="note">
-        <ul className="grid gap-1">
-          <li>
-            Files on S3 or another object store → <strong>Database backup</strong> is enough.
-          </li>
-          <li>
-            Uploads or generated files in the app home → <strong>App backup</strong>.
-          </li>
-          <li>Both on → database dumps for fast in-place rollback, app backups for full recovery or migration.</li>
-        </ul>
-      </div>
-      <div className="box">
-        <DatabaseBackupCard app={app} />
-      </div>
-      <AppBackupCard app={app} />
+    <div className="grid">
+      <DatabaseBackupCard app={app} />
+      <AppBackupBox app={app} />
     </div>
   );
 }
 
-function AppBackupCard({ app }: { app: T.App }) {
+function AppBackupBox({ app }: { app: T.App }) {
   const query = useQuery({
     queryKey: keys.apps.restic(app.id),
     queryFn: ({ signal }) => api.apps.restic.get(app.id, signal),
@@ -50,13 +57,14 @@ function AppBackupCard({ app }: { app: T.App }) {
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   const restic = query.data;
   return (
-    <div className="box box--2" aria-label="App backup">
+    <section className="box box--2" aria-label="App backup">
+      {restic.initialized && <RepositoryCell app={app} restic={restic} />}
+      {restic.initialized && <SnapshotsCell app={app} restic={restic} />}
+      {restic.configured && !restic.initialized && <SetupCell app={app} restic={restic} />}
       {/* Re-mounted when the saved settings change (another tab, a clone adopting the repository). */}
       <SettingsCell key={JSON.stringify(restic.settings)} app={app} restic={restic} />
-      {restic.configured && <RepositoryCell app={app} restic={restic} />}
-      {restic.initialized && <SnapshotsCell app={app} restic={restic} />}
       {restic.initialized && <KeysCell app={app} restic={restic} />}
-    </div>
+    </section>
   );
 }
 
@@ -119,118 +127,121 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const remotes = rclone.data?.remotes ?? [];
   const textarea = "min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm";
   return (
-    <Cell title="App backup" className="cell--wide">
-      <form
-        className="grid gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const kept = parsedRetention();
-          setRetentionError(kept ? "" : "Enter a whole number for each period (0 keeps none of that period).");
-          if (!kept) return;
-          if (repoChanges) setConfirmRepo(true);
-          else save.mutate({ kept });
-        }}
-      >
-        <Field
-          label="Repository"
-          hint={
-            <>
-              An rclone <code>remote:path</code>, one repository per app.{" "}
-              {remotes.length > 0 ? (
-                <>Remotes: {remotes.map((remote) => remote.name).join(", ")}.</>
+    <Cell
+      title="Backup settings"
+      icon={<Settings2 />}
+      className="cell--wide"
+      action={
+        <Button type="submit" size="xs" disabled={!repository.trim() || save.isPending}>
+          {save.isPending ? "Saving" : "Save"}
+        </Button>
+      }
+      onSubmit={(event) => {
+        event.preventDefault();
+        const kept = parsedRetention();
+        setRetentionError(kept ? "" : "✕ WHOLE NUMBERS ONLY");
+        if (!kept) return;
+        if (repoChanges) setConfirmRepo(true);
+        else save.mutate({ kept });
+      }}
+    >
+      <div className="grid gap-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field
+            label="Repository"
+            hint={
+              remotes.length > 0 ? (
+                <>rclone remote:path · {remotes.map((remote) => remote.name).join(", ")}</>
               ) : (
                 <>
-                  Add a remote in <Link href="/backups">Backups → rclone</Link> first.
+                  No remote · <Link href="/backups">add one in Backups</Link>
                 </>
-              )}
-              {restic.initialized && " Changing it disconnects the current repository."}
-            </>
-          }
-        >
-          <Input
-            value={repository}
-            placeholder={`${remotes[0]?.name ?? "b2"}:bento/apps/${app.slug}`}
-            spellCheck={false}
-            onChange={(event) => setRepository(event.target.value)}
-          />
-        </Field>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Paths" hint="One per line, relative to the app home. . is the whole home (recommended).">
-            <textarea className={textarea} value={paths} onChange={(event) => setPaths(event.target.value)} />
-          </Field>
-          <Field
-            label="Excludes"
-            hint="restic patterns. With a / they start at the home (app/storage/cache); without, they match any name (node_modules). Prefix ! to re-include. A .nobackup file excludes its directory."
+              )
+            }
           >
-            <textarea className={textarea} value={excludes} onChange={(event) => setExcludes(event.target.value)} />
-          </Field>
-          <Field
-            label="SQLite files in the home"
-            hint="Copied consistently with sqlite .backup instead of while live. The scheduler's database is always included."
-          >
-            <textarea
-              className={textarea}
-              value={sqlitePaths}
-              placeholder="app/database/database.sqlite"
-              onChange={(event) => setSqlitePaths(event.target.value)}
+            <Input
+              value={repository}
+              placeholder={`${remotes[0]?.name ?? "b2"}:bento/apps/${app.slug}`}
+              spellCheck={false}
+              onChange={(event) => setRepository(event.target.value)}
             />
           </Field>
-          <div className="grid content-start gap-3">
+          <Field label="Schedule" hint="Cron · server time · app stays up">
+            <div className="flex items-center gap-3">
+              <label className="check shrink-0">
+                <Checkbox
+                  checked={schedule.enabled}
+                  onCheckedChange={(checked) => setSchedule({ ...schedule, enabled: checked === true })}
+                />
+                {schedule.enabled ? "ON" : "OFF"}
+              </label>
+              <Input
+                value={schedule.cron}
+                spellCheck={false}
+                aria-label="Cron"
+                placeholder="30 3 * * *"
+                onChange={(event) => setSchedule({ ...schedule, cron: event.target.value })}
+              />
+            </div>
+          </Field>
+        </div>
+        <Field label="Keep" hint={retentionError || "Snapshots per period · 0 keeps none"}>
+          <div className="grid grid-cols-4 gap-2">
+            {retentionUnits.map((unit) => (
+              <label key={unit} className="grid gap-1">
+                <Input
+                  type="number"
+                  min={0}
+                  aria-label={`Keep ${unit}`}
+                  value={retention[unit]}
+                  onChange={(event) => setRetention({ ...retention, [unit]: event.target.value })}
+                />
+                <small className="text-xs text-muted-foreground uppercase">{unit}</small>
+              </label>
+            ))}
+          </div>
+        </Field>
+        <details className="grid gap-3">
+          <summary className="cursor-pointer text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+            Advanced
+          </summary>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <Field label="Paths" hint="One per line · . = whole home">
+              <textarea className={textarea} value={paths} onChange={(event) => setPaths(event.target.value)} />
+            </Field>
+            <Field label="Excludes" hint="restic patterns · ! re-includes · .nobackup skips dir">
+              <textarea className={textarea} value={excludes} onChange={(event) => setExcludes(event.target.value)} />
+            </Field>
+            <Field label="SQLite files" hint="Copied with .backup · scheduler DB always">
+              <textarea
+                className={textarea}
+                value={sqlitePaths}
+                placeholder="app/database/database.sqlite"
+                onChange={(event) => setSqlitePaths(event.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
             <label className="check">
               <Checkbox checked={defaultExcludes} onCheckedChange={(checked) => setDefaultExcludes(checked === true)} />
-              Skip caches ({restic.defaultExcludes.join(", ")})
+              <span>
+                Skip caches
+                <small className="block text-muted-foreground">{restic.defaultExcludes.join(", ")}</small>
+              </span>
             </label>
             <label className="check">
               <Checkbox checked={includeSecrets} onCheckedChange={(checked) => setIncludeSecrets(checked === true)} />
               <span>
                 Include secrets
                 <small className="block text-muted-foreground">
-                  Store env values and database passwords in the encrypted backup, so a restored app keeps them. Anyone
-                  with a repository key can read them. Applies to later snapshots.
+                  Env values and DB passwords. Anyone with a repository key can read them. Applies to later snapshots.
                 </small>
               </span>
             </label>
-            <Field label="Keep snapshots" hint="Hourly, daily, weekly, monthly.">
-              <div className="grid grid-cols-4 gap-2">
-                {retentionUnits.map((unit) => (
-                  <Input
-                    key={unit}
-                    type="number"
-                    min={0}
-                    aria-label={`Keep ${unit}`}
-                    value={retention[unit]}
-                    onChange={(event) => setRetention({ ...retention, [unit]: event.target.value })}
-                  />
-                ))}
-              </div>
-            </Field>
-            <Field label="Schedule" hint="Cron in the server's time zone. Backups run while the app keeps running.">
-              <div className="flex items-center gap-3">
-                <label className="check">
-                  <Checkbox
-                    checked={schedule.enabled}
-                    onCheckedChange={(checked) => setSchedule({ ...schedule, enabled: checked === true })}
-                  />
-                  Enabled
-                </label>
-                <Input
-                  value={schedule.cron}
-                  spellCheck={false}
-                  placeholder="30 3 * * *"
-                  onChange={(event) => setSchedule({ ...schedule, cron: event.target.value })}
-                />
-              </div>
-            </Field>
           </div>
-        </div>
-        <div>
-          <Button type="submit" disabled={!repository.trim() || save.isPending}>
-            {restic.configured ? "Save" : "Save settings"}
-          </Button>
-        </div>
-        {retentionError && <p className="note note--bad">{retentionError}</p>}
+        </details>
         {save.error && !confirmRepo && <p className="note note--bad">{messageOf(save.error)}</p>}
-      </form>
+      </div>
       <ConfirmDialog
         open={confirmRepo}
         onOpenChange={setConfirmRepo}
@@ -250,9 +261,22 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   );
 }
 
-function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
+/** Shown once, by the request that created the key. The loss warning is safety text: keep it complete. */
+function NewKey({ value, children }: { value: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-2">
+      <CopyableCode value={value} />
+      <p className="notice notice--warning">
+        <TriangleAlert />
+        <strong>Copy key now</strong>
+        <span>{children}</span>
+      </p>
+    </div>
+  );
+}
+
+function SetupCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const track = useTrackOperation();
-  // A key is returned once, by the request that created it.
   const [createdKey, setCreatedKey] = useState("");
   const [connectKey, setConnectKey] = useState("");
   const init = useMutation({
@@ -263,120 +287,123 @@ function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
     },
   });
   const connect = useOperationMutation(() => api.apps.restic.connect(app.id, connectKey.trim()));
-  const backup = useOperationMutation(() => api.apps.restic.action(app.id, "backup"));
-  const check = useOperationMutation(() => api.apps.restic.action(app.id, "check"));
-  const refresh = useOperationMutation(() => api.apps.restic.action(app.id, "refresh"));
-  const unlock = useOperationMutation(() => api.apps.restic.action(app.id, "unlock"));
-  const last = restic.lastBackup;
-  const keyNotice = createdKey && (
-    <div className="my-3 grid gap-2">
-      <CopyableCode value={createdKey} />
-      <p className="note font-medium">
-        Copy this key and store it somewhere safe now; it is not shown again. It decrypts every backup of this app. If
-        every key is lost, the backups cannot be recovered.
-      </p>
-    </div>
-  );
-  if (!restic.initialized) {
-    return (
-      <Cell title="Repository" className="cell--wide">
-        <p className="note mb-3">
-          Create a new encrypted repository at <code>{restic.settings.repository}</code>, or connect one that already
-          holds this app's backups with one of its keys. To restore another stack's backup, use Apps → New → From app
-          backup.
-        </p>
-        {keyNotice}
+  return (
+    <Cell title="Repository" icon={<Archive />} kind="tamago" className="cell--wide">
+      <div className="grid gap-4">
+        <KeyValues items={[["Location", <code>{restic.settings.repository}</code>]]} />
+        {createdKey && (
+          <NewKey value={createdKey}>
+            It is not shown again. It decrypts every backup of this app. If every key is lost, the backups cannot be
+            recovered.
+          </NewKey>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <Button disabled={init.isPending} onClick={() => init.mutate()}>
-              <Archive /> Create repository
-            </Button>
-            {init.error && <p className="note note--bad mt-2">{messageOf(init.error)}</p>}
+          <div className="grid content-start gap-2">
+            <span className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">New</span>
+            <div>
+              <Button disabled={init.isPending} onClick={() => init.mutate()}>
+                <Archive /> {init.isPending ? "Creating" : "Create repository"}
+              </Button>
+            </div>
+            {init.error && <p className="note note--bad">{messageOf(init.error)}</p>}
           </div>
           <form
-            className="flex gap-2"
+            className="grid content-start gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               connect.mutate(undefined, { onSuccess: () => setConnectKey("") });
             }}
           >
-            <Input
-              type="password"
-              value={connectKey}
-              placeholder="Existing repository key"
-              autoComplete="off"
-              onChange={(event) => setConnectKey(event.target.value)}
-            />
-            <Button type="submit" variant="outline" disabled={!connectKey.trim() || connect.isPending}>
-              Connect
-            </Button>
+            <span className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Existing</span>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={connectKey}
+                placeholder="Repository key"
+                aria-label="Existing repository key"
+                autoComplete="off"
+                onChange={(event) => setConnectKey(event.target.value)}
+              />
+              <Button type="submit" variant="outline" disabled={!connectKey.trim() || connect.isPending}>
+                <Link2 /> Connect
+              </Button>
+            </div>
+            {connect.error && <p className="note note--bad">{messageOf(connect.error)}</p>}
           </form>
         </div>
-        {connect.error && <p className="note note--bad mt-2">{messageOf(connect.error)}</p>}
-      </Cell>
-    );
-  }
-  return (
-    <Cell title="Repository" className="cell--wide">
-      {keyNotice}
-      <KeyValues
-        items={[
-          ["Repository", <code>{restic.settings.repository}</code>],
-          [
-            "Last backup",
-            last ? (
-              last.ok ? (
-                `${formatRelative(last.at)} · ${last.filesTotal} files, ${formatBytes(last.bytesAdded)} added`
-              ) : last.partial ? (
-                <span className="note--bad">
-                  partial {formatRelative(last.at)}: {last.error}
-                </span>
-              ) : (
-                <span className="note--bad">
-                  failed {formatRelative(last.at)}: {last.error}
-                </span>
-              )
-            ) : (
-              "never"
-            ),
-          ],
-          ["Next run", restic.nextRun ? formatRelative(restic.nextRun) : "not scheduled"],
-          [
-            "Last check",
-            restic.lastCheck
-              ? `${restic.lastCheck.ok ? "ok" : "failed"} ${formatRelative(restic.lastCheck.at)}`
-              : "never",
-          ],
-          ["Last prune", restic.lastPruneAt ? formatRelative(restic.lastPruneAt) : "never"],
-        ]}
-      />
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button disabled={backup.isPending} onClick={() => backup.mutate(undefined)}>
-          <Archive /> Back up now
-        </Button>
-        <Button variant="outline" disabled={check.isPending} onClick={() => check.mutate(undefined)}>
-          <ShieldCheck /> Verify (5% of data)
-        </Button>
-        <Button variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate(undefined)}>
-          <RefreshCw /> Refresh
-        </Button>
-        <Button
-          variant="outline"
-          disabled={unlock.isPending}
-          title="restic unlock: removes locks older than 30 minutes or left by finished processes; running backups keep theirs"
-          onClick={() => unlock.mutate(undefined)}
-        >
-          <Unlock /> Remove stale locks
-        </Button>
       </div>
-      {[backup.error, check.error, refresh.error, unlock.error].map(
-        (error, index) =>
-          error && (
-            <p key={index} className="note note--bad mt-2">
+    </Cell>
+  );
+}
+
+function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
+  const backup = useOperationMutation(() => api.apps.restic.action(app.id, "backup"));
+  const check = useOperationMutation(() => api.apps.restic.action(app.id, "check"));
+  const refresh = useOperationMutation(() => api.apps.restic.action(app.id, "refresh"));
+  const unlock = useOperationMutation(() => api.apps.restic.action(app.id, "unlock"));
+  const last = restic.lastBackup;
+  const failed = last !== undefined && !last.ok;
+  const errors = [backup.error, check.error, refresh.error, unlock.error].filter(Boolean);
+  return (
+    <Cell
+      title="App backup"
+      icon={<Archive />}
+      kind={failed ? "ume" : "gohan"}
+      action={last && <StateBadge state={last.ok ? "succeeded" : last.partial ? "partial" : "failed"} />}
+      foot={
+        <>
+          <Button size="sm" disabled={backup.isPending} onClick={() => backup.mutate(undefined)}>
+            <Archive /> {backup.isPending ? "Backing up" : "Back up now"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={check.isPending}
+            title="Reads 5% of the data"
+            onClick={() => check.mutate(undefined)}
+          >
+            <ShieldCheck /> Verify
+          </Button>
+          <Button size="sm" variant="ghost" disabled={refresh.isPending} onClick={() => refresh.mutate(undefined)}>
+            <RefreshCw /> Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={unlock.isPending}
+            title="restic unlock: removes locks older than 30 minutes or left by finished processes; running backups keep theirs"
+            onClick={() => unlock.mutate(undefined)}
+          >
+            <Unlock /> Unlock
+          </Button>
+          {errors.map((error, index) => (
+            <p key={index} className="note note--bad w-full">
               {messageOf(error)}
             </p>
-          ),
-      )}
+          ))}
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        {failed && (
+          <p className="note note--bad">
+            ✕ {last.partial ? "PARTIAL" : "FAILED"} · {last.error}
+          </p>
+        )}
+        <KeyValues
+          items={[
+            ["Repository", <code className="truncate">{restic.settings.repository}</code>],
+            ["Last", last ? <span title={last.at}>{formatRelative(last.at)}</span> : "—"],
+            ["Size", last?.ok ? `${last.filesTotal} files · +${formatBytes(last.bytesAdded)}` : "—"],
+            ["Next", restic.nextRun ? formatRelative(restic.nextRun) : "— Off"],
+            [
+              "Verified",
+              restic.lastCheck ? `${restic.lastCheck.ok ? "✓" : "✕"} ${formatRelative(restic.lastCheck.at)}` : "—",
+            ],
+            ["Pruned", restic.lastPruneAt ? formatRelative(restic.lastPruneAt) : "—"],
+          ]}
+        />
+      </div>
     </Cell>
   );
 }
@@ -384,51 +411,37 @@ function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
 function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const [target, setTarget] = useState<T.ResticSnapshot | null>(null);
   return (
-    <Cell title="Snapshots" className="cell--wide">
+    <Cell title="Snapshots" icon={<History />} action={<span className="row__meta">{restic.snapshots.length}</span>}>
       <CloneFromBackupDialog app={app} snapshot={target} onClose={() => setTarget(null)} />
       {restic.snapshots.length === 0 ? (
-        <p className="note">No snapshots yet.</p>
+        <p className="note">— No snapshots yet</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-medium">Snapshot</th>
-                <th className="py-1 pr-3 font-medium">Taken</th>
-                <th className="py-1 pr-3 font-medium">Trigger</th>
-                <th className="py-1 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {restic.snapshots.map((snapshot) => (
-                <tr key={snapshot.id} className="border-t">
-                  <td>
-                    <code>{snapshot.shortId}</code>
+        <div className="rows rows--lined max-h-80 overflow-y-auto">
+          {restic.snapshots.map((snapshot) => {
+            const trigger = snapshot.tags
+              .filter((tag) => tag.startsWith("trigger=") || tag.startsWith("slug="))
+              .map((tag) => tag.split("=")[1])
+              .join(" · ");
+            return (
+              <div key={snapshot.id} className="row">
+                <span className="row__main">
+                  <strong className="flex items-center gap-2">
+                    {snapshot.shortId}
                     {snapshot.tags.includes("secrets=1") && (
-                      <span
-                        className="ml-2 rounded border px-1 text-xs text-muted-foreground"
-                        title="Includes env values and database passwords"
-                      >
-                        secrets
-                      </span>
+                      <KeyRound className="size-3.5 text-muted-foreground" aria-label="Includes secrets" />
                     )}
-                  </td>
-                  <td title={snapshot.time}>{formatRelative(snapshot.time)}</td>
-                  <td>
-                    {snapshot.tags
-                      .filter((tag) => tag.startsWith("trigger=") || tag.startsWith("slug="))
-                      .map((tag) => tag.split("=")[1])
-                      .join(" · ")}
-                  </td>
-                  <td className="py-1 text-right">
-                    <Button size="sm" variant="outline" onClick={() => setTarget(snapshot)}>
-                      Restore into a new app
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </strong>
+                  <small title={snapshot.time}>
+                    {formatRelative(snapshot.time)}
+                    {trigger && ` · ${trigger}`}
+                  </small>
+                </span>
+                <Button size="xs" variant="outline" title="Restore into a new app" onClick={() => setTarget(snapshot)}>
+                  <RotateCcw /> Restore
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
     </Cell>
@@ -452,49 +465,55 @@ function KeysCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const remove = useOperationMutation((keyId: string) => api.apps.restic.removeKey(app.id, keyId));
   const [removing, setRemoving] = useState<T.ResticKey | null>(null);
   return (
-    <Cell title="Access keys" className="cell--wide">
-      <p className="note mb-3">
-        Give another Bento (or a person) its own key to restore this app's backups, then remove it when done. The key
-        Bento uses is never shown.
-      </p>
-      <KeyValues
-        items={restic.keys.map((key): [string, React.ReactNode] => [
-          key.id.slice(0, 8),
-          <span className="flex items-center gap-3">
-            {key.userName} · {formatRelative(key.created)}
-            {key.current ? (
-              <span className="note">used by Bento</span>
-            ) : (
-              <Button size="sm" variant="outline" disabled={remove.isPending} onClick={() => setRemoving(key)}>
-                Remove
-              </Button>
-            )}
-          </span>,
-        ])}
-      />
-      {newKey && (
-        <div className="my-3 grid gap-2">
-          <CopyableCode value={newKey} />
-          <p className="note font-medium">Copy this key now; it is not shown again.</p>
+    <Cell
+      title="Access keys"
+      icon={<KeyRound />}
+      className="cell--wide"
+      foot={
+        <form
+          className="flex w-full gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setAddOpen(true);
+          }}
+        >
+          <Input
+            value={label}
+            placeholder="Label, e.g. staging"
+            aria-label="Key label"
+            spellCheck={false}
+            onChange={(event) => setLabel(event.target.value)}
+          />
+          <Button type="submit" size="sm" variant="outline">
+            <KeyRound /> Add key
+          </Button>
+        </form>
+      }
+    >
+      <div className="grid gap-3">
+        {newKey && <NewKey value={newKey}>It is not shown again.</NewKey>}
+        <div className="rows rows--lined">
+          {restic.keys.map((key) => (
+            <div key={key.id} className="row">
+              <span className="row__main">
+                <strong>{key.id.slice(0, 8)}</strong>
+                <small>
+                  {key.userName} · {formatRelative(key.created)}
+                </small>
+              </span>
+              {key.current ? (
+                <span className="row__meta" title="The key Bento uses is never shown">
+                  BENTO
+                </span>
+              ) : (
+                <Button size="xs" variant="danger" disabled={remove.isPending} onClick={() => setRemoving(key)}>
+                  <Trash2 /> Remove
+                </Button>
+              )}
+            </div>
+          ))}
         </div>
-      )}
-      <form
-        className="mt-3 flex gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setAddOpen(true);
-        }}
-      >
-        <Input
-          value={label}
-          placeholder="Label, e.g. staging"
-          spellCheck={false}
-          onChange={(event) => setLabel(event.target.value)}
-        />
-        <Button type="submit" variant="outline">
-          <KeyRound /> Add key
-        </Button>
-      </form>
+      </div>
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}
