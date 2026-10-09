@@ -45,7 +45,7 @@ when the two disagree, update both.
 
 - **Mark:** `public/bento-logo.svg`, a shu box with a rice compartment (face: two eyes and a smile), a matcha cell
   and a tamago cell. Works down to 16 px. One-colour version: cream on shu.
-- **Wordmark:** `bento` in Barlow 700, letter-spacing −0.04em, followed by a shu `.`.
+- **Wordmark:** `bento` in JetBrains Mono 700, letter-spacing −0.04em, followed by a shu `.`.
 - **Mascot "Ben":** `public/bento-mascot-{ok,busy,alert,idle}.svg`, the mark as a character with feet and
   chopstick antennae. Moods map to state and are the only place he appears:
 
@@ -72,17 +72,21 @@ visible), cell `#1D1A17`, accent `#E2603F`, nori stays darkest. Fill meanings do
 
 ### Type
 
-| Role    | Font                      | Size / line | Notes                        |
-| ------- | ------------------------- | ----------- | ---------------------------- |
-| Display | Barlow 600                | 40 / 44     | Metric numbers use mono      |
-| Title   | Barlow 600                | 28–32 / 34  | Page `h1`, one per page      |
-| Head    | Barlow 600                | 18 / 24     | Item names in tiles          |
-| Body    | Barlow 400–500            | 15 / 22     | Max one short line           |
-| Label   | Barlow Semi Condensed 600 | 12 / 16     | CAPS, letter-spacing 0.1em   |
-| Mono    | JetBrains Mono 400–600    | 12–14       | IDs, numbers, paths, commits |
+| Role    | Font                   | Size / line | Notes                        |
+| ------- | ---------------------- | ----------- | ---------------------------- |
+| Display | JetBrains Mono 600     | 40 / 44     | Metric numbers               |
+| Title   | JetBrains Mono 600     | 28–32 / 34  | Page `h1`, one per page      |
+| Head    | JetBrains Mono 600     | 18 / 24     | Item names in tiles          |
+| Body    | JetBrains Mono 400–500 | 15 / 22     | Max one short line           |
+| Label   | JetBrains Mono 600     | 12 / 16     | CAPS, letter-spacing 0.1em   |
+| Data    | JetBrains Mono 400–600 | 12–14       | IDs, numbers, paths, commits |
 
-Fonts are self-hosted from `public/fonts/` (latin subsets, SIL OFL; licences alongside). The management CSP is
-`default-src 'self'`, so never link a font CDN.
+JetBrains Mono is the only family: one variable file (latin subset, weights 100–800) used for body, labels and data.
+Hierarchy comes from size, weight (400–700) and CAPS, never from a second family; adding one needs a change to this
+section. Because every glyph is fixed-width, numbers and units align without a separate mono style, and copy is
+sized for the wider advance (keep labels ≤ 2 words, truncate IDs with an ellipsis rather than wrapping). It is
+self-hosted from `public/fonts/` (SIL OFL 1.1; licence alongside). The management CSP is `default-src 'self'`, so
+never link a font CDN.
 
 ### Space and shape
 
@@ -140,12 +144,12 @@ Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one
 | Segments    | Square, sumi-filled active item: page sections (`role="tab"`). Round with counts: filters (`aria-pressed`)                                                                                                |
 | Field       | CAPS label above, 44 px input, 2 px `line` border, sumi on focus; error = fail border + `✕ REASON`                                                                                                        |
 | Switch      | 52 × 30, ok when on, idle when off, label + ON/OFF word beside it                                                                                                                                         |
-| Metric      | Mono number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 %                                                                                                         |
-| Live chart  | Metric header + 2 px shu line over a flat 8 % shu area, dashed mid gridline, max value top-left; hover = crosshair + sumi mono tooltip. Client-side history only (last 60 polls)                          |
-| Fact row    | `LABEL ······ value`: dotted leader between caption and mono value                                                                                                                                        |
+| Metric      | Number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 %                                                                                                              |
+| Live chart  | Metric header + 2 px shu line over a flat 8 % shu area, dashed mid gridline, max value top-left; hover = crosshair + sumi tooltip. Client-side history only (last 60 polls)                               |
+| Fact row    | `LABEL ······ value`: dotted leader between caption and value                                                                                                                                             |
 | Operation   | Tamago cell: title + `n / m`, progress bar, step list ✓ done, ● current, ○ next                                                                                                                           |
 | Notice      | Caution (tamago, ▲), Warning (ume, !), Note (busy tint, i): CAPS heading + one line                                                                                                                       |
-| Toast       | Nori bar: ✓ + VERB + mono target + one link                                                                                                                                                               |
+| Toast       | Nori bar: ✓ + VERB + target + one link                                                                                                                                                                    |
 | Empty state | Kara cell, mascot `idle`, CAPS title, ≤ 4-word line, one primary action                                                                                                                                   |
 | Confirm     | Lists what is Removed vs Retained as fact rows, then "Type `phrase`" field; destructive button disabled until exact match                                                                                 |
 
@@ -156,7 +160,7 @@ Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one
 | Label  | Noun, caps, ≤ 2 words                  | `MEMORY`, `LAST BACKUP`                   |
 | Button | Verb first                             | `DEPLOY`, `BACK UP NOW`                   |
 | State  | Icon + word                            | `✕ FAILED`                                |
-| Value  | Number + unit, mono                    | `412 / 512 MB`                            |
+| Value  | Number + unit                          | `412 / 512 MB`                            |
 | Fact   | Item ····· value                       | `TLS ····· ✓ VALID · 61 D`                |
 | Risk   | Caution / Warning block, full sentence | `Volume shop-data is kept after removal.` |
 

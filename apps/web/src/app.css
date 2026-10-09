@@ -12,46 +12,10 @@
  */
 
 @font-face {
-  font-family: "Barlow";
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/barlow-latin-400-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Barlow";
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/barlow-latin-500-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Barlow";
-  font-weight: 600;
-  font-display: swap;
-  src: url("/fonts/barlow-latin-600-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Barlow";
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/barlow-latin-700-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Barlow Semi Condensed";
-  font-weight: 600;
-  font-display: swap;
-  src: url("/fonts/barlow-semi-condensed-latin-600-normal.woff2") format("woff2");
-}
-@font-face {
   font-family: "JetBrains Mono";
-  font-weight: 400;
+  font-weight: 100 800;
   font-display: swap;
-  src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "JetBrains Mono";
-  font-weight: 600;
-  font-display: swap;
-  src: url("/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2");
+  src: url("/fonts/jetbrains-mono-latin-wght.woff2") format("woff2");
 }
 
 @theme inline {
@@ -87,9 +51,9 @@
 }
 
 :root {
-  --font-body: "Barlow", "Noto Sans", "Noto Sans JP", system-ui, sans-serif;
-  --font-caps: "Barlow Semi Condensed", "Barlow", "Arial Narrow", system-ui, sans-serif;
-  --font-code: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --font-body: "JetBrains Mono", "Noto Sans Mono", "Noto Sans JP", ui-monospace, monospace;
+  --font-caps: var(--font-body);
+  --font-code: var(--font-body);
   font-family: var(--font-body);
 
   /* Box */
