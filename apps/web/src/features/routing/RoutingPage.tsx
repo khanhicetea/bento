@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ExternalLink, Globe, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
+import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -61,7 +61,11 @@ function EdgePanel() {
 function EdgeMetricsCell() {
   const query = useQuery({
     queryKey: keys.edgeMetrics,
-    queryFn: ({ signal }) => api.edge.metrics(signal),
+    queryFn: async ({ signal }) => {
+      const m = await api.edge.metrics(signal);
+      recordRate(m.requestsPerSecond);
+      return m;
+    },
     refetchInterval: 5_000,
   });
   const m = query.data;
@@ -70,7 +74,7 @@ function EdgeMetricsCell() {
       <Cell
         title="Traffic"
         icon={<Activity />}
-        className="flex flex-col"
+        className="edge-metrics flex flex-col"
         action={
           m && (
             <span className="label flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -85,30 +89,112 @@ function EdgeMetricsCell() {
         ) : !m ? (
           <DomainLoading label="edge metrics" />
         ) : (
-          <div className="grid flex-1 grid-cols-2 gap-2 lg:grid-cols-4">
-            <MetricCard
-              label="Requests / s"
-              value={m.requestsPerSecond.toFixed(1)}
-              hint={`${compact(m.requests)} total`}
-            />
-            <MetricCard label="Connections" value={m.active} hint={`${m.acceptsPerSecond.toFixed(1)} new / s`} />
-            <MetricCard
-              label="Connection states"
-              value={`${m.reading}·${m.writing}·${m.waiting}`}
-              hint="reading · writing · idle"
-            >
-              <StateBar reading={m.reading} writing={m.writing} waiting={m.waiting} />
-            </MetricCard>
-            <MetricCard
-              label="Dropped"
-              value={compact(m.dropped)}
-              hint={m.dropped > 0 ? "worker_connections limit hit" : `${compact(m.handled)} handled`}
-              tone={m.dropped > 0 ? "bad" : "good"}
-            />
+          <div className="grid flex-1 grid-rows-[minmax(0,1fr)_auto] gap-2">
+            <RateChart total={m.requests} />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <MetricCard label="Connections" value={m.active} hint={`${m.acceptsPerSecond.toFixed(1)} new / s`} />
+              <MetricCard
+                label="Connection states"
+                value={`${m.reading}·${m.writing}·${m.waiting}`}
+                hint="reading · writing · idle"
+              >
+                <StateBar reading={m.reading} writing={m.writing} waiting={m.waiting} />
+              </MetricCard>
+              <MetricCard
+                label="Dropped"
+                value={compact(m.dropped)}
+                hint={m.dropped > 0 ? "worker_connections limit hit" : `${compact(m.handled)} handled`}
+                tone={m.dropped > 0 ? "bad" : "good"}
+              />
+            </div>
           </div>
         )}
       </Cell>
     </>
+  );
+}
+
+type RateSample = { at: number; rate: number };
+
+// Requests/s history is kept client-side only: it starts empty on page load and
+// keeps the last 5 minutes of 5 s polls across tab switches.
+const rateHistory: RateSample[] = [];
+const rateHistoryMax = 60;
+function recordRate(rate: number) {
+  rateHistory.push({ at: Date.now(), rate });
+  if (rateHistory.length > rateHistoryMax) rateHistory.shift();
+}
+
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/** Live line of requests per second, with a crosshair tooltip on hover. */
+function RateChart({ total }: { total: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const samples = rateHistory;
+  const latest = samples.at(-1)?.rate ?? 0;
+  const max = Math.max(1, ...samples.map((s) => s.rate)) * 1.15;
+  const w = 100;
+  const h = 100;
+  // Fixed x slots so the line grows in from the right as samples arrive.
+  const x = (i: number) => w - ((samples.length - 1 - i) / (rateHistoryMax - 1)) * w;
+  const y = (rate: number) => h - (rate / max) * h;
+  const points = samples.map((s, i) => `${x(i).toFixed(2)},${y(s.rate).toFixed(2)}`).join(" ");
+  const area = samples.length > 1 ? `${x(0)},${h} ${points} ${x(samples.length - 1)},${h}` : "";
+  const active = hover !== null ? samples[hover] : undefined;
+
+  const onMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (samples.length === 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pos = ((event.clientX - rect.left) / rect.width) * w;
+    const i = Math.round(samples.length - 1 - ((w - pos) / w) * (rateHistoryMax - 1));
+    setHover(i < 0 ? null : Math.min(i, samples.length - 1));
+  };
+
+  return (
+    <div className="flex min-h-[11rem] min-w-0 flex-col gap-2 rounded-[0.875rem] bg-background p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="label text-[0.6875rem] text-muted-foreground">Requests / s</span>
+        <span className="font-mono text-xs text-muted-foreground">{compact(total)} total</span>
+      </div>
+      <span className="font-mono text-[2.25rem] leading-none font-semibold tracking-tight tabular-nums">
+        {(active?.rate ?? latest).toFixed(1)}
+      </span>
+      <div
+        className="rate-chart"
+        role="img"
+        aria-label={`Requests per second over the last ${samples.length} samples, now ${latest.toFixed(1)}`}
+        onPointerMove={onMove}
+        onPointerLeave={() => setHover(null)}
+      >
+        <span className="rate-chart__max font-mono">{(max / 1.15).toFixed(1)}</span>
+        <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+          <line className="rate-chart__grid" x1="0" x2={w} y1={h / 2} y2={h / 2} />
+          <line className="rate-chart__base" x1="0" x2={w} y1={h} y2={h} />
+          {area && <polygon className="rate-chart__area" points={area} />}
+          {samples.length > 1 && <polyline className="rate-chart__line" points={points} />}
+          {active && hover !== null && <line className="rate-chart__cross" x1={x(hover)} x2={x(hover)} y1="0" y2={h} />}
+        </svg>
+        {samples.length > 0 && (
+          <span
+            className="rate-chart__dot"
+            style={{
+              left: `${x(hover ?? samples.length - 1)}%`,
+              top: `${y(active?.rate ?? latest)}%`,
+            }}
+          />
+        )}
+        {active && hover !== null && (
+          <span
+            className="rate-chart__tip font-mono"
+            style={{ left: `${x(hover)}%` }}
+            data-side={x(hover) > 70 ? "left" : "right"}
+          >
+            {active.rate.toFixed(1)} / s · {timeFormat.format(active.at)}
+          </span>
+        )}
+        {samples.length < 2 && <span className="rate-chart__empty label">Collecting samples</span>}
+      </div>
+    </div>
   );
 }
 
@@ -181,6 +267,7 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
     <>
       <section className="box box--edge" aria-label="Edge">
         <Cell
+          className="edge-config"
           title="Edge"
           icon={<Network />}
           action={<StateBadge state={status.settings.enabled ? status.state : "absent"} />}
@@ -233,17 +320,12 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
             </dl>
           </div>
         </Cell>
-        {status.state === "healthy" ? (
-          <EdgeMetricsCell />
-        ) : (
-          <Cell kind="kara" className="grid place-items-center">
-            <EmptyState title="No traffic" body="Edge is not running." />
-          </Cell>
-        )}
-      </section>
-      <section className="box box--edge-routes" aria-label="Routes and certificates">
-        <RoutesCell status={status} />
-        <Cell title="Certificates · ACME" icon={<Lock />} kind={dirty ? "tamago" : "gohan"} className="flex flex-col">
+        <Cell
+          title="Certificates · ACME"
+          icon={<Lock />}
+          kind={dirty ? "tamago" : "gohan"}
+          className="edge-config flex flex-col"
+        >
           <div className="grid gap-4">
             <Field label="Contact email" hint="Expiry notices">
               <Input
@@ -274,68 +356,15 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
             </div>
           </div>
         </Cell>
+        {status.state === "healthy" ? (
+          <EdgeMetricsCell />
+        ) : (
+          <Cell kind="kara" className="edge-metrics grid place-items-center">
+            <EmptyState title="No traffic" body="Edge is not running." />
+          </Cell>
+        )}
       </section>
     </>
-  );
-}
-
-function RoutesCell({ status }: { status: T.EdgeStatus }) {
-  const hosts = useQuery({ queryKey: keys.hosts, queryFn: ({ signal }) => api.hosts.list(signal) });
-  const rows = [...(hosts.data?.hosts ?? [])];
-  // Routes the edge serves that no host claims (stale files).
-  const known = new Set(rows.map((host) => `host-${host.name}`));
-  const stale = status.routes.filter((route) => !known.has(route));
-  rows.sort((a, b) => Number(b.live) - Number(a.live) || a.name.localeCompare(b.name));
-  const live = rows.filter((host) => host.live).length + stale.length;
-  return (
-    <Cell
-      title={`Routes · ${live} live`}
-      icon={<Globe />}
-      action={<span className="label text-xs text-muted-foreground">Serving now</span>}
-    >
-      {hosts.error ? (
-        <DomainError message={messageOf(hosts.error)} onRetry={() => void hosts.refetch()} />
-      ) : rows.length === 0 && stale.length === 0 ? (
-        <EmptyState title="No routes" body="No hosts use the edge yet." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="routes">
-            <thead>
-              <tr>
-                <th>Host</th>
-                <th>Target</th>
-                <th>State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((host) => (
-                <tr key={host.name}>
-                  <td className="font-mono">{host.name}</td>
-                  <td>
-                    <HostTargetText host={host} />
-                  </td>
-                  <td>
-                    <StateBadge
-                      state={host.live ? "published" : "stopped"}
-                      label={host.live ? "Live" : host.enabled ? "Not live" : "Disabled"}
-                    />
-                  </td>
-                </tr>
-              ))}
-              {stale.map((route) => (
-                <tr key={route}>
-                  <td className="font-mono">{route}</td>
-                  <td>—</td>
-                  <td>
-                    <StateBadge state="published" label="Live · unknown" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Cell>
   );
 }
 

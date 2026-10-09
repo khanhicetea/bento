@@ -1862,11 +1862,97 @@ button.row:hover {
 
 /* ---------- Ingress ---------- */
 
+/* Config cells stack on the left; traffic spans both rows on the right. */
 .box--edge {
-  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-auto-flow: column;
 }
-.box--edge-routes {
-  grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+.box--edge > .edge-config {
+  grid-column: 1;
+}
+.box--edge > .edge-metrics {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.rate-chart {
+  position: relative;
+  flex: 1;
+  min-height: 5rem;
+  touch-action: none;
+}
+.rate-chart svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.rate-chart svg * {
+  vector-effect: non-scaling-stroke;
+}
+.rate-chart__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.rate-chart__base {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.rate-chart__area {
+  fill: var(--primary);
+  opacity: 0.08;
+}
+.rate-chart__line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.rate-chart__cross {
+  stroke: var(--muted-foreground);
+  stroke-width: 1;
+}
+.rate-chart__dot {
+  position: absolute;
+  width: 0.625rem;
+  height: 0.625rem;
+  translate: -50% -50%;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--background);
+  pointer-events: none;
+}
+.rate-chart__max {
+  position: absolute;
+  top: -0.25rem;
+  left: 0;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+.rate-chart__tip {
+  position: absolute;
+  top: 0;
+  translate: 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.rate-chart__tip[data-side="left"] {
+  translate: calc(-100% - 0.5rem) 0;
+}
+.rate-chart__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
 }
 .kv--edit dd input {
   height: 2.25rem;
@@ -1901,39 +1987,14 @@ button.row:hover {
 .switch[aria-checked="true"] > span {
   translate: 1.375rem 0;
 }
-.routes {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.routes th {
-  padding: 0 0.6rem 0.5rem;
-  text-align: left;
-  font-family: var(--font-caps);
-  font-weight: 600;
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-.routes td {
-  padding: 0.7rem 0.6rem;
-  border-top: 1px solid var(--border);
-  white-space: nowrap;
-}
-.routes td.font-mono {
-  font-size: 0.8125rem;
-}
-.routes a {
-  text-decoration: none;
-}
-.routes a:hover {
-  color: var(--primary-deep);
-}
 @media (max-width: 1060px) {
-  .box--edge,
-  .box--edge-routes {
+  .box--edge {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .box--edge > .edge-config,
+  .box--edge > .edge-metrics {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 /* A kara cell is already the empty slot: don't draw a second outline inside it. */

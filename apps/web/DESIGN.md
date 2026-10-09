@@ -138,6 +138,7 @@ Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one
 | Field       | CAPS label above, 44 px input, 2 px `line` border, sumi on focus; error = fail border + `✕ REASON`                                                                                                        |
 | Switch      | 52 × 30, ok when on, idle when off, label + ON/OFF word beside it                                                                                                                                         |
 | Metric      | Mono number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 %                                                                                                         |
+| Live chart  | Metric header + 2 px shu line over a flat 8 % shu area, dashed mid gridline, max value top-left; hover = crosshair + sumi mono tooltip. Client-side history only (last 60 polls)                          |
 | Fact row    | `LABEL ······ value`: dotted leader between caption and mono value                                                                                                                                        |
 | Operation   | Tamago cell: title + `n / m`, progress bar, step list ✓ done, ● current, ○ next                                                                                                                           |
 | Notice      | Caution (tamago, ▲), Warning (ume, !), Note (busy tint, i): CAPS heading + one line                                                                                                                       |
@@ -169,7 +170,7 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
   hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
-- **Ingress:** Edge / Tunnel / Utils. Edge status + traffic metrics, routes, ACME, host tiles + Kara. Ingress owns
+- **Ingress:** Edge / Tunnel / Utils. Edge + ACME config (left) beside traffic (right: live requests/s line over three metric cards), host tiles + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
   hosts and adds one through the same host dialog.
 - **Backups:** status row (last, next, schedules, not covered) then Files / App backups / Runs / Schedules.

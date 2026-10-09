@@ -249,7 +249,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
       {/* Outside the form: portal events still bubble through React's tree. */}
       <Dialog open={hostDialog} onOpenChange={setHostDialog}>
         <DialogContent>
-          {hostDialog && <HostDialogBody app={app.slug} onDone={() => setHostDialog(false)} />}
+          {hostDialog && <HostDialogBody app={app.slug} compact onDone={() => setHostDialog(false)} />}
         </DialogContent>
       </Dialog>
     </>

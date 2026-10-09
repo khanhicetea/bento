@@ -8,6 +8,7 @@ import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
 import { RestoreFromBackupDialog } from "./CloneFromBackupDialog.tsx";
 import { useApplicationList } from "./useApplications.ts";
+import { useHostUrl } from "../routing/hostUrl.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -123,6 +124,7 @@ export function ApplicationsPage() {
 
 function ApplicationTile({ app }: { app: T.AppSummary }) {
   const active = useActiveOperations(app.id);
+  const urlOf = useHostUrl();
   const observedRunning = app.observed.state === "healthy" || app.observed.state === "starting";
   const drift = app.desiredRuntime !== (observedRunning ? "running" : "stopped");
   const attention = drift || ["blocked", "failed", "unhealthy"].includes(app.observed.state);
@@ -151,7 +153,7 @@ function ApplicationTile({ app }: { app: T.AppSummary }) {
           </Link>
           <small>
             {app.hosts[0] ? (
-              <a href={`//${app.hosts[0]}`} target="_blank" rel="noreferrer">
+              <a href={urlOf(app.hosts[0])} target="_blank" rel="noreferrer">
                 {app.hosts[0]} <ExternalLink className="inline size-3" aria-hidden="true" />
               </a>
             ) : (

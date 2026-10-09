@@ -57,9 +57,20 @@ function formOf(host: T.Host | undefined, app: string | undefined): HostForm {
 
 /**
  * Add or edit one Ingress host. Render inside a DialogContent; `app` presets
- * an app target for a new host.
+ * an app target for a new host. `compact` hides the target, access log and edge
+ * cache fields, which keep their defaults and stay editable in Ingress.
  */
-export function HostDialogBody({ host, app, onDone }: { host?: T.Host; app?: string; onDone: () => void }) {
+export function HostDialogBody({
+  host,
+  app,
+  compact = false,
+  onDone,
+}: {
+  host?: T.Host;
+  app?: string;
+  compact?: boolean;
+  onDone: () => void;
+}) {
   const apps = useApplicationList();
   const [form, setForm] = useState<HostForm>(() => formOf(host, app));
   const route = form.route;
@@ -97,8 +108,8 @@ export function HostDialogBody({ host, app, onDone }: { host?: T.Host; app?: str
       }}
     >
       <DialogHeader>
-        <DialogTitle>{host ? `Edit ${host.name}` : "Add host"}</DialogTitle>
-        <DialogDescription>Point one domain at an app, an upstream, or another host.</DialogDescription>
+        <DialogTitle>{host ? `Edit ${host.name}` : compact ? "Add domain" : "Add host"}</DialogTitle>
+        <DialogDescription>{"Point one domain at an app, an upstream, or another host."}</DialogDescription>
       </DialogHeader>
       <Field label="Host" hint={host ? "The host name cannot change." : undefined}>
         <Input
@@ -110,43 +121,45 @@ export function HostDialogBody({ host, app, onDone }: { host?: T.Host; app?: str
           onChange={(event) => set({ name: event.target.value })}
         />
       </Field>
-      <div className="grid-2">
-        <Field label="Target">
-          <NativeSelect
-            className="w-full"
-            value={form.kind}
-            onChange={(event) => set({ kind: event.target.value as T.HostTargetKind })}
-          >
-            <option value="app">App</option>
-            <option value="upstream">Upstream</option>
-            <option value="redirect">Redirect</option>
-          </NativeSelect>
-        </Field>
-        {form.kind === "app" && (
-          <Field label="App">
-            <NativeSelect className="w-full" value={form.app} onChange={(event) => set({ app: event.target.value })}>
-              <option value="" disabled>
-                {managedApps.length ? "Choose app" : "No managed apps"}
-              </option>
-              {managedApps.map((candidate) => (
-                <option key={candidate.id} value={candidate.slug}>
-                  {candidate.slug}
-                </option>
-              ))}
+      {!compact && (
+        <div className="grid-2">
+          <Field label="Target">
+            <NativeSelect
+              className="w-full"
+              value={form.kind}
+              onChange={(event) => set({ kind: event.target.value as T.HostTargetKind })}
+            >
+              <option value="app">App</option>
+              <option value="upstream">Upstream</option>
+              <option value="redirect">Redirect</option>
             </NativeSelect>
           </Field>
-        )}
-        {form.kind === "redirect" && (
-          <Field label="Redirect to">
-            <Input
-              placeholder="example.com"
-              spellCheck={false}
-              value={form.redirectTo}
-              onChange={(event) => set({ redirectTo: event.target.value })}
-            />
-          </Field>
-        )}
-      </div>
+          {form.kind === "app" && (
+            <Field label="App">
+              <NativeSelect className="w-full" value={form.app} onChange={(event) => set({ app: event.target.value })}>
+                <option value="" disabled>
+                  {managedApps.length ? "Choose app" : "No managed apps"}
+                </option>
+                {managedApps.map((candidate) => (
+                  <option key={candidate.id} value={candidate.slug}>
+                    {candidate.slug}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+          )}
+          {form.kind === "redirect" && (
+            <Field label="Redirect to">
+              <Input
+                placeholder="example.com"
+                spellCheck={false}
+                value={form.redirectTo}
+                onChange={(event) => set({ redirectTo: event.target.value })}
+              />
+            </Field>
+          )}
+        </div>
+      )}
       {form.kind === "upstream" && (
         <Field label="Upstreams" hint="Space-separated; several are load-balanced.">
           <Input
@@ -198,14 +211,16 @@ export function HostDialogBody({ host, app, onDone }: { host?: T.Host; app?: str
             HTTPS redirect
           </label>
         )}
-        <label className="check">
-          <Checkbox
-            checked={route.accessLog}
-            onCheckedChange={(checked) => setRoute({ accessLog: checked === true })}
-          />
-          Access log
-        </label>
-        {form.kind !== "redirect" && (
+        {!compact && (
+          <label className="check">
+            <Checkbox
+              checked={route.accessLog}
+              onCheckedChange={(checked) => setRoute({ accessLog: checked === true })}
+            />
+            Access log
+          </label>
+        )}
+        {!compact && form.kind !== "redirect" && (
           <label
             className="check"
             title={
@@ -228,7 +243,7 @@ export function HostDialogBody({ host, app, onDone }: { host?: T.Host; app?: str
           Cancel
         </Button>
         <Button type="submit" disabled={!form.name.trim() || !targetSet || save.isPending}>
-          {host ? "Save" : "Add host"}
+          {host ? "Save" : compact ? "Add domain" : "Add host"}
         </Button>
       </DialogFooter>
     </form>

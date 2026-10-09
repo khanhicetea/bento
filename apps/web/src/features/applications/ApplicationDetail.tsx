@@ -35,6 +35,9 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { HostDialogBody } from "../routing/HostDialog.tsx";
+import { useHostUrl } from "../routing/hostUrl.ts";
 
 type Tab = "overview" | "deploy" | "monitoring" | "logs" | "terminal" | "data" | "backup" | "scheduler" | "settings";
 const tabs: Array<[Tab, string]> = [
@@ -105,6 +108,7 @@ function AppHeader({ app }: { app: T.App }) {
     verb === "stop" || verb === "restart" || verb === "unpublish" ? setConfirm(verb) : run(verb);
   const busy = active.active || action.isPending;
   const stopped = app.desiredRuntime === "stopped";
+  const urlOf = useHostUrl();
   return (
     <>
       <PageHeader
@@ -124,7 +128,7 @@ function AppHeader({ app }: { app: T.App }) {
                 <span aria-hidden="true">·</span>
                 <a
                   className="inline-flex items-center gap-1"
-                  href={`//${app.hosts[0]}`}
+                  href={urlOf(app.hosts[0])}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -230,6 +234,8 @@ function CloneNote({ appId }: { appId: string }) {
 }
 
 function Overview({ app }: { app: T.App }) {
+  const urlOf = useHostUrl();
+  const [hostDialog, setHostDialog] = useState(false);
   return (
     <>
       <div className="box box--4">
@@ -282,7 +288,16 @@ function Overview({ app }: { app: T.App }) {
             ]}
           />
         </Cell>
-        <Cell title="Routing">
+        <Cell
+          title="Routing"
+          action={
+            app.ingress === "managed" && (
+              <Button size="xs" variant="ghost" onClick={() => setHostDialog(true)}>
+                <Plus /> Add domain
+              </Button>
+            )
+          }
+        >
           <KeyValues
             items={[
               ["Ingress", `${app.ingressInfo.mode} · ${app.publication}`],
@@ -291,11 +306,24 @@ function Overview({ app }: { app: T.App }) {
                 "Hosts",
                 app.hosts.length ? (
                   <span className="chips">
-                    {app.hosts.map((host) => (
-                      <span key={host} className="chip">
-                        {host}
-                      </span>
-                    ))}
+                    {app.hosts.map((host, index) =>
+                      index === 0 ? (
+                        <a
+                          key={host}
+                          className="chip inline-flex items-center gap-1"
+                          href={urlOf(host)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {host}
+                          <ExternalLink className="size-3" aria-hidden="true" />
+                        </a>
+                      ) : (
+                        <span key={host} className="chip">
+                          {host}
+                        </span>
+                      ),
+                    )}
                   </span>
                 ) : (
                   "—"
@@ -305,6 +333,11 @@ function Overview({ app }: { app: T.App }) {
             ]}
           />
         </Cell>
+        <Dialog open={hostDialog} onOpenChange={setHostDialog}>
+          <DialogContent>
+            {hostDialog && <HostDialogBody app={app.slug} compact onDone={() => setHostDialog(false)} />}
+          </DialogContent>
+        </Dialog>
         <Cell title="Redis" className={app.reconcile.failures > 0 ? "" : "cell--wide"}>
           <KeyValues
             items={[
