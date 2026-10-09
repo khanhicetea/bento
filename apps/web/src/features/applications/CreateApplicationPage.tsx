@@ -138,6 +138,29 @@ export function CreateApplicationPage() {
 
   const toolchains = catalog.data?.toolchains ?? {};
   const managed = ingress === "managed";
+  // Step navigation lives in the foot of the last cell of each step.
+  const nav = (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => (step === 0 ? navigate("/apps") : setStep((value) => value - 1))}
+      >
+        <ChevronLeft />
+        {step === 0 ? "Cancel" : "Back"}
+      </Button>
+      <Button type="submit" disabled={!currentValid || create.isPending}>
+        {step === 3 ? (
+          "Create app"
+        ) : (
+          <>
+            Next
+            <ChevronRight />
+          </>
+        )}
+      </Button>
+    </>
+  );
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader back={{ href: "/apps", label: "Apps" }} title="New app" />
@@ -164,7 +187,7 @@ export function CreateApplicationPage() {
                 </Field>
                 {slug.length > 0 && slugError(slug) && <p className="note note--bad mt-2">{slugError(slug)}</p>}
               </Cell>
-              <Cell title="Runtime">
+              <Cell title="Runtime" foot={nav}>
                 <div className="choices">
                   <Choice
                     name="runtime"
@@ -228,7 +251,7 @@ export function CreateApplicationPage() {
                     </Field>
                   </div>
                 </Cell>
-                <Cell title="Performance">
+                <Cell title="Performance" foot={nav}>
                   <PHPPerformance php={php} onChange={setPhp} resources={resources} catalog={catalog.data} />
                 </Cell>
               </>
@@ -266,7 +289,7 @@ export function CreateApplicationPage() {
                 <Cell title="Command">
                   <ArgvEditor value={http.argv} onChange={(argv) => setHttp({ ...http, argv })} />
                 </Cell>
-                <Cell title="Serving">
+                <Cell title="Serving" foot={nav}>
                   <div className="grid-3">
                     <Field label="Port">
                       <Input
@@ -419,6 +442,7 @@ export function CreateApplicationPage() {
               </Cell>
               <Cell
                 title="Limits"
+                foot={nav}
                 action={
                   <button
                     type="button"
@@ -470,7 +494,7 @@ export function CreateApplicationPage() {
           )}
 
           {step === 3 && (
-            <Cell title="Review">
+            <Cell title="Review" foot={nav}>
               <KeyValues
                 items={[
                   ["Slug", <strong>{slug}</strong>],
@@ -495,27 +519,6 @@ export function CreateApplicationPage() {
               )}
             </Cell>
           )}
-
-          <div className="cell cell--muted actions actions--between py-3!">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => (step === 0 ? navigate("/apps") : setStep((value) => value - 1))}
-            >
-              <ChevronLeft />
-              {step === 0 ? "Cancel" : "Back"}
-            </Button>
-            <Button type="submit" disabled={!currentValid || create.isPending}>
-              {step === 3 ? (
-                "Create app"
-              ) : (
-                <>
-                  Next
-                  <ChevronRight />
-                </>
-              )}
-            </Button>
-          </div>
         </div>
       </form>
     </div>

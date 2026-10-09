@@ -101,7 +101,10 @@ Domain `globe`, TLS `lock`, Logs/Terminal `terminal`, Schedule `clock`, Delete `
 
 **Anatomy:** rim (urushi, r26, pad 6) → seams (6 px, the rim shows through) → cells (r20). A cell has a head
 (icon + LABEL, at most one link or badge on the right), a body with one idea, and an optional foot with actions
-above a hairline.
+above a hairline (`Cell` `foot` prop). Never put a submit button in a cell of its own: a form cell is the form
+(`Cell` `onSubmit`) and its Save is a small (`xs`) button on the right of its own head (`Cell` `action`), saving only
+that cell's fields; its error shows at the end of the body. Multi-cell flows (wizards) put their navigation in the foot
+of the last cell of the step.
 
 **Cell kinds**
 

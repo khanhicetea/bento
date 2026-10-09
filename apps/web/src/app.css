@@ -591,6 +591,24 @@ a.eyebrow:hover {
 .cell--wide {
   grid-column: 1 / -1;
 }
+/* Foot: the cell's actions and their pending or error state, above a hairline. */
+.cell:has(> .cell__foot) {
+  display: flex;
+  flex-direction: column;
+}
+.cell__body {
+  flex: 1;
+  margin-bottom: 1.1rem;
+}
+.cell__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
 .cell--tall {
   grid-row: span 2;
 }

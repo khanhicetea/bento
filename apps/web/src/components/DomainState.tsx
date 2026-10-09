@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type FormEventHandler, type ReactNode } from "react";
 import { Check, CircleHelp, Clock, Copy, Loader, Minus, Square, TriangleAlert, X } from "lucide-react";
 import { Link } from "wouter";
 import { Alert } from "@/components/ui/alert";
@@ -102,12 +102,17 @@ export function moodOf(state: string): Mood {
         : "idle";
 }
 
-/** One compartment of a bento box. */
+/**
+ * One compartment of a bento box. `foot` holds the cell's actions above a hairline. With `onSubmit` the cell
+ * itself is the form, so a Save in its foot submits only this cell's fields.
+ */
 export function Cell({
   title,
   icon,
   kind = "gohan",
   action,
+  foot,
+  onSubmit,
   children,
   className = "",
 }: {
@@ -115,11 +120,14 @@ export function Cell({
   icon?: ReactNode;
   kind?: CellKind;
   action?: ReactNode;
+  foot?: ReactNode;
+  onSubmit?: FormEventHandler<HTMLFormElement>;
   children: ReactNode;
   className?: string;
 }) {
-  return (
-    <section className={`cell ${kindClass[kind]} ${className}`}>
+  const classes = `cell ${kindClass[kind]} ${className}`;
+  const content = (
+    <>
       {(title || action) && (
         <div className="cell__title">
           {title && (
@@ -131,8 +139,22 @@ export function Cell({
           {action}
         </div>
       )}
-      {children}
-    </section>
+      {foot ? (
+        <>
+          <div className="cell__body">{children}</div>
+          <div className="cell__foot">{foot}</div>
+        </>
+      ) : (
+        children
+      )}
+    </>
+  );
+  return onSubmit ? (
+    <form className={classes} onSubmit={onSubmit}>
+      {content}
+    </form>
+  ) : (
+    <section className={classes}>{content}</section>
   );
 }
 
