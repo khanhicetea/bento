@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "**/dist/**", "docs/**", "bento/**", "apps/web/src/api/generated/**"],
+    ignores: ["dist/**", "**/dist/**", "bento/**", "apps/web/src/api/generated/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

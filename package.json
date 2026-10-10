@@ -5,22 +5,19 @@
   "type": "module",
   "workspaces": [
     "apps/web",
-    "apps/docs",
-    "docs"
+    "apps/docs"
   ],
   "engines": {
     "bun": ">=1.4.0 <1.5.0"
   },
   "scripts": {
-    "fmt": "bunx prettier --write apps/web/src apps/web/index.html package.json apps/web/package.json docs/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
-    "fmt:check": "bunx prettier --check apps/web/src apps/web/index.html package.json apps/web/package.json docs/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
+    "fmt": "bunx prettier --write apps/web/src apps/web/index.html package.json apps/web/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
+    "fmt:check": "bunx prettier --check apps/web/src apps/web/index.html package.json apps/web/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
     "lint": "bunx eslint apps/web/src",
     "check": "bunx tsc --noEmit --project apps/web/tsconfig.json",
     "web:build": "bun run --cwd apps/web build",
-    "docs:dev": "bun run --cwd docs dev",
-    "docs:build": "bun run --cwd docs build",
-    "site:dev": "bun run --cwd apps/docs dev",
-    "site:build": "bun run --cwd apps/docs build",
+    "docs:dev": "bun run --cwd apps/docs dev",
+    "docs:build": "bun run --cwd apps/docs build",
     "backend:build": "make -C apps/backend build",
     "backend:test": "make -C apps/backend test",
     "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run web:build && make -C apps/backend ci"

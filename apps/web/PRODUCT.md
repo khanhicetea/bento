@@ -32,7 +32,7 @@ Keep the Bento name, the vector mark (`public/bento-logo.svg`) and the mascot Be
 
 ## Evidence on Hand
 
-README.md and operator documentation in docs/ describe capabilities and limits. The existing React UI in apps/web/src and the committed brand assets in apps/web/public (vector mark, mascot, legacy bento-logo-3d.png) provide real interface content and visual evidence. No customer testimonials, performance claims, or commercial proof are available.
+README.md and operator documentation in apps/docs/ describe capabilities and limits. The existing React UI in apps/web/src and the committed brand assets in apps/web/public (vector mark, PNG mark, mascot) provide real interface content and visual evidence. No customer testimonials, performance claims, or commercial proof are available.
 
 ## Product Principles
 

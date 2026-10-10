@@ -20,7 +20,7 @@ make -C apps/backend test-integration  # real Docker, disposable roots only
 make -C apps/backend release
 
 # This docs site
-bun run site:dev
+bun run docs:dev
 ```
 
 After changing `apps/backend/internal/api/dto`, run `make -C apps/backend generate-types` and commit the output.

@@ -7,7 +7,7 @@ These rules apply to the whole repository. A more specific `AGENTS.md` in a subd
 - Bento is a single-host control plane: a resident Go backend (`apps/backend`) that manages Docker Engine directly,
   keeps desired state in SQLite, serves a REST API and the React UI, and a thin Go CLI that talks to it.
 - Architecture, contributor recipes, and verification records live in `apps/backend/docs/`. Operator documentation
-  lives in `docs/`.
+  lives in `apps/docs/`.
 - Go 1.27 for the backend. The frontend and docs site use their locked JavaScript toolchain (see `mise.toml` and the
   root `package.json`). Keep dependency versions exact and commit `go.mod`, `go.sum`, and lockfile changes.
 - Stack roots are external mutable operator state. Never write runtime state beside the source tree or binary.

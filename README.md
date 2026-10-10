@@ -4,7 +4,7 @@ Bento is a self-hosted control plane for running PHP apps and Node.js HTTP apps 
 Each app gets its own persistent container, Linux identity, home directory, scheduler, and data bindings. Bento keeps
 your intent in SQLite and converges Docker toward it through the Docker Engine API.
 
-![Bento logo](./bento-logo-3d.png)
+![Bento logo](./apps/web/public/bento-logo.png)
 
 ```text
 browser UI / bento CLI
@@ -91,7 +91,7 @@ API types for the UI are generated from Go DTOs with `make -C apps/backend gener
 - [Backend developer docs](apps/backend/README.md)
 - [Architecture](apps/backend/docs/architecture.md)
 - [Verification record and known gaps](apps/backend/docs/evidence.md)
-- Operator guides: `docs/` (`bun run docs:dev`)
+- Operator guides: `apps/docs` (`bun run docs:dev`)
 
 ## Limits
 

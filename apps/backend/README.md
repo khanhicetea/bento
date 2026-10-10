@@ -9,7 +9,7 @@ versioned REST API on loopback, and serves the embedded React UI from `apps/web`
 - How the code works: [docs/architecture.md](docs/architecture.md)
 - How to change it: [docs/contributing.md](docs/contributing.md)
 - What has been verified, and what has not: [docs/evidence.md](docs/evidence.md)
-- Operator documentation: [`docs/`](../../docs) (Starlight site)
+- Operator documentation: [`apps/docs`](../docs) (Blume site)
 
 ## Quick start
 
