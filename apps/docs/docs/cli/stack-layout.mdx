@@ -1,0 +1,33 @@
+---
+title: Stack layout
+description: Every file and directory in a stack root, and which ones are durable.
+---
+
+```text
+/srv/bento/prod/
+├── bento.db                 intent, identities, UID ledger, operations, sessions (0600)
+├── homes/<slug>/            app homes — DURABLE; code in homes/<slug>/app/
+├── sqlite/<id>/             SQLite binding directories — DURABLE
+├── apps/<appId>/config/     generated config + credentials, mounted read-only at /etc/bento
+├── apps/<appId>/identity/   generated passwd/group
+├── services/<name>/         data-service secrets (0400), Redis config
+├── edge/
+│   ├── conf/{live,previous} edge Nginx generations
+│   ├── custom/              your drop-ins
+│   ├── certs/               certificates
+│   └── acme/                ACME state
+├── cloudflared/token        tunnel token (0440)
+├── backups/<slug>/          database backup artifacts
+├── secrets/restic/<appId>.key   app backup repository keys (0400), kept after removal
+├── rclone/rclone.conf       rclone remotes (yours; must not be encrypted)
+└── run/ locks/ cache/ staging/   runtime coordination, not durable
+```
+
+MySQL, PostgreSQL, and Redis data live in Docker volumes named `bento-<stack>-<service>-data`.
+
+## Notes
+
+- `bento.db` schema version 3 adds `apps.home_path`; a version 2 database is migrated when opened. Unknown versions
+  are refused.
+- An app restored from an app backup keeps the source's path inside the container (e.g. `/home/shop`); the host
+  directory is still `homes/<new-slug>/`.

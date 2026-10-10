@@ -1,0 +1,47 @@
+---
+title: Stack
+description: init, serve, import, export, and password commands.
+---
+
+These commands work on the stack folder directly and take the stack lock (except `export`, `status`, and
+`auth`).
+
+## init
+
+```text
+bento --stack ROOT init --name NAME [--mysql V] [--postgres V] [--uid-first N --uid-last N] [--password-stdin]
+```
+
+Refuses a non-empty folder. UID range defaults to 10000–19999.
+
+## serve
+
+```text
+bento serve [--listen 127.0.0.1:7780] [--origin URL]... [--utils-listen IP:PORT|apps:PORT|off]... [--op-concurrency 4]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--listen` | UI/API address. Loopback only; anything else is refused. |
+| `--origin` | Extra allowed browser origin, e.g. a different SSH-forwarded port. |
+| `--utils-listen` | [Utils listener](/ingress/utils) addresses. Default `127.0.0.1:7781` and `apps:7781`. |
+| `--op-concurrency` | 1–16. Operations on different apps run in parallel up to this limit. |
+
+Normally run by systemd (`bento@<stack>`); put overrides in `/etc/bento/<stack>.env`.
+
+## import / export
+
+```text
+bento export --to DIR                                         # type "export"
+bento --stack ROOT import --from DIR [--name NAME] [--uid-first N --uid-last N]
+```
+
+See [Stacks, export, and migration](/system/stacks).
+
+## Misc
+
+```bash
+bento version
+bento status
+bento auth set-password     # or pipe with --password-stdin at init
+```

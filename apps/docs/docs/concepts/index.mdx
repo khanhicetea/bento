@@ -1,0 +1,27 @@
+---
+title: Concepts
+description: The handful of ideas you need to use Bento well.
+---
+
+Bento has a small vocabulary. Five minutes here will make every screen make sense.
+
+![How Bento fits together: a stack holds hosts, apps, and data servers, and every change is a recorded operation](/bento-concepts.webp)
+
+| Term | In one sentence |
+| --- | --- |
+| **Stack** | One Bento installation on a server: a folder (e.g. `/srv/bento/prod`), its apps, and its database servers. |
+| **App** | One website or service. Exactly one container, one Linux user, one home folder. |
+| **Runtime** | What runs the app: PHP (with Nginx built in) or an HTTP process (Node.js, Bun, Python). |
+| **Host** | A domain name Bento serves, pointing at an app, another server, or a redirect. |
+| **Binding** | An app's access to a database server: its own user and databases. |
+| **Operation** | One change Bento carries out — start, deploy, backup — recorded in **Activity**. |
+
+Most people run one stack per server. You can run several, e.g. `prod` and `staging` — see
+[Several stacks](/system/stacks).
+
+<CardGroup cols={2}>
+  <Card title="Apps" href="/concepts/apps">What an app is, and what survives removal.</Card>
+  <Card title="Traffic" href="/concepts/traffic">How visitors reach your apps.</Card>
+  <Card title="Data" href="/concepts/data">Databases, Redis, and files.</Card>
+  <Card title="Changes" href="/concepts/changes">Operations, Activity, and self-healing.</Card>
+</CardGroup>

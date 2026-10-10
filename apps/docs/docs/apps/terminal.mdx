@@ -1,0 +1,29 @@
+---
+title: Terminal
+description: A shell as the app's user — for deploys, maintenance, and debugging.
+---
+
+The **Terminal** tab opens a shell in your code folder (`/home/<slug>/app`), as the app's user, with the app's
+environment and database credentials loaded.
+
+It has two modes:
+
+| Mode | Runs in | Use for |
+| --- | --- | --- |
+| **Tool shell** (default) | A throwaway copy of the app container — same image, files, and credentials, but no web server or jobs. | `composer install`, `npm run build`, migrations, git. Works even when the app is stopped. |
+| **Live app** | The running container itself. | Inspecting the live process. Changes affect production. |
+
+Common tasks:
+
+```bash
+composer install --no-dev          # PHP dependencies
+php artisan migrate --force        # database migrations
+npm ci && npm run build            # front-end assets
+tail -f storage/logs/laravel.log   # framework logs
+mysql -h"$DB_HOST" -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE"   # SQL shell
+```
+
+## File permissions
+
+Copied files from elsewhere and now the app can't write? **Settings → Permissions** checks and repairs ownership:
+**Check**, **Dry run**, **Shallow repair**, or **Recursive repair**. Repairs never follow symlinks.

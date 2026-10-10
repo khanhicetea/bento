@@ -1,0 +1,46 @@
+---
+title: Backup
+description: Protect one app — quick database dumps, full encrypted app backups, or both.
+---
+
+The **Backup** tab has two independent methods. Turning one on never affects the other.
+
+| | **Database backup** | **App backup** |
+| --- | --- | --- |
+| Saves | the app's databases | everything: code, uploads, `.env`, databases, scheduled jobs |
+| Stored as | compressed SQL dumps | an encrypted restic repository (only changes uploaded) |
+| Restore | **in place**, one database at a time | **into a new app**, never over the live one |
+| Pick when | uploads live in S3 or similar | uploads or generated files live in the app's home |
+
+Most production apps benefit from both: dumps for a quick rollback, app backups for disaster recovery.
+
+## Database backup
+
+- **DB schedules** lists the schedules that cover this app. **Add schedule for this app** creates one prefilled for it.
+- **Last dumps** shows the newest dump of each database.
+- **Back up now** runs a one-off dump.
+
+Schedules, off-site upload, and restore are managed in the [Backups screen](/backups/database).
+
+## App backup
+
+<Steps>
+  <Step title="Choose a repository">
+    You need an rclone remote first (**Backups → Schedules → Open rclone shell**, `rclone config`). Then set
+    **Repository** to `remote:path`, e.g. `b2:bento/apps/shop` — one path per app.
+  </Step>
+  <Step title="Choose what to save">
+    Keep **Paths** as `.` (the whole home) unless you have a reason not to. Add **Excludes** like `node_modules`, and
+    list **SQLite files** so they're copied safely while in use.
+  </Step>
+  <Step title="Set schedule and retention">
+    A **Cron** schedule (server time zone) and how many hourly / daily / weekly / monthly snapshots to **Keep**.
+  </Step>
+  <Step title="Create the repository and save the key">
+    Press **Create repository**. The key is shown **once** — **Copy key now** and store it in your password manager.
+    Without it, the backups can never be decrypted.
+  </Step>
+</Steps>
+
+**Snapshots** lists every backup. From there you can **Restore into a new app**. Full details, including restoring on
+another server: [App backups](/backups/app-backups).

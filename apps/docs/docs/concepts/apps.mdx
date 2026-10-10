@@ -1,0 +1,33 @@
+---
+title: Apps
+description: What an app is, where its files live, and what happens when you remove it.
+---
+
+An app is **one container running as its own Linux user**. Apps can't read each other's files or credentials.
+
+![App anatomy: one container and one Linux user, a durable home folder, and what removal keeps](/bento-app-anatomy.webp)
+
+## Where things live
+
+| Inside the app | On the server | What it is |
+| --- | --- | --- |
+| `/home/shop` | `/srv/bento/prod/homes/shop` | The app's **home**: everything the app owns. |
+| `/home/shop/app` | `…/homes/shop/app` | Your **code** — the git checkout. |
+| `/home/shop/deploy.sh` | | Optional [deploy script](/apps/deploy-scripts). |
+
+The home is **durable**: it survives restarts, updates, and container replacement. Everything else in the container is
+read-only and rebuilt as needed — don't write outside the home.
+
+## Names and identity
+
+- The **slug** (`shop`) is permanent. To rename, create a new app.
+- Each app gets a unique Linux **UID**. Bento never reuses a UID, even after an app is deleted, so old files can never
+  be mistaken for a new app's.
+
+## Removing an app keeps its data
+
+**Settings → Remove** asks you to type `delete shop`. It removes the container and its routes, but **keeps** the home
+folder and databases. You'll find them under **System → Retained data**, where you can delete them for good when you're
+sure.
+
+While old data is retained you can't create a new app with the same slug.

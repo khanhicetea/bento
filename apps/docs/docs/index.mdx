@@ -1,0 +1,40 @@
+---
+title: Bento
+description: Run your PHP and Node.js, Bun, or Python apps on one Linux server, from a web UI that keeps every app isolated and every change visible.
+---
+
+Bento turns one Linux server into a small, tidy platform for your web apps. You create an app in the web UI, pick its
+runtime, hostname, and database, deploy from git — and Bento runs it in its own container, under its own user, with
+its own credentials.
+
+<CardGroup cols={2}>
+  <Card title="Install Bento" icon="download" href="/get-started/install">
+    Docker, one binary, one systemd service. About five minutes.
+  </Card>
+  <Card title="Create your first app" icon="rocket" href="/get-started/first-app">
+    From an empty server to a site on HTTPS, in the web UI.
+  </Card>
+  <Card title="Learn the concepts" icon="book-open" href="/concepts">
+    Stacks, apps, data, and how traffic gets in.
+  </Card>
+  <Card title="Prefer the terminal?" icon="terminal" href="/cli">
+    Everything in the UI is also a `bento` command.
+  </Card>
+</CardGroup>
+
+## What you can do
+
+| | |
+| --- | --- |
+| **Run apps** | PHP 7.4–8.5, or Node.js, Bun, and Python HTTP servers. One container per app. |
+| **Deploy** | Connect a git repository, press **Deploy**, or deploy on every push. |
+| **Go online** | Add a domain, get a free HTTPS certificate, publish with one click. |
+| **Store data** | MySQL, PostgreSQL, SQLite, and Redis, with credentials injected for you. |
+| **Run jobs** | Cron jobs and queue workers per app. |
+| **Back up** | Scheduled database dumps and encrypted whole-app snapshots, off-site. |
+
+## Is Bento right for you?
+
+Bento is built for **one server** run by a developer or a small team — a VPS or a dedicated box hosting a handful of
+Laravel, WordPress, Symfony, or Node apps. It is not a cluster scheduler: no replicas, no autoscaling, no
+zero-downtime rollouts, and no hostile multi-tenant hosting.

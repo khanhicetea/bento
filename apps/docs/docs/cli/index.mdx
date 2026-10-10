@@ -1,0 +1,54 @@
+---
+title: CLI basics
+description: Everything in the web UI is also a bento command — for scripts, automation, and SSH-only days.
+---
+
+<Callout type="warning">
+Run `bento` as **root**. The control socket (`run/bento.sock` in the stack folder) is root-only.
+</Callout>
+
+```text
+bento [--stack ROOT] [--json] [--no-wait] <command>
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--stack ROOT` | Stack folder. Defaults to `$BENTO_STACK_ROOT` — set it in root's `~/.bashrc`. |
+| `--json` | Machine-readable output. |
+| `--no-wait` | Return as soon as the operation is accepted instead of following it. |
+
+## How commands work
+
+Most commands talk to the running Bento service, exactly like the UI. Changes become [operations](/concepts/changes):
+the command follows progress and exits when it finishes.
+
+```bash
+bento status              # stack health
+bento ops                 # recent operations ("waiting on <id>" if queued)
+bento op <id>             # steps, events, errors, advice
+bento op cancel <id>      # cancel at the next step boundary
+```
+
+`serve`, `init`, and `import` work on the stack folder directly — see [Stack](/cli/stack).
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | failure |
+| 2 | usage error |
+| 3 | request rejected (validation, conflict, confirmation) |
+
+Every change carries an idempotency key, so retrying a command never runs it twice.
+
+## Command map
+
+| Area | Commands |
+| --- | --- |
+| [Apps](/cli/apps) | `apps`, `app show\|create\|update\|start\|stop\|restart\|publish\|unpublish\|remove`, `app logs\|exec\|shell\|minicrond\|permissions` |
+| [Deploy](/cli/deploy) | `app git`, `app deploy`, `app webhook` |
+| [Data](/cli/data) | `services`, `service add`, `app bind`, `app add-db`, `retired`, `retired prune` |
+| [Backups](/cli/backups) | `backup run\|list\|runs\|restore\|schedule`, `app restore-from-backup` |
+| [Ingress](/cli/ingress) | `edge`, `edge set`, `hosts`, `host add\|set\|remove`, `tunnel`, `tunnel set-token\|disable` |
+| [Stack](/cli/stack) | `serve`, `init`, `import`, `export`, `version`, `status`, `auth set-password` |

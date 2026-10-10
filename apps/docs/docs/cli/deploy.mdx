@@ -1,0 +1,28 @@
+---
+title: Deploy
+description: Git source, deploys, and push-to-deploy webhooks from the CLI.
+---
+
+```bash
+bento app git shop --repo git@github.com:you/shop.git --branch main   # prints the deploy key
+bento app git shop --branch release                                     # change branch
+bento app deploy shop
+```
+
+## Webhooks
+
+```bash
+bento app webhook shop --enable     # prints URL and secret (once)
+bento app webhook shop --rotate     # new secret, same URL
+bento app webhook shop              # recent deliveries
+bento op <operationId>              # a deploy's full log
+```
+
+Trigger from CI:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $BENTO_WEBHOOK_SECRET" "$BENTO_WEBHOOK_URL"
+```
+
+See [Deploy](/apps/deploy) for git host setup and delivery results, and
+[Deploy script recipes](/apps/deploy-scripts) for `~/deploy.sh`.

@@ -1,0 +1,35 @@
+---
+title: Working with an app
+description: The app screen — its header actions and its nine tabs.
+---
+
+Open **Apps** and click an app. Everything about it lives on one screen.
+
+## Header actions
+
+| Button | Does |
+| --- | --- |
+| **Start** / **Stop** | Runs or stops the app, including its jobs and workers. Stopping unpublishes first. A stopped app stays stopped across reboots. |
+| **Publish** / **Unpublish** | Turns the public route on or off (Public apps only). Unpublishing keeps the app running. |
+| **Terminal** | A shell as the app's user. |
+
+A running operation shows as a banner at the top of the screen with live progress.
+
+## Tabs
+
+| Tab | Use it to |
+| --- | --- |
+| **Overview** | See status, runtime, routing, resources, and the app's internal URL. |
+| [**Deploy**](/apps/deploy) | Connect git, deploy, set up push-to-deploy. |
+| [**Monitoring**](/apps/monitoring-and-logs) | CPU, memory, network, and the process tree. |
+| [**Logs**](/apps/monitoring-and-logs#logs) | Live container output. |
+| [**Terminal**](/apps/terminal) | Run commands as the app. |
+| [**Data**](/apps/data) | Databases, Redis, and the database browser. |
+| [**Backup**](/apps/backup) | Database dumps and whole-app backups. |
+| [**Scheduler**](/apps/scheduler) | Cron jobs and workers. |
+| [**Settings**](/apps/settings) | Runtime, PHP performance, domains, limits, environment, permissions, removal. |
+
+## The Apps list
+
+**Apps** lists every app with its state. Filter by **Running**, **Stopped**, or **Attention** (something failed or is
+blocked). **New app** starts the [wizard](/apps/create).

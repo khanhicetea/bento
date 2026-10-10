@@ -1,0 +1,42 @@
+---
+title: Cloudflare Tunnel
+description: Serve apps through Cloudflare without opening any ports on your server.
+---
+
+A Cloudflare Tunnel makes an outbound connection from your server to Cloudflare, so visitors reach your apps without
+ports 80/443 being open. Good for servers behind NAT or a strict firewall.
+
+<Steps>
+  <Step title="Create the tunnel in Cloudflare">
+    In Cloudflare Zero Trust, go to **Networks → Tunnels → Create a tunnel** (type *cloudflared*) and copy its token.
+  </Step>
+  <Step title="Give the token to Bento">
+    **Ingress → Tunnel**, paste the **Token**, save. Bento runs `cloudflared` for you. The token is stored privately
+    and never shown again.
+  </Step>
+  <Step title="Add public hostnames in Cloudflare">
+    For each domain, choose a service:
+
+    | Route to | Service URL |
+    | --- | --- |
+    | Bento's edge (keeps hosts, redirects, caching) | `http://bento-<stack>-edge:80` |
+    | An app directly | the app's **Internal URL** from its Overview, e.g. `http://app-<id>:8080` |
+
+    Apps routed directly should use **External** access.
+  </Step>
+</Steps>
+
+<Callout type="warning" title="External access has no off switch in Bento">
+With **External**, Bento doesn't own the route: there's no Publish button, and stopping the app leaves the Cloudflare
+hostname in place returning errors. Remove the hostname in Cloudflare to take it offline.
+</Callout>
+
+## Push-to-deploy through a tunnel
+
+Add a hostname rule **above** the app's rule with path `^/_bento/webhook/` and service set to Bento's utils address
+(see [Utils](/ingress/utils)).
+
+## Your own proxy instead
+
+Already run Caddy, Traefik, or nginx in a container? Attach it to the `bento-<stack>-apps` Docker network and proxy to
+each app's Internal URL. Set those apps' access to **External**.

@@ -1,0 +1,84 @@
+---
+title: Apps
+description: Create, run, inspect, and remove apps from the command line.
+---
+
+## Create
+
+```bash
+bento app create --json shop.json
+```
+
+```json shop.json
+{
+  "slug": "shop",
+  "runtime": {
+    "kind": "php-fpm",
+    "php": { "version": "8.4", "documentRoot": "public", "routing": "front-controller", "mode": "standard", "uploadLimitMb": 64 }
+  },
+  "hosts": [{ "name": "shop.example.com", "route": { "tls": "acme", "redirectHttps": true, "accessLog": false } }],
+  "bindings": [{ "engine": "mysql", "service": "mysql84" }]
+}
+```
+
+<Expandable title="HTTP-process runtime">
+```json
+{
+  "kind": "http-process",
+  "http": { "toolchain": "node", "version": "24", "argv": ["node", "server.js"], "workdir": "app", "port": 3000, "readyPath": "/health" }
+}
+```
+</Expandable>
+
+<Expandable title="All PHP runtime fields">
+`version`, `documentRoot`, `routing` (`front-controller` | `legacy`), `mode` (`standard` | `high-concurrency`),
+`uploadLimitMb`, `readyPath`, `releaseSymlink`, `maxWorkers` (1–200), `webMemoryLimitMb` (16–4096),
+`cliMemoryLimitMb` (16–8192), `maxExecutionSeconds` (1–280), `maxInputVars` (100–100000).
+</Expandable>
+
+Resources default to `{"memoryMb": 512, "cpuMillis": 1000, "pids": 256}`.
+
+## Run
+
+```bash
+bento apps                        # list
+bento app show shop
+bento app start shop              # waits for readiness
+bento app publish shop
+bento app unpublish shop
+bento app restart shop
+bento app stop shop               # unpublishes first
+```
+
+## Update
+
+```bash
+bento app update shop --json patch.json
+```
+
+`patch.json` may contain any of `runtime`, `resources`, `ingress` (`managed` | `external` | `none`), `accessLog`, plus
+`expectedGeneration` to refuse the update if the app changed since you read it:
+
+```json
+{ "resources": { "memoryMb": 1024 }, "expectedGeneration": 7 }
+```
+
+## Inspect and operate
+
+```bash
+bento app shell shop                          # tool shell in /home/shop/app
+bento app shell shop --running                # shell in the live container
+bento app exec shop -- php artisan migrate --force
+bento app exec shop --running --workdir current -- php artisan about
+bento app logs shop --tail 200 --follow
+bento app permissions shop --mode check       # check | dry-run | shallow | recursive
+bento app minicrond shop -- list              # scheduler: list | import FILE | run NAME | logs NAME
+```
+
+## Remove
+
+```bash
+bento app remove shop          # type "delete shop"
+bento retired                  # data kept from removed apps
+bento retired prune <appId>    # type "delete"
+```

@@ -1,0 +1,53 @@
+---
+title: Ingress
+description: Edge, hosts, and tunnel from the CLI.
+---
+
+## Edge
+
+```bash
+bento edge
+echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":false,
+       "acmeEmail":"you@example.com","acmeUrl":""}' | bento edge set --json -
+```
+
+## Hosts
+
+```bash
+bento hosts
+bento host add --json host.json          # refuses an existing name
+bento host set --json host.json          # replace target and settings
+bento host remove grafana.example.com    # type "delete grafana.example.com"
+```
+
+<Tabs>
+  <Tab title="App">
+    ```json
+    { "name": "shop.example.com", "target": { "kind": "app", "app": "shop" },
+      "route": { "tls": "acme", "redirectHttps": true }, "enabled": true }
+    ```
+  </Tab>
+  <Tab title="Upstream">
+    ```json
+    { "name": "grafana.example.com", "target": { "kind": "upstream", "upstreams": ["http://10.0.0.5:3000"] },
+      "route": { "tls": "acme", "redirectHttps": true, "staticCache": true }, "enabled": true }
+    ```
+  </Tab>
+  <Tab title="Redirect">
+    ```json
+    { "name": "www.shop.example.com", "target": { "kind": "redirect", "redirectTo": "shop.example.com" },
+      "route": { "tls": "acme" }, "enabled": true }
+    ```
+  </Tab>
+</Tabs>
+
+`route` fields: `tls` (`none` | `self-signed` | `acme` | `external`), `certName` (external TLS), `redirectHttps`,
+`accessLog`, `staticCache`.
+
+## Tunnel
+
+```bash
+bento tunnel
+bento tunnel set-token     # paste the token
+bento tunnel disable
+```

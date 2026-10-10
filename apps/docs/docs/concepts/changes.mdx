@@ -1,0 +1,32 @@
+---
+title: Changes and Activity
+description: How Bento carries out changes, shows progress, and repairs drift on its own.
+---
+
+![Operations and reconcile: every change is a saved operation, and every minute Bento compares desired state with Docker](/bento-operations.webp)
+
+## Every change is an operation
+
+Pressing **Start**, **Deploy**, **Back up now** — each creates an **operation**. Bento saves it first, then runs it
+step by step in the background. You can follow it inline or in **Activity**, close the browser, and come back later.
+
+When an operation fails, it tells you **what** failed and **what to do**, with log lines attached. Bento does not
+retry failed operations by itself — you decide.
+
+## Bento keeps things as you asked
+
+Bento remembers what you **want** (app running or stopped, published or not) separately from what Docker **reports**.
+Every minute it compares them and fixes safe differences:
+
+- an app you want running whose container disappeared is recreated;
+- an app you stopped that someone started by hand is stopped again;
+- the edge, tunnel, and database servers are recreated if missing.
+
+It deliberately does **not** restart an app just because it is unhealthy, and never recreates anything whose data is
+missing. After five failed attempts a target shows as **blocked** on **Home → Attention** until you act.
+
+## Restarts vs. reloads
+
+Some settings need a new container (runtime version, memory, environment, bindings) — the app restarts briefly. Others
+(PHP settings, Nginx, scheduled jobs) are reloaded in place without downtime. Save buttons that will restart a running
+app say so.

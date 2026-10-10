@@ -1,0 +1,61 @@
+---
+title: App backups
+description: Encrypted snapshots of a whole app, restored as a new app — on this server or another.
+---
+
+An app backup is a [restic](https://restic.net) snapshot of an app's home (code, uploads, `.env`), its databases, its
+scheduled jobs, and a description of its settings. Snapshots are encrypted and deduplicated — after the first one,
+only changes are uploaded.
+
+Set it up from the app's [Backup tab](/apps/backup#app-backup).
+
+## What gets saved
+
+1. A SQL dump of each database (taken first, so every upload referenced by the data is included).
+2. Safe copies of SQLite files and the scheduler's jobs.
+3. `app.json` — runtime, resources, domains, bindings, git source, and environment variables **with secrets
+   redacted**.
+4. The home folder, minus your excludes.
+
+The app keeps running throughout.
+
+### Include secrets
+
+By default no passwords are saved. Turn on **Include secrets** in **Backup settings** to also store environment
+secrets and database passwords inside the (encrypted) snapshot, so a restored app works without re-entering them.
+
+## Restore
+
+App backups are **never** restored over the live app. Pick a snapshot and press **Restore into a new app**, giving it a
+new slug (e.g. `shop-restored`). Type `clone <new-slug>` to confirm. The new app is created **stopped**, so you can
+check it before publishing or moving domains.
+
+To roll back only the database of the live app, use [database backups](/backups/database) instead.
+
+## Restore on another server
+
+Useful for migrations and disaster recovery.
+
+<Steps>
+  <Step title="Create an access key on the source app">
+    In the source app's Backup tab, **Access keys → Add**. Copy the key — it's shown once.
+  </Step>
+  <Step title="Add the same rclone remote on the new server">
+    See [Off-site storage](/backups/rclone).
+  </Step>
+  <Step title="Restore">
+    **Apps → From app backup**, enter the repository and key, and choose a slug. The new server needs a database
+    server of the same engine and version.
+  </Step>
+</Steps>
+
+## Keep an eye on it
+
+- **Backups → App backups** shows each app's last run, next run, and verification.
+- A run that couldn't read some files is marked **partial**.
+- **Verify** reads part of the data back to check the repository is healthy.
+- If a run warns about a stale lock, fix the remote's delete permission and press **Remove stale locks**.
+
+<Callout type="danger">
+Lose every key and the backups are gone for good. Store keys in a password manager, away from the server.
+</Callout>

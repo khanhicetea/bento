@@ -1,0 +1,45 @@
+---
+title: Edge
+description: Turn on Bento's built-in Nginx edge for domains and automatic HTTPS.
+---
+
+The **Ingress** screen controls how traffic reaches your apps. It has three tabs: **Edge**, **Tunnel**, and **Utils**,
+plus the list of **Hosts**.
+
+The **edge** is Bento's shared Nginx. It listens on ports 80/443, handles HTTPS certificates, and sends each domain to
+the right app. It's off until you enable it.
+
+## Enable the edge
+
+In **Ingress → Edge**:
+
+| Field | Typical value |
+| --- | --- |
+| **Enabled** | on |
+| **Bind** | `0.0.0.0` (all interfaces) |
+| **HTTP** / **HTTPS** | `80` / `443` |
+| **HTTP/3** | off unless you need it (also open UDP 443) |
+| **Contact email** | your email, for Let's Encrypt notices |
+| **Directory URL** | empty = Let's Encrypt. Set another ACME CA if you use one. |
+
+Save. Open ports 80 and 443 in your firewall.
+
+## Certificates
+
+Each host picks a **TLS** mode:
+
+| TLS | Use when |
+| --- | --- |
+| **ACME** | Public domain pointing at this server. Free, automatic, renewed for you. Needs port 80 reachable. |
+| **External certificate** | You have your own certificate (e.g. a wildcard). Put `fullchain.pem` and `privkey.pem` in `edge/certs/external/<name>/` in the stack folder. |
+| **Self-signed** | Testing only. |
+| **None** | Plain HTTP. |
+
+## Traffic
+
+The **Traffic** panel shows live edge metrics — connections, connection states, and dropped requests.
+
+## Safe changes
+
+Every edge change is tested with `nginx -t` before it goes live. If a change is invalid, it's rejected and the edge keeps
+serving the previous configuration — you'll never take every site down with a typo.

@@ -1,0 +1,141 @@
+---
+title: Protect app backups
+description: Let restic delete what it needs while a compromised host still can't destroy your backups — versioning, lifecycle rules, and Object Lock.
+---
+
+[App backups](/backups/app-backups) need a remote credential that can **delete**. That credential lives on the Bento
+host, so whoever takes over the host could delete every backup with it.
+
+The fix: let the credential delete, but make deletes **reversible** on the storage side. The bucket keeps deleted or
+overwritten objects as old versions for a fixed window, and the Bento credential can't touch those versions or the
+bucket's rules.
+
+| Threat | Without protection | With this setup |
+| --- | --- | --- |
+| restic deletes a lock or prunes | object gone | noncurrent version, expires after the window |
+| Attacker runs `rclone purge` / `restic forget --prune` | backups gone | only delete markers; everything restorable |
+| Attacker deletes versions or disables versioning | possible | denied by IAM (and Object Lock) |
+| Attacker silently stops backups | unnoticed | Backups page shows failed/overdue runs |
+
+## S3 and compatible stores
+
+<Steps>
+  <Step title="Enable versioning">
+    ```sh
+    aws s3api put-bucket-versioning --bucket backup-example \
+      --versioning-configuration Status=Enabled
+    ```
+    A plain `DeleteObject` now only adds a delete marker.
+  </Step>
+  <Step title="Expire old versions with a lifecycle rule">
+    Choose a window longer than your time to notice an incident; 30 days is common.
+
+    ```json lifecycle.json
+    {
+      "Rules": [
+        {
+          "ID": "bento-restic-versions",
+          "Filter": { "Prefix": "bento/" },
+          "Status": "Enabled",
+          "NoncurrentVersionExpiration": { "NoncurrentDays": 30 },
+          "Expiration": { "ExpiredObjectDeleteMarker": true },
+          "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+        }
+      ]
+    }
+    ```
+    ```sh
+    aws s3api put-bucket-lifecycle-configuration --bucket backup-example \
+      --lifecycle-configuration file://lifecycle.json
+    ```
+  </Step>
+  <Step title="Give Bento a key that can delete objects, not versions">
+    ```json policy.json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ListRepositoryPaths",
+          "Effect": "Allow",
+          "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+          "Resource": "arn:aws:s3:::backup-example",
+          "Condition": { "StringLike": { "s3:prefix": ["bento/*", "bento"] } }
+        },
+        {
+          "Sid": "ReadWriteDeleteCurrentObjects",
+          "Effect": "Allow",
+          "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+          "Resource": "arn:aws:s3:::backup-example/bento/*"
+        },
+        {
+          "Sid": "NeverTouchHistoryOrBucketRules",
+          "Effect": "Deny",
+          "Action": [
+            "s3:DeleteObjectVersion",
+            "s3:PutBucketVersioning",
+            "s3:PutLifecycleConfiguration",
+            "s3:PutBucketPolicy",
+            "s3:DeleteBucketPolicy",
+            "s3:PutBucketObjectLockConfiguration",
+            "s3:PutObjectRetention",
+            "s3:BypassGovernanceRetention",
+            "s3:DeleteBucket"
+          ],
+          "Resource": ["arn:aws:s3:::backup-example", "arn:aws:s3:::backup-example/*"]
+        }
+      ]
+    }
+    ```
+    `rclone lsd remote:` fails with this policy; `rclone lsf remote:bucket/path` works, and that's what Bento uses.
+  </Step>
+  <Step title="Optional: Object Lock">
+    A retention period enforced by the storage service itself.
+
+    - **Governance:** admins with `s3:BypassGovernanceRetention` (never the Bento key) can still remove versions. Good
+      default.
+    - **Compliance:** nobody, not even the account root, can delete before retention ends.
+
+    ```sh
+    aws s3api put-object-lock-configuration --bucket backup-example \
+      --object-lock-configuration '{"ObjectLockEnabled":"Enabled","Rule":{"DefaultRetention":{"Mode":"GOVERNANCE","Days":30}}}'
+    ```
+    Keep lifecycle `NoncurrentDays` ≥ the lock days.
+  </Step>
+  <Step title="Verify">
+    From the rclone shell:
+
+    ```sh
+    rclone touch remote:backup-example/bento/.check                     # write: ok
+    rclone deletefile remote:backup-example/bento/.check                # delete: ok (marker)
+    rclone lsf --s3-versions remote:backup-example/bento/ | grep check  # old version still listed
+    rclone deletefile --s3-versions "remote:backup-example/bento/.check-v2026-10-01-000000-000"  # must fail: AccessDenied
+    ```
+  </Step>
+</Steps>
+
+## Other providers
+
+| Provider | History | Notes |
+| --- | --- | --- |
+| Backblaze B2 | All versions by default; lifecycle "Keep prior versions for N days" | Object Lock available. Restrict the application key to bucket and prefix. |
+| Wasabi | Versioning + Object Lock | Same S3 policy; minimum storage duration billing. |
+| Cloudflare R2 | No object versioning | Use bucket lock rules on the prefix, or another provider. |
+| MinIO / self-hosted S3 | Versioning + Object Lock (MinIO) | Same S3 policy. |
+| SFTP / local disk | None | Use ZFS/btrfs snapshots on a storage host the Bento host can't reach. |
+
+## Recovering after deletion
+
+Copy the repository as it was before the incident into a new location:
+
+```sh
+rclone copy --s3-version-at "2026-10-01 12:00:00" \
+  remote:backup-example/bento/apps/shop remote:backup-example/recovered/shop
+```
+
+Point the app's repository at the recovered path, **Connect** with the app's key, run **Verify**, then restore.
+
+## Limits
+
+- An attacker can still stop new backups or upload junk — watch **Backups → App backups**.
+- Anyone with a repository key can read backups. Store keys like passwords.
+- Protection lasts only as long as your window.

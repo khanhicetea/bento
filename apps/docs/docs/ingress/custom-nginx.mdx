@@ -1,0 +1,25 @@
+---
+title: Custom Nginx
+description: Add your own Nginx snippets to the edge, safely.
+---
+
+For anything the UI doesn't cover — custom headers, rate limits, basic auth — drop `.conf` files into the stack's
+`edge/custom/` folder (as root on the server):
+
+| Folder | Applies to |
+| --- | --- |
+| `main.d/` | Nginx `main` context |
+| `http.d/` | the `http` block (all sites) |
+| `sites.d/` | your own extra `server` blocks |
+| `routes/host-<domain>/` | inside one host's server block |
+| `routes/app-<slug>/` | every host pointing at that app |
+
+Example — basic auth on a staging app:
+
+```nginx edge/custom/routes/app-shop-staging/auth.conf
+auth_basic "Staging";
+auth_basic_user_file /etc/bento-edge-custom/htpasswd;
+```
+
+Your files are validated with every edge change. A broken snippet fails the change with `edge-validation-failed` and
+the live edge stays untouched. Save any setting in **Ingress → Edge** to apply new snippets.

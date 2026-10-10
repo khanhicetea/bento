@@ -1,0 +1,23 @@
+---
+title: Scheduler
+description: Cron jobs and long-running workers for an app.
+---
+
+Every app has its own scheduler ([minicrond](https://github.com/khanhicetea/minicrond)) running inside its container,
+as its own user. The **Scheduler** tab is its full UI: create jobs and workers, run a job now, and read run history and
+logs.
+
+- **Jobs** run on a cron schedule — e.g. `php artisan schedule:run` every minute.
+- **Workers** run continuously and are restarted if they exit — e.g. `php artisan queue:work`.
+
+<Callout type="note">
+The app must be **running** to manage its jobs. Jobs keep running while the app is unpublished; stopping or restarting
+the app stops or restarts them too.
+</Callout>
+
+Things to know:
+
+- Jobs belong to the app (stored in its home), so they're included in [app backups](/apps/backup).
+- A job can never run twice at once, even while the container is being replaced.
+- Tasks named `zz-bento-*` are Bento's own (e.g. weekly SQLite `VACUUM`) and read-only.
+- After a deploy, restart queue workers (`php artisan queue:restart`) so they load the new code.

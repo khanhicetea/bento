@@ -1,0 +1,70 @@
+---
+title: Deploy
+description: Connect a git repository, deploy with one click, and deploy automatically on every push.
+---
+
+## Connect a repository
+
+In the **Deploy** tab, under **Repository**:
+
+1. Enter the **Repository URL** and **Branch**.
+   - **Private repos:** use the SSH URL (`git@github.com:you/shop.git`).
+   - **Public repos:** HTTPS works too.
+2. Copy the **Deploy key** Bento generated and add it to the repository as a **read-only** deploy key.
+3. Press **Deploy**.
+
+## What a deploy does
+
+1. Fetches the branch into `/home/<slug>/app`. Files git doesn't track — `.env`, `vendor/`, `node_modules/`, uploads —
+   are left alone.
+2. Runs your [deploy script](/apps/deploy-scripts) `~/deploy.sh`, if there is one (install dependencies, migrate…).
+3. Reloads the app if it's running.
+
+The deploy log streams live under the button. If the deploy script fails, the new code stays on disk but the app is
+**not** reloaded, so the running version keeps serving.
+
+## Push to deploy
+
+Deploy automatically whenever you push to the branch.
+
+<Steps>
+  <Step title="Enable the webhook">
+    Under **Push to deploy**, press **Enable webhook**. Copy the **secret** now — it's shown only once (lost it?
+    **Rotate**; the URL stays the same).
+  </Step>
+  <Step title="Make the URL reachable">
+    - **Public apps on the edge:** nothing to do — the edge forwards `/_bento/webhook/*` on every domain.
+    - **Tunnel or your own proxy:** route `/_bento/webhook/*` to Bento's utils listener. See [Utils](/ingress/utils).
+  </Step>
+  <Step title="Add it to your git host">
+    | Host | Where | Put the secret in |
+    | --- | --- | --- |
+    | GitHub | Settings → Webhooks → Add webhook (content type `application/json`) | Secret |
+    | GitLab | Settings → Webhooks, Push events | Secret token |
+    | Gitea / Forgejo | Settings → Webhooks | Secret |
+    | Bitbucket | Repository settings → Webhooks, Repository push | Secret |
+    | CI script | `curl -fsS -X POST -H "Authorization: Bearer $SECRET" "$URL"` | bearer token |
+
+    Send **push** events only.
+  </Step>
+</Steps>
+
+**Recent deliveries** shows every webhook call with its result:
+
+| Result | Meaning |
+| --- | --- |
+| **deployed** | A deploy was queued. |
+| **coalesced** | Joined a deploy already waiting. |
+| **duplicate** | The git host re-sent a delivery. |
+| **ignored-ref** | Push to another branch or a tag. |
+| **ignored-event** | Not a push event. |
+| **ping** | The test call git hosts send on setup. |
+
+The webhook never decides *what* to deploy — Bento always fetches the configured branch.
+
+<Expandable title="Webhook not arriving?">
+- Git host shows timeout or 502 → the URL doesn't reach Bento; check your proxy or tunnel route and firewall.
+- `404` → wrong URL or secret, or the webhook is disabled.
+- **ignored-ref** → the push went to a different branch than the one configured.
+- `413` → payload too big; send push events only.
+</Expandable>

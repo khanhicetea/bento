@@ -1,0 +1,58 @@
+---
+title: Create an app
+description: Every option in the New app wizard, explained.
+---
+
+**Apps → New app** walks you through four steps. Nothing runs until you press **Start** afterwards, so you can create
+an app before its code is ready.
+
+## 1. Basics
+
+- **Slug** — permanent name: lowercase letters, digits, hyphens. Becomes `/home/<slug>` and the database prefix.
+- **Runtime** — **PHP** or **HTTP process**. This can't be changed later.
+
+## 2. Runtime
+
+<Tabs>
+  <Tab title="PHP">
+    | Field | Choose |
+    | --- | --- |
+    | **Version** | 7.4 – 8.5. Prefer 8.3+; 7.4 and 8.0 are end-of-life. |
+    | **Routing** | **Front controller** for frameworks (Laravel, Symfony, Slim) — only `index.php` runs. **Legacy** for WordPress and classic sites — any `.php` file runs. |
+    | **Document root** | Folder served to the web, relative to your code. `public` for Laravel/Symfony, empty for WordPress. |
+    | **Release symlink** | Only for [release-style deploys](/apps/deploy-scripts#releases), e.g. `current`. |
+    | **Performance** | **Standard** for typical apps. **High concurrency** for apps that mostly wait on APIs or slow queries: 3× the workers, less memory each. |
+
+    PHP apps come with Nginx built in, plus Composer, Node.js, and git for builds.
+  </Tab>
+  <Tab title="HTTP process">
+    | Field | Choose |
+    | --- | --- |
+    | **Toolchain** / **Version** | Node.js 20/22/24, Bun 1.2/1.3, or Python 3.12/3.13. |
+    | **Command** | The program and its arguments, e.g. `node` `server.js`. Runs directly, not through a shell. |
+    | **Port** | The port your app listens on. |
+    | **Working dir** | Relative to your code folder. |
+    | **Ready path** | A URL Bento requests to check the app is up, e.g. `/health`. |
+
+    Your app must listen on `0.0.0.0:$PORT` — Bento sets `PORT` and `HOST`.
+  </Tab>
+</Tabs>
+
+## 3. Routing & data
+
+- **Access** — **Public** (edge + HTTPS), **External** (tunnel or your own proxy), or **Private** (no public route). See
+  [Traffic](/concepts/traffic).
+- **Domains** and **TLS** (Public only) — add one or more domains. **ACME** gets a free certificate automatically;
+  **External** uses certificate files you provide under a **Certificate name**.
+- **Data** — bind **MySQL**, **PostgreSQL**, **SQLite**, or **None**. You can add more later in the Data tab.
+- **Limits** — **Memory (MB)**, **CPU (millicores)**, **Processes**. Defaults: 512 MB, 1000 (one core), 256. Idle apps
+  use 20–35 MB.
+
+<Callout type="tip">
+For PHP, memory also decides how many requests run in parallel: Standard mode gets about 6 workers at 512 MB and 12 at
+1 GB. Need more throughput? Raise memory.
+</Callout>
+
+## 4. Review
+
+Check the summary and press **Create app**. Next: [deploy code](/apps/deploy).

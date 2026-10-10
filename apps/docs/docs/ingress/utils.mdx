@@ -1,0 +1,48 @@
+---
+title: Utils
+description: Bento's small public-safe listener for deploy webhooks and the database browser.
+---
+
+Two features need to be reachable from outside the SSH tunnel: **push-to-deploy webhooks** (called by your git host)
+and the **database browser**. Bento serves them on a separate **utils listener** that exposes nothing else — never the
+UI or the API. Every request must prove itself (a webhook secret, or a one-time browser ticket).
+
+## Addresses
+
+**Ingress → Utils → Utils listener** shows where it listens:
+
+| Address | Reachable from |
+| --- | --- |
+| `127.0.0.1:7781` | the server itself (host nginx, Caddy) |
+| apps-network address, e.g. `10.200.0.128:7781` | containers: the edge, cloudflared |
+
+## Expose it
+
+<Tabs>
+  <Tab title="Bento edge">
+    Webhooks work automatically on every domain the edge serves. The database browser is **not** forwarded on app
+    domains — open it through the SSH tunnel or a base URL.
+  </Tab>
+  <Tab title="Host nginx">
+    ```nginx
+    location /_bento/ {
+      proxy_pass http://127.0.0.1:7781;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      client_max_body_size 80m;
+      proxy_read_timeout 15m;
+    }
+    ```
+  </Tab>
+  <Tab title="Cloudflare Tunnel">
+    Add a hostname with path `^/_bento/` and service `HTTP` → the apps-network address. If `ufw` blocks
+    container-to-host traffic: `ufw allow from 10.200.0.0/24 to any port 7781 proto tcp`.
+  </Tab>
+</Tabs>
+
+Then set **Utils base URL** to the origin you exposed (e.g. `https://utils.example.com`). Bento uses it to show full
+webhook URLs and to open the database browser. Always use HTTPS.
+
+## Database browser
+
+**Database browser → Enable** starts one shared Adminer container on the private data network. Then use **Browse** on
+any binding in an app's [Data tab](/apps/data#browse-data).

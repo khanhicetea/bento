@@ -1,0 +1,79 @@
+---
+title: Install Bento
+description: Install Docker, install the Bento binary, create your first stack, and start the service.
+---
+
+<Callout type="warning" title="Run everything as root">
+Bento manages Docker, owns app home directories, and runs each app under its own Linux user — so it must run as
+**root**, and so must every `bento` command. Switch to a root shell before you start:
+
+```bash
+sudo -i
+```
+
+Running `bento` as a normal user (even one in the `docker` group) fails: the control socket is root-only.
+</Callout>
+
+## Before you start
+
+- A Linux server, **amd64** (arm64 builds exist but are not yet verified end to end).
+- A fresh or dedicated machine is best. Bento will want ports **80** and **443** if you use its built-in edge.
+- A domain you can point at the server, if you want public HTTPS.
+
+<Steps>
+  <Step title="Install Docker">
+    Bento needs Docker Engine (API 1.44+, i.e. Docker 25 or newer). The quickest way on Debian, Ubuntu, Fedora, and
+    friends is Docker's convenience script:
+
+    ```bash
+    curl -fsSL https://get.docker.com | sh
+    systemctl enable --now docker
+    docker version        # check: Server version 25 or newer
+    ```
+
+    Already have Docker from your distribution's packages? Fine — just check the version.
+  </Step>
+  <Step title="Install the Bento binary">
+    Download `bento-linux-amd64` from the [releases page](https://github.com/khanhicetea/bento/releases), then:
+
+    ```bash
+    install -m 0755 bento-linux-amd64 /usr/local/bin/bento
+    bento version
+    ```
+  </Step>
+  <Step title="Create a stack">
+    A **stack** is one Bento installation with its own folder. Name it `prod` and add a MySQL server:
+
+    ```bash
+    bento --stack /srv/bento/prod init --name prod --mysql 8.4
+    ```
+
+    Want PostgreSQL instead, or as well? Add `--postgres 17`. You can add more database servers later from the UI.
+  </Step>
+  <Step title="Start the Bento service">
+    The systemd unit ships in the repository at `deploy/systemd/bento@.service`.
+
+    ```bash
+    install -m 0644 bento@.service /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable --now bento@prod
+    ```
+
+    `bento@prod` serves the stack at `/srv/bento/prod`. It starts after Docker on every boot.
+  </Step>
+  <Step title="Set your password">
+    ```bash
+    export BENTO_STACK_ROOT=/srv/bento/prod
+    bento auth set-password
+    bento status
+    ```
+    Add the `export` line to root's `~/.bashrc` so you never need `--stack` again.
+  </Step>
+</Steps>
+
+Next: [open the web UI](/get-started/open-the-ui).
+
+<Callout type="tip">
+Stopping or upgrading the Bento service **does not stop your apps**. They are ordinary containers and keep serving;
+only management pauses.
+</Callout>

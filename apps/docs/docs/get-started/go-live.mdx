@@ -1,0 +1,40 @@
+---
+title: Put it online
+description: Turn on Bento's edge, point DNS, and publish your app on HTTPS.
+---
+
+<Steps>
+  <Step title="Point DNS at the server">
+    Create an `A` (and `AAAA`, if you have IPv6) record for `shop.example.com` pointing at your server's public IP.
+    Certificates can't be issued until DNS resolves.
+  </Step>
+  <Step title="Turn on the edge (once per server)">
+    Go to **Ingress → Edge**:
+
+    - Tick **Enabled**. Keep **Bind** `0.0.0.0`, **HTTP** `80`, **HTTPS** `443`.
+    - Under **Certificates · ACME**, enter your **Contact email**. Leave the directory URL empty for Let's Encrypt.
+    - Save.
+
+    Make sure your firewall allows ports 80 and 443.
+  </Step>
+  <Step title="Publish the app">
+    Open the app and press **Publish**. Bento checks the app is running and healthy, then turns its route on.
+  </Step>
+</Steps>
+
+Visit `https://shop.example.com`. The first request may take a few seconds while the certificate is issued.
+
+## Publish vs. start
+
+These are separate on purpose:
+
+- **Start / Stop** controls whether the app runs (including its cron jobs and workers).
+- **Publish / Unpublish** controls whether the public can reach it.
+
+Unpublishing takes the site offline but keeps jobs and workers running — handy for maintenance. Stopping always
+unpublishes first.
+
+## No public ports?
+
+If your server sits behind NAT, or you'd rather not open ports, use a [Cloudflare Tunnel](/ingress/tunnel) instead of
+the edge.

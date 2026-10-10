@@ -1,0 +1,44 @@
+---
+title: Database backups
+description: Schedule compressed dumps of MySQL, PostgreSQL, and SQLite, upload them off-site, and restore in place.
+---
+
+## Create a schedule
+
+**Backups → Schedules → New schedule**:
+
+| Field | Notes |
+| --- | --- |
+| **Name** | e.g. `nightly` |
+| **Cron** | e.g. `0 2 * * *` — in the **server's time zone** (shown on the tab) |
+| **Databases** | **All apps**, **One app**, or **Specific databases** of one app |
+| **Keep per database** | how many dumps this schedule keeps per database |
+| **Compression** | zstd (default) or gzip |
+| **rclone remote** | optional off-site copy, e.g. `b2:bucket/bento`. Press **Test** to check it. See [Off-site storage](/backups/rclone). |
+
+You can have as many schedules as you like — e.g. hourly for one busy database and nightly for everything.
+
+How it behaves:
+
+- Dumps are consistent snapshots (`--single-transaction` for MySQL, `pg_dump`, SQLite's online backup) taken while the
+  app runs.
+- A dump is kept only if it succeeded and isn't empty.
+- Retention only deletes this schedule's own dumps; manual backups are never deleted. Off-site copies are never
+  deleted by Bento — use your bucket's lifecycle rules.
+- Runs missed while Bento was down are recorded, not replayed.
+
+## Restore
+
+<Steps>
+  <Step title="Find the dump">
+    **Backups → Files**, or the app's **Backup** tab.
+  </Step>
+  <Step title="Restore">
+    Press **Restore**, choose the target database, and type `replace <database>` to confirm.
+  </Step>
+</Steps>
+
+<Callout type="warning">
+Restore overwrites live data and is not atomic. When unsure, restore into a fresh database first (add one in the app's
+Data tab). **SQLite** restores need the app stopped.
+</Callout>

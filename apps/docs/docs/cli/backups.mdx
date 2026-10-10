@@ -1,0 +1,55 @@
+---
+title: Backups
+description: Database dumps, schedules, restore, and app backup restore from the CLI.
+---
+
+## Database backups
+
+```bash
+bento backup run                                       # every database
+bento backup run --app shop --database shop,shop_logs --compression gzip --upload b2:bucket/bento
+bento backup list
+bento backup runs
+bento backup restore --artifact shop/mysql-shop-20260101T020000.000Z.sql.zst --app shop --database shop
+```
+
+`restore` asks you to type `replace <database>`.
+
+## Schedules
+
+```bash
+bento backup schedule list
+bento backup schedule create --json schedule.json
+bento backup schedule update <id> --json schedule.json
+bento backup schedule enable|disable|delete <id>
+```
+
+```json schedule.json
+{
+  "name": "shop hourly",
+  "enabled": true,
+  "cron": "0 * * * *",
+  "scope": "database",
+  "appId": "<app id>",
+  "databases": ["shop"],
+  "compression": "zstd",
+  "retain": 24,
+  "rcloneRemote": "remote:bucket/bento"
+}
+```
+
+`scope`: `all` (no `appId`), `app` (no `databases`), or `database`.
+
+## Restore an app backup from another stack
+
+```bash
+bento app restore-from-backup --repo s3:bucket/shop --key-file ./shop.key --slug shop-staging
+```
+
+| Option | Effect |
+| --- | --- |
+| `--backup-after same-repo` | keep backing up to that repository with that key (schedule off) |
+| `--backup-after new-repo` | prepare a separate repository; don't keep the key |
+| `--keep-username` | reuse the source database user when free |
+
+App backup setup itself is done in the app's [Backup tab](/apps/backup).

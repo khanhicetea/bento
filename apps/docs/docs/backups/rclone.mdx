@@ -1,0 +1,37 @@
+---
+title: Off-site storage
+description: Connect S3, Backblaze B2, Google Drive, and 70+ other storage providers with rclone.
+---
+
+Both backup methods upload through [rclone](https://rclone.org). Bento runs rclone in a container — nothing to install
+on the server.
+
+## Add a remote
+
+<Steps>
+  <Step title="Open the rclone shell">
+    **Backups → Schedules**, edit a schedule, and press **Open rclone shell**.
+  </Step>
+  <Step title="Configure">
+    ```sh
+    rclone config            # follow the prompts: n) New remote
+    rclone lsd myremote:     # check it works
+    ```
+  </Step>
+  <Step title="Use it">
+    Enter `myremote:bucket/path` as a schedule's **rclone remote** or an app backup **Repository**. **Test** checks the
+    destination without writing.
+  </Step>
+</Steps>
+
+## Tips
+
+- **Google Drive, OneDrive, Dropbox:** answer `n` to "Use web browser to automatically authenticate?", run
+  `rclone authorize "drive"` on your laptop, and paste the token back.
+- **Encrypt database dumps:** create a `crypt` remote that wraps your storage remote and upload to it. Keep its
+  passwords somewhere safe. (App backups are always encrypted by restic.)
+- **Don't set an rclone config password** — unattended backups can't unlock it, so Bento refuses it.
+- **App backups need delete permission** (for locks and pruning). For S3: `GetObject`, `PutObject`, `DeleteObject`,
+  `ListBucket`. Then [protect against deletion](/backups/protect).
+
+The config is stored in `rclone/rclone.conf` in the stack folder and contains credentials.

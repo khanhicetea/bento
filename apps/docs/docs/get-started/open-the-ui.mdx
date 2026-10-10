@@ -1,0 +1,44 @@
+---
+title: Open the web UI
+description: Reach Bento's UI safely over SSH, sign in, and find your way around.
+---
+
+## Connect
+
+For safety, the Bento UI listens **only on the server itself** (`127.0.0.1:7780`). From your laptop, open an SSH tunnel:
+
+```bash
+ssh -L 7780:127.0.0.1:7780 root@your-server
+```
+
+Keep that session open and browse to **http://127.0.0.1:7780**. Sign in with the password you set.
+
+<Callout type="warning">
+Never expose the UI through a public proxy. Use an SSH tunnel or a VPN.
+</Callout>
+
+<Expandable title="Using a different local port?">
+If you forward to another port, e.g. `-L 9000:127.0.0.1:7780`, allow that address by adding
+`--origin http://127.0.0.1:9000` to the service (put `BENTO_LISTEN` and extra flags in `/etc/bento/prod.env`).
+</Expandable>
+
+## A quick tour
+
+The sidebar has six places:
+
+| Screen | What it's for |
+| --- | --- |
+| **Home** | Health at a glance: Docker, data services, apps running, anything that needs **Attention**, recent activity. |
+| **Apps** | Your apps, filterable by Running, Stopped, and Attention. **New app** starts here. |
+| **Activity** | Every change Bento made: what ran, its progress, and why anything failed. |
+| **Ingress** | Domains and how traffic gets in: **Edge**, **Tunnel**, and **Utils**. |
+| **Backups** | Database dumps, app backups, run history, and schedules. |
+| **System** | Bento and Docker versions, data kept from removed apps, Docker images, volumes, and networks. |
+
+Press <kbd>Ctrl</kbd> + <kbd>K</kbd> (<kbd>⌘</kbd> <kbd>K</kbd> on macOS) anywhere for the command palette.
+
+## How changes work
+
+When you press a button like **Start** or **Deploy**, Bento accepts the request immediately and runs it in the
+background. You'll see progress inline, and the full record — every step and any error with advice — is in
+**Activity**. You can close the tab; the work continues.

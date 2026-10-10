@@ -1,0 +1,22 @@
+---
+title: Upgrade Bento
+description: Replace the binary and restart the service — your apps keep running.
+---
+
+```bash
+sudo -i
+install -m 0755 bento-linux-amd64 /usr/local/bin/bento
+systemctl restart bento@prod
+bento version
+```
+
+Apps, the edge, and databases keep serving during the restart — only management pauses. A running operation is
+drained before the service stops.
+
+If a new version changes an app's runtime image or generated configuration, Bento brings running apps up to date by
+replacing their containers — expect a brief restart per app. Check **Activity** after upgrading.
+
+<Callout type="note">
+Take a [stack export](/system/stacks#move-or-clone-a-whole-stack) before upgrading. Bento refuses to open state from a
+version it doesn't know rather than rewriting it.
+</Callout>

@@ -1,0 +1,36 @@
+---
+title: Backups overview
+description: Choose a backup strategy and find your way around the Backups screen.
+---
+
+Bento has two backup methods, set per app in its [Backup tab](/apps/backup):
+
+![Two backup methods: database dumps restored in place, and encrypted app snapshots restored into a new app](/bento-backups.webp)
+
+| | Database backup | App backup |
+| --- | --- | --- |
+| Saves | databases | the whole app — files, databases, jobs |
+| Restore | in place, per database | into a new app |
+| Off-site | optional rclone upload | always (restic repository on a remote) |
+
+<Callout type="warning">
+A backup that only exists on the same server isn't disaster recovery. Upload off-site **and** test a restore.
+</Callout>
+
+## The Backups screen
+
+| Tab | Shows |
+| --- | --- |
+| **Files** | Every database dump on the server. **Restore** or delete from here. Filter by database type. |
+| **App backups** | Every app with app backups: schedule, last result, snapshots, data added, last verification. |
+| **Runs** | History of all backup runs, failures highlighted. |
+| **Schedules** | Database backup schedules (app backup schedules shown read-only — edit them on the app). |
+
+**Back up now** in the header runs a one-off database backup.
+
+<CardGroup cols={2}>
+  <Card title="Database backups" href="/backups/database">Schedules, retention, restore.</Card>
+  <Card title="App backups" href="/backups/app-backups">Snapshots, restore, migration.</Card>
+  <Card title="Off-site storage" href="/backups/rclone">Set up S3, B2, Drive… with rclone.</Card>
+  <Card title="Ransomware-proof" href="/backups/protect">Make deletes reversible.</Card>
+</CardGroup>

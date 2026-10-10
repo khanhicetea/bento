@@ -5,6 +5,7 @@
   "type": "module",
   "workspaces": [
     "apps/web",
+    "apps/docs",
     "docs"
   ],
   "engines": {
@@ -18,6 +19,8 @@
     "web:build": "bun run --cwd apps/web build",
     "docs:dev": "bun run --cwd docs dev",
     "docs:build": "bun run --cwd docs build",
+    "site:dev": "bun run --cwd apps/docs dev",
+    "site:build": "bun run --cwd apps/docs build",
     "backend:build": "make -C apps/backend build",
     "backend:test": "make -C apps/backend test",
     "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run web:build && make -C apps/backend ci"

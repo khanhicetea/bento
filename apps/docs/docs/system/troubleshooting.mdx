@@ -1,0 +1,49 @@
+---
+title: Troubleshooting
+description: The common problems, what they mean, and how to fix them.
+---
+
+Start with the failed operation in **Activity** — it names the problem and suggests a fix.
+
+<Accordion>
+  <AccordionItem title="App won't start: not-ready">
+    The app started but didn't answer HTTP. Check the **Logs** tab. For HTTP-process apps, make sure the app listens on
+    `0.0.0.0:$PORT` and the **Ready path** returns a non-5xx status. For PHP, check the document root contains
+    `index.php`.
+  </AccordionItem>
+  <AccordionItem title="App won't start: instance-exited">
+    The process crashed on boot. The operation shows its last log lines — usually a missing dependency or config.
+    Fix it in the **Terminal** (tool shell works while stopped) and press **Start** again.
+  </AccordionItem>
+  <AccordionItem title="Site shows an error or the wrong certificate">
+    Check that DNS points at the server, ports 80/443 are open, the app is **published**, and the host's TLS is
+    **ACME**. A new certificate needs port 80 reachable from the internet.
+  </AccordionItem>
+  <AccordionItem title="Something is 'blocked'">
+    Bento tried five times to repair it and stopped. Read the reason on **Home → Attention**, fix the cause, then
+    start the app (or re-save the edge / tunnel / database browser settings) to clear it.
+  </AccordionItem>
+  <AccordionItem title="durable-state-missing / volume-missing">
+    An app's home, SQLite folder, or a database volume has disappeared. Bento refuses to start with empty data.
+    Restore it from a backup or export, then start again.
+  </AccordionItem>
+  <AccordionItem title="Can't create an app: home-retained">
+    A removed app with the same slug still has data. Delete it under **System → Retained data**, or pick another slug.
+  </AccordionItem>
+  <AccordionItem title="edge-validation-failed">
+    A host setting or one of your [custom Nginx](/ingress/custom-nginx) files is invalid. The live edge is unchanged.
+  </AccordionItem>
+  <AccordionItem title="Redis error NOPERM">
+    The app ran a command that would affect other apps (`FLUSHDB`, `KEYS`…). Clear caches by prefix or tag instead.
+  </AccordionItem>
+  <AccordionItem title="Permission denied writing files">
+    Files were copied in as another user. Use **Settings → Permissions → Recursive repair**.
+  </AccordionItem>
+  <AccordionItem title="'bento' says permission denied">
+    Run it as root (`sudo -i`). See [Install](/get-started/install).
+  </AccordionItem>
+  <AccordionItem title="Bento service won't start">
+    Another Bento process already uses this stack (`locks/controller.lock`), or `bento.db` is from an unsupported
+    version — Bento never rewrites state it doesn't understand. Check `journalctl -u bento@prod`.
+  </AccordionItem>
+</Accordion>

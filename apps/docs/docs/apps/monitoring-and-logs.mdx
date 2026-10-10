@@ -1,0 +1,29 @@
+---
+title: Monitoring and logs
+description: Watch an app's resource use and read its live output.
+---
+
+## Monitoring
+
+The **Monitoring** tab shows the running container live:
+
+- **CPU** against the app's core limit,
+- **Memory** as a percentage of its limit,
+- **Network in / out**,
+- the **process tree**: every process with its PID, user, CPU %, memory (RSS), uptime, and command.
+
+Metrics appear once the app is started.
+
+<Callout type="tip">
+Memory near its limit? Raise it in **Settings → Container settings**. For PHP apps this also adds workers.
+</Callout>
+
+## Logs
+
+The **Logs** tab streams everything the container prints: your app, Nginx, PHP-FPM, and the scheduler. Use
+**Wrap lines**, **Copy visible logs**, and **Clear logs** from the toolbar.
+
+- Known secrets (database passwords etc.) are redacted.
+- Docker keeps up to 30 MB of logs per app.
+- Your framework's own log files (e.g. `storage/logs/laravel.log`) are in the home — read them from the
+  [Terminal](/apps/terminal).

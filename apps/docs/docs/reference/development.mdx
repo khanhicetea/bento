@@ -1,0 +1,27 @@
+---
+title: Development
+description: Build, test, and release Bento from source.
+---
+
+The toolchain is pinned in `mise.toml` (Go and Bun).
+
+```bash
+mise install
+bun install --frozen-lockfile
+
+# Frontend
+bun run fmt:check && bun run lint && bun run check && bun run web:build
+
+# Backend (as root)
+make -C apps/backend ci                # gofmt, vet, race tests, generated-type drift, build
+make -C apps/backend test-integration  # real Docker, disposable roots only
+
+# Release: static amd64/arm64 binaries with the embedded UI
+make -C apps/backend release
+
+# This docs site
+bun run site:dev
+```
+
+After changing `apps/backend/internal/api/dto`, run `make -C apps/backend generate-types` and commit the output.
+Contributor rules live in `AGENTS.md`; architecture notes in `apps/backend/docs/`.

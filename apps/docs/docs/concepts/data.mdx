@@ -1,0 +1,41 @@
+---
+title: Data
+description: Database servers, bindings, Redis, and where your files are safe.
+---
+
+![Data and bindings: apps bind to MySQL, PostgreSQL, Redis, and SQLite on a private data network](/bento-data.webp)
+
+## Database servers
+
+A stack runs shared database servers — MySQL (8.0, 8.4, 9.4) and PostgreSQL (14–18) — plus one Redis. Each app gets
+its **own user and databases** on them; apps can't see each other's data.
+
+## Bindings
+
+A **binding** connects an app to a server. Adding one creates:
+
+- a database user just for this app,
+- a database named `<slug>_main` (add more, like `shop_reports`, any time).
+
+Bindings are **add-only**: Bento never drops a database or changes a password behind your back. You can also bind
+**SQLite** — a private folder for a `.db` file.
+
+## Credentials are injected
+
+You never copy passwords around. The app gets environment variables:
+
+| Variables | For |
+| --- | --- |
+| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | the first binding (Laravel-ready) |
+| `BENTO_DB_<n>_*` | every binding |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_PREFIX` | Redis |
+
+## Redis is shared
+
+Every app has its own Redis user that can only touch keys starting with `<slug>:`. Commands that would affect other
+apps — `FLUSHDB`, `FLUSHALL`, `KEYS` — are refused. Clear caches by prefix or tag instead.
+
+## What's durable
+
+App homes, SQLite files, and database volumes. If any of them goes missing, Bento **refuses** to start the app empty
+and asks you to restore — it never silently replaces your data with nothing.

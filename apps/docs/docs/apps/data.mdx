@@ -1,0 +1,54 @@
+---
+title: Data
+description: Add databases to an app, browse them in Adminer, and use Redis.
+---
+
+The **Data** tab lists the app's **data bindings** — one per database server it uses — and its Redis access.
+
+## Add a database
+
+- **Add binding** — pick a data service (e.g. MySQL 8.4, PostgreSQL 17) or **SQLite file**. Bento creates a user for
+  the app and a database `<slug>_main`.
+- **More databases on the same binding** — type a name (letters and digits) in **New database** and add it. `reports`
+  becomes `shop_reports`.
+
+Bindings can't be removed or changed — this protects your data. A running app restarts briefly after a binding is
+added, to pick up the new credentials.
+
+<Callout type="note">
+Need a database server version that isn't listed? Add it once for the whole stack:
+`bento service add --engine postgres --version 17` (PostgreSQL 17 and 18 include pgvector, PostGIS, pg_cron, and
+TimescaleDB).
+</Callout>
+
+## Use it from your app
+
+Credentials arrive as environment variables — Laravel reads `DB_*` and `REDIS_*` with no `.env` changes:
+
+| Variables | For |
+| --- | --- |
+| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | the first binding |
+| `BENTO_DB_<n>_*` | every binding |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_PREFIX` | Redis |
+
+SQLite bindings are a private folder at `/var/lib/bento/sqlite/<id>/<slug>.db`, vacuumed weekly.
+
+## Browse data
+
+Each MySQL or PostgreSQL binding has a **Browse** button that opens it in [Adminer](https://www.adminer.org/) in a new
+tab, signed in as the app's own user — so you see exactly what the app sees, with full write access.
+
+The browser must be enabled once in **Ingress → Utils → Database browser**. If you reach the UI through an SSH
+tunnel, forward port 7781 too:
+
+```bash
+ssh -L 7780:127.0.0.1:7780 -L 7781:127.0.0.1:7781 root@your-server
+```
+
+Access lasts 30 idle minutes and ends when you sign out. Uploads up to 80 MB, queries up to 15 minutes.
+
+## Redis
+
+Every app has its own Redis user limited to keys starting with `<slug>:` — set `REDIS_PREFIX` as your cache prefix
+(Laravel does this automatically). `FLUSHDB`, `FLUSHALL`, and `KEYS` are refused because they'd affect other apps;
+clear caches by prefix or tag. When Redis is full, writes fail rather than evicting another app's keys.

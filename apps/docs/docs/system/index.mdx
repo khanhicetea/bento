@@ -1,0 +1,34 @@
+---
+title: Home and System
+description: Check the health of your server, see what needs attention, and clean up retained data.
+---
+
+## Home
+
+**Home** is the dashboard:
+
+- **Status** — Docker connection and each data service (MySQL, PostgreSQL, Redis).
+- **Attention** — anything failed or blocked that needs you. Click through for the reason and a suggested fix.
+- **Apps running**, **In progress** operations, **Data services**.
+- Your **Apps** and recent **Activity**.
+
+If Home is all green, everything is as you asked.
+
+## System
+
+**System** has four tabs:
+
+| Tab | Shows |
+| --- | --- |
+| **Overview** | Bento version, Docker version, architecture, the **Stack**, **Retained data**, and reconciliation status. |
+| **Images** | Docker images on the server, including Bento's runtime images. |
+| **Volumes** | Docker volumes — database data lives here. |
+| **Networks** | Docker networks. |
+
+### Retained data
+
+When you remove an app, its home folder and databases are **kept**. They're listed here as *Kept after removal*.
+When you're sure you no longer need them, delete them permanently by typing `delete`. This also deletes the app's
+backup settings and the backup key Bento kept — **the backup repository itself is never touched**.
+
+Until retained data is deleted, the slug can't be reused.

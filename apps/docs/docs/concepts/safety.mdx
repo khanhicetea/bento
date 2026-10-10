@@ -1,0 +1,34 @@
+---
+title: Safety
+description: The guard rails Bento puts around your data, secrets, and server.
+---
+
+## Confirmations you type
+
+Anything destructive asks you to type an exact phrase:
+
+| Action | Type |
+| --- | --- |
+| Remove an app | `delete <slug>` |
+| Permanently delete retained data | `delete` |
+| Restore a database dump over live data | `replace <database>` |
+| Export the whole stack | `export` |
+| Remove a domain | `delete <host>` |
+
+## Secrets stay secret
+
+Passwords, tokens, and keys are stored in private files and never appear in logs, the UI, or `docker inspect`.
+One-time secrets — a webhook secret, a backup repository key, a tunnel token — are shown **once**. Copy them when you
+see them.
+
+## Containers are locked down
+
+Each app runs as its own user, with a read-only system, no extra Linux capabilities, and no way to gain privileges.
+
+<Callout type="warning" title="Trust the code you run">
+This isolation protects apps from each other's mistakes. It is not a sandbox for code from strangers.
+</Callout>
+
+## The UI is private
+
+The management UI only listens on the server itself. Reach it with an SSH tunnel; never publish it.

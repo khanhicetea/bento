@@ -1,0 +1,25 @@
+---
+title: Data
+description: Data services, bindings, and databases from the CLI.
+---
+
+## Data services
+
+```bash
+bento services
+bento service add --engine mysql --version 8.4        # MySQL 8.0 | 8.4 | 9.4
+bento service add --engine postgres --version 17      # PostgreSQL 14–18
+```
+
+Services are never removed by Bento.
+
+## Bindings
+
+```bash
+bento app bind shop --engine mysql --service mysql84   # user u<appId>, database shop_main
+bento app bind shop --engine sqlite
+bento app add-db shop --binding <id> --name reports    # shop_reports
+```
+
+Bindings are add-only. Database names are `<slug>_<name>` (hyphens become `_`); `<name>` is 1–30 lowercase letters
+or digits and `main` is reserved.

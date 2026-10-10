@@ -1,0 +1,20 @@
+---
+title: Runtime images
+description: How Bento builds its curated runtime images and what is inside them.
+---
+
+Bento builds one image per runtime version through the Docker Engine API — no Docker CLI or BuildKit needed.
+
+- The build context is **embedded in the binary** and hashed together with the build arguments. The tag
+  `bento-runtime/<toolchain>:<version>-<hash>` changes whenever either changes.
+- Base images, s6-overlay, minicrond, and Composer are pinned and checksum-verified.
+
+## Inside every image
+
+| Component | Role |
+| --- | --- |
+| `bento-init` | Entry point; takes the per-app instance lock and starts s6-overlay as PID 1. |
+| s6-overlay | Supervises the runtime and minicrond. |
+| `bento-exec` | Tooling entry point for shells and exec; never starts daemons. |
+| `bento-ready` | Readiness probe. |
+| Failure handler | Stops the container after five crashes of a component within two minutes, so Docker's restart policy applies its own backoff. |

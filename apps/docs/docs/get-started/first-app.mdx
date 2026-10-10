@@ -1,0 +1,67 @@
+---
+title: Create your first app
+description: Use the New app wizard to create a PHP app with a database, deploy code from git, and start it.
+---
+
+We'll create **shop**, a Laravel app with a MySQL database. The same flow works for WordPress, Symfony, or a
+Node.js app — only the runtime step differs.
+
+## 1. Run the wizard
+
+Go to **Apps → New app**. The wizard has four steps.
+
+<Steps>
+  <Step title="Basics">
+    - **Slug:** `shop`. This is the app's permanent name — lowercase letters, digits, and hyphens. Its files will
+      live in `/home/shop`.
+    - **Runtime:** **PHP** (for Node.js, Bun, or Python choose **HTTP process**).
+  </Step>
+  <Step title="Runtime">
+    - **Version:** 8.4
+    - **Routing:** front controller (everything goes through `index.php`, as Laravel expects)
+    - **Document root:** `public`
+    - **Performance:** Standard
+  </Step>
+  <Step title="Routing & data">
+    - **Access:** **Public** (served by Bento's edge with HTTPS). Add the domain `shop.example.com` and choose
+      **ACME** for a free certificate.
+    - **Data:** pick **MySQL 8.4**.
+    - **Limits:** keep the defaults (512 MB memory, 1 CPU) for now.
+  </Step>
+  <Step title="Review">
+    Check the summary and press **Create app**.
+  </Step>
+</Steps>
+
+The app now exists — with its own Linux user, home folder, MySQL database, and Redis access — but it is **stopped**
+and has no code yet.
+
+## 2. Deploy your code
+
+Open the app's **Deploy** tab.
+
+1. Enter the **Repository URL** (SSH form, e.g. `git@github.com:you/shop.git`) and **Branch**, then save.
+2. Bento shows a **Deploy key**. Add it to your repository as a **read-only deploy key** (GitHub: Settings → Deploy
+   keys).
+3. Press **Deploy**. Bento clones the repository into `/home/shop/app`.
+
+Laravel needs dependencies and a `.env`. Open the **Terminal** tab — you're already the app's user, in the code folder:
+
+```bash
+composer install --no-dev
+cp .env.example .env && php artisan key:generate
+```
+
+<Callout type="tip">
+You don't need to put database passwords in `.env`. Bento injects `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`,
+`DB_PASSWORD`, `REDIS_*` and more as environment variables. See [Data](/apps/data).
+</Callout>
+
+To run these steps automatically on every deploy, add a [deploy script](/apps/deploy-scripts).
+
+## 3. Start it
+
+Press **Start**. Bento starts the container and waits until the app actually answers HTTP requests. If something is
+wrong, the operation fails with the app's last log lines — check the **Logs** tab.
+
+Your app is running, but not public yet. Next: [put it online](/get-started/go-live).

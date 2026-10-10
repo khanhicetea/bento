@@ -1,0 +1,35 @@
+---
+title: Hosts
+description: Add domains that point at an app, at another server, or redirect elsewhere.
+---
+
+**Ingress → Hosts** lists every domain the edge serves. Domains you add in the New app wizard appear here too.
+
+## Add a host
+
+Press **Add host**, enter the **Host** (domain), and choose a **Target**:
+
+| Target | Sends visitors to | Example |
+| --- | --- | --- |
+| **App** | One of your Bento apps (Public access) | `shop.example.com` → shop |
+| **Upstream** | Any HTTP(S) server outside Bento; several URLs are load-balanced | `grafana.example.com` → `http://10.0.0.5:3000` |
+| **Redirect** | Another domain, permanently (301), keeping the path | `www.shop.example.com` → `shop.example.com` |
+
+Then set the host's options:
+
+- **TLS** — usually **ACME**. See [certificates](/ingress#certificates).
+- **HTTPS redirect** — send `http://` visitors to `https://`.
+- **Static cache** — cache CSS, JS, images, and fonts in the edge's memory for 10 minutes (upstreams' own cache
+  headers are respected).
+- **Access log** — log requests at the edge.
+
+## Edit or remove
+
+Click a host to change its target — for example, to switch a domain from the old app to a new one in one step.
+Removing a host asks you to type `delete <host>`.
+
+Good to know:
+
+- Each domain belongs to exactly one target.
+- An app's **first** host is the address shown for it in the UI.
+- Removing an app removes its hosts.

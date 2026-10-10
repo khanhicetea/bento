@@ -1,0 +1,50 @@
+---
+title: Settings
+description: Change runtime, PHP performance, domains, resources, and environment — or remove the app.
+---
+
+Each card in **Settings** saves on its own. Buttons on cards that need a new container note that **running apps may
+restart**; other changes apply without downtime.
+
+## Runtime
+
+Version, routing, document root (PHP) or command, port, and ready path (HTTP process). The runtime *type* can't
+change.
+
+## PHP performance settings
+
+Start from **Standard** or **High concurrency**, then override if needed:
+
+| Setting | Default (Standard) | Range |
+| --- | --- | --- |
+| Max workers | from memory (~6 at 512 MB) | 1–200 |
+| Web memory limit | 128 MB | 16–4096 MB |
+| Jobs & workers memory limit | 256 MB | 16–8192 MB |
+| Max execution time | 60 s | 1–280 s |
+| Max input vars | PHP default | 100–100000 |
+
+Your app can still raise web limits with `ini_set()` or a `.user.ini` file in the document root — that's also where
+any other PHP setting goes.
+
+## Ingress settings and Hosts
+
+Change the **Access** mode and the app's own access log. **Hosts** lists the domains pointing at this app; manage them
+in [Ingress](/ingress/hosts). A Public app needs at least one host to publish.
+
+## Container settings
+
+**Memory**, **CPU**, and **Processes** limits.
+
+## Environment
+
+Add your own environment variables (API keys, feature flags). Bento's own `DB_*` and `REDIS_*` are provided
+automatically. Saving restarts a running app.
+
+## Permissions
+
+Repairs file ownership in the home — **Check**, **Dry run**, **Shallow repair**, or **Recursive repair**.
+
+## Remove
+
+Type `delete <slug>` to confirm. The container and its domains are removed and its UID retired. The **home and
+databases are kept** under **System → Retained data** until you delete them there.

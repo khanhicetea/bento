@@ -1,0 +1,15 @@
+---
+title: Activity
+description: Follow every change Bento makes — progress, events, and failures with advice.
+---
+
+**Activity** is the record of every [operation](/concepts/changes): starts, deploys, backups, edge changes, and Bento's
+own self-healing.
+
+- Filter by **All**, **Active**, **Failed**, **Done**, or **Search activity**.
+- Click an operation to see each step, its events, and live output (deploy logs, backup output).
+- A failed operation explains what went wrong and what to do next, with the app's last log lines.
+- A queued operation shows what it's waiting on — operations on the *same* app run one at a time.
+
+Operations survive browser closes and Bento restarts. If Bento was stopped mid-operation, it's marked
+**interrupted** and **not** re-run automatically: check the state and run it again if needed.

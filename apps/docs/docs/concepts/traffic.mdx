@@ -1,0 +1,34 @@
+---
+title: Traffic
+description: The three ways visitors can reach an app — Public, External, and Private.
+---
+
+Every app chooses an **Access** mode in the wizard (and later in **Settings → Ingress settings**).
+
+| Access | Who routes traffic | Use when |
+| --- | --- | --- |
+| **Public** | Bento's **edge** (Nginx with automatic HTTPS) | Your server has public ports 80/443. The usual choice. |
+| **External** | A Cloudflare Tunnel or your own proxy | No open ports, or you already run Caddy/Traefik/nginx. |
+| **Private** | Nobody | Internal APIs, workers-only apps. |
+
+![Three ways in: Public through the edge, External through a tunnel or your own proxy, Private with no outside route](/bento-traffic.webp)
+
+## Publish
+
+Public apps have one extra switch: **Publish**. A running app is only reachable once published, so you can start an
+app, test it, and then publish it. **Unpublish** takes it offline without stopping it.
+
+## Hosts
+
+Domains are managed in **Ingress**. A host can point at:
+
+- an **app**,
+- an **upstream** — another server, e.g. Grafana on `10.0.0.5:3000`,
+- a **redirect** — e.g. `www.shop.example.com` → `shop.example.com`.
+
+See [Ingress](/ingress).
+
+## Between apps
+
+Apps can reach each other over Bento's internal network (address shown as **Internal URL** on an app). Databases are
+on a separate private network with no internet access. Nothing except the edge opens a port on your server.

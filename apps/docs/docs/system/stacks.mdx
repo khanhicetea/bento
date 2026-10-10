@@ -1,0 +1,45 @@
+---
+title: Stacks, export, and migration
+description: Run several stacks on one server, and move or clone a whole stack.
+---
+
+## Several stacks on one server
+
+Run `prod` and `staging` side by side. Each needs its own folder, name, systemd service, UI port, UID range, and — if
+both use the edge — different HTTP/HTTPS ports:
+
+```bash
+bento --stack /srv/bento/staging init --name staging --uid-first 20000 --uid-last 29999
+echo 'BENTO_LISTEN=127.0.0.1:7790' > /etc/bento/staging.env
+systemctl enable --now bento@staging
+```
+
+Tunnel to `7790` for the staging UI.
+
+## Move or clone a whole stack
+
+<Steps>
+  <Step title="Export">
+    ```bash
+    bento export --to /backup/prod-2026-10-10      # type "export" to confirm
+    ```
+    Apps and databases pause briefly so everything is consistent, then resume exactly as they were.
+  </Step>
+  <Step title="Copy the export to the new server">
+    It contains all data **and all secrets** — transfer and store it securely.
+  </Step>
+  <Step title="Import">
+    ```bash
+    bento --stack /srv/bento/prod import --from /backup/prod-2026-10-10
+    systemctl enable --now bento@prod
+    ```
+  </Step>
+  <Step title="Turn things back on">
+    An imported stack starts **safe**: every app stopped and unpublished, the edge, tunnel, and backup schedules off.
+    Enable them deliberately once you've switched DNS.
+  </Step>
+</Steps>
+
+To clone on the **same** server, add `--name copy --uid-first 20000 --uid-last 29999` to `import`.
+
+To move a **single** app, use [app backups](/backups/app-backups#restore-on-another-server).

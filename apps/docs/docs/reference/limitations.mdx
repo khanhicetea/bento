@@ -1,0 +1,23 @@
+---
+title: Limitations
+description: Known limits of the current release, stated plainly.
+---
+
+## By design
+
+- **One host.** No replicas, autoscaling, or zero-downtime replacement — restarts and boot-config changes interrupt
+  the app.
+- **Shared apps network.** Apps on the same stack can reach each other's listeners.
+- **Trusted code only.** Not a sandbox for hostile tenants. Curated runtime images only.
+- **Loopback management.** Remote access needs your own secure tunnel.
+- **Generated web config.** App Nginx and FPM config is generated; customization is through edge drop-ins and
+  `.user.ini`. Access logs go to the bounded container log; there are no access-log reports.
+
+## Not yet verified
+
+Verified end to end on **linux/amd64 with PHP 8.4 and Node.js 24**. Not yet exercised end to end:
+
+- arm64 builds
+- other runtime versions
+- live Cloudflare Tunnel, ACME, and HTTP/3
+- rclone uploads
