@@ -150,6 +150,9 @@ export const api = {
   services: {
     list: (signal?: AbortSignal) => get<T.ServiceList>("/api/v1/services", signal),
     create: (body: T.CreateServiceRequest) => mutate("POST", "/api/v1/services", body),
+    configure: (name: string, body: T.ConfigureServiceRequest) =>
+      mutate("PUT", `/api/v1/services/${enc(name)}/settings`, body),
+    restart: (name: string) => mutate("POST", `/api/v1/services/${enc(name)}/restart`),
   },
   edge: {
     get: (signal?: AbortSignal) => get<T.EdgeStatus>("/api/v1/edge", signal),

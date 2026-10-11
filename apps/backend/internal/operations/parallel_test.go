@@ -139,6 +139,7 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 	parallel := map[string]bool{
 		KindAppReconcile: true, KindAppStart: true, KindAppRestart: true, KindAppStop: true,
 		KindAppUpdate: true, KindAppDeploy: true, KindServiceCreate: true, KindServiceEnsure: true,
+		KindServiceConfigure: true, KindServiceRestart: true,
 		KindImagePrepare: true,
 		KindResticInit:   true, KindResticConnect: true, KindResticBackup: true,
 		KindResticRefresh: true, KindResticKeyAdd: true, KindResticKeyRemove: true, KindResticCheck: true, KindResticUnlock: true, KindResticInspect: true,

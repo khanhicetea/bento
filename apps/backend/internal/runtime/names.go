@@ -19,7 +19,9 @@ const (
 	LabelGeneration = "io.bento.generation"
 	LabelOperation  = "io.bento.operation-id"
 	LabelService    = "io.bento.service"
-	LabelImageKey   = "io.bento.image-key"
+	// LabelServiceSettings fingerprints a data service's tuned settings.
+	LabelServiceSettings = "io.bento.service-settings"
+	LabelImageKey        = "io.bento.image-key"
 )
 
 type Role string

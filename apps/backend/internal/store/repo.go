@@ -685,7 +685,7 @@ type ServiceRow struct {
 func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
 	rows, err := q.QueryContext(
 		ctx,
-		"SELECT name, engine, version, image, volume, initialized, created_at FROM data_services ORDER BY name",
+		"SELECT name, engine, version, image, volume, initialized, settings_json, created_at FROM data_services ORDER BY name",
 	)
 	if err != nil {
 		return nil, err
@@ -695,12 +695,15 @@ func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
 	for rows.Next() {
 		var s ServiceRow
 		var init int
-		var created string
-		if err := rows.Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &created); err != nil {
+		var settings, created string
+		if err := rows.Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &settings, &created); err != nil {
 			return nil, err
 		}
 		s.Initialized = init == 1
 		s.CreatedAt = platform.ParseTime(created)
+		if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
+			return nil, fmt.Errorf("service %s settings: %w", s.Name, err)
+		}
 		out = append(out, s)
 	}
 	return out, rows.Err()
@@ -709,36 +712,63 @@ func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
 func GetService(ctx context.Context, q Q, name string) (ServiceRow, error) {
 	var s ServiceRow
 	var init int
-	var created string
+	var settings, created string
 	err := q.QueryRowContext(
 		ctx,
-		"SELECT name, engine, version, image, volume, initialized, created_at FROM data_services WHERE name = ?",
+		"SELECT name, engine, version, image, volume, initialized, settings_json, created_at FROM data_services WHERE name = ?",
 		name,
 	).
-		Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &created)
+		Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &settings, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
+	if err != nil {
+		return s, err
+	}
 	s.Initialized = init == 1
 	s.CreatedAt = platform.ParseTime(created)
-	return s, err
+	if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
+		return s, fmt.Errorf("service %s settings: %w", s.Name, err)
+	}
+	return s, nil
 }
 
 func InsertService(ctx context.Context, q Q, s domain.DataService) error {
 	_, err := q.ExecContext(
 		ctx,
-		"INSERT INTO data_services(name, engine, version, image, volume, created_at) VALUES(?,?,?,?,?,?)",
+		"INSERT INTO data_services(name, engine, version, image, volume, settings_json, created_at) VALUES(?,?,?,?,?,?,?)",
 		s.Name,
 		s.Engine,
 		s.Version,
 		s.Image,
 		s.Volume,
+		settingsJSON(s.Settings),
 		platform.FormatTime(s.CreatedAt),
 	)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: service %s already exists", ErrConflict, s.Name)
 	}
 	return err
+}
+
+// SetServiceSettings replaces a service's tuned parameters.
+func SetServiceSettings(ctx context.Context, q Q, name string, settings domain.ServiceSettings) error {
+	res, err := q.ExecContext(ctx, "UPDATE data_services SET settings_json = ? WHERE name = ?", settingsJSON(settings), name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func settingsJSON(s domain.ServiceSettings) string {
+	if len(s) == 0 {
+		return "{}"
+	}
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func MarkServiceInitialized(ctx context.Context, q Q, name string) error {

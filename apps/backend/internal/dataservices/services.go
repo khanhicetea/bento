@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,9 +45,16 @@ func (m *Manager) confDir(service string) string {
 	return filepath.Join(m.Layout.ServicesDir(), service, "conf")
 }
 
+// ErrSecretMissing reports an established relational service whose
+// administrator secret is gone. The real password lives in the data volume,
+// so a newly generated one could never log in.
+var ErrSecretMissing = errors.New("administrator secret missing")
+
 // EnsureSecrets generates administrator secrets once. Existing secrets are
-// never rotated.
-func (m *Manager) EnsureSecrets(s domain.DataService) error {
+// never rotated. For an established MySQL/PostgreSQL service a missing
+// secret is refused rather than regenerated; Redis is exempt because Bento
+// writes its whole ACL, admin included, from the secret file.
+func (m *Manager) EnsureSecrets(s domain.DataService, established bool) error {
 	dir := m.secretsDir(s.Name)
 	if err := platform.EnsureDir(filepath.Dir(dir), 0o700, platform.RootOwner); err != nil {
 		return err
@@ -57,6 +65,9 @@ func (m *Manager) EnsureSecrets(s domain.DataService) error {
 	pwPath := filepath.Join(dir, "root-password")
 	pw, err := os.ReadFile(pwPath)
 	if errors.Is(err, fs.ErrNotExist) {
+		if established && s.Engine != domain.EngineRedis {
+			return fmt.Errorf("%w: %s", ErrSecretMissing, pwPath)
+		}
 		pw = []byte(platform.RandomPassword(32))
 		if err := platform.AtomicWrite(pwPath, pw, 0o400, platform.RootOwner); err != nil {
 			return err
@@ -117,6 +128,9 @@ func roleOf(e domain.Engine) runtime.Role {
 // private data network and publish no host ports.
 func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
 	labels := m.Names.Labels(roleOf(s.Engine), map[string]string{runtime.LabelService: s.Name})
+	if fp := SettingsFingerprint(s); fp != "" {
+		labels[runtime.LabelServiceSettings] = fp
+	}
 	mounts := []mount.Mount{
 		{Type: mount.TypeVolume, Source: s.Volume, Target: m.volumeTarget(s)},
 		{Type: mount.TypeBind, Source: m.secretsDir(s.Name), Target: "/run/bento-secrets", ReadOnly: true},
@@ -125,12 +139,14 @@ func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
 	switch s.Engine {
 	case domain.EngineMySQL:
 		cfg.Env = []string{"MYSQL_ROOT_PASSWORD_FILE=/run/bento-secrets/root-password"}
+		cfg.Cmd = ServerArgs(s)
 		cfg.Healthcheck = &container.HealthConfig{
 			Test:     []string{"CMD", "mysqladmin", "--defaults-extra-file=/run/bento-secrets/client.cnf", "ping", "--silent"},
 			Interval: 15 * time.Second, Timeout: 5 * time.Second, StartPeriod: 120 * time.Second, Retries: 5,
 		}
 	case domain.EnginePostgres:
 		cfg.Env = []string{"POSTGRES_PASSWORD_FILE=/run/bento-secrets/root-password"}
+		cfg.Cmd = ServerArgs(s)
 		cfg.Healthcheck = &container.HealthConfig{
 			Test:     []string{"CMD", "pg_isready", "-U", "postgres"},
 			Interval: 15 * time.Second, Timeout: 5 * time.Second, StartPeriod: 60 * time.Second, Retries: 5,
@@ -167,6 +183,63 @@ func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
 			m.Names.DataNetwork(): {Aliases: []string{s.Name}},
 		}},
 	}
+}
+
+// ServerArgs renders tuned settings as the server command, or nil to keep
+// the image default. Both official images (and pglayers) run a bare
+// "mysqld"/"postgres" CMD and read their remaining configuration from files,
+// so appending flags overrides only the tuned parameters. Values come from
+// domain.NormalizeServiceSettings and keys from the allowlist; anything else
+// is dropped rather than passed through.
+func ServerArgs(s domain.DataService) []string {
+	keys := slices.Sorted(maps.Keys(s.Settings))
+	var args []string
+	for _, k := range keys {
+		t, ok := domain.Tunable(s.Engine, k)
+		if !ok {
+			continue
+		}
+		v := s.Settings[k]
+		if t.Kind == domain.TunableSize {
+			n, canon, err := domain.ParseSize(v)
+			if err != nil || n < t.Min || n > t.Max {
+				continue
+			}
+			v = canon
+			if s.Engine == domain.EnginePostgres {
+				// PostgreSQL units: kB, MB, GB.
+				v = strings.TrimSuffix(canon, "K") + "kB"
+				if !strings.HasSuffix(canon, "K") {
+					v = canon + "B"
+				}
+			}
+		} else if _, err := strconv.ParseInt(v, 10, 64); err != nil {
+			continue
+		}
+		switch s.Engine {
+		case domain.EngineMySQL:
+			args = append(args, "--"+strings.ReplaceAll(k, "_", "-")+"="+v)
+		case domain.EnginePostgres:
+			args = append(args, "-c", k+"="+v)
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	if s.Engine == domain.EngineMySQL {
+		return append([]string{"mysqld"}, args...)
+	}
+	return append([]string{"postgres"}, args...)
+}
+
+// SettingsFingerprint identifies the rendered server settings; it is empty
+// when none are tuned, so containers created before tuning existed match.
+func SettingsFingerprint(s domain.DataService) string {
+	args := ServerArgs(s)
+	if len(args) == 0 {
+		return ""
+	}
+	return platform.SHA256Hex([]byte(strings.Join(args, "\x00")))[:16]
 }
 
 // Ready runs the engine-specific readiness command inside the container.
@@ -495,18 +568,8 @@ func (m *Manager) WriteRedisConfig(service string, users []RedisUser) error {
 // app cannot grow it until the host runs out; 256 MiB when unknown.
 func RedisMaxMemory() int64 {
 	const floor = 64 << 20
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 256 << 20
-	}
-	for line := range strings.SplitSeq(string(b), "\n") {
-		if f := strings.Fields(line); len(f) >= 2 && f[0] == "MemTotal:" {
-			kb, err := strconv.ParseInt(f[1], 10, 64)
-			if err != nil {
-				break
-			}
-			return max(kb*1024/4, floor)
-		}
+	if mem, ok := platform.HostMemory(); ok {
+		return max(mem/4, floor)
 	}
 	return 256 << 20
 }

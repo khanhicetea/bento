@@ -25,7 +25,7 @@ const ApplicationID = 0x424E5431
 // SchemaVersion is the current schema. Versions from MigratableFromVersion up
 // are migrated to it by Open; every other version is refused without
 // modifying the file.
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 // MigratableFromVersion is the oldest schema Open upgrades.
 const MigratableFromVersion = 2
@@ -197,6 +197,10 @@ var migrations = map[int64]func(tx *sql.Tx) error{
 		return err
 	},
 	3: migrateHosts,
+	4: func(tx *sql.Tx) error {
+		_, err := tx.Exec("ALTER TABLE data_services ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
+		return err
+	},
 }
 
 // migrateHosts moves domain ownership from apps and proxies into Ingress
@@ -376,6 +380,7 @@ CREATE TABLE data_services (
   image      TEXT NOT NULL,
   volume     TEXT NOT NULL UNIQUE,
   initialized INTEGER NOT NULL DEFAULT 0,
+  settings_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL
 ) STRICT;
 

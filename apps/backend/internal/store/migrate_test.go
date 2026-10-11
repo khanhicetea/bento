@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ func makeV3DB(t *testing.T, path string) {
 	}
 	for _, stmt := range []string{
 		"DROP TABLE hosts",
+		"ALTER TABLE data_services DROP COLUMN settings_json",
 		"ALTER TABLE apps DROP COLUMN access_log",
 		`ALTER TABLE apps ADD COLUMN route_json TEXT NOT NULL DEFAULT '{"tls":"none"}'`,
 		`CREATE TABLE proxies (
@@ -93,9 +95,9 @@ func userVersion(t *testing.T, path string) int64 {
 	return v
 }
 
-func TestCheckCompatibleAcceptsTwoToFourOnly(t *testing.T) {
+func TestCheckCompatibleAcceptsTwoToFiveOnly(t *testing.T) {
 	dir := t.TempDir()
-	for version, ok := range map[int]bool{1: false, 2: true, 3: true, 4: true, 5: false} {
+	for version, ok := range map[int]bool{1: false, 2: true, 3: true, 4: true, 5: true, 6: false} {
 		path := filepath.Join(dir, "v"+string(rune('0'+version))+".db")
 		makeForeignDB(t, path, ApplicationID, version)
 		if err := CheckCompatible(path); (err == nil) != ok {
@@ -273,5 +275,45 @@ func TestHomePathRoundTripAndValidation(t *testing.T) {
 		if err := insert("b"+bad, "other", bad); err == nil {
 			t.Errorf("home path %q accepted", bad)
 		}
+	}
+}
+
+// Schema 4 services gain empty settings: nothing is tuned, so running
+// containers keep matching their (absent) settings fingerprint.
+func TestOpenMigratesV4ServiceSettings(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bento.db")
+	s, err := Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		"ALTER TABLE data_services DROP COLUMN settings_json",
+		`INSERT INTO data_services(name, engine, version, image, volume, initialized, created_at)
+		  VALUES('mysql84', 'mysql', '8.4', 'mysql:8.4', 'v-mysql84', 1, '2026-01-02T03:04:05Z')`,
+		"PRAGMA user_version = 4",
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	svc, err := GetService(ctx, s.DB(), "mysql84")
+	if err != nil || !svc.Initialized || len(svc.Settings) != 0 {
+		t.Fatalf("service %+v %v", svc, err)
+	}
+	want := domain.ServiceSettings{"innodb_buffer_pool_size": "1G"}
+	if err := SetServiceSettings(ctx, s.DB(), "mysql84", want); err != nil {
+		t.Fatal(err)
+	}
+	if svc, err = GetService(ctx, s.DB(), "mysql84"); err != nil || svc.Settings["innodb_buffer_pool_size"] != "1G" {
+		t.Fatalf("settings %+v %v", svc.Settings, err)
+	}
+	if err := SetServiceSettings(ctx, s.DB(), "nope", want); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown service: %v", err)
 	}
 }

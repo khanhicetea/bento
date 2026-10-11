@@ -182,8 +182,8 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   hosts and adds one through the same host dialog.
 - **Backups:** status row (last, next, schedules, not covered) then Files / App backups / Runs / Schedules.
   Restore requires `replace <db>`.
-- **System:** Overview (Bento, Docker, arch; reconciliation; data services; stack; retained data with
-  `delete` prune) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
+- **System:** Overview (Bento, Docker, arch; reconciliation; data services, each tile with Tune (MySQL/PostgreSQL
+  settings dialog, saving restarts the service) and Restart (confirm); stack; retained data with `delete` prune) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
 
 ## 8. Do / Don't
 

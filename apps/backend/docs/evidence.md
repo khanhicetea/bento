@@ -255,6 +255,16 @@ backend stopped, edge traffic and scheduled jobs continued.
 - `make test-integration` as root passed (runtime images were already built, so that test only checked them).
 - Not verified: ACME issuance per host, external certificates per host, HTTP/3, arm64.
 
+## Data service tuning (2026-10-11, linux/amd64)
+
+- `TestIntegrationServiceSettings` (real Docker, root): MySQL 8.4 and PostgreSQL 18 (pglayers) were tuned through
+  `service.configure`; the running servers reported the new `innodb_buffer_pool_size`/`max_connections` and
+  `shared_buffers`/`work_mem`/`max_connections`, kept them across `service.restart`, and a marker row written before
+  the container was replaced was still there afterwards. pglayers keeps `shared_preload_libraries` in its config
+  file and its CMD is a bare `postgres`, so the appended `-c` flags do not drop the preloaded extensions.
+- `make test-integration` as root passed.
+- Not verified: MySQL 8.0/9.4 and PostgreSQL 14–17 flag rendering on a live server, arm64, the System page in a browser.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).

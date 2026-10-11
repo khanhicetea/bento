@@ -567,6 +567,50 @@ func (c *Controller) CreateService(
 	return svc, op, err
 }
 
+// ConfigureService saves tuned settings of a MySQL/PostgreSQL service and
+// applies them by recreating its container on the same volume.
+func (c *Controller) ConfigureService(
+	ctx context.Context,
+	name string,
+	in map[string]string,
+	idem string,
+) (store.Operation, error) {
+	svc, err := store.GetService(ctx, c.Store.DB(), name)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Operation{}, fmt.Errorf("%w: service %s", store.ErrNotFound, name)
+	}
+	if err != nil {
+		return store.Operation{}, err
+	}
+	if svc.Engine != domain.EngineMySQL && svc.Engine != domain.EnginePostgres {
+		return store.Operation{}, domain.ValidationErrors{{Field: "settings", Message: "only MySQL and PostgreSQL are tunable"}}
+	}
+	mem, _ := platform.HostMemory()
+	settings, err := domain.NormalizeServiceSettings(svc.Engine, in, mem)
+	if err != nil {
+		return store.Operation{}, err
+	}
+	op, _, err := c.Submit(ctx, Submission{
+		Kind: KindServiceConfigure, TargetKind: "service", TargetID: name, IdempotencyKey: idem,
+		Request: map[string]any{"settings": settings},
+		Mutate:  func(ctx context.Context, q store.Q) error { return store.SetServiceSettings(ctx, q, name, settings) },
+	})
+	return op, err
+}
+
+// RestartService restarts a data service with its saved settings.
+func (c *Controller) RestartService(ctx context.Context, name, idem string) (store.Operation, error) {
+	if _, err := store.GetService(ctx, c.Store.DB(), name); errors.Is(err, store.ErrNotFound) {
+		return store.Operation{}, fmt.Errorf("%w: service %s", store.ErrNotFound, name)
+	} else if err != nil {
+		return store.Operation{}, err
+	}
+	op, _, err := c.Submit(ctx, Submission{
+		Kind: KindServiceRestart, TargetKind: "service", TargetID: name, IdempotencyKey: idem,
+	})
+	return op, err
+}
+
 // ConfigureEdge validates and persists edge settings, then applies them.
 func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, idem string) (store.Operation, error) {
 	var errs domain.ValidationErrors

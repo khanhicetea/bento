@@ -971,3 +971,48 @@ func TestHostEndpoints(t *testing.T) {
 		t.Fatalf("delete -> %d %s", resp.StatusCode, body)
 	}
 }
+
+func TestServiceSettingsEndpoints(t *testing.T) {
+	c, _ := newServer(t)
+	c.login()
+	if resp, out := c.write("POST", "/api/v1/services", `{"engine":"mysql","version":"8.4"}`); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create -> %d %s", resp.StatusCode, out)
+	}
+	path := "/api/v1/services/mysql84/settings"
+	good := `{"settings":{"innodb_buffer_pool_size":"512M"}}`
+	if resp, _ := c.do("PUT", path, good, map[string]string{"Origin": origin}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("settings without csrf -> %d", resp.StatusCode)
+	}
+	if resp, _ := c.do("POST", "/api/v1/services/mysql84/restart", "", map[string]string{"Origin": origin}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("restart without csrf -> %d", resp.StatusCode)
+	}
+	for body, want := range map[string]int{
+		`{"settings":{"datadir":"/tmp"}}`:                       http.StatusUnprocessableEntity,
+		`{"settings":{"innodb_buffer_pool_size":"1G; rm -rf"}}`: http.StatusUnprocessableEntity,
+		`{"settings":{"max_connections":"9999999"}}`:            http.StatusUnprocessableEntity,
+		`{"settings":{"max_connections":300}}`:                  http.StatusBadRequest,
+		`{"settings":{"max_connections":"300"},"extra":true}`:   http.StatusBadRequest,
+	} {
+		if resp, out := c.write("PUT", path, body); resp.StatusCode != want {
+			t.Errorf("%s -> %d %s, want %d", body, resp.StatusCode, out, want)
+		}
+	}
+	if resp, _ := c.write("PUT", "/api/v1/services/mysql99/settings", good); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown service -> %d", resp.StatusCode)
+	}
+	if resp, _ := c.write("POST", "/api/v1/services/mysql99/restart", ""); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown service restart -> %d", resp.StatusCode)
+	}
+	if resp, out := c.write("PUT", path, good); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("valid settings -> %d %s", resp.StatusCode, out)
+	}
+	_, out := c.do("GET", "/api/v1/services", "", nil)
+	var list dto.ServiceList
+	if err := json.Unmarshal([]byte(out), &list); err != nil || len(list.Services) != 1 {
+		t.Fatalf("list %s %v", out, err)
+	}
+	svc := list.Services[0]
+	if svc.Settings["innodb_buffer_pool_size"] != "512M" || len(svc.Tunables) == 0 {
+		t.Fatalf("service %+v", svc)
+	}
+}

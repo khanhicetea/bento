@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Database, Plus } from "lucide-react";
+import { Database, Plus, RotateCw, SlidersHorizontal } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
+import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { Cell, DomainError, DomainLoading, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { ServiceSettingsDialog } from "./ServiceSettingsDialog.tsx";
 
 /** Shared database services, shown on the System page below the host metrics. */
 export function DataServices() {
@@ -29,21 +31,7 @@ export function DataServices() {
       {q.data && (
         <div className="grid gap-2 sm:grid-cols-2">
           {q.data.services.map((s) => (
-            <article key={s.name} className="grid justify-items-start gap-2 rounded-[0.875rem] bg-background p-3.5">
-              <span className="label flex items-center gap-2 text-xs">
-                <EngineLogo engine={s.engine} className="size-4" />
-                {s.name} <span className="font-mono tracking-normal">{s.version}</span>
-              </span>
-              <StateBadge
-                state={s.initialized ? s.state : "starting"}
-                title={s.message}
-                label={s.initialized ? undefined : "Initializing"}
-              />
-              <code className="truncate text-xs text-muted-foreground" title={s.image}>
-                {s.volume}
-              </code>
-              {s.message && s.state !== "healthy" && <p className="note note--bad">{s.message}</p>}
-            </article>
+            <ServiceTile key={s.name} service={s} />
           ))}
           {q.data.services.length === 0 && <p className="note">No services · add one below</p>}
         </div>
@@ -88,5 +76,58 @@ export function DataServices() {
       </div>
       {create.error && <p className="note note--bad mt-2">{messageOf(create.error)}</p>}
     </Cell>
+  );
+}
+
+function ServiceTile({ service: s }: { service: T.Service }) {
+  const [tuning, setTuning] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const restart = useOperationMutation(() => api.services.restart(s.name));
+  const tuned = s.tunables.filter((t) => s.settings[t.key]);
+  return (
+    <article className="grid justify-items-start gap-2 rounded-[0.875rem] bg-background p-3.5">
+      <span className="label flex items-center gap-2 text-xs">
+        <EngineLogo engine={s.engine} className="size-4" />
+        {s.name} <span className="font-mono tracking-normal">{s.version}</span>
+      </span>
+      <StateBadge
+        state={s.initialized ? s.state : "starting"}
+        title={s.message}
+        label={s.initialized ? undefined : "Initializing"}
+      />
+      <code className="truncate text-xs text-muted-foreground" title={s.image}>
+        {s.volume}
+      </code>
+      {tuned.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {tuned.map((t) => `${t.label.toLowerCase()} ${s.settings[t.key]}`).join(" · ")}
+        </p>
+      )}
+      {!s.settingsApplied && <p className="note note--caution">▲ Settings not applied · restart</p>}
+      {s.message && s.state !== "healthy" && <p className="note note--bad">{s.message}</p>}
+      {s.initialized && (
+        <div className="flex flex-wrap gap-2">
+          {s.tunables.length > 0 && (
+            <Button size="xs" variant="outline" onClick={() => setTuning(true)}>
+              <SlidersHorizontal /> Tune
+            </Button>
+          )}
+          <Button size="xs" variant="outline" onClick={() => setConfirmRestart(true)} disabled={restart.isPending}>
+            <RotateCw /> {restart.isPending ? "Restarting" : "Restart"}
+          </Button>
+        </div>
+      )}
+      {s.tunables.length > 0 && <ServiceSettingsDialog service={s} open={tuning} onOpenChange={setTuning} />}
+      <ConfirmDialog
+        open={confirmRestart}
+        onOpenChange={setConfirmRestart}
+        title={`Restart ${s.name}`}
+        description={`Apps using ${s.name} lose their connection until it is ready again.`}
+        confirmLabel="Restart"
+        pending={restart.isPending}
+        error={restart.error ?? undefined}
+        onConfirm={() => restart.mutate(undefined, { onSuccess: () => setConfirmRestart(false) })}
+      />
+    </article>
   );
 }

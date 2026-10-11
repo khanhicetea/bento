@@ -281,11 +281,13 @@ type Host struct {
 }
 
 type DataService struct {
-	Name      string
-	Engine    Engine
-	Version   string
-	Image     string
-	Volume    string
+	Name    string
+	Engine  Engine
+	Version string
+	Image   string
+	Volume  string
+	// Settings are tuned server parameters (MySQL/PostgreSQL only).
+	Settings  ServiceSettings
 	CreatedAt time.Time
 }
 

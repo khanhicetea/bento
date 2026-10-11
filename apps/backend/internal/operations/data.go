@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -111,7 +114,7 @@ func (c *Controller) syncRedisACL(ctx context.Context) error {
 			)
 		}
 	}
-	if err := c.Data().EnsureSecrets(svc.DataService); err != nil {
+	if err := c.Data().EnsureSecrets(svc.DataService, svc.Initialized); err != nil {
 		return err
 	}
 	if err := c.Data().WriteRedisConfig(svc.Name, users); err != nil {
@@ -133,7 +136,15 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 	if _, err := c.EnsureNetworks(ctx); err != nil {
 		return "", err
 	}
-	if err := c.Data().EnsureSecrets(svc.DataService); err != nil {
+	if err := c.Data().EnsureSecrets(svc.DataService, svc.Initialized); err != nil {
+		if errors.Is(err, dataservices.ErrSecretMissing) {
+			return "", Fail(
+				"durable-state-missing",
+				"Restore services/"+svc.Name+"/secrets from a backup of the stack root. Bento never replaces an established service's administrator secret.",
+				"%v",
+				err,
+			)
+		}
 		return "", err
 	}
 	if svc.Engine == domain.EngineRedis {
@@ -215,7 +226,29 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 			)
 		}
 		id = ins.ID
-		if ins.State == nil || !ins.State.Running {
+		if ins.Config.Labels[runtime.LabelServiceSettings] != spec.Config.Labels[runtime.LabelServiceSettings] {
+			// Tuned settings changed: replace the container on the same
+			// volume. Ownership and the volume mount were verified above.
+			if err := r.Phase(ctx, "apply-settings"); err != nil {
+				return "", err
+			}
+			if ins.State != nil && ins.State.Running {
+				r.Info(ctx, "stopping %s to apply settings", svc.Name)
+				if err := c.Engine.Stop(ctx, id, serviceStopTimeout); err != nil {
+					return "", err
+				}
+			}
+			if err := c.Engine.Remove(ctx, id); err != nil {
+				return "", err
+			}
+			if id, err = c.Engine.Create(ctx, spec); err != nil {
+				return "", err
+			}
+			if err := c.Engine.Start(ctx, id); err != nil {
+				return "", err
+			}
+			r.Info(ctx, "recreated %s with %s", svc.Name, describeSettings(svc.DataService))
+		} else if ins.State == nil || !ins.State.Running {
 			if err := c.Engine.Start(ctx, id); err != nil {
 				return "", err
 			}
@@ -283,6 +316,89 @@ func (c *Controller) handleServiceEnsure(ctx context.Context, r *Run) (any, erro
 		return nil, err
 	}
 	return map[string]any{"containerId": id}, nil
+}
+
+// serviceStopTimeout matches the containers' StopTimeout so the server can
+// flush and shut down cleanly.
+const serviceStopTimeout = 60 * time.Second
+
+func describeSettings(s domain.DataService) string {
+	if len(s.Settings) == 0 {
+		return "default settings"
+	}
+	parts := make([]string, 0, len(s.Settings))
+	for _, k := range slices.Sorted(maps.Keys(s.Settings)) {
+		parts = append(parts, k+"="+s.Settings[k])
+	}
+	return strings.Join(parts, " ")
+}
+
+// handleServiceConfigure applies saved settings: the container is recreated
+// on its volume when they differ from the running ones.
+func (c *Controller) handleServiceConfigure(ctx context.Context, r *Run) (any, error) {
+	svc, err := c.loadEstablishedService(ctx, r.Op.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.Phase(ctx, "ensure"); err != nil {
+		return nil, err
+	}
+	id, err := c.ensureService(ctx, r, svc, false)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"containerId": id}, nil
+}
+
+// handleServiceRestart stops the service cleanly and starts it again (with
+// the saved settings), then waits for readiness.
+func (c *Controller) handleServiceRestart(ctx context.Context, r *Run) (any, error) {
+	svc, err := c.loadEstablishedService(ctx, r.Op.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	ins, err := c.Engine.Inspect(ctx, c.Names.ServiceContainer(svc.Name))
+	if err != nil {
+		return nil, err
+	}
+	if ins != nil {
+		if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, roleOf(svc.Engine), "") ||
+			ins.Config.Labels[runtime.LabelService] != svc.Name {
+			return nil, Fail("foreign-container", "Resolve the conflicting container manually.",
+				"container %s is not owned by this stack", c.Names.ServiceContainer(svc.Name))
+		}
+		if ins.State != nil && ins.State.Running {
+			if err := r.Phase(ctx, "stop"); err != nil {
+				return nil, err
+			}
+			if err := c.Engine.Stop(ctx, ins.ID, serviceStopTimeout); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := r.Phase(ctx, "start"); err != nil {
+		return nil, err
+	}
+	id, err := c.ensureService(ctx, r, svc, false)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"containerId": id}, nil
+}
+
+func (c *Controller) loadEstablishedService(ctx context.Context, name string) (store.ServiceRow, error) {
+	svc, err := store.GetService(ctx, c.Store.DB(), name)
+	if errors.Is(err, store.ErrNotFound) {
+		return svc, Fail("service-missing", "The service no longer exists.", "service %s not found", name)
+	}
+	if err != nil {
+		return svc, err
+	}
+	if !svc.Initialized {
+		return svc, Fail("service-uninitialized", "Wait for the service to finish initializing.",
+			"service %s is not initialized yet", name)
+	}
+	return svc, nil
 }
 
 // handleBindingAdd provisions newly added bindings/databases, then refreshes

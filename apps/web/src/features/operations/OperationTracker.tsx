@@ -72,6 +72,8 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
     // Acceptance itself changes intent (for example desired state).
     void queryClient.invalidateQueries({ queryKey: keys.operations.lists });
     if (accepted.operation.targetKind === "app") void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+    // A configure saves settings on acceptance; show them before it finishes.
+    if (accepted.operation.targetKind === "service") void queryClient.invalidateQueries({ queryKey: keys.services });
     if (accepted.operation.targetKind === "host") {
       void queryClient.invalidateQueries({ queryKey: keys.hosts });
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });

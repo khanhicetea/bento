@@ -25,6 +25,24 @@ If Home is all green, everything is as you asked.
 | **Volumes** | Docker volumes — database data lives here. |
 | **Networks** | Docker networks. |
 
+### Data services
+
+Each MySQL, PostgreSQL, and Redis service has a tile under **Data services** with two actions:
+
+- **Restart** stops the service cleanly and starts it again. Apps using it lose their connection until it is ready.
+- **Tune** (MySQL and PostgreSQL) sets the main server parameters. Sizes take a `K`, `M`, or `G` unit; leave a field
+  empty for the engine default. **Save & restart** replaces the service container on the same volume, so data is
+  kept, but apps lose their connection for a few seconds.
+
+| Engine | Parameters |
+| --- | --- |
+| MySQL | `innodb_buffer_pool_size`, `innodb_redo_log_capacity`, `max_connections`, `max_allowed_packet`, `tmp_table_size` |
+| PostgreSQL | `shared_buffers`, `effective_cache_size`, `work_mem`, `maintenance_work_mem`, `max_connections` |
+
+Memory parameters can't exceed the host's memory. If the server won't start with new values, the tile shows it as
+unhealthy: open **Tune** again and lower them. Bento doesn't touch configuration files inside the volume, so settings
+you made with `SET PERSIST` or `ALTER SYSTEM` still apply, but the values set here win.
+
 ### Retained data
 
 When you remove an app, its home folder and databases are **kept**. They're listed here as *Kept after removal*.

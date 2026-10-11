@@ -127,7 +127,7 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 			cl.shared = serviceDeps(app)
 		}
 		return cl
-	case KindServiceCreate, KindServiceEnsure:
+	case KindServiceCreate, KindServiceEnsure, KindServiceConfigure, KindServiceRestart:
 		return claims{excl: []string{serviceClaim(op.TargetID)}}
 	case KindResticBackup:
 		app, err := lookup(op.TargetID)

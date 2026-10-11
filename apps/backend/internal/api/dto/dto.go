@@ -475,6 +475,38 @@ type Service struct {
 	Initialized bool          `json:"initialized"`
 	State       ObservedState `json:"state"`
 	Message     string        `json:"message,omitempty"`
+	// Settings are the saved tuned parameters; unset keys use the default.
+	Settings map[string]string `json:"settings"`
+	// SettingsApplied is false while the container runs with other settings
+	// than the saved ones (a configure did not finish yet).
+	SettingsApplied bool `json:"settingsApplied"`
+	// Tunables lists the parameters this engine allows tuning (empty for Redis).
+	Tunables []ServiceTunable `json:"tunables"`
+}
+
+type TunableKind string
+
+const (
+	TunableKindSize TunableKind = "size"
+	TunableKindInt  TunableKind = "int"
+)
+
+type ServiceTunable struct {
+	Key     string      `json:"key"`
+	Label   string      `json:"label"`
+	Kind    TunableKind `json:"kind"`
+	Default string      `json:"default"`
+	Min     string      `json:"min"`
+	Max     string      `json:"max"`
+	// Memory marks parameters bounded by host memory.
+	Memory bool   `json:"memory"`
+	Help   string `json:"help"`
+}
+
+// ConfigureServiceRequest replaces a service's tuned settings and restarts
+// it to apply them. An empty value resets a parameter to its default.
+type ConfigureServiceRequest struct {
+	Settings map[string]string `json:"settings"`
 }
 
 type ServiceList struct {

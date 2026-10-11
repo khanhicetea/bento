@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/dataservices"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/edge"
@@ -111,6 +113,8 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/services", s.handleListServices)
 	api("GET /api/v1/reconcile", s.handleReconcileStatus)
 	api("POST /api/v1/services", s.handleCreateService)
+	api("PUT /api/v1/services/{name}/settings", s.handleConfigureService)
+	api("POST /api/v1/services/{name}/restart", s.handleRestartService)
 
 	api("GET /api/v1/edge", s.handleGetEdge)
 	api("PUT /api/v1/edge", s.handlePutEdge)
@@ -895,8 +899,22 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 			Image:       row.Image,
 			Volume:      row.Volume,
 			Initialized: row.Initialized,
+			Settings:    map[string]string{},
+			Tunables:    []dto.ServiceTunable{},
+		}
+		maps.Copy(svc.Settings, row.Settings)
+		for _, t := range domain.ServiceTunables[row.Engine] {
+			mx := domain.FormatSize(t.Max)
+			mn := domain.FormatSize(t.Min)
+			if t.Kind == domain.TunableInt {
+				mn, mx = strconv.FormatInt(t.Min, 10), strconv.FormatInt(t.Max, 10)
+			}
+			svc.Tunables = append(svc.Tunables, dto.ServiceTunable{Key: t.Key, Label: t.Label, Kind: dto.TunableKind(t.Kind),
+				Default: t.Default, Min: mn, Max: mx, Memory: t.Memory, Help: t.Help})
 		}
 		ins, err := s.C.Engine.Inspect(r.Context(), s.C.Names.ServiceContainer(row.Name))
+		svc.SettingsApplied = ins == nil || ins.Config == nil ||
+			ins.Config.Labels[runtime.LabelServiceSettings] == dataservices.SettingsFingerprint(row.DataService)
 		switch {
 		case err != nil:
 			svc.State, svc.Message = dto.ObservedStateBlocked, "docker unavailable"
@@ -934,6 +952,39 @@ func (s *Server) handleCreateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, op, err := s.C.CreateService(r.Context(), domain.Engine(req.Engine), req.Version, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleConfigureService(w http.ResponseWriter, r *http.Request) {
+	var req dto.ConfigureServiceRequest
+	if err := decode(w, r, &req); err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.ConfigureService(r.Context(), r.PathValue("name"), req.Settings, idem)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	s.accepted(w, op, nil)
+}
+
+func (s *Server) handleRestartService(w http.ResponseWriter, r *http.Request) {
+	idem, err := idempotencyKey(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	op, err := s.C.RestartService(r.Context(), r.PathValue("name"), idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/dataservices"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
@@ -443,7 +444,11 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if ins == nil || ins.State == nil || !ins.State.Running {
+		// A stale settings fingerprint means a configure did not finish;
+		// ensure replaces the container on its volume.
+		stale := ins != nil && ins.Config != nil &&
+			ins.Config.Labels[runtime.LabelServiceSettings] != dataservices.SettingsFingerprint(s.DataService)
+		if ins == nil || ins.State == nil || !ins.State.Running || stale {
 			r.submit(ctx, t, operations.KindServiceEnsure, "service", s.Name)
 		}
 	}

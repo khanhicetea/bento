@@ -25,59 +25,63 @@ import (
 
 // Operation kinds.
 const (
-	KindAppProvision  = "app.provision"
-	KindAppStart      = "app.start"
-	KindAppStop       = "app.stop"
-	KindAppRestart    = "app.restart"
-	KindAppUpdate     = "app.update"
-	KindAppPublish    = "app.publish"
-	KindAppUnpublish  = "app.unpublish"
-	KindAppRemove     = "app.remove"
-	KindAppPrune      = "app.prune"
-	KindAppReconcile  = "app.reconcile"
-	KindBindingAdd    = "binding.add"
-	KindDatabaseAdd   = "database.add"
-	KindServiceCreate = "service.create"
-	KindServiceEnsure = "service.reconcile"
-	KindEdgeApply     = "edge.apply"
-	KindTunnelApply   = "tunnel.apply"
-	KindDBAdminApply  = "dbadmin.apply"
-	KindBackupRun     = "backup.run"
-	KindBackupRestore = "backup.restore"
-	KindBackupDelete  = "backup.delete"
-	KindRcloneTest    = "backup.rclone-test"
-	KindStackExport   = "stack.export"
-	KindPermissions   = "app.permissions"
+	KindAppProvision     = "app.provision"
+	KindAppStart         = "app.start"
+	KindAppStop          = "app.stop"
+	KindAppRestart       = "app.restart"
+	KindAppUpdate        = "app.update"
+	KindAppPublish       = "app.publish"
+	KindAppUnpublish     = "app.unpublish"
+	KindAppRemove        = "app.remove"
+	KindAppPrune         = "app.prune"
+	KindAppReconcile     = "app.reconcile"
+	KindBindingAdd       = "binding.add"
+	KindDatabaseAdd      = "database.add"
+	KindServiceCreate    = "service.create"
+	KindServiceEnsure    = "service.reconcile"
+	KindServiceConfigure = "service.configure"
+	KindServiceRestart   = "service.restart"
+	KindEdgeApply        = "edge.apply"
+	KindTunnelApply      = "tunnel.apply"
+	KindDBAdminApply     = "dbadmin.apply"
+	KindBackupRun        = "backup.run"
+	KindBackupRestore    = "backup.restore"
+	KindBackupDelete     = "backup.delete"
+	KindRcloneTest       = "backup.rclone-test"
+	KindStackExport      = "stack.export"
+	KindPermissions      = "app.permissions"
 )
 
 func (c *Controller) registerHandlers() {
 	c.handlers = map[string]handler{
-		KindAppProvision:  c.handleProvision,
-		KindAppStart:      c.handleStart,
-		KindAppStop:       c.handleStop,
-		KindAppRestart:    c.handleRestart,
-		KindAppUpdate:     c.handleUpdate,
-		KindAppPublish:    c.handlePublish,
-		KindAppUnpublish:  c.handleUnpublish,
-		KindAppRemove:     c.handleRemove,
-		KindAppPrune:      c.handlePrune,
-		KindAppReconcile:  c.handleReconcile,
-		KindBindingAdd:    c.handleBindingAdd,
-		KindDatabaseAdd:   c.handleBindingAdd,
-		KindServiceCreate: c.handleServiceCreate,
-		KindServiceEnsure: c.handleServiceEnsure,
-		KindEdgeApply:     c.handleEdgeApply,
-		KindTunnelApply:   c.handleTunnelApply,
-		KindDBAdminApply:  c.handleDBAdminApply,
-		KindBackupRun:     c.handleBackupRun,
-		KindBackupRestore: c.handleBackupRestore,
-		KindBackupDelete:  c.handleBackupDelete,
-		KindRcloneTest:    c.handleRcloneTest,
-		KindStackExport:   c.handleStackExport,
-		KindPermissions:   c.handlePermissions,
-		KindAppDeploy:     c.handleDeploy,
-		KindImagePrune:    c.handleImagePrune,
-		KindImagePrepare:  c.handleImagePrepare,
+		KindAppProvision:     c.handleProvision,
+		KindAppStart:         c.handleStart,
+		KindAppStop:          c.handleStop,
+		KindAppRestart:       c.handleRestart,
+		KindAppUpdate:        c.handleUpdate,
+		KindAppPublish:       c.handlePublish,
+		KindAppUnpublish:     c.handleUnpublish,
+		KindAppRemove:        c.handleRemove,
+		KindAppPrune:         c.handlePrune,
+		KindAppReconcile:     c.handleReconcile,
+		KindBindingAdd:       c.handleBindingAdd,
+		KindDatabaseAdd:      c.handleBindingAdd,
+		KindServiceCreate:    c.handleServiceCreate,
+		KindServiceEnsure:    c.handleServiceEnsure,
+		KindServiceConfigure: c.handleServiceConfigure,
+		KindServiceRestart:   c.handleServiceRestart,
+		KindEdgeApply:        c.handleEdgeApply,
+		KindTunnelApply:      c.handleTunnelApply,
+		KindDBAdminApply:     c.handleDBAdminApply,
+		KindBackupRun:        c.handleBackupRun,
+		KindBackupRestore:    c.handleBackupRestore,
+		KindBackupDelete:     c.handleBackupDelete,
+		KindRcloneTest:       c.handleRcloneTest,
+		KindStackExport:      c.handleStackExport,
+		KindPermissions:      c.handlePermissions,
+		KindAppDeploy:        c.handleDeploy,
+		KindImagePrune:       c.handleImagePrune,
+		KindImagePrepare:     c.handleImagePrepare,
 
 		KindResticInit:      c.handleResticInit,
 		KindResticConnect:   c.handleResticConnect,

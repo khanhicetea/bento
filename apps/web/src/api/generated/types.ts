@@ -437,6 +437,42 @@ export interface Service {
   initialized: boolean;
   state: ObservedState;
   message?: string;
+  /**
+   * Settings are the saved tuned parameters; unset keys use the default.
+   */
+  settings: { [key: string]: string};
+  /**
+   * SettingsApplied is false while the container runs with other settings
+   * than the saved ones (a configure did not finish yet).
+   */
+  settingsApplied: boolean;
+  /**
+   * Tunables lists the parameters this engine allows tuning (empty for Redis).
+   */
+  tunables: ServiceTunable[];
+}
+export const TunableKindSize = "size";
+export const TunableKindInt = "int";
+export type TunableKind = typeof TunableKindSize | typeof TunableKindInt;
+export interface ServiceTunable {
+  key: string;
+  label: string;
+  kind: TunableKind;
+  default: string;
+  min: string;
+  max: string;
+  /**
+   * Memory marks parameters bounded by host memory.
+   */
+  memory: boolean;
+  help: string;
+}
+/**
+ * ConfigureServiceRequest replaces a service's tuned settings and restarts
+ * it to apply them. An empty value resets a parameter to its default.
+ */
+export interface ConfigureServiceRequest {
+  settings: { [key: string]: string};
 }
 export interface ServiceList {
   services: Service[];
