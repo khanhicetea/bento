@@ -3,6 +3,7 @@ package operations
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -453,20 +454,23 @@ func (c *Controller) runDeployScript(
 			"BENTO_WEBHOOK_PUSHER="+d.Pusher,
 		)
 	}
-	req.OutputLimit = 256 << 10
+	// Both streams feed one log as Docker delivers them, so the error that
+	// ended the script is journalled after the output before it and is what
+	// the failure summary shows.
+	out := newScriptLog(ctx, r, "deploy.sh: ", app.Redactor())
+	stdout, stderr := out.Stream(false), out.Stream(true)
+	req.Stdout, req.Stderr = stdout, stderr
 	r.Info(ctx, "running ~/%s", DeployScriptName)
 	execCtx, cancel := context.WithTimeout(ctx, deployScriptTimeout)
 	res, err := c.Engine.Exec(execCtx, tool.ContainerID, req)
 	timedOut := execCtx.Err() != nil
 	cancel()
-	redact := app.Redactor()
-	for _, line := range tailLines(res.Stdout, 60) {
-		r.Info(ctx, "deploy.sh: %s", redact.Replace(line))
-	}
-	errTail := tailLines(res.Stderr, 40)
-	for _, line := range errTail {
-		r.Warn(ctx, "deploy.sh: %s", redact.Replace(line))
-	}
+	// Engines that capture instead of streaming return the output here.
+	stdout.Write(res.Stdout)
+	stderr.Write(res.Stderr)
+	stdout.Flush()
+	stderr.Flush()
+	out.Finish()
 	guidance := "The new code is checked out but the app was not reloaded and the deploy was not recorded. Fix ~/deploy.sh or the code and deploy again."
 	switch {
 	case timedOut:
@@ -474,10 +478,7 @@ func (c *Controller) runDeployScript(
 	case err != nil:
 		return err
 	case res.ExitCode != 0:
-		detail := "no output"
-		if len(errTail) > 0 {
-			detail = redact.Replace(errTail[len(errTail)-1])
-		}
+		detail := cmp.Or(out.Summary(), "no output")
 		return Fail(
 			"deploy-script-failed",
 			guidance,
