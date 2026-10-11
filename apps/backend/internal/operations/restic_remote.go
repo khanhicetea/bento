@@ -72,7 +72,7 @@ func (c *Controller) validateRemoteInput(in ResticRemoteInput, needSlug bool) (s
 	if key == "" || len(key) > 1024 || strings.ContainsAny(key, "\x00\r\n") {
 		errs.Add("key", "paste the repository key")
 	}
-	if in.Snapshot != "" && in.Snapshot != "latest" && !domain.ResticSnapshotID.MatchString(in.Snapshot) {
+	if in.Snapshot != "" && !validSnapshotRef(in.Snapshot) {
 		errs.Add("snapshot", "choose a snapshot")
 	}
 	if in.Slug != "" || needSlug {
@@ -153,7 +153,7 @@ func (c *Controller) SubmitRestoreFromBackup(
 	}
 	snapshot := in.Snapshot
 	if snapshot == "" {
-		snapshot = "latest"
+		snapshot = SnapshotLatest
 	}
 	req := ResticRemoteRequest{
 		ResticCloneRequest: ResticCloneRequest{Snapshot: snapshot, Slug: in.Slug, AppID: platform.NewAppID(),
@@ -232,13 +232,39 @@ func (c *Controller) openRemoteRepo(
 	return cloneRepo{env: env, job: job, view: view, repoID: id, keyFile: pending, snapshots: snaps}, nil
 }
 
+// SnapshotLatest selects the newest snapshot wherever a snapshot is chosen
+// (inspect, clone, restore-from-backup; API and CLI alike).
+const SnapshotLatest = "latest"
+
+// validSnapshotRef accepts a full or short snapshot id or "latest".
+func validSnapshotRef(s string) bool {
+	return s == SnapshotLatest || domain.ResticSnapshotID.MatchString(s)
+}
+
+// resolveAppSnapshot resolves "latest" to the newest snapshot of app in its
+// own repository (tagged app=<id>: a shared or adopted repository also holds
+// other apps' snapshots). An id is returned as is; restic resolves short ids.
+func resolveAppSnapshot(ctx context.Context, r *Run, job *backup.ResticJob, appID, want string) (string, error) {
+	if want != SnapshotLatest {
+		return want, nil
+	}
+	if err := r.Phase(ctx, "resolve-snapshot"); err != nil {
+		return "", err
+	}
+	snaps, err := listSnapshots(ctx, job, "app="+appID)
+	if err != nil {
+		return "", err
+	}
+	return resolveSnapshot(snaps, want)
+}
+
 // resolveSnapshot maps "" / "latest" or a (short) id to the full snapshot id.
 func resolveSnapshot(snaps []domain.ResticSnapshot, want string) (string, error) {
 	if len(snaps) == 0 {
 		return "", Fail("restic-empty", "The repository holds no snapshots; run a backup on the source first.",
 			"the repository has no snapshots")
 	}
-	if want == "" || want == "latest" {
+	if want == "" || want == SnapshotLatest {
 		return snaps[0].ID, nil
 	}
 	for _, s := range snaps {

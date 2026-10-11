@@ -155,7 +155,7 @@ func (c *Controller) SubmitResticInspect(
 		return store.Operation{}, err
 	}
 	var errs domain.ValidationErrors
-	if !domain.ResticSnapshotID.MatchString(req.Snapshot) {
+	if !validSnapshotRef(req.Snapshot) {
 		errs.Add("snapshot", "choose a snapshot")
 	}
 	if req.Slug != "" {
@@ -184,7 +184,7 @@ func (c *Controller) SubmitResticClone(
 		return store.Operation{}, err
 	}
 	var errs domain.ValidationErrors
-	if !domain.ResticSnapshotID.MatchString(req.Snapshot) {
+	if !validSnapshotRef(req.Snapshot) {
 		errs.Add("snapshot", "choose a snapshot")
 	}
 	if err := domain.ValidateSlug(req.Slug); err != nil {
@@ -758,7 +758,11 @@ func (c *Controller) handleResticInspect(ctx context.Context, r *Run) (any, erro
 	}
 	defer env.close()
 	defer job.Close(ctx)
-	return c.inspectSnapshot(ctx, r, job, req.Snapshot, req.Slug, req.KeepUsername)
+	snapshot, err := resolveAppSnapshot(ctx, r, job, app.ID, req.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return c.inspectSnapshot(ctx, r, job, snapshot, req.Slug, req.KeepUsername)
 }
 
 // inspectSnapshot reads a snapshot's manifest and app.json and plans the
@@ -894,7 +898,13 @@ func (c *Controller) handleAppCloneFromBackup(ctx context.Context, r *Run) (any,
 		if err != nil {
 			return cloneRepo{}, err
 		}
-		return cloneRepo{env: env, job: job, view: v}, nil
+		snapshot, err := resolveAppSnapshot(ctx, r, job, src.ID, req.Snapshot)
+		if err != nil {
+			job.Close(ctx)
+			env.close()
+			return cloneRepo{}, err
+		}
+		return cloneRepo{env: env, job: job, view: v, snapshot: snapshot}, nil
 	})
 }
 

@@ -952,7 +952,8 @@ export interface ResticKeyAccepted extends Accepted {
 }
 /**
  * ResticInspectRequest previews a snapshot (operation kind restic.inspect).
- * With a slug the preview shows the real target names.
+ * With a slug the preview shows the real target names. Snapshot is a full or
+ * short snapshot id, or "latest" for the app's newest snapshot.
  */
 export interface ResticInspectRequest {
   snapshot: string;
@@ -961,7 +962,8 @@ export interface ResticInspectRequest {
 }
 /**
  * ResticCloneRequest restores a snapshot into a new app on this stack. The
- * confirmation is exactly "clone <slug>".
+ * confirmation is exactly "clone <slug>". Snapshot is a full or short
+ * snapshot id, or "latest" for the app's newest snapshot.
  */
 export interface ResticCloneRequest {
   snapshot: string;
@@ -978,7 +980,7 @@ export interface ResticCloneRequest {
  * on another stack (operation kind restic.inspect-remote). Repository is an
  * rclone remote path (name:path) and Key one of the repository's keys; it is
  * kept in a pending file for the operation and deleted at its end. An empty
- * snapshot means the newest; the result lists all snapshots.
+ * snapshot or "latest" means the newest; the result lists all snapshots.
  */
 export interface RestoreFromBackupInspectRequest {
   repository: string;

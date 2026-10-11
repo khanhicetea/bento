@@ -1003,7 +1003,8 @@ type ResticKeyAccepted struct {
 }
 
 // ResticInspectRequest previews a snapshot (operation kind restic.inspect).
-// With a slug the preview shows the real target names.
+// With a slug the preview shows the real target names. Snapshot is a full or
+// short snapshot id, or "latest" for the app's newest snapshot.
 type ResticInspectRequest struct {
 	Snapshot     string `json:"snapshot"`
 	Slug         string `json:"slug"`
@@ -1011,7 +1012,8 @@ type ResticInspectRequest struct {
 }
 
 // ResticCloneRequest restores a snapshot into a new app on this stack. The
-// confirmation is exactly "clone <slug>".
+// confirmation is exactly "clone <slug>". Snapshot is a full or short
+// snapshot id, or "latest" for the app's newest snapshot.
 type ResticCloneRequest struct {
 	Snapshot     string `json:"snapshot"`
 	Slug         string `json:"slug"`
@@ -1025,7 +1027,7 @@ type ResticCloneRequest struct {
 // on another stack (operation kind restic.inspect-remote). Repository is an
 // rclone remote path (name:path) and Key one of the repository's keys; it is
 // kept in a pending file for the operation and deleted at its end. An empty
-// snapshot means the newest; the result lists all snapshots.
+// snapshot or "latest" means the newest; the result lists all snapshots.
 type RestoreFromBackupInspectRequest struct {
 	Repository   string `json:"repository"`
 	Key          string `json:"key"`

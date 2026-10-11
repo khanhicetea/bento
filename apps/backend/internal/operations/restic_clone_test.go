@@ -235,10 +235,15 @@ func TestResticCloneClaimsAndConfirmation(t *testing.T) {
 	if _, err := h.c.SubmitResticClone(ctx, src.ID, bad, "clone Bad Slug", ""); err == nil {
 		t.Fatal("invalid slug accepted")
 	}
-	bad = req
-	bad.Snapshot = "latest"
-	if _, err := h.c.SubmitResticClone(ctx, src.ID, bad, "clone shop-copy", ""); err == nil {
-		t.Fatal("non-hex snapshot accepted")
+	for _, snap := range []string{"", "newest", "LATEST", "aaaa"} {
+		bad = req
+		bad.Snapshot = snap
+		if _, err := h.c.SubmitResticClone(ctx, src.ID, bad, "clone shop-copy", ""); err == nil {
+			t.Fatalf("snapshot %q accepted", snap)
+		}
+		if _, err := h.c.SubmitResticInspect(ctx, src.ID, ResticInspectRequest{Snapshot: snap}, ""); err == nil {
+			t.Fatalf("inspect snapshot %q accepted", snap)
+		}
 	}
 	bad = req
 	bad.BackupAfter = "sideways"
@@ -449,6 +454,62 @@ func TestCloneFromBackupCreatesStoppedApp(t *testing.T) {
 	}
 }
 
+// "latest" is accepted by inspect and clone like the CLI and
+// restore-from-backup accept it, and resolves to the newest snapshot of the
+// source app (listed with its app tag) before restic reads anything.
+func TestInspectAndCloneResolveLatest(t *testing.T) {
+	f := newCloneFixture(t, false, false)
+	h, ctx := f.h, t.Context()
+	const full = "aaaaaaaabbbbbbbb"
+
+	op, err := h.c.SubmitResticInspect(ctx, f.src.ID, ResticInspectRequest{Snapshot: SnapshotLatest}, "")
+	must(t, err)
+	got := h.wait(op)
+	if got.State != store.OpSucceeded {
+		t.Fatalf("inspect latest: %s %s: %s", got.State, got.ErrorCode, got.ErrorMessage)
+	}
+	var preview struct {
+		Snapshot string `json:"snapshot"`
+	}
+	must(t, json.Unmarshal(got.Result, &preview))
+	if preview.Snapshot != full {
+		t.Fatalf("inspect resolved %q, want %q", preview.Snapshot, full)
+	}
+
+	op, err = h.c.SubmitResticClone(ctx, f.src.ID,
+		ResticCloneRequest{Snapshot: SnapshotLatest, Slug: "shop-copy"}, "clone shop-copy", "")
+	must(t, err)
+	got = h.wait(op)
+	if got.State != store.OpSucceeded {
+		t.Fatalf("clone latest: %s %s: %s", got.State, got.ErrorCode, got.ErrorMessage)
+	}
+	var res ResticCloneResult
+	must(t, json.Unmarshal(got.Result, &res))
+	if res.Snapshot != full {
+		t.Fatalf("clone resolved %q, want %q", res.Snapshot, full)
+	}
+	calls := strings.Join(h.fake.Calls, "\n")
+	if !strings.Contains(calls, "restic snapshots --no-lock --tag app="+f.src.ID) {
+		t.Fatalf("latest must be resolved among the source app's snapshots:\n%s", calls)
+	}
+	if !strings.Contains(calls, "restic restore "+full+" ") || strings.Contains(calls, "restic restore latest") {
+		t.Fatalf("restore must use the resolved id:\n%s", calls)
+	}
+}
+
+func TestResolveSnapshotLatestOnEmptyRepo(t *testing.T) {
+	if _, err := resolveSnapshot(nil, SnapshotLatest); err == nil || !strings.Contains(err.Error(), "no snapshots") {
+		t.Fatalf("empty repository: %v", err)
+	}
+	snaps := []domain.ResticSnapshot{{ID: "bbbbbbbbcccccccc", ShortID: "bbbbbbbb"}, {ID: "aaaaaaaabbbbbbbb", ShortID: "aaaaaaaa"}}
+	if id, err := resolveSnapshot(snaps, SnapshotLatest); err != nil || id != "bbbbbbbbcccccccc" {
+		t.Fatalf("latest -> %q %v", id, err)
+	}
+	if id, err := resolveSnapshot(snaps, "aaaaaaaa"); err != nil || id != "aaaaaaaabbbbbbbb" {
+		t.Fatalf("short id -> %q %v", id, err)
+	}
+}
+
 func TestCloneFromBackupRollsBackOnFailure(t *testing.T) {
 	f := newCloneFixture(t, true, true)
 	h, ctx := f.h, t.Context()
@@ -514,7 +575,7 @@ func TestResticInspectReturnsPreview(t *testing.T) {
 	if _, err := store.GetApp(t.Context(), h.store.DB(), "shop-copy"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatal("inspect must not create an app")
 	}
-	if _, err := h.c.SubmitResticInspect(t.Context(), f.src.ID, ResticInspectRequest{Snapshot: "latest"}, ""); err == nil {
+	if _, err := h.c.SubmitResticInspect(t.Context(), f.src.ID, ResticInspectRequest{Snapshot: "newest"}, ""); err == nil {
 		t.Fatal("invalid snapshot accepted")
 	}
 }

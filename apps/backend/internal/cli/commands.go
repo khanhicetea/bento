@@ -727,17 +727,8 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		if *newSlug == "" {
 			return errors.New("usage: bento app clone-from-backup SRC_SLUG --snapshot ID|latest --slug NEW")
 		}
+		// "latest" is resolved by the backend against the repository itself.
 		snap := *snapshot
-		if snap == "latest" {
-			var rv dto.Restic
-			if err := c.Do(ctx, "GET", base+"/restic", nil, &rv, nil); err != nil {
-				return err
-			}
-			if len(rv.Snapshots) == 0 {
-				return errors.New("the app has no snapshots (refresh the repository first)")
-			}
-			snap = rv.Snapshots[0].ID
-		}
 		fmt.Fprintln(os.Stderr, "Creates a new app from the snapshot. The new app is left stopped and unpublished.")
 		got, err := confirmPrompt("clone " + *newSlug)
 		if err != nil {
