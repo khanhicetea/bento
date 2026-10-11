@@ -7,6 +7,15 @@ unix_socket = true
 
 [scheduler]
 timezone = "UTC"
+
+# Filled into jobs saved through the scheduler UI or imported. minicrond's own
+# default is a clean environment with PATH=/usr/bin:/bin, which hides the
+# toolchain (/usr/local/bin) and the app's DB_*/REDIS_* credentials, so
+# `php artisan schedule:run` would fail. Workers ignore these defaults and
+# need env_base = "inherit" themselves.
+[defaults]
+env_base = "inherit"
+working_dir = "~/app"
 {{range .Jobs}}
 [[job]]
 name = "{{.Name}}"

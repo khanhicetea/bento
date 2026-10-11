@@ -75,6 +75,7 @@ fi
 php artisan migrate --force
 php artisan optimize        # config, route, event, and view caches
 php artisan queue:restart   # workers pick up the new code after their current job
+sleep 3 && minicrond reload # start workers again once they have exited (see Scheduler)
 ```
 
 <Callout type="tip">
@@ -163,6 +164,7 @@ switched=1
 echo "current -> $NAME"
 
 php artisan queue:restart
+sleep 3 && minicrond reload # start workers again once they have exited (see Scheduler)
 
 # 5. Keep the newest $KEEP releases.
 ls -1dt "$RELEASES"/*/ | tail -n +$((KEEP + 1)) | xargs -r rm -rf
