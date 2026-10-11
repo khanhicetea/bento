@@ -152,14 +152,14 @@ counter (the DB write works); e2e-php also returns `redisCounter`.
 
 | Case | How | Expect |
 | --- | --- | --- |
-| Push to deploy | `$B --json app webhook e2e-php --enable`; register `https://e2e-php.$E2E_DOMAIN<path>` on GitHub (`gh api -X POST repos/$GU/e2e-php/hooks`, `content_type json`, the secret); push a commit | GitHub ping 200, push 202; `app webhook` lists `push deployed`; new marker live |
+| Push to deploy | `$B --json app webhook e2e-php --enable`; register its `url` (`https://e2e-php.$E2E_DOMAIN<path>`) on GitHub (`gh api -X POST repos/$GU/e2e-php/hooks`, `content_type json`, the secret); push a commit | GitHub ping 200, push 202; `app webhook` lists `push deployed`; new marker live |
 | Wrong branch | push to `feature` | delivery `ignored-ref` |
 | Forged calls | POST with no signature, a wrong `X-Hub-Signature-256`, a wrong bearer, a wrong path, and a GET | all 404 |
 | CI style | `curl -X POST -H "Authorization: Bearer $SECRET" URL` | 202, delivery `generic trigger deployed` |
 | Failing script | add a `FAIL` file the script checks for, push, deploy | op fails with the script's exit code; old version keeps serving; next good deploy reloads |
 
-The webhook URL that Bento prints uses the edge port (`http://host:18080/...`). Behind a tunnel, register
-`https://host/<path>` instead (see [Known findings](#known-findings)).
+With the edge bound to loopback and a tunnel configured, the webhook URL that Bento prints is
+`https://host/_bento/webhook/deploy/<id>`, without the edge port; `path` is always printed as well.
 
 ## 5. Ingress modes
 
@@ -188,15 +188,15 @@ no_check_bucket = true
 
 | Case | How | Expect |
 | --- | --- | --- |
-| Remote test | `$E/api.sh POST /api/v1/backups/rclone/test '{"remote":"e2es3:BUCKET/bento-e2e/db"}'` | succeeded within seconds |
+| Remote test | `$E/api.sh POST /api/v1/backups/rclone/test '{"remote":"e2es3:BUCKET/bento-e2e/db"}'`; repeat with a broken endpoint | succeeded within seconds; the broken one fails within seconds (at most 60s) with rclone's error |
 | DB dump + upload | `$B backup run --app e2e-php --upload e2es3:BUCKET/bento-e2e/db` (also `--compression gzip` on e2e-node) | `upload: succeeded`; artifacts in `backup list` and in the bucket |
 | DB restore | drop `hits` with `q.php`, then `echo "replace e2e_php_main" \| $B backup restore --artifact PATH --app e2e-php --database e2e_php_main` | wrong text refused; table back with the dump's row count |
 | App backup | `api.sh PUT /api/v1/apps/ID/restic` (repository `e2es3:BUCKET/bento-e2e/apps/e2e-php`, paths `["."]`), `POST .../restic/init` (save `.key` to `~/.config/bento-e2e/*.restic.key`), `POST .../restic/backup` | snapshot listed, `lastBackup.ok` |
-| Clone on stack | `POST .../restic/inspect` then `.../restic/clone` with `{"snapshot":"<full id>","slug":"e2e-php-clone","confirm":"clone e2e-php-clone"}`; add a host (`$B host add`), start, publish | code, untracked files, DB rows restored; new DB name and user; Redis empty (not backed up) |
+| Clone on stack | `POST .../restic/inspect` then `.../restic/clone` with `{"snapshot":"latest","slug":"e2e-php-clone","confirm":"clone e2e-php-clone"}`; add a host (`$B host add`), start, publish | code, untracked files, DB rows restored; new DB name and user; Redis empty (not backed up) |
 | Disaster restore | `echo "clone e2e-php-dr" \| $B app restore-from-backup --repo e2es3:... --key-file KEY --slug e2e-php-dr --snapshot latest` | stopped app plus a checklist (DB user, deploy key, hosts); a random key fails with `wrong key` |
 
-`backup list` prints a table even with `--json`; parse it with `awk`. The REST clone and inspect endpoints need a full
-snapshot ID, while the CLI accepts `latest`.
+`$B backup list --json` (or `$B --json backup list`) prints the artifact list as JSON. The REST inspect and clone
+endpoints accept a full or short snapshot ID or `latest`, like the CLI.
 
 ## 7. Removal and retained data
 
@@ -228,12 +228,16 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
 
 ### Known findings
 
-1. **Webhook URL wrong behind a tunnel or with a non-default edge port.** `app webhook` prints
-   `http://<host>:18080/_bento/webhook/...`, which GitHub cannot reach; the public URL is `https://<host>/...`.
-2. **rclone Test with an unreachable endpoint** runs for about 2.5 minutes before failing with
-   `context deadline exceeded`, despite `--contimeout 15s --timeout 30s`.
-3. **`backup list --json`** ignores `--json` and prints the table.
-4. **REST restic inspect/clone** reject `"snapshot":"latest"` ("choose a snapshot"); the CLI accepts it.
+1. ~~**Webhook URL wrong behind a tunnel or with a non-default edge port.**~~ **Fixed:** with a loopback-bound edge
+   or a configured tunnel the URL is `https://<host>/_bento/webhook/...` (no edge port); a public edge keeps its
+   scheme and port. The CLI and UI always show the path too. Not yet re-run live.
+2. ~~**rclone Test with an unreachable endpoint** ran for about 2.5 minutes, then `context deadline exceeded`.~~
+   **Fixed:** the test adds `--low-level-retries 1` (rclone's default 10 retries with backoff caused the delay),
+   is bounded to 60s, and reports rclone's last error line. Not yet re-run live.
+3. ~~**`backup list --json`** ignored `--json`.~~ **Fixed:** `backup list` and `backup schedule list` honor `--json`,
+   and every listing also accepts `--json` after the command.
+4. ~~**REST restic inspect/clone** rejected `"snapshot":"latest"`.~~ **Fixed:** the API accepts `latest` and the
+   operation resolves it to the source app's newest snapshot in the repository, shared with restore-from-backup.
 5. **Legacy PHP with docroot = repo root** serves non-dot files such as `composer.json`, `config.inc`, `vendor/*`.
    Dotfiles are denied. Expected nginx behaviour, but worth a warning in the UI or docs.
 6. **No ready path on a PHP app** means readiness probes request `/` and run app code a few times before the first
