@@ -29,7 +29,7 @@ export function DataServices() {
       {q.isPending && <DomainLoading label="services" />}
       {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
       {q.data && (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {q.data.services.map((s) => (
             <ServiceTile key={s.name} service={s} />
           ))}

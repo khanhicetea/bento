@@ -76,18 +76,6 @@ function Overview() {
             />
           </div>
         </Cell>
-        <Cell>
-          <div className="metric">
-            <span>Architecture</span>
-            <strong className="text-[1.75rem]!">{status.arch}</strong>
-          </div>
-        </Cell>
-      </div>
-      <div className="box box--2">
-        <ReconcileTargets />
-        <DataServices />
-      </div>
-      <div className="box box--2">
         <Cell
           title="Stack"
           icon={<Server />}
@@ -103,6 +91,7 @@ function Overview() {
               ["Name", status.stackName],
               ["ID", <CopyableCode value={status.stackId} />],
               ["Root", <CopyableCode value={status.root} />],
+              ["Arch", status.arch],
               ...(status.dockerError
                 ? ([["Docker", <span className="text-destructive">{status.dockerError}</span>]] as Array<
                     [string, React.ReactNode]
@@ -111,6 +100,12 @@ function Overview() {
             ]}
           />
         </Cell>
+      </div>
+      <div className="box">
+        <DataServices />
+      </div>
+      <div className="box box--2">
+        <ReconcileTargets />
         <RetainedData />
       </div>
     </>
