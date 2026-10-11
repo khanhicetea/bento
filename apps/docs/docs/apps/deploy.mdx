@@ -35,6 +35,11 @@ Deploy automatically whenever you push to the branch.
   <Step title="Make the URL reachable">
     - **Public apps on the edge:** nothing to do — the edge forwards `/_bento/webhook/*` on every domain.
     - **Tunnel or your own proxy:** route `/_bento/webhook/*` to Bento's utils listener. See [Utils](/ingress/utils).
+
+    Bento shows the **path** (`/_bento/webhook/deploy/<id>`) and, when it can tell, the full **URL** on the app's
+    first domain. With a Cloudflare Tunnel or an edge bound to `127.0.0.1`, that URL is `https://<domain>/…` without
+    the edge's internal port. Any other public domain that reaches Bento works too: put it in front of the path, or set
+    a utils base URL.
   </Step>
   <Step title="Add it to your git host">
     | Host | Where | Put the secret in |

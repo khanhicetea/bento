@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, GitBranch, KeyRound, Rocket, Webhook } from "lucide-react";
 import { Link } from "wouter";
@@ -223,6 +223,7 @@ function WebhookCell({ app, source }: { app: T.App; source: T.GitSource }) {
               </span>
             ),
           ],
+          ...(hook.url ? [["Path", <CopyableCode value={hook.path} />] satisfies [string, ReactNode]] : []),
           ["Content type", <code>application/json</code>],
           [
             "Secret",

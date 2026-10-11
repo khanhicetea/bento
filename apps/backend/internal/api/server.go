@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -767,10 +768,43 @@ func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 	if !ok {
 		return ""
 	}
+	ts, err := s.C.TunnelSettings(r.Context())
+	if err != nil {
+		return ""
+	}
+	return publicHostOrigin(es, ts.Enabled, h)
+}
+
+// publicHostOrigin is the origin a git host should use to reach an
+// edge-routed host. The edge's listen port is an internal detail whenever
+// something else faces the internet:
+//
+//   - the edge is bound to loopback, or a Cloudflare Tunnel is configured: the
+//     public side is the tunnel or a host proxy, which serves the hostname on
+//     the standard HTTPS port. The origin is https://<host> and never carries
+//     the edge port (a route with tls "none" is then plain HTTP only between
+//     that proxy and the edge).
+//   - otherwise the edge itself is public: the scheme follows the route's TLS
+//     mode and a non-default port is kept, because it is the reachable one.
+//
+// Setups this cannot infer set the utils base URL; the path is always returned
+// next to the URL so operators can compose their own.
+func publicHostOrigin(es domain.EdgeSettings, tunnel bool, h domain.Host) string {
+	if tunnel || isLoopbackBind(es.Bind) {
+		return "https://" + h.Name
+	}
 	if h.Route.TLS == domain.TLSNone {
 		return "http://" + h.Name + portSuffix(es.HTTPPort, 80)
 	}
 	return "https://" + h.Name + portSuffix(es.HTTPSPort, 443)
+}
+
+func isLoopbackBind(bind string) bool {
+	if bind == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(bind, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // utilsTargets are the utils listener origins a proxy can forward to.

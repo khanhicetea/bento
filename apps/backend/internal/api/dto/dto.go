@@ -392,7 +392,8 @@ type Webhook struct {
 	// Path is served on every edge-routed domain.
 	Path string `json:"path"`
 	// URL uses the utils base URL, else the app's primary domain when the
-	// edge forwards webhooks to Bento, else "".
+	// edge forwards webhooks to Bento, else "". Behind a tunnel or a
+	// loopback-bound edge it is https://<domain> without the edge port.
 	URL string `json:"url"`
 	// Targets are the backend's utils listeners; point a host proxy or a
 	// Cloudflare Tunnel path rule for /_bento/webhook/* at one of them.

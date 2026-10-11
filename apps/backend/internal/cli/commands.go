@@ -859,11 +859,12 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			fmt.Fprintf(r.out, "no webhook (enable one with `bento app webhook %s --enable`)\n", slug)
 			return nil
 		}
+		// The URL is Bento's best guess at the public origin; the path is
+		// always printed so operators with another ingress can compose theirs.
 		if hook.URL != "" {
 			fmt.Fprintf(r.out, "url:    %s\n", hook.URL)
-		} else {
-			fmt.Fprintf(r.out, "path:   %s  (on any domain whose /_bento/webhook/* reaches Bento)\n", hook.Path)
 		}
+		fmt.Fprintf(r.out, "path:   %s  (on any domain whose /_bento/webhook/* reaches Bento)\n", hook.Path)
 		if len(hook.Targets) > 0 {
 			fmt.Fprintf(
 				r.out,
