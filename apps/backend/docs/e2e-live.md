@@ -300,8 +300,10 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
 10. ~~**Deploy failure summary showed the wrong line.**~~ **Fixed:** the script's stdout and stderr are journalled as
     one stream in arrival order, live, without escape codes (first 120 lines, then the last 40); the summary is the
     last line on either stream.
-11. **Workers are not restarted after they exit (minicrond 0.4.0).** `restart = "always"` workers stay stopped after
-    a clean exit (`queue:restart`) or a crash (SIGKILL); only start errors are retried. Workaround: `minicrond
-    reload` (in the deploy recipes). Needs a minicrond fix.
+11. **Workers stop for good after quick clean exits (minicrond 0.4.0).** Any exit within `healthy_after` (30s),
+    even exit 0 from `queue:restart`, counts toward `max_restart_attempts` (5); after 5 the worker is never started
+    again. The counter is kept per name in memory and survives re-import and reload, so a definition that once
+    failed to start is exhausted from its first quick exit. Exits after 30s restart fine. Workaround:
+    `sleep 3 && minicrond reload` (in the deploy recipes). Needs a minicrond fix.
 12. **Workers ignore scheduler `[defaults]`** and a worker that exhausts its start attempts stops with nothing shown
     in Bento. Needs a minicrond fix.
