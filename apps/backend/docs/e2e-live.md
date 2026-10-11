@@ -207,6 +207,52 @@ endpoints accept a full or short snapshot ID or `latest`, like the CLI.
 | Prune | `echo delete \| $B retired prune APP_ID` | databases, user, and home dropped; entry stays with `prunedAt` |
 | UID non-reuse | create the slug again | gets the next UID, never the retired one |
 
+## 8. Laravel with cron and a queue worker
+
+A real-world app: Laravel 13 on PHP 8.4, MySQL, Redis cache, a database queue processed by a worker, and the
+scheduler running a heartbeat command every minute. Generate the skeleton and push it to a **private** repo:
+
+```bash
+docker run --rm -u 0:0 -e COMPOSER_HOME=/tmp/c -v "$PWD":/w -w /w composer:2.8 \
+  create-project --prefer-dist --no-interaction --no-scripts laravel/laravel e2e-laravel
+rm -rf e2e-laravel/vendor
+```
+
+Add a `visits` table and a `heartbeats` table (migration), a queued `ProcessVisit` job that stamps
+`visits.processed_at`, an `app:heartbeat` command scheduled `everyMinute()` in `routes/console.php`, and routes `/`
+(insert a visit, dispatch the job), `/status` (counts of visits, processed, pending and failed jobs, heartbeats), and
+`/health`. Keep marks in `config/app.php`, never as a top-level `const` in a routes file (route caching loads it
+twice).
+
+| Step | How | Expect |
+| --- | --- | --- |
+| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/health`, mysql84; deploy key on the private repo | app created |
+| Deploy script | the **Classic** recipe from `apps/docs/docs/apps/deploy-scripts.mdx`, unchanged | — |
+| First deploy, no `.env` | `$B app deploy e2e-laravel` | fails with `~/app/.env is missing`; code is cloned |
+| `.env` | copy `.env.example`, `APP_ENV=production`, `CACHE_STORE=redis`; keep `DB_CONNECTION=sqlite`; `php artisan key:generate --force` via `app exec` | Bento's `DB_*` win: migrations run on MySQL |
+| Jobs and worker | import (as below) with `$B app minicrond e2e-laravel -- import /home/e2e-laravel/tmp/jobs.toml` | `/status`: pending jobs drain to 0; heartbeats grow by one a minute |
+| Push to deploy | webhook on GitHub, push a new mark | new mark live; jobs after the deploy are processed by the new code |
+| Worker after deploy | `queue:restart` in the recipe, then `sleep 3 && minicrond reload` | worker PID changes and keeps processing |
+| Failing deploy | push a `composer.json` change plus a migration that throws | op fails; summary is the exception text; journal shows Composer's lines, then `FAIL` and the exception, no escape codes; the old code keeps serving |
+
+```toml
+[[job]]
+name = "laravel-schedule"
+schedule = "* * * * *"
+command = "php artisan schedule:run"
+timeout = 120
+
+[[worker]]
+name = "queue-default"
+command = "php artisan queue:work --sleep=1 --tries=3 --max-time=3600"
+env_base = "inherit"       # workers do not get Bento's scheduler defaults
+working_dir = "~/app"
+```
+
+Check the job picked up Bento's defaults: `$B app minicrond e2e-laravel -- list` shows `env_base: inherit` and
+`working_dir: ~/app` for `laravel-schedule`. Inspect runs with `minicrond run NAME` (jobs only) and
+`minicrond logs RUN_ID`; workers are controlled by `minicrond reload`.
+
 ## Teardown
 
 ```bash
@@ -215,25 +261,26 @@ for id in $($B retired | jq -r '.retired[] | select(.prunedAt == null) | .appId'
 SID=$($B --json status | jq -r .stackId)          # read before stopping the backend
 kill "$(pgrep -fx '/opt/bento-e2e/bento --stack /srv/bento-e2e serve.*')"
 docker ps -a --filter label=io.bento.stack-id=$SID -q | xargs -r docker rm -f    # full reset only: also data services
-for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone; do $E/cf-host.sh rm $h; done
-for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py; do gh repo delete $GU/$r --yes; done
+for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone e2e-laravel; do $E/cf-host.sh rm $h; done
+for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-laravel; do gh repo delete $GU/$r --yes; done
 ```
 
 Keep the tunnel and the bucket for the next run unless asked; delete the stack root only for a full reset.
 
 ## Last run: 2026-10-11
 
-Commit `7ca4f46`, Docker 29.8.1, amd64. Every case in sections 1–7 passed. Skipped: ACME issuance (no public 80/443),
+Commit `7ca4f46` for sections 1–7; section 8 and the fixes below re-run live on `fix/e2e-findings` (`7c278bb`).
+Docker 29.8.1, amd64. Every case passed except the open findings. Skipped: ACME issuance (no public 80/443),
 arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock buckets.
 
 ### Known findings
 
 1. ~~**Webhook URL wrong behind a tunnel or with a non-default edge port.**~~ **Fixed:** with a loopback-bound edge
    or a configured tunnel the URL is `https://<host>/_bento/webhook/...` (no edge port); a public edge keeps its
-   scheme and port. The CLI and UI always show the path too. Not yet re-run live.
+   scheme and port. The CLI and UI always show the path too. Verified live.
 2. ~~**rclone Test with an unreachable endpoint** ran for about 2.5 minutes, then `context deadline exceeded`.~~
    **Fixed:** the test adds `--low-level-retries 1` (rclone's default 10 retries with backoff caused the delay),
-   is bounded to 60s, and reports rclone's last error line. Not yet re-run live.
+   is bounded to 60s, and reports rclone's last error line. Verified live: a bad endpoint fails in 2s.
 3. ~~**`backup list --json`** ignored `--json`.~~ **Fixed:** `backup list` and `backup schedule list` honor `--json`,
    and every listing also accepts `--json` after the command.
 4. ~~**REST restic inspect/clone** rejected `"snapshot":"latest"`.~~ **Fixed:** the API accepts `latest` and the
@@ -245,3 +292,16 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
 7. **Failed deploy** leaves the new code on disk; a later manual restart serves it without the deploy step that
    failed (documented, but easy to trip over).
 8. **`retired`** keeps pruned entries (with `prunedAt`) next to live ones in the same list.
+9. ~~**Scheduler jobs could not run `php`.**~~ **Fixed:** minicrond defaults jobs to a clean environment with
+   `PATH=/usr/bin:/bin`, so `php artisan schedule:run` failed (`executable "php" not found in trusted PATH`) and
+   had no `DB_*`. Bento's generated `minicrond.toml` now sets `[defaults] env_base = "inherit"` and
+   `working_dir = "~/app"`. Bare names in an `argv` are still only looked up in `/usr/bin` and `/bin`: use
+   `command` or absolute paths.
+10. ~~**Deploy failure summary showed the wrong line.**~~ **Fixed:** the script's stdout and stderr are journalled as
+    one stream in arrival order, live, without escape codes (first 120 lines, then the last 40); the summary is the
+    last line on either stream.
+11. **Workers are not restarted after they exit (minicrond 0.4.0).** `restart = "always"` workers stay stopped after
+    a clean exit (`queue:restart`) or a crash (SIGKILL); only start errors are retried. Workaround: `minicrond
+    reload` (in the deploy recipes). Needs a minicrond fix.
+12. **Workers ignore scheduler `[defaults]`** and a worker that exhausts its start attempts stops with nothing shown
+    in Bento. Needs a minicrond fix.
