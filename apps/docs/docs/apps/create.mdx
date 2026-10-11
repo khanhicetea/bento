@@ -32,7 +32,7 @@ an app before its code is ready.
     | **Command** | The program and its arguments, e.g. `node` `server.js`. Runs directly, not through a shell. |
     | **Port** | The port your app listens on. |
     | **Working dir** | Relative to your code folder. |
-    | **Ready path** | A URL Bento requests to check the app is up, e.g. `/health`. |
+    | **Ready path** | Optional. A URL that must answer without a 5xx error, e.g. `/health`. Leave empty while the app still needs setup: then any HTTP answer counts. |
 
     Your app must listen on `0.0.0.0:$PORT` — Bento sets `PORT` and `HOST`.
   </Tab>

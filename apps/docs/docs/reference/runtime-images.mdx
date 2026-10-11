@@ -7,7 +7,9 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 
 - The build context is **embedded in the binary** and hashed together with the build arguments. The tag
   `bento-runtime/<toolchain>:<version>-<hash>` changes whenever either changes.
-- Base images, s6-overlay, minicrond, and Composer are pinned and checksum-verified.
+- Base images, s6-overlay, minicrond, Composer, Node.js, and pnpm are pinned and checksum-verified.
+- PHP images include Node.js 24 LTS with `npm` and `pnpm`, so `npm ci && npm run build` works in the tool shell and
+  deploy scripts. Caches go to the app's home folder.
 
 ## Inside every image
 
@@ -16,5 +18,5 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 | `bento-init` | Entry point; takes the per-app instance lock and starts s6-overlay as PID 1. |
 | s6-overlay | Supervises the runtime and minicrond. |
 | `bento-exec` | Tooling entry point for shells and exec; never starts daemons. |
-| `bento-ready` | Readiness probe. |
+| `bento-ready` | Readiness probe: the runtime is up and the HTTP port answers. A 5xx fails it only when you set a **Ready path**. |
 | Failure handler | Stops the container after five crashes of a component within two minutes, so Docker's restart policy applies its own backoff. |

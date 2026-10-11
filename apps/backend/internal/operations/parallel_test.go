@@ -622,7 +622,7 @@ func TestBootingAppIsNotRoutedByAnotherOperation(t *testing.T) {
 
 func TestWarmingIsClearedWhenStartFails(t *testing.T) {
 	h := newHarness(t)
-	app := h.createApp("shop")
+	app := h.createAppReadyPath("shop", "/healthz")
 	h.c.Probe = func(context.Context, string) (int, error) { return 503, nil }
 	op, err := h.c.StartApp(t.Context(), app.ID, "")
 	if err != nil {

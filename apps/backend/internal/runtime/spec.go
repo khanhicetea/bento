@@ -68,6 +68,15 @@ func appResources(r domain.Resources) container.Resources {
 	}
 }
 
+// ToolMinMemoryMB is the memory floor for tool containers, so package installs
+// and builds (npm, composer) do not OOM on apps sized small for serving.
+const ToolMinMemoryMB = 1024
+
+func toolResources(r domain.Resources) container.Resources {
+	r.MemoryMB = max(r.MemoryMB, ToolMinMemoryMB)
+	return appResources(r)
+}
+
 func appEnv(app domain.App) []string {
 	return []string{"HOME=" + app.ContainerHome(), "USER=" + app.Slug, "LANG=C.UTF-8"}
 }
@@ -202,7 +211,7 @@ func ToolContainerSpec(in AppInputs, opID string, maxLifetime time.Duration) doc
 		SecurityOpt:    []string{"no-new-privileges:true"},
 		Tmpfs:          tmpfs(app),
 		Mounts:         appMounts(in),
-		Resources:      appResources(app.Resources),
+		Resources:      toolResources(app.Resources),
 		LogConfig:      logConfig(),
 		Init:           new(true),
 	}

@@ -63,6 +63,14 @@ var RuntimeArtifacts = map[string]string{
 	"COMPOSER_SHA256":          "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6",
 }
 
+// PHPNodeArtifacts pin the Node.js LTS toolchain (with npm) and pnpm layered
+// into every managed PHP image for installing and building front-end assets.
+var PHPNodeArtifacts = map[string]string{
+	"NODE_BASE":    HTTPToolchains["node"]["24"],
+	"PNPM_VERSION": "12.7.0",
+	"PNPM_SHA256":  "1a7fe4b36abead79ee13e2f2c2089ddd37fee016179b9fe56a85a44ef72aaf7f",
+}
+
 // ResticArtifacts pin the restic binary layered onto RcloneImage to build the
 // app backup image (restic's rclone backend runs the rclone next to it).
 var ResticArtifacts = map[string]string{

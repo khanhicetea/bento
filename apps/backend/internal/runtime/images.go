@@ -44,6 +44,7 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	if key.Kind == domain.RuntimePHP {
 		kind = "php"
 		args["PHP_BASE"] = base
+		maps.Copy(args, domain.PHPNodeArtifacts)
 	} else {
 		args["TOOLCHAIN_BASE"] = base
 		args["TOOLCHAIN"] = key.Toolchain + "-" + key.Version

@@ -85,7 +85,8 @@ Never put Docker calls inside `Store.Tx`, and never perform effects in an HTTP h
 4. Record what you actually ran in `docs/evidence.md`.
 
 Pinned artifacts (s6-overlay, minicrond, Composer) live in `domain.RuntimeArtifacts` with SHA-256 checksums for amd64
-and arm64; update both checksums together.
+and arm64; update both checksums together. PHP images also copy Node.js (with npm) from the pinned
+`HTTPToolchains["node"]` LTS base and pnpm from a checksum-verified npm tarball (`domain.PHPNodeArtifacts`).
 
 ## Changing the container spec
 

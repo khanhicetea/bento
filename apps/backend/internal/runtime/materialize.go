@@ -71,6 +71,9 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 	env.add("BENTO_RUNTIME_KIND", string(app.Runtime.Kind))
 	env.add("BENTO_HTTP_PORT", strconv.Itoa(app.HTTPPort()))
 	env.add("BENTO_READY_PATH", app.ReadyPath())
+	if app.HasExplicitReadyPath() {
+		env.add("BENTO_READY_STRICT", "1")
+	}
 	env.add("BENTO_SCHEDULER_BASE_PATH", SchedulerBasePath(app.Slug))
 	env.add("BENTO_TRUSTED_PROXIES", strings.Join(ctx.TrustedProxies, ","))
 	env.add("TZ", "UTC")

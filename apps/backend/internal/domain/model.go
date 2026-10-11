@@ -119,6 +119,13 @@ func (a App) ReadyPath() string {
 	return "/"
 }
 
+// HasExplicitReadyPath reports whether the operator configured a ready path,
+// which makes a 5xx answer from it fail readiness.
+func (a App) HasExplicitReadyPath() bool {
+	return (a.Runtime.PHP != nil && a.Runtime.PHP.ReadyPath != "") ||
+		(a.Runtime.HTTP != nil && a.Runtime.HTTP.ReadyPath != "")
+}
+
 // DisplayHost is the host shown as the app's address: its first enabled
 // host, else "".
 func (a App) DisplayHost() (Host, bool) {

@@ -171,8 +171,12 @@ Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remo
   fingerprint differs, stop it, remove it, then create/start the replacement (never two instances at once). Duplicates
   or foreign containers on the name block the operation.
 - **waitReady:** polls `checkReady` until `ReadyTimeout` (180 s): container running with the intended generation,
-  `bento-ready` exec succeeds inside the container (scheduler socket, FPM ping, local HTTP), and a direct HTTP GET from
-  the backend to the container's apps-network IP returns < 500. An exited container fails fast with a log tail.
+  `bento-ready` exec succeeds inside the container (scheduler socket, FPM ping, local HTTP answers), and a direct HTTP
+  GET from the backend to the container's apps-network IP gets an HTTP answer. With the default ready path any status
+  counts: a new app that returns 500 until its setup is finished still starts and keeps its route, and the operation
+  logs a warning with the status (`ReadyCheck.HTTPStatus`). Only an explicitly configured ready path must also return
+  < 500 (`BENTO_READY_STRICT=1` in `runtime.env` applies the same rule to the Docker health check). An exited
+  container fails fast with a log tail.
 - **update:** if the boot fingerprint changed, replace; otherwise run `scopedReloads` for whichever of
   frontend/pool/scheduler files changed: validate with the running process (`nginx -t`, `php-fpm -t`,
   `minicrond validate`); on failure restore the previous bytes (`runtime.Changes.Restore`) and send nothing; on
@@ -258,7 +262,8 @@ idle `sleep` command; it never runs `/init`, starts no daemons, and does not tak
 ### Managed images
 
 `PlanImage` combines the embedded context for `php` or `http` (`templates/images/common` overlaid with the kind) with
-pinned build args (base image, s6-overlay and minicrond versions and SHA-256s, Composer) and hashes both into the tag
+pinned build args (base image, s6-overlay and minicrond versions and SHA-256s, Composer; for PHP also the Node.js LTS
+base and pnpm from `domain.PHPNodeArtifacts`) and hashes both into the tag
 `bento-runtime/<toolchain>:<version>-<hash12>`. `ImageManager.Ensure` builds only when that tag is missing, using the
 Engine API classic builder (`build.BuilderV1`) — no BuildKit features in the Dockerfiles. Tar headers use fixed modes
 and mtimes so the context is byte-reproducible.

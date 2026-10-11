@@ -8,8 +8,8 @@ Start with the failed operation in **Activity** — it names the problem and sug
 <Accordion>
   <AccordionItem title="App won't start: not-ready">
     The app started but didn't answer HTTP. Check the **Logs** tab. For HTTP-process apps, make sure the app listens on
-    `0.0.0.0:$PORT` and the **Ready path** returns a non-5xx status. For PHP, check the document root contains
-    `index.php`.
+    `0.0.0.0:$PORT`, and if you set a **Ready path**, that it returns a non-5xx status. Without a ready path any HTTP
+    answer counts, so an app that shows an error page until its setup is done still starts and stays reachable.
   </AccordionItem>
   <AccordionItem title="App won't start: instance-exited">
     The process crashed on boot. The operation shows its last log lines — usually a missing dependency or config.

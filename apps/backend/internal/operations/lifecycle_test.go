@@ -102,10 +102,19 @@ func (h *harness) wait(op store.Operation) store.Operation {
 
 func (h *harness) createApp(slug string) domain.App {
 	h.t.Helper()
+	return h.createAppReadyPath(slug, "")
+}
+
+// createAppReadyPath creates an app with an explicit ready path ("" keeps the
+// default, under which a 5xx answer does not fail readiness).
+func (h *harness) createAppReadyPath(slug, readyPath string) domain.App {
+	h.t.Helper()
 	app, op, err := h.c.CreateApp(h.t.Context(), CreateAppInput{
-		Slug:    slug,
-		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}}},
-		Hosts:   []AppHostInput{{Name: slug + ".example.com"}}, Bindings: []BindingRequest{{Engine: domain.EngineSQLite}},
+		Slug: slug,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{
+			Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}, ReadyPath: readyPath,
+		}},
+		Hosts: []AppHostInput{{Name: slug + ".example.com"}}, Bindings: []BindingRequest{{Engine: domain.EngineSQLite}},
 	}, "")
 	if err != nil {
 		h.t.Fatal(err)
@@ -184,7 +193,7 @@ func TestStartStopRestartSemantics(t *testing.T) {
 
 func TestReadinessFailureIsBoundedAndDoesNotPublish(t *testing.T) {
 	h := newHarness(t)
-	app := h.createApp("shop")
+	app := h.createAppReadyPath("shop", "/healthz")
 	h.c.Probe = func(context.Context, string) (int, error) { return 503, nil }
 	op, err := h.c.StartApp(t.Context(), app.ID, "")
 	if err != nil {
@@ -196,6 +205,37 @@ func TestReadinessFailureIsBoundedAndDoesNotPublish(t *testing.T) {
 	}
 	if n := h.fake.CallCount("Create"); n != 1 {
 		t.Fatalf("readiness failure must not cause recreation storms (Create=%d)", n)
+	}
+}
+
+// A new app commonly answers 500 until its setup is finished. With the
+// default ready path that must not fail the start or hold its route, or the
+// operator could never reach the setup page.
+func TestDefaultReadyPathServerErrorStillStarts(t *testing.T) {
+	h := newHarness(t)
+	app := h.createApp("shop")
+	h.c.Probe = func(context.Context, string) (int, error) { return 500, nil }
+	got := h.mustSucceed(h.c.StartApp(t.Context(), app.ID, ""))
+	if got.State != store.OpSucceeded {
+		t.Fatalf("start: %s %s", got.ErrorCode, got.ErrorMessage)
+	}
+	app, _ = store.GetApp(t.Context(), h.store.DB(), app.ID)
+	chk := h.c.CheckReady(t.Context(), app)
+	if !chk.Ready || chk.HTTPStatus != 500 || !chk.AppError() {
+		t.Fatalf("expected ready with app error 500, got %+v", chk)
+	}
+}
+
+func TestReadinessUnreachableHTTPFails(t *testing.T) {
+	h := newHarness(t)
+	app := h.createApp("shop")
+	h.c.Probe = func(context.Context, string) (int, error) { return 0, errors.New("connection refused") }
+	op, err := h.c.StartApp(t.Context(), app.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.wait(op); got.State != store.OpFailed || got.ErrorCode != "not-ready" {
+		t.Fatalf("expected not-ready failure, got %s %s", got.ErrorCode, got.ErrorMessage)
 	}
 }
 

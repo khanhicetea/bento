@@ -651,15 +651,25 @@ func short(s string) string {
 	return s
 }
 
-// ReadyCheck is one readiness evaluation.
+// ReadyCheck is one readiness evaluation. HTTPStatus is the status the
+// direct probe received; with the default ready path a 5xx is reported here
+// but does not make the app unready.
 type ReadyCheck struct {
-	Ready  bool   `json:"ready"`
-	Reason string `json:"reason"`
+	Ready      bool   `json:"ready"`
+	Reason     string `json:"reason"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
 }
 
+// AppError reports a ready instance whose application answers with a server
+// error, typically a freshly created app that is still being set up.
+func (r ReadyCheck) AppError() bool { return r.Ready && r.HTTPStatus >= 500 }
+
 // checkReady verifies the running instance, intended generation, in-container
-// component readiness (scheduler, FPM, local HTTP), and the real HTTP
-// endpoint reached over the app network from the backend.
+// component readiness (scheduler, FPM, local HTTP answering), and the real
+// HTTP endpoint reached over the app network from the backend. Any HTTP
+// answer proves the server is up; the status code gates readiness only when
+// the operator configured an explicit ready path, so an app that returns 500
+// until its setup is finished still starts, routes and publishes.
 func (c *Controller) checkReady(ctx context.Context, app domain.App, gen string) ReadyCheck {
 	obs, err := c.observe(ctx, app)
 	if err != nil {
@@ -692,10 +702,10 @@ func (c *Controller) checkReady(ctx context.Context, app domain.App, gen string)
 	if err != nil {
 		return ReadyCheck{Reason: "direct HTTP probe: " + err.Error()}
 	}
-	if code >= 500 {
-		return ReadyCheck{Reason: fmt.Sprintf("direct HTTP probe returned %d", code)}
+	if code >= 500 && app.HasExplicitReadyPath() {
+		return ReadyCheck{Reason: fmt.Sprintf("direct HTTP probe returned %d", code), HTTPStatus: code}
 	}
-	return ReadyCheck{Ready: true}
+	return ReadyCheck{Ready: true, HTTPStatus: code}
 }
 
 // waitReady polls readiness within the configured bound. An exited container
@@ -709,7 +719,12 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 	for {
 		chk := c.checkReady(ctx, app, gen)
 		if chk.Ready {
-			r.Info(ctx, "app is ready")
+			if chk.AppError() {
+				r.Warn(ctx, "app is up but %s answers %d; routes stay active so its setup can be finished",
+					app.ReadyPath(), chk.HTTPStatus)
+			} else {
+				r.Info(ctx, "app is ready")
+			}
 			if c.clearWarming(app.ID) {
 				// An operation running in parallel applied the edge while this
 				// instance booted and left its route unavailable.

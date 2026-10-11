@@ -3,6 +3,7 @@
 # Built with the Docker Engine API (classic builder); no BuildKit features.
 ARG PHP_BASE
 ARG DEBIAN_BASE
+ARG NODE_BASE
 
 FROM ${PHP_BASE} AS php-build
 # Also records the Debian packages providing the shared libraries PHP links
@@ -30,6 +31,20 @@ RUN set -eux; \
     /usr/local/bin/peardev /usr/local/bin/pecl /usr/local/bin/php-config /usr/local/bin/phpize \
     /usr/src/php* /tmp/pear /usr/local/etc/php-fpm.d/*
 
+# Node.js LTS with npm and pnpm, so apps can install node_modules and build
+# front-end assets with the tooling exec. pnpm's tarball is checksum-verified;
+# its install script swaps in the native binary for this architecture.
+FROM ${NODE_BASE} AS node
+ARG PNPM_VERSION
+ARG PNPM_SHA256
+RUN set -eux; \
+  cd /tmp; \
+  npm pack --silent "pnpm@${PNPM_VERSION}"; \
+  echo "${PNPM_SHA256}  pnpm-${PNPM_VERSION}.tgz" | sha256sum -c -; \
+  npm install -g --no-audit --no-fund --allow-scripts=pnpm "./pnpm-${PNPM_VERSION}.tgz"; \
+  pnpm --version; \
+  rm -rf /tmp/* /root/.npm
+
 FROM ${DEBIAN_BASE} AS artifacts
 ARG S6_OVERLAY_VERSION
 ARG S6_OVERLAY_NOARCH_SHA256
@@ -52,7 +67,9 @@ ENV PHP_INI_DIR=/usr/local/etc/php \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0 \
     S6_KILL_GRACETIME=3000 \
     S6_SERVICES_GRACETIME=8000 \
-    BENTO_RUNTIME_KIND=php-fpm
+    BENTO_RUNTIME_KIND=php-fpm \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    PNPM_CONFIG_UPDATE_NOTIFIER=false
 COPY --from=php-build /usr/local/share/bento-php-runtime-deps /tmp/bento-php-runtime-deps
 COPY apt-sources.sh /tmp/apt-sources.sh
 # EOL bases are the PHP image itself: drop its PHP so only the build stage's
@@ -74,6 +91,15 @@ RUN set -eux; \
     >> /etc/bash.bashrc; \
   rm -rf /var/lib/apt/lists/* /tmp/bento-php-runtime-deps /etc/nginx/sites-enabled /etc/nginx/conf.d
 COPY --from=php-build /usr/local/ /usr/local/
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=node /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
+RUN set -eux; \
+  cd /usr/local/bin; \
+  ln -s ../lib/node_modules/npm/bin/npm-cli.js npm; \
+  ln -s ../lib/node_modules/npm/bin/npx-cli.js npx; \
+  for b in pnpm pnpx pn pnx; do ln -s "../lib/node_modules/pnpm/$b" "$b"; done; \
+  node --version; npm --version; pnpm --version
 COPY --from=artifacts /rootfs/ /
 COPY rootfs/ /
 WORKDIR /home
