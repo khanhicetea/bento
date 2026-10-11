@@ -132,6 +132,27 @@ type runner struct {
 
 func (r *runner) client() *Client { return NewClient(r.layout) }
 
+func (r *runner) printJSON(v any) {
+	enc := json.NewEncoder(r.out)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(v)
+}
+
+// listFlags parses the flags of a read-only listing command. Besides its own
+// flags it accepts --json, so `bento backup list --json` behaves like
+// `bento --json backup list`. Listing commands take no positional arguments.
+func (r *runner) listFlags(fs *flag.FlagSet, args []string) error {
+	asJSON := fs.Bool("json", r.json, "machine-readable output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("%s: unexpected argument %q", fs.Name(), fs.Arg(0))
+	}
+	r.json = *asJSON
+	return nil
+}
+
 func sub(name string, args []string) (*flag.FlagSet, []string) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	return fs, args
@@ -281,12 +302,15 @@ func (r *runner) run(args []string) error {
 		)
 		return nil
 	case "status":
+		if err := r.listFlags(flag.NewFlagSet("status", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var st dto.SystemStatus
 		if err := c.Do(ctx, "GET", "/api/v1/system", nil, &st, nil); err != nil {
 			return err
 		}
 		if r.json {
-			printJSON(st)
+			r.printJSON(st)
 			return nil
 		}
 		fmt.Fprintf(
@@ -320,12 +344,15 @@ func (r *runner) run(args []string) error {
 		fmt.Fprintln(r.out, "password updated; existing browser sessions were revoked")
 		return nil
 	case "apps":
+		if err := r.listFlags(flag.NewFlagSet("apps", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var list dto.AppList
 		if err := c.Do(ctx, "GET", "/api/v1/apps", nil, &list, nil); err != nil {
 			return err
 		}
 		if r.json {
-			printJSON(list)
+			r.printJSON(list)
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
@@ -352,7 +379,7 @@ func (r *runner) run(args []string) error {
 	case "ops":
 		fs, rest := sub("ops", args[1:])
 		target := fs.String("target", "", "filter by target id")
-		if err := fs.Parse(rest); err != nil {
+		if err := r.listFlags(fs, rest); err != nil {
 			return err
 		}
 		path := "/api/v1/operations?limit=50"
@@ -364,7 +391,7 @@ func (r *runner) run(args []string) error {
 			return err
 		}
 		if r.json {
-			printJSON(list)
+			r.printJSON(list)
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
@@ -403,15 +430,18 @@ func (r *runner) run(args []string) error {
 		if err := c.Do(ctx, "GET", "/api/v1/operations/"+args[1], nil, &op, nil); err != nil {
 			return err
 		}
-		printJSON(op)
+		r.printJSON(op)
 		return nil
 	case "services":
+		if err := r.listFlags(flag.NewFlagSet("services", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var list dto.ServiceList
 		if err := c.Do(ctx, "GET", "/api/v1/services", nil, &list, nil); err != nil {
 			return err
 		}
 		if r.json {
-			printJSON(list)
+			r.printJSON(list)
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
@@ -457,7 +487,7 @@ func (r *runner) run(args []string) error {
 		if err := c.Do(ctx, "GET", "/api/v1/edge", nil, &st, nil); err != nil {
 			return err
 		}
-		printJSON(st)
+		r.printJSON(st)
 		return nil
 	case "tunnel":
 		if len(args) >= 2 && (args[1] == "set-token" || args[1] == "disable") {
@@ -478,15 +508,18 @@ func (r *runner) run(args []string) error {
 		if err := c.Do(ctx, "GET", "/api/v1/tunnel", nil, &st, nil); err != nil {
 			return err
 		}
-		printJSON(st)
+		r.printJSON(st)
 		return nil
 	case "hosts":
+		if err := r.listFlags(flag.NewFlagSet("hosts", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var list dto.HostList
 		if err := c.Do(ctx, "GET", "/api/v1/hosts", nil, &list, nil); err != nil {
 			return err
 		}
 		if r.json {
-			printJSON(list)
+			r.printJSON(list)
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
@@ -594,7 +627,7 @@ func (r *runner) restoreFromBackup(ctx context.Context, c *Client, args []string
 		return err
 	}
 	if r.json {
-		printJSON(acc.Operation.Result)
+		r.printJSON(acc.Operation.Result)
 		return nil
 	}
 	if list, ok := acc.Operation.Result["checklist"].([]any); ok {
@@ -651,7 +684,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		if err := c.Do(ctx, "GET", base, nil, &a, nil); err != nil {
 			return err
 		}
-		printJSON(a)
+		r.printJSON(a)
 		return nil
 	case "update":
 		fs, rest := sub("app update", args[2:])
@@ -716,7 +749,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			return err
 		}
 		if r.json {
-			printJSON(acc.Operation.Result)
+			r.printJSON(acc.Operation.Result)
 			return nil
 		}
 		if list, ok := acc.Operation.Result["checklist"].([]any); ok {
@@ -767,7 +800,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		}
 		acc, err := c.Mutate(ctx, "POST", base+"/permissions", dto.PermissionsRequest{Mode: *mode}, r.wait, r.out)
 		if err == nil {
-			printJSON(acc.Operation.Result)
+			r.printJSON(acc.Operation.Result)
 		}
 		return err
 	case "git":
@@ -800,7 +833,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			return err
 		}
 		if r.json {
-			printJSON(g)
+			r.printJSON(g)
 			return nil
 		}
 		if !g.Configured {
@@ -823,7 +856,7 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 	case "deploy":
 		acc, err := c.Mutate(ctx, "POST", base+"/deploy", map[string]any{}, r.wait, r.out)
 		if err == nil && r.wait {
-			printJSON(acc.Operation.Result)
+			r.printJSON(acc.Operation.Result)
 		}
 		return err
 	case "webhook":
@@ -849,9 +882,9 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 		}
 		if r.json {
 			if hook.Secret != "" {
-				printJSON(hook)
+				r.printJSON(hook)
 			} else {
-				printJSON(hook.Webhook)
+				r.printJSON(hook.Webhook)
 			}
 			return nil
 		}
@@ -1071,12 +1104,18 @@ func (r *runner) shell(ctx context.Context, c *Client, slug string, running bool
 }
 
 func (r *runner) retired(ctx context.Context, c *Client, args []string) error {
+	if len(args) == 0 || args[0] != "prune" {
+		// The listing is always JSON; --json is accepted for symmetry.
+		if err := r.listFlags(flag.NewFlagSet("retired", flag.ContinueOnError), args); err != nil {
+			return err
+		}
+	}
 	var list dto.RetiredList
 	if err := c.Do(ctx, "GET", "/api/v1/retired", nil, &list, nil); err != nil {
 		return err
 	}
-	if len(args) == 0 {
-		printJSON(list)
+	if len(args) == 0 || args[0] != "prune" {
+		r.printJSON(list)
 		return nil
 	}
 	if len(args) != 2 || args[0] != "prune" {
@@ -1136,13 +1175,20 @@ func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
 		}
 		acc, err := c.Mutate(ctx, "POST", "/api/v1/backups", req, r.wait, r.out)
 		if err == nil && r.wait {
-			printJSON(acc.Operation.Result)
+			r.printJSON(acc.Operation.Result)
 		}
 		return err
 	case "list":
+		if err := r.listFlags(flag.NewFlagSet("backup list", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var list dto.BackupArtifactList
 		if err := c.Do(ctx, "GET", "/api/v1/backups/artifacts", nil, &list, nil); err != nil {
 			return err
+		}
+		if r.json {
+			r.printJSON(list)
+			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "PATH\tENGINE\tDATABASE\tBYTES\tCREATED")
@@ -1151,11 +1197,15 @@ func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
 		}
 		return tw.Flush()
 	case "runs":
+		// Always JSON; --json is accepted for symmetry.
+		if err := r.listFlags(flag.NewFlagSet("backup runs", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var list dto.BackupRunList
 		if err := c.Do(ctx, "GET", "/api/v1/backups/runs", nil, &list, nil); err != nil {
 			return err
 		}
-		printJSON(list)
+		r.printJSON(list)
 		return nil
 	case "restore":
 		fs, rest := sub("backup restore", args[1:])
@@ -1194,9 +1244,16 @@ func (r *runner) backupSchedule(ctx context.Context, c *Client, args []string) e
 	var out dto.BackupSchedule
 	switch args[0] {
 	case "list":
+		if err := r.listFlags(flag.NewFlagSet("backup schedule list", flag.ContinueOnError), args[1:]); err != nil {
+			return err
+		}
 		var list dto.BackupScheduleList
 		if err := c.Do(ctx, "GET", base, nil, &list, nil); err != nil {
 			return err
+		}
+		if r.json {
+			r.printJSON(list)
+			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
 		fmt.Fprintf(tw, "ID\tNAME\tENABLED\tCRON (%s)\tSCOPE\tKEEP\tNEXT\tLAST\tSTATE\n", list.TimeZone)
@@ -1256,7 +1313,7 @@ func (r *runner) backupSchedule(ctx context.Context, c *Client, args []string) e
 	default:
 		return usage
 	}
-	printJSON(out)
+	r.printJSON(out)
 	return nil
 }
 

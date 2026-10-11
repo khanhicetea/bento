@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -171,10 +170,4 @@ func (c *Client) WaitOperation(ctx context.Context, id string, w io.Writer) (dto
 		case <-time.After(time.Second):
 		}
 	}
-}
-
-func printJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(v)
 }
