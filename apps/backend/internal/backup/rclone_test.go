@@ -146,6 +146,36 @@ func TestRcloneShellSpec(t *testing.T) {
 	}
 }
 
+// A remote test must fail fast: one attempt, one low-level try, bounded
+// connect and I/O timeouts, the remote last (e2e finding: a bad S3 endpoint
+// ran into the operation deadline after minutes of low-level retries).
+func TestRcloneTestArgsFailFast(t *testing.T) {
+	got := rcloneTestArgs("s3:bucket/bento")
+	want := []string{
+		"lsf", "--max-depth", "1",
+		"--contimeout", "10s", "--timeout", "20s",
+		"--retries", "1", "--low-level-retries", "1",
+		"s3:bucket/bento",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("argv %q, want %q", got, want)
+	}
+	if rcloneTestTimeout > time.Minute {
+		t.Fatalf("test timeout %s is not bounded", rcloneTestTimeout)
+	}
+}
+
+func TestTestRemoteSucceedsAndCleansUp(t *testing.T) {
+	d, fake := rcloneDeps(t, sampleConf)
+	msg, err := d.TestRemote(t.Context(), "s3:bucket/bento")
+	if err != nil || !strings.Contains(msg, "reachable") {
+		t.Fatalf("got %q %v", msg, err)
+	}
+	if len(fake.Containers) != 0 {
+		t.Fatal("test container left behind")
+	}
+}
+
 func onlyContainer(t *testing.T, fake *docker.Fake) docker.ContainerSpec {
 	t.Helper()
 	if len(fake.Containers) != 1 {

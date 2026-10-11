@@ -177,8 +177,15 @@ func (d Deps) runRclone(ctx context.Context, args []string, mounts []mount.Mount
 		return 0, "", err
 	}
 	code, err := d.Engine.Wait(ctx, id)
-	if err != nil || code == 0 {
-		return code, "", err
+	if err != nil {
+		// A cancelled or timed-out wait still reports what rclone said so
+		// far (for example a TLS error it was retrying); ctx is done here.
+		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return code, d.logTail(lctx, id), err
+	}
+	if code == 0 {
+		return code, "", nil
 	}
 	return code, d.logTail(ctx, id), nil
 }
@@ -238,14 +245,20 @@ func (d Deps) TestRemote(ctx context.Context, remote string) (string, error) {
 	if err := d.checkRemote(remote); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	// Pull first so a slow first download does not eat the test's deadline.
+	if err := d.ensureRcloneImage(ctx); err != nil {
+		return "", err
+	}
+	tctx, cancel := context.WithTimeout(ctx, rcloneTestTimeout)
 	defer cancel()
-	code, tail, err := d.runRclone(
-		ctx,
-		[]string{"lsf", "--max-depth", "1", "--contimeout", "15s", "--timeout", "30s", "--retries", "1", remote},
-		nil,
-	)
+	code, tail, err := d.runRclone(tctx, rcloneTestArgs(remote), nil)
 	switch {
+	case err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
+		msg := fmt.Sprintf("no answer from %s within %s", remote, rcloneTestTimeout)
+		if tail != "" {
+			msg += ": " + rcloneErrorLine(tail)
+		}
+		return "", errors.New(msg)
 	case err != nil:
 		return "", err
 	case code == 0:
@@ -256,7 +269,26 @@ func (d Deps) TestRemote(ctx context.Context, remote string) (string, error) {
 			remote,
 		), nil
 	}
-	return "", fmt.Errorf("rclone exited %d: %s", code, tail)
+	return "", fmt.Errorf("rclone exited %d: %s", code, rcloneErrorLine(tail))
+}
+
+// rcloneTestTimeout bounds the rclone run of a remote test (the image pull
+// happens before it); a test that has not answered by then reports rclone's
+// last error line instead of a bare "context deadline exceeded".
+const rcloneTestTimeout = 60 * time.Second
+
+// rcloneTestArgs lists the top level of remote and gives up fast. rclone
+// retries a failing request --low-level-retries times (default 10, with
+// backoff, and S3's SDK retries on top) inside each of --retries attempts, so
+// an unreachable endpoint or a TLS handshake failure used to run for minutes.
+// One attempt with one low-level try reports the real error in seconds.
+func rcloneTestArgs(remote string) []string {
+	return []string{
+		"lsf", "--max-depth", "1",
+		"--contimeout", "10s", "--timeout", "20s",
+		"--retries", "1", "--low-level-retries", "1",
+		remote,
+	}
 }
 
 // RcloneShellSpec plans an idle container for an interactive rclone shell.
