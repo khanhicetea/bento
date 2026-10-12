@@ -250,8 +250,30 @@ working_dir = "~/app"
 ```
 
 Check the job picked up Bento's defaults: `$B app minicrond e2e-laravel -- list` shows `env_base: inherit` and
-`working_dir: ~/app` for `laravel-schedule`. Inspect runs with `minicrond run NAME` (jobs only) and
-`minicrond logs RUN_ID`; workers are controlled by `minicrond reload`.
+`working_dir: ~/app` for `laravel-schedule`. `minicrond run NAME` **triggers** a run of a job and prints its
+run ID; read it with `minicrond logs RUN_ID`; workers are controlled by `minicrond reload`.
+
+## 9. Real app: Cachet 3.x
+
+[Cachet](https://github.com/cachethq/cachet) (Laravel 13, Filament, Livewire) deployed unchanged from a fork, to catch
+what a hand-written fixture misses. `gh repo fork cachethq/cachet --fork-name e2e-cachet --default-branch-only`
+(public; default branch `3.x`).
+
+| Step | How | Expect |
+| --- | --- | --- |
+| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/up`, **postgres18**; HTTPS repo URL, branch `3.x` | app created |
+| Deploy script | Classic recipe, plus `php artisan filament:assets` and `php artisan cachet:assets` before `migrate` (Cachet's built assets are gitignored and only published by `composer update`) | without them `/` is 500 `ViteManifestNotFoundException` |
+| `.env` | `.env.example` with `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://e2e-cachet.$E2E_DOMAIN`, `CACHE_STORE=redis`, `CACHET_TRUSTED_PROXIES="*"`; keep `DB_CONNECTION=sqlite`; `key:generate --force` **after** the first `composer install` | migrations run on Postgres |
+| Start before the first good deploy | `$B app start e2e-cachet`, then `$B app deploy` | see finding 14 |
+| Admin + API token | copy a PHP script into `homes/e2e-cachet/tmp/` that boots the app, runs `cachet:make:user`, prints `createToken('e2e', ['*'])->plainTextToken`; redirect stdout to `~/.config/bento-e2e/cachet-token` | `app exec` has no stdin (finding 16) |
+| API writes | `POST /api/components`, `POST /api/incidents` with the bearer token | 200; both show on `/` |
+| Jobs and worker | the section 8 `jobs.toml`; `Artisan::queue('inspire')` ×5 via tinker | `jobs` drains to 0, `failed_jobs` 0 |
+| Push to deploy | webhook on the fork, push `public/e2e-mark.txt` | ping 200, push 202, mark live in ~3s; worker PID changes |
+| Failing deploy | push a migration that throws, then revert | summary `e2e: intentional migration failure`; `/` keeps 200; revert deploys |
+| Dashboard login | `/dashboard/login` through the tunnel | **broken in a browser** (finding 15) |
+
+Cachet's scheduler registers demo-reset seeders (`db:seed --force` every 30 min), guarded by `CACHET_DEMO_MODE`;
+keep it unset.
 
 ## Teardown
 
@@ -261,13 +283,16 @@ for id in $($B retired | jq -r '.retired[] | select(.prunedAt == null) | .appId'
 SID=$($B --json status | jq -r .stackId)          # read before stopping the backend
 kill "$(pgrep -fx '/opt/bento-e2e/bento --stack /srv/bento-e2e serve.*')"
 docker ps -a --filter label=io.bento.stack-id=$SID -q | xargs -r docker rm -f    # full reset only: also data services
-for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone e2e-laravel; do $E/cf-host.sh rm $h; done
-for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-laravel; do gh repo delete $GU/$r --yes; done
+for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone e2e-laravel e2e-cachet; do $E/cf-host.sh rm $h; done
+for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-laravel e2e-cachet; do gh repo delete $GU/$r --yes; done
 ```
 
 Keep the tunnel and the bucket for the next run unless asked; delete the stack root only for a full reset.
 
-## Last run: 2026-10-11
+## Last run: 2026-10-12
+
+Section 9 (Cachet) on `main` (`3d35e82`), 2026-10-12. Earlier sections: 2026-10-11, below.
+
 
 Commit `7ca4f46` for sections 1–7; section 8 and the fixes below re-run live on `fix/e2e-findings` (`7c278bb`).
 Docker 29.8.1, amd64. Every case passed except the open findings. Skipped: ACME issuance (no public 80/443),
@@ -307,3 +332,21 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
     `sleep 3 && minicrond reload` (in the deploy recipes). Needs a minicrond fix.
 12. **Workers ignore scheduler `[defaults]`** and a worker that exhausts its start attempts stops with nothing shown
     in Bento. Needs a minicrond fix.
+13. **Deploy log order across stdout and stderr is not guaranteed.** Docker reads the two pipes separately, so lines
+    written microseconds apart can arrive swapped. Seen live: `echo "deploying …"` then `echo "~/app/.env is missing"
+    >&2; exit 1` was journalled stderr first, and the failure summary was `deploying 40bd081 …`. Fix: run the script
+    with stderr merged into stdout (one pipe keeps order), or document that the summary can miss by one line.
+14. **The Classic recipe fails the first deploy of an app that was never started.** `minicrond reload` needs the
+    scheduler socket, which only exists in a running app container (`dial unix …/minicron.sock: no such file`). The
+    playbook order (deploy, then start) hits it. Fix the recipe (`minicrond reload || true`, or skip when the socket
+    is missing) or have the deploy skip the step for a stopped app.
+15. **Apps behind the tunnel see `http`.** cloudflared sends `X-Forwarded-Proto: https`, but the edge overwrites it
+    with its own `$scheme` (`http`) and `X-Forwarded-Port` with `80`, so trusting proxies in the app cannot help.
+    Laravel then redirects to `http://…` and Livewire renders `data-update-uri="http://…"`, which a browser blocks
+    as mixed content: Cachet's dashboard login is unusable through the tunnel. Fix: in the edge, trust
+    `X-Forwarded-Proto` (and set port 443 for https) only from the tunnel's reserved IP (`NetworkSettings.TunnelIP`).
+    The client IP is also cloudflared's, not the visitor's (`CF-Connecting-IP` from the same address).
+16. **`app exec` does not forward stdin**, so secrets cannot be piped into a command; they have to be staged as files
+    in the app home.
+17. **No CLI to list scheduler runs.** `minicrond logs` needs a run ID and the scheduler gateway needs a UI session,
+    so scheduled (not manual) runs cannot be inspected from the CLI.
