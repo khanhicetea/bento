@@ -52,8 +52,9 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 	site := string(files["sites/host-pub.example.com.conf"])
 	for _, want := range []string{
 		"server_name pub.example.com;", "proxy_pass http://bento_app_pub;",
-		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $scheme;",
-		"acme_certificate bento_acme;", "return 301 https://$host$request_uri;", "listen 443 quic;",
+		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $bento_proto;",
+		"proxy_set_header X-Forwarded-Port $bento_port;",
+		"acme_certificate bento_acme;", "return 301 https://$host$bento_https_suffix$request_uri;", "listen 443 quic;",
 		"location ^~ /_bento/webhook/ {", "proxy_pass http://bento_utils;",
 		"include /etc/bento-edge-custom/routes/host-pub.example.com/*.conf;",
 		"include /etc/bento-edge-custom/routes/app-pub/*.conf;",
@@ -137,15 +138,70 @@ func TestRenderRedirectHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	www := string(files["sites/host-www.shop.example.com.conf"])
-	if strings.Count(www, "return 301 https://shop.example.com:8443$request_uri;") != 2 {
+	if strings.Count(www, "return 301 https://shop.example.com$bento_https_suffix$request_uri;") != 2 {
 		t.Fatal("a redirect to a served TLS host must use its scheme and port on both listeners")
 	}
 	if strings.Contains(www, "proxy_pass") || strings.Contains(www, "/_bento/") {
 		t.Fatal("a redirect host proxies nothing")
 	}
 	if !strings.Contains(string(files["sites/host-old.example.com.conf"]),
-		"return 301 $scheme://elsewhere.example.org$request_uri;") {
+		"return 301 $bento_proto://elsewhere.example.org$request_uri;") {
 		t.Fatal("a redirect to an unknown host keeps the request scheme")
+	}
+	main := string(files["nginx.conf"])
+	if !strings.Contains(main, "map $bento_from_tunnel $bento_https_suffix {\n    default \":8443\";\n    1       \"\";") ||
+		!strings.Contains(main, "map $bento_from_tunnel $bento_http_suffix {\n    default \":8080\";\n    1       \"\";") {
+		t.Fatal("redirect suffixes are the edge's ports, and none for tunnel visitors")
+	}
+}
+
+func TestRenderTrustsForwardingOnlyFromTunnel(t *testing.T) {
+	app := domain.App{ID: "a1", Slug: "shop", Ingress: domain.IngressManaged, Publication: domain.Published,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}}}
+	in := Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
+		Apps:     []domain.App{app},
+		Hosts:    []domain.Host{appHost("shop.example.com", "a1", domain.Route{TLS: domain.TLSACME, RedirectHTTPS: true})},
+		Running:  map[string]bool{"a1": true},
+		TunnelIP: "10.200.0.3",
+	}
+	files, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(files["nginx.conf"])
+	for _, want := range []string{
+		"set_real_ip_from 10.200.0.3;", "real_ip_header CF-Connecting-IP;",
+		"geo $realip_remote_addr $bento_from_tunnel {\n    default 0;\n    10.200.0.3 1;\n  }",
+		"map \"$bento_from_tunnel:$http_x_forwarded_proto\" $bento_proto {\n    default   $scheme;\n    \"1:https\" https;",
+		"map \"$bento_from_tunnel:$http_x_forwarded_proto\" $bento_port {\n    default   $server_port;\n    \"1:https\" 443;",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main config missing %q", want)
+		}
+	}
+	if strings.Count(main, "set_real_ip_from") != 1 {
+		t.Error("only the tunnel address may rewrite the client address")
+	}
+	site := string(files["sites/host-shop.example.com.conf"])
+	if strings.Contains(site, "$scheme") || strings.Contains(site, "$server_port") {
+		t.Error("sites must forward the visitor's scheme and port, not the edge's")
+	}
+	// Port 80 redirects plain HTTP but serves a tunnel visitor already on HTTPS.
+	http := site[:strings.Index(site, "listen 443 ssl;")]
+	if !strings.Contains(http, "if ($bento_proto = http) {") || !strings.Contains(http, "proxy_pass http://bento_app_shop;") {
+		t.Error("port 80 must redirect only plain HTTP and serve tunnel HTTPS")
+	}
+
+	in.TunnelIP = ""
+	files, err = Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main = string(files["nginx.conf"])
+	if strings.Contains(main, "set_real_ip_from") || strings.Contains(main, "real_ip_header") ||
+		!strings.Contains(main, "geo $bento_from_tunnel {\n    default 0;\n  }") {
+		t.Error("without a tunnel address no forwarding header is trusted")
 	}
 }
 

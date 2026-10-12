@@ -239,6 +239,7 @@ func (c *Controller) renderEdge(
 		Hosts:         hosts,
 		Running:       runningApps,
 		UtilsUpstream: upstream,
+		TunnelIP:      ns.TunnelIP,
 	})
 }
 

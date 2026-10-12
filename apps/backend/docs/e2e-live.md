@@ -270,7 +270,7 @@ what a hand-written fixture misses. `gh repo fork cachethq/cachet --fork-name e2
 | Jobs and worker | the section 8 `jobs.toml`; `Artisan::queue('inspire')` ×5 via tinker | `jobs` drains to 0, `failed_jobs` 0 |
 | Push to deploy | webhook on the fork, push `public/e2e-mark.txt` | ping 200, push 202, mark live in ~3s; worker PID changes |
 | Failing deploy | push a migration that throws, then revert | summary `e2e: intentional migration failure`; `/` keeps 200; revert deploys |
-| Dashboard login | `/dashboard/login` through the tunnel | **broken in a browser** (finding 15) |
+| Dashboard login | Livewire login through the tunnel (`POST` the login component to `data-update-uri`, browser UA) | redirect to `/dashboard`, 200 |
 
 Cachet's scheduler registers demo-reset seeders (`db:seed --force` every 30 min), guarded by `CACHET_DEMO_MODE`;
 keep it unset.
@@ -340,12 +340,13 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
     scheduler socket, which only exists in a running app container (`dial unix …/minicron.sock: no such file`). The
     playbook order (deploy, then start) hits it. Fix the recipe (`minicrond reload || true`, or skip when the socket
     is missing) or have the deploy skip the step for a stopped app.
-15. **Apps behind the tunnel see `http`.** cloudflared sends `X-Forwarded-Proto: https`, but the edge overwrites it
-    with its own `$scheme` (`http`) and `X-Forwarded-Port` with `80`, so trusting proxies in the app cannot help.
-    Laravel then redirects to `http://…` and Livewire renders `data-update-uri="http://…"`, which a browser blocks
-    as mixed content: Cachet's dashboard login is unusable through the tunnel. Fix: in the edge, trust
-    `X-Forwarded-Proto` (and set port 443 for https) only from the tunnel's reserved IP (`NetworkSettings.TunnelIP`).
-    The client IP is also cloudflared's, not the visitor's (`CF-Connecting-IP` from the same address).
+15. ~~**Apps behind the tunnel saw `http`.**~~ **Fixed:** the edge overwrote cloudflared's `X-Forwarded-Proto:
+    https` with its own `http` (and port 80, and cloudflared's IP), so Laravel redirected to `http://` and Livewire's
+    update URL was blocked as mixed content. The edge now takes the scheme, port, and `CF-Connecting-IP` from
+    connections from the tunnel's reserved address only; port 80 redirects only plain-HTTP visitors. Verified live:
+    `/dashboard` redirects to `https://`, a scripted Livewire login reaches the dashboard, the access log shows the
+    visitor IP, forged headers sent straight to the edge are ignored, and a self-signed + HTTPS-redirect route serves
+    tunnel HTTPS without looping.
 16. **`app exec` does not forward stdin**, so secrets cannot be piped into a command; they have to be staged as files
     in the app home.
 17. **No CLI to list scheduler runs.** `minicrond logs` needs a run ID and the scheduler gateway needs a UI session,

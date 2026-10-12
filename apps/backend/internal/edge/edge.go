@@ -66,7 +66,6 @@ type Route struct {
 	MaxBodyMB           int
 	Unavailable         bool
 	HTTP3               bool
-	HTTPSPortSuffix     string
 	HTTPSAdvertisedPort int
 	// UtilsUpstream is the backend's utils listener (host:port) that
 	// /_bento/webhook/* is proxied to; "" leaves the path to the upstream.
@@ -95,6 +94,10 @@ type Input struct {
 	Running map[string]bool
 	// UtilsUpstream is the backend's utils listener on the apps network.
 	UtilsUpstream string
+	// TunnelIP is the reserved apps-network address of the stack's
+	// cloudflared. Forwarding headers (scheme, visitor IP) are trusted only
+	// on connections from it; "" trusts none.
+	TunnelIP string
 }
 
 // RouteName is the edge route (site file and drop-in directory) of a host.
@@ -145,7 +148,7 @@ func Render(in Input) (map[string][]byte, error) {
 		if _, ok := served[h.Name]; !ok {
 			continue
 		}
-		r := baseRoute(string(h.Target), RouteName(h.Name), h.Name, h.Route, s, suffix)
+		r := baseRoute(string(h.Target), RouteName(h.Name), h.Name, h.Route, s)
 		r.UtilsUpstream = in.UtilsUpstream
 		r.MaxBodyMB = 64
 		r.StaticCache = h.Route.StaticCache
@@ -174,12 +177,14 @@ func Render(in Input) (map[string][]byte, error) {
 			// A redirect to a host the edge serves uses that host's scheme
 			// and port; any other host keeps the request's scheme.
 			r.UtilsUpstream, r.StaticCache = "", false
-			r.RedirectURL = "$scheme://" + h.RedirectTo
+			// The suffixes are the edge's published ports, or none for a
+			// visitor who came through the tunnel.
+			r.RedirectURL = "$bento_proto://" + h.RedirectTo
 			if to, ok := served[h.RedirectTo]; ok {
 				if to.Route.TLS == domain.TLSNone {
-					r.RedirectURL = "http://" + h.RedirectTo + httpSuffix
+					r.RedirectURL = "http://" + h.RedirectTo + "$bento_http_suffix"
 				} else {
-					r.RedirectURL = "https://" + h.RedirectTo + suffix
+					r.RedirectURL = "https://" + h.RedirectTo + "$bento_https_suffix"
 				}
 			}
 		}
@@ -191,6 +196,7 @@ func Render(in Input) (map[string][]byte, error) {
 	main, err := assets.Render("edge-nginx.conf.tmpl", map[string]any{
 		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3,
 		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
+		"TunnelIP": in.TunnelIP, "HTTPSPortSuffix": suffix, "HTTPPortSuffix": httpSuffix,
 	})
 	if err != nil {
 		return nil, err
@@ -224,11 +230,10 @@ func baseRoute(
 	kind, name, host string,
 	route domain.Route,
 	s domain.EdgeSettings,
-	suffix string,
 ) Route {
 	r := Route{
 		Kind: kind, Name: name, ServerNames: host, AccessLog: route.AccessLog,
-		HTTP3: s.HTTP3, HTTPSPortSuffix: suffix, HTTPSAdvertisedPort: s.HTTPSPort,
+		HTTP3: s.HTTP3, HTTPSAdvertisedPort: s.HTTPSPort,
 		Includes: []string{name},
 	}
 	switch route.TLS {
