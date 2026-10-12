@@ -180,7 +180,8 @@ func TestRenderedConfig(t *testing.T) {
 	if !strings.Contains(files["fastcgi.conf"], "fastcgi_read_timeout 120s;") {
 		t.Fatal("fastcgi timeout must keep its 120s floor")
 	}
-	if !strings.Contains(files["minicrond.toml"], "[defaults]\nenv_base = \"inherit\"\nworking_dir = \"~/app\"\n") {
+	if !strings.Contains(files["minicrond.toml"], "[defaults]\nenv_base = \"inherit\"\nworking_dir = \"~/app\"\n") ||
+		!strings.Contains(files["minicrond.toml"], `trusted_path = ["/usr/local/bin", "/usr/bin", "/bin"]`) {
 		t.Fatal(files["minicrond.toml"])
 	}
 	if !strings.Contains(files["minicrond.toml"], `name = "zz-bento-sqlite-vacuum-shop-0123456789"`) || !strings.Contains(files["minicrond.toml"], `schedule = "3 2 * * 1"`) {

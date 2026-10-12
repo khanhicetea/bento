@@ -72,7 +72,8 @@ bento app exec shop -- php artisan migrate --force
 bento app exec shop --running --workdir current -- php artisan about
 bento app logs shop --tail 200 --follow
 bento app permissions shop --mode check       # check | dry-run | shallow | recursive
-bento app minicrond shop -- list              # scheduler: list | import FILE | run NAME | logs NAME
+bento app minicrond shop -- list              # scheduler: list | import FILE | run JOB | runs NAME | logs RUN_ID
+bento app minicrond shop -- restart queue     # workers: start | stop | restart WORKER
 ```
 
 ## Remove

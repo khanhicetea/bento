@@ -7,12 +7,15 @@ unix_socket = true
 
 [scheduler]
 timezone = "UTC"
+# Bare argv names (argv = ["php", ...]) resolve here. The toolchains of the
+# official runtime images live in /usr/local/bin; minicrond's default is only
+# /usr/bin and /bin.
+trusted_path = ["/usr/local/bin", "/usr/bin", "/bin"]
 
-# Filled into jobs saved through the scheduler UI or imported. minicrond's own
-# default is a clean environment with PATH=/usr/bin:/bin, which hides the
-# toolchain (/usr/local/bin) and the app's DB_*/REDIS_* credentials, so
-# `php artisan schedule:run` would fail. Workers ignore these defaults and
-# need env_base = "inherit" themselves.
+# Filled into jobs and workers saved through the scheduler UI or imported.
+# minicrond's own default is a clean environment, which hides the toolchain's
+# PATH and the app's DB_*/REDIS_* credentials, so `php artisan schedule:run`
+# would fail.
 [defaults]
 env_base = "inherit"
 working_dir = "~/app"

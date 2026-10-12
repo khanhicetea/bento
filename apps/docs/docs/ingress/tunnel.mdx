@@ -31,6 +31,15 @@ With **External**, Bento doesn't own the route: there's no Publish button, and s
 hostname in place returning errors. Remove the hostname in Cloudflare to take it offline.
 </Callout>
 
+## HTTPS and visitor IPs
+
+Cloudflare ends HTTPS, and `cloudflared` talks plain HTTP to the edge. The edge passes the visitor's scheme and IP on
+to your app (`X-Forwarded-Proto: https`, `X-Forwarded-Port: 443`, `X-Forwarded-For`), so frameworks that trust
+proxies build `https://` links and log real client IPs. These headers are trusted only from Bento's own `cloudflared`;
+anything else that sends them is ignored.
+
+A host's **HTTPS redirect** sends plain-HTTP tunnel visitors to `https://` and serves HTTPS ones; it never loops.
+
 ## Push-to-deploy through a tunnel
 
 Add a hostname rule **above** the app's rule with path `^/_bento/webhook/` and service set to Bento's utils address
