@@ -280,6 +280,23 @@ what a hand-written fixture misses. `gh repo fork cachethq/cachet --fork-name e2
 Cachet's scheduler registers demo-reset seeders (`db:seed --force` every 30 min), guarded by `CACHET_DEMO_MODE`;
 keep it unset.
 
+## 10. Real app: Invoice Ninja v5
+
+[Invoice Ninja](https://github.com/invoiceninja/invoiceninja) (Laravel 12, about 4 GB of history) deployed unchanged
+from a fork: `gh repo fork invoiceninja/invoiceninja --fork-name e2e-invoiceninja --default-branch-only` (public;
+default branch `v5-stable`, which commits its built frontends).
+
+| Step | How | Expect |
+| --- | --- | --- |
+| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/health`, **mysql84**, `resources` 1536 MB / 2000 mCPU / 512 pids; HTTPS repo URL, branch `v5-stable` | app created |
+| First deploy, no `.env` | `$B app deploy e2e-invoiceninja` | shallow clone in ~20s, `.git` ~56 MB (a full clone took 5 min and 3.8 GB); fails with `~/app/.env is missing` |
+| Deploy script | Classic recipe without the npm step; `rm -f database/schema/mysql-schema.sql` before `migrate` | without it `migrate` fails `sh: 1: mysql: not found` (finding 18) |
+| `.env` | `.env.example` minus `APP_KEY`/`DB_*`/`COMPOSER_AUTH`, `APP_URL=https://e2e-invoiceninja.$E2E_DOMAIN`, `TRUSTED_PROXIES="*"`, `REQUIRE_HTTPS=true`, `QUEUE_CONNECTION=database`, **`CACHE_DRIVER=file`**; `key:generate --force` after the first `composer install` | 317 migrations run on MySQL; `CACHE_DRIVER=redis` fails `WRONGPASS` (finding 19) |
+| Account | `php artisan ninja:create-account --email=... --password=...` (about 2 min), then `php artisan db:seed --force` | `/`, `/up`, `/api/health` 200; without the seed `POST /api/v1/clients` is 422 `currency_id` |
+| API | `POST /api/v1/login` (`X-Requested-With: XMLHttpRequest`), then `POST /api/v1/clients`, `POST /api/v1/invoices` with `X-API-TOKEN` | client created, invoice `0001` |
+| Jobs and worker | the section 8 `jobs.toml` | worker `running`; `jobs` 0, `failed_jobs` 0 |
+| Incremental deploy | push `public/e2e-mark.txt`, deploy | shallow fetch, 3s; `changed()` diffs against the previous commit and skips Composer; history stays 1 commit |
+
 ## Teardown
 
 ```bash
@@ -288,14 +305,15 @@ for id in $($B retired | jq -r '.retired[] | select(.prunedAt == null) | .appId'
 SID=$($B --json status | jq -r .stackId)          # read before stopping the backend
 kill "$(pgrep -fx '/opt/bento-e2e/bento --stack /srv/bento-e2e serve.*')"
 docker ps -a --filter label=io.bento.stack-id=$SID -q | xargs -r docker rm -f    # full reset only: also data services
-for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone e2e-laravel e2e-cachet; do $E/cf-host.sh rm $h; done
-for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-laravel e2e-cachet; do gh repo delete $GU/$r --yes; done
+for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone e2e-laravel e2e-cachet e2e-invoiceninja; do $E/cf-host.sh rm $h; done
+for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-laravel e2e-cachet e2e-invoiceninja; do gh repo delete $GU/$r --yes; done
 ```
 
 Keep the tunnel and the bucket for the next run unless asked; delete the stack root only for a full reset.
 
 ## Last run: 2026-10-12
 
+Section 10 (Invoice Ninja) on `feat/shallow-clone`, 2026-10-12.
 Section 9 (Cachet) on `main` (`3d35e82`), 2026-10-12. Earlier sections: 2026-10-11, below.
 
 
@@ -354,3 +372,9 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
     in the app home.
 17. **No CLI to list scheduler runs.** `minicrond logs` needs a run ID and the scheduler gateway needs a UI session,
     so scheduled (not manual) runs cannot be inspected from the CLI.
+18. **PHP images have no `mysql`/`psql` client.** Laravel's `migrate` loads a committed schema dump
+    (`database/schema/mysql-schema.sql`) with the `mysql` CLI and fails `sh: 1: mysql: not found`. Workaround: delete
+    the dump in the deploy script so the migrations run. Fix: ship the database clients in the PHP runtime images.
+19. **Apps whose Redis config ignores `REDIS_USERNAME` cannot use Bento's Redis.** Invoice Ninja's
+    `config/database.php` reads only host, password, and port, so the per-app ACL user fails `WRONGPASS`. Workaround:
+    `CACHE_DRIVER=file`. Worth a note in the operator docs.

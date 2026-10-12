@@ -25,6 +25,10 @@ minutes; its output appears in the deploy log.
 | `BENTO_BRANCH`, `BENTO_REPO_URL`, `BENTO_OPERATION_ID` | source and operation |
 | `BENTO_WEBHOOK_PROVIDER`, `_EVENT`, `_DELIVERY`, `_REF`, `_COMMIT`, `_PUSHER` | webhook deploys only |
 
+The checkout is shallow (depth 1): `git log` shows one commit, but the previous deploy's commit is kept, so
+`git diff "$BENTO_PREVIOUS_COMMIT" "$BENTO_COMMIT"` works. Scripts that need older history (`git describe`, tags)
+must run `git fetch --unshallow` themselves.
+
 ## Pick a layout
 
 | | Classic (one directory) | Releases (Deployer style) |

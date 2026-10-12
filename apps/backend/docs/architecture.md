@@ -313,7 +313,7 @@ Tunnel path rule, an operator proxy) forwards `/_bento/webhook/*` to a utils lis
 
 ### Git deploy and webhooks
 
-`app.deploy` runs in a tooling container as the app identity: fetch (deploy key on stdin, `/tmp` only), then
+`app.deploy` runs in a tooling container as the app identity: a shallow (depth 1) clone or fetch of the branch (deploy key on stdin, `/tmp` only), then
 `~/deploy.sh` when present in a **separate** exec (so the key is gone), then record the commit, then reload the app
 process. `~/deploy.sh` must be a regular executable file owned by the app or root; anything else fails
 `deploy-script-invalid` before any exec. It runs from `app/` with the app environment plus `BENTO_DEPLOY_TRIGGER`,

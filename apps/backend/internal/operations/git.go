@@ -166,6 +166,9 @@ func (c *Controller) DeployApp(ctx context.Context, id, idem string) (store.Oper
 // key arrives on stdin and lives only in the container's private /tmp tmpfs.
 // Host keys are pinned on first use in the app's own known_hosts. Tracked files
 // are reset to the branch; untracked files (.env, vendor, uploads) are kept.
+// Clones and fetches are shallow (depth 1): history is never needed to deploy,
+// and the previous deploy's commit stays in the object store, so deploy scripts
+// can still diff BENTO_PREVIOUS_COMMIT against BENTO_COMMIT.
 const deployScript = `set -euo pipefail
 key="$(mktemp /tmp/bento-deploy-key.XXXXXX)"
 trap 'rm -f "$key"' EXIT
@@ -186,16 +189,16 @@ if [ -d .git ]; then
     fi
     git remote set-url origin "$BENTO_GIT_URL"
   fi
-  git fetch --quiet --prune origin "+refs/heads/$BENTO_GIT_BRANCH:refs/remotes/origin/$BENTO_GIT_BRANCH"
+  git fetch --quiet --prune --depth 1 origin "+refs/heads/$BENTO_GIT_BRANCH:refs/remotes/origin/$BENTO_GIT_BRANCH"
   git checkout --quiet --force -B "$BENTO_GIT_BRANCH" "refs/remotes/origin/$BENTO_GIT_BRANCH"
   git reset --quiet --hard "refs/remotes/origin/$BENTO_GIT_BRANCH"
 elif [ -z "$(ls -A)" ]; then
-  git clone --quiet --branch "$BENTO_GIT_BRANCH" --single-branch -- "$BENTO_GIT_URL" .
+  git clone --quiet --depth 1 --branch "$BENTO_GIT_BRANCH" --single-branch -- "$BENTO_GIT_URL" .
 else
   echo "code directory is not empty and is not a git checkout" >&2
   exit 66
 fi
-git submodule update --quiet --init --recursive
+git submodule update --quiet --init --recursive --depth 1
 echo "BENTO_COMMIT=$(git rev-parse HEAD)"
 echo "BENTO_SUBJECT=$(git log -1 --format=%s | head -c 200)"
 `
