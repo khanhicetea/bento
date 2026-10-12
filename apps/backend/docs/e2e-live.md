@@ -232,7 +232,7 @@ twice).
 | `.env` | copy `.env.example`, `APP_ENV=production`, `CACHE_STORE=redis`; keep `DB_CONNECTION=sqlite`; `php artisan key:generate --force` via `app exec` | Bento's `DB_*` win: migrations run on MySQL |
 | Jobs and worker | import (as below) with `$B app minicrond e2e-laravel -- import /home/e2e-laravel/tmp/jobs.toml` | `/status`: pending jobs drain to 0; heartbeats grow by one a minute |
 | Push to deploy | webhook on GitHub, push a new mark | new mark live; jobs after the deploy are processed by the new code |
-| Worker after deploy | `queue:restart` in the recipe, then `sleep 3 && minicrond reload` | worker PID changes and keeps processing |
+| Worker after deploy | `queue:restart` in the recipe; three deploys back to back | worker PID changes, `failures` stays 0, keeps processing |
 | Failing deploy | push a `composer.json` change plus a migration that throws | op fails; summary is the exception text; journal shows Composer's lines, then `FAIL` and the exception, no escape codes; the old code keeps serving |
 
 ```toml
@@ -245,13 +245,18 @@ timeout = 120
 [[worker]]
 name = "queue-default"
 command = "php artisan queue:work --sleep=1 --tries=3 --max-time=3600"
-env_base = "inherit"       # workers do not get Bento's scheduler defaults
-working_dir = "~/app"
 ```
 
-Check the job picked up Bento's defaults: `$B app minicrond e2e-laravel -- list` shows `env_base: inherit` and
-`working_dir: ~/app` for `laravel-schedule`. `minicrond run NAME` **triggers** a run of a job and prints its
-run ID; read it with `minicrond logs RUN_ID`; workers are controlled by `minicrond reload`.
+Check both picked up Bento's defaults: `$B app minicrond e2e-laravel -- list` shows `env_base: inherit` and
+`working_dir: ~/app` for `laravel-schedule` and `queue-default`. `minicrond run JOB` **triggers** a run of a job and
+prints its run ID; `minicrond runs NAME` lists recent runs; read one with `minicrond logs RUN_ID`; workers are
+controlled with `minicrond start|stop|restart WORKER`.
+
+Worker supervision (minicrond 0.4.4): import a worker with bare `argv = ["php", "artisan", "queue:work", ...]` and
+run `queue:restart` 3s after each start, 7 times: it restarts every time. A worker with `command = "exit 3"`,
+`max_restart_attempts = 3` shows `worker_state.status: exhausted` in `list` and under `worker_exhaustions` in
+`status`; a new revision, `start`, and `reload` each give it a fresh budget; a fixed revision survives a SIGKILL
+(`failures: 1`, restarted).
 
 ## 9. Real app: Cachet 3.x
 
@@ -320,26 +325,24 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
 9. ~~**Scheduler jobs could not run `php`.**~~ **Fixed:** minicrond defaults jobs to a clean environment with
    `PATH=/usr/bin:/bin`, so `php artisan schedule:run` failed (`executable "php" not found in trusted PATH`) and
    had no `DB_*`. Bento's generated `minicrond.toml` now sets `[defaults] env_base = "inherit"` and
-   `working_dir = "~/app"`. Bare names in an `argv` are still only looked up in `/usr/bin` and `/bin`: use
-   `command` or absolute paths.
+   `working_dir = "~/app"`, and (minicrond 0.4.4) `[scheduler] trusted_path = ["/usr/local/bin", "/usr/bin",
+   "/bin"]`, so bare `argv` names resolve too. Verified live: the daemon starts with it in every runtime image.
 10. ~~**Deploy failure summary showed the wrong line.**~~ **Fixed:** the script's stdout and stderr are journalled as
     one stream in arrival order, live, without escape codes (first 120 lines, then the last 40); the summary is the
     last line on either stream.
-11. **Workers stop for good after quick clean exits (minicrond 0.4.0).** Any exit within `healthy_after` (30s),
-    even exit 0 from `queue:restart`, counts toward `max_restart_attempts` (5); after 5 the worker is never started
-    again. The counter is kept per name in memory and survives re-import and reload, so a definition that once
-    failed to start is exhausted from its first quick exit. Exits after 30s restart fine. Workaround:
-    `sleep 3 && minicrond reload` (in the deploy recipes). Needs a minicrond fix.
-12. **Workers ignore scheduler `[defaults]`** and a worker that exhausts its start attempts stops with nothing shown
-    in Bento. Needs a minicrond fix.
+11. ~~**Workers stop for good after quick clean exits.**~~ **Fixed in minicrond 0.4.4:** clean exits no longer
+    count toward `max_restart_attempts`, and the counter resets on a new revision, `reload`, and `start`/`restart`.
+    The `sleep 3 && minicrond reload` workaround is gone from the deploy recipes. Verified live (section 8).
+12. ~~**Workers ignore scheduler `[defaults]`; exhausted workers are invisible.**~~ **Fixed in minicrond 0.4.4:**
+    workers inherit `env_base` and `working_dir`; an exhausted worker shows `worker_state.status: exhausted` in
+    `list`, `worker_exhaustions` in `status`, and **Exhausted** in the Scheduler UI. Verified live.
 13. **Deploy log order across stdout and stderr is not guaranteed.** Docker reads the two pipes separately, so lines
     written microseconds apart can arrive swapped. Seen live: `echo "deploying …"` then `echo "~/app/.env is missing"
     >&2; exit 1` was journalled stderr first, and the failure summary was `deploying 40bd081 …`. Fix: run the script
     with stderr merged into stdout (one pipe keeps order), or document that the summary can miss by one line.
-14. **The Classic recipe fails the first deploy of an app that was never started.** `minicrond reload` needs the
-    scheduler socket, which only exists in a running app container (`dial unix …/minicron.sock: no such file`). The
-    playbook order (deploy, then start) hits it. Fix the recipe (`minicrond reload || true`, or skip when the socket
-    is missing) or have the deploy skip the step for a stopped app.
+14. ~~**The Classic recipe fails the first deploy of an app that was never started.**~~ `minicrond reload` needed
+    the scheduler socket, which only exists in a running app container. **Fixed** by finding 11: the recipes no
+    longer call `minicrond`. Not re-run live from a stopped app.
 15. ~~**Apps behind the tunnel saw `http`.**~~ **Fixed:** the edge overwrote cloudflared's `X-Forwarded-Proto:
     https` with its own `http` (and port 80, and cloudflared's IP), so Laravel redirected to `http://` and Livewire's
     update URL was blocked as mixed content. The edge now takes the scheme, port, and `CF-Connecting-IP` from

@@ -17,33 +17,23 @@ the app stops or restarts them too.
 
 ## Commands and environment
 
-Write the command as a **Command** (a shell line), e.g. `php artisan schedule:run`. New jobs start in `~/app` with the
-app's environment — `PATH` with the toolchain, `DB_*`, `REDIS_*`, and your env vars — so Laravel needs no `.env`
-database settings.
+Write the command as a **Command** (a shell line), e.g. `php artisan schedule:run`. New jobs and workers start in
+`~/app` with the app's environment — `PATH` with the toolchain, `DB_*`, `REDIS_*`, and your env vars — so Laravel
+needs no `.env` database settings. A value you set on the job or worker wins.
 
-| Field | Jobs | Workers |
-| --- | --- | --- |
-| Environment | the app's (`env_base = inherit`) by default | set **Environment base** to `inherit` yourself |
-| Working dir | `~/app` by default | set it to `~/app`, or use absolute paths |
-| Argv form | absolute paths only, e.g. `/usr/local/bin/php` | same |
-
-A worker left on the `clean` environment sees only `PATH=/usr/bin:/bin`: `php` is not found and no database credentials
-are set. Example worker for Laravel:
+The **Argv** form also works with bare names such as `["php", "artisan", "queue:work"]`: they are looked up in
+`/usr/local/bin`, `/usr/bin`, and `/bin`. Example worker for Laravel:
 
 ```toml
 [[worker]]
 name = "queue-default"
 command = "php artisan queue:work --sleep=1 --tries=3 --max-time=3600"
-env_base = "inherit"
-working_dir = "~/app"
 ```
 
-<Callout type="warning" title="Check workers after a deploy">
-`php artisan queue:restart` makes workers exit so they reload code, and the current scheduler does not always start
-them again. Check the worker is running in the **Scheduler** tab after a deploy. If it is stopped, start the workers
-again with `bento app minicrond <slug> -- reload`. The [deploy script recipes](/apps/deploy-scripts) end with
-`sleep 3 && minicrond reload`, which does this after every deploy.
-</Callout>
+Workers are restarted after every clean exit, so `php artisan queue:restart` in a deploy script is enough to load new
+code. A worker that keeps failing (non-zero exit within 30 seconds, 5 times in a row) is stopped and shown as
+**Exhausted** in the **Scheduler** tab; fix it, then start it again there or with
+`bento app minicrond <slug> -- start <worker>`.
 
 Things to know:
 
