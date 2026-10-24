@@ -275,5 +275,31 @@ backend stopped, edge traffic and scheduled jobs continued.
 - Live Cloudflare Tunnel, ACME issuance, HTTP/3, external certificates, rclone upload to a real cloud backend,
   scheduled backup firing,
   SQLite restore, and stop persistence across an actual host reboot (verified by restart-policy inspection only).
-- Base images are digest-pinned only for the verified versions (PHP 8.4, Node 24, Debian, edge, MySQL 8.4,
+- Base images are digest-pinned only for the verified versions (PHP 8.2-8.5, Node 24, Debian, edge, MySQL 8.4,
   PostgreSQL 17, Redis, cloudflared, rclone); other catalog entries are pinned by tag.
+
+## PHP2Shell (CVE-2026-109618, CVE-2026-109619; 2026-10-24; live Docker 29.8.1, amd64)
+
+- PHP 8.2-8.5 base images are pinned to the Oct 21 fixed releases by index digest: 8.2.35, 8.3.36, 8.4.27, 8.5.12
+  (`php -v` checked in each pulled image). Pinning changes the image hash, so every PHP app is rebuilt and replaced.
+- PHP 7.4, 8.0 and 8.1 have no upstream fix. They are now built from deb.sury.org packages on the pinned Debian
+  bookworm base (`templates/images/php-sury`, overlaid on `images/php`): php7.4 1:7.4.33-31, php8.0 1:8.0.30-25,
+  php8.1 8.1.34-9, all built Oct 21. Sury's index was read for bookworm amd64 and arm64: all three fixed. Bullseye
+  arm64 still carried the old 8.1 build, which is why these versions moved off the EOL bullseye base. The build
+  fails if an installed php-cli/fpm/common package is older than `domain.PHPSuryPackages`; `php -v` cannot show a
+  backport. The Sury signing key is pinned by SHA-256. Backported builds disable session upload progress in code.
+- Sury images: `php -m` is a superset of the previous official 7.4 image (extras: calendar, FFI, gettext, igbinary,
+  shmop, sysv*, xsl). Debian's php.ini is removed so PHP runs on compiled defaults like the official images (Debian's
+  production php.ini disables session GC in favour of a cron job the container does not have). `php`, `php-fpm`,
+  nginx 1.22.1, Node 24, Composer, minicrond and s6 present; `php-fpm -t` accepts the generated pool settings.
+  `TestIntegrationBuildRuntimeImages` built 7.4, 8.0 and 8.1; `TestIntegrationAppLifecycle` (real app container,
+  hardened spec, app UID, instance lock, reconciler recreation) passed on each with the version swapped in
+  temporarily (the committed test still uses 8.4).
+- `zz-bento.ini` sets `session.upload_progress.enabled=0` and `fatal_error_backtraces=0`; the FPM pool sets
+  `php_admin_value[session.upload_progress.enabled]=0`. Effective values checked on 8.2.35, 8.5.12, 7.4, 8.0, 8.1.
+  Upstream says no configuration fully closes either CVE; the patch is the fix and these settings are partial
+  mitigation.
+- Not verified: arm64 images were not built or run (package availability only); exploit resistance (no PoC run).
+  Sury images track the repository at build time, not a snapshot: a rebuild picks up newer packages, but nothing
+  rebuilds existing images until the floor or another build input changes. The `bullseye` handling in
+  `apt-sources.sh` and `RuntimeDebianBase` is now unused.

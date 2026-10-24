@@ -40,9 +40,14 @@ func executable(name string) bool {
 }
 
 // BuildContext assembles the tar build context for a managed runtime image:
-// images/common/* overlaid with images/<kind>/*. It returns the tar bytes and
-// the content hash that identifies them.
+// images/common/* overlaid with images/<kind>/*. The php-sury kind builds PHP
+// from packages instead of the official image and shares everything else with
+// php, so it is overlaid on images/php. It returns the tar bytes and the
+// content hash that identifies them.
 func BuildContext(kind string) ([]byte, string, error) {
+	if kind == "php-sury" {
+		return buildContext(kind, "images/common", "images/php", "images/php-sury")
+	}
 	return buildContext(kind, "images/common", "images/"+kind)
 }
 

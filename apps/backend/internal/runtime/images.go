@@ -43,8 +43,15 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	kind := "http"
 	if key.Kind == domain.RuntimePHP {
 		kind = "php"
-		args["PHP_BASE"] = base
 		maps.Copy(args, domain.PHPNodeArtifacts)
+		if minPkg, ok := key.SuryMinVersion(); ok {
+			kind = "php-sury"
+			args["PHP_VERSION"] = key.Version
+			args["PHP_MIN_PKG_VERSION"] = minPkg
+			args["SURY_KEY_SHA256"] = domain.SuryKeySHA256
+		} else {
+			args["PHP_BASE"] = base
+		}
 	} else {
 		args["TOOLCHAIN_BASE"] = base
 		args["TOOLCHAIN"] = key.Toolchain + "-" + key.Version

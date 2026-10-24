@@ -28,6 +28,9 @@ php_admin_value[session.save_path] = {{.Home}}/tmp/sessions
 php_admin_value[upload_tmp_dir] = /tmp
 php_admin_value[upload_max_filesize] = {{.UploadLimitMB}}M
 php_admin_value[post_max_size] = {{.UploadLimitMB}}M
+; PHP2Shell (CVE-2026-109619) hardening: upload progress is parsed before app
+; code runs, so only an admin value reaches it; ini_set() and .user.ini do not.
+php_admin_value[session.upload_progress.enabled] = 0
 ; Web request limits. php_value, not php_admin_value: the app may still raise
 ; them for itself with ini_set() or .user.ini.
 php_value[memory_limit] = {{.PHP.WebMemoryLimitMB}}M

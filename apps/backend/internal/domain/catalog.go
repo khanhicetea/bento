@@ -10,14 +10,20 @@ import (
 // managed image, not a separate lifecycle engine. Base references are pinned by
 // digest where the release has been verified; the resolved image ID of every
 // built managed image is additionally recorded in state.
+//
+// PHP2Shell (CVE-2026-109618, CVE-2026-109619; fixed in 8.2.35, 8.3.36, 8.4.27,
+// 8.5.12): a floating tag would not change the image hash, so the fixed
+// releases are pinned by digest to force a rebuild. Upstream ships no fix for
+// 7.4, 8.0 and 8.1; those are built from deb.sury.org packages on Debian (see
+// PHPSuryPackages), so their base is Debian itself.
 var PHPVersions = map[string]string{
-	"7.4": "php:7.4-fpm-bullseye",
-	"8.0": "php:8.0-fpm-bullseye",
-	"8.1": "php:8.1-fpm-bookworm",
-	"8.2": "php:8.2-fpm-bookworm",
-	"8.3": "php:8.3-fpm-bookworm",
-	"8.4": "php:8.4-fpm-bookworm@sha256:43e1ac38217031dbbecae60e84ccf8593722031559178d199bf56adb0145d5d0",
-	"8.5": "php:8.5-fpm-bookworm",
+	"7.4": DebianBase,
+	"8.0": DebianBase,
+	"8.1": DebianBase,
+	"8.2": "php:8.2-fpm-bookworm@sha256:91d643dd148528402ae8e3eb897f2ba95e0cc5217ca75c97ec38f09fbf260c66",
+	"8.3": "php:8.3-fpm-bookworm@sha256:6b4641a875dd3e0f7551b2751e1f5909084856d18166af7fbb522ac230feb702",
+	"8.4": "php:8.4-fpm-bookworm@sha256:df5a5113e1179ddf4560cd15727eb3812f6457829756d2a96c6c11bb4c250089",
+	"8.5": "php:8.5-fpm-bookworm@sha256:d3db5340c7ecfb1e3a26af5d3d9de8b4e160cdd75692a830b5cb74b0b85db2cf",
 }
 
 var HTTPToolchains = map[string]map[string]string{
@@ -35,6 +41,20 @@ var HTTPToolchains = map[string]map[string]string{
 		"3.13": "python:3.13-slim-bookworm",
 	},
 }
+
+// PHPSuryPackages lists the PHP versions built from deb.sury.org packages and
+// the oldest package version of each that is accepted. A backport keeps the
+// upstream version number, so only the package revision proves the PHP2Shell
+// fix. Raising a floor changes the image hash and rebuilds every app on it.
+var PHPSuryPackages = map[string]string{
+	"7.4": "1:7.4.33-31",
+	"8.0": "1:8.0.30-25",
+	"8.1": "8.1.34-9",
+}
+
+// SuryKeySHA256 pins the deb.sury.org archive signing key
+// (1505 8500 A023 5D97 F5D1 0063 B188 E2B6 95BD 4743, expires 2028-02-04).
+const SuryKeySHA256 = "b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c"
 
 const DebianBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
 
@@ -251,6 +271,16 @@ func (k ImageKey) BaseImage() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unsupported toolchain %s %s", k.Toolchain, k.Version)
+}
+
+// SuryMinVersion is the oldest accepted deb.sury.org package version when the
+// key's PHP is built from packages rather than the official image.
+func (k ImageKey) SuryMinVersion() (string, bool) {
+	if k.Kind != RuntimePHP {
+		return "", false
+	}
+	v, ok := PHPSuryPackages[k.Version]
+	return v, ok
 }
 
 func SortedKeys[V any](m map[string]V) []string {

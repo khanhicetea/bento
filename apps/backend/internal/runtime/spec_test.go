@@ -169,7 +169,7 @@ func TestRenderedConfig(t *testing.T) {
 	if strings.Contains(files["php-fpm.conf"], "\nuser =") {
 		t.Fatal("pool must not switch identity")
 	}
-	for _, want := range []string{"pm = ondemand\n", "pm.max_children = 6\n", "pm.process_idle_timeout = 10s\n", "php_value[memory_limit] = 128M\n", "php_value[max_execution_time] = 60\n", "php_value[max_input_vars] = 1000\n"} {
+	for _, want := range []string{"pm = ondemand\n", "pm.max_children = 6\n", "pm.process_idle_timeout = 10s\n", "php_value[memory_limit] = 128M\n", "php_value[max_execution_time] = 60\n", "php_value[max_input_vars] = 1000\n", "php_admin_value[session.upload_progress.enabled] = 0\n"} {
 		if !strings.Contains(files["php-fpm.conf"], want) {
 			t.Errorf("php-fpm.conf missing %q", want)
 		}
@@ -337,5 +337,40 @@ func TestPHPLimitsFollowOverrides(t *testing.T) {
 	app.Runtime.PHP.Mode = "small"
 	if _, _, _, err := RenderAppConfig(app, AppContext{}); err == nil {
 		t.Fatal("a stored app with an unknown mode must fail to render")
+	}
+}
+
+func TestSuryPHPImagesBuildFromPackages(t *testing.T) {
+	for v, floor := range domain.PHPSuryPackages {
+		spec, err := PlanImage(domain.ImageKey{Kind: domain.RuntimePHP, Toolchain: "php", Version: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.ContextKind != "php-sury" || spec.Args["PHP_VERSION"] != v || spec.Args["PHP_MIN_PKG_VERSION"] != floor ||
+			spec.Args["SURY_KEY_SHA256"] != domain.SuryKeySHA256 || spec.Args["PHP_BASE"] != "" || spec.Args["DEBIAN_BASE"] != domain.DebianBase {
+			t.Fatalf("php %s plan: %s %v", v, spec.ContextKind, spec.Args)
+		}
+	}
+	official, err := PlanImage(domain.ImageKey{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if official.ContextKind != "php" || official.Args["PHP_BASE"] == "" || official.Args["PHP_MIN_PKG_VERSION"] != "" {
+		t.Fatalf("official php plan: %s %v", official.ContextKind, official.Args)
+	}
+	// The package build is overlaid on the shared php context: same services
+	// and ini files, its own Dockerfile.
+	sury, _, err := assets.BuildContext("php-sury")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, _, _ := assets.BuildContext("php")
+	for _, name := range []string{"rootfs/etc/s6-overlay/s6-rc.d/php-fpm/run", "rootfs/usr/local/etc/php/conf.d/zz-bento.ini", "Dockerfile"} {
+		if !bytes.Contains(sury, []byte(name)) || !bytes.Contains(plain, []byte(name)) {
+			t.Errorf("%s missing from a PHP build context", name)
+		}
+	}
+	if bytes.Equal(sury, plain) {
+		t.Fatal("php-sury must not reuse the official PHP Dockerfile")
 	}
 }

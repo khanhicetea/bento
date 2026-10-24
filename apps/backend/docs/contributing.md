@@ -77,7 +77,10 @@ Never put Docker calls inside `Store.Tx`, and never perform effects in an HTTP h
 ## Recipe: add a toolchain or runtime version
 
 1. Add the version and its base image to `domain.PHPVersions` or `domain.HTTPToolchains` (pin by digest once verified:
-   `docker pull <ref>` then use `RepoDigests`).
+   `docker pull <ref>` then use `RepoDigests`). A PHP version upstream no longer releases is instead built from
+   deb.sury.org packages: set its base to `DebianBase` and add its oldest acceptable package revision to
+   `domain.PHPSuryPackages` (check the Sury `Packages` index for every architecture first); the image build refuses
+   an older package.
 2. If the image needs extra packages, change `templates/images/<kind>/Dockerfile`. Keep it compatible with the classic
    builder: no `RUN --mount`, no heredocs, no `TARGETARCH` (use `dpkg --print-architecture`).
 3. `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages` builds the listed keys;

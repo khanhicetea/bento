@@ -28,7 +28,9 @@ func TestIntegrationBuildRuntimeImages(t *testing.T) {
 	m := &ImageManager{Engine: sdk}
 	keys := []domain.ImageKey{
 		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.4"},
-		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "7.4"}, // EOL bullseye base via archive.debian.org
+		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "7.4"}, // deb.sury.org packages on Debian
+		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.0"},
+		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.1"},
 		{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"},
 	}
 	for _, key := range keys {
