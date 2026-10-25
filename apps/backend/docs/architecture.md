@@ -73,7 +73,8 @@ connection, and `BEGIN IMMEDIATE` transactions.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
   target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
-  `operation_events` (≤200 events each), `sessions`, `images`, `backup_runs`.
+  `operation_events` (≤200 events each), `sessions`, `api_tokens` (schema 6; SHA-256 hashes, scope, expiry), `images`,
+  `backup_runs`.
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
   across a Docker call.
 
@@ -420,7 +421,19 @@ only what it created.
 - `auth.go`: argon2id password (`settings.auth`), 12-hour sessions stored as SHA-256 token hashes, `HttpOnly`
   `SameSite=Strict` cookie, login rate limit (10 failures / 5 min), and for writes: exact `Origin` in
   `AllowedOrigins`, `Sec-Fetch-Site: same-origin` when present, and `X-CSRF-Token` equal to the session's token.
-  Changing the password revokes every session.
+  Changing the password revokes every session (not API tokens).
+- `scopes.go` + `tokens.go`: API tokens and scopes. `routeScopes` maps each route pattern to the least scope
+  (`read` < `operate` < `admin` < full); an unlisted route needs full (session or unscoped socket), so new routes
+  are closed to tokens by default. `requireAuth(scope)` checks a principal already in the context (control socket,
+  or an MCP tool call re-entering the mux), else `Authorization: Bearer bento_pat_…` (no CSRF: browsers never send
+  it unprompted), else the session. The socket accepts `X-Bento-Scope` to narrow itself (`bento mcp`). Restricted
+  callers see env values as `[redacted]`, cannot change env, and cannot upload backups; their operations get origin
+  `token:<name>` / `local:<scope>` via `operations.WithOrigin`. Token management is full-scope only; import deletes
+  every token.
+- `POST /mcp`: stateless Streamable HTTP for tokens and scoped sockets (sessions refused, foreign `Origin` refused).
+  Tools live in `internal/mcp` and call the API through `inProcess`, a `RoundTripper` that serves the mux with the
+  caller's context, so every tool call is scope-checked like a direct request. `bento mcp` serves the same tools on
+  stdio over the control socket.
 - `server.go`: routes and resource handlers; mutations respond `202` with the operation and `Location`.
 - `stream.go`: logs as SSE (tail ≤ 5000, 30 min, 20 MB, the app's secrets redacted, resume via `since`/`Last-Event-ID`),
   operation events as SSE, bounded exec (1 MiB, 10 min), `minicrond` passthrough (refuses `daemon`), and the
@@ -492,7 +505,8 @@ changes its own UID and never execs into containers per request. Relays idle for
 - Destructive actions check labels, role, and (for app containers) the home mount first.
 - Exact confirmations are enforced server-side in `accept.go`, not only in the CLI/UI.
 - Missing durable data blocks; nothing is ever silently re-created empty.
-- The management API is loopback-only and requires a session or a peer-verified local socket.
+- The management API is loopback-only and requires a session, a peer-verified local socket, or a scoped API token.
+  No token scope reaches deletes, restores, exec, terminals, or credentials.
 - The utils listener serves only routes that authenticate themselves: deploy webhooks (per-app secret; can at most
   queue a deploy of the configured branch) and the database browser (single-use ticket from a session + CSRF call,
   then a binding-scoped grant re-checked against the live session on every request), and the scheduler UI (the same

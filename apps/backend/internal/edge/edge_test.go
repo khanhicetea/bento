@@ -153,6 +153,16 @@ func TestRenderRedirectHosts(t *testing.T) {
 		!strings.Contains(main, "map $bento_from_tunnel $bento_http_suffix {\n    default \":8080\";\n    1       \"\";") {
 		t.Fatal("redirect suffixes are the edge's ports, and none for tunnel visitors")
 	}
+	if !strings.Contains(main, "map $scheme $bento_published_port {\n    default 8080;\n    https   8443;") ||
+		!strings.Contains(main, "map $scheme $bento_scheme_suffix {\n    default \":8080\";\n    https   \":8443\";") {
+		t.Fatal("forwarded port and host suffix are the edge's published ports")
+	}
+	site := string(files["sites/host-shop.example.com.conf"])
+	if !strings.Contains(site, "proxy_set_header Host $bento_forwarded_host;") ||
+		!strings.Contains(site, "proxy_set_header X-Forwarded-Host $bento_forwarded_host;") ||
+		strings.Contains(site, "proxy_set_header Host $http_host;") {
+		t.Fatal("apps must see the host with the edge's published port, built from $host")
+	}
 }
 
 func TestRenderTrustsForwardingOnlyFromTunnel(t *testing.T) {
@@ -174,7 +184,8 @@ func TestRenderTrustsForwardingOnlyFromTunnel(t *testing.T) {
 		"set_real_ip_from 10.200.0.3;", "real_ip_header CF-Connecting-IP;",
 		"geo $realip_remote_addr $bento_from_tunnel {\n    default 0;\n    10.200.0.3 1;\n  }",
 		"map \"$bento_from_tunnel:$http_x_forwarded_proto\" $bento_proto {\n    default   $scheme;\n    \"1:https\" https;",
-		"map \"$bento_from_tunnel:$http_x_forwarded_proto\" $bento_port {\n    default   $server_port;\n    \"1:https\" 443;",
+		"map \"$bento_from_tunnel:$http_x_forwarded_proto\" $bento_port {\n    default   $bento_published_port;\n    \"1:https\" 443;",
+		"map $bento_from_tunnel $bento_forwarded_host {\n    default $host$bento_scheme_suffix;\n    1       $host;",
 	} {
 		if !strings.Contains(main, want) {
 			t.Errorf("main config missing %q", want)

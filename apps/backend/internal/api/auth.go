@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
@@ -26,6 +27,11 @@ const (
 	SessionTTL    = 12 * time.Hour
 	authSetting   = "auth"
 	csrfHeader    = "X-CSRF-Token"
+	// ScopeHeader lets a control-socket client (bento mcp) drop to a token
+	// scope. It can only narrow access, never widen it.
+	ScopeHeader = "X-Bento-Scope"
+	// TokenPrefix marks Bento API tokens so leaked ones are recognizable.
+	TokenPrefix = "bento_pat_"
 )
 
 // PasswordRecord is the stored operator credential (argon2id).
@@ -86,8 +92,10 @@ func SetOperatorPassword(ctx context.Context, s *store.Store, pw string) error {
 type principalKey struct{}
 
 type principal struct {
-	Kind    string // "session" | "local"
+	Kind    string // "session" | "local" | "token"
 	Session store.Session
+	Token   store.APIToken
+	Scope   scope
 }
 
 func principalFrom(ctx context.Context) (principal, bool) {
@@ -165,12 +173,36 @@ func unsafeMethod(m string) bool {
 	return m != http.MethodGet && m != http.MethodHead && m != http.MethodOptions
 }
 
-// requireAuth wraps browser-facing handlers. Local CLI requests arrive on a
-// separate listener already marked with a local principal.
-func (s *Server) requireAuth(next http.Handler) http.Handler {
+// requireAuth admits a caller whose scope covers need. A principal already
+// in the context (the control socket, or an MCP tool call re-entering the
+// API in-process) is checked as is; otherwise a bearer token or a browser
+// session authenticates the request.
+func (s *Server) requireAuth(need scope, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p, ok := principalFrom(r.Context()); ok && p.Kind == "local" {
+		if p, ok := principalFrom(r.Context()); ok {
+			if p.Scope < need {
+				writeError(w, s.Log, scopeDenied(need, p.Scope))
+				return
+			}
 			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "" {
+			p, ok := s.tokenPrincipal(r)
+			if !ok {
+				writeJSON(w, http.StatusUnauthorized, dto.ErrorResponse{Error: dto.ErrorBody{
+					Code: dto.ErrorCodeUnauthorized, Message: "invalid or expired API token"}})
+				return
+			}
+			if p.Scope < need {
+				writeError(w, s.Log, scopeDenied(need, p.Scope))
+				return
+			}
+			// A bearer token is never sent by a browser on its own, so token
+			// writes need no Origin or CSRF check.
+			ctx := context.WithValue(r.Context(), principalKey{}, p)
+			ctx = operations.WithOrigin(ctx, "token:"+p.Token.Name)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 		sess, ok := s.sessionFromRequest(r)
@@ -188,9 +220,30 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 				return
 			}
 		}
-		ctx := context.WithValue(r.Context(), principalKey{}, principal{Kind: "session", Session: sess})
+		ctx := context.WithValue(r.Context(), principalKey{}, principal{Kind: "session", Session: sess, Scope: scopeFull})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// tokenPrincipal authenticates "Authorization: Bearer bento_pat_…".
+func (s *Server) tokenPrincipal(r *http.Request) (principal, bool) {
+	scheme, tok, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(tok, TokenPrefix) || len(tok) > 128 {
+		return principal{}, false
+	}
+	now := time.Now()
+	t, err := store.GetLiveAPIToken(r.Context(), s.Store.DB(), tokenHash(tok), now)
+	if err != nil {
+		return principal{}, false
+	}
+	sc, ok := parseScope(dto.TokenScope(t.Scope))
+	if !ok {
+		return principal{}, false
+	}
+	if err := store.TouchAPIToken(r.Context(), s.Store.DB(), t.ID, now); err != nil {
+		s.Log.Warn("record token use", "token", t.Name, "err", err)
+	}
+	return principal{Kind: "token", Token: t, Scope: sc}, true
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
@@ -357,7 +410,18 @@ func (s *Server) LocalOnly(next http.Handler) http.Handler {
 			)
 			return
 		}
-		ctx := context.WithValue(r.Context(), principalKey{}, principal{Kind: "local"})
+		p := principal{Kind: "local", Scope: scopeFull}
+		ctx := r.Context()
+		if v := r.Header.Get(ScopeHeader); v != "" {
+			sc, ok := parseScope(dto.TokenScope(v))
+			if !ok {
+				writeError(w, s.Log, badRequest(ScopeHeader+" must be read, operate or admin"))
+				return
+			}
+			p.Scope = sc
+			ctx = operations.WithOrigin(ctx, "local:"+v)
+		}
+		ctx = context.WithValue(ctx, principalKey{}, p)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

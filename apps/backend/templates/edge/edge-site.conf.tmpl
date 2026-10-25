@@ -14,11 +14,12 @@ upstream {{.UpstreamName}} {
     proxy_http_version 1.1;
     # Security-relevant forwarding headers are overwritten, never appended.
     # $remote_addr, $bento_proto and $bento_port are the visitor's when the
-    # request came through the tunnel (edge-nginx.conf).
-    proxy_set_header Host $host;
+    # request came through the tunnel; $bento_forwarded_host carries the
+    # edge's published port when it is not standard (edge-nginx.conf).
+    proxy_set_header Host $bento_forwarded_host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Host $bento_forwarded_host;
     proxy_set_header X-Forwarded-Proto $bento_proto;
     proxy_set_header X-Forwarded-Port $bento_port;
     proxy_set_header Forwarded "";

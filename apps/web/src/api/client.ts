@@ -180,6 +180,11 @@ export const api = {
     remove: (name: string, confirm: string) =>
       mutate("DELETE", `/api/v1/hosts/${enc(name)}`, { confirm } satisfies T.ConfirmRequest),
   },
+  tokens: {
+    list: (signal?: AbortSignal) => get<T.APITokenList>("/api/v1/tokens", signal),
+    create: (body: T.CreateAPITokenRequest) => request<T.CreatedAPIToken>("POST", "/api/v1/tokens", body),
+    revoke: (id: string) => request<void>("DELETE", `/api/v1/tokens/${enc(id)}`),
+  },
   retired: {
     list: (signal?: AbortSignal) => get<T.RetiredList>("/api/v1/retired", signal),
     prune: (appId: string, confirm: string) =>

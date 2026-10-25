@@ -1,0 +1,118 @@
+---
+title: AI agents (MCP)
+description: Let Claude, Cursor, or another MCP client read your stack and run routine operations, with scoped access.
+---
+
+Bento speaks the [Model Context Protocol](https://modelcontextprotocol.io). An AI client can list apps, read logs and
+operations, and — if you allow it — start, restart, deploy, and back up apps.
+
+There are two ways to connect:
+
+| Way | Runs | Credential | Use when |
+| --- | --- | --- | --- |
+| `bento mcp` (stdio) | On the server, started by the client over SSH | SSH login + root | Claude Code or Desktop on your machine, SSH access to the server |
+| `POST /mcp` (HTTP) | Inside `bento serve` | API token | Clients that only speak HTTP; reach it through an SSH tunnel |
+
+<Callout type="warning">
+The management listener is loopback-only. Never expose `/mcp` through Ingress, the tunnel, or the utils listener —
+reach it through an SSH tunnel.
+</Callout>
+
+## Scopes
+
+Every connection has one scope. The backend enforces it on every request; the client only sees tools it may call.
+
+| Scope | Can |
+| --- | --- |
+| `read` (default) | Status, apps, logs, metrics, readiness, operations, data services, ingress, backups, Docker inventory |
+| `operate` | Everything in `read`, plus start / stop / restart / deploy apps, run backups, restart data services, cancel operations |
+| `admin` | Everything in `operate`, plus create / update / publish apps, add bindings and databases, set git sources, save Ingress hosts |
+
+No scope can delete or restore anything. Deleting apps, hosts, schedules, or backups; restores and clones;
+pruning retained data; export; exec and terminals; database-browser tickets; and every credential (password,
+tunnel token, restic keys, webhook secrets, API tokens) still need the web UI or the plain `bento` CLI, with their
+exact confirmations.
+
+For any scoped caller, Bento also:
+
+- shows app **env values as `[redacted]`** and refuses env changes,
+- refuses backup uploads to rclone remotes,
+- labels every operation it starts — `token:<name>` or `local:<scope>` — in **Activity**.
+
+Log lines come from your apps. Treat them as untrusted input to the model: a log line can contain text that looks
+like instructions.
+
+## Stdio: `bento mcp`
+
+`bento mcp [--scope read|operate|admin]` serves MCP on stdin/stdout and talks to the backend over the control socket.
+It needs root on the server, like every client command.
+
+**Claude Code**, connecting over SSH:
+
+```bash
+claude mcp add bento -- ssh root@server bento --stack /srv/bento mcp --scope operate
+```
+
+**Claude Desktop, Cursor, and other JSON-configured clients:**
+
+```json
+{
+  "mcpServers": {
+    "bento": {
+      "command": "ssh",
+      "args": ["root@server", "bento", "--stack", "/srv/bento", "mcp", "--scope", "read"]
+    }
+  }
+}
+```
+
+Use an SSH key that works without a prompt. To restrict that key to MCP only, add a forced command in the server's
+`authorized_keys`:
+
+```text
+command="bento --stack /srv/bento mcp --scope read",no-pty,no-port-forwarding ssh-ed25519 AAAA… ai-client
+```
+
+## HTTP: API tokens and `POST /mcp`
+
+Create a token on the server. It is shown **once**; only its hash is stored.
+
+```bash
+bento token create claude --scope read --expires-days 30
+bento token list
+bento token revoke claude
+```
+
+You can also manage tokens in **System → AI access**. Token names are 1–48 lowercase letters, digits, `.`, `_`, or `-`.
+`--expires-days 0` makes a token that never expires (not recommended).
+
+Open a tunnel, then point the client at `/mcp` with the token as a bearer header:
+
+```bash
+ssh -N -L 7780:127.0.0.1:7780 root@server
+claude mcp add --transport http bento http://127.0.0.1:7780/mcp \
+  --header "Authorization: Bearer bento_pat_…"
+```
+
+The endpoint is stateless Streamable HTTP: each `POST` carries one JSON-RPC message and gets a JSON reply. It sends no
+server-to-client stream, so `GET /mcp` returns `405`. A browser session cookie is not accepted, and a request with a
+foreign `Origin` is refused.
+
+The same token also works on the REST API (`Authorization: Bearer …`) within its scope, without CSRF headers.
+
+## Tools
+
+| Tool | Scope | Does |
+| --- | --- | --- |
+| `get_status`, `get_catalog`, `get_docker_inventory` | read | Stack, runtime catalog, Docker images/volumes/networks |
+| `list_apps`, `get_app`, `get_app_readiness`, `get_app_metrics` | read | Apps by slug |
+| `get_app_logs` | read | Last 1–1000 lines (≤ 64 KB), secrets redacted |
+| `list_operations`, `get_operation`, `wait_operation` | read | Follow any operation; `wait_operation` blocks up to 120 s |
+| `list_services`, `get_reconcile_status`, `get_ingress`, `get_backup_status` | read | Data, drift repair, edge + hosts + tunnel, backups |
+| `start_app`, `stop_app`, `restart_app`, `deploy_app` | operate | App lifecycle |
+| `backup_app`, `backup_databases` | operate | Restic app backup, local database dumps |
+| `restart_service`, `cancel_operation` | operate | Data service restart, cancel |
+| `create_app`, `update_app`, `publish_app`, `unpublish_app` | admin | App configuration |
+| `add_binding`, `add_database`, `set_git_source`, `save_host` | admin | Data, git, Ingress |
+
+Mutating tools return the accepted operation. The model then calls `wait_operation` to report the result.

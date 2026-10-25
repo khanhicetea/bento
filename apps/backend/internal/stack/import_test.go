@@ -140,6 +140,7 @@ func downgradeState(t *testing.T, exp exportedStack, version int) {
 	stmts := []string{
 		"DROP TABLE hosts",
 		"ALTER TABLE data_services DROP COLUMN settings_json",
+		"DROP TABLE api_tokens",
 		"ALTER TABLE apps DROP COLUMN access_log",
 		`ALTER TABLE apps ADD COLUMN route_json TEXT NOT NULL DEFAULT '{"tls":"none"}'`,
 		`CREATE TABLE proxies (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, upstreams_json TEXT NOT NULL,

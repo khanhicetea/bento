@@ -25,7 +25,7 @@ const ApplicationID = 0x424E5431
 // SchemaVersion is the current schema. Versions from MigratableFromVersion up
 // are migrated to it by Open; every other version is refused without
 // modifying the file.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // MigratableFromVersion is the oldest schema Open upgrades.
 const MigratableFromVersion = 2
@@ -199,6 +199,10 @@ var migrations = map[int64]func(tx *sql.Tx) error{
 	3: migrateHosts,
 	4: func(tx *sql.Tx) error {
 		_, err := tx.Exec("ALTER TABLE data_services ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
+		return err
+	},
+	5: func(tx *sql.Tx) error {
+		_, err := tx.Exec(apiTokensTable)
 		return err
 	},
 }
@@ -492,4 +496,4 @@ CREATE TABLE schedules (
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 ) STRICT;
-`
+` + apiTokensTable

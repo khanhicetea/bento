@@ -222,6 +222,10 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.AccessLog = app.AccessLog
 	out.Env = []dto.EnvVar{}
 	for _, e := range app.Runtime.Env {
+		if restricted(ctx) {
+			// Operator env often holds API keys; tokens and MCP see names only.
+			e.Value = redactedValue
+		}
 		out.Env = append(out.Env, dto.EnvVar(e))
 	}
 	out.Bindings = []dto.Binding{}

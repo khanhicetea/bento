@@ -184,7 +184,8 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   Restore requires `replace <db>`.
 - **System:** Overview (Bento, Docker, stack with arch; full-width data services, each tile with Tune (MySQL/PostgreSQL
   settings dialog, saving restarts the service) and Restart (confirm); reconciliation beside retained data with
-  `delete` prune) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
+  `delete` prune; API tokens list (Revoke, confirm) beside a New token form cell that turns tamago and shows the
+  token once with a Warning notice) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
 
 ## 8. Do / Don't
 

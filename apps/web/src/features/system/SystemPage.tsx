@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { DockerInventory, type DockerKind } from "./DockerInventory.tsx";
 import { Mascot } from "../../components/Mascot.tsx";
 import { ReconcileTargets } from "./ReconcileTargets.tsx";
+import { ApiTokens } from "./ApiTokens.tsx";
 
 type Tab = "overview" | DockerKind;
 const tabLabels: Record<Tab, string> = {
@@ -108,6 +109,7 @@ function Overview() {
         <ReconcileTargets />
         <RetainedData />
       </div>
+      <ApiTokens />
     </>
   );
 }

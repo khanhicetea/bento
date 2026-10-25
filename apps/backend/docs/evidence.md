@@ -352,3 +352,17 @@ backend stopped, edge traffic and scheduled jobs continued.
   apps stay valid.
 - `TestIntegrationServiceSettings` extended temporarily (reverted) to create, tune, restart and verify data on
   MySQL 8.4 and 9.7 and PostgreSQL 14, 15, 16, 17 and 18: passed. A Bun 1.4 runtime image built. Not run: arm64.
+
+## MCP and API tokens (2026-10-25; live Docker, amd64)
+
+- Disposable stack, real backend: `bento mcp --scope read` over stdio answered `initialize`, listed 15 read tools and
+  ran `list_services`; `--scope operate` ran `restart_service redis` and `wait_operation` returned `succeeded` with
+  operation origin `local:operate`.
+- `bento token create|list|revoke`: the token printed once; `POST /mcp` with a read token ran `get_status`; the same
+  token got `403` on `POST /services/redis/restart`; `/mcp` without a token `401`; a revoked token `401`.
+- Unit/contract: route-scope table matches registered routes and keeps delete/restore/exec/credential routes
+  full-only; read/operate/admin enforcement, no CSRF for bearer writes, env redaction and env-change refusal,
+  backup-upload refusal, expired/revoked/malformed tokens, `X-Bento-Scope` on a real Unix socket, MCP stdio framing,
+  cancellation, and HTTP transport rules (Origin, protocol version, `GET` 405, sessions refused).
+- Not verified: a real Claude Code / Desktop client session against either transport; the System → AI access panel
+  was type-checked and built but not viewed in a browser.

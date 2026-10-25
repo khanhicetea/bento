@@ -802,6 +802,47 @@ export interface LoginRequest {
 export interface SetPasswordRequest {
   password: string;
 }
+/**
+ * TokenScope bounds what an API token or a scoped control-socket client may
+ * do: read < operate < admin. Routes outside every scope (deleting, restoring,
+ * exec, credentials) need a browser session or the unscoped CLI.
+ */
+export const TokenScopeRead = "read";
+export const TokenScopeOperate = "operate";
+export const TokenScopeAdmin = "admin";
+export type TokenScope = typeof TokenScopeRead | typeof TokenScopeOperate | typeof TokenScopeAdmin;
+/**
+ * APIToken describes a bearer token. The secret is never returned after
+ * creation.
+ */
+export interface APIToken {
+  id: string;
+  name: string;
+  scope: TokenScope;
+  createdAt: string;
+  /**
+   * ExpiresAt is empty for a token that never expires.
+   */
+  expiresAt?: string;
+  lastUsedAt?: string;
+}
+export interface APITokenList {
+  tokens: APIToken[];
+}
+export interface CreateAPITokenRequest {
+  name: string;
+  scope: TokenScope;
+  /**
+   * ExpiresInDays is 1-365; 0 means the token never expires.
+   */
+  expiresInDays?: number /* int */;
+}
+/**
+ * CreatedAPIToken carries the secret once; only its hash is stored.
+ */
+export interface CreatedAPIToken extends APIToken {
+  token: string;
+}
 export interface PermissionIssue {
   path: string;
   reason: string;

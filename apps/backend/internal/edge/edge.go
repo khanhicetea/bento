@@ -112,8 +112,12 @@ func Render(in Input) (map[string][]byte, error) {
 	if s.HTTPSPort != 443 {
 		suffix = ":" + strconv.Itoa(s.HTTPSPort)
 	}
-	if s.HTTPPort != 80 && s.HTTPPort != 0 {
-		httpSuffix = ":" + strconv.Itoa(s.HTTPPort)
+	httpPort := s.HTTPPort
+	if httpPort == 0 {
+		httpPort = 80
+	}
+	if httpPort != 80 {
+		httpSuffix = ":" + strconv.Itoa(httpPort)
 	}
 	apps := make(map[string]domain.App, len(in.Apps))
 	for _, a := range in.Apps {
@@ -197,6 +201,7 @@ func Render(in Input) (map[string][]byte, error) {
 		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3,
 		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
 		"TunnelIP": in.TunnelIP, "HTTPSPortSuffix": suffix, "HTTPPortSuffix": httpSuffix,
+		"HTTPPort": httpPort, "HTTPSPort": s.HTTPSPort,
 	})
 	if err != nil {
 		return nil, err

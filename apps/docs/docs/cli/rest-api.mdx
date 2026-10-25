@@ -14,6 +14,8 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 - **Long-running mutations** return `202` with `{operation, statusUrl}` and a `Location` header. Send
   `Idempotency-Key` to make retries safe.
 - **Browser writes** need the session cookie, an exact allowed `Origin`, and `X-CSRF-Token`.
+- **API tokens** (`Authorization: Bearer bento_pat_…`) need no CSRF header and are limited to their scope
+  (`read`, `operate`, `admin`); see [AI agents (MCP)](/cli/ai). Routes outside every scope return `403`.
 - **Timestamps:** RFC 3339 UTC with milliseconds.
 
 ## Endpoints
@@ -21,6 +23,7 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 | Area | Endpoints |
 | --- | --- |
 | Session | `GET/POST/DELETE /session`, `PUT /auth/password` |
+| API tokens | `GET/POST /tokens`, `DELETE /tokens/{id}` (session or CLI only; `POST` returns the token once) |
 | System | `GET /system`, `GET /catalog`, `GET /reconcile` |
 | Apps | `GET/POST /apps`, `GET/PATCH/DELETE /apps/{id}`, `POST /apps/{id}/{start,stop,restart,publish,unpublish}` |
 | App data | `POST /apps/{id}/bindings`, `POST /apps/{id}/bindings/{bid}/databases`, `POST /apps/{id}/permissions` |
@@ -45,6 +48,8 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 | `DELETE /apps/{id}/restic/keys/{keyId}` | Remove a key |
 | `POST /apps/{id}/restic/inspect`, `POST /apps/{id}/restic/clone` | Clone needs `clone <new-slug>` |
 | `POST /apps/restore-from-backup/inspect`, `POST /apps/restore-from-backup` | Another stack's repository; `clone <new-slug>` |
+
+MCP is served at `POST /mcp` (outside `/api/v1`) for API tokens; see [AI agents (MCP)](/cli/ai).
 
 The scheduler UI is not part of the JSON API: it is proxied at `/apps/<slug>/scheduler/…` and needs a browser session
 and an exact allowed `Origin`.

@@ -197,6 +197,14 @@ type Submission struct {
 	Mutate func(ctx context.Context, q store.Q) error
 }
 
+type originKey struct{}
+
+// WithOrigin labels operations submitted under ctx that set no origin of
+// their own, so the journal shows which credential asked (e.g. "token:ci").
+func WithOrigin(ctx context.Context, origin string) context.Context {
+	return context.WithValue(ctx, originKey{}, origin)
+}
+
 // Submit persists intent and the operation atomically, then wakes the
 // executor. A repeated idempotency key returns the original operation
 // without re-applying Mutate.
@@ -210,6 +218,9 @@ func (c *Controller) Submit(ctx context.Context, s Submission) (store.Operation,
 	}
 	if _, ok := c.handlers[s.Kind]; !ok {
 		return store.Operation{}, false, fmt.Errorf("unknown operation kind %q", s.Kind)
+	}
+	if s.Origin == "" {
+		s.Origin, _ = ctx.Value(originKey{}).(string)
 	}
 	raw, err := json.Marshal(s.Request)
 	if err != nil {

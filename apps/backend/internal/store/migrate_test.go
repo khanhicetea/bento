@@ -22,6 +22,7 @@ func makeV3DB(t *testing.T, path string) {
 	for _, stmt := range []string{
 		"DROP TABLE hosts",
 		"ALTER TABLE data_services DROP COLUMN settings_json",
+		"DROP TABLE api_tokens",
 		"ALTER TABLE apps DROP COLUMN access_log",
 		`ALTER TABLE apps ADD COLUMN route_json TEXT NOT NULL DEFAULT '{"tls":"none"}'`,
 		`CREATE TABLE proxies (
@@ -95,9 +96,9 @@ func userVersion(t *testing.T, path string) int64 {
 	return v
 }
 
-func TestCheckCompatibleAcceptsTwoToFiveOnly(t *testing.T) {
+func TestCheckCompatibleAcceptsTwoToSixOnly(t *testing.T) {
 	dir := t.TempDir()
-	for version, ok := range map[int]bool{1: false, 2: true, 3: true, 4: true, 5: true, 6: false} {
+	for version, ok := range map[int]bool{1: false, 2: true, 3: true, 4: true, 5: true, 6: true, 7: false} {
 		path := filepath.Join(dir, "v"+string(rune('0'+version))+".db")
 		makeForeignDB(t, path, ApplicationID, version)
 		if err := CheckCompatible(path); (err == nil) != ok {
@@ -289,6 +290,7 @@ func TestOpenMigratesV4ServiceSettings(t *testing.T) {
 	}
 	for _, stmt := range []string{
 		"ALTER TABLE data_services DROP COLUMN settings_json",
+		"DROP TABLE api_tokens",
 		`INSERT INTO data_services(name, engine, version, image, volume, initialized, created_at)
 		  VALUES('mysql84', 'mysql', '8.4', 'mysql:8.4', 'v-mysql84', 1, '2026-01-02T03:04:05Z')`,
 		"PRAGMA user_version = 4",
@@ -315,5 +317,47 @@ func TestOpenMigratesV4ServiceSettings(t *testing.T) {
 	}
 	if err := SetServiceSettings(ctx, s.DB(), "nope", want); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown service: %v", err)
+	}
+}
+
+func TestOpenMigratesV5APITokens(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bento.db")
+	s, err := Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{"DROP TABLE api_tokens", "PRAGMA user_version = 5"} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	if s, err = Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	at := time.Now().UTC()
+	tok := APIToken{ID: "tok_1", Name: "ci", Scope: "read", TokenHash: "h1", CreatedAt: at}
+	if err := InsertAPIToken(ctx, s.DB(), tok); err != nil {
+		t.Fatal(err)
+	}
+	if err := InsertAPIToken(ctx, s.DB(), APIToken{ID: "tok_2", Name: "ci", Scope: "read", TokenHash: "h2",
+		CreatedAt: at}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate name: %v", err)
+	}
+	if err := InsertAPIToken(ctx, s.DB(), APIToken{ID: "tok_3", Name: "x", Scope: "root", TokenHash: "h3",
+		CreatedAt: at}); err == nil {
+		t.Fatal("unknown scope stored")
+	}
+	got, err := GetLiveAPIToken(ctx, s.DB(), "h1", at)
+	if err != nil || got.Name != "ci" || !got.ExpiresAt.IsZero() {
+		t.Fatalf("get %+v %v", got, err)
+	}
+	if err := DeleteAPIToken(ctx, s.DB(), "ci"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GetLiveAPIToken(ctx, s.DB(), "h1", at); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted token: %v", err)
 	}
 }

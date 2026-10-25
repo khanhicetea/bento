@@ -51,8 +51,18 @@ type Server struct {
 
 // Handler builds the route table. local marks the Unix control socket.
 func (s *Server) Handler() http.Handler {
+	h, _ := s.routes()
+	return h
+}
+
+// routes builds the handler and returns the authenticated API patterns.
+func (s *Server) routes() (http.Handler, []string) {
 	mux := http.NewServeMux()
-	api := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireAuth(h)) }
+	var patterns []string
+	api := func(pattern string, h http.HandlerFunc) {
+		patterns = append(patterns, pattern)
+		mux.Handle(pattern, s.requireAuth(routeScope(pattern), h))
+	}
 
 	mux.HandleFunc("GET /api/v1/session", s.handleGetSession)
 	mux.HandleFunc("POST /api/v1/session", s.handleLogin)
@@ -152,6 +162,14 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/v1/backups/rclone/terminal", s.handleRcloneTerminal)
 	api("POST /api/v1/stack/export", s.handleExport)
 
+	api("GET /api/v1/tokens", s.handleListTokens)
+	api("POST /api/v1/tokens", s.handleCreateToken)
+	api("DELETE /api/v1/tokens/{id}", s.handleDeleteToken)
+
+	// MCP over Streamable HTTP. Tool calls re-enter this mux in-process with
+	// the caller's principal, so each one is checked against routeScopes.
+	mux.Handle("/mcp", s.requireAuth(scopeRead, s.mcpHandler(mux)))
+
 	// minicrond's UI, served under runtime.SchedulerBasePath. The bare
 	// /apps/{slug}/scheduler stays a client route of the web UI; registering
 	// it keeps ServeMux from redirecting it into the proxy.
@@ -162,7 +180,7 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, s.Log, notFound("no such endpoint"))
 	}))
 	mux.Handle("/", s.webUI())
-	return securityHeaders(mux)
+	return securityHeaders(mux), patterns
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -487,6 +505,11 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		in.Ingress = &m
 	}
 	if req.Env != nil {
+		if restricted(r.Context()) {
+			writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden,
+				msg: "env changes need a browser session or the bento CLI"})
+			return
+		}
 		env := make([]domain.EnvVar, 0, len(*req.Env))
 		for _, e := range *req.Env {
 			env = append(env, domain.EnvVar(e))

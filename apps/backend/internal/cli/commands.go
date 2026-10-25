@@ -45,6 +45,9 @@ Backend:
 Client (requires the running backend):
   status
   auth set-password                                   reads the password from the terminal or stdin
+  mcp [--scope read|operate|admin]                    MCP server on stdio for a local AI client (default read)
+  token list | token create NAME --scope read|operate|admin [--expires-days 90] | token revoke NAME|ID
+                                                      bearer tokens for POST /mcp and the API (shown once)
   apps
   app show SLUG | create --json FILE | update SLUG --json FILE
   app start|stop|restart|publish|unpublish SLUG
@@ -330,6 +333,10 @@ func (r *runner) run(args []string) error {
 			st.QueuedOps,
 		)
 		return nil
+	case "mcp":
+		return r.runMCP(ctx, args[1:])
+	case "token":
+		return r.runToken(ctx, args[1:])
 	case "auth":
 		if len(args) < 2 || args[1] != "set-password" {
 			return errors.New("usage: bento auth set-password")

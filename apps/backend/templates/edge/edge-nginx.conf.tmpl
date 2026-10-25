@@ -77,8 +77,13 @@ http {
     "1:https" https;
     "1:http"  http;
   }
+  # The edge's published ports, which may differ from the container's 80/443.
+  map $scheme $bento_published_port {
+    default {{.HTTPPort}};
+    https   {{.HTTPSPort}};
+  }
   map "$bento_from_tunnel:$http_x_forwarded_proto" $bento_port {
-    default   $server_port;
+    default   $bento_published_port;
     "1:https" 443;
     "1:http"  80;
   }
@@ -91,6 +96,17 @@ http {
   map $bento_from_tunnel $bento_http_suffix {
     default "{{.HTTPPortSuffix}}";
     1       "";
+  }
+  # Host as the visitor typed it, so apps build links with a non-standard
+  # published port. Normalised $host plus the edge's own suffix, never the
+  # raw client Host header.
+  map $scheme $bento_scheme_suffix {
+    default "{{.HTTPPortSuffix}}";
+    https   "{{.HTTPSPortSuffix}}";
+  }
+  map $bento_from_tunnel $bento_forwarded_host {
+    default $host$bento_scheme_suffix;
+    1       $host;
   }
 
   log_format bento_edge '$remote_addr - [$time_local] "$request" $status $body_bytes_sent '

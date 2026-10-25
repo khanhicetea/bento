@@ -204,6 +204,8 @@ func rewriteImportedState(
 		// Pending/interrupted work in the archive is never replayed.
 		"UPDATE operations SET state='cancelled', error_code='imported', error_message='not replayed after import' WHERE state IN ('queued','running')",
 		"DELETE FROM sessions",
+		// API tokens belong to the source host; a clone must not accept them.
+		"DELETE FROM api_tokens",
 		// New networks are planned for this host.
 		"DELETE FROM settings WHERE key = 'network'",
 		// Schedules stay configured but off; bookkeeping restarts on this host.

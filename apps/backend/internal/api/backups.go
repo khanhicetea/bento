@@ -55,6 +55,12 @@ func (s *Server) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
+	if req.RcloneRemote != "" && restricted(r.Context()) {
+		// Uploading moves data off the host; tokens may only back up locally.
+		writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden,
+			msg: "uploading backups needs a browser session or the bento CLI"})
+		return
+	}
 	idem, err := idempotencyKey(r)
 	if err != nil {
 		writeError(w, s.Log, err)

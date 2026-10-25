@@ -849,6 +849,48 @@ type SetPasswordRequest struct {
 	Password string `json:"password"`
 }
 
+// ---- API tokens ----
+
+// TokenScope bounds what an API token or a scoped control-socket client may
+// do: read < operate < admin. Routes outside every scope (deleting, restoring,
+// exec, credentials) need a browser session or the unscoped CLI.
+type TokenScope string
+
+const (
+	TokenScopeRead    TokenScope = "read"
+	TokenScopeOperate TokenScope = "operate"
+	TokenScopeAdmin   TokenScope = "admin"
+)
+
+// APIToken describes a bearer token. The secret is never returned after
+// creation.
+type APIToken struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Scope     TokenScope `json:"scope"`
+	CreatedAt string     `json:"createdAt"`
+	// ExpiresAt is empty for a token that never expires.
+	ExpiresAt  string `json:"expiresAt,omitempty"`
+	LastUsedAt string `json:"lastUsedAt,omitempty"`
+}
+
+type APITokenList struct {
+	Tokens []APIToken `json:"tokens"`
+}
+
+type CreateAPITokenRequest struct {
+	Name  string     `json:"name"`
+	Scope TokenScope `json:"scope"`
+	// ExpiresInDays is 1-365; 0 means the token never expires.
+	ExpiresInDays int `json:"expiresInDays,omitempty"`
+}
+
+// CreatedAPIToken carries the secret once; only its hash is stored.
+type CreatedAPIToken struct {
+	APIToken `tstype:",extends"`
+	Token    string `json:"token"`
+}
+
 type PermissionIssue struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
