@@ -19,26 +19,27 @@ import (
 var PHPVersions = map[string]string{
 	"7.4": DebianBase,
 	"8.0": DebianBase,
-	"8.1": DebianBase,
-	"8.2": "php:8.2-fpm-bookworm@sha256:91d643dd148528402ae8e3eb897f2ba95e0cc5217ca75c97ec38f09fbf260c66",
-	"8.3": "php:8.3-fpm-bookworm@sha256:6b4641a875dd3e0f7551b2751e1f5909084856d18166af7fbb522ac230feb702",
-	"8.4": "php:8.4-fpm-bookworm@sha256:df5a5113e1179ddf4560cd15727eb3812f6457829756d2a96c6c11bb4c250089",
-	"8.5": "php:8.5-fpm-bookworm@sha256:d3db5340c7ecfb1e3a26af5d3d9de8b4e160cdd75692a830b5cb74b0b85db2cf",
+	"8.1": DebianBookwormBase,
+	"8.2": "php:8.2-fpm-trixie@sha256:77900c43ba8b8f2f61c73bcf68afbfb1b72a349052472e7640d402ef998754b3",
+	"8.3": "php:8.3-fpm-trixie@sha256:56e2cf0558ddfbe36e90030f763b72be2f763bcd9075890e9c68420e0dfa827e",
+	"8.4": "php:8.4-fpm-trixie@sha256:af1728147713459bda545446e3fae81cea5119543c46f28b9a077c7b3ff149c2",
+	"8.5": "php:8.5-fpm-trixie@sha256:f49965c6e6a237eb3b27a6fc565e167839dc8abc65ee0652af0078f6ecdf4bbd",
 }
 
 var HTTPToolchains = map[string]map[string]string{
 	"node": {
-		"20": "node:20-bookworm-slim",
-		"22": "node:22-bookworm-slim",
-		"24": "node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6",
+		"20": "node:20-trixie-slim@sha256:abfbe12cc943141a0c9e8c0a57d710df1dadd95d35e8662cc02958b284d1f35b",
+		"22": "node:22-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf",
+		"24": "node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea",
 	},
 	"bun": {
 		"1.2": "oven/bun:1.2-debian",
 		"1.3": "oven/bun:1.3-debian",
+		"1.4": "oven/bun:1.4-debian@sha256:93d5032fe06d163427822dc1598f420363759bb18155c9cc90eb1be05a64a19e",
 	},
 	"python": {
-		"3.12": "python:3.12-slim-bookworm",
-		"3.13": "python:3.13-slim-bookworm",
+		"3.12": "python:3.12-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704",
+		"3.13": "python:3.13-slim-trixie@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962",
 	},
 }
 
@@ -56,14 +57,19 @@ var PHPSuryPackages = map[string]string{
 // (1505 8500 A023 5D97 F5D1 0063 B188 E2B6 95BD 4743, expires 2028-02-04).
 const SuryKeySHA256 = "b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c"
 
-const DebianBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+const DebianBase = "debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
+
+// DebianBookwormBase is the base of PHP 8.1 only: Sury's trixie arm64 index
+// still carries the unfixed 8.1.34-8, below the PHPSuryPackages floor. Move 8.1
+// to DebianBase once trixie arm64 has 8.1.34-9 or newer.
+const DebianBookwormBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
 
 // RuntimeDebianBase returns the Debian base whose release matches a runtime
 // key's base image. End-of-life bullseye releases reuse the PHP base itself:
 // the current debian:bullseye-slim carries security updates that
 // archive.debian.org cannot satisfy, while the PHP image's packages resolve.
 func (k ImageKey) RuntimeDebianBase() string {
-	if ref, err := k.BaseImage(); err == nil && strings.Contains(ref, "-bullseye") {
+	if ref, err := k.BaseImage(); err == nil && (strings.Contains(ref, "-bullseye") || ref == DebianBookwormBase) {
 		return ref
 	}
 	return DebianBase
@@ -101,11 +107,11 @@ var ResticArtifacts = map[string]string{
 
 // Pulled infrastructure images.
 const (
-	EdgeImage    = "nginx:stable-trixie@sha256:b972f831f200b19ef0767938224f9711e74cd783718738cd7405d5cabf75c442"
+	EdgeImage    = "nginx:stable-trixie@sha256:a7675fcee220f59b4a99f7098c06a0d5d999c2c0ee37c0211efb780536e5cb20"
 	TunnelImage  = "cloudflare/cloudflared:2025.9.1@sha256:4604b477520dc8322af5427da68b44f0bf814938e9d2e4814f2249ee4b03ffdf"
 	RcloneImage  = "rclone/rclone:1.71.1@sha256:d5971950c2b370fb04dd3292541b5bda6d9103143fd7e345aeb435a399388afc"
-	RedisImage   = "redis:8.2-bookworm@sha256:164c759a0c342ee69d08fc99219382b0fd682181465c0df2e0e6911f4c85d73c"
-	RedisVersion = "8.2"
+	RedisImage   = "redis:8.4-trixie@sha256:6a12a187547eb2eac4da4528f9d9787d69f3848e513480baedfd75e3b2ac393e"
+	RedisVersion = "8.4"
 	// AdminerImage serves the database browser (one shared container).
 	AdminerImage = "adminer:5.5.1@sha256:6c19fd07aaf25361fbc1541a7015c86cf670b830951cfb0d47869f34ec0ef2cf"
 )
@@ -119,8 +125,8 @@ const (
 
 var MySQLVersions = map[string]string{
 	"8.0": "mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b", // EOL upstream; kept for existing volumes, 8.0 -> 8.4 in-place upgrade is supported
-	"8.4": "mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d",
-	"9.4": "mysql:9.4@sha256:135bc87cce147c3d28cecb9ad270b814cb52805af7ddeea83bfcaf157d05a6b2",
+	"8.4": "mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69",
+	"9.7": "mysql:9.7@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54", // LTS
 }
 
 // PostgreSQL 17+ use the pglayers "full" profile (official postgres base plus
@@ -128,11 +134,11 @@ var MySQLVersions = map[string]string{
 // shared_preload_libraries preconfigured). pglayers does not publish 14-16, so
 // those use the official image with its bundled contrib extensions.
 var PostgresVersions = map[string]string{
-	"14": "postgres:14-bookworm@sha256:dcc2ca942d8518144f387a0c2630188427835f984caaed0418b986928e761809",
-	"15": "postgres:15-bookworm@sha256:539ceaaae49b3a7c8a04467cf00cc6788d8e3f1675df41860d86eebc4c40524f",
-	"16": "postgres:16-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67",
-	"17": "ghcr.io/pglayers/pglayers-full:17@sha256:b7969f13473358d72a34c23391449f7065090a1ecc455cba75913287e975044c",
-	"18": "ghcr.io/pglayers/pglayers-full:18@sha256:c71d1b7bd757dfb6049a85a1cdaaf5610675c215549ccfa31351133189f335e0",
+	"14": "postgres:14-trixie@sha256:8ab94f61668dc73bbab4dc13273ff2fc37e635536af62aef5306a49a9682a446",
+	"15": "postgres:15-trixie@sha256:baa22e6286bf832cb147b8bb5aa9d8bc999846d69c21d11bf63f58fbeed1fa48",
+	"16": "postgres:16-trixie@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97",
+	"17": "ghcr.io/pglayers/pglayers-full:17@sha256:f64f47233cf3dcb69121e3785f0acbc39af21c13f8f909538f71b7b21a934768",
+	"18": "ghcr.io/pglayers/pglayers-full:18@sha256:d22f47895e8c2be156e048a5644c79f534090281fb0e9954222960fa008296de",
 }
 
 // PHP performance modes. Both run one ondemand FPM pool: workers are forked

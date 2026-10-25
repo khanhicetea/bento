@@ -303,3 +303,52 @@ backend stopped, edge traffic and scheduled jobs continued.
   Sury images track the repository at build time, not a snapshot: a rebuild picks up newer packages, but nothing
   rebuilds existing images until the floor or another build input changes. The `bullseye` handling in
   `apt-sources.sh` and `RuntimeDebianBase` is now unused.
+
+## PHP images moved to Debian trixie (2026-10-25; live Docker 29.8.1, amd64)
+
+- PHP 8.2-8.5 now use `php:<v>-fpm-trixie` pinned by index digest (same fixed releases: 8.2.35, 8.3.36, 8.4.27,
+  8.5.12; `php -v` checked). `DebianBase` is `debian:trixie-slim` (digest-pinned), which PHP 7.4 and 8.0 (Sury
+  packages) build on; nginx there is 1.26.3. Changing the base changes every PHP image hash, so PHP apps rebuild.
+- PHP 8.1 stays on `DebianBookwormBase`: Sury's trixie arm64 index still has the unfixed 8.1.34-8 (amd64 and arm64
+  have the fixed 7.4/8.0 and amd64 has 8.1.34-9), and the build refuses a package below `PHPSuryPackages`. Move 8.1 to
+  `DebianBase` once trixie arm64 has 8.1.34-9 or newer.
+- The runtime-deps scan in `templates/images/php/Dockerfile` now drops `dpkg -S` "diversion by" lines, which trixie
+  emits and which broke the apt install with bogus package names.
+- `TestIntegrationBuildRuntimeImages` (8.4, 7.4, 8.0, 8.1, node 24) and `TestIntegrationAppLifecycle` (8.4) passed.
+  Not run: PHP 8.2, 8.3 and 8.5 builds, arm64 builds, Python/Bun/Node 20/22 (still bookworm), Redis and PostgreSQL
+  (still bookworm).
+
+## Node and edge nginx update (2026-10-25; live Docker 29.8.1, amd64)
+
+- Node 24 is `node:24-trixie-slim` 24.22.1 and Node 22 is `node:22-trixie-slim` 22.23.4, both pinned by digest (were
+  24.21.0 and an unpinned 22 tag, on bookworm). The Oct 21 Node security releases are 22.23.4, 24.22.1 and 26.12.1; the
+  advisory text itself was not read (only secondary reports), so check the CVE list before quoting it. The PHP images
+  copy Node and npm from the Node 24 image, so every PHP image hash changed and PHP apps rebuild.
+- Node 20 is end of life (last release 20.20.2) and has no fix; it is left as `node:20-bookworm-slim`. Not removed:
+  existing apps may use it.
+- Edge nginx is `nginx:stable-trixie` 1.30.6 (was 1.30.5), pinned by digest.
+- nginx inside the PHP runtime images is Debian's package (1.26.3 on trixie); Debian backports fixes under the old
+  version number, and the package is only refreshed when an image is rebuilt.
+- Passed: `TestIntegrationBuildRuntimeImages` and the `internal/integration` suite with `BENTO_DOCKER_TESTS=1`.
+  Not run: arm64.
+
+## Remaining toolchains on trixie (2026-10-25; live Docker 29.8.1, amd64)
+
+- Node 20 (still EOL, 20.20.2), Python 3.12 and 3.13 moved to the `-trixie-slim` variants, pinned by digest. Built
+  with a temporary integration test (removed): node 20, node 22, python 3.12, python 3.13.
+- Superseded below: Redis, PostgreSQL 14-16 and Bun were left on bookworm at this point.
+
+## Data services and Bun refreshed (2026-10-25; live Docker 29.8.1, amd64)
+
+- Redis 8.2 -> `redis:8.4-trixie` 8.4.7 (`RedisVersion` is now 8.4), pinned by digest. Booted by hand with the generated
+  redis.conf + ACL file as 999:999: NOAUTH liveness reply, `ACL LOAD`, `CONFIG SET maxmemory`, AOF on, and a prefix
+  user refused outside its prefix and refused FLUSHALL. No automated integration test covers Redis.
+- PostgreSQL 14, 15, 16 -> `postgres:<v>-trixie` (14.24, 15.19, 16.15). Existing data directories were not reindexed
+  (dev phase); the glibc locale change from bookworm can leave text indexes inconsistent. pglayers 17 (17.11) and 18
+  (18.6) digests refreshed; both were already trixie.
+- MySQL 8.4 -> 8.4.13 (new digest). The unmaintained `9.4` pin is replaced by `9.7` (LTS, 9.7.4); 8.0 stays at 8.0.46
+  (EOL upstream). The images are Oracle Linux 9, not Debian. A version key is only read when a service is created.
+- Bun 1.4 added: `oven/bun:1.4-debian` 1.4.4 (trixie), pinned by digest. 1.2 (bookworm) and 1.3 are kept so existing
+  apps stay valid.
+- `TestIntegrationServiceSettings` extended temporarily (reverted) to create, tune, restart and verify data on
+  MySQL 8.4 and 9.7 and PostgreSQL 14, 15, 16, 17 and 18: passed. A Bun 1.4 runtime image built. Not run: arm64.

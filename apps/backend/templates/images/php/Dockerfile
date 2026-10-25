@@ -24,7 +24,7 @@ RUN set -eux; \
     \( -perm -u+x -o -name '*.so' \) -exec ldd {} + 2>/dev/null \
     | awk '/=> \// { print $3 }' | sort -u \
     | while read -r lib; do echo "$lib"; realpath "$lib"; done \
-    | xargs -r dpkg -S 2>/dev/null | cut -d: -f1 | sort -u \
+    | xargs -r dpkg -S 2>/dev/null | grep -v '^diversion by' | cut -d: -f1 | sort -u \
     > /usr/local/share/bento-php-runtime-deps; \
   cat /usr/local/share/bento-php-runtime-deps; \
   rm -rf /usr/local/include/php /usr/local/lib/php/build /usr/local/bin/docker-php-ext-* \

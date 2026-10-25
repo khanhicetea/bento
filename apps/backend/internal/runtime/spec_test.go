@@ -346,8 +346,12 @@ func TestSuryPHPImagesBuildFromPackages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		wantBase := domain.DebianBase
+		if v == "8.1" {
+			wantBase = domain.DebianBookwormBase
+		}
 		if spec.ContextKind != "php-sury" || spec.Args["PHP_VERSION"] != v || spec.Args["PHP_MIN_PKG_VERSION"] != floor ||
-			spec.Args["SURY_KEY_SHA256"] != domain.SuryKeySHA256 || spec.Args["PHP_BASE"] != "" || spec.Args["DEBIAN_BASE"] != domain.DebianBase {
+			spec.Args["SURY_KEY_SHA256"] != domain.SuryKeySHA256 || spec.Args["PHP_BASE"] != "" || spec.Args["DEBIAN_BASE"] != wantBase {
 			t.Fatalf("php %s plan: %s %v", v, spec.ContextKind, spec.Args)
 		}
 	}
