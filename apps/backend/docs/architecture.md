@@ -58,22 +58,17 @@ One SQLite file (`bento.db`, `0600`) opened with `modernc.org/sqlite` (pure Go),
 connection, and `BEGIN IMMEDIATE` transactions.
 
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
-  version (currently 4). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a foreign, older
-  than 2, newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). It accepts 2 and 3 (to migrate) and 4.
-- **Migrations:** `store.Open` runs every step from the file's version up to the current one in one transaction (the
-  version is re-read inside it); a failure leaves the file at its old version. v2 → v3 adds `apps.home_path`. v3 → v4
-  moves domain ownership to Ingress: each `domains` row becomes a `hosts` row (app domains target their app, proxy
-  domains become upstream hosts carrying the proxy's upstreams and enabled flag), each with its former owner's
-  `route_json`; the former primary domain gets the lowest `position`. `apps.route_json` becomes
-  `apps.access_log` (the app-local Nginx log), and `domains` and `proxies` are dropped. A domain row whose owner is
-  missing refuses the migration. `stack.Import` copies the archived `state.db` and opens it through the same path, so a v2
-  export imports and migrates. `apps.home_path` (NULL = `/home/<slug>`) is the in-container home
-  (`domain.App.HomePath`, returned by `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as
-  `/home/<slug-shaped>`, written only at insert, and exposed read-only as the App DTO's `homePath`.
+  version (currently 1, the MVP baseline). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a
+  foreign, older, newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). Only the current version is
+  accepted; there are no migrations yet. `stack.Import` copies the archived `state.db` and opens it through the same
+  path, so an export from another schema version is refused before anything is created.
+- **App home:** `apps.home_path` (NULL = `/home/<slug>`) is the in-container home (`domain.App.HomePath`, returned by
+  `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as `/home/<slug-shaped>`, written only at
+  insert, and exposed read-only as the App DTO's `homePath`. `apps.access_log` toggles the app-local Nginx log.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
   target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
-  `operation_events` (≤200 events each), `sessions`, `api_tokens` (schema 6; SHA-256 hashes, scope, expiry), `images`,
+  `operation_events` (≤200 events each), `sessions`, `api_tokens` (SHA-256 hashes, scope, expiry),
   `backup_runs`.
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
   across a Docker call.

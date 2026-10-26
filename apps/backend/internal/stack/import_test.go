@@ -2,11 +2,10 @@ package stack
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -127,70 +126,26 @@ func openImported(t *testing.T, root string) *store.Store {
 	return s
 }
 
-// downgradeState rewrites an exported state.db to an older schema: v3 has
-// app-owned domains and proxies instead of hosts; v2 also lacks
-// apps.home_path. The export's app keeps one domain.
-func downgradeState(t *testing.T, exp exportedStack, version int) {
-	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(exp.dir, "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	stmts := []string{
-		"DROP TABLE hosts",
-		"ALTER TABLE data_services DROP COLUMN settings_json",
-		"DROP TABLE api_tokens",
-		"ALTER TABLE apps DROP COLUMN access_log",
-		`ALTER TABLE apps ADD COLUMN route_json TEXT NOT NULL DEFAULT '{"tls":"none"}'`,
-		`CREATE TABLE proxies (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, upstreams_json TEXT NOT NULL,
-		  route_json TEXT NOT NULL, enabled INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT`,
-		`CREATE TABLE domains (name TEXT PRIMARY KEY, owner_kind TEXT NOT NULL, owner_id TEXT NOT NULL,
-		  is_primary INTEGER NOT NULL, created_at TEXT NOT NULL) STRICT`,
-		`INSERT INTO domains VALUES('shop.example.com', 'app', '` + exp.app.ID + `', 1, '2026-01-02T03:04:05Z')`,
-	}
-	if version == 2 {
-		stmts = append(stmts, "ALTER TABLE apps DROP COLUMN home_path")
-	}
-	for _, q := range append(stmts, fmt.Sprintf("PRAGMA user_version = %d", version)) {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatal(err)
-		}
-	}
+// An export holding any other state schema is refused before anything is
+// created.
+func TestImportRefusesOtherSchemaVersion(t *testing.T) {
+	exp := writeExport(t)
 	m, err := transfer.ReadManifest(exp.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.SchemaVersion = version
+	m.SchemaVersion = store.SchemaVersion + 1
 	if err := transfer.WriteManifest(exp.dir, m); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// Older-schema exports import and are migrated to the current schema.
-func TestImportMigratesOlderState(t *testing.T) {
-	for _, version := range []int{2, 3} {
-		t.Run(fmt.Sprint(version), func(t *testing.T) {
-			testImportMigrates(t, version)
-		})
-	}
-}
-
-func testImportMigrates(t *testing.T, version int) {
-	exp := writeExport(t)
-	ctx := t.Context()
-	downgradeState(t, exp, version)
 	root := filepath.Join(t.TempDir(), "clone")
 	rng := &domain.UIDRange{First: 50000, Last: 59999}
-	if err := Import(ctx, docker.NewFake(), discard, ImportOptions{Root: root, From: exp.dir, Name: "clone", NewUIDRange: rng}); err != nil {
-		t.Fatal(err)
+	err = Import(t.Context(), docker.NewFake(), discard, ImportOptions{Root: root, From: exp.dir, Name: "clone", NewUIDRange: rng})
+	if err == nil || !strings.Contains(err.Error(), "state schema") {
+		t.Fatalf("import of schema %d: %v", m.SchemaVersion, err)
 	}
-	if _, v, err := store.Inspect(platform.Layout{Root: root}.Database()); err != nil || v != store.SchemaVersion {
-		t.Fatalf("imported schema version %d %v", v, err)
-	}
-	app, err := store.GetApp(ctx, openImported(t, root).DB(), exp.app.ID)
-	if err != nil || app.ContainerHome() != "/home/shop" || len(app.Hosts) != 1 || app.Hosts[0].Name != "shop.example.com" {
-		t.Fatalf("app %+v %v", app, err)
+	if _, err := os.Stat(root); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("refused import touched the root: %v", err)
 	}
 }
 

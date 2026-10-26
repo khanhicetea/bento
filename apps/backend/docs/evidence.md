@@ -5,6 +5,9 @@ What has been verified, how, and what has not. Recorded 2026-09-27 on Linux x86_
 
 **Only amd64 was executed.** The arm64 binary is cross-compiled (static ELF aarch64) but has not been run.
 
+Dated sections below are a log. Sections that mention schema versions 2–6 or store migrations describe the pre-MVP
+store; the MVP starts again from one baseline schema (version 1) with no migrations.
+
 ## Repeatable checks
 
 ```bash
@@ -415,3 +418,17 @@ backend stopped, edge traffic and scheduled jobs continued.
   `Alt-Svc` was sent on the direct path and not on the front path (scratch edge with HTTP/3).
 - Not verified: a real VPS over Tailscale, HAProxy as the sender, ACME issuance through the front proxy, the edge
   start retry after a reboot before `tailscale0` is up, the Ingress page in a browser.
+
+## MVP baseline schema and fresh live e2e (2026-10-26; live Docker 29.8.1, amd64)
+
+- The store has one baseline schema, version 1, with no migration chain; the unused `images` table is gone.
+  `store.CheckCompatible` accepts only version 1 and refuses others without writing (unit tests cover foreign, older,
+  newer, and non-SQLite files); `stack.Import` refuses an export with another schema version before creating the root.
+- `make ci` as root and `make test-integration` (real Docker) passed. `bun run fmt:check`, `lint`, `check`, and
+  `web:build` passed.
+- A fresh stack initialised by the new binary has `user_version` 1, `application_id` `0x424E5431`, and 15 tables.
+- The full live e2e (`docs/e2e-live.md` sections 1–10) passed on that fresh stack: five runtimes behind a real
+  Cloudflare Tunnel, private SSH deploy keys, GitHub push webhooks, forged webhook calls, ingress modes, R2 database
+  dumps and restore, restic app backup, clone and disaster restore, removal/prune/UID non-reuse, Laravel with
+  scheduler and queue worker, Cachet, and Invoice Ninja.
+- Not verified: ACME issuance, HTTP/3, arm64, scheduled backups, non-GitHub webhooks.

@@ -27,7 +27,7 @@ MySQL, PostgreSQL, and Redis data live in Docker volumes named `bento-<stack>-<s
 
 ## Notes
 
-- `bento.db` schema version 3 adds `apps.home_path`; a version 2 database is migrated when opened. Unknown versions
-  are refused.
+- `bento.db` carries a schema version. A database from an unknown or unsupported version is refused and left
+  untouched.
 - An app restored from an app backup keeps the source's path inside the container (e.g. `/home/shop`); the host
   directory is still `homes/<new-slug>/`.

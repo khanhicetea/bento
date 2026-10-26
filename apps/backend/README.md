@@ -47,9 +47,11 @@ of the UI; run `make web build` to embed the UI.
 ```text
 cmd/bento/            main: delegates to internal/cli
 templates/            embedded, immutable assets (see templates.go)
-  images/{common,php,http}/   runtime image build contexts (Dockerfile + rootfs)
+  images/{common,php,php-sury,http}/   runtime image build contexts (Dockerfile + rootfs)
+  images-standalone/restic/  app backup job image
   config/             per-app Nginx, FastCGI, PHP-FPM, minicrond templates
   edge/               edge Nginx main config and site templates
+  dbadmin/            database browser router
 internal/
   api/                REST handlers, auth/sessions/CSRF, SSE, WebSocket terminal, scheduler gateway, SPA serving
   api/dto/            the wire contract (source for the generated TypeScript)
@@ -61,6 +63,7 @@ internal/
   domain/             model, validation, runtime catalog and pinned images
   edge/               edge config rendering, generations (stage/validate/swap), boot certificate
   integration/        real-Docker acceptance tests (gated)
+  mcp/                MCP server over scoped API tokens
   operations/         controller, operation handlers, acceptance (intent) functions
   platform/           stack layout, symlink-safe filesystem helpers, locks, ids, host id checks
   reconcile/          event watch + periodic resync, retry budgets

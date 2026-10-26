@@ -45,7 +45,6 @@ var (
 	domainLabel     = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	dbNamePattern   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 	dbSuffixPattern = regexp.MustCompile(`^[a-z][a-z0-9]{0,29}$`)
-	serviceName     = regexp.MustCompile(`^(mysql|postgres)[0-9]{1,3}$`)
 	readyPathRegexp = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@/%?-]{0,255}$`)
 	certNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 )
@@ -138,13 +137,6 @@ func ValidateDatabaseSuffix(suffix string) error {
 func ValidateDatabaseName(name string) error {
 	if !dbNamePattern.MatchString(name) {
 		return fmt.Errorf("must match %s", dbNamePattern)
-	}
-	return nil
-}
-
-func ValidateServiceName(name string) error {
-	if !serviceName.MatchString(name) {
-		return errors.New("must look like mysql84 or postgres17")
 	}
 	return nil
 }

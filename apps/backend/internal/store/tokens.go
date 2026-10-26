@@ -22,18 +22,6 @@ type APIToken struct {
 	LastUsedAt time.Time // zero: never used
 }
 
-const apiTokensTable = `
-CREATE TABLE api_tokens (
-  id           TEXT PRIMARY KEY,
-  name         TEXT NOT NULL UNIQUE,
-  scope        TEXT NOT NULL CHECK (scope IN ('read','operate','admin')),
-  token_hash   TEXT NOT NULL UNIQUE,
-  created_at   TEXT NOT NULL,
-  expires_at   TEXT NOT NULL DEFAULT '',
-  last_used_at TEXT NOT NULL DEFAULT ''
-) STRICT;
-`
-
 // InsertAPIToken stores a new token. A duplicate name is a conflict.
 func InsertAPIToken(ctx context.Context, q Q, t APIToken) error {
 	_, err := q.ExecContext(ctx,

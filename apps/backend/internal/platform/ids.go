@@ -9,13 +9,6 @@ import (
 	"time"
 )
 
-// Clock abstracts time for tests.
-type Clock interface{ Now() time.Time }
-
-type SystemClock struct{}
-
-func (SystemClock) Now() time.Time { return time.Now().UTC() }
-
 // RandomHex returns n random bytes hex-encoded.
 func RandomHex(n int) string {
 	b := make([]byte, n)

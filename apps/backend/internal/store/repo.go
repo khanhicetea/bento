@@ -776,50 +776,6 @@ func MarkServiceInitialized(ctx context.Context, q Q, name string) error {
 	return err
 }
 
-// ---- images ----
-
-type ImageRecord struct {
-	Key         string
-	Tag         string
-	ImageID     string
-	ContextHash string
-	BuiltAt     string
-}
-
-func GetImage(ctx context.Context, q Q, key string) (ImageRecord, error) {
-	var r ImageRecord
-	err := q.QueryRowContext(ctx, "SELECT key, tag, image_id, context_hash, built_at FROM images WHERE key = ?", key).
-		Scan(&r.Key, &r.Tag, &r.ImageID, &r.ContextHash, &r.BuiltAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return r, ErrNotFound
-	}
-	return r, err
-}
-
-func PutImage(ctx context.Context, q Q, r ImageRecord) error {
-	_, err := q.ExecContext(ctx, `INSERT INTO images(key, tag, image_id, context_hash, built_at) VALUES(?,?,?,?,?)
-		ON CONFLICT(key) DO UPDATE SET tag=excluded.tag, image_id=excluded.image_id, context_hash=excluded.context_hash, built_at=excluded.built_at`,
-		r.Key, r.Tag, r.ImageID, r.ContextHash, now())
-	return err
-}
-
-func ListImages(ctx context.Context, q Q) ([]ImageRecord, error) {
-	rows, err := q.QueryContext(ctx, "SELECT key, tag, image_id, context_hash, built_at FROM images ORDER BY key")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []ImageRecord
-	for rows.Next() {
-		var r ImageRecord
-		if err := rows.Scan(&r.Key, &r.Tag, &r.ImageID, &r.ContextHash, &r.BuiltAt); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
 // ---- retired incarnations ----
 
 type RetainedRelational struct {

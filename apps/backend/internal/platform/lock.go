@@ -46,22 +46,6 @@ func TryLock(path string) (*FileLock, error) {
 	return &FileLock{f: f, path: path}, nil
 }
 
-// Lock acquires an exclusive lock, blocking until available.
-func Lock(path string) (*FileLock, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return &FileLock{f: f, path: path}, nil
-}
-
 func readHolder(f *os.File) string {
 	buf := make([]byte, 32)
 	n, _ := f.ReadAt(buf, 0) // best effort: a short or failed read yields ""

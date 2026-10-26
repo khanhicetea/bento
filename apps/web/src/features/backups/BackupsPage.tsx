@@ -26,7 +26,7 @@ import {
 } from "../../components/DomainState.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
 import { Mascot } from "../../components/Mascot.tsx";
-import { keepEscapeInTerminal, TerminalView } from "../../components/TerminalDialog.tsx";
+import { keepEscapeInTerminal, TerminalView } from "../../components/Terminal.tsx";
 import { formatBytes, formatCron, formatDuration, formatRelative } from "../../lib/format.ts";
 import { useApplication, useApplicationList, useOperationMutation } from "../applications/useApplications.ts";
 import { Alert } from "@/components/ui/alert";

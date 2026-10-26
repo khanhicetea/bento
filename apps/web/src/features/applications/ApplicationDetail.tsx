@@ -15,7 +15,7 @@ import {
   PageHeader,
   StateBadge,
 } from "../../components/DomainState.tsx";
-import { TerminalPanel } from "../../components/TerminalDialog.tsx";
+import { TerminalPanel } from "../../components/Terminal.tsx";
 import { keys } from "../../api/keys.ts";
 import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";

@@ -22,22 +22,10 @@ import (
 // refused.
 const ApplicationID = 0x424E5431
 
-// SchemaVersion is the current schema. Versions from MigratableFromVersion up
-// are migrated to it by Open; every other version is refused without
-// modifying the file.
-const SchemaVersion = 6
-
-// MigratableFromVersion is the oldest schema Open upgrades.
-const MigratableFromVersion = 2
-
-// SupportedVersions lists every schema Open accepts, oldest first.
-func SupportedVersions() []int {
-	var out []int
-	for v := MigratableFromVersion; v <= SchemaVersion; v++ {
-		out = append(out, v)
-	}
-	return out
-}
+// SchemaVersion is the only schema Open accepts. Every other version is
+// refused without modifying the file. Schema changes after a release need a
+// new version and an in-place migration in Open.
+const SchemaVersion = 1
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -71,8 +59,7 @@ func Inspect(path string) (appID int64, version int64, err error) {
 }
 
 // CheckCompatible refuses foreign, old, or future state with guidance. It
-// accepts MigratableFromVersion (Open migrates it) and SchemaVersion, and
-// never writes.
+// accepts only SchemaVersion and never writes.
 func CheckCompatible(path string) error {
 	appID, version, err := Inspect(path)
 	if err != nil {
@@ -86,8 +73,8 @@ func CheckCompatible(path string) error {
 			appID,
 		)
 	}
-	if version < MigratableFromVersion {
-		return fmt.Errorf("%w: schema version %d is older than supported %d", ErrUnsupportedState, version, MigratableFromVersion)
+	if version < SchemaVersion {
+		return fmt.Errorf("%w: schema version %d is older than supported %d", ErrUnsupportedState, version, SchemaVersion)
 	}
 	if version > SchemaVersion {
 		return fmt.Errorf(
@@ -178,104 +165,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("%w: integrity check failed (%s %v); refusing to continue", ErrUnsupportedState, check, err)
 	}
-	var version int64
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := migrate(db, version); err != nil {
-		db.Close()
-		return nil, err
-	}
 	return &Store{db: db, path: path}, nil
-}
-
-// migrations[v] upgrades schema v to v+1.
-var migrations = map[int64]func(tx *sql.Tx) error{
-	2: func(tx *sql.Tx) error {
-		_, err := tx.Exec("ALTER TABLE apps ADD COLUMN home_path TEXT")
-		return err
-	},
-	3: migrateHosts,
-	4: func(tx *sql.Tx) error {
-		_, err := tx.Exec("ALTER TABLE data_services ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
-		return err
-	},
-	5: func(tx *sql.Tx) error {
-		_, err := tx.Exec(apiTokensTable)
-		return err
-	},
-}
-
-// migrateHosts moves domain ownership from apps and proxies into Ingress
-// hosts: every app domain becomes an app-target host and every proxy domain
-// an upstream-target host, each carrying its former owner's route settings.
-// The app keeps only its app-local access log. Rows that do not map onto a
-// host (an unknown owner kind or a missing owner) refuse the migration.
-func migrateHosts(tx *sql.Tx) error {
-	var unmapped int
-	if err := tx.QueryRow(`SELECT count(*) FROM domains d
-		WHERE NOT (d.owner_kind = 'app' AND EXISTS (SELECT 1 FROM apps a WHERE a.id = d.owner_id))
-		  AND NOT (d.owner_kind = 'proxy' AND EXISTS (SELECT 1 FROM proxies p WHERE p.id = d.owner_id))`,
-	).Scan(&unmapped); err != nil {
-		return err
-	}
-	if unmapped > 0 {
-		return fmt.Errorf("%w: %d domain rows have no app or proxy owner", ErrUnsupportedState, unmapped)
-	}
-	for _, stmt := range []string{
-		hostsTable,
-		// The primary domain keeps its place as the app's display host.
-		`INSERT INTO hosts(name, target_kind, app_id, upstreams_json, redirect_to, route_json, enabled, position,
-			created_at, updated_at)
-		SELECT d.name, 'app', d.owner_id, '[]', '', a.route_json, 1, 1 - d.is_primary, d.created_at, d.created_at
-		FROM domains d JOIN apps a ON a.id = d.owner_id WHERE d.owner_kind = 'app'`,
-		`INSERT INTO hosts(name, target_kind, app_id, upstreams_json, redirect_to, route_json, enabled, position,
-			created_at, updated_at)
-		SELECT d.name, 'upstream', NULL, p.upstreams_json, '', p.route_json, p.enabled, 1 - d.is_primary,
-			d.created_at, p.updated_at
-		FROM domains d JOIN proxies p ON p.id = d.owner_id WHERE d.owner_kind = 'proxy'`,
-		`ALTER TABLE apps ADD COLUMN access_log INTEGER NOT NULL DEFAULT 0 CHECK (access_log IN (0, 1))`,
-		`UPDATE apps SET access_log = CASE WHEN json_extract(route_json, '$.accessLog') THEN 1 ELSE 0 END`,
-		`ALTER TABLE apps DROP COLUMN route_json`,
-		`DROP TABLE domains`,
-		`DROP TABLE proxies`,
-	} {
-		if _, err := tx.Exec(stmt); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// migrate upgrades an older supported schema to SchemaVersion in one
-// transaction. The version is re-read inside the transaction; a failure
-// leaves the database at its old version.
-func migrate(db *sql.DB, version int64) error {
-	if version == SchemaVersion {
-		return nil
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var current int64
-	if err := tx.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
-		return err
-	}
-	if current < MigratableFromVersion || current > SchemaVersion {
-		return fmt.Errorf("%w: cannot migrate schema version %d", ErrUnsupportedState, current)
-	}
-	for v := current; v < SchemaVersion; v++ {
-		if err := migrations[v](tx); err != nil {
-			return fmt.Errorf("migrate schema %d to %d: %w", v, v+1, err)
-		}
-	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
-		return fmt.Errorf("migrate schema %d to %d: %w", current, SchemaVersion, err)
-	}
-	return tx.Commit()
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -310,27 +200,6 @@ func (s *Store) SnapshotTo(ctx context.Context, dest string) error {
 	return err
 }
 
-// hostsTable holds Ingress hosts. Each name points at exactly one target:
-// an app (app_id), external upstreams (upstreams_json), or another host name
-// (redirect_to). position orders an app's hosts; the lowest is its display host.
-const hostsTable = `
-CREATE TABLE hosts (
-  name           TEXT PRIMARY KEY,
-  target_kind    TEXT NOT NULL CHECK (target_kind IN ('app','upstream','redirect')),
-  app_id         TEXT REFERENCES apps(id) ON DELETE CASCADE,
-  upstreams_json TEXT NOT NULL DEFAULT '[]',
-  redirect_to    TEXT NOT NULL DEFAULT '',
-  route_json     TEXT NOT NULL,
-  enabled        INTEGER NOT NULL CHECK (enabled IN (0, 1)),
-  position       INTEGER NOT NULL DEFAULT 0,
-  created_at     TEXT NOT NULL,
-  updated_at     TEXT NOT NULL,
-  CHECK ((target_kind = 'app') = (app_id IS NOT NULL)),
-  CHECK (target_kind <> 'redirect' OR redirect_to <> '')
-) STRICT;
-CREATE INDEX hosts_app ON hosts(app_id);
-`
-
 const schema = `
 CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
@@ -359,33 +228,51 @@ CREATE TABLE apps (
   slug                   TEXT NOT NULL UNIQUE,
   uid                    INTEGER NOT NULL UNIQUE REFERENCES uid_ledger(uid),
   gid                    INTEGER NOT NULL,
+  home_path              TEXT,
   runtime_json           TEXT NOT NULL,
   resources_json         TEXT NOT NULL,
   desired_runtime        TEXT NOT NULL CHECK (desired_runtime IN ('stopped','running')),
   ingress                TEXT NOT NULL CHECK (ingress IN ('managed','external','none')),
   publication            TEXT NOT NULL CHECK (publication IN ('unpublished','published')),
   redis_json             TEXT NOT NULL,
+  access_log             INTEGER NOT NULL DEFAULT 0 CHECK (access_log IN (0, 1)),
   config_generation      INTEGER NOT NULL DEFAULT 1,
   credentials_generation INTEGER NOT NULL DEFAULT 1,
   provisioned            INTEGER NOT NULL DEFAULT 0,
   created_at             TEXT NOT NULL,
   updated_at             TEXT NOT NULL,
-  home_path              TEXT,
-  access_log             INTEGER NOT NULL DEFAULT 0 CHECK (access_log IN (0, 1)),
   CHECK (uid = gid),
   CHECK (publication = 'unpublished' OR ingress = 'managed')
 ) STRICT;
 
-` + hostsTable + `
+-- Ingress hosts. Each name points at exactly one target: an app (app_id),
+-- external upstreams (upstreams_json), or another host name (redirect_to).
+-- position orders an app's hosts; the lowest is its display host.
+CREATE TABLE hosts (
+  name           TEXT PRIMARY KEY,
+  target_kind    TEXT NOT NULL CHECK (target_kind IN ('app','upstream','redirect')),
+  app_id         TEXT REFERENCES apps(id) ON DELETE CASCADE,
+  upstreams_json TEXT NOT NULL DEFAULT '[]',
+  redirect_to    TEXT NOT NULL DEFAULT '',
+  route_json     TEXT NOT NULL,
+  enabled        INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+  position       INTEGER NOT NULL DEFAULT 0,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  CHECK ((target_kind = 'app') = (app_id IS NOT NULL)),
+  CHECK (target_kind <> 'redirect' OR redirect_to <> '')
+) STRICT;
+CREATE INDEX hosts_app ON hosts(app_id);
+
 CREATE TABLE data_services (
-  name       TEXT PRIMARY KEY,
-  engine     TEXT NOT NULL CHECK (engine IN ('mysql','postgres','redis')),
-  version    TEXT NOT NULL,
-  image      TEXT NOT NULL,
-  volume     TEXT NOT NULL UNIQUE,
-  initialized INTEGER NOT NULL DEFAULT 0,
+  name          TEXT PRIMARY KEY,
+  engine        TEXT NOT NULL CHECK (engine IN ('mysql','postgres','redis')),
+  version       TEXT NOT NULL,
+  image         TEXT NOT NULL,
+  volume        TEXT NOT NULL UNIQUE,
+  initialized   INTEGER NOT NULL DEFAULT 0,
   settings_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL
+  created_at    TEXT NOT NULL
 ) STRICT;
 
 -- Add-only bindings: rows are never deleted while the app exists.
@@ -450,14 +337,6 @@ CREATE TABLE sessions (
   revoked    INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
-CREATE TABLE images (
-  key          TEXT PRIMARY KEY,
-  tag          TEXT NOT NULL,
-  image_id     TEXT NOT NULL,
-  context_hash TEXT NOT NULL,
-  built_at     TEXT NOT NULL
-) STRICT;
-
 -- Retired app incarnations and their retained durable artifacts. Rows are
 -- kept after prune for history; pruned_at records permanent deletion.
 CREATE TABLE retired_apps (
@@ -496,4 +375,16 @@ CREATE TABLE schedules (
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 ) STRICT;
-` + apiTokensTable
+
+-- Scoped bearer credentials for automation. Only the SHA-256 of the secret
+-- is stored.
+CREATE TABLE api_tokens (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL UNIQUE,
+  scope        TEXT NOT NULL CHECK (scope IN ('read','operate','admin')),
+  token_hash   TEXT NOT NULL UNIQUE,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL DEFAULT '',
+  last_used_at TEXT NOT NULL DEFAULT ''
+) STRICT;
+`

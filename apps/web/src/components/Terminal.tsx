@@ -4,7 +4,6 @@ import { Terminal } from "@xterm/xterm";
 import { api } from "../api/client.ts";
 import { StateBadge } from "./DomainState.tsx";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type ConnectionState = "connecting" | "connected" | "reconnecting" | "detached" | "closed" | "error";
 
@@ -202,32 +201,5 @@ export function TerminalView({ path, children }: { path: string; children?: Reac
         <div ref={setElement} className="terminal-host" />
       </div>
     </div>
-  );
-}
-
-export function TerminalDialog({
-  appId,
-  title,
-  mode,
-  onClose,
-}: {
-  appId: string;
-  title: string;
-  mode: "tool" | "running";
-  onClose: () => void;
-}) {
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-5xl" onEscapeKeyDown={keepEscapeInTerminal}>
-        <DialogHeader>
-          <DialogTitle>{title} — terminal</DialogTitle>
-          <DialogDescription>
-            Runs as the app identity. Tool shells start no daemons and are kept 15 minutes after you disconnect; history
-            persists in the app home. Esc goes to the shell; close with ×.
-          </DialogDescription>
-        </DialogHeader>
-        <TerminalPanel appId={appId} mode={mode} />
-      </DialogContent>
-    </Dialog>
   );
 }

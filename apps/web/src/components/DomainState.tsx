@@ -76,10 +76,6 @@ export function PageHeader({
   );
 }
 
-export function Page({ children }: { children: ReactNode }) {
-  return <>{children}</>;
-}
-
 /** Cell kinds: fill colour is meaning (DESIGN.md §4). */
 export type CellKind = "gohan" | "ume" | "tamago" | "nori" | "kara";
 const kindClass: Record<CellKind, string> = {
@@ -243,8 +239,6 @@ export function StateBadge({
     </span>
   );
 }
-
-export const StatusPill = StateBadge;
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (

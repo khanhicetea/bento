@@ -59,8 +59,8 @@ are refused and left untouched.
 ```bash
 export BENTO_STACK_ROOT=/srv/bento/prod
 cat > shop.json <<'EOF'
-{"slug":"shop","runtime":{"kind":"php-fpm","php":{"version":"8.4","documentRoot":"public","routing":"front-controller","pool":"small","uploadLimitMb":64}},
- "domains":["shop.example.com"],"route":{"tls":"acme","redirectHttps":true,"accessLog":false},
+{"slug":"shop","runtime":{"kind":"php-fpm","php":{"version":"8.4","documentRoot":"public","routing":"front-controller","mode":"standard","uploadLimitMb":64}},
+ "hosts":[{"name":"shop.example.com","route":{"tls":"acme","redirectHttps":true}}],
  "bindings":[{"engine":"mysql","service":"mysql84"}]}
 EOF
 bento app create --json shop.json      # provisioned, stopped, unpublished

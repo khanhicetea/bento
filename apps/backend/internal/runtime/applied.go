@@ -51,18 +51,9 @@ type AppliedConfig struct {
 
 const appliedVersion = 1
 
-// scopeHash hashes scope file bytes the same way RenderAppConfig does.
-func scopeHash(scope string, files map[string][]byte) string {
-	var buf []byte
-	for _, n := range ScopeFiles(scope) {
-		buf = append(buf, files[n]...)
-	}
-	return platform.SHA256Hex(buf)
-}
-
 // renderedScopeHash picks the Materialized hash for a scope. Non-PHP apps
 // have no frontend/pool files; their rendered hash is the hash of nothing,
-// matching what scopeHash computes for absent files.
+// matching the hash of absent files.
 func renderedScopeHash(m Materialized, scope string) string {
 	var h string
 	switch scope {

@@ -12,8 +12,8 @@ Written for an agent to follow end to end. The operator only provides the accoun
 
 - **Disposable only.** Use the dedicated GitHub test account, the e2e tunnel and `e2e-*` hostnames, the test bucket,
   and the `/srv/bento-e2e` stack. Within these you may create, wipe, and rebuild without asking.
-- **Never touch** anything else on the host or in the accounts: other Bento stacks (for example `bento-dev` on
-  `/tmp/dev-stack`, ports 7780/7781/8880/8843), unrelated containers, other tunnels, or other DNS records in the zone.
+- **Never touch** anything else on the host or in the accounts: other Bento stacks (for example `devstack` on
+  `/srv/bento-dev`, port 7780), unrelated containers, other tunnels, or other DNS records in the zone.
 - **Never print secrets.** Source `~/.config/bento-e2e/env` and pass values by variable; mask account IDs in output.
 - **Report honestly.** ACME needs public ports 80/443 and arm64 needs an arm64 host; report them as skipped unless
   they actually ran.
@@ -156,7 +156,7 @@ counter (the DB write works); e2e-php also returns `redisCounter`.
 | Wrong branch | push to `feature` | delivery `ignored-ref` |
 | Forged calls | POST with no signature, a wrong `X-Hub-Signature-256`, a wrong bearer, a wrong path, and a GET | all 404 |
 | CI style | `curl -X POST -H "Authorization: Bearer $SECRET" URL` | 202, delivery `generic trigger deployed` |
-| Failing script | add a `FAIL` file the script checks for, push, deploy | op fails with the script's exit code; old version keeps serving; next good deploy reloads |
+| Failing script | add a `FAIL` file the script checks for, push, deploy | op fails with the script's exit code; the app is not reloaded, but PHP serves the new files within 2s (opcache revalidates; finding 7); next good deploy reloads |
 
 With the edge bound to loopback and a tunnel configured, the webhook URL that Bento prints is
 `https://host/_bento/webhook/deploy/<id>`, without the edge port; `path` is always printed as well.
@@ -191,7 +191,7 @@ no_check_bucket = true
 | Remote test | `$E/api.sh POST /api/v1/backups/rclone/test '{"remote":"e2es3:BUCKET/bento-e2e/db"}'`; repeat with a broken endpoint | succeeded within seconds; the broken one fails within seconds (at most 60s) with rclone's error |
 | DB dump + upload | `$B backup run --app e2e-php --upload e2es3:BUCKET/bento-e2e/db` (also `--compression gzip` on e2e-node) | `upload: succeeded`; artifacts in `backup list` and in the bucket |
 | DB restore | drop `hits` with `q.php`, then `echo "replace e2e_php_main" \| $B backup restore --artifact PATH --app e2e-php --database e2e_php_main` | wrong text refused; table back with the dump's row count |
-| App backup | `api.sh PUT /api/v1/apps/ID/restic` (repository `e2es3:BUCKET/bento-e2e/apps/e2e-php`, paths `["."]`), `POST .../restic/init` (save `.key` to `~/.config/bento-e2e/*.restic.key`), `POST .../restic/backup` | snapshot listed, `lastBackup.ok` |
+| App backup | `api.sh PUT /api/v1/apps/ID/restic` (repository `e2es3:BUCKET/bento-e2e/<run>/apps/e2e-php`, paths `["."]`, a retention that keeps at least one snapshot, e.g. `{"daily":7}`), `POST .../restic/init` (save `.key` to `~/.config/bento-e2e/*.restic.key`), `POST .../restic/backup` | snapshot listed, `lastBackup.ok` |
 | Clone on stack | `POST .../restic/inspect` then `.../restic/clone` with `{"snapshot":"latest","slug":"e2e-php-clone","confirm":"clone e2e-php-clone"}`; add a host (`$B host add`), start, publish | code, untracked files, DB rows restored; new DB name and user; Redis empty (not backed up) |
 | Disaster restore | `echo "clone e2e-php-dr" \| $B app restore-from-backup --repo e2es3:... --key-file KEY --slug e2e-php-dr --snapshot latest` | stopped app plus a checklist (DB user, deploy key, hosts); a random key fails with `wrong key` |
 
@@ -233,7 +233,7 @@ twice).
 | Jobs and worker | import (as below) with `$B app minicrond e2e-laravel -- import /home/e2e-laravel/tmp/jobs.toml` | `/status`: pending jobs drain to 0; heartbeats grow by one a minute |
 | Push to deploy | webhook on GitHub, push a new mark | new mark live; jobs after the deploy are processed by the new code |
 | Worker after deploy | `queue:restart` in the recipe; three deploys back to back | worker PID changes, `failures` stays 0, keeps processing |
-| Failing deploy | push a `composer.json` change plus a migration that throws | op fails; summary is the exception text; journal shows Composer's lines, then `FAIL` and the exception, no escape codes; the old code keeps serving |
+| Failing deploy | push a `composer.json` change plus a migration that throws | op fails; summary is the exception text; journal shows Composer's lines, then `FAIL` and the exception, no escape codes; the site keeps answering, but with the new code (Composer's post-install scripts drop Laravel's config cache; finding 7) |
 
 ```toml
 [[job]]
@@ -268,7 +268,7 @@ what a hand-written fixture misses. `gh repo fork cachethq/cachet --fork-name e2
 | --- | --- | --- |
 | Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/up`, **postgres18**; HTTPS repo URL, branch `3.x` | app created |
 | Deploy script | Classic recipe, plus `php artisan filament:assets` and `php artisan cachet:assets` before `migrate` (Cachet's built assets are gitignored and only published by `composer update`) | without them `/` is 500 `ViteManifestNotFoundException` |
-| `.env` | `.env.example` with `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://e2e-cachet.$E2E_DOMAIN`, `CACHE_STORE=redis`, `CACHET_TRUSTED_PROXIES="*"`; keep `DB_CONNECTION=sqlite`; `key:generate --force` **after** the first `composer install` | migrations run on Postgres |
+| `.env` | `.env.example` with `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://e2e-cachet.$E2E_DOMAIN`, `CACHE_STORE=redis`, `CACHET_TRUSTED_PROXIES="*"` (replace the empty line from the example; the first definition wins); keep `DB_CONNECTION=sqlite`; `key:generate --force` **after** the first `composer install` | migrations run on Postgres |
 | Start before the first good deploy | `$B app start e2e-cachet`, then `$B app deploy` | see finding 14 |
 | Admin + API token | copy a PHP script into `homes/e2e-cachet/tmp/` that boots the app, runs `cachet:make:user`, prints `createToken('e2e', ['*'])->plainTextToken`; redirect stdout to `~/.config/bento-e2e/cachet-token` | `app exec` has no stdin (finding 16) |
 | API writes | `POST /api/components`, `POST /api/incidents` with the bearer token | 200; both show on `/` |
@@ -309,17 +309,23 @@ for h in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-php-clone e2e-laravel e2
 for r in e2e-node e2e-php e2e-legacy e2e-bun e2e-py e2e-laravel e2e-cachet e2e-invoiceninja; do gh repo delete $GU/$r --yes; done
 ```
 
-Keep the tunnel and the bucket for the next run unless asked; delete the stack root only for a full reset.
+Keep the tunnel and the bucket for the next run unless asked; delete the stack root only for a full reset. A new
+binary with a different state schema refuses the old root, so a schema change needs a full reset. Reusing the test
+repos is fine: push the current `scripts/e2e/apps/*` contents as a new commit, use a fresh branch name for the
+wrong-branch case, and a fresh bucket prefix per run so `restic init` does not meet an old repository.
 
-## Last run: 2026-10-12
+## Last run: 2026-10-26
 
-Section 10 (Invoice Ninja) on `feat/shallow-clone`, 2026-10-12.
-Section 9 (Cachet) on `main` (`3d35e82`), 2026-10-12. Earlier sections: 2026-10-11, below.
+Full fresh run of sections 1–10 on `main` after the MVP cleanup (single baseline schema, version 1): new stack root,
+new data volumes, Docker 29.8.1, amd64. Every case passed except the open findings below. Notes from this run:
 
+- GitHub's codeload answered `HTTP/2 429` to Composer once during the first Invoice Ninja install; the retry
+  succeeded. External, not a Bento issue.
+- `ninja:create-account` took about 2s (it took about 2 minutes on 2026-10-12).
+- Skipped: ACME issuance (no public 80/443), arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups,
+  Object Lock buckets.
 
-Commit `7ca4f46` for sections 1–7; section 8 and the fixes below re-run live on `fix/e2e-findings` (`7c278bb`).
-Docker 29.8.1, amd64. Every case passed except the open findings. Skipped: ACME issuance (no public 80/443),
-arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock buckets.
+Earlier runs: sections 1–8 on 2026-10-11, 9 and 10 on 2026-10-12.
 
 ### Known findings
 
@@ -338,7 +344,9 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
 6. **No ready path on a PHP app** means readiness probes request `/` and run app code a few times before the first
    visitor.
 7. **Failed deploy** leaves the new code on disk; a later manual restart serves it without the deploy step that
-   failed (documented, but easy to trip over).
+   failed (documented, but easy to trip over). PHP apps serve the new files within 2s anyway (opcache
+   `validate_timestamps=1`, `revalidate_freq=2`), and a Laravel app also loses its config cache when Composer runs,
+   so on PHP a failed deploy is live code, not a rollback. Confirmed live 2026-10-26.
 8. **`retired`** keeps pruned entries (with `prunedAt`) next to live ones in the same list.
 9. ~~**Scheduler jobs could not run `php`.**~~ **Fixed:** minicrond defaults jobs to a clean environment with
    `PATH=/usr/bin:/bin`, so `php artisan schedule:run` failed (`executable "php" not found in trusted PATH`) and
@@ -378,3 +386,7 @@ arm64, GitLab/Gitea/Bitbucket webhooks, scheduled (cron) backups, Object Lock bu
 19. **Apps whose Redis config ignores `REDIS_USERNAME` cannot use Bento's Redis.** Invoice Ninja's
     `config/database.php` reads only host, password, and port, so the per-app ACL user fails `WRONGPASS`. Workaround:
     `CACHE_DRIVER=file`. Worth a note in the operator docs.
+20. **A failing Composer step gives a useless summary.** When `composer install` fails, its last output line is the
+    command's usage text (`install [--prefer-source] ...`), so the operation summary shows that instead of the error
+    a few lines above (seen with a codeload 429). Fix: pick the last line that is not Composer's usage text, or show
+    the last few lines.
