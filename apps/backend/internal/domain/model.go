@@ -299,12 +299,28 @@ type EdgeSettings struct {
 	HTTP3     bool   `json:"http3"`
 	ACMEEmail string `json:"acmeEmail"`
 	ACMEURL   string `json:"acmeUrl"`
+	// FrontProxy adds listeners for a TCP proxy in front of the edge (for
+	// example a public VPS forwarding over a VPN) that speaks PROXY protocol.
+	FrontProxy FrontProxySettings `json:"frontProxy"`
+}
+
+// FrontProxySettings are extra edge listeners that expect a PROXY protocol
+// header. The header's client address is believed only when the connecting
+// peer is in TrustedProxies. Visitors on this path reached the front proxy on
+// the standard ports 80/443, so the edge forwards those ports and no suffix.
+type FrontProxySettings struct {
+	Enabled        bool     `json:"enabled"`
+	Bind           string   `json:"bind"`
+	HTTPPort       int      `json:"httpPort"`
+	HTTPSPort      int      `json:"httpsPort"`
+	TrustedProxies []string `json:"trustedProxies"`
 }
 
 func DefaultEdgeSettings() EdgeSettings {
 	return EdgeSettings{
 		Enabled: false, Bind: "0.0.0.0", HTTPPort: 80, HTTPSPort: 443,
-		ACMEURL: "https://acme-v02.api.letsencrypt.org/directory",
+		ACMEURL:    "https://acme-v02.api.letsencrypt.org/directory",
+		FrontProxy: FrontProxySettings{Bind: "0.0.0.0", HTTPPort: 8080, HTTPSPort: 8443, TrustedProxies: []string{}},
 	}
 }
 

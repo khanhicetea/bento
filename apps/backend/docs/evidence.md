@@ -397,3 +397,21 @@ backend stopped, edge traffic and scheduled jobs continued.
   app stopped, read and edit ran in a tool container that was removed afterwards. The scripts also ran under the
   unit tests with local bash (symlinks, hidden paths, binary refusal, UTF-8 windows, mode preserved, no temp files
   left).
+
+## Edge front proxy (PROXY protocol) (2026-10-26; live Docker 29.8.1, amd64)
+
+- Rendered config with the feature off is byte-identical to the previous release (diffed against `HEAD` for standard
+  and custom edge ports); `nginx -t` in the pinned edge image accepted the enabled config with HTTP/3, ACME, tunnel
+  and an IPv6 trusted prefix.
+- Disposable stack (`/tmp/bfp-*`, uids 61000+), real backend: `bento edge set` refused a `0.0.0.0/0` trusted list,
+  then enabled the front proxy on the host's LAN IP (edge on `127.0.0.1:18181/18543`, front on `:18180/18443`); the
+  edge container published both pairs. An upstream host to an echo container received, through the front HTTPS port
+  with `curl --haproxy-protocol --haproxy-clientip 203.0.113.9` and a forged `X-Forwarded-For: 6.6.6.6`:
+  `X-Forwarded-For`/`X-Real-IP 203.0.113.9`, `Host shop.example.com`, `X-Forwarded-Proto https`,
+  `X-Forwarded-Port 443`; the front HTTP port redirected to `https://shop.example.com/a`. Direct traffic on the edge
+  port still carried `shop.example.com:18543` and port `18543`. A connection without a PROXY header and a container
+  on the apps network sending one were both closed. Changing the trusted list reloaded the same container (the old
+  peer was then closed); disabling recreated the edge without the extra ports or any `proxy_protocol` in the config.
+  `Alt-Svc` was sent on the direct path and not on the front path (scratch edge with HTTP/3).
+- Not verified: a real VPS over Tailscale, HAProxy as the sender, ACME issuance through the front proxy, the edge
+  start retry after a reboot before `tailscale0` is up, the Ingress page in a browser.

@@ -7,7 +7,7 @@ Every app chooses an **Access** mode in the wizard (and later in **Settings → 
 
 | Access | Who routes traffic | Use when |
 | --- | --- | --- |
-| **Public** | Bento's **edge** (Nginx with automatic HTTPS) | Your server has public ports 80/443. The usual choice. |
+| **Public** | Bento's **edge** (Nginx with automatic HTTPS) | Your server has public ports 80/443, or a VPS forwards them to it ([Front proxy](/ingress/front-proxy)). The usual choice. |
 | **External** | A Cloudflare Tunnel or your own proxy | No open ports, or you already run Caddy/Traefik/nginx. |
 | **Private** | Nobody | Internal APIs, workers-only apps. |
 

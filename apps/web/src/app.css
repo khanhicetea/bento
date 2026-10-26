@@ -1847,7 +1847,7 @@ button.row:hover {
 
 /* ---------- Ingress ---------- */
 
-/* Config cells stack on the left; traffic spans both rows on the right. */
+/* Config cells stack on the left; traffic spans all their rows on the right. */
 .box--edge {
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   grid-auto-flow: column;
@@ -1857,7 +1857,7 @@ button.row:hover {
 }
 .box--edge > .edge-metrics {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
 }
 .rate-chart {
   position: relative;

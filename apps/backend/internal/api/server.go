@@ -817,9 +817,9 @@ func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 // edge-routed host. The edge's listen port is an internal detail whenever
 // something else faces the internet:
 //
-//   - the edge is bound to loopback, or a Cloudflare Tunnel is configured: the
-//     public side is the tunnel or a host proxy, which serves the hostname on
-//     the standard HTTPS port. The origin is https://<host> and never carries
+//   - the edge is bound to loopback, a Cloudflare Tunnel is configured, or a
+//     front proxy is enabled: the public side is the tunnel or that proxy,
+//     which serves the hostname on the standard HTTPS port. The origin is https://<host> and never carries
 //     the edge port (a route with tls "none" is then plain HTTP only between
 //     that proxy and the edge).
 //   - otherwise the edge itself is public: the scheme follows the route's TLS
@@ -828,7 +828,7 @@ func (s *Server) webhookBase(r *http.Request, app domain.App) string {
 // Setups this cannot infer set the utils base URL; the path is always returned
 // next to the URL so operators can compose their own.
 func publicHostOrigin(es domain.EdgeSettings, tunnel bool, h domain.Host) string {
-	if tunnel || isLoopbackBind(es.Bind) {
+	if tunnel || es.FrontProxy.Enabled || isLoopbackBind(es.Bind) {
 		return "https://" + h.Name
 	}
 	if h.Route.TLS == domain.TLSNone {
@@ -1073,7 +1073,7 @@ func (s *Server) handleGetEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := dto.EdgeStatus{
-		Settings: dto.EdgeSettings(es),
+		Settings: edgeToDTO(es),
 		State:    s.containerState(r.Context(), s.C.Names.EdgeContainer()),
 		Routes:   []string{},
 	}
@@ -1111,7 +1111,7 @@ func (s *Server) handlePutEdge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, err := s.C.ConfigureEdge(r.Context(), domain.EdgeSettings(req), idem)
+	op, err := s.C.ConfigureEdge(r.Context(), edgeFromDTO(req), idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return

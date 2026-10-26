@@ -490,6 +490,23 @@ export interface EdgeSettings {
   http3: boolean;
   acmeEmail: string;
   acmeUrl: string;
+  /**
+   * FrontProxy adds PROXY protocol listeners for a TCP proxy in front of
+   * the edge, such as a public VPS forwarding to a homelab over a VPN.
+   */
+  frontProxy: FrontProxySettings;
+}
+/**
+ * FrontProxySettings are edge listeners that expect a PROXY protocol header.
+ * The client address in it is trusted only from TrustedProxies (IP addresses
+ * or CIDRs); visitors on this path are treated as using ports 80/443.
+ */
+export interface FrontProxySettings {
+  enabled: boolean;
+  bind: string;
+  httpPort: number /* int */;
+  httpsPort: number /* int */;
+  trustedProxies: string[];
 }
 export interface EdgeStatus {
   settings: EdgeSettings;

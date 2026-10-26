@@ -47,13 +47,40 @@ func (c *Controller) edgeGenerations() edge.Generations {
 	return edge.Generations{Dir: c.Layout.EdgeConfDir()}
 }
 
+// edgeContainerSettings is the part of EdgeSettings that shapes the edge
+// container. Its JSON matches the settings from before the front proxy, so
+// adding that feature does not recreate existing edges.
+type edgeContainerSettings struct {
+	Enabled   bool   `json:"enabled"`
+	Bind      string `json:"bind"`
+	HTTPPort  int    `json:"httpPort"`
+	HTTPSPort int    `json:"httpsPort"`
+	HTTP3     bool   `json:"http3"`
+	ACMEEmail string `json:"acmeEmail"`
+	ACMEURL   string `json:"acmeUrl"`
+}
+
+// frontListeners is the front proxy's container shape: its published ports.
+// The trusted list only changes rendered config, so editing it reloads.
+type frontListeners struct {
+	Bind      string
+	HTTPPort  int
+	HTTPSPort int
+}
+
 func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
+	var front *frontListeners
+	if fp := s.FrontProxy; fp.Enabled {
+		front = &frontListeners{fp.Bind, fp.HTTPPort, fp.HTTPSPort}
+	}
 	b, _ := json.Marshal(struct {
-		S  domain.EdgeSettings
-		IP string
-		I  string
-		V  int
-	}{s, ns.EdgeIP, domain.EdgeImage, 1})
+		S     edgeContainerSettings
+		IP    string
+		I     string
+		V     int
+		Front *frontListeners `json:",omitempty"`
+	}{edgeContainerSettings{s.Enabled, s.Bind, s.HTTPPort, s.HTTPSPort, s.HTTP3, s.ACMEEmail, s.ACMEURL},
+		ns.EdgeIP, domain.EdgeImage, 1, front})
 	return platform.SHA256Hex(b)[:20]
 }
 
@@ -70,6 +97,17 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker
 	if s.HTTP3 {
 		ports[network.MustParsePort("443/udp")] = []network.PortBinding{{HostIP: bind, HostPort: strconv.Itoa(s.HTTPSPort)}}
 		exposed[network.MustParsePort("443/udp")] = struct{}{}
+	}
+	if fp := s.FrontProxy; fp.Enabled {
+		fbind, err := parseEdgeBind(fp.Bind)
+		if err != nil {
+			return docker.ContainerSpec{}, invalidEdgeBind(err)
+		}
+		for container, host := range map[int]int{edge.FrontHTTPPort: fp.HTTPPort, edge.FrontHTTPSPort: fp.HTTPSPort} {
+			p := network.MustParsePort(strconv.Itoa(container) + "/tcp")
+			ports[p] = []network.PortBinding{{HostIP: fbind, HostPort: strconv.Itoa(host)}}
+			exposed[p] = struct{}{}
+		}
 	}
 	stop := 15
 	return docker.ContainerSpec{

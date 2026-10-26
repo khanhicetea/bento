@@ -72,16 +72,66 @@ http {
     default 0;
   }
 {{- end}}
+{{- $std := "$bento_from_tunnel"}}
+{{- if .FrontProxy}}
+{{- $std = "$bento_std_ports"}}
+
+  # A TCP proxy in front of the edge (e.g. a public VPS) connects to the PROXY
+  # protocol listeners. The header's client address is believed only when the
+  # connecting peer is a trusted front proxy; other peers there are closed.
+  # Its visitors reached that proxy on the standard ports 80/443.
+  map $server_port $bento_via_front {
+    default 0;
+    {{.FrontHTTPPort}} 1;
+    {{.FrontHTTPSPort}} 1;
+  }
+  geo $realip_remote_addr $bento_front_trusted {
+    default 0;
+{{- range .FrontTrusted}}
+    {{.}} 1;
+{{- end}}
+  }
+  map "$bento_via_front:$bento_front_trusted" $bento_front_reject {
+    default 0;
+    "1:0"   1;
+  }
+  # Tunnel or front proxy: the visitor used the standard ports.
+  map "$bento_from_tunnel:$bento_via_front" $bento_std_ports {
+    default 0;
+    "1:0"   1;
+    "0:1"   1;
+  }
+  map $bento_via_front $bento_client_addr {
+    default $remote_addr;
+    1       $proxy_protocol_addr;
+  }
+{{- if .HTTP3}}
+  # UDP is not forwarded through the front proxy, so HTTP/3 is not offered.
+  map $bento_via_front $bento_alt_svc {
+    default 'h3=":{{.HTTPSPort}}"; ma=86400';
+    1       "";
+  }
+{{- end}}
+{{- end}}
   map "$bento_from_tunnel:$http_x_forwarded_proto" $bento_proto {
     default   $scheme;
     "1:https" https;
     "1:http"  http;
   }
   # The edge's published ports, which may differ from the container's 80/443.
+{{- if .FrontProxy}}
+  map "$bento_via_front:$scheme" $bento_published_port {
+    default   {{.HTTPPort}};
+    "0:https" {{.HTTPSPort}};
+    "1:http"  80;
+    "1:https" 443;
+  }
+{{- else}}
   map $scheme $bento_published_port {
     default {{.HTTPPort}};
     https   {{.HTTPSPort}};
   }
+{{- end}}
   map "$bento_from_tunnel:$http_x_forwarded_proto" $bento_port {
     default   $bento_published_port;
     "1:https" 443;
@@ -89,11 +139,11 @@ http {
   }
   # Port suffixes for redirects: the edge's published ports, or none for
   # visitors who came through the tunnel on Cloudflare's standard ports.
-  map $bento_from_tunnel $bento_https_suffix {
+  map {{$std}} $bento_https_suffix {
     default "{{.HTTPSPortSuffix}}";
     1       "";
   }
-  map $bento_from_tunnel $bento_http_suffix {
+  map {{$std}} $bento_http_suffix {
     default "{{.HTTPPortSuffix}}";
     1       "";
   }
@@ -104,12 +154,12 @@ http {
     default "{{.HTTPPortSuffix}}";
     https   "{{.HTTPSPortSuffix}}";
   }
-  map $bento_from_tunnel $bento_forwarded_host {
+  map {{$std}} $bento_forwarded_host {
     default $host$bento_scheme_suffix;
     1       $host;
   }
 
-  log_format bento_edge '$remote_addr - [$time_local] "$request" $status $body_bytes_sent '
+  log_format bento_edge '{{if .FrontProxy}}$bento_client_addr{{else}}$remote_addr{{end}} - [$time_local] "$request" $status $body_bytes_sent '
                         '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time '
                         'route=$bento_route host=$host';
   access_log off;
@@ -163,6 +213,10 @@ http {
   server {
     listen 80 default_server;
     listen [::]:80 default_server;
+{{- if .FrontProxy}}
+    listen {{.FrontHTTPPort}} proxy_protocol default_server;
+    listen [::]:{{.FrontHTTPPort}} proxy_protocol default_server;
+{{- end}}
     server_name _;
     set $bento_route "-";
     return 404;
@@ -170,6 +224,10 @@ http {
   server {
     listen 443 ssl default_server;
     listen [::]:443 ssl default_server;
+{{- if .FrontProxy}}
+    listen {{.FrontHTTPSPort}} ssl proxy_protocol default_server;
+    listen [::]:{{.FrontHTTPSPort}} ssl proxy_protocol default_server;
+{{- end}}
 {{- if .HTTP3}}
     listen 443 quic reuseport default_server;
     listen [::]:443 quic reuseport default_server;

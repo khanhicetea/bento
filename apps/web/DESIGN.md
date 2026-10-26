@@ -177,7 +177,7 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
   hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
-- **Ingress:** Edge / Tunnel / Utils. Edge + ACME config (left) beside traffic (right: live requests/s line over three metric cards), host tiles + Kara. Ingress owns
+- **Ingress:** Edge / Tunnel / Utils. Edge, Front proxy and ACME config (left, one Save in the ACME cell) beside traffic (right: live requests/s line over three metric cards), host tiles + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
   hosts and adds one through the same host dialog.
 - **Backups:** status row (last, next, schedules, not covered) then Files / App backups / Runs / Schedules.

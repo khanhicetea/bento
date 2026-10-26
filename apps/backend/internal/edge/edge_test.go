@@ -300,3 +300,79 @@ func TestUpstreamIdentKeepsSimilarHostsApart(t *testing.T) {
 		t.Fatal("hosts that sanitize alike must get distinct upstream names")
 	}
 }
+
+func TestRenderFrontProxy(t *testing.T) {
+	app := domain.App{ID: "a1", Slug: "shop", Ingress: domain.IngressManaged, Publication: domain.Published,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}}}
+	in := Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 8443, HTTP3: true, ACMEURL: "https://acme.test/dir",
+			FrontProxy: domain.FrontProxySettings{Enabled: true, TrustedProxies: []string{"100.64.0.1/32", "fd7a:115c:a1e0::/48"}}},
+		Apps:          []domain.App{app},
+		Hosts:         []domain.Host{appHost("shop.example.com", "a1", domain.Route{TLS: domain.TLSACME, RedirectHTTPS: true})},
+		Running:       map[string]bool{"a1": true},
+		UtilsUpstream: "10.200.0.1:7781",
+		TunnelIP:      "10.200.0.3",
+	}
+	files, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(files["nginx.conf"])
+	for _, want := range []string{
+		"map $server_port $bento_via_front {\n    default 0;\n    8080 1;\n    8443 1;\n  }",
+		// The peer, never a forwarded or PROXY-claimed address, decides trust.
+		"geo $realip_remote_addr $bento_front_trusted {\n    default 0;\n    100.64.0.1/32 1;\n    fd7a:115c:a1e0::/48 1;\n  }",
+		"map $bento_via_front $bento_client_addr {\n    default $remote_addr;\n    1       $proxy_protocol_addr;",
+		"map \"$bento_via_front:$scheme\" $bento_published_port {\n    default   80;\n    \"0:https\" 8443;\n    \"1:http\"  80;\n    \"1:https\" 443;",
+		"map $bento_std_ports $bento_https_suffix {\n    default \":8443\";\n    1       \"\";",
+		"map $bento_std_ports $bento_forwarded_host {\n    default $host$bento_scheme_suffix;\n    1       $host;",
+		"map $bento_via_front $bento_alt_svc {\n    default 'h3=\":8443\"; ma=86400';\n    1       \"\";",
+		"listen 8080 proxy_protocol default_server;", "listen 8443 ssl proxy_protocol default_server;",
+		"log_format bento_edge '$bento_client_addr - ",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main config missing %q", want)
+		}
+	}
+	if strings.Contains(main, "real_ip_header proxy_protocol") {
+		t.Error("the PROXY address must not replace $remote_addr: the tunnel owns real_ip_header")
+	}
+	site := string(files["sites/host-shop.example.com.conf"])
+	for _, want := range []string{
+		"listen 8080 proxy_protocol;", "listen [::]:8080 proxy_protocol;",
+		"listen 8443 ssl proxy_protocol;", "listen [::]:8443 ssl proxy_protocol;",
+		"add_header Alt-Svc $bento_alt_svc always;",
+		"proxy_set_header X-Forwarded-For $bento_client_addr;", "proxy_set_header X-Real-IP $bento_client_addr;",
+	} {
+		if !strings.Contains(site, want) {
+			t.Errorf("site missing %q", want)
+		}
+	}
+	if n := strings.Count(site, "if ($bento_front_reject) {\n    return 444;"); n != 2 {
+		t.Errorf("both server blocks must close untrusted front peers, found %d", n)
+	}
+	if strings.Contains(site, "X-Forwarded-For $remote_addr") {
+		t.Error("forwarded client address must come from $bento_client_addr")
+	}
+
+	// Off: no PROXY listener or front-proxy variable anywhere.
+	in.Settings.FrontProxy.Enabled = false
+	files, err = Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, b := range files {
+		if strings.Contains(string(b), "proxy_protocol") || strings.Contains(string(b), "bento_front") ||
+			strings.Contains(string(b), "bento_client_addr") {
+			t.Errorf("%s mentions the front proxy while it is off", name)
+		}
+	}
+
+	// Persisted settings are re-checked: nothing unparsed reaches nginx.
+	for _, bad := range [][]string{nil, {"0.0.0.0/0"}, {"100.64.0.1 1; }"}} {
+		in.Settings.FrontProxy = domain.FrontProxySettings{Enabled: true, TrustedProxies: bad}
+		if _, err := Render(in); err == nil {
+			t.Errorf("trusted %q must be refused at render", bad)
+		}
+	}
+}

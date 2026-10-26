@@ -4,11 +4,12 @@ import { keys } from "../../api/keys.ts";
 
 /**
  * Public URL of an Ingress host: scheme from its TLS mode, and the edge's
- * bound port when it is not the scheme default.
+ * bound port when it is not the scheme default. Behind a front proxy visitors
+ * use the standard ports, so no port is shown.
  */
 export function hostUrl(name: string, host: T.Host | undefined, edge: T.EdgeSettings | undefined) {
   const secure = host ? host.route.tls !== "none" : false;
-  const port = secure ? edge?.httpsPort : edge?.httpPort;
+  const port = edge?.frontProxy?.enabled ? undefined : secure ? edge?.httpsPort : edge?.httpPort;
   const fallback = secure ? 443 : 80;
   const suffix = port && port !== fallback ? `:${port}` : "";
   return `${secure ? "https" : "http"}://${name}${suffix}`;

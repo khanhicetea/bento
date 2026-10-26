@@ -635,6 +635,18 @@ func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, i
 	if strings.ContainsAny(s.ACMEEmail, " \"'\n;{}") {
 		errs.Add("acmeEmail", "invalid email")
 	}
+	var stackNets []netip.Prefix
+	var ns NetworkSettings
+	if found, err := store.GetSetting(ctx, c.Store.DB(), networkSettingKey, &ns); err != nil {
+		return store.Operation{}, err
+	} else if found {
+		for _, sub := range []string{ns.AppsSubnet, ns.DataSubnet} {
+			if p, err := netip.ParsePrefix(sub); err == nil {
+				stackNets = append(stackNets, p)
+			}
+		}
+	}
+	validateFrontProxy(&s, stackNets, &errs)
 	if err := errs.Err(); err != nil {
 		return store.Operation{}, err
 	}
@@ -643,6 +655,108 @@ func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, i
 		Mutate: func(ctx context.Context, q store.Q) error { return store.PutSetting(ctx, q, edgeSettingKey, s) },
 	})
 	return op, err
+}
+
+// maxTrustedProxies bounds the front proxy allow-list; it names a handful of
+// proxy hosts, not a network.
+const maxTrustedProxies = 16
+
+// validateFrontProxy fills defaults, canonicalises the trusted list, and checks
+// the listeners. A disabled front proxy keeps its values but needs no peers.
+func validateFrontProxy(s *domain.EdgeSettings, stackNets []netip.Prefix, errs *domain.ValidationErrors) {
+	fp := &s.FrontProxy
+	def := domain.DefaultEdgeSettings().FrontProxy
+	if fp.Bind == "" {
+		fp.Bind = def.Bind
+	}
+	if fp.HTTPPort == 0 {
+		fp.HTTPPort = def.HTTPPort
+	}
+	if fp.HTTPSPort == 0 {
+		fp.HTTPSPort = def.HTTPSPort
+	}
+	trusted, ok := canonicalTrustedProxies(fp.TrustedProxies, stackNets)
+	fp.TrustedProxies = trusted
+	if !ok {
+		errs.Add("frontProxy.trustedProxies",
+			"must be IP addresses or CIDRs, not catch-all ranges or Bento's own networks")
+	}
+	if !fp.Enabled {
+		return
+	}
+	bind, err := parseEdgeBind(fp.Bind)
+	if err != nil {
+		errs.Add("frontProxy.bind", "must be an IPv4 address")
+	}
+	if fp.HTTPPort < 1 || fp.HTTPPort > 65535 {
+		errs.Add("frontProxy.httpPort", "must be a port")
+	}
+	if fp.HTTPSPort < 1 || fp.HTTPSPort > 65535 || fp.HTTPSPort == fp.HTTPPort {
+		errs.Add("frontProxy.httpsPort", "must be a port different from frontProxy.httpPort")
+	}
+	// The same host port is free on two binds only when both are specific
+	// and different.
+	mainBind, mainErr := parseEdgeBind(s.Bind)
+	overlap := err != nil || mainErr != nil || bind == mainBind || bind.IsUnspecified() || mainBind.IsUnspecified()
+	if overlap {
+		if fp.HTTPPort == s.HTTPPort || fp.HTTPPort == s.HTTPSPort {
+			errs.Add("frontProxy.httpPort", "is already used by the edge's main listeners")
+		}
+		if fp.HTTPSPort == s.HTTPPort || fp.HTTPSPort == s.HTTPSPort {
+			errs.Add("frontProxy.httpsPort", "is already used by the edge's main listeners")
+		}
+	}
+	if ok && len(trusted) == 0 {
+		errs.Add("frontProxy.trustedProxies", "needs the front proxy's address")
+	}
+}
+
+// canonicalTrustedProxies parses addresses (as single-host prefixes) and CIDRs
+// into masked, de-duplicated prefixes. Catch-all ranges and prefixes that
+// overlap the stack's own networks are refused: a container there could
+// otherwise connect to the edge directly and claim any client address.
+func canonicalTrustedProxies(in []string, stackNets []netip.Prefix) ([]string, bool) {
+	out := []string{}
+	if len(in) > maxTrustedProxies {
+		return out, false
+	}
+	seen := map[netip.Prefix]bool{}
+	for _, raw := range in {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		var p netip.Prefix
+		if strings.Contains(raw, "/") {
+			var err error
+			if p, err = netip.ParsePrefix(raw); err != nil {
+				return out, false
+			}
+		} else {
+			a, err := netip.ParseAddr(raw)
+			if err != nil || a.Zone() != "" {
+				return out, false
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		if p.Addr().Is4In6() {
+			return out, false
+		}
+		p = p.Masked()
+		if p.Bits() == 0 {
+			return out, false
+		}
+		for _, n := range stackNets {
+			if n.Overlaps(p) {
+				return out, false
+			}
+		}
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p.String())
+		}
+	}
+	return out, true
 }
 
 // parseEdgeBind accepts only a canonical dotted-quad IPv4 address (no

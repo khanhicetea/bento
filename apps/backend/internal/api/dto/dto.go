@@ -529,6 +529,20 @@ type EdgeSettings struct {
 	HTTP3     bool   `json:"http3"`
 	ACMEEmail string `json:"acmeEmail"`
 	ACMEURL   string `json:"acmeUrl"`
+	// FrontProxy adds PROXY protocol listeners for a TCP proxy in front of
+	// the edge, such as a public VPS forwarding to a homelab over a VPN.
+	FrontProxy FrontProxySettings `json:"frontProxy"`
+}
+
+// FrontProxySettings are edge listeners that expect a PROXY protocol header.
+// The client address in it is trusted only from TrustedProxies (IP addresses
+// or CIDRs); visitors on this path are treated as using ports 80/443.
+type FrontProxySettings struct {
+	Enabled        bool     `json:"enabled"`
+	Bind           string   `json:"bind"`
+	HTTPPort       int      `json:"httpPort"`
+	HTTPSPort      int      `json:"httpsPort"`
+	TrustedProxies []string `json:"trustedProxies"`
 }
 
 type EdgeStatus struct {

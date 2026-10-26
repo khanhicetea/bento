@@ -304,6 +304,17 @@ The edge (`edge` package + `operations/edge.go`):
 3. The edge container is recreated only when its own settings fingerprint changes (ports, bind, HTTP/3, image);
    otherwise it gets `SIGHUP`. Includes in the generated config are relative, which is why candidates validate in place.
 
+**Front proxy** (`edge.frontProxy`, off by default): a TCP proxy in front of the edge, such as a public VPS forwarding
+to a homelab over a VPN, connects to two extra listeners with `proxy_protocol` on fixed container ports
+`edge.FrontHTTPPort`/`FrontHTTPSPort` (8080/8443), published on their own bind and host ports. `$server_port` marks
+the path (`$bento_via_front`); a `geo` on `$realip_remote_addr` (the TCP peer, never a claimed address) checks it
+against `trustedProxies`, and other peers on those ports get `444`. The visitor address is `$proxy_protocol_addr`
+through a map (`$bento_client_addr`), not `real_ip_header`, which belongs to the tunnel. Like tunnel visitors, front
+visitors used the standard ports: `$bento_std_ports` drops the port suffix and forwards 80/443, and `Alt-Svc` is not
+sent because UDP is not forwarded. Accept refuses catch-all prefixes and prefixes overlapping the stack networks; the
+render re-parses the list. With the feature off the rendered config is byte-identical to before, and the edge
+fingerprint ignores it (only enabling, bind or ports recreate the container; the trusted list only reloads).
+
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
 When the utils listener binds the apps network, every app and upstream host reserves

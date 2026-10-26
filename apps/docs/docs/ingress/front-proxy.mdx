@@ -1,0 +1,134 @@
+---
+title: Front proxy
+description: Serve a homelab through a public VPS that forwards TCP with PROXY protocol.
+---
+
+Use a **front proxy** when Bento runs somewhere without a public IP (a homelab behind CGNAT, a NAT'd office server)
+and you have a small public server, such as a VPS, that can reach it over Tailscale, WireGuard or another private link.
+
+The VPS forwards raw TCP. It never decrypts traffic and never holds certificates: HTTPS still ends at Bento's edge,
+which keeps issuing certificates and managing hosts. The VPS adds a short **PROXY protocol** header to each connection
+so the edge knows the visitor's real IP.
+
+```text
+visitor ──TLS──▶ VPS :443 ──PROXY + TLS over tailnet──▶ Bento edge :8443 ──▶ app
+```
+
+## Set it up
+
+<Steps>
+  <Step title="Turn on the front proxy in Bento">
+    In **Ingress → Edge → Front proxy**:
+
+    | Field | Typical value |
+    | --- | --- |
+    | **PROXY protocol** | on |
+    | **Bind** | the server's tailnet IP, e.g. `100.101.102.103` |
+    | **HTTP** / **HTTPS** | `8080` / `8443` |
+    | **Trusted proxies** | the VPS's tailnet IP, e.g. `100.64.0.1` |
+
+    Save. The edge restarts with two extra listeners. Ports 80/443 keep working for direct and LAN visitors.
+  </Step>
+  <Step title="Forward TCP on the VPS">
+    Install Nginx with the stream module (`apt install nginx libnginx-mod-stream` on Debian/Ubuntu). Remove any `http`
+    site that listens on 80 or 443, such as `sites-enabled/default`, then add this to `/etc/nginx/nginx.conf`:
+
+    <Tabs>
+      <Tab title="Nginx">
+        ```nginx /etc/nginx/nginx.conf
+        stream {
+          # Bento server's tailnet IP. Use the IP, not a DNS name:
+          # Nginx resolves names only once at startup.
+          upstream bento_http  { server 100.101.102.103:8080; }
+          upstream bento_https { server 100.101.102.103:8443; }
+
+          server {
+            listen 80;
+            listen [::]:80;
+            proxy_pass bento_http;
+            proxy_protocol on;
+            proxy_connect_timeout 5s;
+          }
+          server {
+            listen 443;
+            listen [::]:443;
+            proxy_pass bento_https;
+            proxy_protocol on;
+            proxy_connect_timeout 5s;
+            proxy_timeout 1h;  # WebSockets, server-sent events
+          }
+        }
+        ```
+      </Tab>
+      <Tab title="HAProxy">
+        ```text /etc/haproxy/haproxy.cfg
+        frontend web_http
+          mode tcp
+          bind :80
+          default_backend bento_http
+        frontend web_https
+          mode tcp
+          bind :443
+          default_backend bento_https
+        backend bento_http
+          mode tcp
+          server bento 100.101.102.103:8080 send-proxy-v2
+        backend bento_https
+          mode tcp
+          timeout server 1h
+          server bento 100.101.102.103:8443 send-proxy-v2
+        ```
+      </Tab>
+    </Tabs>
+
+    Check and reload: `nginx -t && systemctl reload nginx`.
+  </Step>
+  <Step title="Open the ports">
+    On the VPS, allow TCP 80 and 443. With Tailscale, let only the VPS reach the two Bento ports, for example:
+
+    ```json Tailscale ACL
+    { "action": "accept", "src": ["tag:edge-vps"], "dst": ["tag:homelab:8080,8443"] }
+    ```
+
+    Allowing UDP 41641 on the VPS lets Tailscale connect directly instead of through a relay.
+  </Step>
+  <Step title="Point DNS at the VPS">
+    Set each domain's `A` / `AAAA` record to the VPS's public IP. ACME certificates are issued as usual, because port 80
+    passes through to the edge.
+  </Step>
+</Steps>
+
+## What your apps see
+
+Visitors on this path reached the VPS on the standard ports, so the edge forwards those ports and never adds a port
+to the host, even when the edge's own HTTPS port is not 443:
+
+| Value | Through the VPS | Direct to the edge on `:8443` |
+| --- | --- | --- |
+| Visitor IP (`X-Forwarded-For`, PHP `REMOTE_ADDR`) | the visitor's IP from the PROXY header | the visitor's IP |
+| Host (`HTTP_HOST`) | `shop.example.com` | `shop.example.com:8443` |
+| `X-Forwarded-Proto` / `HTTPS` | `https` / `on` | `https` / `on` |
+| `X-Forwarded-Port` | `443` | `8443` |
+| HTTP → HTTPS redirect | `https://shop.example.com/…` | `https://shop.example.com:8443/…` |
+
+Apps need no changes: they still trust forwarding headers only from the edge. Node, Bun and Python apps trust the
+addresses in `BENTO_TRUSTED_PROXIES` as before. With the front proxy on, the webhook URLs Bento shows use
+`https://<host>` with no port.
+
+## Security
+
+- The client IP in a PROXY header is believed only when the connection comes from a **trusted proxy**. Any other
+  peer on the front proxy ports is disconnected.
+- A connection without a PROXY header on those ports is refused, and a forged `X-Forwarded-For` sent by a visitor is
+  ignored.
+- Bento refuses a trusted list that is a catch-all (`0.0.0.0/0`, `::/0`) or that overlaps its own Docker networks,
+  because any container there could otherwise reach the edge and claim any visitor IP.
+- Bind the front proxy ports to the tailnet IP, so nothing else on the LAN or internet can reach them.
+
+## Limits
+
+- HTTP/3 is not offered to visitors on this path, because the VPS forwards TCP only. Browsers use HTTP/2.
+- If the bind address is a tailnet IP, the edge cannot start until that interface is up after a reboot. Bento
+  retries until it starts.
+- Every request makes an extra trip through the VPS. Pick a VPS region close to the server and check that
+  `tailscale status` shows a direct connection.

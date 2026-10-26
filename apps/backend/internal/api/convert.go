@@ -53,6 +53,26 @@ func runtimeToDTO(r domain.Runtime) dto.RuntimeSpec {
 	return out
 }
 
+func edgeToDTO(s domain.EdgeSettings) dto.EdgeSettings {
+	fp := s.FrontProxy
+	return dto.EdgeSettings{
+		Enabled: s.Enabled, Bind: s.Bind, HTTPPort: s.HTTPPort, HTTPSPort: s.HTTPSPort, HTTP3: s.HTTP3,
+		ACMEEmail: s.ACMEEmail, ACMEURL: s.ACMEURL,
+		FrontProxy: dto.FrontProxySettings{Enabled: fp.Enabled, Bind: fp.Bind, HTTPPort: fp.HTTPPort,
+			HTTPSPort: fp.HTTPSPort, TrustedProxies: nonNil(fp.TrustedProxies)},
+	}
+}
+
+func edgeFromDTO(s dto.EdgeSettings) domain.EdgeSettings {
+	fp := s.FrontProxy
+	return domain.EdgeSettings{
+		Enabled: s.Enabled, Bind: s.Bind, HTTPPort: s.HTTPPort, HTTPSPort: s.HTTPSPort, HTTP3: s.HTTP3,
+		ACMEEmail: s.ACMEEmail, ACMEURL: s.ACMEURL,
+		FrontProxy: domain.FrontProxySettings{Enabled: fp.Enabled, Bind: fp.Bind, HTTPPort: fp.HTTPPort,
+			HTTPSPort: fp.HTTPSPort, TrustedProxies: nonNil(fp.TrustedProxies)},
+	}
+}
+
 func routeFromDTO(r *dto.Route) domain.Route {
 	if r == nil {
 		return domain.Route{TLS: domain.TLSNone}

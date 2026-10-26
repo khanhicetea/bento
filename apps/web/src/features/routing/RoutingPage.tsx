@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
+import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Router, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -52,7 +52,8 @@ function EdgePanel() {
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   return (
     <>
-      <EdgeForm status={query.data} />
+      {/* Saved settings come back canonical (defaults, CIDRs); remount so the form shows them. */}
+      <EdgeForm key={JSON.stringify(query.data.settings)} status={query.data} />
       <HostsPanel />
     </>
   );
@@ -263,6 +264,14 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
   const save = useOperationMutation(() => api.edge.set(settings));
   const dirty = JSON.stringify(settings) !== JSON.stringify(status.settings);
   const set = (next: Partial<T.EdgeSettings>) => setSettings({ ...settings, ...next });
+  const setFront = (next: Partial<T.FrontProxySettings>) =>
+    setSettings({ ...settings, frontProxy: { ...settings.frontProxy, ...next } });
+  const [trusted, setTrusted] = useState(status.settings.frontProxy.trustedProxies.join(", "));
+  const reset = () => {
+    setSettings(status.settings);
+    setTrusted(status.settings.frontProxy.trustedProxies.join(", "));
+  };
+  const front = settings.frontProxy;
   return (
     <>
       <section className="box box--edge" aria-label="Edge">
@@ -320,6 +329,69 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
             </dl>
           </div>
         </Cell>
+        <Cell className="edge-config" title="Front proxy" icon={<Router />}>
+          <div className="grid gap-3">
+            <span className="flex items-center gap-3">
+              <Switch
+                checked={front.enabled}
+                label="Front proxy enabled"
+                onChange={(enabled) => setFront({ enabled })}
+              />
+              <span className="label text-xs">PROXY protocol</span>
+            </span>
+            <dl className="kv kv--edit">
+              <div>
+                <dt>Bind</dt>
+                <dd>
+                  <Input
+                    aria-label="Front proxy bind address"
+                    value={front.bind}
+                    spellCheck={false}
+                    onChange={(event) => setFront({ bind: event.target.value })}
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>HTTP</dt>
+                <dd>
+                  <Input
+                    aria-label="Front proxy HTTP port"
+                    type="number"
+                    value={front.httpPort}
+                    onChange={(event) => setFront({ httpPort: Number(event.target.value) })}
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>HTTPS</dt>
+                <dd>
+                  <Input
+                    aria-label="Front proxy HTTPS port"
+                    type="number"
+                    value={front.httpsPort}
+                    onChange={(event) => setFront({ httpsPort: Number(event.target.value) })}
+                  />
+                </dd>
+              </div>
+            </dl>
+            <Field label="Trusted proxies" hint="Front proxy IPs or CIDRs, comma separated">
+              <Input
+                value={trusted}
+                placeholder="100.64.0.1"
+                spellCheck={false}
+                onChange={(event) => {
+                  setTrusted(event.target.value);
+                  setFront({
+                    trustedProxies: event.target.value
+                      .split(/[\s,]+/)
+                      .map((value) => value.trim())
+                      .filter(Boolean),
+                  });
+                }}
+              />
+            </Field>
+          </div>
+        </Cell>
         <Cell
           title="Certificates · ACME"
           icon={<Lock />}
@@ -350,7 +422,7 @@ function EdgeForm({ status }: { status: T.EdgeStatus }) {
               <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
                 Save
               </Button>
-              <Button variant="ghost" disabled={!dirty || save.isPending} onClick={() => setSettings(status.settings)}>
+              <Button variant="ghost" disabled={!dirty || save.isPending} onClick={reset}>
                 Reset
               </Button>
             </div>

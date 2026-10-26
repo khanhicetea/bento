@@ -12,6 +12,10 @@ func TestPublicHostOrigin(t *testing.T) {
 	edge := func(bind string, http, https int) domain.EdgeSettings {
 		return domain.EdgeSettings{Enabled: true, Bind: bind, HTTPPort: http, HTTPSPort: https}
 	}
+	front := func(es domain.EdgeSettings) domain.EdgeSettings {
+		es.FrontProxy = domain.FrontProxySettings{Enabled: true, TrustedProxies: []string{"100.64.0.1/32"}}
+		return es
+	}
 	cases := []struct {
 		name   string
 		es     domain.EdgeSettings
@@ -29,6 +33,7 @@ func TestPublicHostOrigin(t *testing.T) {
 		{"ipv6 loopback edge", edge("::1", 8080, 8443), false, tls, "https://shop.example.com"},
 		{"localhost edge", edge("localhost", 8080, 8443), false, plain, "https://shop.example.com"},
 		{"tunnel with public edge", edge("0.0.0.0", 8080, 8443), true, plain, "https://shop.example.com"},
+		{"front proxy in front of a custom-port edge", front(edge("0.0.0.0", 8080, 8443)), false, tls, "https://shop.example.com"},
 	}
 	for _, c := range cases {
 		if got := publicHostOrigin(c.es, c.tunnel, c.host); got != c.want {

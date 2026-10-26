@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math/big"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -43,6 +44,11 @@ const (
 	// StubStatusPort is the edge's loopback-only stub_status listener. It sits
 	// in an uncommon high range so operator drop-ins are unlikely to collide.
 	StubStatusPort = 57319
+	// FrontHTTPPort and FrontHTTPSPort are the container ports of the PROXY
+	// protocol listeners. They are fixed so the config can tell the paths
+	// apart by $server_port whatever host ports they are published on.
+	FrontHTTPPort  = 8080
+	FrontHTTPSPort = 8443
 )
 
 // Route is one managed edge route.
@@ -76,6 +82,12 @@ type Route struct {
 	// Includes are the operator drop-in route directories included in the
 	// server block: the host's own, plus app-<slug> for app targets.
 	Includes []string
+	// FrontHTTPPort and FrontHTTPSPort are the PROXY protocol listeners, or 0
+	// when no front proxy is configured.
+	FrontHTTPPort  int
+	FrontHTTPSPort int
+	// ClientAddr is the nginx variable holding the visitor's address.
+	ClientAddr string
 }
 
 // AppUpstream is one app's shared upstream block. It is rendered once per app
@@ -119,6 +131,10 @@ func Render(in Input) (map[string][]byte, error) {
 	if httpPort != 80 {
 		httpSuffix = ":" + strconv.Itoa(httpPort)
 	}
+	front, trusted, err := frontProxy(s.FrontProxy)
+	if err != nil {
+		return nil, err
+	}
 	apps := make(map[string]domain.App, len(in.Apps))
 	for _, a := range in.Apps {
 		apps[a.ID] = a
@@ -153,6 +169,10 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute(string(h.Target), RouteName(h.Name), h.Name, h.Route, s)
+		r.ClientAddr = "$remote_addr"
+		if front {
+			r.FrontHTTPPort, r.FrontHTTPSPort, r.ClientAddr = FrontHTTPPort, FrontHTTPSPort, "$bento_client_addr"
+		}
 		r.UtilsUpstream = in.UtilsUpstream
 		r.MaxBodyMB = 64
 		r.StaticCache = h.Route.StaticCache
@@ -202,6 +222,8 @@ func Render(in Input) (map[string][]byte, error) {
 		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
 		"TunnelIP": in.TunnelIP, "HTTPSPortSuffix": suffix, "HTTPPortSuffix": httpSuffix,
 		"HTTPPort": httpPort, "HTTPSPort": s.HTTPSPort,
+		"FrontProxy": front, "FrontTrusted": trusted,
+		"FrontHTTPPort": FrontHTTPPort, "FrontHTTPSPort": FrontHTTPSPort,
 	})
 	if err != nil {
 		return nil, err
@@ -222,6 +244,27 @@ func Render(in Input) (map[string][]byte, error) {
 		files["sites/"+r.Name+".conf"] = b
 	}
 	return files, nil
+}
+
+// frontProxy reports whether PROXY protocol listeners are rendered and the
+// peers trusted on them. Settings are validated on save; anything that does
+// not parse as a non-catch-all prefix here is refused rather than rendered.
+func frontProxy(fp domain.FrontProxySettings) (bool, []string, error) {
+	if !fp.Enabled {
+		return false, nil, nil
+	}
+	if len(fp.TrustedProxies) == 0 {
+		return false, nil, errors.New("front proxy has no trusted proxies")
+	}
+	out := make([]string, 0, len(fp.TrustedProxies))
+	for _, t := range fp.TrustedProxies {
+		p, err := netip.ParsePrefix(t)
+		if err != nil || p.Bits() == 0 {
+			return false, nil, fmt.Errorf("front proxy trusted proxy %q is not a CIDR", t)
+		}
+		out = append(out, p.Masked().String())
+	}
+	return true, out, nil
 }
 
 // upstreamIdent makes a host name a unique nginx upstream identifier: dots
