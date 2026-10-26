@@ -56,6 +56,7 @@ func TestRouteScopesNameRegisteredRoutes(t *testing.T) {
 	// Destructive and credential routes stay out of every token scope.
 	for _, p := range []string{
 		"DELETE /api/v1/apps/{id}", "POST /api/v1/apps/{id}/exec", "GET /api/v1/apps/{id}/terminal",
+		"POST /api/v1/apps/{id}/scheduler/command",
 		"POST /api/v1/backups/restore", "POST /api/v1/backups/delete", "GET /api/v1/backups/download",
 		"POST /api/v1/stack/export", "PUT /api/v1/auth/password", "PUT /api/v1/tunnel/token",
 		"POST /api/v1/retired/{id}/prune", "DELETE /api/v1/hosts/{name}", "POST /api/v1/apps/{id}/webhook",

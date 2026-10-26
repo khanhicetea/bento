@@ -24,18 +24,19 @@ Every connection has one scope. The backend enforces it on every request; the cl
 
 | Scope | Can |
 | --- | --- |
-| `read` (default) | Status, apps, logs, metrics, readiness, operations, data services, ingress, backups, Docker inventory |
-| `operate` | Everything in `read`, plus start / stop / restart / deploy apps, run backups, restart data services, cancel operations |
-| `admin` | Everything in `operate`, plus create / update / publish apps, add bindings and databases, set git sources, save Ingress hosts |
+| `read` (default) | Status, apps, logs, metrics, readiness, operations, data services, ingress, backups, Docker inventory, app scheduler jobs, runs and run logs |
+| `operate` | Everything in `read`, plus start / stop / restart / deploy apps, run backups, restart data services, cancel operations, run scheduler jobs, start / stop / restart workers, stop runs |
+| `admin` | Everything in `operate`, plus create / update / publish apps, add bindings and databases, set git sources, save Ingress hosts, create / edit / enable / disable scheduler jobs, list / read / edit files in an app's `~/app` |
 
 No scope can delete or restore anything. Deleting apps, hosts, schedules, or backups; restores and clones;
-pruning retained data; export; exec and terminals; database-browser tickets; and every credential (password,
+pruning retained data; export; exec and terminals; importing or deleting scheduler jobs; database-browser tickets; and every credential (password,
 tunnel token, restic keys, webhook secrets, API tokens) still need the web UI or the plain `bento` CLI, with their
 exact confirmations.
 
 For any scoped caller, Bento also:
 
 - shows app **env values as `[redacted]`** and refuses env changes,
+- shows only the **env keys** of scheduler jobs, never their values,
 - refuses backup uploads to rclone remotes,
 - labels every operation it starts — `token:<name>` or `local:<scope>` — in **Activity**.
 
@@ -114,5 +115,27 @@ The same token also works on the REST API (`Authorization: Bearer …`) within i
 | `restart_service`, `cancel_operation` | operate | Data service restart, cancel |
 | `create_app`, `update_app`, `publish_app`, `unpublish_app` | admin | App configuration |
 | `add_binding`, `add_database`, `set_git_source`, `save_host` | admin | Data, git, Ingress |
+| `list_scheduler_jobs`, `list_scheduler_runs`, `get_scheduler_run_log` | read | App jobs and workers, run history, run output (≤ 64 KB a page, secrets redacted) |
+| `run_scheduler_job`, `control_scheduler_worker`, `stop_scheduler_run` | operate | Run a job now; start / stop / restart a worker; stop a run |
+| `create_scheduler_job`, `update_scheduler_job` | admin | Create a job or worker; change only the fields given |
+| `set_scheduler_job_enabled` | admin | Enable or disable a job or worker |
+| `list_app_files`, `read_app_file` | admin | Browse and read text files in the app's `~/app` (≤ 256 KB a read, secrets redacted) |
+| `edit_app_file`, `write_app_file` | admin | Replace exact text in a file, or create / overwrite a whole file |
 
 Mutating tools return the accepted operation. The model then calls `wait_operation` to report the result.
+Scheduler tools act directly on the app's [scheduler](/apps/scheduler) and return no operation; the app must be
+running. Bento's own `zz-bento-*` tasks are read-only.
+
+<Callout type="warning">
+A scheduler job runs any command as the app. An `admin` token can create one, so treat `admin` like shell access to
+every app.
+</Callout>
+
+File tools reach only the app's code directory, `~/app`: never the rest of the home, and never a hidden path such
+as `.env` or `.git`, even through a symlink. Edits need the sha256 from the last read, so a file that changed in
+between is refused, not overwritten. Text that shows a secret as `[redacted]` cannot be written back; use
+`edit_app_file`, which changes only the text it is given. A deploy resets git-tracked files, so commit lasting fixes
+to the repository.
+
+Job env values can be set and removed by key but are never shown back. An edit keeps the env values and settings it
+does not mention, and fails instead of overwriting if the job changed since it was read.

@@ -27,7 +27,9 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 | System | `GET /system`, `GET /catalog`, `GET /reconcile` |
 | Apps | `GET/POST /apps`, `GET/PATCH/DELETE /apps/{id}`, `POST /apps/{id}/{start,stop,restart,publish,unpublish}` |
 | App data | `POST /apps/{id}/bindings`, `POST /apps/{id}/bindings/{bid}/databases`, `POST /apps/{id}/permissions` |
+| App files | `GET /apps/{id}/files?path=`, `GET/PUT/PATCH /apps/{id}/files/content` (admin; `~/app` only, no hidden paths) |
 | App tools | `GET /apps/{id}/readiness`, `GET /apps/{id}/logs` (SSE), `POST /apps/{id}/exec`, `POST /apps/{id}/scheduler/command`, `GET /apps/{id}/terminal` (WebSocket) |
+| App scheduler | `GET/POST /apps/{id}/scheduler/jobs`, `PATCH /apps/{id}/scheduler/jobs/{name}`, `POST /apps/{id}/scheduler/jobs/{name}/run`, `POST /apps/{id}/scheduler/jobs/{name}/enabled`, `POST /apps/{id}/scheduler/workers/{name}/{start,stop,restart}`, `GET /apps/{id}/scheduler/runs`, `GET /apps/{id}/scheduler/runs/{run}/log`, `POST /apps/{id}/scheduler/runs/{run}/stop` |
 | Operations | `GET /operations`, `GET /operations/{id}`, `GET /operations/{id}/events` (SSE), `POST /operations/{id}/cancel` |
 | Data | `GET/POST /services`, `GET /retired`, `POST /retired/{id}/prune` |
 | Ingress | `GET/PUT /edge`, `GET /tunnel`, `PUT /tunnel/token`, `GET/POST /hosts`, `PUT/DELETE /hosts/{name}` |
@@ -51,5 +53,7 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 
 MCP is served at `POST /mcp` (outside `/api/v1`) for API tokens; see [AI agents (MCP)](/cli/ai).
 
-The scheduler UI is not part of the JSON API: it is proxied at `/apps/<slug>/scheduler/…` and needs a browser session
+The `/scheduler` routes above are a typed view of the app's minicrond for API tokens: they need the app running, show
+job env keys but never values, and cannot delete or import jobs (use the UI or `POST /apps/{id}/scheduler/command`
+from a session or the CLI). Creating and editing jobs needs `admin`. The scheduler UI is not part of the JSON API: it is proxied at `/apps/<slug>/scheduler/…` and needs a browser session
 and an exact allowed `Origin`.

@@ -865,6 +865,171 @@ export interface ExecResult {
 export interface SchedulerCommandRequest {
   argv: string[];
 }
+export const SchedulerJobKindJob = "job";
+export const SchedulerJobKindWorker = "worker";
+export type SchedulerJobKind = typeof SchedulerJobKindJob | typeof SchedulerJobKindWorker;
+/**
+ * SchedulerJob is one minicrond job or worker. Env values are never
+ * included, only their keys; app secrets in the command are redacted.
+ */
+export interface SchedulerJob {
+  name: string;
+  kind: SchedulerJobKind;
+  /**
+   * ReadOnly marks Bento's own config-owned tasks (zz-bento-*).
+   */
+  readOnly: boolean;
+  enabled: boolean;
+  command?: string;
+  argv?: string[];
+  schedule?: string;
+  timezone?: string;
+  workingDir?: string;
+  envKeys: string[];
+  nextFireAt?: string;
+  worker?: SchedulerWorkerState;
+}
+export interface SchedulerWorkerState {
+  status: string;
+  active: boolean;
+  held: boolean;
+  failures: number /* int */;
+  exhausted: boolean;
+}
+export interface SchedulerJobList {
+  jobs: SchedulerJob[];
+}
+export interface SchedulerRun {
+  id: string;
+  job: string;
+  kind: string;
+  status: string;
+  endReason?: string;
+  trigger: string;
+  attempt: number /* int */;
+  exitCode?: number /* int */;
+  signal?: string;
+  queuedAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  logBytes: number /* int64 */;
+  logTruncated: boolean;
+}
+export interface SchedulerRunList {
+  runs: SchedulerRun[];
+  /**
+   * NextBefore pages to older runs (pass as before); empty on the last page.
+   */
+  nextBefore?: string;
+}
+export interface SchedulerLogLine {
+  seq: number /* uint64 */;
+  stderr?: boolean;
+  line: string;
+}
+/**
+ * SchedulerRunLog is one page of a run's output, oldest first. Pass Next as
+ * after to read on; More reports that the page was full.
+ */
+export interface SchedulerRunLog {
+  runId: string;
+  lines: SchedulerLogLine[];
+  next: number /* uint64 */;
+  more: boolean;
+}
+/**
+ * SchedulerJobRequest creates a job or worker (POST: name, kind and command
+ * or argv required) or edits one (PATCH: only the fields sent change).
+ * Setting command clears argv and the reverse. Env values are set or removed
+ * by key and never read back; keys not mentioned keep their values. Fields
+ * minicrond has that are not listed here are kept unchanged on edit.
+ */
+export interface SchedulerJobRequest {
+  name?: string;
+  kind?: SchedulerJobKind;
+  command?: string;
+  argv?: string[];
+  schedule?: string;
+  timezone?: string;
+  workingDir?: string;
+  enabled?: boolean;
+  timeout?: number /* int */;
+  retries?: number /* int */;
+  env?: { [key: string]: string};
+  removeEnv?: string[];
+}
+export interface SchedulerEnabledRequest {
+  enabled: boolean;
+}
+/**
+ * SchedulerResult reports a worker or run action minicrond accepted.
+ */
+export interface SchedulerResult {
+  name: string;
+  action: string;
+}
+export const AppFileTypeFile = "file";
+export const AppFileTypeDir = "dir";
+export const AppFileTypeSymlink = "symlink";
+export const AppFileTypeOther = "other";
+export type AppFileType = typeof AppFileTypeFile | typeof AppFileTypeDir | typeof AppFileTypeSymlink | typeof AppFileTypeOther;
+export interface AppFileEntry {
+  name: string;
+  type: AppFileType;
+  size: number /* int64 */;
+  modifiedAt: string;
+}
+/**
+ * AppFileList is one directory of the app code directory. Path is relative
+ * to ~/app ("" is ~/app itself).
+ */
+export interface AppFileList {
+  path: string;
+  entries: AppFileEntry[];
+  truncated: boolean;
+}
+/**
+ * AppFileContent is a UTF-8 window of a text file, with the app's secrets
+ * redacted. Sha256 is of the whole file on disk; pass it to an edit. Read on
+ * from offset+length while eof is false.
+ */
+export interface AppFileContent {
+  path: string;
+  size: number /* int64 */;
+  sha256: string;
+  offset: number /* int64 */;
+  length: number /* int64 */;
+  eof: boolean;
+  content: string;
+}
+/**
+ * AppFileWriteRequest replaces a file's content, or creates the file when
+ * expectedSha256 is empty. A file that changed since it was read is refused.
+ */
+export interface AppFileWriteRequest {
+  path: string;
+  content: string;
+  expectedSha256?: string;
+}
+/**
+ * AppFileReplaceRequest replaces exactly one occurrence of oldText (or every
+ * one with all) on the real file content, so secrets shown as [redacted]
+ * elsewhere in the file stay intact.
+ */
+export interface AppFileReplaceRequest {
+  path: string;
+  oldText: string;
+  newText: string;
+  all?: boolean;
+  expectedSha256?: string;
+}
+export interface AppFileWritten {
+  path: string;
+  size: number /* int64 */;
+  sha256: string;
+  created: boolean;
+  replacements?: number /* int */;
+}
 export interface AppProcess {
   pid: string;
   ppid: string;

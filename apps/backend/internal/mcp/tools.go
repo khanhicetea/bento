@@ -552,6 +552,10 @@ func allTools() []Tool {
 		},
 	}
 
+	read = append(read, schedulerReadTools()...)
+	operate = append(operate, schedulerOperateTools()...)
+	admin = append(admin, schedulerAdminTools()...)
+	admin = append(admin, fileTools()...)
 	out := append(read, operate...)
 	return append(out, admin...)
 }

@@ -434,6 +434,21 @@ only what it created.
   Tools live in `internal/mcp` and call the API through `inProcess`, a `RoundTripper` that serves the mux with the
   caller's context, so every tool call is scope-checked like a direct request. `bento mcp` serves the same tools on
   stdio over the control socket.
+- `schedulerapi.go`: the token-facing app scheduler routes (`/apps/{id}/scheduler/{jobs,workers,runs}…`). Each sends
+  one fixed request to minicrond's HTTP API (under `runtime.SchedulerBasePath`) over the scheduler relay, like the
+  gateway, and needs the app desired-running. Output is allowlisted into `dto.Scheduler*` (job env keys only, app
+  secrets redacted from commands and log lines); names and run ids are validated before anything is sent. Admin may
+  create (`POST`, sent with `If-None-Match: *`) and edit (`PATCH`: read the full definition, apply only the given
+  fields to its raw JSON so unmodelled fields and env values survive, `PUT` with `If-Match` on the revision read).
+  A job is an arbitrary command as the app, so admin is exec-level here. `zz-bento-*` is reserved. Import and delete
+  stay on full-scope `scheduler/command`. These routes act directly, like exec, and are not operations.
+- `appfiles.go`: admin list/read/write/replace of files under `~/app` only. `domain.CleanRelative` refuses absolute,
+  `..` and hidden paths; each access is a fixed bash script exec'd as the app UID through `bento-exec` (running
+  instance, else a tool container), path as an argument, which re-checks the `realpath` stays inside `~/app` and out
+  of hidden paths. The backend never opens app paths as root. Writes refuse symlink targets, go to a temp file in
+  the same directory and are renamed over the target (mode kept), and replace only when the on-disk sha256 matches.
+  Reads are UTF-8 only and redacted; `[redacted]` is refused in written text, and `PATCH` replaces text on the real
+  bytes so secrets elsewhere in the file survive. Not operations, like exec.
 - `server.go`: routes and resource handlers; mutations respond `202` with the operation and `Location`.
 - `stream.go`: logs as SSE (tail ≤ 5000, 30 min, 20 MB, the app's secrets redacted, resume via `since`/`Last-Event-ID`),
   operation events as SSE, bounded exec (1 MiB, 10 min), `minicrond` passthrough (refuses `daemon`), and the

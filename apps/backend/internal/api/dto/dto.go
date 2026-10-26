@@ -915,6 +915,179 @@ type SchedulerCommandRequest struct {
 	Argv []string `json:"argv"`
 }
 
+// ---- app scheduler (minicrond), as API tokens and MCP see it ----
+
+type SchedulerJobKind string
+
+const (
+	SchedulerJobKindJob    SchedulerJobKind = "job"
+	SchedulerJobKindWorker SchedulerJobKind = "worker"
+)
+
+// SchedulerJob is one minicrond job or worker. Env values are never
+// included, only their keys; app secrets in the command are redacted.
+type SchedulerJob struct {
+	Name string           `json:"name"`
+	Kind SchedulerJobKind `json:"kind"`
+	// ReadOnly marks Bento's own config-owned tasks (zz-bento-*).
+	ReadOnly   bool                  `json:"readOnly"`
+	Enabled    bool                  `json:"enabled"`
+	Command    string                `json:"command,omitempty"`
+	Argv       []string              `json:"argv,omitempty"`
+	Schedule   string                `json:"schedule,omitempty"`
+	Timezone   string                `json:"timezone,omitempty"`
+	WorkingDir string                `json:"workingDir,omitempty"`
+	EnvKeys    []string              `json:"envKeys"`
+	NextFireAt string                `json:"nextFireAt,omitempty"`
+	Worker     *SchedulerWorkerState `json:"worker,omitempty"`
+}
+
+type SchedulerWorkerState struct {
+	Status    string `json:"status"`
+	Active    bool   `json:"active"`
+	Held      bool   `json:"held"`
+	Failures  int    `json:"failures"`
+	Exhausted bool   `json:"exhausted"`
+}
+
+type SchedulerJobList struct {
+	Jobs []SchedulerJob `json:"jobs"`
+}
+
+type SchedulerRun struct {
+	ID           string `json:"id"`
+	Job          string `json:"job"`
+	Kind         string `json:"kind"`
+	Status       string `json:"status"`
+	EndReason    string `json:"endReason,omitempty"`
+	Trigger      string `json:"trigger"`
+	Attempt      int    `json:"attempt"`
+	ExitCode     *int   `json:"exitCode,omitempty"`
+	Signal       string `json:"signal,omitempty"`
+	QueuedAt     string `json:"queuedAt"`
+	StartedAt    string `json:"startedAt,omitempty"`
+	EndedAt      string `json:"endedAt,omitempty"`
+	LogBytes     int64  `json:"logBytes"`
+	LogTruncated bool   `json:"logTruncated"`
+}
+
+type SchedulerRunList struct {
+	Runs []SchedulerRun `json:"runs"`
+	// NextBefore pages to older runs (pass as before); empty on the last page.
+	NextBefore string `json:"nextBefore,omitempty"`
+}
+
+type SchedulerLogLine struct {
+	Seq    uint64 `json:"seq"`
+	Stderr bool   `json:"stderr,omitempty"`
+	Line   string `json:"line"`
+}
+
+// SchedulerRunLog is one page of a run's output, oldest first. Pass Next as
+// after to read on; More reports that the page was full.
+type SchedulerRunLog struct {
+	RunID string             `json:"runId"`
+	Lines []SchedulerLogLine `json:"lines"`
+	Next  uint64             `json:"next"`
+	More  bool               `json:"more"`
+}
+
+// SchedulerJobRequest creates a job or worker (POST: name, kind and command
+// or argv required) or edits one (PATCH: only the fields sent change).
+// Setting command clears argv and the reverse. Env values are set or removed
+// by key and never read back; keys not mentioned keep their values. Fields
+// minicrond has that are not listed here are kept unchanged on edit.
+type SchedulerJobRequest struct {
+	Name       string            `json:"name,omitempty"`
+	Kind       SchedulerJobKind  `json:"kind,omitempty"`
+	Command    *string           `json:"command,omitempty"`
+	Argv       []string          `json:"argv,omitempty"`
+	Schedule   *string           `json:"schedule,omitempty"`
+	Timezone   *string           `json:"timezone,omitempty"`
+	WorkingDir *string           `json:"workingDir,omitempty"`
+	Enabled    *bool             `json:"enabled,omitempty"`
+	Timeout    *int              `json:"timeout,omitempty"`
+	Retries    *int              `json:"retries,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	RemoveEnv  []string          `json:"removeEnv,omitempty"`
+}
+
+type SchedulerEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SchedulerResult reports a worker or run action minicrond accepted.
+type SchedulerResult struct {
+	Name   string `json:"name"`
+	Action string `json:"action"`
+}
+
+// ---- app code files (~/app only; hidden paths refused) ----
+
+type AppFileType string
+
+const (
+	AppFileTypeFile    AppFileType = "file"
+	AppFileTypeDir     AppFileType = "dir"
+	AppFileTypeSymlink AppFileType = "symlink"
+	AppFileTypeOther   AppFileType = "other"
+)
+
+type AppFileEntry struct {
+	Name       string      `json:"name"`
+	Type       AppFileType `json:"type"`
+	Size       int64       `json:"size"`
+	ModifiedAt string      `json:"modifiedAt"`
+}
+
+// AppFileList is one directory of the app code directory. Path is relative
+// to ~/app ("" is ~/app itself).
+type AppFileList struct {
+	Path      string         `json:"path"`
+	Entries   []AppFileEntry `json:"entries"`
+	Truncated bool           `json:"truncated"`
+}
+
+// AppFileContent is a UTF-8 window of a text file, with the app's secrets
+// redacted. Sha256 is of the whole file on disk; pass it to an edit. Read on
+// from offset+length while eof is false.
+type AppFileContent struct {
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	Sha256  string `json:"sha256"`
+	Offset  int64  `json:"offset"`
+	Length  int64  `json:"length"`
+	EOF     bool   `json:"eof"`
+	Content string `json:"content"`
+}
+
+// AppFileWriteRequest replaces a file's content, or creates the file when
+// expectedSha256 is empty. A file that changed since it was read is refused.
+type AppFileWriteRequest struct {
+	Path           string `json:"path"`
+	Content        string `json:"content"`
+	ExpectedSha256 string `json:"expectedSha256,omitempty"`
+}
+
+// AppFileReplaceRequest replaces exactly one occurrence of oldText (or every
+// one with all) on the real file content, so secrets shown as [redacted]
+// elsewhere in the file stay intact.
+type AppFileReplaceRequest struct {
+	Path           string `json:"path"`
+	OldText        string `json:"oldText"`
+	NewText        string `json:"newText"`
+	All            bool   `json:"all,omitempty"`
+	ExpectedSha256 string `json:"expectedSha256,omitempty"`
+}
+
+type AppFileWritten struct {
+	Path         string `json:"path"`
+	Size         int64  `json:"size"`
+	Sha256       string `json:"sha256"`
+	Created      bool   `json:"created"`
+	Replacements int    `json:"replacements,omitempty"`
+}
+
 // ---- monitoring ----
 
 type AppProcess struct {

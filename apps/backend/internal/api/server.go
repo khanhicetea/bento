@@ -47,6 +47,8 @@ type Server struct {
 	terminals terminalRegistry
 	dbadmin   dbadminGate
 	edgeStats edgeSampler
+	// schedulerDial replaces Relay.Dial in tests.
+	schedulerDial func(context.Context, domain.App) (net.Conn, error)
 }
 
 // Handler builds the route table. local marks the Unix control socket.
@@ -113,7 +115,20 @@ func (s *Server) routes() (http.Handler, []string) {
 	api("GET /api/v1/apps/{id}/metrics", s.handleAppMetrics)
 	api("GET /api/v1/apps/{id}/logs", s.handleAppLogs)
 	api("POST /api/v1/apps/{id}/exec", s.handleExec)
+	api("GET /api/v1/apps/{id}/files", s.handleListAppFiles)
+	api("GET /api/v1/apps/{id}/files/content", s.handleReadAppFile)
+	api("PUT /api/v1/apps/{id}/files/content", s.handleWriteAppFile)
+	api("PATCH /api/v1/apps/{id}/files/content", s.handleReplaceAppFile)
 	api("POST /api/v1/apps/{id}/scheduler/command", s.handleSchedulerCommand)
+	api("GET /api/v1/apps/{id}/scheduler/jobs", s.handleSchedulerJobs)
+	api("POST /api/v1/apps/{id}/scheduler/jobs", s.handleSchedulerCreateJob)
+	api("PATCH /api/v1/apps/{id}/scheduler/jobs/{name}", s.handleSchedulerUpdateJob)
+	api("POST /api/v1/apps/{id}/scheduler/jobs/{name}/run", s.handleSchedulerRunJob)
+	api("POST /api/v1/apps/{id}/scheduler/jobs/{name}/enabled", s.handleSchedulerJobEnabled)
+	api("POST /api/v1/apps/{id}/scheduler/workers/{name}/{action}", s.handleSchedulerWorker)
+	api("GET /api/v1/apps/{id}/scheduler/runs", s.handleSchedulerRuns)
+	api("GET /api/v1/apps/{id}/scheduler/runs/{run}/log", s.handleSchedulerRunLog)
+	api("POST /api/v1/apps/{id}/scheduler/runs/{run}/stop", s.handleSchedulerStopRun)
 	api("GET /api/v1/apps/{id}/terminal", s.handleTerminal)
 
 	api("GET /api/v1/operations", s.handleListOps)

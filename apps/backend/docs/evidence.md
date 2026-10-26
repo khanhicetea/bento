@@ -366,3 +366,34 @@ backend stopped, edge traffic and scheduled jobs continued.
   cancellation, and HTTP transport rules (Origin, protocol version, `GET` 405, sessions refused).
 - Not verified: a real Claude Code / Desktop client session against either transport; the System → AI access panel
   was type-checked and built but not viewed in a browser.
+
+## App scheduler over API tokens and MCP (2026-10-26; live Docker, amd64)
+
+- Disposable stack (`/tmp/bms`, uids 50000+), real backend and minicrond in a running node 24 app, one job with a
+  literal env value and one worker imported through `bento app minicrond -- import`.
+- Tokens over HTTP: `GET …/scheduler/jobs` listed both with `envKeys: ["API_KEY"]` and no value; read token `403` on
+  run; operate token ran the job (`202`), and a repeat with the same `Idempotency-Key` returned the same run;
+  runs and run log (stdout and stderr lines) read back; admin token `403` on raw `scheduler/command`; a stopped app
+  `409 precondition_failed`.
+- `POST /mcp`: read/operate/admin tokens listed 3/6/7 scheduler tools; `get_scheduler_run_log`,
+  `control_scheduler_worker` stop (worker `held`) and start, `stop_scheduler_run` on the active worker run,
+  `set_scheduler_job_enabled` (admin only; operate gets unknown tool), and an unknown job returned in-band
+  `not_found`.
+- Found and fixed during the run: minicrond serves its API under the app's base path, so requests carry
+  `runtime.SchedulerBasePath`; the unit fake now requires it. A stack root under a long path fails the relay's Unix
+  socket bind (path limit) — not new, but use short roots for live checks.
+- Not verified: a real Claude Code / Desktop client; arm64.
+- Job definition writes (same day, new disposable stack): admin `create_scheduler_job` created a job with env and a
+  worker with argv; operate does not list it; a second create of the same name returned `conflict`; a bad cron
+  expression came back as minicrond's validation message. `update_scheduler_job` changed the schedule and one env
+  value, removed one env key, cleared the timeout with `0`, and switched command to argv; minicrond accepted every
+  round-tripped definition, and a run printed the updated env value while the untouched one survived the argv edit.
+  Not exercised live: a concurrent edit losing the `If-Match` race (unit-tested against a fake).
+- App code files (same day, new disposable stack, node 24 app): admin `list_app_files` showed `src` and two symlinks
+  but not `.env`; operate does not list the tools. `read_app_file` of `src/main.js` returned content + sha256;
+  `.env`, `../config/…`, a link to `/etc/passwd`, a link to `$HOME` and a write through a link to `/tmp` were all
+  refused; a link to `$HOME` read back into `~/app` was allowed. `edit_app_file` with the read sha256 applied; a
+  `write_app_file` with that now-stale sha256 got `conflict`; a create made a `0644` file owned by the app. With the
+  app stopped, read and edit ran in a tool container that was removed afterwards. The scripts also ran under the
+  unit tests with local bash (symlinks, hidden paths, binary refusal, UTF-8 windows, mode preserved, no temp files
+  left).
