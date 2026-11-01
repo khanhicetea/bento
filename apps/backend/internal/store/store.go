@@ -14,6 +14,8 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -22,10 +24,41 @@ import (
 // refused.
 const ApplicationID = 0x424E5431
 
-// SchemaVersion is the only schema Open accepts. Every other version is
-// refused without modifying the file. Schema changes after a release need a
-// new version and an in-place migration in Open.
+// SchemaVersion is the schema this build creates and runs on. Open upgrades
+// any version from MigratableFromVersion up to it with the steps in
+// migrations; every other version is refused without modifying the file.
+// A schema change bumps SchemaVersion and adds migrations[old] in the same
+// change (see docs/contributing.md).
 const SchemaVersion = 2
+
+// MigratableFromVersion is the oldest schema Open upgrades. Version 2 is the
+// production baseline: no deployment runs an older schema, so nothing below
+// it is migrated.
+const MigratableFromVersion = 2
+
+// StateBackupsDir is the stack-root directory that holds the copy of the
+// state database taken before each migration. Export skips it.
+const StateBackupsDir = "state-backups"
+
+// SupportedVersions lists every schema Open accepts, oldest first.
+func SupportedVersions() []int {
+	var out []int
+	for v := MigratableFromVersion; v <= SchemaVersion; v++ {
+		out = append(out, v)
+	}
+	return out
+}
+
+// migration upgrades the schema from version v to v+1 inside the single
+// migration transaction. Foreign keys are off while it runs, so a table can
+// be rebuilt with SQLite's create-copy-drop-rename procedure (the tables are
+// STRICT with CHECK constraints, so changing an enum needs a rebuild); they
+// are checked with foreign_key_check before commit. A migration must refuse
+// rows it cannot map (ErrUnsupportedState) rather than drop or guess them.
+type migration func(tx *sql.Tx) error
+
+// migrations[v] upgrades schema v to v+1. Every SchemaVersion bump adds one.
+var migrations = map[int64]migration{}
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -58,8 +91,8 @@ func Inspect(path string) (appID int64, version int64, err error) {
 	return appID, version, nil
 }
 
-// CheckCompatible refuses foreign, old, or future state with guidance. It
-// accepts only SchemaVersion and never writes.
+// CheckCompatible refuses foreign, too old, or future state with guidance. It
+// accepts MigratableFromVersion through SchemaVersion and never writes.
 func CheckCompatible(path string) error {
 	appID, version, err := Inspect(path)
 	if err != nil {
@@ -73,8 +106,13 @@ func CheckCompatible(path string) error {
 			appID,
 		)
 	}
-	if version < SchemaVersion {
-		return fmt.Errorf("%w: schema version %d is older than supported %d", ErrUnsupportedState, version, SchemaVersion)
+	if version < MigratableFromVersion {
+		return fmt.Errorf(
+			"%w: schema version %d is older than the oldest upgradable schema %d",
+			ErrUnsupportedState,
+			version,
+			MigratableFromVersion,
+		)
 	}
 	if version > SchemaVersion {
 		return fmt.Errorf(
@@ -143,8 +181,9 @@ func Create(path string) (*Store, error) {
 	return &Store{db: db, path: path}, nil
 }
 
-// Open opens an existing compatible database. Incompatible files are refused
-// before any write.
+// Open opens an existing compatible database and upgrades an older supported
+// schema to SchemaVersion (after copying the file aside). Incompatible files
+// are refused before any write.
 func Open(path string) (*Store, error) {
 	if err := CheckCompatible(path); err != nil {
 		return nil, err
@@ -165,7 +204,108 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("%w: integrity check failed (%s %v); refusing to continue", ErrUnsupportedState, check, err)
 	}
+	if err := migrate(context.Background(), db, path, SchemaVersion, migrations); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db, path: path}, nil
+}
+
+// migrate upgrades the database to target with steps, in one transaction.
+// Before any change it writes a consistent copy of the database to
+// <dir of path>/state-backups/. A failure rolls back and leaves the database
+// at its old version; the copy is kept either way.
+func migrate(ctx context.Context, db *sql.DB, path string, target int64, steps map[int64]migration) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	var from int64
+	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&from); err != nil {
+		return err
+	}
+	if from == target {
+		return nil
+	}
+	if from < MigratableFromVersion || from > target {
+		return fmt.Errorf("%w: cannot migrate schema version %d to %d", ErrUnsupportedState, from, target)
+	}
+	for v := from; v < target; v++ {
+		if steps[v] == nil {
+			return fmt.Errorf("%w: no migration from schema %d to %d", ErrUnsupportedState, v, v+1)
+		}
+	}
+	copyPath, err := preMigrationCopy(ctx, conn, path, from)
+	if err != nil {
+		return fmt.Errorf("copy state before migrating schema %d: %w", from, err)
+	}
+	// foreign_keys cannot change inside a transaction; it is per connection,
+	// and this is the store's only connection.
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys = ON")
+	fail := func(step string, err error) error {
+		return fmt.Errorf("migrate state schema %d to %d: %s: %w (the database is unchanged; a copy taken before "+
+			"the attempt is at %s)", from, target, step, err, copyPath)
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for v := from; v < target; v++ {
+		if err := steps[v](tx); err != nil {
+			return fail(fmt.Sprintf("step %d to %d", v, v+1), err)
+		}
+	}
+	rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return fail("foreign key check", err)
+	}
+	violation := rows.Next()
+	rows.Close()
+	if violation {
+		return fail("foreign key check", fmt.Errorf("%w: migrated rows violate foreign keys", ErrUnsupportedState))
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", target)); err != nil {
+		return fail("set version", err)
+	}
+	var check string
+	if err := tx.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {
+		return fail("integrity check", fmt.Errorf("%w: %s %v", ErrUnsupportedState, check, err))
+	}
+	if err := tx.Commit(); err != nil {
+		return fail("commit", err)
+	}
+	return nil
+}
+
+// preMigrationCopy writes a consistent copy of the open database (VACUUM INTO)
+// to a new 0600 file under the stack root's state-backups directory.
+func preMigrationCopy(ctx context.Context, conn *sql.Conn, path string, from int64) (string, error) {
+	dir := filepath.Join(filepath.Dir(path), StateBackupsDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", err
+	}
+	name := fmt.Sprintf("%s.schema-%d.%s", filepath.Base(path), from, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	dest := filepath.Join(dir, name)
+	// VACUUM INTO needs a missing or empty file; creating it first fixes its
+	// mode regardless of umask and refuses to reuse an existing name.
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	f.Close()
+	if _, err := conn.ExecContext(ctx, "VACUUM INTO ?", dest); err != nil {
+		os.Remove(dest)
+		return "", err
+	}
+	return dest, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

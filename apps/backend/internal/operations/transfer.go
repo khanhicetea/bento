@@ -22,10 +22,10 @@ import (
 
 // RootSkip lists stack-root entries excluded from the root archive: the live
 // database (captured separately with VACUUM INTO), runtime coordination,
-// caches, staging, and local backup artifacts.
+// caches, staging, local backup artifacts, and pre-migration state copies.
 var RootSkip = map[string]bool{
 	"bento.db": true, "bento.db-wal": true, "bento.db-shm": true, "run": true, "locks": true,
-	"cache": true, "staging": true, "backups": true,
+	"cache": true, "staging": true, "backups": true, store.StateBackupsDir: true,
 }
 
 // SubmitExport requires confirm "export" because it briefly stops running

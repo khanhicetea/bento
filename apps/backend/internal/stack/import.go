@@ -109,7 +109,9 @@ func readExport(
 	if m, err = transfer.ReadManifest(from); err != nil {
 		return "", m, "", fmt.Errorf("read manifest: %w", err)
 	}
-	if err := m.Validate(store.SchemaVersion); err != nil {
+	// An export from an older supported schema is migrated when its state is
+	// opened in the new root.
+	if err := m.Validate(store.SupportedVersions()...); err != nil {
 		return "", m, "", err
 	}
 	if v, verr := engine.Version(ctx); verr == nil && m.Arch != "" && v.Arch != m.Arch {

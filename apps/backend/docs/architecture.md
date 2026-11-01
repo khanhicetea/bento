@@ -60,8 +60,15 @@ connection, and `BEGIN IMMEDIATE` transactions.
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
   version (currently 2: the shared Redis was removed and `apps` gained `valkey`/`minicrond`). `store.CheckCompatible`
   probes with `mode=ro&immutable=1`, so refusing a foreign, older, newer, or non-SQLite file writes nothing (not even
-  `-wal`/`-shm`). Only the current version is accepted; there are no migrations yet (a version-1 file is refused). `stack.Import` copies the archived `state.db` and opens it through the same
-  path, so an export from another schema version is refused before anything is created.
+  `-wal`/`-shm`). Version 2 is the production baseline (`store.MigratableFromVersion`); nothing older is accepted.
+- **Migrations:** `store.Open` upgrades a file from `MigratableFromVersion` up to `SchemaVersion` after
+  `quick_check`. It first writes a consistent copy (`VACUUM INTO`, `0600`) to
+  `state-backups/bento.db.schema-<from>.<utc>` (`0700`, skipped by export), then runs `migrations[v]` for each step in
+  one `BEGIN IMMEDIATE` transaction with `foreign_keys` off (so STRICT tables with `CHECK` enums can be rebuilt),
+  checks `foreign_key_check` and `quick_check`, sets `user_version`, and commits. Any failure rolls back, leaves the
+  file at its old version, and names the copy. A missing step or a downgrade is refused before anything is written.
+  `stack.Import` accepts an export from any supported schema (`store.SupportedVersions`) and migrates it when it opens
+  the copied `state.db`; other versions are refused before anything is created.
 - **App home:** `apps.home_path` (NULL = `/home/<slug>`) is the in-container home (`domain.App.HomePath`, returned by
   `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as `/home/<slug-shaped>`, written only at
   insert, and exposed read-only as the App DTO's `homePath`. `apps.access_log` toggles the app-local Nginx log.
@@ -311,6 +318,13 @@ The edge (`edge` package + `operations/edge.go`):
    `renameat2(RENAME_EXCHANGE)`; the old generation is kept as `previous`.
 3. The edge container is recreated only when its own settings fingerprint changes (ports, bind, HTTP/3, image);
    otherwise it gets `SIGHUP`. Includes in the generated config are relative, which is why candidates validate in place.
+   The pinned image is ensured (pulled if missing) on every apply, before validation and any create, because an
+   image-only bump renders identical routes. A recreate validates with the new image (a validator container; the live
+   generation too when routes did not change), then renames the old edge to `bento-<stack>-edge-previous`, creates
+   the new edge, stops the old one, starts the new one, and removes the old one. Any failure removes the new
+   container and renames and restarts the old one, so ingress keeps its previous settings. The next apply settles a
+   leftover `-edge-previous` from an interrupted recreate (restored if the edge is missing, removed otherwise; a
+   foreign container with that name is refused).
 
 **Front proxy** (`edge.frontProxy`, off by default): a TCP proxy in front of the edge, such as a public VPS forwarding
 to a homelab over a VPN, connects to two extra listeners with `proxy_protocol` on fixed container ports

@@ -32,8 +32,14 @@ type Fake struct {
 	// ExecHook answers Exec calls; default exits 0.
 	ExecHook func(id string, req ExecRequest) ExecResult
 	// FailOn makes the named method return an error once (fault injection).
+	// A key may also be a full call ("Create <name>", "Start <name>") to fail
+	// only the call on that container.
 	FailOn map[string]error
 	Calls  []string
+	// RequireImages makes Create fail like the Engine API when the image is
+	// not present locally (the API never pulls on create). Off by default so
+	// tests that do not model images keep working.
+	RequireImages bool
 }
 
 type FakeContainer struct {
@@ -59,12 +65,14 @@ func NewFake() *Fake {
 	}
 }
 
-func (f *Fake) record(call string) error {
+func (f *Fake) record(call string, aliases ...string) error {
 	f.Calls = append(f.Calls, call)
 	name, _, _ := strings.Cut(call, " ")
-	if err, ok := f.FailOn[name]; ok {
-		delete(f.FailOn, name)
-		return err
+	for _, key := range append(append([]string{call}, aliases...), name) {
+		if err, ok := f.FailOn[key]; ok {
+			delete(f.FailOn, key)
+			return err
+		}
 	}
 	return nil
 }
@@ -245,6 +253,11 @@ func (f *Fake) Create(_ context.Context, spec ContainerSpec) (string, error) {
 	if f.find(spec.Name) != nil {
 		return "", fmt.Errorf("Conflict. The container name %q is already in use", spec.Name)
 	}
+	if f.RequireImages && spec.Config != nil {
+		if _, ok := f.Images[spec.Config.Image]; !ok {
+			return "", fmt.Errorf("No such image: %s", spec.Config.Image)
+		}
+	}
 	f.seq++
 	id := fmt.Sprintf("c%04d", f.seq)
 	f.Containers[id] = &FakeContainer{
@@ -260,10 +273,14 @@ func (f *Fake) Create(_ context.Context, spec ContainerSpec) (string, error) {
 func (f *Fake) Start(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.record("Start " + id); err != nil {
+	c := f.find(id)
+	var alias []string
+	if c != nil {
+		alias = []string{"Start " + c.Name}
+	}
+	if err := f.record("Start "+id, alias...); err != nil {
 		return err
 	}
-	c := f.find(id)
 	if c == nil {
 		return fmt.Errorf("no such container %s", id)
 	}
@@ -294,6 +311,24 @@ func (f *Fake) Remove(_ context.Context, id string) error {
 	if c := f.find(id); c != nil {
 		delete(f.Containers, c.ID)
 	}
+	return nil
+}
+
+func (f *Fake) Rename(_ context.Context, id, newName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.record("Rename " + id + " " + newName); err != nil {
+		return err
+	}
+	c := f.find(id)
+	if c == nil {
+		return fmt.Errorf("no such container %s", id)
+	}
+	if other := f.find(newName); other != nil && other != c {
+		return fmt.Errorf("Conflict. The container name %q is already in use", newName)
+	}
+	c.Name = newName
+	c.Spec.Name = newName
 	return nil
 }
 

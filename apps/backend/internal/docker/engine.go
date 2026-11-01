@@ -138,6 +138,9 @@ type Engine interface {
 	Start(ctx context.Context, id string) error
 	Stop(ctx context.Context, id string, timeout time.Duration) error
 	Remove(ctx context.Context, id string) error
+	// Rename changes a container's name (running or not); it never touches
+	// the container's state, mounts, or networks.
+	Rename(ctx context.Context, id, newName string) error
 	Signal(ctx context.Context, id, signal string) error
 	SetRestartPolicy(ctx context.Context, id string, policy container.RestartPolicyMode) error
 	Wait(ctx context.Context, id string) (int64, error)
@@ -466,6 +469,11 @@ func (s *SDK) Remove(ctx context.Context, id string) error {
 	if IsNotFound(err) {
 		return nil
 	}
+	return err
+}
+
+func (s *SDK) Rename(ctx context.Context, id, newName string) error {
+	_, err := s.c.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: newName})
 	return err
 }
 

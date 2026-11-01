@@ -4,9 +4,14 @@
 # values are exported verbatim. Missing files are tolerated so ephemeral tools
 # that were deliberately given no credentials still start.
 bento_load_env_file() {
-  local file="$1" key value
+  local file="$1" line key value
   [[ -r "$file" ]] || return 0
-  while IFS='=' read -r key value || [[ -n "$key$value" ]]; do
+  # Split each line at its first '=' with parameter expansion. `IFS='=' read
+  # key value` would drop one trailing '=' from the value (base64 padding).
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    key="${line%%=*}"
+    value=""
+    [[ "$line" == *=* ]] && value="${line#*=}"
     [[ -z "$key" || "$key" == \#* ]] && continue
     if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       echo "bento: invalid key in $file" >&2

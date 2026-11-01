@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"strconv"
@@ -319,6 +320,9 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	if err != nil {
 		return err
 	}
+	if id, running, err = c.settlePreviousEdge(ctx, r, id, running); err != nil {
+		return err
+	}
 	if !s.Enabled {
 		if id != "" {
 			r.Info(ctx, "edge disabled; removing edge container")
@@ -343,21 +347,40 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	if err != nil {
 		return err
 	}
+	// The pinned image is needed by every path below (validator container,
+	// create, recreate), not only when routes changed: an upgrade that bumps
+	// only the image pin renders identical routes but recreates the edge, and
+	// the Engine API never pulls on create.
+	if err := docker.EnsureImage(ctx, c.Engine, domain.EdgeImage, func() error {
+		r.Info(ctx, "pulling edge image")
+		return nil
+	}); err != nil {
+		return err
+	}
+	// Decide on recreation before validating, so a candidate meant for a new
+	// image or shape is checked by that image, not by the old running edge.
+	spec, err := c.edgeSpec(s, ns)
+	if err != nil {
+		return err
+	}
+	gen := spec.Config.Labels[runtime.LabelGeneration]
+	recreate := false
+	if id != "" {
+		ins, err := c.Engine.Inspect(ctx, id)
+		if err != nil {
+			return err
+		}
+		recreate = ins == nil || ins.Config == nil || ins.Config.Labels[runtime.LabelGeneration] != gen
+	}
 	gens := c.edgeGenerations()
 	changed := !gens.Same(files)
 	if changed {
-		if err := docker.EnsureImage(ctx, c.Engine, domain.EdgeImage, func() error {
-			r.Info(ctx, "pulling edge image")
-			return nil
-		}); err != nil {
-			return err
-		}
 		cand, err := gens.Stage(files)
 		if err != nil {
 			return err
 		}
 		var runningID string
-		if running {
+		if running && !recreate {
 			runningID = id
 		}
 		if err := c.validateEdge(ctx, cand, runningID); err != nil {
@@ -376,26 +399,20 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 		r.Info(ctx, "edge generation promoted (%d route files)", len(files)-1)
 	}
 	// Ensure the edge container matches its planned shape.
-	spec, err := c.edgeSpec(s, ns)
-	if err != nil {
-		return err
-	}
-	gen := spec.Config.Labels[runtime.LabelGeneration]
-	if id != "" {
-		ins, err := c.Engine.Inspect(ctx, id)
-		if err != nil {
-			return err
-		}
-		if ins.Config.Labels[runtime.LabelGeneration] != gen {
-			r.Info(ctx, "edge settings changed; recreating edge")
-			if err := c.Engine.Stop(ctx, id, 15*time.Second); err != nil {
-				return err
+	if recreate {
+		if !changed {
+			// The live generation was validated by the old image; check it
+			// with the new one before the old edge is touched.
+			if err := c.validateEdge(ctx, "live", ""); err != nil {
+				return Fail(
+					"edge-validation-failed",
+					"The running edge is unchanged. The live configuration is rejected by the new edge image or settings; fix the custom drop-ins and retry.",
+					"edge configuration rejected: %v",
+					err,
+				)
 			}
-			if err := c.Engine.Remove(ctx, id); err != nil {
-				return err
-			}
-			id, running = "", false
 		}
+		return c.recreateEdge(ctx, r, id, running, spec)
 	}
 	if id == "" {
 		if id, err = c.Engine.Create(ctx, spec); err != nil {
@@ -423,6 +440,106 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 		r.Info(ctx, "edge reloaded")
 	}
 	return nil
+}
+
+// recreateEdge replaces the edge container with one of the planned shape
+// (image, ports, bind, HTTP/3) without losing the old one until the new one
+// runs: the old edge is renamed aside, the new one is created under the edge
+// name, the old one is stopped to free its ports, and the new one is started.
+// Any failure removes the new container and puts the old edge back under its
+// name, running if it was. The live generation on disk is shared by both.
+func (c *Controller) recreateEdge(ctx context.Context, r *Run, oldID string, wasRunning bool, spec docker.ContainerSpec) error {
+	r.Info(ctx, "edge settings or image changed; recreating edge")
+	name, prev := c.Names.EdgeContainer(), c.Names.EdgePreviousContainer()
+	if err := c.Engine.Rename(ctx, oldID, prev); err != nil {
+		return err
+	}
+	// Past this point every exit either finishes the swap or restores the old
+	// edge; neither may be skipped because the operation was cancelled.
+	bg := context.WithoutCancel(ctx)
+	newID, err := c.Engine.Create(bg, spec)
+	if err != nil {
+		return c.restorePreviousEdge(bg, r, oldID, wasRunning, "", "edge-create-failed", "create edge: %v", err)
+	}
+	if err := c.Engine.Stop(bg, oldID, 15*time.Second); err != nil {
+		return c.restorePreviousEdge(bg, r, oldID, wasRunning, newID, "edge-recreate-failed", "stop previous edge: %v", err)
+	}
+	if err := c.Engine.Start(bg, newID); err != nil {
+		return c.restorePreviousEdge(bg, r, oldID, wasRunning, newID, "edge-start-failed", "start edge: %v", err)
+	}
+	if err := c.Engine.Remove(bg, oldID); err != nil {
+		// The new edge serves; the next apply removes the leftover.
+		r.Warn(ctx, "edge recreated, but the previous edge container %s was not removed: %v", prev, err)
+	}
+	r.Info(ctx, "edge recreated as %s", name)
+	return nil
+}
+
+// restorePreviousEdge undoes a failed recreate and returns the failure.
+func (c *Controller) restorePreviousEdge(
+	ctx context.Context,
+	r *Run,
+	oldID string,
+	wasRunning bool,
+	newID, code, format string,
+	cause error,
+) error {
+	failure := fmt.Errorf(format, cause)
+	if newID != "" {
+		if err := c.Engine.Remove(ctx, newID); err != nil {
+			return Fail(code,
+				"The new edge could not be removed and the previous edge is kept aside; the next edge apply restores it.",
+				"%v; remove new edge: %v", failure, err)
+		}
+	}
+	if err := c.Engine.Rename(ctx, oldID, c.Names.EdgeContainer()); err != nil {
+		return Fail(code,
+			"The previous edge is kept aside; the next edge apply restores it.",
+			"%v; restore previous edge: %v", failure, err)
+	}
+	if wasRunning {
+		if err := c.Engine.Start(ctx, oldID); err != nil {
+			return Fail(code,
+				"The previous edge was put back but did not start; check the host ports and retry the edge apply.",
+				"%v; restart previous edge: %v", failure, err)
+		}
+	}
+	r.Warn(ctx, "edge recreate failed; the previous edge was restored with its old settings")
+	return Fail(code,
+		"The previous edge was restored and serves with its old settings. Check that the chosen host ports are free and the edge image is available, then retry.",
+		"%v", failure)
+}
+
+// settlePreviousEdge resolves a previous edge left aside by an interrupted
+// recreate. If the edge itself exists the leftover is removed; otherwise the
+// leftover is put back under the edge name so the apply continues from it.
+// A container with that name that this stack's edge does not own is refused.
+func (c *Controller) settlePreviousEdge(ctx context.Context, r *Run, id string, running bool) (string, bool, error) {
+	prev := c.Names.EdgePreviousContainer()
+	ins, err := c.Engine.Inspect(ctx, prev)
+	if err != nil || ins == nil {
+		return id, running, err
+	}
+	if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, runtime.RoleEdge, "") {
+		return id, running, Fail(
+			"foreign-container",
+			"Resolve the conflicting container manually.",
+			"container %s is not this stack's edge",
+			prev,
+		)
+	}
+	if id != "" {
+		r.Info(ctx, "removing previous edge container left by an interrupted recreate")
+		if err := c.Engine.Remove(ctx, ins.ID); err != nil {
+			return id, running, err
+		}
+		return id, running, nil
+	}
+	r.Info(ctx, "restoring previous edge container left by an interrupted recreate")
+	if err := c.Engine.Rename(ctx, ins.ID, c.Names.EdgeContainer()); err != nil {
+		return id, running, err
+	}
+	return ins.ID, ins.State != nil && ins.State.Running, nil
 }
 
 func (c *Controller) handleEdgeApply(ctx context.Context, r *Run) (any, error) {

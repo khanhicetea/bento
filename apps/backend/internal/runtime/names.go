@@ -63,9 +63,13 @@ func (n Names) AppContainer(appID string) string { return n.prefix() + "-app-" +
 func (n Names) ToolContainer(appID, opID string) string {
 	return n.prefix() + "-tool-" + appID + "-" + opID
 }
-func (n Names) EdgeContainer() string    { return n.prefix() + "-edge" }
-func (n Names) TunnelContainer() string  { return n.prefix() + "-cloudflared" }
-func (n Names) DBAdminContainer() string { return n.prefix() + "-dbadmin" }
+func (n Names) EdgeContainer() string { return n.prefix() + "-edge" }
+
+// EdgePreviousContainer holds the old edge while a recreated edge starts, so a
+// failed recreate can put it back.
+func (n Names) EdgePreviousContainer() string { return n.prefix() + "-edge-previous" }
+func (n Names) TunnelContainer() string       { return n.prefix() + "-cloudflared" }
+func (n Names) DBAdminContainer() string      { return n.prefix() + "-dbadmin" }
 func (n Names) ServiceContainer(service string) string {
 	return n.prefix() + "-" + service
 }

@@ -6,7 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/moby/moby/api/types/container"
+
+	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
@@ -143,5 +147,190 @@ func TestTunnelApplyPullFailure(t *testing.T) {
 	}
 	if h.fake.CallCount("Create") != 0 {
 		t.Fatal("no container may be created without the image")
+	}
+}
+
+// startEdge configures and starts the edge and returns its container id.
+func startEdge(t *testing.T, h *harness) string {
+	t.Helper()
+	s := domain.DefaultEdgeSettings()
+	s.Enabled = true
+	h.mustSucceed(h.c.ConfigureEdge(t.Context(), s, ""))
+	ins, _ := h.fake.Inspect(t.Context(), h.c.Names.EdgeContainer())
+	if ins == nil || !ins.State.Running {
+		t.Fatal("edge not running")
+	}
+	return ins.ID
+}
+
+// simulateEdgeUpgrade makes the running edge look as if an older Bento made
+// it (a different generation label) and removes the newly pinned image, as
+// on a host that has just installed a release bumping the edge image pin.
+func simulateEdgeUpgrade(t *testing.T, h *harness, id string) {
+	t.Helper()
+	c := h.fake.Containers[id]
+	labels := map[string]string{}
+	for k, v := range c.Spec.Config.Labels {
+		labels[k] = v
+	}
+	labels[runtime.LabelGeneration] = "from-an-older-release"
+	cfg := *c.Spec.Config
+	cfg.Labels = labels
+	c.Spec.Config = &cfg
+	delete(h.fake.Images, domain.EdgeImage)
+	h.fake.RequireImages = true
+}
+
+func reapplyEdge(t *testing.T, h *harness) (store.Operation, error) {
+	t.Helper()
+	s, err := h.c.EdgeSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := h.c.ConfigureEdge(t.Context(), s, "")
+	if err != nil {
+		return op, err
+	}
+	return h.wait(op), nil
+}
+
+func assertNoPreviousEdge(t *testing.T, h *harness) {
+	t.Helper()
+	if prev, _ := h.fake.Inspect(t.Context(), h.c.Names.EdgePreviousContainer()); prev != nil {
+		t.Fatal("previous edge container left behind")
+	}
+}
+
+// An upgrade that only bumps the edge image pin renders identical routes; the
+// edge must still pull the new image before recreating, or Create fails and
+// ingress stays down.
+func TestEdgeImageBumpPullsBeforeRecreate(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	oldID := startEdge(t, h)
+	simulateEdgeUpgrade(t, h, oldID)
+	pulls := h.fake.CallCount("PullImage " + domain.EdgeImage)
+	op, err := reapplyEdge(t, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.State != store.OpSucceeded {
+		t.Fatalf("edge apply failed: %s: %s", op.ErrorCode, op.ErrorMessage)
+	}
+	if h.fake.CallCount("PullImage "+domain.EdgeImage) != pulls+1 {
+		t.Fatal("the new edge image must be pulled")
+	}
+	ins, _ := h.fake.Inspect(ctx, h.c.Names.EdgeContainer())
+	if ins == nil || ins.ID == oldID || !ins.State.Running {
+		t.Fatal("edge must be recreated and running")
+	}
+	if ins.Config.Labels[runtime.LabelGeneration] == "from-an-older-release" {
+		t.Fatal("recreated edge must carry the new generation")
+	}
+	if old, _ := h.fake.Inspect(ctx, oldID); old != nil {
+		t.Fatal("old edge must be removed after a successful recreate")
+	}
+	assertNoPreviousEdge(t, h)
+}
+
+// A recreate that fails at any step puts the old edge back, running, under
+// the edge name.
+func TestEdgeRecreateFailureRestoresPreviousEdge(t *testing.T) {
+	for _, tc := range []struct{ fault, code string }{
+		{"Create", "edge-create-failed"},
+		{"Start", "edge-start-failed"},
+	} {
+		t.Run(tc.fault, func(t *testing.T) {
+			h := newHarness(t)
+			ctx := t.Context()
+			oldID := startEdge(t, h)
+			simulateEdgeUpgrade(t, h, oldID)
+			h.fake.FailOn = map[string]error{
+				tc.fault + " " + h.c.Names.EdgeContainer(): errors.New("port is already allocated"),
+			}
+			op, err := reapplyEdge(t, h)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if op.State != store.OpFailed || op.ErrorCode != tc.code {
+				t.Fatalf("want %s failure, got %s %s: %s", tc.code, op.State, op.ErrorCode, op.ErrorMessage)
+			}
+			ins, _ := h.fake.Inspect(ctx, h.c.Names.EdgeContainer())
+			if ins == nil || ins.ID != oldID || !ins.State.Running {
+				t.Fatal("the previous edge must be restored and running")
+			}
+			assertNoPreviousEdge(t, h)
+			list, _ := h.fake.List(ctx, map[string]string{"io.bento.role": "edge"})
+			if len(list) != 1 {
+				t.Fatalf("the failed new edge must be removed, %d edge containers remain", len(list))
+			}
+		})
+	}
+}
+
+// A recreate interrupted after the old edge was renamed aside is settled by
+// the next apply: the leftover is restored when the edge is missing and
+// removed when a new edge already exists.
+func TestEdgeApplySettlesInterruptedRecreate(t *testing.T) {
+	t.Run("restore", func(t *testing.T) {
+		h := newHarness(t)
+		ctx := t.Context()
+		oldID := startEdge(t, h)
+		if err := h.fake.Rename(ctx, oldID, h.c.Names.EdgePreviousContainer()); err != nil {
+			t.Fatal(err)
+		}
+		h.fake.Stop(ctx, oldID, 0)
+		if op, _ := reapplyEdge(t, h); op.State != store.OpSucceeded {
+			t.Fatalf("edge apply failed: %s: %s", op.ErrorCode, op.ErrorMessage)
+		}
+		ins, _ := h.fake.Inspect(ctx, h.c.Names.EdgeContainer())
+		if ins == nil || ins.ID != oldID || !ins.State.Running {
+			t.Fatal("the previous edge must be restored under the edge name and started")
+		}
+		assertNoPreviousEdge(t, h)
+	})
+	t.Run("remove", func(t *testing.T) {
+		h := newHarness(t)
+		ctx := t.Context()
+		oldID := startEdge(t, h)
+		if err := h.fake.Rename(ctx, oldID, h.c.Names.EdgePreviousContainer()); err != nil {
+			t.Fatal(err)
+		}
+		// The new edge was created before the interruption.
+		s, _ := h.c.EdgeSettings(ctx)
+		ns, _ := h.c.NetworkPlan(ctx)
+		spec, err := h.c.edgeSpec(s, ns)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newID, _ := h.fake.Create(ctx, spec)
+		if op, _ := reapplyEdge(t, h); op.State != store.OpSucceeded {
+			t.Fatalf("edge apply failed: %s: %s", op.ErrorCode, op.ErrorMessage)
+		}
+		ins, _ := h.fake.Inspect(ctx, h.c.Names.EdgeContainer())
+		if ins == nil || ins.ID != newID || !ins.State.Running {
+			t.Fatal("the new edge must be kept and started")
+		}
+		if old, _ := h.fake.Inspect(ctx, oldID); old != nil {
+			t.Fatal("the leftover previous edge must be removed")
+		}
+	})
+}
+
+// A previous-edge name held by something this stack does not own is refused.
+func TestEdgeApplyRefusesForeignPreviousEdge(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	startEdge(t, h)
+	h.fake.Create(ctx, docker.ContainerSpec{
+		Name:   h.c.Names.EdgePreviousContainer(),
+		Config: &container.Config{Image: "busybox", Labels: map[string]string{"owner": "someone-else"}},
+	})
+	op, _ := reapplyEdge(t, h)
+	if op.State != store.OpFailed || op.ErrorCode != "foreign-container" {
+		t.Fatalf("want foreign-container, got %s %s", op.State, op.ErrorCode)
+	}
+	if foreign, _ := h.fake.Inspect(ctx, h.c.Names.EdgePreviousContainer()); foreign == nil {
+		t.Fatal("a foreign container must not be touched")
 	}
 }

@@ -18,6 +18,7 @@ description: Every file and directory in a stack root, and which ones are durabl
 │   └── acme/                ACME state
 ├── cloudflared/token        tunnel token (0440)
 ├── backups/<slug>/          database backup artifacts
+├── state-backups/           copies of bento.db taken before each schema upgrade (0600; not exported)
 ├── secrets/restic/<appId>.key   app backup repository keys (0400), kept after removal
 ├── rclone/rclone.conf       rclone remotes (yours; must not be encrypted)
 └── run/ locks/ cache/ staging/   runtime coordination, not durable
@@ -28,7 +29,8 @@ snapshot in its home, at `homes/<slug>/.local/share/valkey/dump.rdb`.
 
 ## Notes
 
-- `bento.db` carries a schema version. A database from an unknown or unsupported version is refused and left
-  untouched.
+- `bento.db` carries a schema version. A newer Bento upgrades an older supported schema in place when it starts,
+  after copying the database to `state-backups/`; a failed upgrade leaves `bento.db` unchanged. A database from an
+  unknown, newer, or too old version is refused and left untouched.
 - An app restored from an app backup keeps the source's path inside the container (e.g. `/home/shop`); the host
   directory is still `homes/<new-slug>/`.

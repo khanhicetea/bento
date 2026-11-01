@@ -5,8 +5,9 @@ What has been verified, how, and what has not. Recorded 2026-09-27 on Linux x86_
 
 **Only amd64 was executed.** The arm64 binary is cross-compiled (static ELF aarch64) but has not been run.
 
-Dated sections below are a log. Sections that mention schema versions 2–6 or store migrations describe the pre-MVP
-store; the MVP starts again from one baseline schema (version 1) with no migrations.
+Dated sections below are a log. Sections that mention schema versions 2–6 or store migrations before 2026-10-26
+describe the pre-MVP store. The MVP restarted at schema 1; schema 2 (2026-10-31) is the production baseline, and
+migrations from it onward run through `store.migrate` (2026-11-01).
 
 ## Repeatable checks
 
@@ -462,3 +463,37 @@ backend stopped, edge traffic and scheduled jobs continued.
   `TestIntegrationAppServices` runs `redis-cli PING` in the app container.
 - Not verified: arm64 Valkey builds, PHP 8.2/8.3/8.5, Python and Node 20/22 images, the live e2e (`e2e-live.md`),
   the new UI controls in a browser, restic backup/clone of a Valkey snapshot end to end.
+
+## Release blockers from the 2026-11-01 audit (live Docker 29.8.1, amd64)
+
+- **Store migrations.** `store.Open` now upgrades `MigratableFromVersion` (2, the production baseline) through
+  `SchemaVersion` via `store.migrate`; `migrations` is empty because 2 is current. `migrate_test.go` drives a
+  synthetic step to version 3:
+  - success writes a `0600` `VACUUM INTO` copy under `state-backups/` (`0700`) that still opens as schema 2, and
+    turns foreign keys back on;
+  - a failing step and a foreign-key violation (found by `foreign_key_check` while keys are off) both roll back,
+    keep version 2 and the data, and name the copy in the error;
+  - a missing step or a downgrade is refused without writing or copying;
+  - opening a current-schema file creates no copy.
+
+  `stack.Import` accepts `store.SupportedVersions()`, and export skips `state-backups`. Not verified: a real 2→3
+  migration, since none exists yet.
+- **Edge image and recreate.** `applyEdge` ensures the pinned image on every apply, not only when routes changed.
+  A recreate now validates with the new image, renames the old edge to `-edge-previous`, creates the new edge,
+  stops the old one, starts the new one, and removes the old one. A failure restores the old edge.
+  - Fake engine: the fake gained `RequireImages` and per-container `FailOn` keys. On the old code,
+    `TestEdgeImageBumpPullsBeforeRecreate` reproduced the outage ("No such image" after the old edge was removed).
+    `TestEdgeRecreateFailureRestoresPreviousEdge` (Create and Start faults), `TestEdgeApplySettlesInterruptedRecreate`
+    and `TestEdgeApplyRefusesForeignPreviousEdge` also fail on the old code and pass now.
+  - Real Docker: `TestIntegrationEdgeRecreateAndRollback` moved the edge to new ports (new container, old port
+    released, the new port answering 404 for an unknown host). It then tried a host port held by a listener: the
+    operation failed `edge-start-failed`, and the same edge container came back running and serving on its previous
+    port. No `-edge-previous` remained either time.
+- **Env loader.** `env.bash` splits each line at the first `=` with parameter expansion. `IFS='=' read` dropped one
+  trailing `=` (`K=abc=` loaded as `abc`); `TestEnvLoaderKeepsValuesVerbatim` fails on the old loader. The change
+  under `templates/images/common` changes every runtime image tag, so every app is rebuilt and replaced on its next
+  start or update, or by the reconciler.
+- `make ci` and `make test-integration` passed as root (integration 264 s, runtime images 49 s). The frontend gates
+  passed earlier the same day; no UI or DTO changed.
+- Not verified: arm64, an edge image pin bump between two real releases (simulated by relabelling), ACME and HTTP/3
+  across a recreate.
