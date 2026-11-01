@@ -100,7 +100,7 @@ func TestClaimsConflictMatrix(t *testing.T) {
 		{"same app", a, claims{excl: []string{"app:a"}}, true},
 		{"service op vs dependent app", svc, a, true},
 		{"service op vs unrelated app", svc, claims{excl: []string{"app:c"}}, false},
-		{"different services", svc, claims{excl: []string{"service:redis"}}, false},
+		{"different services", svc, claims{excl: []string{"service:postgres17"}}, false},
 		{"global vs anything", globalClaims, b, true},
 		{"anything vs global", b, globalClaims, true},
 		{"global vs global", globalClaims, globalClaims, true},
@@ -120,11 +120,12 @@ func TestServiceDeps(t *testing.T) {
 			{Engine: domain.EngineSQLite},
 			{Engine: domain.EngineMySQL, Service: "mysql"},
 			{Engine: domain.EngineMySQL, Service: "mysql"},
+			{Engine: domain.EnginePostgres, Service: "postgres17"},
 		},
-		Redis: domain.RedisIdentity{Username: "u"},
+		Valkey: true, // app-local: never a service dependency
 	}
 	got := serviceDeps(app)
-	if len(got) != 2 || got[0] != "service:mysql" || got[1] != "service:redis" {
+	if len(got) != 2 || got[0] != "service:mysql" || got[1] != "service:postgres17" {
 		t.Fatalf("deps %v", got)
 	}
 	if len(serviceDeps(domain.App{Bindings: []domain.Binding{{Engine: domain.EngineSQLite}}})) != 0 {
@@ -174,7 +175,7 @@ func TestUnprovisionedStartOrUpdateRunsAlone(t *testing.T) {
 	}
 	for _, kind := range []string{KindAppStart, KindAppUpdate} {
 		if !h.c.claimsFor(ctx, store.Operation{Kind: kind, TargetID: app.ID}).global {
-			t.Fatalf("%s that provisions (grants, Redis ACL) must run alone", kind)
+			t.Fatalf("%s that provisions (grants) must run alone", kind)
 		}
 	}
 	if h.c.claimsFor(ctx, store.Operation{Kind: KindAppDeploy, TargetID: app.ID}).global {
@@ -774,41 +775,6 @@ func TestUpdatesOfDifferentAppsRunInParallel(t *testing.T) {
 		if got := h.wait(op); got.State != store.OpSucceeded {
 			t.Fatalf("update: %s %s", got.ErrorCode, got.ErrorMessage)
 		}
-	}
-}
-
-// Updates of apps running in parallel each rewrite the Redis ACL; the
-// read-write-reload sequences must not interleave.
-func TestRedisACLSyncsAreSerialized(t *testing.T) {
-	h := newHarness(t)
-	ctx := t.Context()
-	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{Stdout: []byte("OK")} }
-	h.mustSucceed(func() (store.Operation, error) {
-		_, op, err := h.c.CreateService(ctx, domain.EngineRedis, "", "")
-		return op, err
-	}())
-	var inflight, peak atomic.Int32
-	h.fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
-		if len(req.Cmd) > 3 && req.Cmd[2] == "ACL" {
-			n := inflight.Add(1)
-			for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
-			}
-			time.Sleep(20 * time.Millisecond)
-			inflight.Add(-1)
-		}
-		return docker.ExecResult{Stdout: []byte("OK")}
-	}
-	var wg sync.WaitGroup
-	for range 4 {
-		wg.Go(func() {
-			if err := h.c.syncRedisACL(ctx); err != nil {
-				t.Error(err)
-			}
-		})
-	}
-	wg.Wait()
-	if peak.Load() != 1 {
-		t.Fatalf("%d Redis ACL reloads overlapped", peak.Load())
 	}
 }
 

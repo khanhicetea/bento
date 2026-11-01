@@ -131,6 +131,15 @@ var ResticMinicronExcludes = []string{
 	MinicronDataDir + "/minicron.sock",
 }
 
+// ValkeyDataDir is the app's own Valkey data directory (its RDB snapshot)
+// relative to the app home.
+const ValkeyDataDir = ".local/share/valkey"
+
+// ResticValkeyExcludes are Valkey files never backed up (relative to the
+// home): in-progress snapshots. dump.rdb is replaced only by an atomic
+// rename, so the file itself is always a complete snapshot.
+var ResticValkeyExcludes = []string{ValkeyDataDir + "/temp-*.rdb"}
+
 // HomeSidecarName is the Bento identity record inside each home; it belongs
 // to one stack incarnation and is never backed up or restored.
 const HomeSidecarName = ".bento-identity.json"
@@ -258,7 +267,7 @@ func ResticExcludeLines(s ResticSettings, homeMount string, sqliteFiles []string
 		return neg + p
 	}
 	lines := []string{homeMount + "/" + HomeSidecarName}
-	for _, p := range ResticMinicronExcludes {
+	for _, p := range slices.Concat(ResticMinicronExcludes, ResticValkeyExcludes) {
 		lines = append(lines, homeMount+"/"+p)
 	}
 	if s.DefaultExcludes {

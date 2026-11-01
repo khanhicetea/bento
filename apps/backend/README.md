@@ -58,7 +58,7 @@ internal/
   assets/             embed FS, deterministic image build contexts, template rendering
   backup/             logical dump/publish/retention/upload and restore
   cli/                command parsing, `serve`, control-socket client
-  dataservices/       MySQL/PostgreSQL/Redis containers, admin SQL, grants, Redis ACL
+  dataservices/       MySQL/PostgreSQL containers, admin SQL, grants
   docker/             Engine interface, SDK implementation, in-memory Fake for tests
   domain/             model, validation, runtime catalog and pinned images
   edge/               edge config rendering, generations (stage/validate/swap), boot certificate

@@ -33,8 +33,9 @@ Start with the failed operation in **Activity** — it names the problem and sug
   <AccordionItem title="edge-validation-failed">
     A host setting or one of your [custom Nginx](/ingress/custom-nginx) files is invalid. The live edge is unchanged.
   </AccordionItem>
-  <AccordionItem title="Redis error NOPERM">
-    The app ran a command that would affect other apps (`FLUSHDB`, `KEYS`…). Clear caches by prefix or tag instead.
+  <AccordionItem title="Connection refused on 127.0.0.1:6379">
+    The app expects Redis, but its own Valkey is off. Turn on the app's `valkey` setting (see
+    [Settings](/apps/settings#valkey-and-scheduler)) or point the app at another cache store.
   </AccordionItem>
   <AccordionItem title="Permission denied writing files">
     Files were copied in as another user. Use **Settings → Permissions → Recursive repair**.

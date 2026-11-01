@@ -87,6 +87,8 @@ export function ApplicationEditor({ app }: { app: T.App }) {
   );
   const [ingress, setIngress] = useState<T.IngressMode>(app.ingress);
   const [accessLog, setAccessLog] = useState(app.accessLog);
+  const [valkey, setValkey] = useState(app.valkey);
+  const [minicrond, setMinicrond] = useState(app.minicrond);
   const [hostDialog, setHostDialog] = useState(false);
   const [resources, setResources] = useState<T.Resources>(app.resources);
   const env = useEnvDraft(app.env);
@@ -102,7 +104,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
     runtime: { kind, php: phpWith(savedPhp, php, phpPerformanceKeys) },
   }));
   const saveIngress = useCellSave(app, generation, setGeneration, () => ({ ingress, accessLog }));
-  const saveResources = useCellSave(app, generation, setGeneration, () => ({ resources }));
+  const saveResources = useCellSave(app, generation, setGeneration, () => ({ resources, valkey, minicrond }));
   const saveEnv = useCellSave(app, generation, setGeneration, () => ({ env: env.value() }));
 
   const submit =
@@ -309,6 +311,19 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                   onChange={(e) => setResources({ ...resources, pids: Number(e.target.value) })}
                 />
               </Field>
+              <div className="grid">
+                <label
+                  className="check"
+                  title="Redis-compatible Valkey on 127.0.0.1:6379, no password, snapshots in the app home."
+                >
+                  <Checkbox checked={valkey} onCheckedChange={(checked) => setValkey(checked === true)} />
+                  Valkey (Redis alternative)
+                </label>
+                <label className="check" title="Minicrond runs cron jobs, workers and Bento's internal tasks.">
+                  <Checkbox checked={minicrond} onCheckedChange={(checked) => setMinicrond(checked === true)} />
+                  Processes &amp; Tasks (minicrond)
+                </label>
+              </div>
             </div>
             <SaveError save={saveResources} />
           </Cell>

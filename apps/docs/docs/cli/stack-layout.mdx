@@ -10,7 +10,7 @@ description: Every file and directory in a stack root, and which ones are durabl
 ├── sqlite/<id>/             SQLite binding directories — DURABLE
 ├── apps/<appId>/config/     generated config + credentials, mounted read-only at /etc/bento
 ├── apps/<appId>/identity/   generated passwd/group
-├── services/<name>/         data-service secrets (0400), Redis config
+├── services/<name>/         data-service secrets (0400)
 ├── edge/
 │   ├── conf/{live,previous} edge Nginx generations
 │   ├── custom/              your drop-ins
@@ -23,7 +23,8 @@ description: Every file and directory in a stack root, and which ones are durabl
 └── run/ locks/ cache/ staging/   runtime coordination, not durable
 ```
 
-MySQL, PostgreSQL, and Redis data live in Docker volumes named `bento-<stack>-<service>-data`.
+MySQL and PostgreSQL data live in Docker volumes named `bento-<stack>-<service>-data`. An app's own Valkey keeps its
+snapshot in its home, at `homes/<slug>/.local/share/valkey/dump.rdb`.
 
 ## Notes
 

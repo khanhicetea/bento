@@ -82,6 +82,8 @@ export function CreateApplicationPage() {
   const [binding, setBinding] = useState("sqlite");
   const [resources, setResources] = useState<T.Resources>({ memoryMb: 512, cpuMillis: 1000, pids: 256 });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [valkey, setValkey] = useState(false);
+  const [minicrond, setMinicrond] = useState(true);
 
   const create = useOperationMutation(() => {
     const [engine, service] = binding.split(":");
@@ -92,6 +94,8 @@ export function CreateApplicationPage() {
       resources,
       ingress,
       accessLog: route.accessLog,
+      valkey,
+      minicrond,
       // Each domain becomes an Ingress host targeting the new app.
       hosts: ingress === "managed" ? domains.list.map((name) => ({ name, route })) : [],
       bindings: binding === "none" ? [] : [{ engine: engine as T.Engine, service }],
@@ -440,6 +444,21 @@ export function CreateApplicationPage() {
                   />
                 </div>
               </Cell>
+              <Cell title="App services">
+                <div className="flex flex-wrap gap-5">
+                  <label
+                    className="check"
+                    title="Redis-compatible Valkey on 127.0.0.1:6379, no password, snapshots in the app home."
+                  >
+                    <Checkbox checked={valkey} onCheckedChange={(checked) => setValkey(checked === true)} />
+                    Valkey (Redis alternative)
+                  </label>
+                  <label className="check" title="Minicrond runs cron jobs, workers and Bento's internal tasks.">
+                    <Checkbox checked={minicrond} onCheckedChange={(checked) => setMinicrond(checked === true)} />
+                    Processes &amp; Tasks (minicrond)
+                  </label>
+                </div>
+              </Cell>
               <Cell
                 title="Limits"
                 foot={nav}
@@ -508,6 +527,8 @@ export function CreateApplicationPage() {
                   ["Access", `${ingress}${managed && domains.list.length ? ` · ${domains.list.join(", ")}` : ""}`],
                   ["TLS", managed ? route.tls : "—"],
                   ["Data", binding === "none" ? "None" : binding],
+                  ["Valkey", valkey ? "✓ On" : "— Off"],
+                  ["Processes & Tasks", minicrond ? "✓ On" : "— Off"],
                   ["Limits", `${resources.memoryMb} MB · ${resources.cpuMillis}m CPU · ${resources.pids} pids`],
                 ]}
               />

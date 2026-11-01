@@ -23,6 +23,7 @@ bento_load_env_file /etc/bento/credentials.env || exit $?
 export USER="${BENTO_APP_SLUG:-app}" LOGNAME="${BENTO_APP_SLUG:-app}"
 export MINICRON_DATA="${HOME}/.local/share/minicron"
 export MINICRON_CONFIG=/etc/bento/minicrond.toml
+export VALKEY_DATA="${HOME}/.local/share/valkey"
 # Lets the Bento UI embed the scheduler page in a same-origin iframe.
 export MINICRON_ALLOW_IFRAME=1
 export BASE_PATH="${BENTO_SCHEDULER_BASE_PATH:-}"

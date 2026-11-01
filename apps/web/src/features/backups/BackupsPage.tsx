@@ -256,8 +256,8 @@ function AppBackupsTab() {
   return (
     <>
       <p className="note mb-3">
-        Whole-app snapshots (home, databases, scheduler) in each app's restic repository. Cron uses server time (
-        {query.data.timeZone}).
+        Whole-app snapshots (home, databases, processes &amp; tasks) in each app's restic repository. Cron uses server
+        time ({query.data.timeZone}).
       </p>
       <div className="box">
         <div className="tiles tiles--3">
@@ -320,7 +320,10 @@ function AppBackupTile({ summary, compact = false }: { summary: T.AppBackupSumma
             </div>
             <div className="facts__wide">
               <dt>What</dt>
-              <dd>{summary.paths.includes(".") ? "Whole home" : summary.paths.join(", ")} + databases + scheduler</dd>
+              <dd>
+                {summary.paths.includes(".") ? "Whole home" : summary.paths.join(", ")} + databases + processes &amp;
+                tasks
+              </dd>
             </div>
             <div>
               <dt>Verified</dt>

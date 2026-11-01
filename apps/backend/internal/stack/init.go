@@ -91,12 +91,7 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 	defer s.Close()
 	id = store.StackIdentity{ID: platform.NewStackID(), Name: opts.Name, CreatedAt: platform.FormatTime(time.Now())}
 	names := runtime.Names{StackID: id.ID, StackName: id.Name}
-	services := []domain.DataService{{
-		Name:    "redis",
-		Engine:  domain.EngineRedis,
-		Version: domain.RedisVersion,
-		Image:   domain.RedisImage,
-	}}
+	var services []domain.DataService
 	if opts.MySQL != "" {
 		img, ok := domain.MySQLVersions[opts.MySQL]
 		if !ok {

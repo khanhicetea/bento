@@ -25,7 +25,7 @@ const ApplicationID = 0x424E5431
 // SchemaVersion is the only schema Open accepts. Every other version is
 // refused without modifying the file. Schema changes after a release need a
 // new version and an in-place migration in Open.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -234,8 +234,9 @@ CREATE TABLE apps (
   desired_runtime        TEXT NOT NULL CHECK (desired_runtime IN ('stopped','running')),
   ingress                TEXT NOT NULL CHECK (ingress IN ('managed','external','none')),
   publication            TEXT NOT NULL CHECK (publication IN ('unpublished','published')),
-  redis_json             TEXT NOT NULL,
   access_log             INTEGER NOT NULL DEFAULT 0 CHECK (access_log IN (0, 1)),
+  valkey                 INTEGER NOT NULL DEFAULT 0 CHECK (valkey IN (0, 1)),
+  minicrond              INTEGER NOT NULL DEFAULT 1 CHECK (minicrond IN (0, 1)),
   config_generation      INTEGER NOT NULL DEFAULT 1,
   credentials_generation INTEGER NOT NULL DEFAULT 1,
   provisioned            INTEGER NOT NULL DEFAULT 0,
@@ -266,7 +267,7 @@ CREATE INDEX hosts_app ON hosts(app_id);
 
 CREATE TABLE data_services (
   name          TEXT PRIMARY KEY,
-  engine        TEXT NOT NULL CHECK (engine IN ('mysql','postgres','redis')),
+  engine        TEXT NOT NULL CHECK (engine IN ('mysql','postgres')),
   version       TEXT NOT NULL,
   image         TEXT NOT NULL,
   volume        TEXT NOT NULL UNIQUE,

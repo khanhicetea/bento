@@ -154,7 +154,7 @@ func writeFile(t *testing.T, path, body string, uid int) {
 func TestIntegrationAppLifecycle(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	// Redis is initialized by the queued init operation.
+	// Wait for any queued init operation.
 	for {
 		ops, _ := store.ListOperations(ctx, e.s.DB(), store.OpFilter{States: []store.OpState{store.OpQueued, store.OpRunning}})
 		if len(ops) == 0 {
@@ -239,6 +239,102 @@ func TestIntegrationAppLifecycle(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	if o, _ := e.c.Observe(ctx, a2); o.Running {
 		t.Fatal("stopped app was resurrected")
+	}
+}
+
+// Valkey and minicrond are per-app s6 services: Valkey (off by default) runs
+// as the app on loopback and snapshots into the home; either one turned off
+// leaves no process behind and no restart loop, and Valkey reloads its
+// snapshot when turned back on.
+func TestIntegrationAppServices(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	node := domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}, Port: 3000}}
+	app := e.create("kvapp", node)
+	if app.Valkey || !app.Minicrond {
+		t.Fatalf("defaults valkey=%v minicrond=%v", app.Valkey, app.Minicrond)
+	}
+	writeFile(t, filepath.Join(e.layout.AppCode("kvapp"), "s.js"),
+		"require('http').createServer((q,s)=>s.end('ok')).listen(3000,'0.0.0.0')", app.UID)
+	e.wait(e.c.StartApp(ctx, app.ID, ""))
+
+	exec := func(cmd ...string) string {
+		t.Helper()
+		obs, err := e.c.Observe(ctx, app)
+		if err != nil || !obs.Running {
+			t.Fatalf("instance not running: %+v %v", obs, err)
+		}
+		res, err := e.sdk.Exec(ctx, obs.ContainerID, docker.ExecRequest{Cmd: cmd})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(res.Stdout) + string(res.Stderr))
+	}
+	procs := func() string { return exec("sh", "-c", "cat /proc/[0-9]*/comm") }
+	update := func(valkey, minicrond bool) {
+		t.Helper()
+		_, op, err := e.c.UpdateApp(ctx, app.ID, operations.UpdateAppInput{Valkey: &valkey, Minicrond: &minicrond}, "")
+		e.wait(op, err)
+	}
+	if p := procs(); !strings.Contains(p, "minicrond") || strings.Contains(p, "valkey-server") {
+		t.Fatalf("default processes:\n%s", p)
+	}
+
+	update(true, true)
+	if got := exec("valkey-cli", "PING"); got != "PONG" {
+		t.Fatalf("valkey PING: %q", got)
+	}
+	if got := exec("redis-cli", "PING"); got != "PONG" {
+		t.Fatalf("redis-cli alias PING: %q", got)
+	}
+	if got := exec("sh", "-c", "valkey-cli SET greeting hello && valkey-cli SAVE"); got != "OK\nOK" {
+		t.Fatalf("SET/SAVE: %q", got)
+	}
+	// Every process, Valkey included, runs as the app; the data directory is private.
+	if got := exec("sh", "-c", "stat -c %u /proc/[0-9]*/ | sort -u; stat -c %u:%a ~/.local/share/valkey"); got !=
+		fmt.Sprintf("%d\n%d:700", app.UID, app.UID) {
+		t.Fatalf("valkey identity: %q", got)
+	}
+	if got := exec("bash", "-c", "source /usr/local/lib/bento/env.bash && echo $REDIS_URL"); got != "redis://127.0.0.1:6379" {
+		t.Fatalf("REDIS_URL: %q", got)
+	}
+	// Tool shells, execs and deploy hooks run in a tool container; it shares
+	// the app's loopback so REDIS_URL reaches the app's Valkey there too.
+	running, err := store.GetApp(ctx, e.s.DB(), app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := e.c.OpenTool(ctx, running, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.sdk.Exec(ctx, tool.ContainerID, docker.ExecRequest{
+		Cmd: []string{"/usr/local/bin/bento-exec", "bash", "-c", `valkey-cli -u "$REDIS_URL" GET greeting`},
+	})
+	tool.Close()
+	if err != nil || strings.TrimSpace(string(res.Stdout)) != "hello" {
+		t.Fatalf("valkey from tool container: %q %q %v", res.Stdout, res.Stderr, err)
+	}
+	dump := filepath.Join(e.layout.AppHome("kvapp"), ".local/share/valkey/dump.rdb")
+	if info, err := os.Stat(dump); err != nil || info.Size() == 0 {
+		t.Fatalf("snapshot in home: %v %v", info, err)
+	}
+
+	update(false, false)
+	time.Sleep(5 * time.Second) // a restart loop would show up as failures here
+	if p := procs(); strings.Contains(p, "minicrond") || strings.Contains(p, "valkey-server") {
+		t.Fatalf("services still running while off:\n%s", p)
+	}
+	if got := exec("sh", "-c", "wc -l < /run/bento/failures"); got != "0" {
+		t.Fatalf("off services recorded failures: %s", got)
+	}
+	if _, err := os.Stat(dump); err != nil {
+		t.Fatalf("snapshot must stay in the home while off: %v", err)
+	}
+
+	update(true, true)
+	if got := exec("valkey-cli", "GET", "greeting"); got != "hello" {
+		t.Fatalf("snapshot not reloaded: %q", got)
 	}
 }
 

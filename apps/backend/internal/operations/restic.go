@@ -902,6 +902,9 @@ type AppSpec struct {
 	Resources     domain.Resources   `json:"resources"`
 	Ingress       domain.IngressMode `json:"ingress"`
 	AccessLog     bool               `json:"accessLog,omitempty"`
+	Valkey        bool               `json:"valkey,omitempty"`
+	// Minicrond is always written; a snapshot without it ran minicrond.
+	Minicrond *bool `json:"minicrond,omitempty"`
 	// Domains are the Ingress host names that targeted the app, display host
 	// first. A clone only lists them; hosts are re-pointed in Ingress.
 	Domains  []string         `json:"domains"`
@@ -1007,8 +1010,8 @@ func resticSecrets(app domain.App) ResticSecrets {
 	return out
 }
 
-// secretRedactor replaces every value that can land in secrets.json (and the
-// Redis password) in operation output.
+// secretRedactor replaces every value that can land in secrets.json in
+// operation output.
 func secretRedactor(app domain.App) *strings.Replacer {
 	var pairs []string
 	for _, e := range app.Runtime.Env {
@@ -1020,9 +1023,6 @@ func secretRedactor(app domain.App) *strings.Replacer {
 		if b.Password != "" {
 			pairs = append(pairs, b.Password, domain.RedactedEnvValue)
 		}
-	}
-	if app.Redis.Password != "" {
-		pairs = append(pairs, app.Redis.Password, domain.RedactedEnvValue)
 	}
 	return strings.NewReplacer(pairs...)
 }
@@ -1043,7 +1043,8 @@ func (c *Controller) appSpec(ctx context.Context, app domain.App, versions map[s
 	rt.Env = redactedEnv(rt.Env)
 	s := AppSpec{
 		FormatVersion: ResticFormatVersion, Slug: app.Slug, Runtime: rt, Resources: app.Resources,
-		Ingress: app.Ingress, AccessLog: app.AccessLog, Domains: []string{}, Bindings: []AppSpecBinding{},
+		Ingress: app.Ingress, AccessLog: app.AccessLog, Valkey: app.Valkey, Minicrond: &app.Minicrond,
+		Domains: []string{}, Bindings: []AppSpecBinding{},
 	}
 	for _, h := range app.Hosts {
 		s.Domains = append(s.Domains, h.Name)

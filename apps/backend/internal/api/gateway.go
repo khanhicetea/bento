@@ -101,6 +101,10 @@ func (s *Server) schedulerGateway() http.Handler {
 			dbadminText(w, http.StatusNotFound, "app not found")
 			return
 		}
+		if !app.Minicrond {
+			dbadminText(w, http.StatusServiceUnavailable, "minicrond is off for this app; turn it on in the app settings")
+			return
+		}
 		if app.DesiredRuntime != domain.DesiredRunning {
 			dbadminText(w, http.StatusServiceUnavailable, "the app is stopped; its scheduler is not running")
 			return

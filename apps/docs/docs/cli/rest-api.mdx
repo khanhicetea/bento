@@ -56,4 +56,9 @@ MCP is served at `POST /mcp` (outside `/api/v1`) for API tokens; see [AI agents 
 The `/scheduler` routes above are a typed view of the app's minicrond for API tokens: they need the app running, show
 job env keys but never values, and cannot delete or import jobs (use the UI or `POST /apps/{id}/scheduler/command`
 from a session or the CLI). Creating and editing jobs needs `admin`. The scheduler UI is not part of the JSON API: it is proxied at `/apps/<slug>/scheduler/…` and needs a browser session
-and an exact allowed `Origin`.
+and an exact allowed `Origin`. When an app's `minicrond` setting is off, the `/scheduler` routes answer `409`
+`precondition_failed` and the proxied UI answers `503`.
+
+Apps carry two service switches: `valkey` (the app's own Valkey, default `false`) and `minicrond` (its scheduler,
+default `true`). Both are accepted by `POST /apps` and `PATCH /apps/{id}`; changing either replaces a running app's
+container.

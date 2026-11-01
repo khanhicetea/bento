@@ -18,7 +18,7 @@ func testApp() domain.App {
 		ID: "aabc123", Slug: "shop", UID: 10000, GID: 10000,
 		Runtime:   domain.Runtime{Kind: domain.RuntimePHP, PHP: &domain.PHPRuntime{Version: "8.4", DocumentRoot: "public", Routing: "front-controller", Mode: "standard", UploadLimitMB: 64}},
 		Resources: domain.Resources{MemoryMB: 512, CPUMillis: 1000, PIDs: 256},
-		Redis:     domain.RedisIdentity{Mode: "acl", Prefix: "shop:", Username: "app-aabc123", Password: "redissecret123"},
+		Minicrond: true,
 		Bindings: []domain.Binding{
 			{ID: "b1", Engine: domain.EngineMySQL, Service: "mysql84", Username: "uaabc123", Password: "dbsecret12345", Databases: []string{"shop"}},
 			{ID: "b2", Engine: domain.EngineSQLite, SQLiteFileID: "shop_0123456789", Vacuum: &domain.VacuumSlot{DayOfWeek: 1, Hour: 2, Minute: 3}},
@@ -149,7 +149,7 @@ func TestRenderedConfig(t *testing.T) {
 		files[f.name] = string(f.data)
 	}
 	creds := files["credentials.env"]
-	for _, want := range []string{"DB_CONNECTION=mysql", "DB_HOST=mysql84", "DB_PASSWORD=dbsecret12345", "BENTO_DB_1_DATABASE=/var/lib/bento/sqlite/shop_0123456789/shop.db", "REDIS_PREFIX=shop:"} {
+	for _, want := range []string{"DB_CONNECTION=mysql", "DB_HOST=mysql84", "DB_PASSWORD=dbsecret12345", "BENTO_DB_1_DATABASE=/var/lib/bento/sqlite/shop_0123456789/shop.db"} {
 		if !strings.Contains(creds, want) {
 			t.Errorf("credentials missing %s", want)
 		}
@@ -190,6 +190,65 @@ func TestRenderedConfig(t *testing.T) {
 	passwd := string(id[0].data)
 	if !strings.Contains(passwd, "app10000:x:10000:10000") || !strings.HasPrefix(passwd, "root:x:0:0") {
 		t.Fatalf("identity files must preserve image entries and avoid name collisions: %s", passwd)
+	}
+}
+
+func TestValkeyAndMinicrondToggles(t *testing.T) {
+	runtimeEnv := func(app domain.App) string {
+		t.Helper()
+		cfg, _, _, err := RenderAppConfig(app, AppContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range cfg {
+			if f.name == "runtime.env" {
+				return string(f.data)
+			}
+		}
+		t.Fatal("runtime.env not rendered")
+		return ""
+	}
+	base := testApp()
+	env := runtimeEnv(base)
+	if !strings.Contains(env, "BENTO_MINICROND=1\n") || !strings.Contains(env, "BENTO_VALKEY=0\n") || strings.Contains(env, "REDIS_") {
+		t.Fatalf("defaults: %s", env)
+	}
+	on := testApp()
+	on.Valkey, on.Minicrond = true, false
+	env = runtimeEnv(on)
+	for _, want := range []string{"BENTO_MINICROND=0\n", "BENTO_VALKEY=1\n", "REDIS_HOST=127.0.0.1\n", "REDIS_PORT=6379\n", "REDIS_URL=redis://127.0.0.1:6379\n"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("runtime.env missing %q: %s", want, env)
+		}
+	}
+	// The app's own env wins over the client defaults.
+	on.Runtime.Env = []domain.EnvVar{{Key: "REDIS_HOST", Value: "cache.internal"}}
+	if env = runtimeEnv(on); strings.Contains(env, "REDIS_HOST=") || !strings.Contains(env, "REDIS_PORT=6379\n") {
+		t.Fatalf("app env must win: %s", env)
+	}
+	// Toggles are boot-static: they change the fingerprint.
+	g := Fingerprint(inputs(t, base))
+	for name, mutate := range map[string]func(*domain.App){
+		"valkey":    func(a *domain.App) { a.Valkey = true },
+		"minicrond": func(a *domain.App) { a.Minicrond = false },
+	} {
+		a := testApp()
+		mutate(&a)
+		if Fingerprint(inputs(t, a)) == g {
+			t.Errorf("%s toggle must change the fingerprint", name)
+		}
+	}
+}
+
+func TestDataNetworkOnlyForServiceBindings(t *testing.T) {
+	names := Names{StackID: "s1", StackName: "prod"}
+	app := testApp()
+	if eps := appNetworks(AppInputs{App: app, Names: names}).EndpointsConfig; eps[names.DataNetwork()] == nil {
+		t.Fatal("a MySQL-bound app must join the data network")
+	}
+	app.Bindings = app.Bindings[1:] // SQLite only
+	if eps := appNetworks(AppInputs{App: app, Names: names}).EndpointsConfig; eps[names.DataNetwork()] != nil || eps[names.AppsNetwork()] == nil {
+		t.Fatal("an app without service bindings stays off the data network")
 	}
 }
 

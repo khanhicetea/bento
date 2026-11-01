@@ -7,7 +7,8 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 
 - The build context is **embedded in the binary** and hashed together with the build arguments. The tag
   `bento-runtime/<toolchain>:<version>-<hash>` changes whenever either changes.
-- Base images, s6-overlay, minicrond, Composer, Node.js, and pnpm are pinned and checksum-verified.
+- Base images, s6-overlay, minicrond, Composer, Node.js, and pnpm are pinned and checksum-verified. Valkey is built
+  from a pinned, checksum-verified source release on each image's own base.
 - PHP images include Node.js 24 LTS with `npm` and `pnpm`, so `npm ci && npm run build` works in the tool shell and
   deploy scripts. Caches go to the app's home folder.
 
@@ -16,7 +17,8 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 | Component | Role |
 | --- | --- |
 | `bento-init` | Entry point; takes the per-app instance lock and starts s6-overlay as PID 1. |
-| s6-overlay | Supervises the runtime and minicrond. |
+| s6-overlay | Supervises the runtime, minicrond, and Valkey, each as the app's user. A service turned off in the app's settings exits once and stays down. |
+| Valkey | `valkey-server` and `valkey-cli` (also as `redis-cli`). Runs only when the app's `valkey` setting is on, on `127.0.0.1:6379`. |
 | `bento-exec` | Tooling entry point for shells and exec; never starts daemons. |
-| `bento-ready` | Readiness probe: the runtime is up and the HTTP port answers. A 5xx fails it only when you set a **Ready path**. |
+| `bento-ready` | Readiness probe: the runtime is up, the scheduler and Valkey answer (when on), and the HTTP port answers. A 5xx fails it only when you set a **Ready path**. |
 | Failure handler | Stops the container after five crashes of a component within two minutes, so Docker's restart policy applies its own backoff. |

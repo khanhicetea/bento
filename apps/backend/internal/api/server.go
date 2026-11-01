@@ -468,6 +468,8 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		Runtime:   runtimeFromDTO(req.Runtime),
 		Ingress:   domain.IngressMode(req.Ingress),
 		AccessLog: req.AccessLog,
+		Valkey:    req.Valkey,
+		Minicrond: req.Minicrond,
 	}
 	for _, h := range req.Hosts {
 		in.Hosts = append(in.Hosts, operations.AppHostInput{Name: h.Name, Route: routeFromDTO(h.Route)})
@@ -506,7 +508,12 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	in := operations.UpdateAppInput{ExpectedGeneration: int64(req.ExpectedGeneration), AccessLog: req.AccessLog}
+	in := operations.UpdateAppInput{
+		ExpectedGeneration: int64(req.ExpectedGeneration),
+		AccessLog:          req.AccessLog,
+		Valkey:             req.Valkey,
+		Minicrond:          req.Minicrond,
+	}
 	if req.Runtime != nil {
 		rt := runtimeFromDTO(*req.Runtime)
 		in.Runtime = &rt

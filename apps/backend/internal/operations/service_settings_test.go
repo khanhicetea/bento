@@ -113,14 +113,6 @@ func TestConfigureServiceValidation(t *testing.T) {
 	if _, err := h.c.ConfigureService(ctx, "mysql99", nil, ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown service: %v", err)
 	}
-	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{Stdout: []byte("OK")} }
-	h.mustSucceed(func() (store.Operation, error) {
-		_, op, err := h.c.CreateService(ctx, domain.EngineRedis, "", "")
-		return op, err
-	}())
-	if _, err := h.c.ConfigureService(ctx, "redis", map[string]string{"maxmemory": "1G"}, ""); err == nil {
-		t.Error("redis is not tunable")
-	}
 }
 
 // Restart refuses a container that is not this stack's service.

@@ -1,14 +1,15 @@
 ---
 title: Data
-description: Database servers, bindings, Redis, and where your files are safe.
+description: Database servers, bindings, Valkey, and where your files are safe.
 ---
 
-![Data and bindings: apps bind to MySQL, PostgreSQL, Redis, and SQLite on a private data network](/bento-data.webp)
+![Data and bindings: apps bind to MySQL, PostgreSQL, and SQLite on a private data network](/bento-data.webp)
 
 ## Database servers
 
-A stack runs shared database servers — MySQL (8.0, 8.4, 9.7) and PostgreSQL (14–18) — plus one Redis. Each app gets
-its **own user and databases** on them; apps can't see each other's data.
+A stack runs shared database servers — MySQL (8.0, 8.4, 9.7) and PostgreSQL (14–18). Each app gets its **own user
+and databases** on them; apps can't see each other's data. Only apps bound to one of them join the private data
+network.
 
 ## Bindings
 
@@ -28,12 +29,12 @@ You never copy passwords around. The app gets environment variables:
 | --- | --- |
 | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | the first binding (Laravel-ready) |
 | `BENTO_DB_<n>_*` | every binding |
-| `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_PREFIX` | Redis |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_URL` | the app's own Valkey, when it is on |
 
-## Redis is shared
+## Valkey is per app
 
-Every app has its own Redis user that can only touch keys starting with `<slug>:`. Commands that would affect other
-apps — `FLUSHDB`, `FLUSHALL`, `KEYS` — are refused. Clear caches by prefix or tag instead.
+There is no shared Redis. An app that needs one turns on its own [Valkey](/apps/data#valkey): a Redis-compatible
+server inside the app's container, reachable only from that app, with its snapshot kept in the app's home.
 
 ## What's durable
 

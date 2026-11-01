@@ -33,7 +33,7 @@ Go to **Apps → New app**. The wizard has four steps.
   </Step>
 </Steps>
 
-The app now exists — with its own Linux user, home folder, MySQL database, and Redis access — but it is **stopped**
+The app now exists — with its own Linux user, home folder, and MySQL database — but it is **stopped**
 and has no code yet.
 
 ## 2. Deploy your code
@@ -54,7 +54,7 @@ cp .env.example .env && php artisan key:generate
 
 <Callout type="tip">
 You don't need to put database passwords in `.env`. Bento injects `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`,
-`DB_PASSWORD`, `REDIS_*` and more as environment variables. See [Data](/apps/data).
+`DB_PASSWORD` and more as environment variables. See [Data](/apps/data).
 </Callout>
 
 To run these steps automatically on every deploy, add a [deploy script](/apps/deploy-scripts).

@@ -15,19 +15,19 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/transfer"
 )
 
-// exportFixture is a harness with one running app and one running Redis
+// exportFixture is a harness with one running app and one running MySQL
 // service, the state every export path starts from.
 func exportFixture(t *testing.T) (*harness, domain.App) {
 	t.Helper()
 	h := newHarness(t)
 	ctx := t.Context()
-	// "ready" satisfies app readiness, "OK" the Redis ACL reload.
+	// "ready" satisfies app readiness; exit 0 the service readiness.
 	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult {
 		return docker.ExecResult{Stdout: []byte("ready OK")}
 	}
 	app := h.createApp("shop")
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
-	_, op, err := h.c.CreateService(ctx, domain.EngineRedis, "", "")
+	_, op, err := h.c.CreateService(ctx, domain.EngineMySQL, "8.4", "")
 	h.mustSucceed(op, err)
 	return h, app
 }
@@ -55,7 +55,7 @@ func (h *harness) assertResumed(app domain.App, serviceRunning bool) {
 	if err != nil || !obs.Running {
 		h.t.Fatalf("app not resumed after export: %+v %v", obs, err)
 	}
-	ins, err := h.fake.Inspect(ctx, h.c.Names.ServiceContainer("redis"))
+	ins, err := h.fake.Inspect(ctx, h.c.Names.ServiceContainer("mysql84"))
 	if err != nil || ins == nil || ins.State.Running != serviceRunning {
 		h.t.Fatalf("service running after export: want %v (%v)", serviceRunning, err)
 	}
@@ -83,7 +83,7 @@ func TestExportQuiescesArchivesAndResumes(t *testing.T) {
 		m.StateFile != "state.db" || m.RootArchive != "stack.tar.zst" || len(m.Services) != 1 {
 		t.Fatalf("manifest %+v", m)
 	}
-	if s := m.Services[0]; s.Name != "redis" || s.VolumeFile != "volume-redis.tar" || s.Image != domain.RedisImage {
+	if s := m.Services[0]; s.Name != "mysql84" || s.VolumeFile != "volume-mysql84.tar" || s.Image != domain.MySQLVersions["8.4"] {
 		t.Fatalf("service entry %+v", s)
 	}
 	for _, f := range []string{"state.db", "stack.tar.zst", "manifest.json"} {
@@ -95,7 +95,7 @@ func TestExportQuiescesArchivesAndResumes(t *testing.T) {
 	if n := h.fake.CallCount("Stop") - stops; n != 2 {
 		t.Fatalf("export must stop exactly the running app and service, stopped %d", n)
 	}
-	want := []string{"quiesce", "snapshot-state", "archive-root", "archive-volume redis", "resume"}
+	want := []string{"quiesce", "snapshot-state", "archive-root", "archive-volume mysql84", "resume"}
 	if p := h.phases(got.ID); !slices.Equal(p[:len(want)], want) {
 		t.Fatalf("phases %v", p)
 	}
@@ -117,7 +117,7 @@ func TestExportFailureStillResumes(t *testing.T) {
 		},
 		"volume missing": {
 			inject: func(h *harness) {
-				if err := h.fake.VolumeRemove(h.t.Context(), h.c.Names.ServiceVolume("redis")); err != nil {
+				if err := h.fake.VolumeRemove(h.t.Context(), h.c.Names.ServiceVolume("mysql84")); err != nil {
 					h.t.Fatal(err)
 				}
 			},

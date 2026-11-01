@@ -21,7 +21,12 @@ php artisan migrate --force        # database migrations
 npm ci && npm run build            # front-end assets
 tail -f storage/logs/laravel.log   # framework logs
 mysql -h"$DB_HOST" -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE"   # SQL shell
+valkey-cli                         # the app's Valkey, when it is on (redis-cli works too)
 ```
+
+When the app's [Valkey](/apps/data#valkey) is on and the app is running, the tool shell shares the app's network, so
+`valkey-cli` and `REDIS_URL` reach it as `127.0.0.1:6379`. If the app is redeployed or restarted while a tool shell is
+open, that shell loses its network; end the session and open a new one.
 
 ## File permissions
 

@@ -259,7 +259,7 @@ func schedulerAdminTools() []Tool {
 	return []Tool{{
 		Name: "create_scheduler_job", Title: "Create scheduler job", Scope: dto.TokenScopeAdmin,
 		Description: "Create a cron job or worker in an app's scheduler. It runs as the app, in ~/app with the " +
-			"app's environment (PATH, DB_*, REDIS_*). Give command or argv. Fails if the name exists; use " +
+			"app's environment (PATH, DB_*, REDIS_* when Valkey is on). Give command or argv. Fails if the name exists; use " +
 			"update_scheduler_job to change it.",
 		Input: object(createProps, "app", "name", "kind"),
 		Run: func(ctx context.Context, b *Backend, raw json.RawMessage) (any, error) {

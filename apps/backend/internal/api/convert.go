@@ -240,6 +240,8 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.HomePath = app.HomePath
 	out.Runtime = runtimeToDTO(app.Runtime)
 	out.AccessLog = app.AccessLog
+	out.Valkey = app.Valkey
+	out.Minicrond = app.Minicrond
 	out.Env = []dto.EnvVar{}
 	for _, e := range app.Runtime.Env {
 		if restricted(ctx) {
@@ -263,8 +265,6 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 		}
 		out.Bindings = append(out.Bindings, db)
 	}
-	out.RedisPrefix = app.Redis.Prefix
-	out.RedisUser = app.Redis.Username
 	out.IngressInfo = ingressInfo(app)
 	out.Reconcile = rec
 	out.CreatedAt = platform.FormatTime(app.CreatedAt)

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -316,5 +317,36 @@ func TestSchedulerJobWrites(t *testing.T) {
 	}
 	if resp, _ := c.bearer(admin, "PATCH", base+"/cron", `{"kind":"worker"}`); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("kind change -> %d", resp.StatusCode)
+	}
+}
+
+// With minicrond off there is no scheduler: the API and the UI gateway refuse
+// before dialing the relay.
+func TestSchedulerRefusedWhenMinicrondOff(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	ctx := t.Context()
+	c.api.schedulerDial = func(context.Context, domain.App) (net.Conn, error) {
+		t.Error("dialed the scheduler of an app whose minicrond is off")
+		return nil, errors.New("unexpected dial")
+	}
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","minicrond":false,"valkey":true,"runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}}}`)
+	var acc dto.Accepted
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+	if _, err := h.Store.DB().ExecContext(ctx, `UPDATE apps SET desired_runtime='running'`); err != nil {
+		t.Fatal(err)
+	}
+	_, body = c.do("GET", "/api/v1/apps/shop", "", nil)
+	var app dto.App
+	if err := json.Unmarshal([]byte(body), &app); err != nil || app.Minicrond || !app.Valkey {
+		t.Fatalf("app %s %v", body, err)
+	}
+	if resp, body := c.do("GET", "/api/v1/apps/shop/scheduler/jobs", "", nil); resp.StatusCode != http.StatusConflict ||
+		!strings.Contains(body, "minicrond is off") {
+		t.Fatalf("jobs -> %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := c.do("GET", "/apps/shop/scheduler/", "", nil); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("gateway -> %d", resp.StatusCode)
 	}
 }

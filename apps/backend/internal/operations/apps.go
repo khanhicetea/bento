@@ -380,9 +380,6 @@ func (c *Controller) provision(ctx context.Context, r *Run, app domain.App) erro
 			return err
 		}
 	}
-	if err := c.syncRedisACL(ctx); err != nil {
-		r.Warn(ctx, "redis ACL not applied yet: %v", err)
-	}
 	if err := r.Phase(ctx, "materialize"); err != nil {
 		return err
 	}
@@ -921,9 +918,6 @@ func (c *Controller) handleUpdate(ctx context.Context, r *Run) (any, error) {
 	if err := c.ensureSQLiteDirs(app); err != nil {
 		return nil, err
 	}
-	if err := c.syncRedisACL(ctx); err != nil {
-		r.Warn(ctx, "redis ACL not applied: %v", err)
-	}
 	result := map[string]any{}
 	if app.DesiredRuntime == domain.DesiredRunning {
 		obs, err := c.observe(ctx, app)
@@ -1019,8 +1013,11 @@ func (c *Controller) scopedReloads(ctx context.Context, r *Run, app domain.App, 
 		if !s.changed {
 			continue
 		}
-		if app.Runtime.Kind != domain.RuntimePHP && s.scope != runtime.ScopeScheduler {
-			// No process consumes this scope; nothing to reload.
+		if (app.Runtime.Kind != domain.RuntimePHP && s.scope != runtime.ScopeScheduler) ||
+			(s.scope == runtime.ScopeScheduler && !app.Minicrond) {
+			// No process consumes this scope; nothing to reload. Enabling
+			// minicrond changes runtime.env, so it starts on a new instance
+			// that reads the current file.
 			if err := ch.MarkApplied(s.scope); err != nil {
 				return err
 			}
@@ -1215,7 +1212,7 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 	if err := r.Phase(ctx, "retire-identity"); err != nil {
 		return nil, err
 	}
-	arts := store.RetainedArtifacts{Home: c.Layout.AppHome(app.Slug), RedisUser: app.Redis.Username}
+	arts := store.RetainedArtifacts{Home: c.Layout.AppHome(app.Slug)}
 	for _, b := range app.Bindings {
 		if b.Engine == domain.EngineSQLite {
 			arts.SQLiteFileIDs = append(arts.SQLiteFileIDs, b.SQLiteFileID)
@@ -1249,9 +1246,6 @@ func (c *Controller) handleRemove(ctx context.Context, r *Run) (any, error) {
 	// removed; durable data (home, SQLite, databases) is retained.
 	if err := os.RemoveAll(c.Layout.AppDir(app.ID)); err != nil {
 		r.Warn(ctx, "could not remove generated config: %v", err)
-	}
-	if err := c.syncRedisACL(ctx); err != nil {
-		r.Warn(ctx, "redis ACL not refreshed: %v", err)
 	}
 	return map[string]any{"removed": true, "retained": arts}, nil
 }

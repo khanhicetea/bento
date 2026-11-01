@@ -91,9 +91,11 @@ func appNetworks(in AppInputs) *network.NetworkingConfig {
 	return &network.NetworkingConfig{EndpointsConfig: eps}
 }
 
-// needsDataNetwork: every app joins the data network because Redis ACL
-// identities are provisioned for all apps.
-func needsDataNetwork(domain.App) bool { return true }
+// needsDataNetwork: only apps bound to a MySQL or PostgreSQL service join the
+// data network; SQLite and the app's own Valkey are local to its container.
+func needsDataNetwork(app domain.App) bool {
+	return slices.ContainsFunc(app.Bindings, func(b domain.Binding) bool { return b.Engine != domain.EngineSQLite })
+}
 
 func logConfig() container.LogConfig {
 	return container.LogConfig{Type: "local", Config: map[string]string{"max-size": "10m", "max-file": "3"}}
@@ -118,7 +120,7 @@ type fingerprintInput struct {
 }
 
 // specVersion changes when the planner itself changes container shape.
-const specVersion = 2
+const specVersion = 3
 
 // Fingerprint returns the non-secret configuration fingerprint recorded in
 // the io.bento.generation label.
@@ -218,4 +220,16 @@ func ToolContainerSpec(in AppInputs, opID string, maxLifetime time.Duration) doc
 	return docker.ContainerSpec{
 		Name: in.Names.ToolContainer(app.ID, opID), Config: cfg, HostConfig: host, Networking: appNetworks(in),
 	}
+}
+
+// ShareAppNetwork makes a tool container join the running app container's
+// network namespace, so the tool reaches services the app keeps on loopback
+// (its Valkey) and keeps the app's network memberships. Docker forbids a
+// hostname or endpoint config in this mode; both come from the app. If the
+// app container is replaced while the tool runs, the tool keeps loopback only.
+func ShareAppNetwork(spec docker.ContainerSpec, appContainerID string) docker.ContainerSpec {
+	spec.Config.Hostname = ""
+	spec.HostConfig.NetworkMode = container.NetworkMode("container:" + appContainerID)
+	spec.Networking = nil
+	return spec
 }

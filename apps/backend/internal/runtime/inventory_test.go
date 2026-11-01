@@ -27,20 +27,20 @@ func TestClassifyInventory(t *testing.T) {
 		{Names: []string{"/bento-prod-mysql84"}, ImageID: "sha256:mysql", Labels: n.Labels(RoleDatabase, map[string]string{LabelService: "mysql84"}),
 			Mounts:          []container.MountPoint{{Type: mount.TypeVolume, Name: "bento-prod-mysql84-data"}, {Type: mount.TypeBind, Source: "/srv"}},
 			NetworkSettings: nets("bento-prod-data")},
-		{Names: []string{"/bento-stage-redis"}, ImageID: "sha256:redis", Labels: other.Labels(RoleCache, nil), NetworkSettings: nets("bento-stage-data")},
+		{Names: []string{"/bento-stage-mysql84"}, ImageID: "sha256:otherdb", Labels: other.Labels(RoleDatabase, nil), NetworkSettings: nets("bento-stage-data")},
 		{Names: []string{"/unrelated"}, ImageID: "sha256:nginx", NetworkSettings: nets("bridge")},
 	}
 	images := []docker.ImageSummary{
 		{ID: "sha256:built", Labels: map[string]string{LabelManaged: "true"}},
 		{ID: "sha256:oldbuild", Labels: map[string]string{LabelManaged: "true"}},
 		{ID: "sha256:mysql"},
-		{ID: "sha256:redis"},
+		{ID: "sha256:otherdb"},
 		{ID: "sha256:nginx"},
 	}
 	volumes := []docker.VolumeInfo{
 		{Name: "bento-prod-mysql84-data", Labels: n.Labels(RoleVolume, map[string]string{LabelService: "mysql84"})},
 		{Name: "bento-prod-pg-data", Labels: n.Labels(RoleVolume, map[string]string{LabelService: "pg"})},
-		{Name: "bento-stage-redis-data", Labels: other.Labels(RoleVolume, nil)},
+		{Name: "bento-stage-mysql84-data", Labels: other.Labels(RoleVolume, nil)},
 		{Name: "random"},
 	}
 	networks := []docker.NetworkSummary{
@@ -52,7 +52,7 @@ func TestClassifyInventory(t *testing.T) {
 	inv := n.ClassifyInventory(containers, images, volumes, networks, map[string]string{"a1": "shop"})
 
 	wantImg := map[string]Ownership{"sha256:built": OwnedStack, "sha256:oldbuild": OwnedStack, "sha256:mysql": OwnedStack,
-		"sha256:redis": OwnedOtherStack, "sha256:nginx": OwnedForeign}
+		"sha256:otherdb": OwnedOtherStack, "sha256:nginx": OwnedForeign}
 	for _, i := range inv.Images {
 		if i.Ownership != wantImg[i.ID] {
 			t.Errorf("image %s: got %s want %s", i.ID, i.Ownership, wantImg[i.ID])
@@ -83,7 +83,7 @@ func TestClassifyInventory(t *testing.T) {
 	}
 
 	wantVol := map[string]Ownership{"bento-prod-mysql84-data": OwnedStack, "bento-prod-pg-data": OwnedStack,
-		"bento-stage-redis-data": OwnedOtherStack, "random": OwnedForeign}
+		"bento-stage-mysql84-data": OwnedOtherStack, "random": OwnedForeign}
 	for _, v := range inv.Volumes {
 		if v.Ownership != wantVol[v.Name] {
 			t.Errorf("volume %s: got %s want %s", v.Name, v.Ownership, wantVol[v.Name])

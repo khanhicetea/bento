@@ -33,12 +33,26 @@ in [Ingress](/ingress/hosts). A Public app needs at least one host to publish.
 
 ## Container settings
 
-**Memory**, **CPU**, and **Processes** limits.
+**Memory**, **CPU**, and **Processes** limits, plus the [Valkey and scheduler](#valkey-and-scheduler) switches.
 
 ## Environment
 
-Add your own environment variables (API keys, feature flags). Bento's own `DB_*` and `REDIS_*` are provided
-automatically. Saving restarts a running app.
+Add your own environment variables (API keys, feature flags). Bento's own `DB_*` (and `REDIS_*` when
+[Valkey](#valkey-and-scheduler) is on) are provided automatically. Saving restarts a running app.
+
+## Valkey and scheduler
+
+Two services inside the app's container can be turned on or off:
+
+| Setting | Default | Runs |
+| --- | --- | --- |
+| `valkey` | off | The app's own [Valkey](/apps/data#valkey) on `127.0.0.1:6379` |
+| `minicrond` | on | The app's [scheduler](/apps/scheduler): cron jobs and workers |
+
+Toggle **Valkey (Redis alternative)** and **Scheduler (minicrond)** in **Container settings** and save, or pick them in **App
+services** when creating the app. From the CLI, use `bento app update <slug> --json patch.json`, e.g.
+`{ "valkey": true }`. Changing either replaces a running app's container. Port 6379 is reserved for Valkey, so an HTTP-process
+app can't listen on it.
 
 ## Permissions
 

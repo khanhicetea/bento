@@ -7,7 +7,7 @@ description: Check the health of your server, see what needs attention, and clea
 
 **Home** is the dashboard:
 
-- **Status** — Docker connection and each data service (MySQL, PostgreSQL, Redis).
+- **Status** — Docker connection and each data service (MySQL, PostgreSQL).
 - **Attention** — anything failed or blocked that needs you. Click through for the reason and a suggested fix.
 - **Apps running**, **In progress** operations, **Data services**.
 - Your **Apps** and recent **Activity**.
@@ -27,12 +27,12 @@ If Home is all green, everything is as you asked.
 
 ### Data services
 
-Each MySQL, PostgreSQL, and Redis service has a tile under **Data services** with two actions:
+Each MySQL and PostgreSQL service has a tile under **Data services** with two actions:
 
 - **Restart** stops the service cleanly and starts it again. Apps using it lose their connection until it is ready.
-- **Tune** (MySQL and PostgreSQL) sets the main server parameters. Sizes take a `K`, `M`, or `G` unit; leave a field
-  empty for the engine default. **Save & restart** replaces the service container on the same volume, so data is
-  kept, but apps lose their connection for a few seconds.
+- **Tune** sets the main server parameters. Sizes take a `K`, `M`, or `G` unit; leave a field empty for the engine
+  default. **Save & restart** replaces the service container on the same volume, so data is kept, but apps lose their
+  connection for a few seconds.
 
 | Engine | Parameters |
 | --- | --- |

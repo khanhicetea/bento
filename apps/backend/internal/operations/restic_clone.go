@@ -492,9 +492,8 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	app := domain.App{
 		ID: in.AppID, Slug: slug, Runtime: rt, Resources: res, DesiredRuntime: domain.DesiredStopped,
 		Ingress: ingress, Publication: domain.Unpublished, AccessLog: accessLog, HomePath: stored,
+		Valkey: in.Spec.Valkey, Minicrond: in.Spec.Minicrond == nil || *in.Spec.Minicrond,
 		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
-		Redis: domain.RedisIdentity{Mode: "acl", Prefix: slug + ":", Username: "app-" + in.AppID,
-			Password: platform.RandomPassword(32)},
 	}
 	p.App = app
 
@@ -1084,7 +1083,7 @@ func (c *Controller) runClone(
 		}
 	}()
 
-	// Step 3: provisioning (home, SQLite dirs, users and grants, Redis ACL).
+	// Step 3: provisioning (home, SQLite dirs, users and grants).
 	if app, err = store.GetApp(ctx, c.Store.DB(), app.ID); err != nil {
 		return nil, err
 	}
@@ -1248,7 +1247,9 @@ func (c *Controller) cloneResult(
 		}
 		add("After checking the clone, point these Ingress hosts at it: %s.", strings.Join(names, ", "))
 	}
-	add("Redis keys are not backed up; the clone uses the prefix %s.", app.Redis.Prefix)
+	if app.Valkey {
+		add("Valkey starts from the last snapshot it saved in the home before the backup.")
+	}
 	res.Checklist = append(res.Checklist, p.Notes...)
 	return res
 }
@@ -1558,9 +1559,6 @@ func (c *Controller) rollbackClone(ctx context.Context, r *Run, app domain.App, 
 	}
 	if err := os.RemoveAll(c.Layout.AppDir(app.ID)); err != nil {
 		warn("rollback: remove generated config: %v", err)
-	}
-	if err := c.syncRedisACL(ctx); err != nil {
-		warn("rollback: redis ACL not refreshed: %v", err)
 	}
 	return clean
 }

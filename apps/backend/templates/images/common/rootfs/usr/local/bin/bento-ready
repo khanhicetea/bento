@@ -1,6 +1,7 @@
 #!/bin/bash
 # Readiness probe run inside the app container. Verifies the scheduler daemon
-# answers on its private socket and the kind-specific HTTP frontend responds.
+# answers on its private socket and Valkey answers PING (each only when it is
+# on for the app), and the kind-specific HTTP frontend responds.
 # Any HTTP answer counts: an app still being set up may return 500 and must
 # not be reported broken. Only an explicitly configured ready path
 # (BENTO_READY_STRICT=1) also requires a non-5xx status.
@@ -8,10 +9,15 @@ set -uo pipefail
 # shellcheck source=/dev/null
 source /usr/local/lib/bento/env.bash
 fail() { echo "not ready: $*"; exit 1; }
-sock="$MINICRON_DATA/minicron.sock"
-[[ -S "$sock" ]] || fail "scheduler socket missing"
-curl -fsS -o /dev/null --max-time 3 --unix-socket "$sock" "http://minicrond${BASE_PATH%/}/healthz" \
-  || fail "scheduler health check failed"
+if [[ "${BENTO_MINICROND:-1}" == 1 ]]; then
+  sock="$MINICRON_DATA/minicron.sock"
+  [[ -S "$sock" ]] || fail "scheduler socket missing"
+  curl -fsS -o /dev/null --max-time 3 --unix-socket "$sock" "http://minicrond${BASE_PATH%/}/healthz" \
+    || fail "scheduler health check failed"
+fi
+if [[ "${BENTO_VALKEY:-0}" == 1 ]]; then
+  [[ "$(valkey-cli -h 127.0.0.1 -p 6379 PING 2>&1)" == PONG ]] || fail "valkey ping failed"
+fi
 if [[ "${BENTO_RUNTIME_KIND:-}" == php-fpm ]]; then
   curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:8081/fpm-ping" || fail "php-fpm ping failed"
 fi

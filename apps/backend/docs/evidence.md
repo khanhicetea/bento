@@ -432,3 +432,33 @@ backend stopped, edge traffic and scheduled jobs continued.
   dumps and restore, restic app backup, clone and disaster restore, removal/prune/UID non-reuse, Laravel with
   scheduler and queue worker, Cachet, and Invoice Ninja.
 - Not verified: ACME issuance, HTTP/3, arm64, scheduled backups, non-GitHub webhooks.
+
+## Per-app Valkey and minicrond; shared Redis removed (2026-10-31; live Docker 29.8.1, amd64)
+
+- The shared Redis service, its ACL sync and the `redis` service claim are gone. `store.SchemaVersion` is 2 (a
+  version-1 `bento.db` is refused, no migration); container `specVersion` is 3. Apps join the data network only when
+  bound to MySQL or PostgreSQL (`TestDataNetworkOnlyForServiceBindings`).
+- Valkey 9.1.3 source pinned by SHA-256 `184e34ed…e293`, matching `valkey-io/valkey-hashes`. `TestIntegrationBuildRuntimeImages`
+  built PHP 8.4, 7.4, 8.0, 8.1 (bookworm), Node 24 and Bun 1.4 with Valkey compiled on each image's own base; in the
+  PHP 8.4 image `valkey-server` reports `v=9.1.3 malloc=jemalloc-5.3.0` and links only libc and libm.
+- `TestIntegrationAppServices` (real Docker): a new app runs minicrond and no Valkey; turning Valkey on replaced the
+  instance, readiness passed with `valkey-cli PING`, every process ran as the app UID, `REDIS_URL` was
+  `redis://127.0.0.1:6379`, and `SAVE` wrote `~/.local/share/valkey/dump.rdb` (dir `0700`) in the host home. With both
+  off, neither process ran and `/run/bento/failures` stayed empty after 5 s (no restart loop); turning Valkey back on
+  reloaded the key from the snapshot.
+- Unit/API tests: defaults (Valkey off, minicrond on), toggles persisted and replacing a running instance, app env
+  winning over the `REDIS_*` defaults, port 6379 and `VALKEY_DATA` reserved, `temp-*.rdb` excluded from restic, and the
+  scheduler API (409) and gateway (503) refusing without dialing when minicrond is off.
+- `make ci` steps (fmt-check, vet, race tests, build) and `make test-integration` passed as root; `check-generated`
+  differs only because the regenerated `types.ts` is not committed yet. `bun run fmt:check`, `lint`, `check`,
+  `web:build` and `docs:build` passed.
+- Tool containers (terminal tool shell, exec, file edits, deploy hooks) of a running Valkey app join the app
+  container's network namespace (`ShareAppNetwork`); before this, `valkey-cli` in a tool shell was refused on a dev
+  stack. `TestIntegrationAppServices` reads the key from a tool container via `valkey-cli -u "$REDIS_URL"`;
+  `TestToolSharesAppNetworkForValkey` covers Valkey off and a stopped app keeping their own networking. A probe pair
+  on Docker 29.8.1 showed the provider container can be stopped and removed while joined (the joiner keeps `lo` only),
+  so an app replace is never blocked by an open tool shell.
+- Runtime images ship `redis-cli` as a symlink to `valkey-cli` (as Valkey's own `make install` does);
+  `TestIntegrationAppServices` runs `redis-cli PING` in the app container.
+- Not verified: arm64 Valkey builds, PHP 8.2/8.3/8.5, Python and Node 20/22 images, the live e2e (`e2e-live.md`),
+  the new UI controls in a browser, restic backup/clone of a Valkey snapshot end to end.

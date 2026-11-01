@@ -75,6 +75,10 @@ func (s *Server) schedulerCall(ctx context.Context, app domain.App, method, path
 // body and extra headers, and decodes its JSON answer into out. minicrond
 // errors become API errors with the app's secrets redacted.
 func (s *Server) schedulerDo(ctx context.Context, app domain.App, method, path string, hdr http.Header, body, out any) (http.Header, error) {
+	if !app.Minicrond {
+		return nil, &apiError{status: http.StatusConflict, code: dto.ErrorCodePrecondition,
+			msg: "minicrond is off for this app; turn it on to use its scheduler"}
+	}
 	if app.DesiredRuntime != domain.DesiredRunning {
 		return nil, &apiError{status: http.StatusConflict, code: dto.ErrorCodePrecondition,
 			msg: "the app is stopped; start it to use its scheduler"}

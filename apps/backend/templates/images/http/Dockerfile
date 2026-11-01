@@ -15,6 +15,15 @@ ARG MINICROND_ARM64_SHA256
 COPY fetch-artifacts.sh /tmp/fetch-artifacts.sh
 RUN sh /tmp/fetch-artifacts.sh
 
+# Valkey for apps that turn it on, compiled on the toolchain base itself so it
+# links against that image's libc (bases differ in Debian release).
+FROM ${TOOLCHAIN_BASE} AS valkey
+ARG VALKEY_VERSION
+ARG VALKEY_SHA256
+USER root
+COPY apt-sources.sh build-valkey.sh /tmp/
+RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
+
 FROM ${TOOLCHAIN_BASE}
 ARG TOOLCHAIN
 ENV S6_READ_ONLY_ROOT=1 \
@@ -31,6 +40,7 @@ RUN set -eux; \
   apt-get install -y --no-install-recommends bash ca-certificates curl git openssh-client sqlite3 xz-utils; \
   rm -rf /var/lib/apt/lists/*
 COPY --from=artifacts /rootfs/ /
+COPY --from=valkey /rootfs/ /
 COPY rootfs/ /
 WORKDIR /home
 ENTRYPOINT ["/usr/local/bin/bento-init"]

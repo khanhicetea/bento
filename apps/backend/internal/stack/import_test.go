@@ -22,7 +22,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/transfer"
 )
 
-// exportedStack is a source stack written out in export format: a Redis
+// exportedStack is a source stack written out in export format: a MySQL
 // service, one app with a home sidecar, an allocated UID, a session, and
 // settings that import must neutralize.
 type exportedStack struct {
@@ -38,7 +38,7 @@ func writeExport(t *testing.T) exportedStack {
 	}
 	ctx := t.Context()
 	src := filepath.Join(t.TempDir(), "src")
-	id, err := Init(ctx, InitOptions{Root: src, Name: "prod"})
+	id, err := Init(ctx, InitOptions{Root: src, Name: "prod", MySQL: "8.4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,14 +99,14 @@ func writeExport(t *testing.T) exportedStack {
 		t.Fatal(err)
 	}
 	f.Close()
-	if err := os.WriteFile(filepath.Join(dest, "volume-redis.tar"), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dest, "volume-mysql84.tar"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m := transfer.Manifest{
 		Format: transfer.FormatName, Version: transfer.FormatVersion, SchemaVersion: store.SchemaVersion,
 		StackID: id.ID, StackName: id.Name, Arch: "amd64", StateFile: "state.db", RootArchive: "stack.tar.zst",
-		Services: []transfer.ServiceEntry{{Name: "redis", Engine: "redis", Image: domain.RedisImage,
-			VolumeFile: "volume-redis.tar", SourceVolume: "bento-prod-redis-data"}},
+		Services: []transfer.ServiceEntry{{Name: "mysql84", Engine: "mysql", Version: "8.4", Image: domain.MySQLVersions["8.4"],
+			VolumeFile: "volume-mysql84.tar", SourceVolume: "bento-prod-mysql84-data"}},
 	}
 	if err := transfer.WriteManifest(dest, m); err != nil {
 		t.Fatal(err)
@@ -197,15 +197,15 @@ func TestImportNeutralizesStateAndRestoresVolumes(t *testing.T) {
 		}
 	}
 	names := runtime.Names{StackID: ident.ID, StackName: "clone"}
-	vol := names.ServiceVolume("redis")
-	svc, err := store.GetService(ctx, db, "redis")
+	vol := names.ServiceVolume("mysql84")
+	svc, err := store.GetService(ctx, db, "mysql84")
 	if err != nil || svc.Volume != vol {
 		t.Fatalf("service volume %q %v", svc.Volume, err)
 	}
-	if v, ok := fake.Volumes[vol]; !ok || v.Labels[runtime.LabelStackID] != ident.ID || v.Labels[runtime.LabelService] != "redis" {
+	if v, ok := fake.Volumes[vol]; !ok || v.Labels[runtime.LabelStackID] != ident.ID || v.Labels[runtime.LabelService] != "mysql84" {
 		t.Fatalf("volume %s not created with ownership labels: %+v", vol, v)
 	}
-	if fake.CallCount("PullImage "+domain.RedisImage) != 1 || fake.CallCount("Create") != 1 ||
+	if fake.CallCount("PullImage "+domain.MySQLVersions["8.4"]) != 1 || fake.CallCount("Create") != 1 ||
 		fake.CallCount("Start") != 1 || fake.CallCount("Remove") != 1 || len(fake.Containers) != 0 {
 		t.Fatalf("restore job calls %v", fake.Calls)
 	}

@@ -73,9 +73,6 @@ func serviceDeps(app domain.App) []string {
 			out = append(out, serviceClaim(b.Service))
 		}
 	}
-	if app.Redis.Username != "" && !slices.Contains(out, serviceClaim("redis")) {
-		out = append(out, serviceClaim("redis"))
-	}
 	return out
 }
 
@@ -88,7 +85,7 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //
 //   - app.reconcile|start|restart|update|deploy|stop hold their app
 //     exclusively. The shared resources they touch (image builds, network
-//     planning, edge generations, the Redis ACL) are serialized by locks
+//     planning, edge generations) are serialized by locks
 //     inside the handlers. All but stop also share every data service the
 //     app is bound to, so an app never boots, migrates or reloads while an
 //     earlier queued operation is still bringing its database up. A start or

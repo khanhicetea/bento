@@ -3,6 +3,11 @@
 exec 2>&1
 # shellcheck source=/dev/null
 source /usr/local/lib/bento/env.bash
+if [[ "${BENTO_MINICROND:-1}" != 1 ]]; then
+  # Off: run once and exit cleanly, so s6 never restarts it.
+  /command/s6-svc -O .
+  exit 0
+fi
 umask 077
 mkdir -p "$MINICRON_DATA"
 chmod 700 "$MINICRON_DATA"

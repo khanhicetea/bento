@@ -62,6 +62,18 @@ func (c *Controller) OpenTool(ctx context.Context, app domain.App, lifetime time
 	}
 	in := runtime.AppInputs{App: app, Names: c.Names, Layout: c.Layout, ImageID: imageID, Materialized: m}
 	spec := runtime.ToolContainerSpec(in, "t"+platform.RandomHex(5), lifetime)
+	if app.Valkey {
+		// Valkey listens on the app container's loopback; share it so tool
+		// shells, execs and deploy hooks reach it at REDIS_URL. A stopped app
+		// has no Valkey to reach, so the tool keeps its own networking.
+		obs, err := c.observe(ctx, app)
+		if err != nil {
+			return nil, err
+		}
+		if obs.Exists && obs.Running && obs.Owned {
+			spec = runtime.ShareAppNetwork(spec, obs.ContainerID)
+		}
+	}
 	id, err := c.Engine.Create(ctx, spec)
 	if err != nil {
 		return nil, err

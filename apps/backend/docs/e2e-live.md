@@ -85,7 +85,7 @@ $B --stack /srv/bento-e2e init --name e2e --mysql 8.4 --postgres 18 --uid-first 
   --password-stdin < ~/.config/bento-e2e/ui-password
 nohup $B --stack /srv/bento-e2e serve --listen 127.0.0.1:7790 --utils-listen 127.0.0.1:7791 --utils-listen apps:7791 \
   > /srv/bento-e2e-serve.log 2>&1 &
-$B status; $B services          # expect mysql84, postgres18, redis healthy
+$B status; $B services          # expect mysql84, postgres18 healthy
 ```
 
 The separate UID range and ports keep the stack clear of any other stack on the host. Expect: `init` refuses an
@@ -119,7 +119,7 @@ listed, `$B app deploy`, `$B app start`, `$B app publish`, `$E/cf-host.sh add SL
 | Slug | Repo | Runtime JSON (`runtime`) | Binding | `~/deploy.sh` |
 | --- | --- | --- | --- | --- |
 | e2e-node | public, HTTPS URL | `http-process`, node 22, argv `["node","server.js"]`, port 3000, readyPath `/health` | postgres18 | `npm install --omit=dev` |
-| e2e-php | **private**, SSH URL + deploy key | `php-fpm` 8.4, docroot `public`, `front-controller` | mysql84 (+ Redis, automatic) | write `deployed-at.txt` |
+| e2e-php | **private**, SSH URL + deploy key | `php-fpm` 8.4, docroot `public`, `front-controller` | mysql84, plus `"valkey": true` in the create JSON | write `deployed-at.txt` |
 | e2e-legacy | public | `php-fpm` 7.4, docroot `""`, `legacy` | mysql84 | none |
 | e2e-bun | public | `http-process`, bun 1.3, argv `["bun","server.ts"]`, port 3000 | sqlite | none |
 | e2e-py | public | `http-process`, python 3.13, argv `[".venv/bin/python","app.py"]`, port 8000 | postgres18 | `python3 -m venv .venv` (once) + `pip install -r requirements.txt` |
@@ -146,7 +146,9 @@ the container it is `/home/SLUG/tmp/...`. `app exec` runs in a separate tool con
 `/tmp` is not shared.
 
 **Expect** each `https://SLUG.$E2E_DOMAIN/` to answer 200 with JSON naming its runtime version and a growing `hits`
-counter (the DB write works); e2e-php also returns `redisCounter`.
+counter (the DB write works); e2e-php also returns `redisCounter` from its own Valkey (the fixture must connect to
+`REDIS_HOST`/`REDIS_PORT` without `AUTH`: the app-local Valkey has no user or password). Apps without a MySQL or
+PostgreSQL binding (e2e-bun) are not attached to the data network.
 
 ## 4. Deploy cases
 
@@ -192,7 +194,7 @@ no_check_bucket = true
 | DB dump + upload | `$B backup run --app e2e-php --upload e2es3:BUCKET/bento-e2e/db` (also `--compression gzip` on e2e-node) | `upload: succeeded`; artifacts in `backup list` and in the bucket |
 | DB restore | drop `hits` with `q.php`, then `echo "replace e2e_php_main" \| $B backup restore --artifact PATH --app e2e-php --database e2e_php_main` | wrong text refused; table back with the dump's row count |
 | App backup | `api.sh PUT /api/v1/apps/ID/restic` (repository `e2es3:BUCKET/bento-e2e/<run>/apps/e2e-php`, paths `["."]`, a retention that keeps at least one snapshot, e.g. `{"daily":7}`), `POST .../restic/init` (save `.key` to `~/.config/bento-e2e/*.restic.key`), `POST .../restic/backup` | snapshot listed, `lastBackup.ok` |
-| Clone on stack | `POST .../restic/inspect` then `.../restic/clone` with `{"snapshot":"latest","slug":"e2e-php-clone","confirm":"clone e2e-php-clone"}`; add a host (`$B host add`), start, publish | code, untracked files, DB rows restored; new DB name and user; Redis empty (not backed up) |
+| Clone on stack | `POST .../restic/inspect` then `.../restic/clone` with `{"snapshot":"latest","slug":"e2e-php-clone","confirm":"clone e2e-php-clone"}`; add a host (`$B host add`), start, publish | code, untracked files, DB rows restored; new DB name and user; `redisCounter` resumes from the Valkey `dump.rdb` in the snapshot (it can lag the live value: an idle Valkey saves at most hourly) and the clone checklist says so |
 | Disaster restore | `echo "clone e2e-php-dr" \| $B app restore-from-backup --repo e2es3:... --key-file KEY --slug e2e-php-dr --snapshot latest` | stopped app plus a checklist (DB user, deploy key, hosts); a random key fails with `wrong key` |
 
 `$B backup list --json` (or `$B --json backup list`) prints the artifact list as JSON. The REST inspect and clone
@@ -209,8 +211,8 @@ endpoints accept a full or short snapshot ID or `latest`, like the CLI.
 
 ## 8. Laravel with cron and a queue worker
 
-A real-world app: Laravel 13 on PHP 8.4, MySQL, Redis cache, a database queue processed by a worker, and the
-scheduler running a heartbeat command every minute. Generate the skeleton and push it to a **private** repo:
+A real-world app: Laravel 13 on PHP 8.4, MySQL, the app's own Valkey as cache, a database queue processed by a worker,
+and the scheduler running a heartbeat command every minute. Generate the skeleton and push it to a **private** repo:
 
 ```bash
 docker run --rm -u 0:0 -e COMPOSER_HOME=/tmp/c -v "$PWD":/w -w /w composer:2.8 \
@@ -226,7 +228,7 @@ twice).
 
 | Step | How | Expect |
 | --- | --- | --- |
-| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/health`, mysql84; deploy key on the private repo | app created |
+| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/health`, mysql84, `"valkey": true`; deploy key on the private repo | app created; `REDIS_HOST=127.0.0.1` in its env |
 | Deploy script | the **Classic** recipe from `apps/docs/docs/apps/deploy-scripts.mdx`, unchanged | — |
 | First deploy, no `.env` | `$B app deploy e2e-laravel` | fails with `~/app/.env is missing`; code is cloned |
 | `.env` | copy `.env.example`, `APP_ENV=production`, `CACHE_STORE=redis`; keep `DB_CONNECTION=sqlite`; `php artisan key:generate --force` via `app exec` | Bento's `DB_*` win: migrations run on MySQL |
@@ -266,7 +268,7 @@ what a hand-written fixture misses. `gh repo fork cachethq/cachet --fork-name e2
 
 | Step | How | Expect |
 | --- | --- | --- |
-| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/up`, **postgres18**; HTTPS repo URL, branch `3.x` | app created |
+| Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/up`, **postgres18**, `"valkey": true`; HTTPS repo URL, branch `3.x` | app created |
 | Deploy script | Classic recipe, plus `php artisan filament:assets` and `php artisan cachet:assets` before `migrate` (Cachet's built assets are gitignored and only published by `composer update`) | without them `/` is 500 `ViteManifestNotFoundException` |
 | `.env` | `.env.example` with `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://e2e-cachet.$E2E_DOMAIN`, `CACHE_STORE=redis`, `CACHET_TRUSTED_PROXIES="*"` (replace the empty line from the example; the first definition wins); keep `DB_CONNECTION=sqlite`; `key:generate --force` **after** the first `composer install` | migrations run on Postgres |
 | Start before the first good deploy | `$B app start e2e-cachet`, then `$B app deploy` | see finding 14 |
@@ -291,7 +293,7 @@ default branch `v5-stable`, which commits its built frontends).
 | Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/health`, **mysql84**, `resources` 1536 MB / 2000 mCPU / 512 pids; HTTPS repo URL, branch `v5-stable` | app created |
 | First deploy, no `.env` | `$B app deploy e2e-invoiceninja` | shallow clone in ~20s, `.git` ~56 MB (a full clone took 5 min and 3.8 GB); fails with `~/app/.env is missing` |
 | Deploy script | Classic recipe without the npm step; `rm -f database/schema/mysql-schema.sql` before `migrate` | without it `migrate` fails `sh: 1: mysql: not found` (finding 18) |
-| `.env` | `.env.example` minus `APP_KEY`/`DB_*`/`COMPOSER_AUTH`, `APP_URL=https://e2e-invoiceninja.$E2E_DOMAIN`, `TRUSTED_PROXIES="*"`, `REQUIRE_HTTPS=true`, `QUEUE_CONNECTION=database`, **`CACHE_DRIVER=file`**; `key:generate --force` after the first `composer install` | 317 migrations run on MySQL; `CACHE_DRIVER=redis` fails `WRONGPASS` (finding 19) |
+| `.env` | `.env.example` minus `APP_KEY`/`DB_*`/`COMPOSER_AUTH`, `APP_URL=https://e2e-invoiceninja.$E2E_DOMAIN`, `TRUSTED_PROXIES="*"`, `REQUIRE_HTTPS=true`, `QUEUE_CONNECTION=database`, **`CACHE_DRIVER=file`**; `key:generate --force` after the first `composer install` | 317 migrations run on MySQL |
 | Account | `php artisan ninja:create-account --email=... --password=...` (about 2 min), then `php artisan db:seed --force` | `/`, `/up`, `/api/health` 200; without the seed `POST /api/v1/clients` is 422 `currency_id` |
 | API | `POST /api/v1/login` (`X-Requested-With: XMLHttpRequest`), then `POST /api/v1/clients`, `POST /api/v1/invoices` with `X-API-TOKEN` | client created, invoice `0001` |
 | Jobs and worker | the section 8 `jobs.toml` | worker `running`; `jobs` 0, `failed_jobs` 0 |
@@ -383,9 +385,10 @@ Earlier runs: sections 1–8 on 2026-10-11, 9 and 10 on 2026-10-12.
 18. **PHP images have no `mysql`/`psql` client.** Laravel's `migrate` loads a committed schema dump
     (`database/schema/mysql-schema.sql`) with the `mysql` CLI and fails `sh: 1: mysql: not found`. Workaround: delete
     the dump in the deploy script so the migrations run. Fix: ship the database clients in the PHP runtime images.
-19. **Apps whose Redis config ignores `REDIS_USERNAME` cannot use Bento's Redis.** Invoice Ninja's
-    `config/database.php` reads only host, password, and port, so the per-app ACL user fails `WRONGPASS`. Workaround:
-    `CACHE_DRIVER=file`. Worth a note in the operator docs.
+19. ~~**Apps whose Redis config ignores `REDIS_USERNAME` cannot use Bento's Redis.**~~ Invoice Ninja's
+    `config/database.php` reads only host, password, and port, so the per-app ACL user failed `WRONGPASS`.
+    **Obsolete:** the shared Redis is gone; an app's own Valkey has no user or password, so host and port are enough.
+    Not re-run live.
 20. **A failing Composer step gives a useless summary.** When `composer install` fails, its last output line is the
     command's usage text (`install [--prefer-source] ...`), so the operation summary shows that instead of the error
     a few lines above (seen with a codeload 429). Fix: pick the last line that is not Composer's usage text, or show

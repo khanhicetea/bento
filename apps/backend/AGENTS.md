@@ -42,7 +42,7 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 | Container shape, labels, names, generated app config | `internal/runtime` (+ `templates/config`) |
 | Runtime images | `templates/images/{common,php,http}` and pins in `internal/domain/catalog.go` |
 | Edge Nginx | `internal/edge` + `templates/edge` + `internal/operations/edge.go` |
-| MySQL/PostgreSQL/Redis | `internal/dataservices` |
+| MySQL/PostgreSQL | `internal/dataservices` |
 | Persistence | `internal/store` |
 | New Docker capability | `internal/docker`: `Engine` interface + `SDK` + `Fake`, all three together |
 
@@ -76,9 +76,8 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 
 - **Operations run in parallel only if `operations/claims.go` says so.** An unlisted kind is global (runs alone).
   Handlers of parallel kinds (`app.reconcile|start|restart|update|deploy|stop`, `service.create|reconcile`) share the
-  edge, the network plan, image builds and the Redis ACL only through `applyEdge` (`edgeMu`), `NetworkPlan`/
-  `EnsureNetworks` (`netMu`), `Images.Ensure` (per-tag lock) and `syncRedisACL` (`aclMu`): never write those outside
-  these functions. Grants (`provisionRelational`) write shared data services and are only for global kinds; a parallel
+  edge, the network plan and image builds only through `applyEdge` (`edgeMu`), `NetworkPlan`/`EnsureNetworks`
+  (`netMu`) and `Images.Ensure` (per-tag lock): never write those outside these functions. Grants (`provisionRelational`) write shared data services and are only for global kinds; a parallel
   kind that could provision (an unprovisioned `start`/`update`) is classified global.
 - **Container spec changes:** any change to `AppContainerSpec` output must bump `specVersion` in `runtime/spec.go`.
   Every running app is then replaced (one at a time) on its next start/update or by the reconciler — mention this in
@@ -90,8 +89,9 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
   because `embed.FS` drops modes — update that rule when adding scripts in new locations.
 - **Changing anything under `templates/images`** or a pinned version changes the image tag, so all apps of that
   runtime are rebuilt and replaced. Upgrading a pinned artifact (s6-overlay, minicrond, Composer) means updating the
-  version **and both amd64/arm64 SHA-256s** in `domain.RuntimeArtifacts`, then running
-  `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages`.
+  version **and both amd64/arm64 SHA-256s** in `domain.RuntimeArtifacts` (Valkey is a source tarball: `VALKEY_VERSION`
+  and its single `VALKEY_SHA256`, compiled on each image's base by `templates/images/common/build-valkey.sh`), then
+  running `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages`.
 - **Data-service readiness must use TCP.** First-boot entrypoints run a socket-only temporary server; a socket probe
   reports ready too early.
 - **tygo:** enum constants must be prefixed with their type name (`ObservedStateHealthy`) to become a union; embedded

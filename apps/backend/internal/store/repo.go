@@ -207,16 +207,16 @@ func ListLedger(ctx context.Context, q Q) ([]LedgerEntry, error) {
 // ---- apps ----
 
 const appColumns = `id, slug, uid, gid, runtime_json, resources_json, desired_runtime, ingress, publication,
-	access_log, redis_json, config_generation, credentials_generation, provisioned, created_at, updated_at, home_path`
+	access_log, valkey, minicrond, config_generation, credentials_generation, provisioned, created_at, updated_at, home_path`
 
 func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	var a domain.App
-	var runtimeJSON, resourcesJSON, redisJSON, created, updated string
-	var provisioned, accessLog int
+	var runtimeJSON, resourcesJSON, created, updated string
+	var provisioned, accessLog, valkey, minicrond int
 	var homePath sql.NullString
 	err := row.Scan(
 		&a.ID, &a.Slug, &a.UID, &a.GID, &runtimeJSON, &resourcesJSON, &a.DesiredRuntime, &a.Ingress, &a.Publication,
-		&accessLog, &redisJSON, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
+		&accessLog, &valkey, &minicrond, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
 		&homePath,
 	)
 	if err != nil {
@@ -229,11 +229,10 @@ func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	if err := json.Unmarshal([]byte(resourcesJSON), &a.Resources); err != nil {
 		return a, err
 	}
-	if err := json.Unmarshal([]byte(redisJSON), &a.Redis); err != nil {
-		return a, err
-	}
 	a.Provisioned = provisioned == 1
 	a.AccessLog = accessLog == 1
+	a.Valkey = valkey == 1
+	a.Minicrond = minicrond == 1
 	a.CreatedAt = platform.ParseTime(created)
 	a.UpdatedAt = platform.ParseTime(updated)
 	return a, nil
@@ -261,9 +260,9 @@ func InsertApp(ctx context.Context, q Q, a domain.App) error {
 		}
 		homePath = a.HomePath
 	}
-	_, err := q.ExecContext(ctx, `INSERT INTO apps(`+appColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := q.ExecContext(ctx, `INSERT INTO apps(`+appColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.Slug, a.UID, a.GID, mustJSON(a.Runtime), mustJSON(a.Resources), a.DesiredRuntime, a.Ingress,
-		a.Publication, boolInt(a.AccessLog), mustJSON(a.Redis), a.ConfigGeneration, a.CredentialsGeneration, provisioned,
+		a.Publication, boolInt(a.AccessLog), boolInt(a.Valkey), boolInt(a.Minicrond), a.ConfigGeneration, a.CredentialsGeneration, provisioned,
 		platform.FormatTime(a.CreatedAt), platform.FormatTime(a.UpdatedAt), homePath)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: app slug or uid already exists", ErrConflict)
@@ -280,14 +279,15 @@ func UpdateApp(ctx context.Context, q Q, a domain.App) error {
 	res, err := q.ExecContext(
 		ctx,
 		`UPDATE apps SET runtime_json=?, resources_json=?, desired_runtime=?, ingress=?, publication=?,
-		access_log=?, redis_json=?, config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
+		access_log=?, valkey=?, minicrond=?, config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
 		mustJSON(a.Runtime),
 		mustJSON(a.Resources),
 		a.DesiredRuntime,
 		a.Ingress,
 		a.Publication,
 		boolInt(a.AccessLog),
-		mustJSON(a.Redis),
+		boolInt(a.Valkey),
+		boolInt(a.Minicrond),
 		a.ConfigGeneration,
 		a.CredentialsGeneration,
 		provisioned,
@@ -789,7 +789,6 @@ type RetainedArtifacts struct {
 	Home          string               `json:"home"`
 	SQLiteFileIDs []string             `json:"sqliteFileIds"`
 	Relational    []RetainedRelational `json:"relational"`
-	RedisUser     string               `json:"redisUser"`
 }
 
 type RetiredApp struct {

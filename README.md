@@ -12,10 +12,10 @@ browser UI / bento CLI
         ▼
 bento serve ── SQLite intent + operation journal + reconciler ── Docker Engine API
         │
-        ├─ app-<id>        one per app: s6 → (Nginx + PHP-FPM | your HTTP process) + minicrond, all as the app UID
+        ├─ app-<id>        one per app: s6 → (Nginx + PHP-FPM | your HTTP process) + minicrond + optional Valkey, all as the app UID
         ├─ edge (optional) shared Nginx: domains, TLS/ACME, HTTP/3, routes to published apps
         ├─ cloudflared     optional tunnel, may target apps directly
-        └─ MySQL / PostgreSQL / Redis on a private internal network
+        └─ MySQL / PostgreSQL on a private internal network (joined only by apps bound to them)
 ```
 
 The backend is not in the request path. If it stops, apps, the edge, and schedules keep running; only management
@@ -31,11 +31,12 @@ and reconciliation pause.
   and host restarts. Deleted containers are recreated only when the app's durable data is intact.
 - **Ingress your way.** Bento's edge, Cloudflare Tunnel straight to `http://app-<id>:<port>`, or your own proxy on the
   app network. Only edge routes are Bento-controlled, and the UI says so.
-- **Per-app scheduler.** [minicrond](https://github.com/khanhicetea/minicrond) runs inside each app. Its UI is served
-  at `/apps/<slug>/scheduler/` on the management origin, through a session-authenticated gateway and a UID-matched
-  relay, never with a token handed to the browser.
-- **Data.** Add-only MySQL/PostgreSQL/SQLite bindings, per-app Redis ACL users, logical backups with atomic
-  publication and retention, exact-confirmed restores, and consistent stack export/import.
+- **Per-app scheduler.** [minicrond](https://github.com/khanhicetea/minicrond) runs inside each app (on by default;
+  an app can turn it off). Its UI is served at `/apps/<slug>/scheduler/` on the management origin, through a
+  session-authenticated gateway and a UID-matched relay, never with a token handed to the browser.
+- **Data.** Add-only MySQL/PostgreSQL/SQLite bindings, an opt-in per-app Valkey on loopback inside the app's own
+  container (snapshot in the home, included in app backups), logical backups with atomic publication and retention,
+  exact-confirmed restores, and consistent stack export/import.
 
 ## Install
 
@@ -71,7 +72,8 @@ echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":fal
 bento app publish shop
 ```
 
-Credentials reach the app as environment variables (`DB_*`, `BENTO_DB_<n>_*`, `REDIS_*`), never through the API.
+Credentials reach the app as environment variables (`DB_*`, `BENTO_DB_<n>_*`), never through the API. With Valkey on,
+`REDIS_HOST`/`REDIS_PORT`/`REDIS_URL` point at the app's own `127.0.0.1:6379` unless the app's env sets them.
 
 ## Development
 
@@ -96,5 +98,5 @@ API types for the UI are generated from Go DTOs with `make -C apps/backend gener
 ## Limits
 
 Single host, no clustering or zero-downtime replacement. Apps sharing the app network can reach each other's
-listeners; database grants and Redis ACLs are the data boundary, not network isolation. This is not a hostile-tenant
+listeners; database grants are the data boundary, not network isolation. This is not a hostile-tenant
 sandbox. The management API is loopback-only and must not be exposed without a separately reviewed remote-access design.

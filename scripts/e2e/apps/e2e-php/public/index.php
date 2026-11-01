@@ -11,10 +11,10 @@ try {
     $out['mysql'] = $pdo->query('SELECT VERSION()')->fetchColumn();
 } catch (Throwable $e) { http_response_code(500); $out['dbError'] = $e->getMessage(); }
 try {
+    // The app's own Valkey: loopback, no user or password.
     $r = new Redis();
     $r->connect(getenv('REDIS_HOST'), (int) getenv('REDIS_PORT'));
-    $r->auth([getenv('REDIS_USERNAME'), getenv('REDIS_PASSWORD')]);
-    $out['redisCounter'] = $r->incr(getenv('REDIS_PREFIX') . 'counter');
+    $out['redisCounter'] = $r->incr('counter');
 } catch (Throwable $e) { http_response_code(500); $out['redisError'] = $e->getMessage(); }
 $out['deployedAt'] = @file_get_contents(__DIR__ . '/../deployed-at.txt') ?: null;
 echo json_encode($out), "\n";

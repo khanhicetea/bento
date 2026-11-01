@@ -269,7 +269,7 @@ func allTools() []Tool {
 			Run: runWait,
 		},
 		getTool("list_services", "Data services",
-			"MySQL, PostgreSQL and Redis services with version, state and settings.", "/api/v1/services"),
+			"MySQL and PostgreSQL services with version, state and settings.", "/api/v1/services"),
 		getTool("get_reconcile_status", "Reconcile status",
 			"Drift repair state per app and service: retry budget, last attempt, blocked targets.", "/api/v1/reconcile"),
 		{
@@ -341,7 +341,7 @@ func allTools() []Tool {
 		},
 		{
 			Name: "restart_service", Title: "Restart data service", Scope: dto.TokenScopeOperate, Destructive: true,
-			Description: "Restart a MySQL, PostgreSQL or Redis service. Every app bound to it loses its connections.",
+			Description: "Restart a MySQL or PostgreSQL service. Every app bound to it loses its connections.",
 			Input:       object(map[string]any{"name": str("Service name as shown by list_services.")}, "name"),
 			Run: func(ctx context.Context, b *Backend, raw json.RawMessage) (any, error) {
 				a, err := args[struct {
@@ -388,6 +388,7 @@ func allTools() []Tool {
 				`{"slug":"shop","runtime":{"kind":"php-fpm","php":{"version":"8.4","documentRoot":"public","routing":"front-controller","mode":"standard"}},` +
 				`"resources":{"memoryMb":512,"cpuMillis":1000,"pids":256},"ingress":"managed","hosts":[{"name":"shop.example.com"}],` +
 				`"bindings":[{"engine":"mysql"}]}. For kind "http-process" use "http":{"toolchain","version","argv","workdir","port","readyPath"}. ` +
+				`"valkey":true runs the app's own Valkey on 127.0.0.1:6379 (default off); "minicrond":false turns its scheduler off (default on). ` +
 				"Read get_catalog for valid values.",
 			Input: object(map[string]any{"spec": freeform("CreateAppRequest.")}, "spec"),
 			Run: func(ctx context.Context, b *Backend, raw json.RawMessage) (any, error) {
@@ -406,7 +407,7 @@ func allTools() []Tool {
 		},
 		{
 			Name: "update_app", Title: "Update app", Scope: dto.TokenScopeAdmin, Destructive: true,
-			Description: "Change an app's runtime, resources, ingress mode or access log. changes is an UpdateAppRequest " +
+			Description: "Change an app's runtime, resources, ingress mode, access log, Valkey or minicrond. changes is an UpdateAppRequest " +
 				`with only the fields to change, e.g. {"resources":{"memoryMb":1024,"cpuMillis":1000,"pids":256}}. ` +
 				"A running app is replaced with the new settings. Env changes are refused here.",
 			Input: object(map[string]any{"app": appProp, "changes": freeform("UpdateAppRequest.")}, "app", "changes"),
@@ -438,7 +439,7 @@ func allTools() []Tool {
 			Description: "Give an app its own user on a data service. Bindings are add-only: they cannot be removed here.",
 			Input: object(map[string]any{
 				"app":     appProp,
-				"engine":  map[string]any{"type": "string", "enum": []string{"mysql", "postgres", "sqlite", "redis"}},
+				"engine":  map[string]any{"type": "string", "enum": []string{"mysql", "postgres", "sqlite"}},
 				"service": str("Service name; omit to use the engine's default service."),
 			}, "app", "engine"),
 			Run: func(ctx context.Context, b *Backend, raw json.RawMessage) (any, error) {

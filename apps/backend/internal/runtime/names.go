@@ -31,7 +31,6 @@ const (
 	RoleTool     Role = "tool"
 	RoleEdge     Role = "edge"
 	RoleDatabase Role = "database"
-	RoleCache    Role = "cache"
 	RoleTunnel   Role = "tunnel"
 	RoleBackup   Role = "backup"
 	RoleDBAdmin  Role = "dbadmin"

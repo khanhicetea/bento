@@ -1,0 +1,15 @@
+#!/bin/bash
+# App-local Valkey (opt-in per app): loopback only, snapshots in the app home.
+exec 2>&1
+# shellcheck source=/dev/null
+source /usr/local/lib/bento/env.bash
+if [[ "${BENTO_VALKEY:-0}" != 1 ]]; then
+  # Off: run once and exit cleanly, so s6 never restarts it.
+  /command/s6-svc -O .
+  exit 0
+fi
+umask 077
+mkdir -p "$VALKEY_DATA"
+chmod 700 "$VALKEY_DATA"
+cd "$VALKEY_DATA"
+exec /usr/local/bin/valkey-server /etc/valkey/valkey.conf --dir "$VALKEY_DATA"

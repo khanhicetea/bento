@@ -64,7 +64,8 @@ export function EnvEditor({ state }: { state: ReturnType<typeof useEnvDraft> }) 
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
         <span className="note">
-          Exposed to the app process. Bento-managed keys (BENTO_*, DB_*, REDIS_*) take precedence.
+          Exposed to the app process. BENTO_* and DB_* keys from Bento take precedence; Valkey sets REDIS_HOST,
+          REDIS_PORT and REDIS_URL only when unset here.
         </span>
         <Button type="button" size="sm" variant="ghost" onClick={state.toggle}>
           {mode === "table" ? "Edit as text" : "Edit as table"}

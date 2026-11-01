@@ -111,8 +111,8 @@ function DeployCell({ app, source }: { app: T.App; source: T.GitSource }) {
         from <code>app/</code>; if it fails, the app is not reloaded.{" "}
         {app.desiredRuntime === "running"
           ? app.runtime.kind === "php-fpm"
-            ? "PHP-FPM then reloads gracefully; the container and scheduler keep running."
-            : "The app process then restarts; the container and scheduler keep running."
+            ? "PHP-FPM then reloads gracefully; the container, workers and tasks keep running."
+            : "The app process then restarts; the container, workers and tasks keep running."
           : "The app stays stopped."}
       </p>
       <Button disabled={deploy.isPending || !app.provisioned} onClick={() => deploy.mutate(undefined)}>

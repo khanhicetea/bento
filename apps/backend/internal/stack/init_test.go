@@ -71,8 +71,8 @@ func TestInitCreatesVersionedPrivateStack(t *testing.T) {
 	s, _ := store.Open(l.Database())
 	defer s.Close()
 	ops, _ := store.ListOperations(t.Context(), s.DB(), store.OpFilter{})
-	if len(ops) != 2 {
-		t.Fatalf("expected explicit init operations for redis and mysql, got %d", len(ops))
+	if len(ops) != 1 {
+		t.Fatalf("expected one explicit init operation for mysql, got %d", len(ops))
 	}
 	if _, err := Init(t.Context(), InitOptions{Root: root, Name: "prod"}); err == nil {
 		t.Fatal("re-init of an existing stack accepted")

@@ -53,8 +53,13 @@ type App struct {
 	Publication    Publication
 	// AccessLog enables the app-local Nginx access log (PHP apps). Edge access
 	// logs are per host.
-	AccessLog        bool
-	Redis            RedisIdentity
+	AccessLog bool
+	// Valkey runs an app-local Valkey server under the app's supervisor:
+	// loopback only, snapshots in the app home. Off by default.
+	Valkey bool
+	// Minicrond runs the app's scheduler (jobs, workers and Bento's internal
+	// tasks). On by default.
+	Minicrond        bool
 	ConfigGeneration int64
 	// CredentialsGeneration increments whenever secret material mounted into
 	// the app changes. It is tracked separately so secrets never enter the
@@ -80,9 +85,6 @@ func (a App) Redactor() *strings.Replacer {
 		if b.Password != "" {
 			pairs = append(pairs, b.Password, "[redacted]")
 		}
-	}
-	if a.Redis.Password != "" {
-		pairs = append(pairs, a.Redis.Password, "[redacted]")
 	}
 	return strings.NewReplacer(pairs...)
 }
@@ -213,20 +215,12 @@ type Route struct {
 	StaticCache bool `json:"staticCache,omitempty"`
 }
 
-type RedisIdentity struct {
-	Mode     string `json:"mode"` // shared | acl
-	Prefix   string `json:"prefix"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-}
-
 type Engine string
 
 const (
 	EngineMySQL    Engine = "mysql"
 	EnginePostgres Engine = "postgres"
 	EngineSQLite   Engine = "sqlite"
-	EngineRedis    Engine = "redis"
 )
 
 // Binding is an add-only data binding. Relational bindings reference a

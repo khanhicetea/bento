@@ -58,9 +58,9 @@ One SQLite file (`bento.db`, `0600`) opened with `modernc.org/sqlite` (pure Go),
 connection, and `BEGIN IMMEDIATE` transactions.
 
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
-  version (currently 1, the MVP baseline). `store.CheckCompatible` probes with `mode=ro&immutable=1`, so refusing a
-  foreign, older, newer, or non-SQLite file writes nothing (not even `-wal`/`-shm`). Only the current version is
-  accepted; there are no migrations yet. `stack.Import` copies the archived `state.db` and opens it through the same
+  version (currently 2: the shared Redis was removed and `apps` gained `valkey`/`minicrond`). `store.CheckCompatible`
+  probes with `mode=ro&immutable=1`, so refusing a foreign, older, newer, or non-SQLite file writes nothing (not even
+  `-wal`/`-shm`). Only the current version is accepted; there are no migrations yet (a version-1 file is refused). `stack.Import` copies the archived `state.db` and opens it through the same
   path, so an export from another schema version is refused before anything is created.
 - **App home:** `apps.home_path` (NULL = `/home/<slug>`) is the in-container home (`domain.App.HomePath`, returned by
   `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as `/home/<slug-shaped>`, written only at
@@ -102,7 +102,7 @@ operations on the same resource keep FIFO order and nothing overtakes a waiting 
 
 | Kind | Claims |
 | --- | --- |
-| `app.reconcile`, `app.start`, `app.restart`, `app.update`, `app.deploy` | exclusive `app:<id>`, shared `service:<name>` for each bound service (and `redis`) |
+| `app.reconcile`, `app.start`, `app.restart`, `app.update`, `app.deploy` | exclusive `app:<id>`, shared `service:<name>` for each bound service |
 | `app.stop` | exclusive `app:<id>` |
 | `service.create`, `service.reconcile` | exclusive `service:<name>` |
 | `image.prepare` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
@@ -127,7 +127,7 @@ blocked, the operation it waits behind. The API returns it as `waitingOn` on que
 Activity page and in the operation tracker, and `bento ops` in the PHASE column. An operation that is only waiting for
 a free slot has no `waitingOn`.
 
-Parallel handlers share five things, each serialized inside the handlers:
+Parallel handlers share four things, each serialized inside the handlers:
 
 - **Edge generations, container and reload** — `edgeMu` around `applyEdge`. It renders the whole route set, so two
   parallel applies would race on `edge/conf/{live,previous}`.
@@ -136,8 +136,6 @@ Parallel handlers share five things, each serialized inside the handlers:
 - **Runtime image builds** — `ImageManager` locks per image tag: concurrent `Ensure` calls for one tag build it once;
   different tags (for example a PHP and a Node image) build concurrently, at most `MaxConcurrentBuilds` (2) at a time
   from any operation. `Remove` (image prune) excludes every `Ensure`.
-- **Redis ACL** — `aclMu` in `syncRedisACL`, which reads every app's identity, rewrites the ACL file and reloads Redis.
-  `app.update` and `service.reconcile` of Redis may call it in parallel.
 - **Route activation of a booting app** — while an operation is (re)starting an app's instance and has not seen it ready,
   the app is *warming* and every edge render treats it as not running, so another operation's `applyEdge` never routes
   to it early. If such an apply happened, the warming operation re-applies the edge as soon as the app is ready (a
@@ -145,8 +143,7 @@ Parallel handlers share five things, each serialized inside the handlers:
   warming, so the reconciler does not queue an `edge.apply` for a route that is about to be restored. The flag clears
   on readiness or when the operation ends.
 
-Lock order when nested: image tag lock, `edgeMu`, `netMu`; `aclMu` and `runMu` (running, warming and waiting state) are
-leaves.
+Lock order when nested: image tag lock, `edgeMu`, `netMu`; `runMu` (running, warming and waiting state) is a leaf.
 
 Handlers re-read state from the store, so an operation that was superseded (e.g. `start` after a later `stop`) notices
 and exits. `--op-concurrency 1` restores strictly serial execution; the maximum is 16. Shutdown stops dispatching and
@@ -160,14 +157,15 @@ Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remo
 
 - **provision:** `ensureHome` creates `homes/<slug>` (`0750`, app-owned), its `app/` code directory, and a root-owned
   `.bento-identity.json` sidecar, or verifies an existing home belongs to this incarnation (a foreign home is refused,
-  never re-owned); creates SQLite dirs; provisions relational grants and Redis ACLs; materializes config; marks the
+  never re-owned); creates SQLite dirs; provisions relational grants; materializes config; marks the
   app provisioned and the ledger row active. Idempotent.
 - **ensureInstance:** verify durable state → ensure networks → `materialize` (resolve image, write config) → plan
   spec + fingerprint → observe. If an owned container exists with the same fingerprint, start it if needed; if the
   fingerprint differs, stop it, remove it, then create/start the replacement (never two instances at once). Duplicates
   or foreign containers on the name block the operation.
 - **waitReady:** polls `checkReady` until `ReadyTimeout` (180 s): container running with the intended generation,
-  `bento-ready` exec succeeds inside the container (scheduler socket, FPM ping, local HTTP answers), and a direct HTTP
+  `bento-ready` exec succeeds inside the container (scheduler socket when minicrond is on, `valkey-cli PING` when Valkey
+  is on, FPM ping, local HTTP answers), and a direct HTTP
   GET from the backend to the container's apps-network IP gets an HTTP answer. With the default ready path any status
   counts: a new app that returns 500 until its setup is finished still starts and keeps its route, and the operation
   logs a warning with the status (`ReadyCheck.HTTPStatus`). Only an explicitly configured ready path must also return
@@ -176,12 +174,13 @@ Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remo
 - **update:** if the boot fingerprint changed, replace; otherwise run `scopedReloads` for whichever of
   frontend/pool/scheduler files changed: validate with the running process (`nginx -t`, `php-fpm -t`,
   `minicrond validate`); on failure restore the previous bytes (`runtime.Changes.Restore`) and send nothing; on
-  success reload (`nginx -s reload`, `s6-svc -r`, `minicrond reload`).
+  success reload (`nginx -s reload`, `s6-svc -r`, `minicrond reload`). The scheduler reload is skipped while
+  minicrond is off; turning it on changes `runtime.env`, so the new instance reads the current `minicrond.toml`.
 - **stop:** remove the edge route first, then set the restart policy to `no` and stop. If the edge apply fails the
   stop still proceeds with a warning; the stale route returns 502 until edge drift reconciliation reapplies it. The persisted intent plus
   `restart=no` is what keeps a stopped app stopped across backend and host restarts.
 - **remove:** route removal (an edge apply failure is a warning, not a blocker, as for stop), container removal (owned only), verify nothing remains, record a `retired_apps` row
-  listing retained artifacts, retire the UID, delete app rows, delete generated config, refresh Redis ACLs.
+  listing retained artifacts, retire the UID, delete app rows, delete generated config.
 - **prune:** drop the recorded relational databases and user, delete SQLite dirs and the home (only if its sidecar
   still names the retired app id). UIDs are never reclaimed.
 
@@ -218,7 +217,7 @@ Recovery of missing durable data is refused by the handlers themselves (`verifyH
 `runtime.Names` derives every Docker name from the stack name: `bento-<stack>-app-<appId>`, `-tool-<appId>-<op>`,
 `-edge`, `-cloudflared`, `-<service>`, `-job-<op>`, volumes `bento-<stack>-<service>-data`, networks
 `bento-<stack>-apps` / `-data`, and the routing alias `app-<appId>`. Labels: `io.bento.managed`, `stack-id`,
-`app-id`, `role` (`runtime|tool|edge|database|cache|tunnel|backup|network|volume`), `generation`, `operation-id`,
+`app-id`, `role` (`runtime|tool|edge|database|tunnel|backup|network|volume`), `generation`, `operation-id`,
 `service`, `image-key`. `Names.OwnedBy` is checked before any stop/remove; names alone never authorize anything.
 
 ### Generated app configuration
@@ -227,12 +226,12 @@ Recovery of missing durable data is refused by the handlers themselves (`verifyH
 
 | File (`apps/<appId>/config/`, mounted at `/etc/bento`, `0440 root:<gid>`) | Reload scope |
 | --- | --- |
-| `runtime.env` — non-secret metadata (`BENTO_APP_ID`, `BENTO_HTTP_PORT`, `BENTO_TRUSTED_PROXIES`, …) | boot |
-| `credentials.env` — `DB_*`, `BENTO_DB_<n>_*`, `REDIS_*` | boot (via credentials generation) |
+| `runtime.env` — non-secret metadata (`BENTO_APP_ID`, `BENTO_HTTP_PORT`, `BENTO_TRUSTED_PROXIES`, `BENTO_MINICROND`, `BENTO_VALKEY`, …); with Valkey on also `REDIS_HOST`/`REDIS_PORT`/`REDIS_URL`, each only if the app's env does not define it | boot |
+| `credentials.env` — `DB_*`, `BENTO_DB_<n>_*` | boot (via credentials generation) |
 | `app.argv` — NUL-separated argv (HTTP apps) | boot |
 | `nginx.conf`, `fastcgi.conf` (PHP) | frontend reload |
 | `php-fpm.conf`, `php.d/zz-app.ini` (PHP; the ini is on the image's `PHP_INI_SCAN_DIR`) | pool restart |
-| `minicrond.toml` — config-owned `zz-bento-*` tasks | scheduler reload |
+| `minicrond.toml` — config-owned `zz-bento-*` tasks (rendered even while minicrond is off; nothing runs them then) | scheduler reload |
 
 plus `apps/<appId>/identity/{passwd,group}`: the image's own files (read once per image ID via a created-not-started
 container and cached) with the app user appended. They are mounted as single files and are boot-static.
@@ -244,7 +243,10 @@ The whole directory is mounted (not individual files) so atomic renames inside i
 `AppContainerSpec` sets: `User uid:gid`, read-only root, `CapDrop: ALL`, `no-new-privileges`, tmpfs `/run`
 (uid-owned, **exec**, 64 MiB — s6-overlay needs to execute from it) and `/tmp`, Engine-API memory/CPU/PID limits,
 `local` log driver (10 MB × 3), health check running `bento-ready`, restart `unless-stopped` (or `no`), working
-directory `/home/<slug>/app`, and endpoints on both stack networks. Mounts: own home, config dir, identity files, own
+directory `/home/<slug>/app`, and an endpoint on the apps network, plus the data network only when the app has a
+MySQL or PostgreSQL binding (`needsDataNetwork`; tool containers follow the same rule, except that `OpenTool` for a
+running app with Valkey on joins the app container's network namespace via `ShareAppNetwork`, so terminals, execs,
+file edits and deploy hooks reach the app's loopback Valkey; a tool opened before a replace keeps loopback only). Mounts: own home, config dir, identity files, own
 SQLite dirs. Nothing else.
 
 `Fingerprint` hashes every boot-static, **non-secret** input (image ID, user, env, mounts, tmpfs, resources, networks,
@@ -258,11 +260,14 @@ idle `sleep` command; it never runs `/init`, starts no daemons, and does not tak
 ### Managed images
 
 `PlanImage` combines the embedded context for `php` or `http` (`templates/images/common` overlaid with the kind) with
-pinned build args (base image, s6-overlay and minicrond versions and SHA-256s, Composer; for PHP also the Node.js LTS
-base and pnpm from `domain.PHPNodeArtifacts`) and hashes both into the tag
+pinned build args (base image, s6-overlay and minicrond versions and SHA-256s, Composer, Valkey's source version and
+single SHA-256 from `domain.RuntimeArtifacts`; for PHP also the Node.js LTS base and pnpm from
+`domain.PHPNodeArtifacts`) and hashes both into the tag
 `bento-runtime/<toolchain>:<version>-<hash12>`. `ImageManager.Ensure` builds only when that tag is missing, using the
 Engine API classic builder (`build.BuilderV1`) — no BuildKit features in the Dockerfiles. Tar headers use fixed modes
-and mtimes so the context is byte-reproducible.
+and mtimes so the context is byte-reproducible. Valkey is compiled in a build stage on each image's own base
+(`common/build-valkey.sh`: checksum-verified source tarball, TLS and systemd off) so it links against that image's
+libc; only `valkey-server` and `valkey-cli` reach `/usr/local/bin`.
 
 ### Inside a runtime container
 
@@ -270,8 +275,16 @@ and mtimes so the context is byte-reproducible.
 (exit 75 if held) and `exec`s s6-overlay's `/init`, which inherits the lock fd. s6 services (`user-bundles.d`):
 
 - PHP image: `nginx` (local frontend on :8080, internal FPM ping on 127.0.0.1:8081), `php-fpm` (single app pool),
-  `minicrond`;
-- HTTP image: `app` (argv from `/etc/bento/app.argv`, `PORT`/`HOST` exported), `minicrond`.
+  `minicrond`, `valkey`;
+- HTTP image: `app` (argv from `/etc/bento/app.argv`, `PORT`/`HOST` exported), `minicrond`, `valkey`.
+
+`minicrond` and `valkey` are per-app switches (`apps.minicrond`, default on; `apps.valkey`, default off) carried to the
+container as `BENTO_MINICROND`/`BENTO_VALKEY` in `runtime.env`, so toggling one replaces the instance. A run script
+whose switch is off marks itself run-once (`s6-svc -O .`) and exits 0, so s6 neither restarts it nor counts a failure.
+`valkey` runs `valkey-server /etc/valkey/valkey.conf --dir $VALKEY_DATA` as the app UID: `bind 127.0.0.1 -::1`,
+port 6379 (`domain.ValkeyPort`, refused as an HTTP app port), `protected-mode yes`, no password (only the app's own
+container can reach it), no `maxmemory` (the container memory limit bounds it), RDB `save 3600 1 300 100 60 10000`
+to `dump.rdb` in `~/.local/share/valkey` (`0700`), no AOF, logs on stdout. `VALKEY_DATA` is a reserved env key.
 
 Every run script sources `env.bash`, which loads `runtime.env` and `credentials.env` key-by-key without shell
 evaluation. `bento-finish` applies bounded backoff and halts the container after 5 failures of a service within
@@ -281,7 +294,7 @@ evaluation. `bento-finish` applies bounded backoff and halts the container after
 
 `Controller.EnsureNetworks` persists a network plan (two free `/24`s from `10.200.0.0/13`): the **apps** network
 (egress allowed; dynamic addresses restricted to the upper `/25`; `.2` reserved for the edge, `.3` for cloudflared) and
-the **data** network (`internal: true`). Apps and tools join both; the edge and tunnel join apps only; data services
+the **data** network (`internal: true`). Apps and tools join apps, and data only when bound to MySQL or PostgreSQL; the edge and tunnel join apps only; data services
 join data only. Those two reserved addresses are the only `set_real_ip_from` sources in app Nginx and the value of
 `BENTO_TRUSTED_PROXIES`.
 
@@ -344,8 +357,8 @@ host) is used when the edge forwards webhooks. Removing the git source or the ap
 `client.cnf`), runs containers on the data network with their named volume, and treats a service as ready only when it
 answers over **TCP** (first-boot entrypoints run a socket-only temporary server). Administrative SQL is sent on exec
 stdin; identifiers are validated against `^[a-z][a-z0-9_]{0,62}$`. Provisioning refuses an existing database that the
-binding's user does not already own. Redis runs with a generated `users.acl` containing only SHA-256 password hashes and
-per-app `~<slug>:*` key patterns, reloaded with `ACL LOAD`.
+binding's user does not already own. The engines are MySQL and PostgreSQL; there is no shared cache service (an app's
+Valkey lives in its own container, see *Inside a runtime container*).
 
 `ensureService(allowInit)` creates a volume only for a never-initialized service; for an initialized service a missing
 volume is a `volume-missing` failure. Volumes are never removed (except volumes a failing `import` created itself).
@@ -365,9 +378,10 @@ retention and remote apply.
 ## Scheduler: `operations/schedules.go`
 
 Platform jobs are rows in `schedules` (`id`, `kind`, `cron`, `enabled`, `spec_json`, bookkeeping). App jobs are not:
-they run in each app's own minicrond as the app UID. `Controller.RunSchedules` ticks every 30 seconds, evaluates
-enabled rows in the server's local time zone (`last_slot` is stored in UTC and converted back before `cron.Next`), and
-for a due slot calls the kind's `Submit`, which only queues a durable operation. Rules:
+they run in each app's own minicrond as the app UID (nothing runs, Bento's `zz-bento-*` tasks included, while the
+app's minicrond is off). `Controller.RunSchedules` ticks every 30 seconds, evaluates enabled rows in the server's local
+time zone (`last_slot` is stored in UTC and converted back before `cron.Next`), and for a due slot calls the kind's
+`Submit`, which only queues a durable operation. Rules:
 
 - Slots missed by more than 10 minutes are counted as missed and skipped, unless the kind sets `CatchUp` (run once).
 - A slot is skipped (`last_state=skipped`) while the schedule's previous operation (`last_op_id`) is not terminal.
@@ -400,11 +414,15 @@ writable.
 `restic.backup` (shares `app:<id>` and bound services, `restic:<id>` exclusive, pool of 2): plain dumps first
 (`DumpPlain`), then `.backup` copies of minicrond's and listed home SQLite files (`SnapshotHomeSQLite`, as the app
 UID, network `none`), `app.json` (env values with secret-looking names redacted) and `manifest.json`, then one
-`restic backup` with the sidecar, live SQLite files, and minicrond's log database/socket excluded (tags `app=`,
+`restic backup` with the sidecar, live SQLite files, minicrond's log database/socket, and Valkey's in-progress
+`temp-*.rdb` excluded (`dump.rdb` is replaced only by rename, so it is always a complete snapshot and is backed up
+with the home) (tags `app=`,
 `stack=`, `slug=`, `trigger=`), then `forget` filtered on `app=<id>,stack=<id>` (and `--prune` at most weekly). Only
 minicrond's `minicron.db` is snapshotted. `manifest.json` is format 2 (`homePath` from `ContainerHome()`, per-dump
 binding/suffix/username, SQLite `fileId`/`fileName`, `minicron`, `secrets`); `readManifest` still reads format 1.
-When the app's `includeSecrets` setting is on, `secrets.json` (`0600` in staging) holds the redacted env values and
+`app.json` carries `valkey` and `minicrond`; a snapshot without `minicrond` restores with it on, and a clone with
+Valkey on starts from the backed-up `dump.rdb` (the clone checklist says so). When the app's `includeSecrets` setting
+is on, `secrets.json` (`0600` in staging) holds the redacted env values and
 binding passwords; `app.json` stays redacted, and `secretRedactor` scrubs those values from operation output. Restic
 exit 3 records the run as `partial` (not OK). There is no in-place restore: app backups restore only into a new app
 (clone, planned).
@@ -442,7 +460,7 @@ only what it created.
   stdio over the control socket.
 - `schedulerapi.go`: the token-facing app scheduler routes (`/apps/{id}/scheduler/{jobs,workers,runs}…`). Each sends
   one fixed request to minicrond's HTTP API (under `runtime.SchedulerBasePath`) over the scheduler relay, like the
-  gateway, and needs the app desired-running. Output is allowlisted into `dto.Scheduler*` (job env keys only, app
+  gateway, and needs the app's minicrond on and the app desired-running (else `409 precondition_failed`). Output is allowlisted into `dto.Scheduler*` (job env keys only, app
   secrets redacted from commands and log lines); names and run ids are validated before anything is sent. Admin may
   create (`POST`, sent with `If-None-Match: *`) and edit (`PATCH`: read the full definition, apply only the given
   fields to its raw JSON so unmodelled fields and env values survive, `PUT` with `If-Match` on the revision read).
@@ -491,8 +509,8 @@ minicrond's UI is served on the management origin at `runtime.SchedulerBasePath`
 (`BENTO_SCHEDULER_BASE_PATH`); the bare path without a trailing slash stays a client route of the web UI, and
 `/apps/{slug}/scheduler/` is the proxy. minicrond escapes its own UI and sends a strict CSP with no framing; the gateway
 adds what only it can enforce. Each request needs a live operator session cookie (a missing session is a plain-text
-401), the slug must be an app's slug (not its id) that is desired running, and writes need an exact allowed `Origin`
-plus same-origin fetch metadata. The CSRF token is deliberately not required: minicrond's UI is app-served and is never
+401), the slug must be an app's slug (not its id) with minicrond on (else a plain-text 503) that is desired running,
+and writes need an exact allowed `Origin` plus same-origin fetch metadata. The CSRF token is deliberately not required: minicrond's UI is app-served and is never
 given it. Cookie, authorization, CSRF, and forwarding headers are stripped before the request crosses the relay;
 `Set-Cookie` and duplicate `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy` headers are dropped, and
 responses get `Cache-Control: no-store` and `Cross-Origin-Resource-Policy: same-origin`. minicrond's own
@@ -520,7 +538,7 @@ changes its own UID and never execs into containers per request. Relays idle for
 ## Security invariants (checklist for reviewers)
 
 - No secret in argv, labels, the fingerprint, logs, API responses, or container env; secrets travel via exec stdin,
-  `0400/0440` files, or hashed ACLs.
+  or `0400/0440` files.
 - App containers: numeric app UID/GID, read-only, no capabilities, `no-new-privileges`, no host ports, no Docker
   socket, only their own home/SQLite/config mounted.
 - Destructive actions check labels, role, and (for app containers) the home mount first.

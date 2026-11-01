@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestValidateSlug(t *testing.T) {
 	for _, ok := range []string{"shop", "my-app", "a1b", "abc-123"} {
@@ -156,5 +159,27 @@ func TestResolvePHP(t *testing.T) {
 	}
 	if _, err := ResolvePHP(PHPRuntime{Mode: ""}, res); err == nil {
 		t.Fatal("an unset mode must be refused, not defaulted, at render time")
+	}
+}
+
+func TestValkeyPortAndDataDirAreReserved(t *testing.T) {
+	r := Runtime{Kind: RuntimeHTTP, HTTP: &HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}, Port: ValkeyPort}}
+	var errs ValidationErrors
+	ValidateRuntime(&r, &errs)
+	if len(errs) != 1 || errs[0].Field != "runtime.http.port" {
+		t.Fatalf("port %d accepted: %v", ValkeyPort, errs)
+	}
+	errs = nil
+	ValidateEnv([]EnvVar{{Key: "VALKEY_DATA", Value: "/tmp"}}, &errs)
+	if len(errs) != 1 {
+		t.Fatalf("VALKEY_DATA accepted: %v", errs)
+	}
+}
+
+func TestResticExcludesValkeyTempSnapshots(t *testing.T) {
+	lines := ResticExcludeLines(ResticSettings{}, "/home/shop", nil)
+	if !slices.Contains(lines, "/home/shop/.local/share/valkey/temp-*.rdb") ||
+		slices.Contains(lines, "/home/shop/.local/share/valkey/dump.rdb") {
+		t.Fatalf("excludes %v", lines)
 	}
 }

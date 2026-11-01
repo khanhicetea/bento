@@ -20,9 +20,11 @@ import (
 const (
 	MySQLPort    = 3306
 	PostgresPort = 5432
-	RedisHost    = "redis"
-	RedisPort    = 6379
 )
+
+// ValkeyHost is where an app's own Valkey listens: loopback inside its
+// container, on domain.ValkeyPort, without a password.
+const ValkeyHost = "127.0.0.1"
 
 // SchedulerBasePath is the URL prefix minicrond serves under; the backend's
 // scheduler gateway on the management listener forwards exactly this prefix.
@@ -77,6 +79,21 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 	env.add("BENTO_SCHEDULER_BASE_PATH", SchedulerBasePath(app.Slug))
 	env.add("BENTO_TRUSTED_PROXIES", strings.Join(ctx.TrustedProxies, ","))
 	env.add("TZ", "UTC")
+	env.add("BENTO_MINICROND", flag(app.Minicrond))
+	env.add("BENTO_VALKEY", flag(app.Valkey))
+	if app.Valkey {
+		// Client defaults for the app's own Valkey; the app's env wins.
+		port := strconv.Itoa(domain.ValkeyPort)
+		for _, kv := range [][2]string{
+			{"REDIS_HOST", ValkeyHost},
+			{"REDIS_PORT", port},
+			{"REDIS_URL", "redis://" + ValkeyHost + ":" + port},
+		} {
+			if !slices.ContainsFunc(app.Runtime.Env, func(e domain.EnvVar) bool { return e.Key == kv[0] }) {
+				env.add(kv[0], kv[1])
+			}
+		}
+	}
 	if app.Runtime.HTTP != nil {
 		env.add("BENTO_WORKDIR", joinPath(code, app.Runtime.HTTP.Workdir))
 	} else {
@@ -374,6 +391,13 @@ func (e *orderedEnv) add(k, v string) {
 
 func (e *orderedEnv) bytes() []byte { return e.buf.Bytes() }
 
+func flag(on bool) string {
+	if on {
+		return "1"
+	}
+	return "0"
+}
+
 func joinPath(base, rel string) string {
 	if rel == "" {
 		return base
@@ -421,14 +445,6 @@ func CredentialsEnv(app domain.App) []byte {
 		}
 	}
 	env.add("BENTO_DB_COUNT", strconv.Itoa(len(app.Bindings)))
-	if app.Redis.Username != "" {
-		env.add("REDIS_HOST", RedisHost)
-		env.add("REDIS_PORT", strconv.Itoa(RedisPort))
-		env.add("REDIS_USERNAME", app.Redis.Username)
-		env.add("REDIS_PASSWORD", app.Redis.Password)
-		env.add("REDIS_PREFIX", app.Redis.Prefix)
-		env.add("BENTO_REDIS_PREFIX", app.Redis.Prefix)
-	}
 	return env.bytes()
 }
 

@@ -234,10 +234,19 @@ func TestSecretsNeverInResponses(t *testing.T) {
 	var acc dto.Accepted
 	json.Unmarshal([]byte(body), &acc)
 	h.Wait(acc.Operation.ID)
-	app, _ := store.GetApp(t.Context(), h.Store.DB(), "shop")
+	ctx, db := t.Context(), h.Store.DB()
+	app, _ := store.GetApp(ctx, db, "shop")
+	const secret = "Sup3rSecretBindingPw"
+	if err := store.InsertService(ctx, db, domain.DataService{Name: "mysql84", Engine: domain.EngineMySQL, Version: "8.4"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertBinding(ctx, db, domain.Binding{ID: "bmysql", AppID: app.ID, Engine: domain.EngineMySQL,
+		Service: "mysql84", Username: "ushop", Password: secret}); err != nil {
+		t.Fatal(err)
+	}
 	for _, p := range []string{"/api/v1/apps", "/api/v1/apps/shop", "/api/v1/operations", "/api/v1/tunnel"} {
 		_, out := c.do("GET", p, "", nil)
-		if strings.Contains(out, app.Redis.Password) {
+		if strings.Contains(out, secret) {
 			t.Fatalf("%s leaked a secret", p)
 		}
 	}

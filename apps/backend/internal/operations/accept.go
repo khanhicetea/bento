@@ -32,6 +32,10 @@ type CreateAppInput struct {
 	Resources domain.Resources
 	Ingress   domain.IngressMode
 	AccessLog bool
+	// Valkey runs the app's own Valkey server (off by default).
+	Valkey bool
+	// Minicrond runs the app's scheduler; nil means on.
+	Minicrond *bool
 	// Hosts seeds Ingress hosts that target the new app.
 	Hosts    []AppHostInput
 	Bindings []BindingRequest
@@ -171,13 +175,8 @@ func (c *Controller) CreateApp(
 	app := domain.App{
 		ID: platform.NewAppID(), Slug: in.Slug, Runtime: in.Runtime, Resources: in.Resources,
 		DesiredRuntime: domain.DesiredStopped, Ingress: in.Ingress, Publication: domain.Unpublished,
-		AccessLog: in.AccessLog, ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
-	}
-	app.Redis = domain.RedisIdentity{
-		Mode:     "acl",
-		Prefix:   in.Slug + ":",
-		Username: "app-" + app.ID,
-		Password: platform.RandomPassword(32),
+		AccessLog: in.AccessLog, Valkey: in.Valkey, Minicrond: in.Minicrond == nil || *in.Minicrond,
+		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	op, existed, err := c.Submit(ctx, Submission{
 		Kind: KindAppProvision, TargetKind: "app", TargetID: app.ID, IdempotencyKey: idem, Generation: 1,
@@ -235,6 +234,8 @@ type UpdateAppInput struct {
 	Resources          *domain.Resources
 	Ingress            *domain.IngressMode
 	AccessLog          *bool
+	Valkey             *bool
+	Minicrond          *bool
 	Env                *[]domain.EnvVar
 }
 
@@ -299,6 +300,12 @@ func (c *Controller) UpdateApp(
 			}
 			if in.AccessLog != nil {
 				cur.AccessLog = *in.AccessLog
+			}
+			if in.Valkey != nil {
+				cur.Valkey = *in.Valkey
+			}
+			if in.Minicrond != nil {
+				cur.Minicrond = *in.Minicrond
 			}
 			if in.Ingress != nil {
 				cur.Ingress = *in.Ingress
@@ -539,8 +546,6 @@ func (c *Controller) CreateService(
 		image, ok = domain.MySQLVersions[version]
 	case domain.EnginePostgres:
 		image, ok = domain.PostgresVersions[version]
-	case domain.EngineRedis:
-		image, ok, version = domain.RedisImage, true, domain.RedisVersion
 	}
 	if !ok {
 		return domain.DataService{}, store.Operation{}, domain.ValidationErrors{{
@@ -549,9 +554,6 @@ func (c *Controller) CreateService(
 		}}
 	}
 	name := string(engine) + strings.ReplaceAll(version, ".", "")
-	if engine == domain.EngineRedis {
-		name = "redis"
-	}
 	svc := domain.DataService{
 		Name:      name,
 		Engine:    engine,

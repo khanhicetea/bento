@@ -18,8 +18,8 @@ the app stops or restarts them too.
 ## Commands and environment
 
 Write the command as a **Command** (a shell line), e.g. `php artisan schedule:run`. New jobs and workers start in
-`~/app` with the app's environment — `PATH` with the toolchain, `DB_*`, `REDIS_*`, and your env vars — so Laravel
-needs no `.env` database settings. A value you set on the job or worker wins.
+`~/app` with the app's environment — `PATH` with the toolchain, `DB_*`, `REDIS_*` (when Valkey is on), and your env
+vars — so Laravel needs no `.env` database settings. A value you set on the job or worker wins.
 
 The **Argv** form also works with bare names such as `["php", "artisan", "queue:work"]`: they are looked up in
 `/usr/local/bin`, `/usr/bin`, and `/bin`. Example worker for Laravel:
@@ -41,3 +41,12 @@ Things to know:
 - A job can never run twice at once, even while the container is being replaced.
 - Tasks named `zz-bento-*` are Bento's own (e.g. weekly SQLite `VACUUM`) and read-only.
 - After a deploy, restart queue workers (`php artisan queue:restart`) so they load the new code.
+
+## Turn it off
+
+An app that needs no jobs or workers can run without a scheduler: clear **Scheduler (minicrond)** in the app's
+[Container settings](/apps/settings#valkey-and-scheduler), or set `minicrond` to `false`. The running container is replaced. While it is off:
+
+- nothing runs — not your jobs and workers, and not Bento's own `zz-bento-*` tasks such as the SQLite `VACUUM`;
+- the **Scheduler** tab and the scheduler API answer that minicrond is off for this app;
+- your jobs stay in the home and run again when you turn it back on.

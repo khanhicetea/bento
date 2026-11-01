@@ -75,8 +75,10 @@ func (k ImageKey) RuntimeDebianBase() string {
 	return DebianBase
 }
 
-// Supervision and scheduler artifacts downloaded (and checksum-verified) while
-// building managed runtime images.
+// Supervision, scheduler and Valkey artifacts downloaded (and
+// checksum-verified) while building managed runtime images. Valkey is a source
+// tarball (one checksum for every architecture), compiled on each image's own
+// Debian release.
 var RuntimeArtifacts = map[string]string{
 	"S6_OVERLAY_VERSION":       "3.2.3.2",
 	"S6_OVERLAY_NOARCH_SHA256": "5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12",
@@ -87,7 +89,13 @@ var RuntimeArtifacts = map[string]string{
 	"MINICROND_ARM64_SHA256":   "2d5974c210107d8c117cdb251bccc3b136d51624a756b7569e8fefc3bc253d23",
 	"COMPOSER_VERSION":         "2.10.3",
 	"COMPOSER_SHA256":          "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6",
+	"VALKEY_VERSION":           "9.1.3",
+	"VALKEY_SHA256":            "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293",
 }
+
+// ValkeyPort is the loopback port of an app's own Valkey server. HTTP apps
+// cannot listen on it.
+const ValkeyPort = 6379
 
 // PHPNodeArtifacts pin the Node.js LTS toolchain (with npm) and pnpm layered
 // into every managed PHP image for installing and building front-end assets.
@@ -107,11 +115,9 @@ var ResticArtifacts = map[string]string{
 
 // Pulled infrastructure images.
 const (
-	EdgeImage    = "nginx:stable-trixie@sha256:a7675fcee220f59b4a99f7098c06a0d5d999c2c0ee37c0211efb780536e5cb20"
-	TunnelImage  = "cloudflare/cloudflared:2025.9.1@sha256:4604b477520dc8322af5427da68b44f0bf814938e9d2e4814f2249ee4b03ffdf"
-	RcloneImage  = "rclone/rclone:1.71.1@sha256:d5971950c2b370fb04dd3292541b5bda6d9103143fd7e345aeb435a399388afc"
-	RedisImage   = "redis:8.4-trixie@sha256:6a12a187547eb2eac4da4528f9d9787d69f3848e513480baedfd75e3b2ac393e"
-	RedisVersion = "8.4"
+	EdgeImage   = "nginx:stable-trixie@sha256:a7675fcee220f59b4a99f7098c06a0d5d999c2c0ee37c0211efb780536e5cb20"
+	TunnelImage = "cloudflare/cloudflared:2025.9.1@sha256:4604b477520dc8322af5427da68b44f0bf814938e9d2e4814f2249ee4b03ffdf"
+	RcloneImage = "rclone/rclone:1.71.1@sha256:d5971950c2b370fb04dd3292541b5bda6d9103143fd7e345aeb435a399388afc"
 	// AdminerImage serves the database browser (one shared container).
 	AdminerImage = "adminer:5.5.1@sha256:6c19fd07aaf25361fbc1541a7015c86cf670b830951cfb0d47869f34ec0ef2cf"
 )

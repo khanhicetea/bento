@@ -154,6 +154,7 @@ var envKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var reservedEnvKeys = map[string]bool{
 	"HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "PATH": true, "TZ": true,
 	"BASE_PATH": true, "MINICRON_DATA": true, "MINICRON_CONFIG": true, "MINICRON_ALLOW_IFRAME": true,
+	"VALKEY_DATA": true,
 }
 
 // ValidateEnv checks operator-defined app environment variables.
@@ -268,6 +269,8 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 		}
 		if h.Port < 1024 || h.Port > 65535 {
 			errs.Add("runtime.http.port", "must be between 1024 and 65535")
+		} else if h.Port == ValkeyPort {
+			errs.Add("runtime.http.port", "%d is reserved for the app's Valkey", ValkeyPort)
 		}
 		if h.ReadyPath != "" && !readyPathRegexp.MatchString(h.ReadyPath) {
 			errs.Add("runtime.http.readyPath", "must be an absolute URL path")

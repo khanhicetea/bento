@@ -1,12 +1,10 @@
-// Package dataservices manages the shared MySQL, PostgreSQL, and Redis
-// services: container specs, administrator secrets, readiness, and
-// add-only app grants. Administrator and app secrets never appear on host
-// argv, in labels, or in API output; SQL and ACLs travel over exec stdin or
-// private files.
+// Package dataservices manages the shared MySQL and PostgreSQL services:
+// container specs, administrator secrets, readiness, and add-only app grants.
+// Administrator and app secrets never appear on host argv, in labels, or in
+// API output; SQL travels over exec stdin or private files.
 package dataservices
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -41,19 +39,14 @@ func (m *Manager) secretsDir(service string) string {
 	return filepath.Join(m.Layout.ServicesDir(), service, "secrets")
 }
 
-func (m *Manager) confDir(service string) string {
-	return filepath.Join(m.Layout.ServicesDir(), service, "conf")
-}
-
 // ErrSecretMissing reports an established relational service whose
 // administrator secret is gone. The real password lives in the data volume,
 // so a newly generated one could never log in.
 var ErrSecretMissing = errors.New("administrator secret missing")
 
 // EnsureSecrets generates administrator secrets once. Existing secrets are
-// never rotated. For an established MySQL/PostgreSQL service a missing
-// secret is refused rather than regenerated; Redis is exempt because Bento
-// writes its whole ACL, admin included, from the secret file.
+// never rotated. For an established service a missing secret is refused
+// rather than regenerated.
 func (m *Manager) EnsureSecrets(s domain.DataService, established bool) error {
 	dir := m.secretsDir(s.Name)
 	if err := platform.EnsureDir(filepath.Dir(dir), 0o700, platform.RootOwner); err != nil {
@@ -65,7 +58,7 @@ func (m *Manager) EnsureSecrets(s domain.DataService, established bool) error {
 	pwPath := filepath.Join(dir, "root-password")
 	pw, err := os.ReadFile(pwPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		if established && s.Engine != domain.EngineRedis {
+		if established {
 			return fmt.Errorf("%w: %s", ErrSecretMissing, pwPath)
 		}
 		pw = []byte(platform.RandomPassword(32))
@@ -76,8 +69,7 @@ func (m *Manager) EnsureSecrets(s domain.DataService, established bool) error {
 		return err
 	}
 	password := strings.TrimSpace(string(pw))
-	switch s.Engine {
-	case domain.EngineMySQL:
+	if s.Engine == domain.EngineMySQL {
 		cnf := fmt.Sprintf("[client]\nuser=root\npassword=%s\nhost=localhost\n", password)
 		if _, err := platform.WriteIfChanged(
 			filepath.Join(dir, "client.cnf"),
@@ -85,10 +77,6 @@ func (m *Manager) EnsureSecrets(s domain.DataService, established bool) error {
 			0o400,
 			platform.RootOwner,
 		); err != nil {
-			return err
-		}
-	case domain.EngineRedis:
-		if err := platform.EnsureDir(filepath.Dir(m.confDir(s.Name)), 0o700, platform.RootOwner); err != nil {
 			return err
 		}
 	}
@@ -102,32 +90,21 @@ func (m *Manager) AdminPassword(service string) (string, error) {
 }
 
 func (m *Manager) volumeTarget(s domain.DataService) string {
-	switch s.Engine {
-	case domain.EngineMySQL:
+	if s.Engine == domain.EngineMySQL {
 		return "/var/lib/mysql"
-	case domain.EnginePostgres:
-		// PostgreSQL 18+ images keep PGDATA in a major-versioned subdirectory
-		// and refuse a volume mounted at the legacy /var/lib/postgresql/data.
-		if major, err := strconv.Atoi(s.Version); err == nil && major >= 18 {
-			return "/var/lib/postgresql"
-		}
-		return "/var/lib/postgresql/data"
-	default:
-		return "/data"
 	}
-}
-
-func roleOf(e domain.Engine) runtime.Role {
-	if e == domain.EngineRedis {
-		return runtime.RoleCache
+	// PostgreSQL 18+ images keep PGDATA in a major-versioned subdirectory
+	// and refuse a volume mounted at the legacy /var/lib/postgresql/data.
+	if major, err := strconv.Atoi(s.Version); err == nil && major >= 18 {
+		return "/var/lib/postgresql"
 	}
-	return runtime.RoleDatabase
+	return "/var/lib/postgresql/data"
 }
 
 // ContainerSpec plans the service container. Data services join only the
 // private data network and publish no host ports.
 func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
-	labels := m.Names.Labels(roleOf(s.Engine), map[string]string{runtime.LabelService: s.Name})
+	labels := m.Names.Labels(runtime.RoleDatabase, map[string]string{runtime.LabelService: s.Name})
 	if fp := SettingsFingerprint(s); fp != "" {
 		labels[runtime.LabelServiceSettings] = fp
 	}
@@ -151,18 +128,6 @@ func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
 			Test:     []string{"CMD", "pg_isready", "-U", "postgres"},
 			Interval: 15 * time.Second, Timeout: 5 * time.Second, StartPeriod: 60 * time.Second, Retries: 5,
 		}
-	case domain.EngineRedis:
-		mounts = append(
-			mounts,
-			mount.Mount{Type: mount.TypeBind, Source: m.confDir(s.Name), Target: "/etc/redis-bento", ReadOnly: true},
-		)
-		cfg.Cmd = []string{"redis-server", "/etc/redis-bento/redis.conf"}
-		cfg.User = "999:999"
-		// Liveness only: an unauthenticated PING proves the server answers.
-		cfg.Healthcheck = &container.HealthConfig{
-			Test:     []string{"CMD-SHELL", "redis-cli ping 2>&1 | grep -qE 'PONG|NOAUTH'"},
-			Interval: 15 * time.Second, Timeout: 5 * time.Second, StartPeriod: 20 * time.Second, Retries: 5,
-		}
 	}
 	stop := 60
 	cfg.StopTimeout = &stop
@@ -172,10 +137,6 @@ func (m *Manager) ContainerSpec(s domain.DataService) docker.ContainerSpec {
 		SecurityOpt:   []string{"no-new-privileges:true"},
 		LogConfig:     container.LogConfig{Type: "local", Config: map[string]string{"max-size": "10m", "max-file": "3"}},
 		ShmSize:       128 << 20,
-	}
-	if s.Engine == domain.EngineRedis {
-		host.ReadonlyRootfs = true
-		host.CapDrop = []string{"ALL"}
 	}
 	return docker.ContainerSpec{
 		Name: m.Names.ServiceContainer(s.Name), Config: cfg, HostConfig: host,
@@ -260,13 +221,8 @@ func (m *Manager) Ready(ctx context.Context, s domain.DataService, containerID s
 		}
 	case domain.EnginePostgres:
 		req.Cmd = []string{"pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-q"}
-	case domain.EngineRedis:
-		pw, err := m.AdminPassword(s.Name)
-		if err != nil {
-			return err
-		}
-		req.Cmd = []string{"redis-cli", "--no-auth-warning", "PING"}
-		req.Env = []string{"REDISCLI_AUTH=" + pw}
+	default:
+		return fmt.Errorf("unsupported engine %q", s.Engine)
 	}
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -311,13 +267,11 @@ func (m *Manager) SQL(ctx context.Context, s domain.DataService, containerID, da
 	return strings.TrimSpace(string(res.Stdout)), nil
 }
 
-// Validation patterns are compiled once: WriteRedisConfig checks every Redis
-// identity on each write and ProvisionBinding each generated password.
+// Validation patterns are compiled once: ProvisionBinding checks each
+// identifier and generated password.
 var (
-	identPattern       = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
-	passwordPattern    = regexp.MustCompile(`^[A-Za-z0-9]+$`)
-	redisUserPattern   = regexp.MustCompile(`^[a-z0-9-]+$`)
-	redisPrefixPattern = regexp.MustCompile(`^[a-z0-9-]+:$`)
+	identPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+	passwordPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 )
 
 func ident(s string) (string, error) {
@@ -511,94 +465,4 @@ func (m *Manager) DropBinding(ctx context.Context, s domain.DataService, id, use
 	}
 	_, err = m.SQL(ctx, s, id, "", sql.String())
 	return err
-}
-
-// ---- Redis ACL ----
-
-// RedisUser is one ACL identity restricted to its key/channel prefix.
-type RedisUser struct {
-	Username string
-	Password string
-	Prefix   string
-}
-
-// WriteRedisConfig renders redis.conf and the ACL file from the full set of
-// app identities. The default user is the administrator.
-func (m *Manager) WriteRedisConfig(service string, users []RedisUser) error {
-	dir := m.confDir(service)
-	if err := platform.EnsureDir(dir, 0o750, platform.Owner{UID: 0, GID: 999}); err != nil {
-		return err
-	}
-	admin, err := m.AdminPassword(service)
-	if err != nil {
-		return err
-	}
-	conf := "# Generated by Bento. Do not edit.\n" +
-		"port 6379\nbind 0.0.0.0\nprotected-mode yes\ndir /data\nappendonly yes\n" +
-		"aclfile /etc/redis-bento/users.acl\n" +
-		fmt.Sprintf("maxmemory %d\nmaxmemory-policy noeviction\n", RedisMaxMemory())
-	slices.SortFunc(users, func(a, b RedisUser) int { return strings.Compare(a.Username, b.Username) })
-	var acl bytes.Buffer
-	fmt.Fprintf(&acl, "user default on sanitize-payload #%s ~* &* +@all\n", platform.SHA256Hex([]byte(admin)))
-	for _, u := range users {
-		if !redisUserPattern.MatchString(u.Username) || !redisPrefixPattern.MatchString(u.Prefix) {
-			return fmt.Errorf("invalid redis identity %q", u.Username)
-		}
-		// INFO is read-only and called on connect by many clients (BullMQ,
-		// Sidekiq, health checks); the rest of @dangerous stays denied because
-		// FLUSHDB, KEYS and friends ignore key prefixes.
-		fmt.Fprintf(
-			&acl,
-			"user %s on sanitize-payload #%s resetkeys ~%s* resetchannels &%s* +@all -@admin -@dangerous +info\n",
-			u.Username,
-			platform.SHA256Hex([]byte(u.Password)),
-			u.Prefix,
-			u.Prefix,
-		)
-	}
-	owner := platform.Owner{UID: 0, GID: 999}
-	if _, err := platform.WriteIfChanged(filepath.Join(dir, "redis.conf"), []byte(conf), 0o440, owner); err != nil {
-		return err
-	}
-	_, err = platform.WriteIfChanged(filepath.Join(dir, "users.acl"), acl.Bytes(), 0o440, owner)
-	return err
-}
-
-// RedisMaxMemory bounds the shared Redis at a quarter of host memory so one
-// app cannot grow it until the host runs out; 256 MiB when unknown.
-func RedisMaxMemory() int64 {
-	const floor = 64 << 20
-	if mem, ok := platform.HostMemory(); ok {
-		return max(mem/4, floor)
-	}
-	return 256 << 20
-}
-
-// ReloadRedis makes the running server load its ACL file and memory bound.
-// It is cheap and idempotent, so callers run it on every sync rather than
-// only when the files changed: a failed reload is then retried next time.
-func (m *Manager) ReloadRedis(ctx context.Context, service, containerID string) error {
-	pw, err := m.AdminPassword(service)
-	if err != nil {
-		return err
-	}
-	for _, cmd := range [][]string{
-		{"redis-cli", "--no-auth-warning", "ACL", "LOAD"},
-		{"redis-cli", "--no-auth-warning", "CONFIG", "SET", "maxmemory", strconv.FormatInt(RedisMaxMemory(), 10)},
-	} {
-		cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		res, err := m.Engine.Exec(cctx, containerID, docker.ExecRequest{Cmd: cmd, Env: []string{"REDISCLI_AUTH=" + pw}})
-		cancel()
-		if err != nil {
-			return err
-		}
-		if res.ExitCode != 0 || !strings.Contains(string(res.Stdout), "OK") {
-			return fmt.Errorf(
-				"redis %s failed: %s",
-				strings.Join(cmd[2:4], " "),
-				redactLine(string(res.Stdout)+string(res.Stderr)),
-			)
-		}
-	}
-	return nil
 }

@@ -10,6 +10,7 @@ import {
   CopyableCode,
   DomainError,
   DomainLoading,
+  EmptyState,
   Field,
   KeyValues,
   PageHeader,
@@ -48,7 +49,7 @@ const tabs: Array<[Tab, string]> = [
   ["terminal", "Terminal"],
   ["data", "Data"],
   ["backup", "Backup"],
-  ["scheduler", "Scheduler"],
+  ["scheduler", "Processes & Tasks"],
   ["settings", "Settings"],
 ];
 
@@ -338,11 +339,11 @@ function Overview({ app }: { app: T.App }) {
             {hostDialog && <HostDialogBody app={app.slug} compact onDone={() => setHostDialog(false)} />}
           </DialogContent>
         </Dialog>
-        <Cell title="Redis" className={app.reconcile.failures > 0 ? "" : "cell--wide"}>
+        <Cell title="App services" className={app.reconcile.failures > 0 ? "" : "cell--wide"}>
           <KeyValues
             items={[
-              ["User", <code>{app.redisUser}</code>],
-              ["Prefix", <code>{app.redisPrefix}*</code>],
+              ["Valkey", app.valkey ? "✓ On · 127.0.0.1:6379" : "— Off"],
+              ["Processes & Tasks", app.minicrond ? "✓ On" : "— Off"],
             ]}
           />
         </Cell>
@@ -561,6 +562,23 @@ function ServiceOptions() {
 }
 
 function Scheduler({ app }: { app: T.App }) {
+  // With minicrond off the gateway answers 503, so the frame is never loaded.
+  if (!app.minicrond)
+    return (
+      <div className="box">
+        <Cell kind="kara">
+          <EmptyState
+            title="Processes & Tasks off"
+            body="Minicrond is off."
+            action={
+              <Button asChild>
+                <Link href={`/apps/${encodeURIComponent(app.slug)}/settings`}>Open settings</Link>
+              </Button>
+            }
+          />
+        </Cell>
+      </div>
+    );
   if (app.desiredRuntime !== "running")
     return (
       <div className="box">
@@ -575,7 +593,7 @@ function Scheduler({ app }: { app: T.App }) {
     <div className="box">
       <div className="cell">
         <div className="scheduler-bar">
-          <strong>Scheduler</strong>
+          <strong>Processes &amp; Tasks</strong>
           {/* A plain anchor: the scheduler is a separate page, not a client route. */}
           <Button asChild>
             <a href={src} target="_blank" rel="noopener">
@@ -583,7 +601,7 @@ function Scheduler({ app }: { app: T.App }) {
             </a>
           </Button>
         </div>
-        <iframe className="scheduler-frame" title={`${app.slug} scheduler`} src={src} />
+        <iframe className="scheduler-frame" title={`${app.slug} processes & tasks`} src={src} />
       </div>
     </div>
   );

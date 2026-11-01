@@ -44,40 +44,6 @@ func TestSlowFirstBootStillEstablishesService(t *testing.T) {
 	}
 }
 
-// M3: a failed ACL LOAD is retried on the next sync even though the ACL file
-// on disk no longer changes.
-func TestRedisACLReloadRetriedAfterFailure(t *testing.T) {
-	h := newHarness(t)
-	ctx := t.Context()
-	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult { return docker.ExecResult{Stdout: []byte("OK")} }
-	h.mustSucceed(func() (store.Operation, error) {
-		_, op, err := h.c.CreateService(ctx, domain.EngineRedis, "", "")
-		return op, err
-	}())
-
-	var loads int
-	fail := true
-	h.fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
-		if len(req.Cmd) > 3 && req.Cmd[2] == "ACL" {
-			loads++
-			if fail {
-				return docker.ExecResult{ExitCode: 1, Stderr: []byte("transient")}
-			}
-		}
-		return docker.ExecResult{Stdout: []byte("OK")}
-	}
-	if err := h.c.syncRedisACL(ctx); err == nil {
-		t.Fatal("first reload should fail")
-	}
-	fail = false
-	if err := h.c.syncRedisACL(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if loads != 2 {
-		t.Fatalf("ACL LOAD ran %d times, want 2", loads)
-	}
-}
-
 // M6: cleanup after a cancelled operation (export resume) must not be cut
 // short by the same cancel flag.
 func TestUncancellableRunIgnoresCancelRequest(t *testing.T) {

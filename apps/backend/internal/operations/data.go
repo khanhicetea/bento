@@ -40,7 +40,7 @@ func (c *Controller) serviceContainer(ctx context.Context, s domain.DataService)
 	}
 	if ins.Config == nil || !c.Names.OwnedBy(
 		ins.Config.Labels,
-		roleOf(s.Engine),
+		runtime.RoleDatabase,
 		"",
 	) || ins.Config.Labels[runtime.LabelService] != s.Name {
 		return "", Fail(
@@ -55,13 +55,6 @@ func (c *Controller) serviceContainer(ctx context.Context, s domain.DataService)
 		return "", Fail("service-not-ready", "Retry after the service finishes starting.", "%v", err)
 	}
 	return ins.ID, nil
-}
-
-func roleOf(e domain.Engine) runtime.Role {
-	if e == domain.EngineRedis {
-		return runtime.RoleCache
-	}
-	return runtime.RoleDatabase
 }
 
 func (c *Controller) provisionRelational(ctx context.Context, b domain.Binding) error {
@@ -87,48 +80,6 @@ func (c *Controller) provisionRelational(ctx context.Context, b domain.Binding) 
 	return nil
 }
 
-// syncRedisACL rewrites the Redis ACL file from all app identities and
-// reloads it when the Redis service is running.
-// Operations running in parallel may call it; aclMu keeps each
-// read-apps/write-file/reload sequence whole.
-func (c *Controller) syncRedisACL(ctx context.Context) error {
-	c.aclMu.Lock()
-	defer c.aclMu.Unlock()
-	svc, err := store.GetService(ctx, c.Store.DB(), "redis")
-	if errors.Is(err, store.ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	apps, err := store.ListApps(ctx, c.Store.DB())
-	if err != nil {
-		return err
-	}
-	var users []dataservices.RedisUser
-	for _, a := range apps {
-		if a.Redis.Username != "" {
-			users = append(
-				users,
-				dataservices.RedisUser{Username: a.Redis.Username, Password: a.Redis.Password, Prefix: a.Redis.Prefix},
-			)
-		}
-	}
-	if err := c.Data().EnsureSecrets(svc.DataService, svc.Initialized); err != nil {
-		return err
-	}
-	if err := c.Data().WriteRedisConfig(svc.Name, users); err != nil {
-		return err
-	}
-	ins, err := c.Engine.Inspect(ctx, c.Names.ServiceContainer(svc.Name))
-	if err != nil || ins == nil || ins.State == nil || !ins.State.Running {
-		return err
-	}
-	// Always reload: a reload that failed once must be retried even though
-	// the files on disk no longer differ.
-	return c.Data().ReloadRedis(ctx, svc.Name, ins.ID)
-}
-
 // ensureService makes a data service container exist and run. When
 // allowInit is false (reconciliation of an established service) a missing
 // volume blocks recovery instead of being replaced with an empty one.
@@ -146,11 +97,6 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 			)
 		}
 		return "", err
-	}
-	if svc.Engine == domain.EngineRedis {
-		if err := c.syncRedisACL(ctx); err != nil {
-			return "", err
-		}
 	}
 	vol, err := c.Engine.VolumeInspect(ctx, svc.Volume)
 	if err != nil {
@@ -200,7 +146,7 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 	if ins != nil {
 		if ins.Config == nil || !c.Names.OwnedBy(
 			ins.Config.Labels,
-			roleOf(svc.Engine),
+			runtime.RoleDatabase,
 			"",
 		) || ins.Config.Labels[runtime.LabelService] != svc.Name {
 			return "", Fail(
@@ -362,7 +308,7 @@ func (c *Controller) handleServiceRestart(ctx context.Context, r *Run) (any, err
 		return nil, err
 	}
 	if ins != nil {
-		if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, roleOf(svc.Engine), "") ||
+		if ins.Config == nil || !c.Names.OwnedBy(ins.Config.Labels, runtime.RoleDatabase, "") ||
 			ins.Config.Labels[runtime.LabelService] != svc.Name {
 			return nil, Fail("foreign-container", "Resolve the conflicting container manually.",
 				"container %s is not owned by this stack", c.Names.ServiceContainer(svc.Name))

@@ -130,14 +130,14 @@ func TestRetryBudgetIsBoundedAndObservable(t *testing.T) {
 func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 	h, r, _ := setup(t)
 	ctx := t.Context()
-	_, op, err := h.C.CreateService(ctx, domain.EngineRedis, "", "")
+	_, op, err := h.C.CreateService(ctx, domain.EngineMySQL, "8.4", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := h.Wait(op.ID); got.State != store.OpSucceeded {
 		t.Fatal(got.ErrorMessage)
 	}
-	name := h.C.Names.ServiceContainer("redis")
+	name := h.C.Names.ServiceContainer("mysql84")
 	// Wait out the actual backoff rather than a fixed guess, which -race can outrun.
 	r.BaseBackoff = 20 * time.Millisecond
 	for range MaxAttempts + 2 {
@@ -145,13 +145,13 @@ func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 		h.Fake.FailOn = map[string]error{"Start": errors.New("injected")}
 		pass(t, h, r)
 		pass(t, h, r)
-		time.Sleep(time.Until(r.Statuses()["service:redis"].NextAttempt) + time.Millisecond)
+		time.Sleep(time.Until(r.Statuses()["service:mysql84"].NextAttempt) + time.Millisecond)
 	}
-	if st := r.Statuses()["service:redis"]; !st.Blocked {
+	if st := r.Statuses()["service:mysql84"]; !st.Blocked {
 		t.Fatalf("expected blocked, got %+v", st)
 	}
 	h.Fake.FailOn = nil
-	op, _, err = h.C.Submit(ctx, operations.Submission{Kind: operations.KindServiceEnsure, TargetKind: "service", TargetID: "redis"})
+	op, _, err = h.C.Submit(ctx, operations.Submission{Kind: operations.KindServiceEnsure, TargetKind: "service", TargetID: "mysql84"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestBlockedServiceRecoversAfterSuccessfulOperation(t *testing.T) {
 		t.Fatal(got.ErrorMessage)
 	}
 	pass(t, h, r)
-	if st, ok := r.Statuses()["service:redis"]; ok {
+	if st, ok := r.Statuses()["service:mysql84"]; ok {
 		t.Fatalf("a successful ensure must clear the budget, got %+v", st)
 	}
 }

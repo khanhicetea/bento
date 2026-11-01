@@ -106,11 +106,10 @@ type Controller struct {
 	passes atomic.Int64
 
 	// Locks for state shared by operations that run in parallel. Acquisition
-	// order when nested: images (runtime.ImageManager), edgeMu, netMu; aclMu
-	// and runMu are leaves.
+	// order when nested: images (runtime.ImageManager), edgeMu, netMu; runMu
+	// is a leaf.
 	netMu  sync.Mutex // network plan + network creation
 	edgeMu sync.Mutex // edge generations, container and reload
-	aclMu  sync.Mutex // Redis ACL file and reload
 
 	// webhookMu serializes webhook deliveries so coalescing sees queued
 	// deploys. Only HandleWebhook takes it, before any other controller lock.

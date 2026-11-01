@@ -88,7 +88,6 @@ const (
 	EngineMySQL    Engine = "mysql"
 	EnginePostgres Engine = "postgres"
 	EngineSQLite   Engine = "sqlite"
-	EngineRedis    Engine = "redis"
 )
 
 // ObservedState is Docker-observed runtime state, never persisted intent.
@@ -249,11 +248,14 @@ type App struct {
 	HomePath string      `json:"homePath,omitempty"`
 	Runtime  RuntimeSpec `json:"runtime"`
 	// AccessLog is the app-local Nginx access log; edge logs are per host.
-	AccessLog   bool        `json:"accessLog"`
+	AccessLog bool `json:"accessLog"`
+	// Valkey runs the app's own Valkey on 127.0.0.1:6379 inside its
+	// container, with snapshots in the app home.
+	Valkey bool `json:"valkey"`
+	// Minicrond runs the app's scheduler (jobs and workers).
+	Minicrond   bool        `json:"minicrond"`
 	Env         []EnvVar    `json:"env"`
 	Bindings    []Binding   `json:"bindings"`
-	RedisPrefix string      `json:"redisPrefix"`
-	RedisUser   string      `json:"redisUser"`
 	IngressInfo IngressInfo `json:"ingressInfo"`
 	Reconcile   Reconcile   `json:"reconcile"`
 	CreatedAt   string      `json:"createdAt"`
@@ -277,6 +279,10 @@ type CreateAppRequest struct {
 	Resources *Resources  `json:"resources,omitempty"`
 	Ingress   IngressMode `json:"ingress,omitempty"`
 	AccessLog bool        `json:"accessLog,omitempty"`
+	// Valkey runs the app's own Valkey server (default off).
+	Valkey bool `json:"valkey,omitempty"`
+	// Minicrond runs the app's scheduler (default on).
+	Minicrond *bool `json:"minicrond,omitempty"`
 	// Hosts are Ingress hosts created together with the app, targeting it.
 	Hosts    []AppHostRequest `json:"hosts"`
 	Bindings []BindingRequest `json:"bindings"`
@@ -294,6 +300,8 @@ type UpdateAppRequest struct {
 	Resources          *Resources   `json:"resources,omitempty"`
 	Ingress            *IngressMode `json:"ingress,omitempty"`
 	AccessLog          *bool        `json:"accessLog,omitempty"`
+	Valkey             *bool        `json:"valkey,omitempty"`
+	Minicrond          *bool        `json:"minicrond,omitempty"`
 	// Env, when present, replaces the app's environment variables.
 	Env *[]EnvVar `json:"env,omitempty"`
 }
@@ -481,7 +489,7 @@ type Service struct {
 	// SettingsApplied is false while the container runs with other settings
 	// than the saved ones (a configure did not finish yet).
 	SettingsApplied bool `json:"settingsApplied"`
-	// Tunables lists the parameters this engine allows tuning (empty for Redis).
+	// Tunables lists the parameters this engine allows tuning.
 	Tunables []ServiceTunable `json:"tunables"`
 }
 

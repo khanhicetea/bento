@@ -13,9 +13,10 @@ Set it up from the app's [Backup tab](/apps/backup#app-backup).
 
 1. A SQL dump of each database (taken first, so every upload referenced by the data is included).
 2. Safe copies of SQLite files and the scheduler's jobs.
-3. `app.json` — runtime, resources, domains, bindings, git source, and environment variables **with secrets
-   redacted**.
-4. The home folder, minus your excludes.
+3. `app.json` — runtime, resources, domains, bindings, git source, the Valkey and scheduler settings, and environment
+   variables **with secrets redacted**.
+4. The home folder, minus your excludes — including the app's [Valkey](/apps/data#valkey) snapshot, `dump.rdb`, when
+   it has one.
 
 The app keeps running throughout.
 

@@ -59,8 +59,7 @@ export type TLSMode = typeof TLSModeNone | typeof TLSModeSelfSigned | typeof TLS
 export const EngineMySQL = "mysql";
 export const EnginePostgres = "postgres";
 export const EngineSQLite = "sqlite";
-export const EngineRedis = "redis";
-export type Engine = typeof EngineMySQL | typeof EnginePostgres | typeof EngineSQLite | typeof EngineRedis;
+export type Engine = typeof EngineMySQL | typeof EnginePostgres | typeof EngineSQLite;
 /**
  * ObservedState is Docker-observed runtime state, never persisted intent.
  */
@@ -216,10 +215,17 @@ export interface App extends AppSummary {
    * AccessLog is the app-local Nginx access log; edge logs are per host.
    */
   accessLog: boolean;
+  /**
+   * Valkey runs the app's own Valkey on 127.0.0.1:6379 inside its
+   * container, with snapshots in the app home.
+   */
+  valkey: boolean;
+  /**
+   * Minicrond runs the app's scheduler (jobs and workers).
+   */
+  minicrond: boolean;
   env: EnvVar[];
   bindings: Binding[];
-  redisPrefix: string;
-  redisUser: string;
   ingressInfo: IngressInfo;
   reconcile: Reconcile;
   createdAt: string;
@@ -239,6 +245,14 @@ export interface CreateAppRequest {
   ingress?: IngressMode;
   accessLog?: boolean;
   /**
+   * Valkey runs the app's own Valkey server (default off).
+   */
+  valkey?: boolean;
+  /**
+   * Minicrond runs the app's scheduler (default on).
+   */
+  minicrond?: boolean;
+  /**
    * Hosts are Ingress hosts created together with the app, targeting it.
    */
   hosts: AppHostRequest[];
@@ -257,6 +271,8 @@ export interface UpdateAppRequest {
   resources?: Resources;
   ingress?: IngressMode;
   accessLog?: boolean;
+  valkey?: boolean;
+  minicrond?: boolean;
   /**
    * Env, when present, replaces the app's environment variables.
    */
@@ -448,7 +464,7 @@ export interface Service {
    */
   settingsApplied: boolean;
   /**
-   * Tunables lists the parameters this engine allows tuning (empty for Redis).
+   * Tunables lists the parameters this engine allows tuning.
    */
   tunables: ServiceTunable[];
 }

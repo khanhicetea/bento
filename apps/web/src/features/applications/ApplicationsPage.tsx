@@ -16,7 +16,6 @@ const engineLabel: Record<T.Engine, string> = {
   mysql: "MySQL",
   postgres: "Postgres",
   sqlite: "SQLite",
-  redis: "Redis",
 };
 
 // Databases per engine; a binding without listed databases still counts as one.

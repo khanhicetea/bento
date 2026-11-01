@@ -471,7 +471,7 @@ function PreviewBody({ preview }: { preview: T.ResticClonePreview }) {
           ["Resources", `${preview.resources.memoryMb} MB · ${preview.resources.cpuMillis / 1000} CPU`],
           ["Home inside the container", <code>{preview.homePath}</code>],
           ["Secrets in the snapshot", yesNo(preview.secrets)],
-          ["Scheduler jobs restored", yesNo(preview.minicron)],
+          ["Processes & Tasks restored", yesNo(preview.minicron)],
           ["Git source and new deploy key", yesNo(preview.git)],
         ]}
       />

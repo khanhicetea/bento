@@ -17,7 +17,7 @@ import (
 // Membership matrix (tested in network_test.go):
 //
 //	apps network  (bridge, egress allowed): app instances, tools, edge, cloudflared
-//	data network  (bridge, internal, no egress): app instances, tools, MySQL, PostgreSQL, Redis, backup jobs
+//	data network  (bridge, internal, no egress): app instances bound to MySQL/PostgreSQL, tools, MySQL, PostgreSQL, backup jobs
 //
 // Edge and cloudflared never join the data network. Dynamic addresses on the
 // apps network come from the upper half of the subnet; the edge and tunnel

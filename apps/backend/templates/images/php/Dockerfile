@@ -58,6 +58,14 @@ ARG COMPOSER_SHA256
 COPY apt-sources.sh fetch-artifacts.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/fetch-artifacts.sh
 
+# Valkey for apps that turn it on, compiled on the runtime's own Debian
+# release from the checksum-verified source tarball.
+FROM ${DEBIAN_BASE} AS valkey
+ARG VALKEY_VERSION
+ARG VALKEY_SHA256
+COPY apt-sources.sh build-valkey.sh /tmp/
+RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
+
 FROM ${DEBIAN_BASE}
 ENV PHP_INI_DIR=/usr/local/etc/php \
     PHP_INI_SCAN_DIR=:/etc/bento/php.d \
@@ -101,6 +109,7 @@ RUN set -eux; \
   for b in pnpm pnpx pn pnx; do ln -s "../lib/node_modules/pnpm/$b" "$b"; done; \
   node --version; npm --version; pnpm --version
 COPY --from=artifacts /rootfs/ /
+COPY --from=valkey /rootfs/ /
 COPY rootfs/ /
 WORKDIR /home
 STOPSIGNAL SIGTERM

@@ -88,7 +88,9 @@ Never put Docker calls inside `Store.Tx`, and never perform effects in an HTTP h
 4. Record what you actually ran in `docs/evidence.md`.
 
 Pinned artifacts (s6-overlay, minicrond, Composer) live in `domain.RuntimeArtifacts` with SHA-256 checksums for amd64
-and arm64; update both checksums together. PHP images also copy Node.js (with npm) from the pinned
+and arm64; update both checksums together. Valkey is pinned there too, as one source tarball (`VALKEY_VERSION`,
+`VALKEY_SHA256`, the same for every architecture) that `templates/images/common/build-valkey.sh` compiles on each
+image's own base. PHP images also copy Node.js (with npm) from the pinned
 `HTTPToolchains["node"]` LTS base and pnpm from a checksum-verified npm tarball (`domain.PHPNodeArtifacts`).
 
 ## Changing the container spec

@@ -108,7 +108,7 @@ func TestConcurrentPassesAndReaders(t *testing.T) {
 			for range 50 {
 				r.Status(app.ID)
 				r.Statuses()
-				r.ResetBudget("service:redis")
+				r.ResetBudget("service:mysql84")
 			}
 		})
 	}
