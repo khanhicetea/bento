@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Router, Trash2, Waypoints } from "lucide-react";
+import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
@@ -52,8 +52,7 @@ function EdgePanel() {
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   return (
     <>
-      {/* Saved settings come back canonical (defaults, CIDRs); remount so the form shows them. */}
-      <EdgeForm key={JSON.stringify(query.data.settings)} status={query.data} />
+      <EdgeForm status={query.data} />
       <HostsPanel />
     </>
   );
@@ -260,183 +259,238 @@ function Switch({ checked, label, onChange }: { checked: boolean; label: string;
 }
 
 function EdgeForm({ status }: { status: T.EdgeStatus }) {
-  const [settings, setSettings] = useState(status.settings);
-  const save = useOperationMutation(() => api.edge.set(settings));
-  const dirty = JSON.stringify(settings) !== JSON.stringify(status.settings);
-  const set = (next: Partial<T.EdgeSettings>) => setSettings({ ...settings, ...next });
+  // Saved settings come back canonical (defaults, CIDRs). Each form cell remounts from its own saved
+  // fields only, so saving one cell never discards the other cell's draft.
+  const { acmeEmail, acmeUrl, ...listeners } = status.settings;
+  return (
+    <section className="box box--edge" aria-label="Edge">
+      <EdgeConfigCell key={JSON.stringify(listeners)} status={status} />
+      <AcmeCell key={JSON.stringify({ acmeEmail, acmeUrl })} status={status} />
+      {status.state === "healthy" ? (
+        <EdgeMetricsCell />
+      ) : (
+        <Cell kind="kara" className="edge-metrics grid place-items-center">
+          <EmptyState title="No traffic" body="Edge is not running." />
+        </Cell>
+      )}
+    </section>
+  );
+}
+
+type EdgeListeners = Omit<T.EdgeSettings, "acmeEmail" | "acmeUrl">;
+
+/** Head actions of an edge form cell: state badge, Reset while dirty, Save. */
+function EdgeCellActions({
+  badge,
+  dirty,
+  pending,
+  onReset,
+}: {
+  badge?: React.ReactNode;
+  dirty: boolean;
+  pending: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <span className="flex items-center gap-2">
+      {badge}
+      {dirty && (
+        <Button type="button" size="xs" variant="ghost" disabled={pending} onClick={onReset}>
+          Reset
+        </Button>
+      )}
+      <Button type="submit" size="xs" disabled={!dirty || pending}>
+        {pending ? "Saving" : "Save"}
+      </Button>
+    </span>
+  );
+}
+
+/** Listeners and front proxy: saves only these fields, keeping the saved ACME settings. */
+function EdgeConfigCell({ status }: { status: T.EdgeStatus }) {
+  const { acmeEmail: _email, acmeUrl: _url, ...saved } = status.settings;
+  const [settings, setSettings] = useState<EdgeListeners>(saved);
+  const save = useOperationMutation(() => api.edge.set({ ...status.settings, ...settings }));
+  const dirty = JSON.stringify(settings) !== JSON.stringify(saved);
+  const set = (next: Partial<EdgeListeners>) => setSettings({ ...settings, ...next });
   const setFront = (next: Partial<T.FrontProxySettings>) =>
     setSettings({ ...settings, frontProxy: { ...settings.frontProxy, ...next } });
-  const [trusted, setTrusted] = useState(status.settings.frontProxy.trustedProxies.join(", "));
+  const [trusted, setTrusted] = useState(saved.frontProxy.trustedProxies.join(", "));
   const reset = () => {
-    setSettings(status.settings);
-    setTrusted(status.settings.frontProxy.trustedProxies.join(", "));
+    setSettings(saved);
+    setTrusted(saved.frontProxy.trustedProxies.join(", "));
   };
   const front = settings.frontProxy;
   return (
-    <>
-      <section className="box box--edge" aria-label="Edge">
-        <Cell
-          className="edge-config"
-          title="Edge"
-          icon={<Network />}
-          action={<StateBadge state={status.settings.enabled ? status.state : "absent"} />}
-        >
-          <div className="grid gap-3">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-              <span className="flex items-center gap-3">
-                <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
-                <span className="label text-xs">Enabled</span>
-              </span>
-              <span className="flex items-center gap-3">
-                <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
-                <span className="label text-xs">HTTP/3 · QUIC</span>
-              </span>
-            </div>
-            <dl className="kv kv--edit">
-              <div>
-                <dt>Bind</dt>
-                <dd>
-                  <Input
-                    aria-label="Bind address"
-                    value={settings.bind}
-                    spellCheck={false}
-                    onChange={(event) => set({ bind: event.target.value })}
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>HTTP</dt>
-                <dd>
-                  <Input
-                    aria-label="HTTP port"
-                    type="number"
-                    value={settings.httpPort}
-                    onChange={(event) => set({ httpPort: Number(event.target.value) })}
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>HTTPS</dt>
-                <dd>
-                  <Input
-                    aria-label="HTTPS port"
-                    type="number"
-                    value={settings.httpsPort}
-                    onChange={(event) => set({ httpsPort: Number(event.target.value) })}
-                  />
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </Cell>
-        <Cell className="edge-config" title="Front proxy" icon={<Router />}>
-          <div className="grid gap-3">
-            <span className="flex items-center gap-3">
-              <Switch
-                checked={front.enabled}
-                label="Front proxy enabled"
-                onChange={(enabled) => setFront({ enabled })}
-              />
-              <span className="label text-xs">PROXY protocol</span>
-            </span>
-            <dl className="kv kv--edit">
-              <div>
-                <dt>Bind</dt>
-                <dd>
-                  <Input
-                    aria-label="Front proxy bind address"
-                    value={front.bind}
-                    spellCheck={false}
-                    onChange={(event) => setFront({ bind: event.target.value })}
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>HTTP</dt>
-                <dd>
-                  <Input
-                    aria-label="Front proxy HTTP port"
-                    type="number"
-                    value={front.httpPort}
-                    onChange={(event) => setFront({ httpPort: Number(event.target.value) })}
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>HTTPS</dt>
-                <dd>
-                  <Input
-                    aria-label="Front proxy HTTPS port"
-                    type="number"
-                    value={front.httpsPort}
-                    onChange={(event) => setFront({ httpsPort: Number(event.target.value) })}
-                  />
-                </dd>
-              </div>
-            </dl>
-            <Field label="Trusted proxies" hint="Front proxy IPs or CIDRs, comma separated">
+    <Cell
+      className="edge-config"
+      title="Edge"
+      icon={<Network />}
+      kind={dirty ? "tamago" : "gohan"}
+      action={
+        <EdgeCellActions
+          badge={<StateBadge state={status.settings.enabled ? status.state : "absent"} />}
+          dirty={dirty}
+          pending={save.isPending}
+          onReset={reset}
+        />
+      }
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate(undefined);
+      }}
+    >
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <span className="flex items-center gap-3">
+            <Switch checked={settings.enabled} label="Edge enabled" onChange={(enabled) => set({ enabled })} />
+            <span className="label text-xs">Enabled</span>
+          </span>
+          <span className="flex items-center gap-3">
+            <Switch checked={settings.http3} label="HTTP/3" onChange={(http3) => set({ http3 })} />
+            <span className="label text-xs">HTTP/3 · QUIC</span>
+          </span>
+        </div>
+        <dl className="kv kv--edit">
+          <div>
+            <dt>Bind</dt>
+            <dd>
               <Input
-                value={trusted}
-                placeholder="100.64.0.1"
+                aria-label="Bind address"
+                value={settings.bind}
                 spellCheck={false}
-                onChange={(event) => {
-                  setTrusted(event.target.value);
-                  setFront({
-                    trustedProxies: event.target.value
-                      .split(/[\s,]+/)
-                      .map((value) => value.trim())
-                      .filter(Boolean),
-                  });
-                }}
+                onChange={(event) => set({ bind: event.target.value })}
               />
-            </Field>
+            </dd>
           </div>
-        </Cell>
-        <Cell
-          title="Certificates · ACME"
-          icon={<Lock />}
-          kind={dirty ? "tamago" : "gohan"}
-          className="edge-config flex flex-col"
-        >
-          <div className="grid gap-4">
-            <Field label="Contact email" hint="Expiry notices">
+          <div>
+            <dt>HTTP</dt>
+            <dd>
               <Input
-                type="email"
-                value={settings.acmeEmail}
-                placeholder="ops@example.com"
-                onChange={(event) => set({ acmeEmail: event.target.value })}
+                aria-label="HTTP port"
+                type="number"
+                value={settings.httpPort}
+                onChange={(event) => set({ httpPort: Number(event.target.value) })}
               />
-            </Field>
-            <Field label="Directory URL" hint="Default: Let's Encrypt production">
+            </dd>
+          </div>
+          <div>
+            <dt>HTTPS</dt>
+            <dd>
               <Input
-                value={settings.acmeUrl}
-                spellCheck={false}
-                onChange={(event) => set({ acmeUrl: event.target.value })}
+                aria-label="HTTPS port"
+                type="number"
+                value={settings.httpsPort}
+                onChange={(event) => set({ httpsPort: Number(event.target.value) })}
               />
-            </Field>
+            </dd>
           </div>
-          <div className="mt-auto grid gap-2 border-t border-foreground/10 pt-3">
-            {dirty && <span className="label text-xs text-[var(--tamago-ink)]">● Unsaved edge settings</span>}
-            {save.error && <span className="note note--bad">{messageOf(save.error)}</span>}
-            <div className="flex gap-2">
-              <Button disabled={!dirty || save.isPending} onClick={() => save.mutate(undefined)}>
-                Save
-              </Button>
-              <Button variant="ghost" disabled={!dirty || save.isPending} onClick={reset}>
-                Reset
-              </Button>
-            </div>
-          </div>
-        </Cell>
-        {status.state === "healthy" ? (
-          <EdgeMetricsCell />
-        ) : (
-          <Cell kind="kara" className="edge-metrics grid place-items-center">
-            <EmptyState title="No traffic" body="Edge is not running." />
-          </Cell>
-        )}
-      </section>
-    </>
+        </dl>
+        <div className="grid gap-3 border-t border-border pt-3">
+          <span className="flex items-center gap-3">
+            <Switch checked={front.enabled} label="Front proxy enabled" onChange={(enabled) => setFront({ enabled })} />
+            <span className="label text-xs">Front proxy</span>
+            <span className="text-xs text-muted-foreground">PROXY protocol</span>
+          </span>
+          {front.enabled && (
+            <>
+              <dl className="kv kv--edit">
+                <div>
+                  <dt>Bind</dt>
+                  <dd>
+                    <Input
+                      aria-label="Front proxy bind address"
+                      value={front.bind}
+                      spellCheck={false}
+                      onChange={(event) => setFront({ bind: event.target.value })}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>HTTP</dt>
+                  <dd>
+                    <Input
+                      aria-label="Front proxy HTTP port"
+                      type="number"
+                      value={front.httpPort}
+                      onChange={(event) => setFront({ httpPort: Number(event.target.value) })}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>HTTPS</dt>
+                  <dd>
+                    <Input
+                      aria-label="Front proxy HTTPS port"
+                      type="number"
+                      value={front.httpsPort}
+                      onChange={(event) => setFront({ httpsPort: Number(event.target.value) })}
+                    />
+                  </dd>
+                </div>
+              </dl>
+              <Field label="Trusted proxies" hint="Front proxy IPs or CIDRs, comma separated">
+                <Input
+                  value={trusted}
+                  placeholder="100.64.0.1"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setTrusted(event.target.value);
+                    setFront({
+                      trustedProxies: event.target.value
+                        .split(/[\s,]+/)
+                        .map((value) => value.trim())
+                        .filter(Boolean),
+                    });
+                  }}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      </div>
+      {save.error && <p className="note note--bad mt-3">{messageOf(save.error)}</p>}
+    </Cell>
+  );
+}
+
+/** ACME account: saves only the contact email and directory, keeping the saved listeners. */
+function AcmeCell({ status }: { status: T.EdgeStatus }) {
+  const saved = { acmeEmail: status.settings.acmeEmail, acmeUrl: status.settings.acmeUrl };
+  const [acme, setAcme] = useState(saved);
+  const save = useOperationMutation(() => api.edge.set({ ...status.settings, ...acme }));
+  const dirty = acme.acmeEmail !== saved.acmeEmail || acme.acmeUrl !== saved.acmeUrl;
+  return (
+    <Cell
+      title="Certificates · ACME"
+      icon={<Lock />}
+      kind={dirty ? "tamago" : "gohan"}
+      className="edge-config"
+      action={<EdgeCellActions dirty={dirty} pending={save.isPending} onReset={() => setAcme(saved)} />}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate(undefined);
+      }}
+    >
+      <div className="grid gap-4">
+        <Field label="Contact email">
+          <Input
+            type="email"
+            value={acme.acmeEmail}
+            placeholder="ops@example.com"
+            onChange={(event) => setAcme({ ...acme, acmeEmail: event.target.value })}
+          />
+        </Field>
+        <Field label="Directory URL">
+          <Input
+            value={acme.acmeUrl}
+            spellCheck={false}
+            onChange={(event) => setAcme({ ...acme, acmeUrl: event.target.value })}
+          />
+        </Field>
+      </div>
+      {save.error && <p className="note note--bad mt-3">{messageOf(save.error)}</p>}
+    </Cell>
   );
 }
 

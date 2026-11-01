@@ -402,23 +402,27 @@ function DataBindings({ app }: { app: T.App }) {
       {groups.map((group) => (
         <KindCard key={group.key} appId={app.id} group={group} />
       ))}
-      <Cell title="Add binding" className={`cell--muted ${addSpan}`}>
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-48 flex-1">
-            <NativeSelect
-              className="w-full"
-              value={engine}
-              onChange={(event) => setEngine(event.target.value)}
-              aria-label="Data service"
-            >
-              <option value="sqlite">SQLite file</option>
-              <ServiceOptions />
-            </NativeSelect>
-          </div>
-          <Button disabled={addBinding.isPending} onClick={() => addBinding.mutate(undefined)}>
-            <Plus /> Add
+      <Cell
+        title="New binding"
+        icon={<Plus />}
+        kind="kara"
+        className={`shadow-[inset_0_0_0_2px_var(--kara-line)] ${addSpan}`}
+        action={
+          <Button type="submit" size="xs" disabled={addBinding.isPending}>
+            {addBinding.isPending ? "Adding" : "Add"}
           </Button>
-        </div>
+        }
+        onSubmit={(event) => {
+          event.preventDefault();
+          addBinding.mutate(undefined);
+        }}
+      >
+        <Field label="Data service">
+          <NativeSelect className="w-full" value={engine} onChange={(event) => setEngine(event.target.value)}>
+            <option value="sqlite">SQLite file</option>
+            <ServiceOptions />
+          </NativeSelect>
+        </Field>
         <p className="note mt-3">Add-only. Data is kept if the app is removed.</p>
         {addBinding.error && <p className="note note--bad mt-2">{messageOf(addBinding.error)}</p>}
       </Cell>

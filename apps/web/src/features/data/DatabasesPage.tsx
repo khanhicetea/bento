@@ -5,7 +5,7 @@ import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
 import { EngineLogo } from "../../components/EngineLogo.tsx";
-import { Cell, DomainError, DomainLoading, StateBadge } from "../../components/DomainState.tsx";
+import { Cell, DomainError, DomainLoading, Field, StateBadge } from "../../components/DomainState.tsx";
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -18,6 +18,24 @@ export function DataServices() {
     queryFn: ({ signal }) => api.services.list(signal),
     refetchInterval: 15_000,
   });
+  return (
+    <Cell title="Data services" icon={<Database />} className="[container-type:inline-size]">
+      {q.isPending && <DomainLoading label="services" />}
+      {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
+      {q.data && (
+        <div className="tiles tiles--3">
+          {q.data.services.map((s) => (
+            <ServiceTile key={s.name} service={s} />
+          ))}
+          <AddServiceForm />
+        </div>
+      )}
+    </Cell>
+  );
+}
+
+/** Kara slot at the end of the service tiles: two fields, so the form lives in the slot, not a dialog. */
+function AddServiceForm() {
   const catalog = useCatalog();
   const [engine, setEngine] = useState<T.Engine>("mysql");
   const [version, setVersion] = useState("");
@@ -25,21 +43,24 @@ export function DataServices() {
   const selectedVersion = version || versions?.at(-1) || "";
   const create = useOperationMutation(() => api.services.create({ engine, version: selectedVersion }));
   return (
-    <Cell title="Data services" icon={<Database />} className="flex flex-col">
-      {q.isPending && <DomainLoading label="services" />}
-      {q.error && <DomainError message={messageOf(q.error)} onRetry={() => void q.refetch()} />}
-      {q.data && (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {q.data.services.map((s) => (
-            <ServiceTile key={s.name} service={s} />
-          ))}
-          {q.data.services.length === 0 && <p className="note">No services · add one below</p>}
-        </div>
-      )}
-      <p className="note mt-3">Volumes are never removed.</p>
-      <div className="mt-auto grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 border-t border-border pt-3">
-        <label className="field">
-          <span>Engine</span>
+    <form
+      className="tile--add-form rounded-[0.875rem] p-3.5"
+      aria-label="Add service"
+      onSubmit={(event) => {
+        event.preventDefault();
+        create.mutate(undefined);
+      }}
+    >
+      <div className="cell__title mb-0!">
+        <h3>
+          <Plus /> New service
+        </h3>
+        <Button type="submit" size="xs" disabled={!selectedVersion || create.isPending}>
+          {create.isPending ? "Adding" : "Add"}
+        </Button>
+      </div>
+      <div className="grid-2">
+        <Field label="Engine">
           <NativeSelect
             className="w-full"
             value={engine}
@@ -51,9 +72,8 @@ export function DataServices() {
             <option value="mysql">MySQL</option>
             <option value="postgres">PostgreSQL</option>
           </NativeSelect>
-        </label>
-        <label className="field">
-          <span>Version</span>
+        </Field>
+        <Field label="Version">
           <NativeSelect
             className="w-full"
             value={selectedVersion}
@@ -65,17 +85,11 @@ export function DataServices() {
               <option key={v}>{v}</option>
             ))}
           </NativeSelect>
-        </label>
-        <Button
-          variant="outline"
-          onClick={() => create.mutate(undefined)}
-          disabled={!selectedVersion || create.isPending}
-        >
-          <Plus /> Add
-        </Button>
+        </Field>
       </div>
-      {create.error && <p className="note note--bad mt-2">{messageOf(create.error)}</p>}
-    </Cell>
+      <p className="note">Volumes are never removed.</p>
+      {create.error && <p className="note note--bad">{messageOf(create.error)}</p>}
+    </form>
   );
 }
 
@@ -86,15 +100,17 @@ function ServiceTile({ service: s }: { service: T.Service }) {
   const tuned = s.tunables.filter((t) => s.settings[t.key]);
   return (
     <article className="grid justify-items-start gap-2 rounded-[0.875rem] bg-background p-3.5">
-      <span className="label flex items-center gap-2 text-xs">
-        <EngineLogo engine={s.engine} className="size-4" />
-        {s.name} <span className="font-mono tracking-normal">{s.version}</span>
-      </span>
-      <StateBadge
-        state={s.initialized ? s.state : "starting"}
-        title={s.message}
-        label={s.initialized ? undefined : "Initializing"}
-      />
+      <div className="flex w-full items-start justify-between gap-2">
+        <span className="label flex min-w-0 items-center gap-2 text-xs">
+          <EngineLogo engine={s.engine} className="size-4 shrink-0" />
+          <span className="truncate">{s.name}</span> <span className="font-mono tracking-normal">{s.version}</span>
+        </span>
+        <StateBadge
+          state={s.initialized ? s.state : "starting"}
+          title={s.message}
+          label={s.initialized ? undefined : "Initializing"}
+        />
+      </div>
       <code className="truncate text-xs text-muted-foreground" title={s.image}>
         {s.volume}
       </code>

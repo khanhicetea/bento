@@ -112,13 +112,13 @@ of the last cell of the step.
 
 **Cell kinds**
 
-| Kind   | Fill                                  | Means                                                  |
-| ------ | ------------------------------------- | ------------------------------------------------------ |
-| Gohan  | `gohan`                               | Default: facts, lists, metrics                         |
-| Ume    | `ume`                                 | Alert: failed, needs action. Max one per box, top-left |
-| Tamago | `tamago`                              | Caution: pending, in progress, unsaved, near limit     |
-| Nori   | `nori`                                | Console: logs, terminal, raw output                    |
-| Kara   | `washi` + 2 px dashed/inset `#B9AF9F` | Empty slot: "+ New …", fills the last row              |
+| Kind   | Fill                                  | Means                                                             |
+| ------ | ------------------------------------- | ----------------------------------------------------------------- |
+| Gohan  | `gohan`                               | Default: facts, lists, metrics                                    |
+| Ume    | `ume`                                 | Alert: failed, needs action. Max one per box, top-left            |
+| Tamago | `tamago`                              | Caution: pending, in progress, unsaved, near limit                |
+| Nori   | `nori`                                | Console: logs, terminal, raw output                               |
+| Kara   | `washi` + 2 px dashed/inset `#B9AF9F` | Empty slot: "+ New …" or a ≤ 2-field add form, fills the last row |
 
 **Grid:** 12 columns. S = 3 (metric), M = 4 (tile), L = 6 (list), XL = 8 (main), full = 12. Row unit 120 px.
 Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one column.
@@ -177,13 +177,14 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
   hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
-- **Ingress:** Edge / Tunnel / Utils. Edge, Front proxy and ACME config (left, one Save in the ACME cell) beside traffic (right: live requests/s line over three metric cards), host tiles + Kara. Ingress owns
+- **Ingress:** Edge / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
   hosts and adds one through the same host dialog.
 - **Backups:** status row (last, next, schedules, not covered) then Files / App backups / Runs / Schedules.
   Restore requires `replace <db>`.
 - **System:** Overview (Bento, Docker, stack with arch; full-width data services, each tile with Tune (MySQL/PostgreSQL
-  settings dialog, saving restarts the service) and Restart (confirm); reconciliation beside retained data with
+  settings dialog, saving restarts the service) and Restart (confirm), then a trailing Kara form tile (engine + version,
+  Add in its head) in the empty slot; reconciliation beside retained data with
   `delete` prune; API tokens list (Revoke, confirm) beside a New token form cell that turns tamago and shows the
   token once with a Warning notice) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
 
