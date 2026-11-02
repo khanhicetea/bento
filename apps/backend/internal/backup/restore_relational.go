@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/dataservices"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -135,7 +136,7 @@ func (d Deps) restoreMySQL(
 	err := d.replayMySQL(ctx, svc, id, b, stage, artifactPath, func(cs string) string {
 		charset = cs
 		return fmt.Sprintf("CREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-			stage, cs, grantPattern(stage), b.Username)
+			stage, cs, dataservices.GrantPattern(stage), b.Username)
 	})
 	// From here on, the staging databases are dropped however the restore
 	// ends; a failure to drop them is only a warning (the next restore of
@@ -171,8 +172,8 @@ func (d Deps) restoreMySQL(
 		return "", unchanged(err)
 	}
 	err = d.replayMySQL(ctx, svc, id, b, database, artifactPath, func(cs string) string {
-		return fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-			database, database, cs, database, b.Username)
+		return fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\n%s",
+			database, database, cs, dataservices.MySQLGrant(database, b.Username))
 	})
 	return RestoreInPlace, err
 }
@@ -280,11 +281,10 @@ func (d Deps) swapMySQL(
 	if exists {
 		fmt.Fprintf(&sql, "ALTER DATABASE `%s` %s;\n", database, charset)
 	} else {
-		fmt.Fprintf(&sql, "CREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-			database, charset, database, b.Username)
+		fmt.Fprintf(&sql, "CREATE DATABASE `%s` %s;\n%s", database, charset, dataservices.MySQLGrant(database, b.Username))
 	}
 	fmt.Fprintf(&sql, "CREATE DATABASE `%s`;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-		trash, grantPattern(trash), b.Username)
+		trash, dataservices.GrantPattern(trash), b.Username)
 	// An open transaction of a running app holds metadata locks; wait for it
 	// a bounded time instead of the server's default of a year.
 	sql.WriteString("SET SESSION lock_wait_timeout = 60;\n")
@@ -327,7 +327,7 @@ func (d Deps) dropMySQLStaging(ctx context.Context, svc domain.DataService, id, 
 		if exists {
 			owned, err := d.Data.SQL(ctx, svc, id, "", fmt.Sprintf(
 				"SELECT COUNT(*) FROM mysql.db WHERE User = '%s' AND Host = '%%' AND Db = '%s';\n",
-				user, grantPattern(n)))
+				user, dataservices.GrantPattern(n)))
 			if err != nil {
 				return err
 			}
@@ -337,17 +337,12 @@ func (d Deps) dropMySQLStaging(ctx context.Context, svc domain.DataService, id, 
 		}
 		if _, err := d.Data.SQL(ctx, svc, id, "", fmt.Sprintf(
 			"DROP DATABASE IF EXISTS `%s`;\nREVOKE IF EXISTS ALL PRIVILEGES ON `%s`.* FROM '%s'@'%%';\n",
-			n, grantPattern(n), user)); err != nil {
+			n, dataservices.GrantPattern(n), user)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-
-// grantPattern escapes "_" in a database name: in a database-level GRANT an
-// unescaped "_" matches any character, which would let the user create and
-// use other databases matching the pattern.
-func grantPattern(name string) string { return strings.ReplaceAll(name, "_", `\_`) }
 
 type dbObject struct {
 	kind string // TABLE, VIEW, PROCEDURE, FUNCTION, TRIGGER, EVENT

@@ -2,8 +2,8 @@
 
 Open findings from the production-readiness audit of 2026-11-01. The release blockers fixed since (the store
 migration framework, the edge image pull and recreate rollback, the env loader's trailing `=`, the scheduler UI
-served from the app's socket, relational restores dropping the live database first, and MySQL restores creating
-root-owned objects) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
+served from the app's socket, relational restores dropping the live database first, MySQL restores creating
+root-owned objects, and MySQL grants whose `_` let one app use another's database) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
 unless they start with `apps/`. Line numbers are as of commit `8a88634` and drift; the named function or template is
 the stable reference.
 
@@ -12,17 +12,7 @@ code but the trigger was not reproduced.
 
 ## Release blockers
 
-### 1. MySQL grants treat `_` in database names as a wildcard: one app can read another's database (confirmed live)
-
-- `mysqlDatabase` (`internal/dataservices/services.go`) runs ``GRANT ALL PRIVILEGES ON `<db>`.*`` with the name
-  unescaped. In a database-level grant `_` matches any character (`partial_revokes` is off by default), and every
-  Bento database name contains `_` (`<slug with - as _>_<suffix>`).
-- Reproduced on MySQL 8.4.13: a user granted `` `a_b_main`.* `` read a table in another tenant's `a1b_main` and
-  created `axb_main`. So the user of app `a-b` can read and write app `a1b`'s database (any two slugs that differ only
-  where one has `-`).
-- Fix: grant `` `a\_b\_main`.* `` (escape `_` and `%`, as restores already do for staging databases), and have
-  provisioning or the reconciler replace existing wildcard grants with escaped ones. The restore reset path and
-  `swapMySQL` re-grant the live database the same unescaped way and must change with it.
+None open.
 
 ## Before public traffic
 
@@ -177,6 +167,9 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 ## Decisions
 
+- Wildcard MySQL grants from before 2026-11-02 are replaced only when provisioning runs for that binding (start of an
+  unprovisioned app, Add binding, Add database); there is no stack-wide migration because no production stack ran the
+  old grants. Databases an app created through such a grant (for example `axb_main`) are not detected.
 - No deployment runs a schema older than 2, so `store.MigratableFromVersion` is 2 and nothing older is migrated.
 - The real-Docker suite (`make -C apps/backend test-integration`) runs on the local dev host, not in GitHub
   Actions. CI (`.github/workflows/ci.yml`) runs only on tags and releases.

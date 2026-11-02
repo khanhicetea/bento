@@ -62,3 +62,21 @@ func TestEnsureSecretsRefusesToRegenerateEstablishedSecret(t *testing.T) {
 		t.Fatal("an existing secret must be kept")
 	}
 }
+
+// A database-level grant on an unescaped name is a pattern: "_" matches any
+// character, so a_b_main would also cover another app's a1b_main.
+func TestMySQLGrantIsExactAndRevokesWildcard(t *testing.T) {
+	if got := GrantPattern("a_b_main"); got != `a\_b\_main` {
+		t.Fatalf("pattern %q", got)
+	}
+	want := "GRANT ALL PRIVILEGES ON `a\\_b\\_main`.* TO 'ua'@'%';\n" +
+		"REVOKE IF EXISTS ALL PRIVILEGES ON `a_b_main`.* FROM 'ua'@'%';\n"
+	if got := MySQLGrant("a_b_main", "ua"); got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	// Without a wildcard character the two forms are the same grant: revoking
+	// the "legacy" one would remove the new one.
+	if got := MySQLGrant("shop", "ua"); strings.Contains(got, "REVOKE") {
+		t.Fatalf("revokes its own grant: %s", got)
+	}
+}

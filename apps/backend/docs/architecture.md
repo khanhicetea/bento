@@ -379,7 +379,9 @@ host) is used when the edge forwards webhooks. Removing the git source or the ap
 `client.cnf`), runs containers on the data network with their named volume, and treats a service as ready only when it
 answers over **TCP** (first-boot entrypoints run a socket-only temporary server). Administrative SQL is sent on exec
 stdin; identifiers are validated against `^[a-z][a-z0-9_]{0,62}$`. Provisioning refuses an existing database that the
-binding's user does not already own. The engines are MySQL and PostgreSQL; there is no shared cache service (an app's
+binding's user does not already own. MySQL grants name exactly one database (`dataservices.MySQLGrant`): in a
+database-level grant `_` is a wildcard, so `a_b_main` would also cover another app's `a1b_main`; the grant is on
+`` `a\_b\_main`.* `` and provisioning revokes an unescaped grant left by an earlier version. The engines are MySQL and PostgreSQL; there is no shared cache service (an app's
 Valkey lives in its own container, see *Inside a runtime container*).
 
 `ensureService(allowInit)` creates a volume only for a never-initialized service; for an initialized service a missing

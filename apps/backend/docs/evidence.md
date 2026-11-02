@@ -604,7 +604,7 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
 - `TestIntegrationRestorePostgres` on PostgreSQL 16 (official image) and 17 (pglayers): the restore swapped, the table
   is owned by the binding role, and an artifact with `RESET ROLE; CREATE ROLE … SUPERUSER` failed with the live
   database unchanged and no role created. `psql -U <user>` over the local socket works on both images.
-- Found while verifying, not fixed (BACKLOG blocker 1): database-level grants are unescaped, and on MySQL 8.4.13 a
+- Found while verifying (fixed in the next section): database-level grants were unescaped, and on MySQL 8.4.13 a
   user granted `` `a_b_main`.* `` read another tenant's `a1b_main` and created `axb_main`. The same check showed
   `log_bin=1`, so MySQL dumps with triggers or stored functions now fail to restore (an app user cannot create them
   either).
@@ -612,3 +612,21 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
   since clones restore through the same path). `bun run fmt:check` passed; no UI or DTO changed.
 - Not verified: a large database, a swap while the app holds a long transaction (`lock_wait_timeout` 60s), a crash
   between the swap and dropping trash (covered only by the leftover cleanup unit test), arm64.
+
+## Exact MySQL grants (2026-11-02; live Docker 29.8.1, amd64)
+
+- Provisioning granted ``ALL PRIVILEGES ON `<db>`.*`` with `_` unescaped. MySQL treats `_` there as a wildcard
+  (`partial_revokes` is off), so the user of app `a-b` (`a_b_main`) could read and write app `a1b`'s `a1b_main` and
+  create `axb_main`. Every grant now goes through `dataservices.MySQLGrant`: `` `a\_b\_main`.* ``, followed by
+  `REVOKE IF EXISTS` of the unescaped grant. The adoption check accepts either form. Restores (reset, swap-created
+  live database) use the same helper.
+- `TestMySQLGrantIsExactAndRevokesWildcard`: the escaped grant, the revoke of the unescaped form, and no revoke when the
+  name has no wildcard character (it would remove the grant just made).
+- Real Docker, `TestIntegrationMySQLGrantsAreExact` on MySQL 8.4 with apps `a-b` and `a1b`: after provisioning, a-b's
+  user cannot read `a1b_main` or create `axb_main` and still uses its own database. A wildcard grant added the old way
+  reproduced the leak; Add database then reprovisioned the binding, the leak was gone, and a-b's grants in `mysql.db`
+  are exactly `a\_b\_extra` and `a\_b\_main`. `TestIntegrationRestoreMySQL` (8.0, 8.4, 9.7) and
+  `TestIntegrationRestorePostgres` passed again.
+- `make ci` and `make test-integration` passed as root (integration 404 s).
+- Not migrated: existing wildcard grants change only when provisioning runs for that binding (BACKLOG, Decisions).
+  The dev stack keeps its old grants until it is reinitialised or its bindings are reprovisioned.

@@ -380,7 +380,10 @@ func (m *Manager) mysqlDatabase(ctx context.Context, s domain.DataService, id, u
 			s,
 			id,
 			"",
-			fmt.Sprintf("SELECT COUNT(*) FROM mysql.db WHERE User = '%s' AND Db = '%s';\n", user, db),
+			// The user's grant may be exact (escaped) or from an earlier
+			// version (unescaped).
+			fmt.Sprintf("SELECT COUNT(*) FROM mysql.db WHERE User = '%s' AND Db IN ('%s', '%s');\n",
+				user, db, GrantPattern(db)),
 		)
 		if err != nil {
 			return err
@@ -390,9 +393,28 @@ func (m *Manager) mysqlDatabase(ctx context.Context, s domain.DataService, id, u
 		}
 	}
 	_, err = m.SQL(ctx, s, id, "", fmt.Sprintf(
-		"CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s COLLATE %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-		db, domain.MySQLDefaultCharset, domain.MySQLDefaultCollation, db, user))
+		"CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET %s COLLATE %s;\n%s",
+		db, domain.MySQLDefaultCharset, domain.MySQLDefaultCollation, MySQLGrant(db, user)))
 	return err
+}
+
+// GrantPattern escapes a database name for a database-level MySQL GRANT or
+// REVOKE, where "_" and "%" are wildcards: an unescaped grant on a_b_main
+// also covers a1b_main (another app's database) and lets the user create
+// axb_main. MySQL stores the escaped form in mysql.db.Db; in a string
+// literal '\_' keeps its backslash, so the result can be compared there as is.
+func GrantPattern(name string) string {
+	return strings.NewReplacer("_", `\_`, "%", `\%`).Replace(name)
+}
+
+// MySQLGrant returns SQL that grants user every privilege on exactly db and
+// revokes the unescaped (wildcard) grant that earlier versions issued.
+func MySQLGrant(db, user string) string {
+	sql := fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n", GrantPattern(db), user)
+	if GrantPattern(db) != db {
+		sql += fmt.Sprintf("REVOKE IF EXISTS ALL PRIVILEGES ON `%s`.* FROM '%s'@'%%';\n", db, user)
+	}
+	return sql
 }
 
 func (m *Manager) postgresDatabase(ctx context.Context, s domain.DataService, id, user, name string) error {
