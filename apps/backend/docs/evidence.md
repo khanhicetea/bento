@@ -548,3 +548,28 @@ behind its socket).
   held in the DRM fbdev helper), so `apt-get` in the first runtime image build step hung in `ptmx_open` and no 0.6.0
   runtime image was built. `TestIntegrationBuildRuntimeImages`, `make test-integration`, and the live scheduler and
   hostile-socket checks have not run on 0.6.0.
+
+## Runtime image build fixes (2026-11-02; live Docker 29.8.1, amd64; dev mode)
+
+- Pins: phpredis 6.3.0 from `https://pecl.php.net/get/redis-6.3.0.tgz` (SHA-256 `0d5141f6…f0b5`, two downloads
+  identical) replaces the unpinned `pecl install redis`. Bun 1.2 and 1.3 are pinned to their multi-arch index digests
+  (`2505ef86…`, `9dba1a1b…`); the same lookup returns the existing Bun 1.4 pin. Bun 1.2 is bookworm (glibc 2.36),
+  every other runtime base is trixie (2.41), so `ValkeyBuildBase` is bookworm.
+- Valkey is built once, in a stage identical in every Dockerfile. The bookworm-built binary links only libc and libm,
+  and `valkey-server --version` passed in every final stage, Bun 1.2 (bookworm) included.
+- The PHP build stage now fails unless OPcache and redis load, and the final stage diffs `php -m` against it.
+- `vim` → `vim-tiny` (`vim` alternative kept). PHP 8.4 image 819 MB → 759 MB as Docker reports it (layers
+  611 → 564 MB).
+- Layer sharing, measured: PHP 8.4 (official image) and 7.4 (deb.sury.org) share their first 9 layers (~466 MB:
+  Debian, tools, Node.js/npm/pnpm, s6/minicrond/Composer, Valkey); their own layers are 98 MB and 128 MB. PHP 8.4,
+  7.4, 8.0 and 8.1 add up to 2,361 MB but are stored in 1,429 MB (8.1 has its own bookworm prefix).
+- `TestIntegrationBuildRuntimeImages` (root, real Docker) passed: PHP 8.4 3m9s (recompiled), 7.4 41s, 8.0 45s, 8.1
+  1m41s, Node 24 38s, Bun 1.4 29s, Bun 1.2 30s. New unit tests `TestPlanArgsMatchDockerfileARGs` and
+  `TestRuntimeImagesShareLayers` failed when one ARG was renamed and when one php-sury ENV value was changed.
+- Live e2e on a fresh `/srv/bento-e2e` stack, sections 1–8 of `e2e-live.md`: all passed except new finding 21
+  (deploying an app before its first start fails when the deploy script uses its Valkey).
+- `make ci` (root) passed on the second run; the first run failed once in `TestScheduleUsesServerLocalTime`
+  (`overlapping run not skipped`), which then passed 5/5 here and 5/5 on unchanged `HEAD`: a load-dependent flake,
+  not investigated. `make test-integration` (root) passed.
+- Not verified: arm64 (Valkey from bookworm, pnpm's native binary), PHP 8.2/8.3/8.5, Python 3.12, Node 20, e2e
+  sections 9–10.

@@ -231,7 +231,8 @@ twice).
 | Create | php-fpm 8.4, docroot `public`, `front-controller`, readyPath `/health`, mysql84, `"valkey": true`; deploy key on the private repo | app created; `REDIS_HOST=127.0.0.1` in its env |
 | Deploy script | the **Classic** recipe from `apps/docs/docs/apps/deploy-scripts.mdx`, unchanged | — |
 | First deploy, no `.env` | `$B app deploy e2e-laravel` | fails with `~/app/.env is missing`; code is cloned |
-| `.env` | copy `.env.example`, `APP_ENV=production`, `CACHE_STORE=redis`; keep `DB_CONNECTION=sqlite`; `php artisan key:generate --force` via `app exec` | Bento's `DB_*` win: migrations run on MySQL |
+| `.env` | copy `.env.example`, `APP_ENV=production`, `CACHE_STORE=redis`; keep `DB_CONNECTION=sqlite`; set `APP_KEY` to `php -r 'echo "base64:".base64_encode(random_bytes(32));'` via `app exec` (`key:generate` needs `vendor/`, which the failed first deploy did not install) | Bento's `DB_*` win: migrations run on MySQL |
+| Start, then deploy | `$B app start e2e-laravel`, then `$B app deploy e2e-laravel` | deploying before the first start fails at `queue:restart` with `Connection refused` (finding 21) |
 | Jobs and worker | import (as below) with `$B app minicrond e2e-laravel -- import /home/e2e-laravel/tmp/jobs.toml` | `/status`: pending jobs drain to 0; heartbeats grow by one a minute |
 | Push to deploy | webhook on GitHub, push a new mark | new mark live; jobs after the deploy are processed by the new code |
 | Worker after deploy | `queue:restart` in the recipe; three deploys back to back | worker PID changes, `failures` stays 0, keeps processing |
@@ -316,7 +317,19 @@ binary with a different state schema refuses the old root, so a schema change ne
 repos is fine: push the current `scripts/e2e/apps/*` contents as a new commit, use a fresh branch name for the
 wrong-branch case, and a fresh bucket prefix per run so `restic init` does not meet an old repository.
 
-## Last run: 2026-10-26
+## Last run: 2026-11-02
+
+Fresh run of sections 1–8 after the runtime image changes (layer reorder, one shared Valkey build, phpredis and Bun
+pins, `vim-tiny`): new stack root and data volumes, Docker 29.8.1, amd64. Every case passed except the open findings
+below; section 8 found finding 21 (per-app Valkey arrived after the previous run). Notes from this run:
+
+- Apps ran on the new images: PHP 8.4.27 (official image) and 7.4.33 (deb.sury.org), Node 22.23.4, Bun 1.3.14 (now
+  pinned by digest), Python 3.13.17, Laravel 13.35.0. In the PHP 8.4 image `vim` is `vim.tiny`; Composer 2.10.3,
+  Node 24, npm and pnpm 12.7.0 run; redis 6.3.0 and OPcache load; `valkey-cli PING` from a tool container answers.
+- Not run: sections 9 and 10 (Cachet, Invoice Ninja), ACME issuance (no public 80/443), arm64, GitLab/Gitea/Bitbucket
+  webhooks, scheduled (cron) backups, Object Lock buckets.
+
+## Run: 2026-10-26
 
 Full fresh run of sections 1–10 on `main` after the MVP cleanup (single baseline schema, version 1): new stack root,
 new data volumes, Docker 29.8.1, amd64. Every case passed except the open findings below. Notes from this run:
@@ -393,3 +406,10 @@ Earlier runs: sections 1–8 on 2026-10-11, 9 and 10 on 2026-10-12.
     command's usage text (`install [--prefer-source] ...`), so the operation summary shows that instead of the error
     a few lines above (seen with a codeload 429). Fix: pick the last line that is not Composer's usage text, or show
     the last few lines.
+21. **Deploying an app before its first start fails when the deploy needs its Valkey.** The app's Valkey runs only
+    inside the running app container, and a deploy's tool container shares its loopback only while the app runs.
+    Seen live on e2e-laravel (`CACHE_STORE=redis`): the Classic recipe's `php artisan queue:restart` failed with
+    `Connection refused` after Composer, migrations and `optimize` had succeeded; after `app start` the same deploy
+    succeeded. Any cache, session or queue use of Valkey in a deploy script does the same. Workaround: start the app
+    before the first deploy. Fix: run the deploy against a Valkey started for the tool container when the app is
+    stopped, or say so in the recipes.

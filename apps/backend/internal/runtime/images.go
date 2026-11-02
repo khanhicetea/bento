@@ -38,7 +38,7 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	if err != nil {
 		return ImageSpec{}, err
 	}
-	args := map[string]string{"DEBIAN_BASE": key.RuntimeDebianBase()}
+	args := map[string]string{"DEBIAN_BASE": key.RuntimeDebianBase(), "VALKEY_BUILD_BASE": domain.ValkeyBuildBase}
 	maps.Copy(args, domain.RuntimeArtifacts)
 	kind := "http"
 	if key.Kind == domain.RuntimePHP {
@@ -51,6 +51,7 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 			args["SURY_KEY_SHA256"] = domain.SuryKeySHA256
 		} else {
 			args["PHP_BASE"] = base
+			maps.Copy(args, domain.PHPRedisArtifacts)
 		}
 	} else {
 		args["TOOLCHAIN_BASE"] = base

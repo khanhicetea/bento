@@ -268,13 +268,21 @@ idle `sleep` command; it never runs `/init`, starts no daemons, and does not tak
 
 `PlanImage` combines the embedded context for `php` or `http` (`templates/images/common` overlaid with the kind) with
 pinned build args (base image, s6-overlay and minicrond versions and SHA-256s, Composer, Valkey's source version and
-single SHA-256 from `domain.RuntimeArtifacts`; for PHP also the Node.js LTS base and pnpm from
-`domain.PHPNodeArtifacts`) and hashes both into the tag
+single SHA-256 from `domain.RuntimeArtifacts`, and `domain.ValkeyBuildBase`; for PHP also the Node.js LTS base and
+pnpm from `domain.PHPNodeArtifacts`, and for the official-image PHP builds the phpredis PECL tarball from
+`domain.PHPRedisArtifacts`) and hashes both into the tag
 `bento-runtime/<toolchain>:<version>-<hash12>`. `ImageManager.Ensure` builds only when that tag is missing, using the
 Engine API classic builder (`build.BuilderV1`) — no BuildKit features in the Dockerfiles. Tar headers use fixed modes
-and mtimes so the context is byte-reproducible. Valkey is compiled in a build stage on each image's own base
-(`common/build-valkey.sh`: checksum-verified source tarball, TLS and systemd off) so it links against that image's
-libc; only `valkey-server` and `valkey-cli` reach `/usr/local/bin`.
+and mtimes so the context is byte-reproducible. Valkey is compiled in one build stage, identical in every
+Dockerfile, on `domain.ValkeyBuildBase` (`common/build-valkey.sh`: checksum-verified source tarball, TLS and systemd
+off). It links only libc and libm, so that base must stay the oldest Debian release among the runtime bases; each
+final stage runs `valkey-server --version` to prove the binary loads on its base. Only `valkey-server` and
+`valkey-cli` reach `/usr/local/bin`. The classic builder shares a layer only when every layer beneath it is
+identical: the `php` and `php-sury` final stages start with the same steps (`php/install-tools.sh`, Node.js, s6,
+Valkey) before anything PHP-specific, so PHP versions on one Debian release share those layers.
+`TestRuntimeImagesShareLayers` keeps the shared steps identical and `TestPlanArgsMatchDockerfileARGs` keeps each
+plan's build args equal to its Dockerfile's `ARG`s. The official-image PHP build checks that OPcache and redis
+load, records `php -m`, and the final stage fails if it loads a different module list (a missing library).
 
 ### Inside a runtime container
 

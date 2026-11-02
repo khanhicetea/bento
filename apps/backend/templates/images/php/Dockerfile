@@ -4,10 +4,14 @@
 ARG PHP_BASE
 ARG DEBIAN_BASE
 ARG NODE_BASE
+ARG VALKEY_BUILD_BASE
 
 FROM ${PHP_BASE} AS php-build
+ARG PHPREDIS_VERSION
+ARG PHPREDIS_SHA256
 # Also records the Debian packages providing the shared libraries PHP links
-# against, so the runtime stage installs exactly those on any base release.
+# against, so the runtime stage installs exactly those on any base release,
+# and the loaded modules, which the runtime stage must reproduce.
 COPY apt-sources.sh /tmp/apt-sources.sh
 RUN set -eux; \
   sh /tmp/apt-sources.sh; \
@@ -18,8 +22,13 @@ RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
   docker-php-ext-install -j"$(nproc)" bcmath exif gd intl pcntl pdo_mysql pdo_pgsql pdo_sqlite pgsql soap sockets zip mysqli; \
   (docker-php-ext-install -j"$(nproc)" opcache || docker-php-ext-enable opcache || true); \
-  pecl install redis; \
+  curl -fsSLo /tmp/redis.tgz "https://pecl.php.net/get/redis-${PHPREDIS_VERSION}.tgz"; \
+  echo "${PHPREDIS_SHA256}  /tmp/redis.tgz" | sha256sum -c -; \
+  pecl install /tmp/redis.tgz; \
   docker-php-ext-enable redis; \
+  php -m | grep -qx 'Zend OPcache'; \
+  php -m | grep -qx redis; \
+  php -m > /usr/local/share/bento-php-modules; \
   find /usr/local/bin /usr/local/sbin /usr/local/lib/php/extensions -type f \
     \( -perm -u+x -o -name '*.so' \) -exec ldd {} + 2>/dev/null \
     | awk '/=> \// { print $3 }' | sort -u \
@@ -29,7 +38,7 @@ RUN set -eux; \
   cat /usr/local/share/bento-php-runtime-deps; \
   rm -rf /usr/local/include/php /usr/local/lib/php/build /usr/local/bin/docker-php-ext-* \
     /usr/local/bin/peardev /usr/local/bin/pecl /usr/local/bin/php-config /usr/local/bin/phpize \
-    /usr/src/php* /tmp/pear /usr/local/etc/php-fpm.d/*
+    /usr/src/php* /tmp/pear /tmp/redis.tgz /usr/local/etc/php-fpm.d/*
 
 # Node.js LTS with npm and pnpm, so apps can install node_modules and build
 # front-end assets with the tooling exec. pnpm's tarball is checksum-verified;
@@ -58,18 +67,18 @@ ARG COMPOSER_SHA256
 COPY apt-sources.sh fetch-artifacts.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/fetch-artifacts.sh
 
-# Valkey for apps that turn it on, compiled on the runtime's own Debian
-# release from the checksum-verified source tarball.
-FROM ${DEBIAN_BASE} AS valkey
+# Valkey for apps that turn it on, built once for every runtime image on the
+# oldest Debian release among them from the checksum-verified source tarball.
+FROM ${VALKEY_BUILD_BASE} AS valkey
 ARG VALKEY_VERSION
 ARG VALKEY_SHA256
 COPY apt-sources.sh build-valkey.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
 
+# Up to the PHP-specific ENV, this stage is identical in images/php-sury: on
+# one Debian release every PHP version shares these layers.
 FROM ${DEBIAN_BASE}
-ENV PHP_INI_DIR=/usr/local/etc/php \
-    PHP_INI_SCAN_DIR=:/etc/bento/php.d \
-    S6_READ_ONLY_ROOT=1 \
+ENV S6_READ_ONLY_ROOT=1 \
     S6_KEEP_ENV=1 \
     S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0 \
@@ -78,40 +87,36 @@ ENV PHP_INI_DIR=/usr/local/etc/php \
     BENTO_RUNTIME_KIND=php-fpm \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     PNPM_CONFIG_UPDATE_NOTIFIER=false
-COPY --from=php-build /usr/local/share/bento-php-runtime-deps /tmp/bento-php-runtime-deps
-COPY apt-sources.sh /tmp/apt-sources.sh
-# EOL bases are the PHP image itself: drop its PHP so only the build stage's
-# remains, and reset the stop signal and command it would otherwise pass on.
-# Bullseye's nginx-light lacks the geo module the app config uses.
-RUN set -eux; \
-  sh /tmp/apt-sources.sh; \
-  rm /tmp/apt-sources.sh; \
-  rm -rf /usr/local/bin/* /usr/local/sbin/* /usr/local/lib/php /usr/local/include/php /usr/local/etc/*; \
-  . /etc/os-release; \
-  nginx_pkg=nginx-light; \
-  if [ "$VERSION_CODENAME" = bullseye ]; then nginx_pkg=nginx-core; fi; \
-  apt-get update; \
-  apt-get install -y --no-install-recommends \
-    bash bash-completion ca-certificates curl git grep gzip jq less openssh-client \
-    sqlite3 unzip vim zip zstd "$nginx_pkg" \
-    $(cat /tmp/bento-php-runtime-deps); \
-  printf '%s\n' '[ -f /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion' \
-    >> /etc/bash.bashrc; \
-  rm -rf /var/lib/apt/lists/* /tmp/bento-php-runtime-deps /etc/nginx/sites-enabled /etc/nginx/conf.d
-COPY --from=php-build /usr/local/ /usr/local/
+COPY apt-sources.sh install-tools.sh /tmp/
+RUN sh /tmp/install-tools.sh
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 COPY --from=node /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
+COPY --from=artifacts /rootfs/ /
+COPY --from=valkey /rootfs/ /
 RUN set -eux; \
   cd /usr/local/bin; \
   ln -s ../lib/node_modules/npm/bin/npm-cli.js npm; \
   ln -s ../lib/node_modules/npm/bin/npx-cli.js npx; \
   for b in pnpm pnpx pn pnx; do ln -s "../lib/node_modules/pnpm/$b" "$b"; done; \
-  node --version; npm --version; pnpm --version
-COPY --from=artifacts /rootfs/ /
-COPY --from=valkey /rootfs/ /
+  node --version; npm --version; pnpm --version; valkey-server --version
+# PHP itself and the libraries it links against. A module the build stage
+# loaded but this image cannot (a missing library) fails the build here.
+ENV PHP_INI_DIR=/usr/local/etc/php \
+    PHP_INI_SCAN_DIR=:/etc/bento/php.d
+COPY --from=php-build /usr/local/ /usr/local/
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends $(cat /usr/local/share/bento-php-runtime-deps); \
+  rm -rf /var/lib/apt/lists/*; \
+  php -m > /tmp/php-modules; \
+  diff /usr/local/share/bento-php-modules /tmp/php-modules; \
+  rm /tmp/php-modules; \
+  php-fpm -v
 COPY rootfs/ /
 WORKDIR /home
+# EOL bases are the PHP image itself: reset the stop signal and command it
+# would otherwise pass on.
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/bento-init"]
 CMD []

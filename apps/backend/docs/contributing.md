@@ -90,9 +90,18 @@ Never put Docker calls inside `Store.Tx`, and never perform effects in an HTTP h
 Pinned artifacts (s6-overlay, minicrond, Composer) live in `domain.RuntimeArtifacts` with SHA-256 checksums for amd64
 and arm64; update both checksums together. After a minicrond bump, run `make vendor-minicrond-ui` to vendor that release's web UI
 into `internal/schedulerui` (the scheduler gateway serves it; `TestVendoredVersionMatchesPin` fails until you do). Valkey is pinned there too, as one source tarball (`VALKEY_VERSION`,
-`VALKEY_SHA256`, the same for every architecture) that `templates/images/common/build-valkey.sh` compiles on each
-image's own base. PHP images also copy Node.js (with npm) from the pinned
-`HTTPToolchains["node"]` LTS base and pnpm from a checksum-verified npm tarball (`domain.PHPNodeArtifacts`).
+`VALKEY_SHA256`, the same for every architecture) that `templates/images/common/build-valkey.sh` compiles once, on
+`domain.ValkeyBuildBase`, for every runtime image. That base must be the oldest Debian release among the runtime bases:
+a new base on an older release needs `ValkeyBuildBase` moved to it (each final stage runs `valkey-server --version`,
+so a mismatch fails the build). PHP images also copy Node.js (with npm) from the pinned
+`HTTPToolchains["node"]` LTS base and pnpm from a checksum-verified npm tarball (`domain.PHPNodeArtifacts`). The
+official-image PHP builds compile phpredis from its PECL tarball, pinned by `domain.PHPRedisArtifacts`
+(`PHPREDIS_VERSION`, and the SHA-256 of `https://pecl.php.net/get/redis-<version>.tgz`).
+
+`images/php` and `images/php-sury` start their final stage with the same steps (`php/install-tools.sh`, Node.js, s6,
+Valkey) so PHP versions on one Debian release share those layers; put PHP-specific steps after them.
+`TestRuntimeImagesShareLayers` fails if the shared steps drift apart, and `TestPlanArgsMatchDockerfileARGs` fails if a
+plan's build args and a Dockerfile's `ARG`s differ.
 
 ## Changing the container spec
 

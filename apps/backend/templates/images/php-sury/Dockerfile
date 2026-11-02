@@ -5,6 +5,7 @@
 # Built with the Docker Engine API (classic builder); no BuildKit features.
 ARG DEBIAN_BASE
 ARG NODE_BASE
+ARG VALKEY_BUILD_BASE
 
 # Node.js LTS with npm and pnpm, so apps can install node_modules and build
 # front-end assets with the tooling exec. pnpm's tarball is checksum-verified;
@@ -33,22 +34,18 @@ ARG COMPOSER_SHA256
 COPY apt-sources.sh fetch-artifacts.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/fetch-artifacts.sh
 
-# Valkey for apps that turn it on, compiled on the runtime's own Debian
-# release from the checksum-verified source tarball.
-FROM ${DEBIAN_BASE} AS valkey
+# Valkey for apps that turn it on, built once for every runtime image on the
+# oldest Debian release among them from the checksum-verified source tarball.
+FROM ${VALKEY_BUILD_BASE} AS valkey
 ARG VALKEY_VERSION
 ARG VALKEY_SHA256
 COPY apt-sources.sh build-valkey.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
 
+# Up to the PHP-specific ARGs, this stage is identical in images/php: on one
+# Debian release every PHP version shares these layers.
 FROM ${DEBIAN_BASE}
-ARG PHP_VERSION
-ARG PHP_MIN_PKG_VERSION
-ARG SURY_KEY_SHA256
-# Debian's own php.ini files are dropped below, so the scan dirs are the only
-# configuration: Debian's module ini files, then Bento's, then the app's.
-ENV PHP_INI_SCAN_DIR=:/usr/local/etc/php/conf.d:/etc/bento/php.d \
-    S6_READ_ONLY_ROOT=1 \
+ENV S6_READ_ONLY_ROOT=1 \
     S6_KEEP_ENV=1 \
     S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0 \
@@ -57,7 +54,25 @@ ENV PHP_INI_SCAN_DIR=:/usr/local/etc/php/conf.d:/etc/bento/php.d \
     BENTO_RUNTIME_KIND=php-fpm \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     PNPM_CONFIG_UPDATE_NOTIFIER=false
-COPY apt-sources.sh /tmp/apt-sources.sh
+COPY apt-sources.sh install-tools.sh /tmp/
+RUN sh /tmp/install-tools.sh
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=node /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
+COPY --from=artifacts /rootfs/ /
+COPY --from=valkey /rootfs/ /
+RUN set -eux; \
+  cd /usr/local/bin; \
+  ln -s ../lib/node_modules/npm/bin/npm-cli.js npm; \
+  ln -s ../lib/node_modules/npm/bin/npx-cli.js npx; \
+  for b in pnpm pnpx pn pnx; do ln -s "../lib/node_modules/pnpm/$b" "$b"; done; \
+  node --version; npm --version; pnpm --version; valkey-server --version
+ARG PHP_VERSION
+ARG PHP_MIN_PKG_VERSION
+ARG SURY_KEY_SHA256
+# Debian's own php.ini files are dropped below, so the scan dirs are the only
+# configuration: Debian's module ini files, then Bento's, then the app's.
+ENV PHP_INI_SCAN_DIR=:/usr/local/etc/php/conf.d:/etc/bento/php.d
 # The signing key is pinned by checksum. The installed packages must be at least
 # the release that carries the PHP2Shell fix (CVE-2026-109618, CVE-2026-109619);
 # php -v does not change with a backport, so the package version is the proof.
@@ -65,10 +80,6 @@ COPY apt-sources.sh /tmp/apt-sources.sh
 # compiled defaults as the official images: it also disables session garbage
 # collection in favour of a cron job this container does not have.
 RUN set -eux; \
-  sh /tmp/apt-sources.sh; \
-  rm /tmp/apt-sources.sh; \
-  apt-get update; \
-  apt-get install -y --no-install-recommends ca-certificates curl; \
   curl -fsSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg; \
   echo "${SURY_KEY_SHA256}  /usr/share/keyrings/deb.sury.org-php.gpg" | sha256sum -c -; \
   . /etc/os-release; \
@@ -76,8 +87,6 @@ RUN set -eux; \
     > /etc/apt/sources.list.d/php-sury.list; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
-    bash bash-completion git grep gzip jq less openssh-client \
-    sqlite3 unzip vim zip zstd nginx-light \
     "php${PHP_VERSION}-cli" "php${PHP_VERSION}-fpm" "php${PHP_VERSION}-bcmath" "php${PHP_VERSION}-curl" \
     "php${PHP_VERSION}-gd" "php${PHP_VERSION}-intl" "php${PHP_VERSION}-mbstring" "php${PHP_VERSION}-mysql" \
     "php${PHP_VERSION}-opcache" "php${PHP_VERSION}-pgsql" "php${PHP_VERSION}-readline" "php${PHP_VERSION}-redis" \
@@ -92,20 +101,7 @@ RUN set -eux; \
   ln -s "/usr/bin/php${PHP_VERSION}" /usr/local/bin/php; \
   ln -s "/usr/sbin/php-fpm${PHP_VERSION}" /usr/local/sbin/php-fpm; \
   php -v; php-fpm -v; \
-  printf '%s\n' '[ -f /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion' \
-    >> /etc/bash.bashrc; \
-  rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled /etc/nginx/conf.d /etc/apt/sources.list.d/php-sury.list
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
-COPY --from=node /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
-RUN set -eux; \
-  cd /usr/local/bin; \
-  ln -s ../lib/node_modules/npm/bin/npm-cli.js npm; \
-  ln -s ../lib/node_modules/npm/bin/npx-cli.js npx; \
-  for b in pnpm pnpx pn pnx; do ln -s "../lib/node_modules/pnpm/$b" "$b"; done; \
-  node --version; npm --version; pnpm --version
-COPY --from=artifacts /rootfs/ /
-COPY --from=valkey /rootfs/ /
+  rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/php-sury.list
 COPY rootfs/ /
 WORKDIR /home
 STOPSIGNAL SIGTERM

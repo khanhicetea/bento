@@ -3,6 +3,7 @@
 # Built with the Docker Engine API (classic builder); no BuildKit features.
 ARG TOOLCHAIN_BASE
 ARG DEBIAN_BASE
+ARG VALKEY_BUILD_BASE
 
 FROM ${DEBIAN_BASE} AS artifacts
 ARG S6_OVERLAY_VERSION
@@ -15,12 +16,11 @@ ARG MINICROND_ARM64_SHA256
 COPY fetch-artifacts.sh /tmp/fetch-artifacts.sh
 RUN sh /tmp/fetch-artifacts.sh
 
-# Valkey for apps that turn it on, compiled on the toolchain base itself so it
-# links against that image's libc (bases differ in Debian release).
-FROM ${TOOLCHAIN_BASE} AS valkey
+# Valkey for apps that turn it on, built once for every runtime image on the
+# oldest Debian release among them from the checksum-verified source tarball.
+FROM ${VALKEY_BUILD_BASE} AS valkey
 ARG VALKEY_VERSION
 ARG VALKEY_SHA256
-USER root
 COPY apt-sources.sh build-valkey.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
 
@@ -35,12 +35,14 @@ ENV S6_READ_ONLY_ROOT=1 \
     BENTO_RUNTIME_KIND=http-process \
     BENTO_TOOLCHAIN=${TOOLCHAIN}
 USER root
+# Valkey is built on another release: it must run on this toolchain's libc.
+COPY --from=valkey /rootfs/ /
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends bash ca-certificates curl git openssh-client sqlite3 xz-utils; \
-  rm -rf /var/lib/apt/lists/*
+  rm -rf /var/lib/apt/lists/*; \
+  /usr/local/bin/valkey-server --version
 COPY --from=artifacts /rootfs/ /
-COPY --from=valkey /rootfs/ /
 COPY rootfs/ /
 WORKDIR /home
 ENTRYPOINT ["/usr/local/bin/bento-init"]

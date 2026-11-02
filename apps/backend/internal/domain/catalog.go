@@ -33,8 +33,8 @@ var HTTPToolchains = map[string]map[string]string{
 		"24": "node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea",
 	},
 	"bun": {
-		"1.2": "oven/bun:1.2-debian",
-		"1.3": "oven/bun:1.3-debian",
+		"1.2": "oven/bun:1.2-debian@sha256:2505ef864643617d187a48ffdc069c35823a9fd16599259e49f7a2d685851f99",
+		"1.3": "oven/bun:1.3-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f",
 		"1.4": "oven/bun:1.4-debian@sha256:93d5032fe06d163427822dc1598f420363759bb18155c9cc90eb1be05a64a19e",
 	},
 	"python": {
@@ -64,6 +64,12 @@ const DebianBase = "debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3
 // to DebianBase once trixie arm64 has 8.1.34-9 or newer.
 const DebianBookwormBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
 
+// ValkeyBuildBase compiles Valkey once for every runtime image. The binaries
+// link only libc and libm, and glibc runs programs built against an older
+// release, so this must stay the oldest Debian release among the runtime
+// bases (bookworm: PHP 8.1 and Bun 1.2; everything else is trixie).
+const ValkeyBuildBase = DebianBookwormBase
+
 // RuntimeDebianBase returns the Debian base whose release matches a runtime
 // key's base image. End-of-life bullseye releases reuse the PHP base itself:
 // the current debian:bullseye-slim carries security updates that
@@ -77,8 +83,7 @@ func (k ImageKey) RuntimeDebianBase() string {
 
 // Supervision, scheduler and Valkey artifacts downloaded (and
 // checksum-verified) while building managed runtime images. Valkey is a source
-// tarball (one checksum for every architecture), compiled on each image's own
-// Debian release.
+// tarball (one checksum for every architecture), compiled on ValkeyBuildBase.
 var RuntimeArtifacts = map[string]string{
 	"S6_OVERLAY_VERSION":       "3.2.3.2",
 	"S6_OVERLAY_NOARCH_SHA256": "5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12",
@@ -103,6 +108,13 @@ var PHPNodeArtifacts = map[string]string{
 	"NODE_BASE":    HTTPToolchains["node"]["24"],
 	"PNPM_VERSION": "12.7.0",
 	"PNPM_SHA256":  "1a7fe4b36abead79ee13e2f2c2089ddd37fee016179b9fe56a85a44ef72aaf7f",
+}
+
+// PHPRedisArtifacts pin the phpredis PECL package compiled into the PHP images
+// built on the official PHP image. The deb.sury.org images install php-redis.
+var PHPRedisArtifacts = map[string]string{
+	"PHPREDIS_VERSION": "6.3.0",
+	"PHPREDIS_SHA256":  "0d5141f634bd1db6c1ddcda053d25ecf2c4fc1c395430d534fd3f8d51dd7f0b5",
 }
 
 // ResticArtifacts pin the restic binary layered onto RcloneImage to build the

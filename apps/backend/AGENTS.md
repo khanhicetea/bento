@@ -90,7 +90,8 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 - **Changing anything under `templates/images`** or a pinned version changes the image tag, so all apps of that
   runtime are rebuilt and replaced. Upgrading a pinned artifact (s6-overlay, minicrond, Composer) means updating the
   version **and both amd64/arm64 SHA-256s** in `domain.RuntimeArtifacts` (Valkey is a source tarball: `VALKEY_VERSION`
-  and its single `VALKEY_SHA256`, compiled on each image's base by `templates/images/common/build-valkey.sh`), then
+  and its single `VALKEY_SHA256`, compiled once on `domain.ValkeyBuildBase` by
+  `templates/images/common/build-valkey.sh`; phpredis is `PHPREDIS_VERSION` and `PHPREDIS_SHA256`), then
   running `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages`.
   A minicrond bump also needs `make vendor-minicrond-ui` (the scheduler gateway serves that vendored UI); review
   the diff of `internal/schedulerui`.

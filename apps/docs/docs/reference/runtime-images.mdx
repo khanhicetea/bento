@@ -7,8 +7,11 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 
 - The build context is **embedded in the binary** and hashed together with the build arguments. The tag
   `bento-runtime/<toolchain>:<version>-<hash>` changes whenever either changes.
-- Base images, s6-overlay, minicrond, Composer, Node.js, and pnpm are pinned and checksum-verified. Valkey is built
-  from a pinned, checksum-verified source release on each image's own base.
+- Base images, s6-overlay, minicrond, Composer, Node.js, pnpm, and the PHP `redis` extension are pinned and
+  checksum-verified. Valkey is built once from a pinned, checksum-verified source release on the oldest Debian
+  release among the runtime bases, and that build is shared by every image.
+- Layers that do not depend on the PHP version (tools, Node.js, s6-overlay, Valkey) come first, so several PHP
+  versions on one host store them once.
 - PHP images include Node.js 24 LTS with `npm` and `pnpm`, so `npm ci && npm run build` works in the tool shell and
   deploy scripts. Caches go to the app's home folder.
 

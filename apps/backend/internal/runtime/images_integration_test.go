@@ -32,7 +32,8 @@ func TestIntegrationBuildRuntimeImages(t *testing.T) {
 		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.0"},
 		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.1"},
 		{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"},
-		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.4"}, // Valkey compiled on a non-trixie base
+		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.4"},
+		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.2"}, // bookworm: the oldest glibc the shared Valkey must run on
 	}
 	for _, key := range keys {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
