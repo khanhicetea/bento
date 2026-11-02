@@ -869,6 +869,9 @@ type LoginRequest struct {
 
 type SetPasswordRequest struct {
 	Password string `json:"password"`
+	// CurrentPassword is required from a browser session; root on the host
+	// (the control socket) sets the password without it to recover access.
+	CurrentPassword string `json:"currentPassword,omitempty"`
 }
 
 // ---- API tokens ----
@@ -905,6 +908,9 @@ type CreateAPITokenRequest struct {
 	Scope TokenScope `json:"scope"`
 	// ExpiresInDays is 1-365; 0 means the token never expires.
 	ExpiresInDays int `json:"expiresInDays,omitempty"`
+	// CurrentPassword is required from a browser session, so a script that
+	// runs on the management origin cannot mint a lasting credential.
+	CurrentPassword string `json:"currentPassword,omitempty"`
 }
 
 // CreatedAPIToken carries the secret once; only its hash is stored.

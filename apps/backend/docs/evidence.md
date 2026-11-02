@@ -497,3 +497,54 @@ backend stopped, edge traffic and scheduled jobs continued.
   passed earlier the same day; no UI or DTO changed.
 - Not verified: arm64, an edge image pin bump between two real releases (simulated by relabelling), ACME and HTTP/3
   across a recreate.
+
+## Scheduler UI served from Bento, not the app socket (2026-11-02; live Docker 29.8.1, amd64)
+
+Closes audit blocker 3 (a compromised app could serve its own script on the management origin by replacing minicrond
+behind its socket).
+
+- The gateway serves minicrond's page and assets from `internal/schedulerui`, vendored by `make vendor-minicrond-ui`
+  from tag `0.5.5` (commit `cbb9366`). The minicrond 0.5.5 amd64 release binary (SHA-256 matching the pin) embeds
+  byte-identical `index.html`, script and stylesheet; re-running the target reproduced the committed files. Only
+  `/api/…` crosses the relay, and `hardenSchedulerResponse` admits JSON, plain text, event streams and TOML; it
+  refuses redirects and untyped bodies (502) and adds a `sandbox` CSP.
+- Unit (`go test -race`, root): `TestSchedulerGateway` runs against a hostile fake behind the relay that answers every
+  path with a script. The shell for every client route is the vendored page, assets match the bundle and revalidate
+  by ETag, and neither dials the relay. HTML, untyped bodies and redirects under `/api/` come back as 502 without the
+  script. App cookies are dropped and credentials are not forwarded. Removing each guard in turn (proxying every
+  path, the media-type allowlist, the redirect check, the sandbox CSP, the untyped-body check) made a test fail.
+  `TestVendoredVersionMatchesPin` ties the bundle to `MINICROND_VERSION`.
+- Creating an API token or changing the password from a browser session now requires the current password (422
+  `currentPassword` otherwise; wrong guesses count against the login limiter); the control socket is exempt
+  (`TestCredentialChangesNeedCurrentPassword`). The System token form asks for it.
+- Live, disposable stack (`/tmp/bsx`, uids 62000+), node 24 app with the real minicrond 0.5.5 through the real relay:
+  shell headers were minicrond's CSP with `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`; both assets were
+  byte-identical to the vendored files; `/api/v1/jobs` returned JSON with both the management and sandbox CSPs; a
+  write without Origin got 403 and a same-origin trigger ran the job (202). Headless Chrome on the Processes & Tasks
+  tab rendered the framed minicrond UI with the job, its schedule and the run, with no CSP violation inside the
+  frame. Then, as the app UID inside the container, a Node server replaced the minicrond socket and answered every
+  path with a script: the shell was still the vendored page, and `/api/v1/jobs` and `/api/v1/runs/x/log/raw` got 502
+  (`content type "text/html"` in the backend log).
+- Found, not changed: Bento's own `index.html` theme bootstrap is an inline script, which the management CSP
+  (`default-src 'self'`) blocks; Chrome logs the violation on every page load.
+- `make ci` steps fmt-check, vet, race tests and build passed as root; `check-generated` differs only because the
+  regenerated `types.ts` is not committed yet. `bun run fmt:check`, `lint`, `check` and `web:build` passed.
+  `make test-integration` was not run (no runtime, Docker, edge or data change).
+- Not verified: arm64, Firefox and Safari, the Open in new tab path in a browser (same headers, checked with curl),
+  minicrond's export/import and log-download flows in the browser, and the token form in a browser.
+
+## minicrond 0.6.0 (2026-11-02; amd64; dev mode)
+
+- Pin moved to 0.6.0 (`fe4651bd…` amd64, `21337b0e…` arm64; both checked against the release's `.sha256` files).
+  `make vendor-minicrond-ui` now vendors the `minicrond-web-0.6.0.tar.gz` release asset after checking its published
+  SHA-256 (`93693a1a…`, recorded in `internal/schedulerui/VERSION`); the three files are byte-identical to tag `0.6.0`
+  `internal/api/assets` and to the bytes embedded in the 0.6.0 amd64 binary. minicrond's HTTP API, config keys, and
+  CLI commands that Bento uses did not change between 0.5.5 and 0.6.0 (the OpenAPI diff is the version string).
+- **Breaking:** 0.6.0 refuses a pre-0.6 data directory. Reproduced with the release binaries: a 0.5.5 data directory
+  with one imported job made 0.6.0 exit 1 with `application_id 0x0, schema 12 … remove the data directory`. Bento is in
+  dev mode, so there is no migration: existing stacks are re-initialized (the dev stack was).
+- `go vet` and `go test -race ./...` passed as root with the new pin and bundle.
+- Blocked, not verified: the host's tty layer deadlocked (tasks in `tty_open`/`ptmx_open` behind `console_lock`
+  held in the DRM fbdev helper), so `apt-get` in the first runtime image build step hung in `ptmx_open` and no 0.6.0
+  runtime image was built. `TestIntegrationBuildRuntimeImages`, `make test-integration`, and the live scheduler and
+  hostile-socket checks have not run on 0.6.0.

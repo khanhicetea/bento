@@ -834,6 +834,11 @@ export interface LoginRequest {
 }
 export interface SetPasswordRequest {
   password: string;
+  /**
+   * CurrentPassword is required from a browser session; root on the host
+   * (the control socket) sets the password without it to recover access.
+   */
+  currentPassword?: string;
 }
 /**
  * TokenScope bounds what an API token or a scoped control-socket client may
@@ -869,6 +874,11 @@ export interface CreateAPITokenRequest {
    * ExpiresInDays is 1-365; 0 means the token never expires.
    */
   expiresInDays?: number /* int */;
+  /**
+   * CurrentPassword is required from a browser session, so a script that
+   * runs on the management origin cannot mint a lasting credential.
+   */
+  currentPassword?: string;
 }
 /**
  * CreatedAPIToken carries the secret once; only its hash is stored.

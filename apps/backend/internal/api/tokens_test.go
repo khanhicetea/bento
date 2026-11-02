@@ -17,7 +17,7 @@ import (
 
 func (c *client) createToken(name string, sc dto.TokenScope) string {
 	c.t.Helper()
-	resp, body := c.write("POST", "/api/v1/tokens", `{"name":"`+name+`","scope":"`+string(sc)+`"}`)
+	resp, body := c.write("POST", "/api/v1/tokens", `{"name":"`+name+`","scope":"`+string(sc)+`","currentPassword":"`+password+`"}`)
 	if resp.StatusCode != http.StatusCreated {
 		c.t.Fatalf("create token %s -> %d %s", name, resp.StatusCode, body)
 	}
@@ -318,4 +318,69 @@ func TestControlSocketScopeHeader(t *testing.T) {
 		t.Fatalf("operate socket start -> %d", got)
 	}
 	h.WaitIdle()
+}
+
+// A browser session must prove the operator password before it creates an API
+// token or changes the password, so a script running on the management origin
+// cannot mint a lasting credential or lock the operator out. Root on the
+// control socket recovers without it.
+func TestCredentialChangesNeedCurrentPassword(t *testing.T) {
+	c, _ := newServer(t)
+	c.login()
+	refused := func(what string, resp *http.Response, body string) {
+		t.Helper()
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `"field":"currentPassword"`) {
+			t.Fatalf("%s -> %d %s", what, resp.StatusCode, body)
+		}
+	}
+	for name, extra := range map[string]string{"missing": ``, "wrong": `,"currentPassword":"not the password"`} {
+		resp, body := c.write("POST", "/api/v1/tokens", `{"name":"ci","scope":"read"`+extra+`}`)
+		refused(name+" token", resp, body)
+		resp, body = c.write("PUT", "/api/v1/auth/password", `{"password":"another long password"`+extra+`}`)
+		refused(name+" password", resp, body)
+	}
+	if _, body := c.do("GET", "/api/v1/tokens", "", nil); strings.Contains(body, `"ci"`) {
+		t.Fatalf("refused token was stored: %s", body)
+	}
+	c.createToken("ci", dto.TokenScopeRead)
+	resp, body := c.write("PUT", "/api/v1/auth/password", `{"password":"another long password","currentPassword":"`+password+`"}`)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("password change -> %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := c.do("GET", "/api/v1/tokens", "", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("session survived the password change -> %d", resp.StatusCode)
+	}
+
+	// Root on the control socket needs no current password.
+	sock := filepath.Join(t.TempDir(), "s.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: c.api.LocalOnly(c.api.Handler()), ConnContext: ConnContext}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+	}}}
+	for path, body := range map[string]string{
+		"/api/v1/tokens":        `{"name":"local","scope":"read"}`,
+		"/api/v1/auth/password": `{"password":"` + password + `"}`,
+	} {
+		method := "POST"
+		if strings.HasSuffix(path, "password") {
+			method = "PUT"
+		}
+		req, _ := http.NewRequest(method, "http://bento"+path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := hc.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("socket %s %s -> %d", method, path, resp.StatusCode)
+		}
+	}
+	c.login()
 }

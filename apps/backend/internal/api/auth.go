@@ -89,6 +89,41 @@ func SetOperatorPassword(ctx context.Context, s *store.Store, pw string) error {
 	})
 }
 
+// confirmCurrentPassword makes a browser session prove the operator password
+// before an action that would outlive the session (a new password, an API
+// token). Root on the control socket is exempt: that is how a locked-out
+// operator recovers. Wrong guesses count against the login limiter. It writes
+// the error response and returns false when the caller must stop.
+func (s *Server) confirmCurrentPassword(w http.ResponseWriter, r *http.Request, current string) bool {
+	if p, ok := principalFrom(r.Context()); ok && p.Kind == "local" {
+		return true
+	}
+	if !s.limiter.allowed() {
+		writeError(w, s.Log, &apiError{status: http.StatusTooManyRequests, code: dto.ErrorCodeRateLimited,
+			msg: "too many failed password attempts; wait and retry"})
+		return false
+	}
+	var rec PasswordRecord
+	if _, err := store.GetSetting(r.Context(), s.Store.DB(), authSetting, &rec); err != nil {
+		writeError(w, s.Log, err)
+		return false
+	}
+	if current != "" && rec.Hash != "" && verifyPassword(rec.Hash, current) {
+		return true
+	}
+	if current != "" {
+		s.limiter.fail()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	writeError(w, s.Log, &apiError{status: http.StatusUnprocessableEntity, code: dto.ErrorCodeValidation,
+		msg: "current password required", fields: []dto.FieldError{{Field: "currentPassword",
+			Message: "enter the current operator password"}}})
+	return false
+}
+
 type principalKey struct{}
 
 type principal struct {

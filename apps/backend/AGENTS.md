@@ -92,6 +92,8 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
   version **and both amd64/arm64 SHA-256s** in `domain.RuntimeArtifacts` (Valkey is a source tarball: `VALKEY_VERSION`
   and its single `VALKEY_SHA256`, compiled on each image's base by `templates/images/common/build-valkey.sh`), then
   running `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages`.
+  A minicrond bump also needs `make vendor-minicrond-ui` (the scheduler gateway serves that vendored UI); review
+  the diff of `internal/schedulerui`.
 - **Data-service readiness must use TCP.** First-boot entrypoints run a socket-only temporary server; a socket probe
   reports ready too early.
 - **tygo:** enum constants must be prefixed with their type name (`ObservedStateHealthy`) to become a union; embedded
@@ -99,6 +101,9 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
   Never hand-edit or reformat the generated file (it is excluded from Prettier).
 - **Edge config** must use relative includes so candidate directories validate in place; app upstreams must stay
   variable-based (`set $bento_upstream …; proxy_pass $bento_upstream;`) so Docker DNS is re-resolved.
+- **Scheduler gateway** serves minicrond's page and assets from `internal/schedulerui`, never from the app's
+  socket; only `/api/…` is relayed, and `hardenSchedulerResponse` admits only data media types. Do not proxy other
+  paths or loosen that allowlist: the app UID can replace minicrond.
 - **Scheduler relay** execs `/proc/self/exe internal-relay` as the app UID and `fchdir`s to an inherited directory fd;
   do not replace this with `setuid` in the backend or `docker exec` per request.
 - **Scoped reloads** validate with the running process and must `Changes.Restore` the previous bytes on failure

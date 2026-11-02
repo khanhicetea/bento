@@ -59,6 +59,9 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 			msg: "validation failed", fields: fields})
 		return
 	}
+	if !s.confirmCurrentPassword(w, r, req.CurrentPassword) {
+		return
+	}
 	secret := TokenPrefix + platform.RandomToken(32)
 	now := time.Now().UTC()
 	t := store.APIToken{ID: "tok_" + platform.RandomHex(8), Name: req.Name, Scope: string(req.Scope),

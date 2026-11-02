@@ -395,6 +395,9 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
+	if !s.confirmCurrentPassword(w, r, req.CurrentPassword) {
+		return
+	}
 	if err := SetOperatorPassword(r.Context(), s.Store, req.Password); err != nil {
 		writeError(w, s.Log, badRequest(err.Error()))
 		return

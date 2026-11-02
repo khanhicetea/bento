@@ -1,9 +1,10 @@
 # Backlog
 
-Open findings from the production-readiness audit of 2026-11-01. The release blockers fixed in that pass (the store
-migration framework, the edge image pull and recreate rollback, the env loader's trailing `=`) are recorded in
-`apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/` unless they start with `apps/`. Line numbers
-are as of commit `8a88634` and drift; the named function or template is the stable reference.
+Open findings from the production-readiness audit of 2026-11-01. The release blockers fixed since (the store
+migration framework, the edge image pull and recreate rollback, the env loader's trailing `=`, and the scheduler UI
+served from the app's socket) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
+unless they start with `apps/`. Line numbers are as of commit `8a88634` and drift; the named function or template is
+the stable reference.
 
 Status: **confirmed** = the code path was read end to end (or reproduced); **plausible** = the mechanism is in the
 code but the trigger was not reproduced.
@@ -38,23 +39,6 @@ code but the trigger was not reproduced.
   the filter). `backup_test.go:119` only feeds 7-byte chunks, so it never takes that path.
 - Fix: replay as the binding user, or rewrite `DEFINER` to the binding user instead of removing it. Apply the filter
   only to DDL/comment lines, never to `INSERT` lines.
-
-### 3. One compromised app can take over the stack through the scheduler UI (confirmed)
-
-- `/apps/{slug}/scheduler/*` is proxied on the management origin (`internal/api/gateway.go`, `server.go` around line
-  200) from a socket that the app UID owns.
-- The UI frames it without a `sandbox` attribute (`apps/web/src/features/applications/ApplicationDetail.tsx:608`).
-  `hardenSchedulerResponse` removes `X-Frame-Options` and sets no CSP sandbox.
-- An app compromised as its own UID can replace minicrond and serve its own JavaScript. That script runs
-  same-origin, reads the CSRF token from `GET /api/v1/session`, and can exec into any app, repoint git sources, mint
-  tokens, or change the password.
-- `PUT /api/v1/auth/password` (`server.go:392`) does not require the current password, which makes the takeover
-  permanent.
-- The docs contradict the code: `docs/architecture.md` (around 517-520) admits this trust boundary, but the
-  invariants checklist (around 549-555) says the scheduler UI is never served on the management origin.
-- Fix: serve the scheduler on the utils origin behind the dbadmin-style ticket/grant, or at minimum frame it with
-  `sandbox="allow-scripts allow-forms"` (no `allow-same-origin`) plus a `Content-Security-Policy: sandbox` header.
-  Require the current password to change it.
 
 ## Before public traffic
 

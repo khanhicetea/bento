@@ -496,7 +496,7 @@ only what it created.
   stream is deliberately **not** redacted: a secret can be split across arbitrary chunk boundaries and terminal escape
   sequences, and the operator can already read the app's secrets from its environment inside that shell, so
   redaction there would give false assurance.
-- `gateway.go`: the scheduler UI gateway (see below). The management handler serves no app-controlled content.
+- `gateway.go`: the scheduler UI gateway (see below). The management handler serves no app-controlled page or script.
 - SPA serving: existing files are served; client routes fall back to `index.html`; asset-like paths 404.
 
 ## Database browser: `api/dbadmin.go`, `operations/dbadmin.go`
@@ -521,18 +521,35 @@ path. Tickets and grants do not survive a backend restart.
 
 minicrond's UI is served on the management origin at `runtime.SchedulerBasePath` = `/apps/<slug>/scheduler`
 (`BENTO_SCHEDULER_BASE_PATH`); the bare path without a trailing slash stays a client route of the web UI, and
-`/apps/{slug}/scheduler/` is the proxy. minicrond escapes its own UI and sends a strict CSP with no framing; the gateway
-adds what only it can enforce. Each request needs a live operator session cookie (a missing session is a plain-text
-401), the slug must be an app's slug (not its id) with minicrond on (else a plain-text 503) that is desired running,
-and writes need an exact allowed `Origin` plus same-origin fetch metadata. The CSRF token is deliberately not required: minicrond's UI is app-served and is never
-given it. Cookie, authorization, CSRF, and forwarding headers are stripped before the request crosses the relay;
-`Set-Cookie` and duplicate `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy` headers are dropped, and
-responses get `Cache-Control: no-store` and `Cross-Origin-Resource-Policy: same-origin`. minicrond's own
-`Content-Security-Policy` is kept next to the management one, so the browser applies the intersection. It is not
-framed. Streaming uses `FlushInterval: -1`; bodies are capped at 10 MB. **Trust boundary:** the app owns its minicrond
-socket directory, so a compromised app can put its own server behind the relay, and that content then runs on the
-management origin and can read the session's CSRF token from `GET /api/v1/session`. The CSP (`script-src 'self'`) does
-not prevent that; the scheduler is only as trustworthy as the app's UID.
+`/apps/{slug}/scheduler/` is the gateway. Every request needs a live operator session cookie (a missing session is a
+plain-text 401), the slug must be an app's slug (not its id) with minicrond on (else a plain-text 503) that is desired
+running, and writes need an exact allowed `Origin` plus same-origin fetch metadata. The CSRF token is deliberately not
+required: minicrond's UI is never given it.
+
+**Trust boundary.** The app's UID owns its minicrond socket directory, so a compromised app can stop minicrond and put
+its own server behind the relay. Nothing that server sends may run on the management origin, so the gateway splits by
+path:
+
+- **Page and assets come from Bento.** `internal/schedulerui` embeds minicrond's built UI (`index.html`, one script,
+  one stylesheet), vendored from the release tag of the pinned `MINICROND_VERSION` by `make vendor-minicrond-ui`
+  (`VERSION` records the tag and commit; `TestVendoredVersionMatchesPin` fails if the pin moves without it). The
+  gateway renders the shell for every client route the way minicrond's own handler does (`<base href>` set to the
+  base path, entry links under `assets/`) and serves `assets/<name>` with an ETag. These responses replace the
+  management CSP with minicrond's own policy, relaxed only to `frame-ancestors 'self'` and `X-Frame-Options:
+  SAMEORIGIN`, so the Scheduler tab can frame them. Non-GET requests get 405. None of them dial the relay.
+- **Only `/api/…` crosses the relay, and only data comes back.** `hardenSchedulerResponse` refuses (502) redirects
+  and any media type other than `application/json`, `text/plain`, `text/event-stream`, or `application/toml`
+  (minicrond's export), as well as a body with no type. What passes loses `Set-Cookie`, `Location`, `Refresh`,
+  `Link`, and the app's CSP/framing/referrer headers, and gets `Content-Security-Policy: sandbox; default-src
+  'none'` next to the management policy, `X-Frame-Options: DENY`, `nosniff`, `Cache-Control: no-store`, and
+  `Cross-Origin-Resource-Policy: same-origin`. A relayed answer opened as a document therefore has an opaque origin
+  and runs nothing.
+
+Cookie, authorization, CSRF, and forwarding headers are stripped before a request crosses the relay. Streaming uses
+`FlushInterval: -1`; bodies are capped at 10 MB. A compromised app can still return false data to its own Scheduler
+tab and act on its own minicrond; it cannot run script beside the Bento UI. As a second layer, creating an API token or
+changing the password from a browser session requires the current password (`confirmCurrentPassword`; root on the
+control socket is exempt for recovery).
 
 ## Scheduler relay: `scheduler`
 
@@ -562,11 +579,14 @@ changes its own UID and never execs into containers per request. Relays idle for
   No token scope reaches deletes, restores, exec, terminals, or credentials.
 - The utils listener serves only routes that authenticate themselves: deploy webhooks (per-app secret; can at most
   queue a deploy of the configured branch) and the database browser (single-use ticket from a session + CSRF call,
-  then a binding-scoped grant re-checked against the live session on every request), and the scheduler UI (the same
-  ticket/grant scheme, scoped to one app slug). Never add Bento's own UI, login, or management routes to it.
-- App-controlled content (the scheduler UI) is never served on the management origin; the management UI sets
-  `frame-src 'self'` and `frame-ancestors 'none'` (only the scheduler gateway relaxes the latter to `'self'`, so the
-  Scheduler tab can embed it; the app runs with `MINICRON_ALLOW_IFRAME=1`), and `Origin: null` never passes the origin check.
+  then a binding-scoped grant re-checked against the live session on every request). The scheduler UI is not served
+  there. Never add Bento's own UI, login, or management routes to it.
+- No app-controlled page or script is served on the management origin. The scheduler page and its assets are the
+  vendored minicrond bundle (`internal/schedulerui`); only `/api/…` data crosses the app's relay, restricted to data
+  media types and sandboxed. The management UI sets `frame-src 'self'` and `frame-ancestors 'none'` (only the
+  vendored scheduler page relaxes the latter to `'self'`, so the Scheduler tab can embed it), and `Origin: null`
+  never passes the origin check.
+- Creating an API token or changing the password from a browser session requires the current password.
 - The Adminer container holds no credentials, joins only the data network, and refuses requests without the
   gateway token. The gateway injects one binding's app-user credentials per request; URL parameters cannot select
   another server, driver, user, or database.

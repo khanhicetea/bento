@@ -84,10 +84,13 @@ function NewToken() {
   const [name, setName] = useState("");
   const [scope, setScope] = useState<T.TokenScope>("read");
   const [days, setDays] = useState("30");
+  const [current, setCurrent] = useState("");
   const create = useMutation({
-    mutationFn: () => api.tokens.create({ name: name.trim(), scope, expiresInDays: Number(days) }),
+    mutationFn: () =>
+      api.tokens.create({ name: name.trim(), scope, expiresInDays: Number(days), currentPassword: current }),
     onSuccess: () => {
       setName("");
+      setCurrent("");
       void queryClient.invalidateQueries({ queryKey: keys.tokens });
     },
   });
@@ -97,7 +100,7 @@ function NewToken() {
       icon={<Plus />}
       kind={create.data ? "tamago" : "gohan"}
       action={
-        <Button type="submit" size="xs" disabled={!name.trim() || create.isPending}>
+        <Button type="submit" size="xs" disabled={!name.trim() || !current || create.isPending}>
           {create.isPending ? "Creating" : "Create"}
         </Button>
       }
@@ -153,6 +156,14 @@ function NewToken() {
             </NativeSelect>
           </Field>
         </div>
+        <Field label="Current password" hint="Required to mint a token">
+          <Input
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+          />
+        </Field>
         <p className="note">
           MCP: <code>POST /mcp</code> with <code>Authorization: Bearer …</code>, or <code>bento mcp</code> over SSH.
         </p>
