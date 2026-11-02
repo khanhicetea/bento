@@ -714,8 +714,12 @@ type BackupSchedule struct {
 	RcloneRemote string   `json:"rcloneRemote"`
 	NextRun      string   `json:"nextRun,omitempty"`
 	LastRun      string   `json:"lastRun,omitempty"`
-	LastState    string   `json:"lastState,omitempty"`
-	LastOpID     string   `json:"lastOpId,omitempty"`
+	// LastState is the last run's operation state (queued, running,
+	// succeeded, failed, ...), or the scheduler's own outcome for a slot it
+	// did not run: missed, skipped, submit-failed. "submitted" means the
+	// run's operation has been pruned from history.
+	LastState string `json:"lastState,omitempty"`
+	LastOpID  string `json:"lastOpId,omitempty"`
 	// TimeZone is the server's zone that cron fields are read in, for
 	// example "UTC+07:00". Ignored on write.
 	TimeZone string `json:"timeZone,omitempty"`

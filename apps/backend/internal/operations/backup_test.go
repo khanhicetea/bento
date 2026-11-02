@@ -185,6 +185,14 @@ func TestMultipleBackupSchedules(t *testing.T) {
 		!strings.Contains(string(op.Request), `"remote":"s3:bucket/shop"`) {
 		t.Fatalf("scheduled op %s %v", op.Request, err)
 	}
+	// The schedule reports how its run ended, not only that it was submitted.
+	done := h.wait(op)
+	if v, _ = h.c.BackupSchedule(ctx, b.ID); v.State.LastState != string(done.State) || !done.State.Terminal() {
+		t.Fatalf("schedule state %q, op %s", v.State.LastState, done.State)
+	}
+	if list, _ = h.c.BackupSchedules(ctx); list[0].State.LastState == "submitted" && list[1].State.LastState == "submitted" {
+		t.Fatalf("listed schedule still submitted: %+v", list)
+	}
 	if err := h.c.DeleteBackupSchedule(ctx, a.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -259,14 +267,20 @@ func TestScheduleUsesServerLocalTime(t *testing.T) {
 	h.c.checkSchedules(ctx, time.Date(2026, 9, 28, 9, 30, 20, 0, ict))
 	v, err := h.c.BackupSchedule(ctx, s.ID)
 	st := v.State
-	if err != nil || st.LastState != "submitted" || st.LastOpID == "" || st.LastSlot != "2026-09-28T02:30:00.000Z" {
+	op, err := store.GetOperation(ctx, h.store.DB(), st.LastOpID)
+	known := map[string]bool{"queued": true, "running": true, "succeeded": true, "failed": true}
+	if err != nil || !known[st.LastState] || st.LastSlot != "2026-09-28T02:30:00.000Z" {
 		t.Fatalf("did not fire at 09:30 local: %+v %v", st, err)
 	}
-	op, err := store.GetOperation(ctx, h.store.DB(), st.LastOpID)
-	if err != nil || !strings.Contains(string(op.Request), `"scheduleId":"`+s.ID+`"`) {
-		t.Fatalf("scheduled op %s %v", op.Request, err)
+	if !strings.Contains(string(op.Request), `"scheduleId":"`+s.ID+`"`) {
+		t.Fatalf("scheduled op %s", op.Request)
 	}
-	// The next slot is skipped, not stacked, while that run is still queued.
+	// The next slot is skipped, not stacked, while that run is still active.
+	// The executor may already have finished it, so hold it running here.
+	h.wait(op)
+	if _, err := h.store.DB().ExecContext(ctx, "UPDATE operations SET state = 'running' WHERE id = ?", op.ID); err != nil {
+		t.Fatal(err)
+	}
 	h.c.checkSchedules(ctx, time.Date(2026, 9, 29, 9, 30, 20, 0, ict))
 	v2, _ := h.c.BackupSchedule(ctx, s.ID)
 	if st2 := v2.State; st2.LastState != "skipped" || st2.LastOpID != st.LastOpID || st2.Missed != 1 {

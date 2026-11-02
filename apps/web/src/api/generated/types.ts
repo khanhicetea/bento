@@ -681,6 +681,12 @@ export interface BackupSchedule {
   rcloneRemote: string;
   nextRun?: string;
   lastRun?: string;
+  /**
+   * LastState is the last run's operation state (queued, running,
+   * succeeded, failed, ...), or the scheduler's own outcome for a slot it
+   * did not run: missed, skipped, submit-failed. "submitted" means the
+   * run's operation has been pruned from history.
+   */
   lastState?: string;
   lastOpId?: string;
   /**

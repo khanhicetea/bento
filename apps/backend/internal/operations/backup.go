@@ -153,6 +153,7 @@ func (c *Controller) BackupSchedules(ctx context.Context) ([]BackupScheduleView,
 		if err != nil {
 			return nil, err
 		}
+		c.resolveScheduleState(ctx, &v.State)
 		out = append(out, v)
 	}
 	return out, nil
@@ -164,7 +165,25 @@ func (c *Controller) BackupSchedule(ctx context.Context, id string) (BackupSched
 	if err != nil {
 		return BackupScheduleView{}, err
 	}
-	return backupScheduleFromRow(row)
+	v, err := backupScheduleFromRow(row)
+	if err != nil {
+		return v, err
+	}
+	c.resolveScheduleState(ctx, &v.State)
+	return v, nil
+}
+
+// resolveScheduleState reports how the last submitted run went: the scheduler
+// only records that it submitted the operation, so "submitted" is replaced by
+// that operation's state (queued, running, succeeded, failed, ...). It stays
+// "submitted" when the operation was pruned from history.
+func (c *Controller) resolveScheduleState(ctx context.Context, st *ScheduleState) {
+	if st.LastState != "submitted" || st.LastOpID == "" {
+		return
+	}
+	if op, err := store.GetOperation(ctx, c.Store.DB(), st.LastOpID); err == nil {
+		st.LastState = string(op.State)
+	}
 }
 
 // validateBackupSelection checks a scope against the stack's apps and

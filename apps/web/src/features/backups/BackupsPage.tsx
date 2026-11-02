@@ -537,7 +537,7 @@ function SchedulesTab() {
           {schedules.map((schedule) => (
             <article
               key={schedule.id}
-              className={`cell tile ${schedule.enabled && schedule.lastState === "submit-failed" ? "cell--alert" : ""}`}
+              className={`cell tile ${schedule.enabled && ["submit-failed", "failed"].includes(schedule.lastState ?? "") ? "cell--alert" : ""}`}
               aria-label={schedule.name}
             >
               <div className="tile__top">
