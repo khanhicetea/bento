@@ -573,3 +573,42 @@ behind its socket).
   not investigated. `make test-integration` (root) passed.
 - Not verified: arm64 (Valkey from bookworm, pnpm's native binary), PHP 8.2/8.3/8.5, Python 3.12, Node 20, e2e
   sections 9–10.
+
+## Relational restore: staged swap, replayed as the binding user (2026-11-02; live Docker 29.8.1, amd64)
+
+Fixes release blockers 1 and 2 of the 2026-11-01 audit: a restore dropped the live database before reading the
+artifact, and a MySQL restore replayed the DEFINER-stripped dump as `root`, so every view, routine, trigger and event
+came back as `root@localhost` with `SQL SECURITY DEFINER`.
+
+- `TestDefinerFilterStripsDefinersAndPassesData` now feeds 1-, 7-, 13-, 64-byte and whole-line chunks. On the old
+  filter, a whole `INSERT` line in one write came back with `'see DEFINER=root@localhost here'` as `'see here'` and
+  `'DEFINER=`x`@`y`'` as `''`; the new filter leaves data lines alone.
+- Fake engine (`internal/backup/restore_relational_test.go`): the MySQL replay logs in through a per-restore option
+  file as the binding user (removed afterwards) into the staging database; the swap is one `RENAME TABLE` (live tables
+  to trash first, identifiers with backticks quoted), with triggers and views dropped before it and events after it,
+  and the live database is never dropped. A truncated artifact, a failing replay, and a cancellation at `swap` return
+  `LiveUnchangedError` with no rename and no staging left. A staged view takes the in-place path, and `Quiesce` runs
+  before the live database is dropped. A staging name that is not ours (MySQL: no grant; PostgreSQL: another owner)
+  is refused, not dropped. PostgreSQL replays with `psql -U <user>` into staging, and a failed swap transaction
+  re-allows connections.
+- Real Docker, `TestIntegrationRestoreMySQL` on MySQL 8.0, 8.4 and 9.7 (the 8.0 and 9.7 pinned images ran for the
+  first time):
+  - A tables-only database with a foreign key was swapped in while the app ran (same container, still running). The
+    data and the `DEFINER=`-looking row came back, and the foreign key still pointed at the live schema and was
+    enforced.
+  - A procedure the app user planted was restored `in-place`: the app was stopped and restarted, the procedure's
+    `DEFINER` is `<user>@%`, and `CALL` runs as the binding user. A hand-made artifact with
+    ``CREATE DEFINER=`root`@`localhost` PROCEDURE`` came back owned by the binding user too.
+  - An artifact with `GRANT ALL PRIVILEGES ON *.*` and a truncated artifact both failed with "The live database is
+    unchanged"; the user gained no global grant and the data was intact. No `bento__` database or grant remained.
+- `TestIntegrationRestorePostgres` on PostgreSQL 16 (official image) and 17 (pglayers): the restore swapped, the table
+  is owned by the binding role, and an artifact with `RESET ROLE; CREATE ROLE … SUPERUSER` failed with the live
+  database unchanged and no role created. `psql -U <user>` over the local socket works on both images.
+- Found while verifying, not fixed (BACKLOG blocker 1): database-level grants are unescaped, and on MySQL 8.4.13 a
+  user granted `` `a_b_main`.* `` read another tenant's `a1b_main` and created `axb_main`. The same check showed
+  `log_bin=1`, so MySQL dumps with triggers or stored functions now fail to restore (an app user cannot create them
+  either).
+- `make ci` and `make test-integration` passed as root (integration 399 s, clone and cross-stack restore included,
+  since clones restore through the same path). `bun run fmt:check` passed; no UI or DTO changed.
+- Not verified: a large database, a swap while the app holds a long transaction (`lock_wait_timeout` 60s), a crash
+  between the swap and dropping trash (covered only by the leftover cleanup unit test), arm64.

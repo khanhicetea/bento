@@ -83,6 +83,26 @@ func (m *Manager) EnsureSecrets(s domain.DataService, established bool) error {
 	return nil
 }
 
+// AppClientFile writes a private MySQL option file that logs in as the
+// binding user and returns its path inside the service container. The caller
+// must call remove when done. Restores replay dumps through it so that
+// objects without a DEFINER become the binding user's, never root's.
+func (m *Manager) AppClientFile(service, user, password string) (inContainer string, remove func(), err error) {
+	if _, err := ident(user); err != nil {
+		return "", nil, err
+	}
+	if !passwordPattern.MatchString(password) {
+		return "", nil, errors.New("binding password has an unexpected format")
+	}
+	name := "app-" + platform.RandomHex(8) + ".cnf"
+	host := filepath.Join(m.secretsDir(service), name)
+	cnf := fmt.Sprintf("[client]\nuser=%s\npassword=%s\nhost=127.0.0.1\nprotocol=tcp\n", user, password)
+	if err := platform.AtomicWrite(host, []byte(cnf), 0o400, platform.RootOwner); err != nil {
+		return "", nil, err
+	}
+	return "/run/bento-secrets/" + name, func() { _ = os.Remove(host) }, nil
+}
+
 // AdminPassword reads a service administrator secret (backend-internal only).
 func (m *Manager) AdminPassword(service string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(m.secretsDir(service), "root-password"))

@@ -316,8 +316,10 @@ func (d Deps) dumpRelational(ctx context.Context, t Target, w io.Writer) error {
 var definerClause = regexp.MustCompile("\\s*DEFINER\\s*=\\s*(?:`(?:[^`]|``)*`|'(?:[^']|'')*'|[A-Za-z0-9_.%-]+)@(?:`(?:[^`]|``)*`|'(?:[^']|'')*'|[A-Za-z0-9_.%-]+)")
 
 // definerFilter strips DEFINER=user@host clauses from a mysqldump stream.
-// Data lines (INSERT) are passed through unbuffered; other lines are
-// buffered to the newline and rewritten.
+// Data lines (INSERT) are passed through unchanged however the stream is
+// chunked; other lines are buffered to the newline and rewritten. Restores
+// replay the result as the binding user, so every view, routine, trigger and
+// event comes back owned by that user.
 type definerFilter struct {
 	w           io.Writer
 	line        []byte
@@ -350,12 +352,14 @@ func (f *definerFilter) Write(p []byte) (int, error) {
 			f.line = append(f.line, p[:i+1]...)
 			p = p[i+1:]
 		}
-		if len(f.line) >= len(insertPrefix) && bytes.HasPrefix(f.line, insertPrefix) && (i < 0) {
+		// A data line is recognised by its first bytes, whether or not its
+		// newline arrived in the same chunk, and is never rewritten.
+		if bytes.HasPrefix(f.line, insertPrefix) {
 			if _, err := f.w.Write(f.line); err != nil {
 				return 0, err
 			}
 			f.line = f.line[:0]
-			f.passthrough = true
+			f.passthrough = i < 0
 			continue
 		}
 		if i >= 0 {

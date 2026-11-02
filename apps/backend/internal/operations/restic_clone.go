@@ -1114,7 +1114,8 @@ func (c *Controller) runClone(
 		if d.Engine == domain.EngineSQLite {
 			err = deps.RestoreSQLite(app, b, dump)
 		} else {
-			err = deps.RestoreRelational(ctx, app, b, target, dump)
+			// The clone is new and stopped, so nothing needs quiescing.
+			_, err = deps.RestoreRelational(ctx, app, b, target, dump, c.restoreOptions(ctx, r, nil))
 		}
 		if err != nil {
 			return nil, Fail("restore-failed", "Try again.", "%s: %v", target, err)

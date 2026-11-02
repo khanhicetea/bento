@@ -1,8 +1,6 @@
 package backup
 
 import (
-	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,95 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
-
-// RestoreRelational replaces an app-namespaced database with an artifact.
-// Not object-level atomic: a failure may leave a partial destination.
-func (d Deps) RestoreRelational(
-	ctx context.Context,
-	app domain.App,
-	b domain.Binding,
-	database, artifactPath string,
-) error {
-	id, svc, err := d.ServiceContainer(ctx, b.Service)
-	if err != nil {
-		return err
-	}
-	src, err := Decompress(artifactPath)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	var stderr strings.Builder
-	switch svc.Engine {
-	case domain.EngineMySQL:
-		peek := bufio.NewReaderSize(src, dumpPeekBytes)
-		// A short dump returns fewer bytes and io.EOF; the charset sniff only
-		// needs whatever is available.
-		head, _ := peek.Peek(dumpPeekBytes)
-		reset := fmt.Sprintf(
-			"DROP DATABASE IF EXISTS `%s`;\nCREATE DATABASE `%s` %s;\nGRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\n",
-			database,
-			database,
-			mysqlCharsetClause(head),
-			database,
-			b.Username,
-		)
-		if _, err := d.Data.SQL(ctx, svc, id, "", reset); err != nil {
-			return err
-		}
-		res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{
-			Cmd: []string{"mysql", "--defaults-extra-file=/run/bento-secrets/client.cnf", database}, Stdin: peek,
-			Stdout: io.Discard, Stderr: &limitWriter{w: &stderr, n: 4096},
-		})
-		if err != nil {
-			return err
-		}
-		if res.ExitCode != 0 {
-			return fmt.Errorf("mysql restore failed: %s", strings.TrimSpace(stderr.String()))
-		}
-	case domain.EnginePostgres:
-		reset := fmt.Sprintf(
-			"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();\n"+
-				"DROP DATABASE IF EXISTS \"%s\";\nCREATE DATABASE \"%s\" OWNER \"%s\";\n",
-			database,
-			database,
-			database,
-			b.Username,
-		)
-		if _, err := d.Data.SQL(ctx, svc, id, "", reset); err != nil {
-			return err
-		}
-		lockdown := fmt.Sprintf(
-			"REVOKE ALL ON DATABASE \"%s\" FROM PUBLIC;\n"+
-				"REVOKE ALL ON SCHEMA public FROM PUBLIC;\n"+
-				"ALTER SCHEMA public OWNER TO \"%s\";\n",
-			database,
-			b.Username,
-		)
-		if _, err := d.Data.SQL(ctx, svc, id, database, lockdown); err != nil {
-			return err
-		}
-		// Objects are created as the app role so ownership stays app-scoped.
-		stream := io.MultiReader(strings.NewReader(fmt.Sprintf("SET ROLE \"%s\";\n", b.Username)), src)
-		res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{
-			Cmd:   []string{"psql", "-U", "postgres", "-d", database, "-X", "-q", "-v", "ON_ERROR_STOP=1"},
-			Stdin: stream, Stdout: io.Discard, Stderr: &limitWriter{w: &stderr, n: 4096},
-		})
-		if err != nil {
-			return err
-		}
-		if res.ExitCode != 0 {
-			return fmt.Errorf("postgres restore failed: %s", strings.TrimSpace(stderr.String()))
-		}
-	default:
-		return errors.New("not a relational binding")
-	}
-	return nil
-}
 
 // RestoreSQLite replaces the binding's database file. The app must be
 // stopped so no writer holds the file.

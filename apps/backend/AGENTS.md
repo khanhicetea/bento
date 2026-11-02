@@ -110,6 +110,9 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 - **Scoped reloads** validate with the running process and must `Changes.Restore` the previous bytes on failure
   without sending a reload.
 - **Readiness failures never trigger recreation**; only missing/stopped containers or a changed fingerprint do.
+- **Never replay a dump as the database administrator.** Restores stage into `bento__rs_*` as the binding user and
+  then swap (`backup.RestoreRelational`); objects without a DEFINER/owner become whoever runs the statement.
+  `bento__` is a reserved database prefix.
 
 ## Tests
 

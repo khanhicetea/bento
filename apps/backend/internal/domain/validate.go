@@ -134,9 +134,16 @@ func ValidateDatabaseSuffix(suffix string) error {
 	return nil
 }
 
+// ReservedDatabasePrefix names the staging databases of restores
+// (backup.stagingNames); no app database may use it.
+const ReservedDatabasePrefix = "bento__"
+
 func ValidateDatabaseName(name string) error {
 	if !dbNamePattern.MatchString(name) {
 		return fmt.Errorf("must match %s", dbNamePattern)
+	}
+	if strings.HasPrefix(name, ReservedDatabasePrefix) {
+		return fmt.Errorf("the %s prefix is reserved", ReservedDatabasePrefix)
 	}
 	return nil
 }

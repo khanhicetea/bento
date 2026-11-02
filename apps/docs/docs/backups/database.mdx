@@ -38,7 +38,14 @@ How it behaves:
   </Step>
 </Steps>
 
+Bento restores the dump into a temporary database first, as the app's own database user, then swaps it in for the
+live one. If the dump is damaged or contains a statement the app's user may not run, the restore fails and the live
+database is untouched. The app keeps running through the swap. MySQL cannot move views, stored procedures or events
+between databases, so a MySQL database that has them is rebuilt in place instead, with the app stopped for that step
+and started again after.
+
 <Callout type="warning">
-Restore overwrites live data and is not atomic. When unsure, restore into a fresh database first (add one in the app's
-Data tab). **SQLite** restores need the app stopped.
+Restore replaces live data, including anything written since the dump. Everything in the restored database belongs
+to the app's user, so a MySQL dump with triggers or stored functions fails to restore: the app's user cannot create
+them. **SQLite** restores need the app stopped.
 </Callout>

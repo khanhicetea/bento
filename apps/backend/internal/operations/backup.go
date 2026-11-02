@@ -624,19 +624,66 @@ func (c *Controller) handleBackupRestore(ctx context.Context, r *Run) (any, erro
 		if obs.Running {
 			return nil, Fail("app-running", "Stop the app before restoring a SQLite database.", "app %s is running", app.Slug)
 		}
-		err = deps.RestoreSQLite(app, b, path)
-	} else {
-		err = deps.RestoreRelational(ctx, app, b, req.Database, path)
+		if err := deps.RestoreSQLite(app, b, path); err != nil {
+			return nil, Fail(
+				"restore-failed",
+				"The destination may be partially restored; restore again or from another artifact.",
+				"%v",
+				err,
+			)
+		}
+		return map[string]any{"restored": req.Database, "from": req.Artifact}, nil
 	}
+	// The app keeps running through a swap; it is stopped only when MySQL
+	// must rebuild the live database in place, and started again after.
+	var stopped bool
+	defer func() {
+		if stopped {
+			_ = c.resumeStopped(ctx, r, []domain.App{app}, nil)
+		}
+	}()
+	method, err := deps.RestoreRelational(ctx, app, b, req.Database, path, c.restoreOptions(ctx, r, func(ctx context.Context) error {
+		if err := r.Phase(ctx, "stop-app"); err != nil {
+			return err
+		}
+		obs, err := c.observe(ctx, app)
+		if err != nil || !obs.Exists || !obs.Running {
+			return err
+		}
+		if err := c.Engine.Stop(ctx, obs.ContainerID, runtime.StopTimeout); err != nil {
+			return err
+		}
+		stopped = true
+		r.Info(ctx, "stopped %s: the database has views, routines or events and is restored in place", app.Slug)
+		return nil
+	}))
 	if err != nil {
-		return nil, Fail(
-			"restore-failed",
-			"The destination may be partially restored; restore again or from another artifact.",
-			"%v",
-			err,
-		)
+		return nil, restoreFailed(err)
 	}
-	return map[string]any{"restored": req.Database, "from": req.Artifact}, nil
+	return map[string]any{"restored": req.Database, "from": req.Artifact, "method": method}, nil
+}
+
+// restoreOptions connects a relational restore to r; quiesce may be nil.
+func (c *Controller) restoreOptions(ctx context.Context, r *Run, quiesce func(context.Context) error) backup.RestoreOptions {
+	return backup.RestoreOptions{
+		Phase:   r.Phase,
+		Quiesce: quiesce,
+		Warn:    func(msg string) { r.Warn(ctx, "%s", msg) },
+	}
+}
+
+// restoreFailed reports a failed relational restore, saying whether the
+// live database was touched.
+func restoreFailed(err error) error {
+	if lu := (*backup.LiveUnchangedError)(nil); errors.As(err, &lu) {
+		return Fail("restore-failed", "The live database is unchanged; fix the cause or choose another artifact.", "%v", err)
+	}
+	return Fail(
+		"restore-failed",
+		"The live database may be partly replaced; restore again or from another artifact.",
+		"%v",
+		err,
+	)
 }
 
 // crossAppWarning reports when an artifact was produced for a different app

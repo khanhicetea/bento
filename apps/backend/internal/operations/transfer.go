@@ -149,7 +149,7 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 	var stoppedServices []store.ServiceRow
 	defer func() {
 		// A service that fails to restart fails an otherwise successful export.
-		if rerr := c.resumeAfterExport(ctx, r, stoppedApps, stoppedServices); err == nil {
+		if rerr := c.resumeStopped(ctx, r, stoppedApps, stoppedServices); err == nil {
 			err = rerr
 		}
 	}()
@@ -218,11 +218,11 @@ func (c *Controller) quiesceForExport(
 	return stoppedApps, stoppedServices, nil
 }
 
-// resumeAfterExport restarts what quiesceForExport stopped. It must run to
-// completion even when the export was cancelled; otherwise every app it
+// resumeStopped restarts what quiesceForExport (or a restore) stopped. It
+// must run to completion even when the operation was cancelled; otherwise every app it
 // stopped stays down. It returns a resume-failed error for the first service
 // that did not restart; an app that does not restart is only a warning.
-func (c *Controller) resumeAfterExport(
+func (c *Controller) resumeStopped(
 	ctx context.Context,
 	r *Run,
 	apps []domain.App,
@@ -250,7 +250,7 @@ func (c *Controller) resumeAfterExport(
 		if _, gen, e := c.ensureInstance(rctx, r, a, false); e != nil {
 			r.Warn(rctx, "app %s did not restart: %v", a.Slug, e)
 		} else if e := c.waitReady(rctx, r, a, gen); e != nil {
-			r.Warn(rctx, "app %s not ready after export: %v", a.Slug, e)
+			r.Warn(rctx, "app %s not ready after restart: %v", a.Slug, e)
 		}
 	}
 	return failed

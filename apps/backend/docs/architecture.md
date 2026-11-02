@@ -397,6 +397,32 @@ and treats exit 3 (directory not found) as reachable. The stack-wide backup sett
 `schedules` (kind `backup`; spec: compression, retain, rclone remote); a backup request's `scheduleId` selects whose
 retention and remote apply.
 
+MySQL dumps pass through `definerFilter`, which removes `DEFINER=` from DDL lines and never touches `INSERT` lines,
+however the exec output is chunked. Relational restores (`backup.RestoreRelational`, used by `backup.restore` and by
+clones) never replay a dump as the administrator:
+
+- The artifact is replayed into a staging database, `bento__rs_<sha256(db)[:16]>` (`domain.ReservedDatabasePrefix`
+  is refused for app databases), as the binding user. MySQL logs in through a per-restore option file
+  (`dataservices.AppClientFile`, `0400`, removed afterwards), after the restore stream passes the same
+  `definerFilter`. PostgreSQL runs `psql -U <user>` over the local socket, not superuser plus `SET ROLE`. Every
+  restored view, routine, trigger and event therefore belongs to the binding user, and a dump statement beyond the
+  user's grants (`GRANT … ON *.*`, `RESET ROLE`, another database) fails. MySQL's binary log is on, so a dump with
+  triggers or stored functions fails too, exactly as the app could not have created them itself.
+- A truncated or corrupt artifact (the read error is recorded by `checkedReader`, because the client may exit 0 on
+  the early end of input), a refused statement, or a cancellation before the `swap` phase drops the staging database
+  and leaves the live one untouched (`backup.LiveUnchangedError`, guidance "The live database is unchanged").
+- Swap: PostgreSQL refuses new connections to the live database, terminates its sessions and renames live → trash
+  and staging → live in one transaction (a failed swap re-allows connections). MySQL moves every live table to
+  `bento__rt_…` and every staged table into the live database in one `RENAME TABLE` (atomic; `lock_wait_timeout`
+  60s). The live database's triggers and views are dropped just before it, and its routines and events just after.
+  The app keeps running. Trash and staging databases are dropped afterwards; a leftover is dropped by the next
+  restore of that database only if it is owned by (PostgreSQL) or granted to (MySQL, `_`-escaped grant) the binding
+  user, and refused otherwise.
+- MySQL cannot move views, routines or events between schemas. When the staged database has any, the handler stops
+  the app (`RestoreOptions.Quiesce`), the live database is dropped and the artifact replayed into it a second time
+  (the staging replay proved that it replays), and the app is started again (`resumeStopped`). The result's `method`
+  is `swap` or `in-place`.
+
 ## Scheduler: `operations/schedules.go`
 
 Platform jobs are rows in `schedules` (`id`, `kind`, `cron`, `enabled`, `spec_json`, bookkeeping). App jobs are not:

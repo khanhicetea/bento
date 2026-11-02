@@ -1,8 +1,9 @@
 # Backlog
 
 Open findings from the production-readiness audit of 2026-11-01. The release blockers fixed since (the store
-migration framework, the edge image pull and recreate rollback, the env loader's trailing `=`, and the scheduler UI
-served from the app's socket) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
+migration framework, the edge image pull and recreate rollback, the env loader's trailing `=`, the scheduler UI
+served from the app's socket, relational restores dropping the live database first, and MySQL restores creating
+root-owned objects) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
 unless they start with `apps/`. Line numbers are as of commit `8a88634` and drift; the named function or template is
 the stable reference.
 
@@ -11,34 +12,17 @@ code but the trigger was not reproduced.
 
 ## Release blockers
 
-### 1. Relational restore drops the live database before the artifact is checked (confirmed)
+### 1. MySQL grants treat `_` in database names as a wildcard: one app can read another's database (confirmed live)
 
-- `internal/backup/restore.go:44-75` runs `DROP DATABASE` + `CREATE DATABASE`, then streams the artifact. The caller
-  is `internal/operations/backup.go:619-631`.
-- Nothing decompresses the artifact fully beforehand, takes a pre-restore dump, or stops the app.
-- How it goes wrong:
-  - a truncated or bit-rotted `.zst` (the checksum fails mid-stream, after MySQL has committed part of it);
-  - a PostgreSQL statement the app role cannot run under `SET ROLE` (`ON_ERROR_STOP`);
-  - the app reconnecting to the empty database and auto-migrating.
-
-  Each leaves the live database empty or partial.
-- Fix: verify the artifact with a full decompress pass first. Then either take an automatic pre-restore dump, or
-  restore into a temporary database and swap it in (PostgreSQL `ALTER DATABASE … RENAME`). Stop the app for the
-  restore.
-
-### 2. MySQL restore turns app objects into root-privileged ones (confirmed in code, not reproduced live)
-
-- `internal/backup/backup.go:279-292` strips every `DEFINER` clause from the dump. `restore.go:56` replays it through
-  `client.cnf`, which logs in as MySQL `root` (`internal/dataservices/services.go:73`). Restic clones replay the same
-  way (`internal/operations/restic_clone.go` around line 1117).
-- Every view, trigger, routine and event therefore comes back as `DEFINER=root@localhost` with `SQL SECURITY
-  DEFINER`. The app user has `ALL ON db.*`, which includes `EXECUTE` and `TRIGGER`. A tenant that plants a
-  procedure gets root access to every database after any restore or clone.
-- Related: the DEFINER filter also rewrites row data. When a whole `INSERT` line arrives in one write, the regex runs
-  over it, and `'see DEFINER=root@localhost here'` becomes `'see here'` (`backup.go:345-365`, reproduced with a copy of
-  the filter). `backup_test.go:119` only feeds 7-byte chunks, so it never takes that path.
-- Fix: replay as the binding user, or rewrite `DEFINER` to the binding user instead of removing it. Apply the filter
-  only to DDL/comment lines, never to `INSERT` lines.
+- `mysqlDatabase` (`internal/dataservices/services.go`) runs ``GRANT ALL PRIVILEGES ON `<db>`.*`` with the name
+  unescaped. In a database-level grant `_` matches any character (`partial_revokes` is off by default), and every
+  Bento database name contains `_` (`<slug with - as _>_<suffix>`).
+- Reproduced on MySQL 8.4.13: a user granted `` `a_b_main`.* `` read a table in another tenant's `a1b_main` and
+  created `axb_main`. So the user of app `a-b` can read and write app `a1b`'s database (any two slugs that differ only
+  where one has `-`).
+- Fix: grant `` `a\_b\_main`.* `` (escape `_` and `%`, as restores already do for staging databases), and have
+  provisioning or the reconciler replace existing wildcard grants with escaped ones. The restore reset path and
+  `swapMySQL` re-grant the live database the same unescaped way and must change with it.
 
 ## Before public traffic
 
@@ -115,6 +99,12 @@ code but the trigger was not reproduced.
   - The import runs `tar` as root in the manifest's `svc.Image` (`internal/stack/volumes.go:30`) without checking it
     against the catalog.
   - Fix: use `openat`/`O_NOFOLLOW` directory fds, mask modes to `0o777`, and accept only catalog images.
+- **Client meta-commands in a crafted dump** (plausible). Restores replay dumps through `mysql` and `psql` exec'd as
+  root in the service container. Both clients run shell commands from their input (`system`/`\!`), so a crafted
+  artifact (a hand-placed file, or a dump in a tampered restic repository) could run commands next to the data
+  volume and `/run/bento-secrets`. Bento's own dumps never contain them. Fix: pass `--skip-system-command` where the
+  pinned `mysql` client supports it, put `\restrict <random>` in front of the `psql` stream, and run the exec as the
+  image's database user.
 - **Off-site dumps are plaintext.** `internal/backup/rclone.go:229` runs a plain `rclone copy`. Nothing requires or
   suggests a `crypt` remote, and remote copies are never pruned.
 - **Export has no integrity protection.** There is no fsync of `stack.tar.zst` or the volume tars
@@ -178,7 +168,8 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 - arm64 execution, and whether the non-PHP digest pins are multi-arch index digests.
 - ACME issuance, HTTP/3, external certificates, a real Cloudflare Tunnel, and real git-host webhook deliveries.
-- SQLite restore. Relational restore round-trips beyond MySQL 8.4 and PostgreSQL 17.
+- SQLite restore. Relational restores of large databases (the swap is verified on small ones with MySQL 8.0/8.4/9.7
+  and PostgreSQL 16/17), and a MySQL swap while the app holds a long transaction (`lock_wait_timeout` 60s).
 - Crash recovery mid-clone (`restic.recover` runs a database drop) on real Docker. Interrupted or tampered imports.
 - Scheduled backup retention pruning. A large-database restore drill. Disk-full behaviour.
 - Stop persistence across a real host reboot.
