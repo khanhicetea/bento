@@ -1,3 +1,9 @@
+// MPTCP is off by default: kernel MPTCP has a use-after-free reachable on
+// attach, so Bento never opens multipath sockets. Operators can still opt in at
+// run time with GODEBUG=multipathtcp=1 (the environment overrides this default).
+
+//go:debug multipathtcp=0
+
 // Command bento is the Bento control plane: the resident backend, offline
 // stack commands, and a thin client for the running backend.
 package main
