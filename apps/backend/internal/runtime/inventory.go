@@ -106,8 +106,9 @@ func (n Names) ClassifyInventory(
 	var inv Inventory
 	for _, i := range images {
 		built := i.Labels[LabelManaged] == "true"
+		own := n.classify(i.Labels, built, imgs, i.ID)
 		inv.Images = append(inv.Images, InventoryImage{ImageSummary: i, Built: built,
-			Ownership: n.classify(nil, built, imgs, i.ID), UsedBy: imgs.stack[i.ID], Prunable: built && !anyUse[i.ID]})
+			Ownership: own, UsedBy: imgs.stack[i.ID], Prunable: built && !anyUse[i.ID] && own != OwnedOtherStack})
 	}
 	for _, v := range volumes {
 		inv.Volumes = append(inv.Volumes, InventoryVolume{VolumeInfo: v, Service: v.Labels[LabelService],
@@ -120,9 +121,11 @@ func (n Names) ClassifyInventory(
 	return inv
 }
 
-// classify prefers explicit stack labels, then observed use. A Bento-built
-// image carries no stack label (images may be shared between stacks), so an
-// unused one is attributed to this stack.
+// classify prefers explicit stack labels, then observed use. Runtime builds
+// carry the stack label of the stack that recorded them; an unlabeled
+// Bento-built image (the backup image, or one built before builds were
+// recorded) may be shared between stacks, so an unused one is attributed to
+// this stack.
 func (n Names) classify(labels map[string]string, builtImage bool, u usage, key string) Ownership {
 	if labels[LabelManaged] == "true" && labels[LabelStackID] != "" {
 		if labels[LabelStackID] == n.StackID {
@@ -146,7 +149,7 @@ func (n Names) classify(labels map[string]string, builtImage bool, u usage, key 
 func PrunableImage(
 	containers []container.Summary,
 	images []docker.ImageSummary,
-	id string,
+	id, stackID string,
 ) (docker.ImageSummary, bool) {
 	for _, i := range images {
 		if i.ID != id {
@@ -154,6 +157,9 @@ func PrunableImage(
 		}
 		if i.Labels[LabelManaged] != "true" {
 			return i, false
+		}
+		if owner := i.Labels[LabelStackID]; owner != "" && owner != stackID {
+			return i, false // another stack's recorded build
 		}
 		for _, c := range containers {
 			if c.ImageID == id {

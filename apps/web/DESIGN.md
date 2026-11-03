@@ -187,6 +187,9 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   Add in its head) in the empty slot; reconciliation beside retained data with
   `delete` prune; API tokens list (Revoke, confirm) beside a New token form cell that turns tamago and shows the
   token once with a Warning notice) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
+  Images starts with a Runtimes box: one tile per runtime (state pill ✓ CURRENT, ▲ UPDATE, ◌ ROLLING OUT, NOT BUILT;
+  current tag and headline versions; app rows with a status dot, `name from -> to` changes and Roll out / Roll back;
+  Rebuild and, when apps are behind, a primary Roll out n that confirms first), Rebuild all in the box head.
 
 ## 8. Do / Don't
 

@@ -100,6 +100,9 @@ type Controller struct {
 	Stack  store.StackIdentity
 	Names  runtime.Names
 	Images *runtime.ImageManager
+	// WakeReconciler asks the reconciler for a pass soon (nil: wait for the next
+	// periodic one). Rollouts call it after changing build assignments.
+	WakeReconciler func()
 
 	handlers map[string]handler
 	wake     chan struct{}

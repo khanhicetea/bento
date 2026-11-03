@@ -3,45 +3,69 @@ package domain
 import (
 	"fmt"
 	"slices"
-	"strings"
 )
 
 // Curated toolchains. A toolchain is a command environment inside a shared
-// managed image, not a separate lifecycle engine. Base references are pinned by
-// digest where the release has been verified; the resolved image ID of every
-// built managed image is additionally recorded in state.
+// managed image, not a separate lifecycle engine.
+//
+// Base references are floating tags: building an image pulls the newest
+// release under the tag, so an operator rebuild (System > Images) picks up
+// PHP and Debian patch releases without a Bento release. Every build records
+// the base image ids and tool versions it resolved (store.RuntimeBuild), and
+// apps keep running the build they were rolled out to until the operator rolls
+// them forward.
 //
 // PHP2Shell (CVE-2026-109618, CVE-2026-109619; fixed in 8.2.35, 8.3.36, 8.4.27,
-// 8.5.12): a floating tag would not change the image hash, so the fixed
-// releases are pinned by digest to force a rebuild. Upstream ships no fix for
-// 7.4, 8.0 and 8.1; those are built from deb.sury.org packages on Debian (see
-// PHPSuryPackages), so their base is Debian itself.
+// 8.5.12): PHPMinVersions refuses an official base older than the fixed
+// release, and changing a floor changes the image inputs, so every app on that
+// PHP version is rebuilt. Upstream ships no fix for 7.4, 8.0 and 8.1; those are
+// built from deb.sury.org packages on Debian (see PHPSuryPackages), so their
+// base is Debian itself.
 var PHPVersions = map[string]string{
 	"7.4": DebianBase,
 	"8.0": DebianBase,
 	"8.1": DebianBookwormBase,
-	"8.2": "php:8.2-fpm-trixie@sha256:77900c43ba8b8f2f61c73bcf68afbfb1b72a349052472e7640d402ef998754b3",
-	"8.3": "php:8.3-fpm-trixie@sha256:56e2cf0558ddfbe36e90030f763b72be2f763bcd9075890e9c68420e0dfa827e",
-	"8.4": "php:8.4-fpm-trixie@sha256:af1728147713459bda545446e3fae81cea5119543c46f28b9a077c7b3ff149c2",
-	"8.5": "php:8.5-fpm-trixie@sha256:f49965c6e6a237eb3b27a6fc565e167839dc8abc65ee0652af0078f6ecdf4bbd",
+	"8.2": "php:8.2-fpm-trixie",
+	"8.3": "php:8.3-fpm-trixie",
+	"8.4": "php:8.4-fpm-trixie",
+	"8.5": "php:8.5-fpm-trixie",
 }
 
+// PHPMinVersions is the oldest PHP release accepted from each official base.
+var PHPMinVersions = map[string]string{
+	"8.2": "8.2.35",
+	"8.3": "8.3.36",
+	"8.4": "8.4.27",
+	"8.5": "8.5.12",
+}
+
+// HTTPToolchains maps each HTTP toolchain version to the mise tool requests
+// installed in its image on DebianBase. A request names a release line; the
+// build resolves its newest release. Python is compiled from source.
 var HTTPToolchains = map[string]map[string]string{
 	"node": {
-		"20": "node:20-trixie-slim@sha256:abfbe12cc943141a0c9e8c0a57d710df1dadd95d35e8662cc02958b284d1f35b",
-		"22": "node:22-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf",
-		"24": "node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea",
+		"20": "node@20 pnpm@latest",
+		"22": "node@22 pnpm@latest",
+		"24": "node@24 pnpm@latest",
 	},
 	"bun": {
-		"1.2": "oven/bun:1.2-debian@sha256:2505ef864643617d187a48ffdc069c35823a9fd16599259e49f7a2d685851f99",
-		"1.3": "oven/bun:1.3-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f",
-		"1.4": "oven/bun:1.4-debian@sha256:93d5032fe06d163427822dc1598f420363759bb18155c9cc90eb1be05a64a19e",
+		"1.2": "bun@1.2",
+		"1.3": "bun@1.3",
+		"1.4": "bun@1.4",
 	},
 	"python": {
-		"3.12": "python:3.12-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704",
-		"3.13": "python:3.13-slim-trixie@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962",
+		"3.12": "python@3.12",
+		"3.13": "python@3.13",
 	},
 }
+
+// PHPTools are the mise tool requests installed in every PHP image, so apps
+// can install node_modules and build front-end assets with the tooling exec.
+const PHPTools = "node@24 pnpm@latest"
+
+// ComposerChannel is the getcomposer.org release channel installed in PHP
+// images; a rebuild picks up its newest release.
+const ComposerChannel = "latest-2.x"
 
 // PHPSuryPackages lists the PHP versions built from deb.sury.org packages and
 // the oldest package version of each that is accepted. A backport keeps the
@@ -57,33 +81,33 @@ var PHPSuryPackages = map[string]string{
 // (1505 8500 A023 5D97 F5D1 0063 B188 E2B6 95BD 4743, expires 2028-02-04).
 const SuryKeySHA256 = "b486fd5488185c4c46467960fa69c53d5085fec492cf76b9eaf3db33561c9d7c"
 
-const DebianBase = "debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
+const DebianBase = "debian:trixie-slim"
 
 // DebianBookwormBase is the base of PHP 8.1 only: Sury's trixie arm64 index
 // still carries the unfixed 8.1.34-8, below the PHPSuryPackages floor. Move 8.1
 // to DebianBase once trixie arm64 has 8.1.34-9 or newer.
-const DebianBookwormBase = "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+const DebianBookwormBase = "debian:bookworm-slim"
 
 // ValkeyBuildBase compiles Valkey once for every runtime image. The binaries
 // link only libc and libm, and glibc runs programs built against an older
 // release, so this must stay the oldest Debian release among the runtime
-// bases (bookworm: PHP 8.1 and Bun 1.2; everything else is trixie).
+// bases (bookworm: PHP 8.1; everything else is trixie).
 const ValkeyBuildBase = DebianBookwormBase
 
 // RuntimeDebianBase returns the Debian base whose release matches a runtime
-// key's base image. End-of-life bullseye releases reuse the PHP base itself:
-// the current debian:bullseye-slim carries security updates that
-// archive.debian.org cannot satisfy, while the PHP image's packages resolve.
+// key's base image: the Debian stages of an image (artifacts, toolchain, and
+// the runtime stage itself) must share its libc.
 func (k ImageKey) RuntimeDebianBase() string {
-	if ref, err := k.BaseImage(); err == nil && (strings.Contains(ref, "-bullseye") || ref == DebianBookwormBase) {
+	if ref, err := k.BaseImage(); err == nil && ref == DebianBookwormBase {
 		return ref
 	}
 	return DebianBase
 }
 
-// Supervision, scheduler and Valkey artifacts downloaded (and
-// checksum-verified) while building managed runtime images. Valkey is a source
-// tarball (one checksum for every architecture), compiled on ValkeyBuildBase.
+// Supervision, scheduler, Valkey and mise artifacts downloaded (and
+// checksum-verified) while building managed runtime images. These are pinned:
+// changing one is a Bento release. Valkey is a source tarball (one checksum
+// for every architecture), compiled on ValkeyBuildBase.
 var RuntimeArtifacts = map[string]string{
 	"S6_OVERLAY_VERSION":       "3.2.3.2",
 	"S6_OVERLAY_NOARCH_SHA256": "5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12",
@@ -92,30 +116,16 @@ var RuntimeArtifacts = map[string]string{
 	"MINICROND_VERSION":        "0.6.0",
 	"MINICROND_AMD64_SHA256":   "fe4651bde9f2f3da238a875dedf9c64e43a84dec1190299e6817520248499ec9",
 	"MINICROND_ARM64_SHA256":   "21337b0e6ecfdfa81861308272481a380c199138c955d626d80c6a7bc33b8d4c",
-	"COMPOSER_VERSION":         "2.10.3",
-	"COMPOSER_SHA256":          "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6",
 	"VALKEY_VERSION":           "9.1.3",
 	"VALKEY_SHA256":            "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293",
+	"MISE_VERSION":             "2026.10.12",
+	"MISE_AMD64_SHA256":        "72404716768b5b044cbd5170136d3d795cbd592658b6e932b66f0f8d67a54875",
+	"MISE_ARM64_SHA256":        "31bbf697b289fde4b5623b223af288edd9ef86298ce9ecff705ac867f6f27e09",
 }
 
 // ValkeyPort is the loopback port of an app's own Valkey server. HTTP apps
 // cannot listen on it.
 const ValkeyPort = 6379
-
-// PHPNodeArtifacts pin the Node.js LTS toolchain (with npm) and pnpm layered
-// into every managed PHP image for installing and building front-end assets.
-var PHPNodeArtifacts = map[string]string{
-	"NODE_BASE":    HTTPToolchains["node"]["24"],
-	"PNPM_VERSION": "12.7.0",
-	"PNPM_SHA256":  "1a7fe4b36abead79ee13e2f2c2089ddd37fee016179b9fe56a85a44ef72aaf7f",
-}
-
-// PHPRedisArtifacts pin the phpredis PECL package compiled into the PHP images
-// built on the official PHP image. The deb.sury.org images install php-redis.
-var PHPRedisArtifacts = map[string]string{
-	"PHPREDIS_VERSION": "6.3.0",
-	"PHPREDIS_SHA256":  "0d5141f634bd1db6c1ddcda053d25ecf2c4fc1c395430d534fd3f8d51dd7f0b5",
-}
 
 // ResticArtifacts pin the restic binary layered onto RcloneImage to build the
 // app backup image (restic's rclone backend runs the rclone next to it).
@@ -281,7 +291,8 @@ func (r Runtime) ImageKey() ImageKey {
 	return ImageKey{}
 }
 
-// BaseImage returns the pinned base reference for a runtime image key.
+// BaseImage returns the base reference (a floating tag) for a runtime image
+// key. HTTP toolchains are installed by mise on DebianBase.
 func (k ImageKey) BaseImage() (string, error) {
 	if k.Kind == RuntimePHP {
 		if ref, ok := PHPVersions[k.Version]; ok {
@@ -289,9 +300,23 @@ func (k ImageKey) BaseImage() (string, error) {
 		}
 		return "", fmt.Errorf("unsupported PHP version %q", k.Version)
 	}
+	if _, err := k.Tools(); err != nil {
+		return "", err
+	}
+	return DebianBase, nil
+}
+
+// Tools returns the mise tool requests installed in the key's image.
+func (k ImageKey) Tools() (string, error) {
+	if k.Kind == RuntimePHP {
+		if _, ok := PHPVersions[k.Version]; ok {
+			return PHPTools, nil
+		}
+		return "", fmt.Errorf("unsupported PHP version %q", k.Version)
+	}
 	if versions, ok := HTTPToolchains[k.Toolchain]; ok {
-		if ref, ok := versions[k.Version]; ok {
-			return ref, nil
+		if tools, ok := versions[k.Version]; ok {
+			return tools, nil
 		}
 	}
 	return "", fmt.Errorf("unsupported toolchain %s %s", k.Toolchain, k.Version)

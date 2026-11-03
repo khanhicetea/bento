@@ -884,6 +884,58 @@ type DockerInventory struct {
 	Networks []DockerNetwork `json:"networks"`
 }
 
+// RuntimeBuild is one build of a managed runtime image. Manifest holds the
+// tool versions it resolved and, under "base:<ref>", the image id each
+// floating base resolved to.
+type RuntimeBuild struct {
+	ID       int64             `json:"id"`
+	Tag      string            `json:"tag"`
+	ImageID  string            `json:"imageId"`
+	BuiltAt  string            `json:"builtAt"`
+	Current  bool              `json:"current"`
+	Manifest map[string]string `json:"manifest"`
+}
+
+// RuntimeImageApp is one provisioned app of a runtime.
+type RuntimeImageApp struct {
+	ID             string         `json:"id"`
+	Slug           string         `json:"slug"`
+	DesiredRuntime DesiredRuntime `json:"desiredRuntime"`
+	// BuildID is the build the app runs or will run (0: none built yet).
+	BuildID int64 `json:"buildId"`
+	// Behind: a newer current build is available to roll out.
+	Behind bool `json:"behind"`
+	// Rolling: a rollout assigned the build; the instance is not yet
+	// confirmed ready on it.
+	Rolling bool `json:"rolling"`
+	// RollbackBuildID is the earlier build the app can go back to (0: none).
+	RollbackBuildID int64 `json:"rollbackBuildId"`
+	// Changes lists "name from -> to" for rolling out the current build.
+	Changes []string `json:"changes"`
+}
+
+// RuntimeImage is one runtime (php-8.4, node-24) and its builds.
+type RuntimeImage struct {
+	Key       string            `json:"key"`
+	Kind      RuntimeKind       `json:"kind"`
+	Toolchain string            `json:"toolchain"`
+	Version   string            `json:"version"`
+	Current   *RuntimeBuild     `json:"current,omitempty"`
+	Builds    []RuntimeBuild    `json:"builds"`
+	Apps      []RuntimeImageApp `json:"apps"`
+}
+
+type RuntimeImageList struct {
+	Images []RuntimeImage `json:"images"`
+}
+
+// RolloutRequest moves apps of a runtime to one of its builds. No buildId is
+// the current build; no appIds is every app on another build.
+type RolloutRequest struct {
+	BuildID int64    `json:"buildId,omitempty"`
+	AppIDs  []string `json:"appIds,omitempty"`
+}
+
 type Session struct {
 	Authenticated bool   `json:"authenticated"`
 	CSRFToken     string `json:"csrfToken,omitempty"`

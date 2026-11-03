@@ -100,9 +100,12 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //     they read, in the clone pool (one at a time), while they download the
 //     snapshot into private staging. They then escalate to global claims
 //     (Run.Escalate) before creating and provisioning the new app.
-//   - image.prepare holds its runtime key exclusively, in the image-build
-//     pool. It only builds (ImageManager serializes per tag and excludes
-//     prune); image.prune stays global.
+//   - image.prepare and image.rebuild hold their runtime key exclusively, in
+//     the image-build pool. They only build (ImageManager serializes per key
+//     and excludes prune); image.prune stays global.
+//   - image.rollout and image.rollout-stop hold their runtime key
+//     exclusively. They only write build assignments; the reconciler
+//     replaces the instances.
 //
 // Everything else runs alone: edge/tunnel/dbadmin apply, provision, publish,
 // unpublish, remove, bindings, permissions, backup, restore, export, image prune.
@@ -148,8 +151,10 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 		return claims{shared: []string{resticClaim(op.TargetID)}, pool: clonePool}
 	case KindAppRestoreFromBackup:
 		return claims{shared: []string{"restic-remote:" + op.TargetID}, pool: clonePool}
-	case KindImagePrepare:
+	case KindImagePrepare, KindImageRebuild:
 		return claims{excl: []string{imageClaim(op.TargetID)}, pool: imageBuildPool}
+	case KindImageRollout, KindImageRolloutStop:
+		return claims{excl: []string{imageClaim(op.TargetID)}}
 	}
 	return globalClaims
 }

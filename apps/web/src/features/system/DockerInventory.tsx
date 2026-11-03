@@ -8,6 +8,7 @@ import { Cell, DomainError, DomainLoading } from "../../components/DomainState.t
 import { formatBytes, formatRelative } from "../../lib/format.ts";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
+import { RuntimeImages } from "./RuntimeImages.tsx";
 
 export type DockerKind = "images" | "volumes" | "networks";
 
@@ -22,6 +23,7 @@ export function DockerInventory({ kind }: { kind: DockerKind }) {
   return (
     <>
       <Summary inventory={inv} />
+      {kind === "images" && <RuntimeImages />}
       <div className="box">
         <Cell>
           {count === 0 ? (

@@ -85,7 +85,8 @@ func (c *Controller) BackupDeps(progress func(string)) backup.Deps {
 			return id, svc.DataService, err
 		},
 		ToolSpec: func(ctx context.Context, app domain.App) (docker.ContainerSpec, error) {
-			imageID, _, err := c.Images.Ensure(ctx, app.Runtime.ImageKey(), nil)
+			build, err := c.ensureAppBuild(ctx, app, nil)
+			imageID := build.ImageID
 			if err != nil {
 				return docker.ContainerSpec{}, err
 			}

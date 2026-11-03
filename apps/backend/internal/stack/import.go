@@ -210,6 +210,10 @@ func rewriteImportedState(
 		"DELETE FROM api_tokens",
 		// New networks are planned for this host.
 		"DELETE FROM settings WHERE key = 'network'",
+		// Runtime builds name the source host's images, and an unfinished
+		// rollout must not resume: this host builds its own (assignments
+		// cascade away).
+		"DELETE FROM runtime_builds",
 		// Schedules stay configured but off; bookkeeping restarts on this host.
 		"UPDATE schedules SET enabled=0, last_slot='', last_run_at='', last_op_id='', last_state='', missed_count=0",
 	}

@@ -338,8 +338,12 @@ func TestBuildContextDeterministic(t *testing.T) {
 	}
 	k1, _ := PlanImage(domain.ImageKey{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.4"})
 	k2, _ := PlanImage(domain.ImageKey{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"})
-	if k1.Tag() == k2.Tag() || !strings.HasPrefix(k1.Tag(), "bento-runtime/php:8.4-") {
-		t.Fatal(k1.Tag(), k2.Tag())
+	at := time.Now()
+	if k1.Hash == k2.Hash || !strings.HasPrefix(k1.BuildTag(at), "bento-runtime/php:8.4-"+k1.Hash[:12]+"-") {
+		t.Fatal(k1.BuildTag(at), k2.BuildTag(at))
+	}
+	if again, _ := PlanImage(k1.Key); again.Hash != k1.Hash {
+		t.Fatal("planning is not deterministic")
 	}
 }
 

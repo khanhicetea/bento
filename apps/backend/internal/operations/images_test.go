@@ -33,10 +33,11 @@ func (e *gatedBuilds) BuildImage(
 	tag string,
 	r io.Reader,
 	args, labels map[string]string,
+	opts docker.BuildOptions,
 	progress func(string),
 ) (string, error) {
 	if !e.gated.Load() {
-		return e.Engine.BuildImage(ctx, tag, r, args, labels, progress)
+		return e.Engine.BuildImage(ctx, tag, r, args, labels, opts, progress)
 	}
 	n := e.inflight.Add(1)
 	for p := e.peak.Load(); n > p && !e.peak.CompareAndSwap(p, n); p = e.peak.Load() {
@@ -47,7 +48,7 @@ func (e *gatedBuilds) BuildImage(
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
-	return e.Engine.BuildImage(ctx, tag, r, args, labels, progress)
+	return e.Engine.BuildImage(ctx, tag, r, args, labels, opts, progress)
 }
 
 func submitPrepare(t *testing.T, h *harness, key string) store.Operation {
@@ -85,17 +86,17 @@ func TestImagePrepareBuildsWithoutTouchingApps(t *testing.T) {
 	}
 	h.wait(op)
 	creates, stops := h.fake.CallCount("Create"), h.fake.CallCount("Stop")
-	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
+	before, _, _, err := h.c.plannedBuild(t.Context(), app)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.fake.SetImage(spec.Tag(), "")
+	h.fake.SetImage(before.Tag, "") // the current build's image is gone
 	got := h.wait(submitPrepare(t, h, app.Runtime.ImageKey().String()))
 	if got.State != store.OpSucceeded {
 		t.Fatalf("prepare: %s %s", got.ErrorCode, got.ErrorMessage)
 	}
-	if _, ok, _ := h.fake.ImageID(t.Context(), spec.Tag()); !ok {
-		t.Fatal("prepare did not build the planned tag")
+	if b, _, ok, _ := h.c.plannedBuild(t.Context(), app); !ok || b.ID == before.ID {
+		t.Fatal("prepare did not build a new current build")
 	}
 	if h.fake.CallCount("Create") != creates || h.fake.CallCount("Stop") != stops {
 		t.Fatal("prepare must not stop or create any container")

@@ -4,22 +4,17 @@
 # images/php, so the s6 services, nginx and ini files are shared with it.
 # Built with the Docker Engine API (classic builder); no BuildKit features.
 ARG DEBIAN_BASE
-ARG NODE_BASE
 ARG VALKEY_BUILD_BASE
 
-# Node.js LTS with npm and pnpm, so apps can install node_modules and build
-# front-end assets with the tooling exec. pnpm's tarball is checksum-verified;
-# its install script swaps in the native binary for this architecture.
-FROM ${NODE_BASE} AS node
-ARG PNPM_VERSION
-ARG PNPM_SHA256
-RUN set -eux; \
-  cd /tmp; \
-  npm pack --silent "pnpm@${PNPM_VERSION}"; \
-  echo "${PNPM_SHA256}  pnpm-${PNPM_VERSION}.tgz" | sha256sum -c -; \
-  npm install -g --no-audit --no-fund --allow-scripts=pnpm "./pnpm-${PNPM_VERSION}.tgz"; \
-  pnpm --version; \
-  rm -rf /tmp/* /root/.npm
+# Node.js LTS with npm and pnpm, installed by mise, so apps can install
+# node_modules and build front-end assets with the tooling exec.
+FROM ${DEBIAN_BASE} AS toolchain
+ARG MISE_VERSION
+ARG MISE_AMD64_SHA256
+ARG MISE_ARM64_SHA256
+ARG MISE_TOOLS
+COPY apt-sources.sh build-toolchain.sh /tmp/
+RUN sh /tmp/build-toolchain.sh
 
 FROM ${DEBIAN_BASE} AS artifacts
 ARG S6_OVERLAY_VERSION
@@ -29,8 +24,7 @@ ARG S6_OVERLAY_ARM64_SHA256
 ARG MINICROND_VERSION
 ARG MINICROND_AMD64_SHA256
 ARG MINICROND_ARM64_SHA256
-ARG COMPOSER_VERSION
-ARG COMPOSER_SHA256
+ARG COMPOSER_CHANNEL
 COPY apt-sources.sh fetch-artifacts.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/fetch-artifacts.sh
 
@@ -53,20 +47,19 @@ ENV S6_READ_ONLY_ROOT=1 \
     S6_SERVICES_GRACETIME=8000 \
     BENTO_RUNTIME_KIND=php-fpm \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
-    PNPM_CONFIG_UPDATE_NOTIFIER=false
+    PNPM_CONFIG_UPDATE_NOTIFIER=false \
+    MISE_HIDE_UPDATE_WARNING=1
 COPY apt-sources.sh install-tools.sh /tmp/
 RUN sh /tmp/install-tools.sh
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
-COPY --from=node /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
+COPY --from=toolchain /opt/mise /opt/mise
+COPY --from=toolchain /rootfs/ /
 COPY --from=artifacts /rootfs/ /
 COPY --from=valkey /rootfs/ /
 RUN set -eux; \
-  cd /usr/local/bin; \
-  ln -s ../lib/node_modules/npm/bin/npm-cli.js npm; \
-  ln -s ../lib/node_modules/npm/bin/npx-cli.js npx; \
-  for b in pnpm pnpx pn pnx; do ln -s "../lib/node_modules/pnpm/$b" "$b"; done; \
-  node --version; npm --version; pnpm --version; valkey-server --version
+  apt-get update; \
+  apt-get install -y --no-install-recommends $(cat /usr/local/share/bento-toolchain-deps); \
+  rm -rf /var/lib/apt/lists/*; \
+  node --version; npm --version; pnpm --version; mise --version; valkey-server --version
 ARG PHP_VERSION
 ARG PHP_MIN_PKG_VERSION
 ARG SURY_KEY_SHA256
@@ -103,6 +96,8 @@ RUN set -eux; \
   php -v; php-fpm -v; \
   rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/php-sury.list
 COPY rootfs/ /
+COPY write-manifest.sh /tmp/
+RUN sh /tmp/write-manifest.sh
 WORKDIR /home
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/bento-init"]

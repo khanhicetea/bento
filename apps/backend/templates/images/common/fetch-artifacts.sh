@@ -1,5 +1,6 @@
 #!/bin/sh
-# Download pinned, checksum-verified supervision/scheduler artifacts into /rootfs.
+# Download checksum-verified supervision, scheduler and Composer artifacts into
+# /rootfs. s6-overlay and minicrond are pinned by version and checksum.
 set -eux
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl xz-utils
@@ -21,8 +22,12 @@ curl -fsSLo /rootfs/usr/local/bin/minicrond \
   "https://github.com/khanhicetea/minicrond/releases/download/${MINICROND_VERSION}/minicrond-linux-${mc_arch}"
 echo "${mc_sha}  /rootfs/usr/local/bin/minicrond" | sha256sum -c -
 chmod 0755 /rootfs/usr/local/bin/minicrond
-if [ -n "${COMPOSER_VERSION:-}" ]; then
-  curl -fsSLo /rootfs/usr/local/bin/composer "https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar"
-  echo "${COMPOSER_SHA256}  /rootfs/usr/local/bin/composer" | sha256sum -c -
+# Composer follows its release channel (latest-2.x): rebuilding the image picks
+# up new releases. The phar is checked against the channel's published SHA-256.
+if [ -n "${COMPOSER_CHANNEL:-}" ]; then
+  composer_url="https://getcomposer.org/download/${COMPOSER_CHANNEL}/composer.phar"
+  curl -fsSLo /rootfs/usr/local/bin/composer "$composer_url"
+  composer_sha="$(curl -fsSL "${composer_url}.sha256" | awk '{ print $1 }')"
+  echo "${composer_sha}  /rootfs/usr/local/bin/composer" | sha256sum -c -
   chmod 0755 /rootfs/usr/local/bin/composer
 fi

@@ -32,3 +32,13 @@ export VALKEY_DATA="${HOME}/.local/share/valkey"
 # Lets the Bento UI embed the scheduler page in a same-origin iframe.
 export MINICRON_ALLOW_IFRAME=1
 export BASE_PATH="${BENTO_SCHEDULER_BASE_PATH:-}"
+# Toolchains the operator installs with mise (mise use / mise install) live in
+# the app home and shadow the image's own, read-only tools in /usr/local/bin.
+# The home's mise data is never backed up; its config (~/.config/mise) is, so
+# `mise install` restores the tools.
+export MISE_DATA_DIR="${HOME}/.local/share/mise" MISE_CACHE_DIR="${HOME}/.cache/mise"
+export MISE_TRUSTED_CONFIG_PATHS="${HOME}" MISE_HIDE_UPDATE_WARNING=1
+case ":${PATH}:" in
+  *":${MISE_DATA_DIR}/shims:"*) ;;
+  *) export PATH="${MISE_DATA_DIR}/shims:${PATH}" ;;
+esac

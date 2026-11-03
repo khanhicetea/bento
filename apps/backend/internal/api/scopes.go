@@ -58,6 +58,7 @@ func (s scope) String() string {
 var routeScopes = map[string]scope{
 	"GET /api/v1/system":                             scopeRead,
 	"GET /api/v1/system/docker":                      scopeRead,
+	"GET /api/v1/system/runtime-images":              scopeRead,
 	"GET /api/v1/catalog":                            scopeRead,
 	"GET /api/v1/apps":                               scopeRead,
 	"GET /api/v1/apps/{id}":                          scopeRead,
@@ -101,6 +102,7 @@ var routeScopes = map[string]scope{
 	"POST /api/v1/apps/{id}/scheduler/jobs/{name}/run":         scopeOperate,
 	"POST /api/v1/apps/{id}/scheduler/workers/{name}/{action}": scopeOperate,
 	"POST /api/v1/apps/{id}/scheduler/runs/{run}/stop":         scopeOperate,
+	"POST /api/v1/system/runtime-images/{key}/rebuild":         scopeOperate,
 
 	"POST /api/v1/apps":                                    scopeAdmin,
 	"PATCH /api/v1/apps/{id}":                              scopeAdmin,
@@ -120,7 +122,9 @@ var routeScopes = map[string]scope{
 	"POST /api/v1/backups/schedules/{id}/enabled":          scopeAdmin,
 	"POST /api/v1/apps/{id}/scheduler/jobs/{name}/enabled": scopeAdmin,
 	"POST /api/v1/apps/{id}/scheduler/jobs":                scopeAdmin,
-	"PATCH /api/v1/apps/{id}/scheduler/jobs/{name}":        scopeAdmin,
+	// Moves apps onto other PHP/toolchain releases.
+	"POST /api/v1/system/runtime-images/{key}/rollout": scopeAdmin,
+	"PATCH /api/v1/apps/{id}/scheduler/jobs/{name}":    scopeAdmin,
 	// App code files (~/app only, no hidden paths). Admin because the code
 	// directory can hold credentials and an edit runs as the app's code.
 	"GET /api/v1/apps/{id}/files":           scopeAdmin,

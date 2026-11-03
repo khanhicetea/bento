@@ -116,7 +116,8 @@ operations on the same resource keep FIFO order and nothing overtakes a waiting 
 | `app.reconcile`, `app.start`, `app.restart`, `app.update`, `app.deploy` | exclusive `app:<id>`, shared `service:<name>` for each bound service |
 | `app.stop` | exclusive `app:<id>` |
 | `service.create`, `service.reconcile` | exclusive `service:<name>` |
-| `image.prepare` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
+| `image.prepare`, `image.rebuild` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
+| `image.rollout`, `image.rollout-stop` | exclusive `image:<key>` (they only write build assignments) |
 | `app.clone-from-backup`, `app.restore-from-backup` | shared `restic:<src>` / `restic-remote:<repo>`, in the `restic-clone` pool (one at a time) while downloading; then `Run.Escalate` turns them global before planning, creating and provisioning the clone |
 | everything else, and any unclassified kind | **global**: runs alone, after everything before it, before anything after it |
 
@@ -144,9 +145,10 @@ Parallel handlers share four things, each serialized inside the handlers:
   parallel applies would race on `edge/conf/{live,previous}`.
 - **Network plan and creation** — `netMu` in `NetworkPlan`/`EnsureNetworks` (read-then-write of the plan setting and
   check-then-create of the Docker networks).
-- **Runtime image builds** — `ImageManager` locks per image tag: concurrent `Ensure` calls for one tag build it once;
-  different tags (for example a PHP and a Node image) build concurrently, at most `MaxConcurrentBuilds` (2) at a time
-  from any operation. `Remove` (image prune) excludes every `Ensure`.
+- **Runtime image builds** — `ImageManager.Hold(key)` serializes everything that decides whether a runtime key needs
+  a build (callers re-read the current build under it, so one builds and the rest find it); different keys build
+  concurrently, at most `MaxConcurrentBuilds` (2) at a time from any operation. `Remove` (image prune) excludes every
+  `Hold`.
 - **Route activation of a booting app** — while an operation is (re)starting an app's instance and has not seen it ready,
   the app is *warming* and every edge render treats it as not running, so another operation's `applyEdge` never routes
   to it early. If such an apply happened, the warming operation re-applies the edge as soon as the app is ready (a
@@ -214,10 +216,12 @@ debounces triggers for 2 s, and also runs a full `Pass` every 60 s. A pass:
   a **rollout**, one app at a time (`Reconciler.rollout`), because a replacement stops the serving instance before the
   new one is ready. When a rollout replacement fails, the other apps on the same runtime image key keep their working
   instances (status `rollout paused: …`) until the failed app recovers — a later reconcile or operator operation on it
-  succeeds — or is no longer desired running; apps on other image keys continue. A finished rollout operation
-  triggers the next pass;
-- for a running app whose planned runtime image is not built (a changed image template or pinned artifact, such as a
-  minicrond bump) → submit one `image.prepare` per runtime key instead, and leave the instance serving on its current
+  succeeds — or is no longer desired running; apps on other image keys continue. When the key still has apps an
+  operator `image.rollout` assigned but that are not yet confirmed on the new build, the pass instead submits
+  `image.rollout-stop`, which puts them (the failed app included) back on their previous build: an operator rollout
+  stops at its first failure. A finished rollout operation triggers the next pass;
+- for a running app with no usable planned build (a changed image template or pinned artifact, such as a minicrond
+  bump) → submit one `image.prepare` per runtime key instead, and leave the instance serving on its current
   image. The app is reconciled (replaced) only on a pass after the build has succeeded; the reconciler watches its
   pending prepares and triggers that pass as soon as one finishes. A failed build keeps the old instance and backs off
   under the `image:<key>` target. Apps that are missing or stopped build inline in `app.reconcile`, since nothing is
@@ -283,23 +287,55 @@ idle `sleep` command; it never runs `/init`, starts no daemons, and does not tak
 
 ### Managed images
 
-`PlanImage` combines the embedded context for `php` or `http` (`templates/images/common` overlaid with the kind) with
-pinned build args (base image, s6-overlay and minicrond versions and SHA-256s, Composer, Valkey's source version and
-single SHA-256 from `domain.RuntimeArtifacts`, and `domain.ValkeyBuildBase`; for PHP also the Node.js LTS base and
-pnpm from `domain.PHPNodeArtifacts`, and for the official-image PHP builds the phpredis PECL tarball from
-`domain.PHPRedisArtifacts`) and hashes both into the tag
-`bento-runtime/<toolchain>:<version>-<hash12>`. `ImageManager.Ensure` builds only when that tag is missing, using the
-Engine API classic builder (`build.BuilderV1`) — no BuildKit features in the Dockerfiles. Tar headers use fixed modes
-and mtimes so the context is byte-reproducible. Valkey is compiled in one build stage, identical in every
-Dockerfile, on `domain.ValkeyBuildBase` (`common/build-valkey.sh`: checksum-verified source tarball, TLS and systemd
-off). It links only libc and libm, so that base must stay the oldest Debian release among the runtime bases; each
-final stage runs `valkey-server --version` to prove the binary loads on its base. Only `valkey-server` and
-`valkey-cli` reach `/usr/local/bin`. The classic builder shares a layer only when every layer beneath it is
-identical: the `php` and `php-sury` final stages start with the same steps (`php/install-tools.sh`, Node.js, s6,
-Valkey) before anything PHP-specific, so PHP versions on one Debian release share those layers.
-`TestRuntimeImagesShareLayers` keeps the shared steps identical and `TestPlanArgsMatchDockerfileARGs` keeps each
-plan's build args equal to its Dockerfile's `ARG`s. The official-image PHP build checks that OPcache and redis
-load, records `php -m`, and the final stage fails if it loads a different module list (a missing library).
+`PlanImage` combines the embedded context for `php`, `php-sury` or `http` (`templates/images/common` overlaid with
+the kind) with the Bento-owned build args: the floating base references (`domain.PHPVersions`, `DebianBase`,
+`domain.ValkeyBuildBase`), the mise tool requests (`ImageKey.Tools`: `domain.PHPTools` or the
+`domain.HTTPToolchains` entry), the Composer channel, the PHP floor (`domain.PHPMinVersions`) or Sury package floor,
+and the pinned, checksum-verified artifacts in `domain.RuntimeArtifacts` (s6-overlay, minicrond, Valkey's source
+tarball, mise). It hashes both into `ImageSpec.Hash`, the image's **inputs**.
+
+Because the bases are floating tags and the tools follow release lines, building the same inputs twice can produce
+different images. Every build therefore gets its own tag, `bento-runtime/<toolchain>:<version>-<hash12>-<time>`
+(`ImageSpec.BuildTag`; an existing tag is never moved), always pulls its bases (`docker.BuildOptions.Pull`), and
+records what it resolved: the image writes `/usr/local/share/bento-manifest` (`common/write-manifest.sh`: tool
+versions and a digest of the installed Debian packages) and `ImageManager.Build` adds the local id of every base
+reference under `base:<ref>`. Builds are rows of `runtime_builds` (key, inputs hash, tag, image id, manifest); one
+per key and inputs is **current**. `app_runtime_builds` records the build each app runs:
+
+- `Controller.plannedBuild` (read-only; used by `planContext`, so by the reconciler's drift check) is the app's
+  assigned build when it is usable (same key and inputs, image still present under its tag), otherwise the key's
+  current build, otherwise none (`DriftImageMissing`).
+- `ensureAppBuild` (in `materialize`, tools and backups) builds the current build when none is usable — under
+  `ImageManager.Hold(key)`, which serializes one key and excludes prune — and records the assignment.
+- After a Bento upgrade that changes the inputs, every assignment is unusable, so apps move to the new current build
+  through the normal rollout.
+- `image.rebuild` builds with `NoCache` under `Hold`. A manifest equal to the current build's is discarded
+  (`RemoveImage` of the new tag); otherwise it is recorded as current and apps keep their assignment.
+- `image.rollout` (`RolloutRequest`: a build, default current; apps, default every provisioned app of the key planned
+  on another build) assigns that build. Running apps are marked `rolling`; `waitReady` clears the mark once the
+  instance is ready on that build's image (`confirmAppBuild`). The reconciler's drift check then replaces them, one at
+  a time; `image.rollout-stop` reverts every still-rolling assignment of the key (`RevertRollingRuntimeBuilds`).
+- Pruning an image deletes its build rows; assignments to them cascade away, and those apps fall back to the current
+  build.
+
+Builds use the Engine API classic builder (`build.BuilderV1`), so the Dockerfiles use no BuildKit features. Tar
+headers use fixed modes and mtimes so the context is byte-reproducible. Toolchains are installed in a `toolchain`
+stage, identical in every Dockerfile (`common/build-toolchain.sh`): mise installs `MISE_TOOLS` into `/opt/mise` at its
+final path (Python compiled from source, so it links against that Debian release), every installed executable is
+linked into `/usr/local/bin`, and the Debian packages they link against are recorded (as the PHP build does) so the
+runtime stage installs exactly those. Operator-installed tools live in the app home: `env.bash` (and
+`/etc/profile.d/bento-mise.sh` for login shells) puts `$HOME/.local/share/mise/shims` before `/usr/local/bin` and
+trusts mise config under the home; `domain.ResticMiseExcludes` keeps that data out of backups. Valkey is compiled in
+one build stage, identical in every Dockerfile, on `domain.ValkeyBuildBase` (`common/build-valkey.sh`:
+checksum-verified source tarball, TLS and systemd off). It links only libc and libm, so that base must stay the oldest
+Debian release among the runtime bases; each final stage runs `valkey-server --version` to prove the binary loads on
+its base. Only `valkey-server` and `valkey-cli` reach `/usr/local/bin`. The classic builder shares a layer only when
+every layer beneath it is identical: the `php` and `php-sury` final stages start with the same steps
+(`php/install-tools.sh`, toolchain, s6, Valkey) before anything PHP-specific, so PHP versions on one Debian release
+share those layers (until a refresh build, which bypasses the cache). `TestRuntimeImagesShareLayers` keeps the shared
+steps identical and `TestPlanArgsMatchDockerfileARGs` keeps each plan's build args equal to its Dockerfile's `ARG`s.
+The official-image PHP build refuses a base below `PHP_MIN_VERSION`, checks that OPcache and redis load, records
+`php -m`, and the final stage fails if it loads a different module list (a missing library).
 
 ### Inside a runtime container
 

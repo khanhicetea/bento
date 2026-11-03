@@ -20,14 +20,11 @@ import (
 func (h *harness) toolWrite(app domain.App) {
 	h.t.Helper()
 	ctx := h.t.Context()
-	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
+	build, _, _, err := h.c.plannedBuild(ctx, app)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	imageID, _, err := h.fake.ImageID(ctx, spec.Tag())
-	if err != nil {
-		h.t.Fatal(err)
-	}
+	imageID := build.ImageID
 	passwd, group, err := h.c.Images.IdentityBase(ctx, imageID)
 	if err != nil {
 		h.t.Fatal(err)

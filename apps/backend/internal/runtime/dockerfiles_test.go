@@ -79,13 +79,15 @@ func stage(t *testing.T, df, name string) string {
 // release instead of once per runtime version.
 func TestRuntimeImagesShareLayers(t *testing.T) {
 	php, sury, http := readDockerfile(t, "php"), readDockerfile(t, "php-sury"), readDockerfile(t, "http")
-	for _, name := range []string{"node", "artifacts", "valkey"} {
+	for _, name := range []string{"toolchain", "artifacts", "valkey"} {
 		if stage(t, php, name) != stage(t, sury, name) {
 			t.Errorf("stage %s differs between images/php and images/php-sury", name)
 		}
 	}
-	if stage(t, php, "valkey") != stage(t, http, "valkey") {
-		t.Error("stage valkey differs between images/php and images/http")
+	for _, name := range []string{"toolchain", "valkey"} {
+		if stage(t, php, name) != stage(t, http, name) {
+			t.Errorf("stage %s differs between images/php and images/http", name)
+		}
 	}
 	shared := func(df string) string {
 		start := strings.LastIndex(df, "\nFROM ${DEBIAN_BASE}\n")

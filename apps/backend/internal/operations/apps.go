@@ -82,6 +82,9 @@ func (c *Controller) registerHandlers() {
 		KindAppDeploy:        c.handleDeploy,
 		KindImagePrune:       c.handleImagePrune,
 		KindImagePrepare:     c.handleImagePrepare,
+		KindImageRebuild:     c.handleImageRebuild,
+		KindImageRollout:     c.handleImageRollout,
+		KindImageRolloutStop: c.handleImageRolloutStop,
 
 		KindResticInit:      c.handleResticInit,
 		KindResticConnect:   c.handleResticConnect,
@@ -329,7 +332,7 @@ func (c *Controller) materialize(
 	r *Run,
 	app domain.App,
 ) (runtime.AppInputs, runtime.Changes, error) {
-	imageID, _, err := c.Images.Ensure(ctx, app.Runtime.ImageKey(), func(s string) { r.Info(ctx, "%s", s) })
+	build, err := c.ensureAppBuild(ctx, app, func(s string) { r.Info(ctx, "%s", s) })
 	if err != nil {
 		return runtime.AppInputs{}, runtime.Changes{}, Fail(
 			"image",
@@ -338,6 +341,7 @@ func (c *Controller) materialize(
 			err,
 		)
 	}
+	imageID := build.ImageID
 	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
 	if err != nil {
 		return runtime.AppInputs{}, runtime.Changes{}, err
@@ -726,6 +730,7 @@ func (c *Controller) waitReady(ctx context.Context, r *Run, app domain.App, gen 
 			} else {
 				r.Info(ctx, "app is ready")
 			}
+			c.confirmAppBuild(ctx, r, app)
 			if c.clearWarming(app.ID) {
 				// An operation running in parallel applied the edge while this
 				// instance booted and left its route unavailable.
@@ -1420,14 +1425,11 @@ func (c *Controller) handlePermissions(ctx context.Context, r *Run) (any, error)
 // image id and the app context built from its identity base and the network
 // plan. ok is false when the managed image does not exist yet.
 func (c *Controller) planContext(ctx context.Context, app domain.App) (string, runtime.AppContext, bool, error) {
-	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
-	if err != nil {
-		return "", runtime.AppContext{}, false, err
-	}
-	imageID, ok, err := c.Engine.ImageID(ctx, spec.Tag())
+	build, _, ok, err := c.plannedBuild(ctx, app)
 	if err != nil || !ok {
 		return "", runtime.AppContext{}, false, err
 	}
+	imageID := build.ImageID
 	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
 	if err != nil {
 		return "", runtime.AppContext{}, false, err

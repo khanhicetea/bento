@@ -29,7 +29,7 @@ const ApplicationID = 0x424E5431
 // migrations; every other version is refused without modifying the file.
 // A schema change bumps SchemaVersion and adds migrations[old] in the same
 // change (see docs/contributing.md).
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 // MigratableFromVersion is the oldest schema Open upgrades. Version 2 is the
 // production baseline: no deployment runs an older schema, so nothing below
@@ -58,7 +58,15 @@ func SupportedVersions() []int {
 type migration func(tx *sql.Tx) error
 
 // migrations[v] upgrades schema v to v+1. Every SchemaVersion bump adds one.
-var migrations = map[int64]migration{}
+var migrations = map[int64]migration{
+	// 3: runtime image builds and the build each app runs. Apps start with no
+	// assignment and are assigned the current build of their runtime when
+	// they are next materialized.
+	2: func(tx *sql.Tx) error {
+		_, err := tx.Exec(runtimeBuildsSchema)
+		return err
+	},
+}
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -517,6 +525,7 @@ CREATE TABLE schedules (
   updated_at   TEXT NOT NULL
 ) STRICT;
 
+` + runtimeBuildsSchema + `
 -- Scoped bearer credentials for automation. Only the SHA-256 of the secret
 -- is stored.
 CREATE TABLE api_tokens (
@@ -527,5 +536,38 @@ CREATE TABLE api_tokens (
   created_at   TEXT NOT NULL,
   expires_at   TEXT NOT NULL DEFAULT '',
   last_used_at TEXT NOT NULL DEFAULT ''
+) STRICT;
+`
+
+// runtimeBuildsSchema holds managed runtime image builds. A build is one image
+// built from one set of Bento-owned inputs (context_hash) of a runtime key;
+// its floating bases and tool channels resolved to manifest_json. current
+// marks the build new apps of that key and inputs are given. Rows are deleted
+// when their image is pruned.
+//
+// app_runtime_builds records the build each app runs (or will run once
+// replaced). previous_build_id is the build before the last rollout, for
+// rolling back; rolling marks an assignment written by a rollout whose
+// instance has not been replaced on it yet, which a failed rollout reverts.
+const runtimeBuildsSchema = `
+CREATE TABLE runtime_builds (
+  id            INTEGER PRIMARY KEY,
+  image_key     TEXT NOT NULL,
+  context_hash  TEXT NOT NULL,
+  tag           TEXT NOT NULL UNIQUE,
+  image_id      TEXT NOT NULL,
+  manifest_json TEXT NOT NULL DEFAULT '{}',
+  built_at      TEXT NOT NULL,
+  current       INTEGER NOT NULL DEFAULT 0 CHECK (current IN (0, 1))
+) STRICT;
+
+CREATE UNIQUE INDEX runtime_builds_current ON runtime_builds(image_key, context_hash) WHERE current = 1;
+
+CREATE TABLE app_runtime_builds (
+  app_id            TEXT PRIMARY KEY REFERENCES apps(id) ON DELETE CASCADE,
+  build_id          INTEGER NOT NULL REFERENCES runtime_builds(id) ON DELETE CASCADE,
+  previous_build_id INTEGER REFERENCES runtime_builds(id) ON DELETE SET NULL,
+  rolling           INTEGER NOT NULL DEFAULT 0 CHECK (rolling IN (0, 1)),
+  updated_at        TEXT NOT NULL
 ) STRICT;
 `

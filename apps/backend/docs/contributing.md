@@ -32,7 +32,7 @@ sudo /tmp/bento --stack /tmp/s1 init --name s1 && sudo /tmp/bento --stack /tmp/s
 | Change what a mutation does to Docker/files | an operation handler in `internal/operations` |
 | Change container shape | `internal/runtime/spec.go` (bump `specVersion`) |
 | Change generated app config | `templates/config/*.tmpl` + `internal/runtime/materialize.go` |
-| Change the runtime image | `templates/images/**` (the tag changes automatically) |
+| Change the runtime image | `templates/images/**` (the inputs hash changes; apps get a new build and roll out automatically) |
 | Add a Docker capability | `docker.Engine` + `SDK` + `Fake` together |
 | Change persistence | `internal/store`: bump `SchemaVersion`, add `migrations[old]` (refuse rows it cannot map), extend `schema` for new stacks, and test that a file at the old version opens with its data migrated |
 
@@ -76,30 +76,36 @@ Never put Docker calls inside `Store.Tx`, and never perform effects in an HTTP h
 
 ## Recipe: add a toolchain or runtime version
 
-1. Add the version and its base image to `domain.PHPVersions` or `domain.HTTPToolchains` (pin by digest once verified:
-   `docker pull <ref>` then use `RepoDigests`). A PHP version upstream no longer releases is instead built from
-   deb.sury.org packages: set its base to `DebianBase` and add its oldest acceptable package revision to
-   `domain.PHPSuryPackages` (check the Sury `Packages` index for every architecture first); the image build refuses
-   an older package.
+1. Add the version to `domain.PHPVersions` (its floating base tag, such as `php:8.6-fpm-trixie`, plus a floor in
+   `domain.PHPMinVersions`) or to `domain.HTTPToolchains` (the mise tool requests, such as `node@26 pnpm@latest`,
+   installed on `DebianBase`). A PHP version upstream no longer releases is instead built from deb.sury.org
+   packages: set its base to `DebianBase` and add its oldest acceptable package revision to `domain.PHPSuryPackages`
+   (check the Sury `Packages` index for every architecture first); the image build refuses an older package.
 2. If the image needs extra packages, change `templates/images/<kind>/Dockerfile`. Keep it compatible with the classic
    builder: no `RUN --mount`, no heredocs, no `TARGETARCH` (use `dpkg --print-architecture`).
 3. `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages` builds the listed keys;
    add yours to that test while verifying, then start a real app on it.
 4. Record what you actually ran in `docs/evidence.md`.
 
-Pinned artifacts (s6-overlay, minicrond, Composer) live in `domain.RuntimeArtifacts` with SHA-256 checksums for amd64
-and arm64; update both checksums together. After a minicrond bump, run `make vendor-minicrond-ui` to vendor that release's web UI
-into `internal/schedulerui` (the scheduler gateway serves it; `TestVendoredVersionMatchesPin` fails until you do). Valkey is pinned there too, as one source tarball (`VALKEY_VERSION`,
-`VALKEY_SHA256`, the same for every architecture) that `templates/images/common/build-valkey.sh` compiles once, on
-`domain.ValkeyBuildBase`, for every runtime image. That base must be the oldest Debian release among the runtime bases:
-a new base on an older release needs `ValkeyBuildBase` moved to it (each final stage runs `valkey-server --version`,
-so a mismatch fails the build). PHP images also copy Node.js (with npm) from the pinned
-`HTTPToolchains["node"]` LTS base and pnpm from a checksum-verified npm tarball (`domain.PHPNodeArtifacts`). The
-official-image PHP builds compile phpredis from its PECL tarball, pinned by `domain.PHPRedisArtifacts`
-(`PHPREDIS_VERSION`, and the SHA-256 of `https://pecl.php.net/get/redis-<version>.tgz`).
+Floating inputs need no Bento change: base tags, mise tool versions, Composer (`latest-2.x`) and phpredis (newest PECL
+release) resolve when an image is built, and an operator rebuild picks up new releases. Raise `domain.PHPMinVersions`
+to force a fixed PHP release: the floor is a build input, so every app on that version is rebuilt and the build
+refuses an older base.
 
-`images/php` and `images/php-sury` start their final stage with the same steps (`php/install-tools.sh`, Node.js, s6,
-Valkey) so PHP versions on one Debian release share those layers; put PHP-specific steps after them.
+Pinned artifacts (s6-overlay, minicrond, mise) live in `domain.RuntimeArtifacts` with SHA-256 checksums for amd64 and
+arm64; update both checksums together (for mise, from the release's `SHASUMS256.txt`, choosing a release at least two
+weeks old). After a minicrond bump, run `make vendor-minicrond-ui` to vendor that release's web UI into
+`internal/schedulerui` (the scheduler gateway serves it; `TestVendoredVersionMatchesPin` fails until you do). Valkey
+is pinned there too, as one source tarball (`VALKEY_VERSION`, `VALKEY_SHA256`, the same for every architecture) that
+`templates/images/common/build-valkey.sh` compiles once, on `domain.ValkeyBuildBase`, for every runtime image. That
+base must be the oldest Debian release among the runtime bases: a new base on an older release needs
+`ValkeyBuildBase` moved to it (each final stage runs `valkey-server --version`, so a mismatch fails the build).
+Toolchains are installed by `templates/images/common/build-toolchain.sh` in a `toolchain` stage that every
+Dockerfile shares; a tool that links against a new Debian library gets it automatically (the stage records the
+packages its binaries need).
+
+`images/php` and `images/php-sury` start their final stage with the same steps (`php/install-tools.sh`, toolchain,
+s6, Valkey) so PHP versions on one Debian release share those layers; put PHP-specific steps after them.
 `TestRuntimeImagesShareLayers` fails if the shared steps drift apart, and `TestPlanArgsMatchDockerfileARGs` fails if a
 plan's build args and a Dockerfile's `ARG`s differ.
 

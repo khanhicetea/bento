@@ -10,7 +10,6 @@ import (
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
-	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 	"github.com/khanhicetea/bento/apps/backend/internal/testutil"
 )
@@ -35,15 +34,14 @@ func runningApp(t *testing.T, h *testutil.Harness, slug, node string) domain.App
 	return app
 }
 
-// upgrade rebuilds the image of runtime node-<v> under its tag, so every
-// running app on it drifts, as after a Bento upgrade whose image is built.
+// upgrade gives runtime node-<v> a new current build and makes the earlier
+// ones predate the image inputs, so every running app on it drifts, as after
+// a Bento upgrade whose image is built.
 func upgrade(t *testing.T, h *testutil.Harness, node string) {
 	t.Helper()
-	spec, err := runtime.PlanImage(domain.ImageKey{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: node})
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.Fake.SetImage(spec.Tag(), "sha256:upgraded-"+node)
+	key := domain.ImageKey{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: node}
+	h.StaleBuilds(t, key)
+	h.NewBuild(t, key, "sha256:upgraded-"+node)
 }
 
 func containerOf(t *testing.T, h *testutil.Harness, app domain.App) string {
@@ -139,5 +137,98 @@ func TestFailedReplacementPausesItsRuntimeOnly(t *testing.T) {
 	}
 	if st := r.Status(beta.ID); st.LastError != "" {
 		t.Fatalf("beta still reports %q", st.LastError)
+	}
+}
+
+func plannedImage(t *testing.T, h *testutil.Harness, app domain.App) string {
+	t.Helper()
+	views, err := h.C.RuntimeImages(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range views {
+		for _, a := range v.Apps {
+			if a.App.ID != app.ID {
+				continue
+			}
+			for _, b := range v.Builds {
+				if b.ID == a.BuildID {
+					return b.ImageID
+				}
+			}
+		}
+	}
+	t.Fatalf("no planned build for %s", app.Slug)
+	return ""
+}
+
+// A rebuild leaves apps alone; an operator rollout replaces them one at a
+// time and, at the first failed replacement, puts every app not yet
+// confirmed on the new build back on its previous one.
+func TestOperatorRolloutStopsAtFirstFailure(t *testing.T) {
+	h := testutil.New(t)
+	var apps []domain.App
+	for _, slug := range []string{"alpha", "beta", "gamma"} {
+		apps = append(apps, runningApp(t, h, slug, "24"))
+	}
+	before := map[string]string{}
+	old := map[string]string{}
+	for _, a := range apps {
+		before[a.ID] = containerOf(t, h, a)
+		old[a.ID] = plannedImage(t, h, a)
+	}
+	key := domain.ImageKey{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"}
+	h.NewBuild(t, key, "sha256:rebuilt")
+	r := New(h.C, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	r.BaseBackoff = time.Millisecond
+	pass(t, h, r)
+	if n := replaced(t, h, apps, before); n != 0 {
+		t.Fatalf("a rebuild alone replaced %d apps", n)
+	}
+
+	op, err := h.C.RolloutImage(t.Context(), key.String(), operations.RolloutRequest{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.Wait(op.ID); got.State != store.OpSucceeded {
+		t.Fatal(got.ErrorMessage)
+	}
+	pass(t, h, r) // the first app rolls out
+	if n := replaced(t, h, apps, before); n != 1 {
+		t.Fatalf("%d apps replaced after one pass, want 1", n)
+	}
+	h.Fake.FailOn = map[string]error{"Create": errors.New("injected: the rebuilt image does not start")}
+	pass(t, h, r) // the second replacement fails
+	h.Fake.FailOn = nil
+	pass(t, h, r) // settles the failure and stops the rollout
+	if n, last := countOps(t, h, operations.KindImageRolloutStop, key.String()); n != 1 || last.State != store.OpSucceeded {
+		t.Fatalf("rollout-stop ops %d (%s %s)", n, last.State, last.ErrorMessage)
+	}
+	if rolling, _ := h.C.HasRollingBuilds(t.Context(), key.String()); rolling {
+		t.Fatal("a stopped rollout leaves no rolling apps")
+	}
+	onNew := 0
+	for _, a := range apps {
+		if plannedImage(t, h, a) == "sha256:rebuilt" {
+			onNew++
+		} else if plannedImage(t, h, a) != old[a.ID] {
+			t.Fatalf("%s planned on an unexpected build", a.Slug)
+		}
+	}
+	if onNew != 1 {
+		t.Fatalf("%d apps stay on the rebuilt image, want only the confirmed one", onNew)
+	}
+	for range 4 {
+		pass(t, h, r) // the failed app is restored on its previous build
+	}
+	for _, a := range apps {
+		obs, err := h.C.Observe(t.Context(), a)
+		if err != nil || !obs.Running || obs.Image != plannedImage(t, h, a) {
+			t.Fatalf("%s: running=%v image %s, planned %s (%v)", a.Slug, obs.Running, obs.Image,
+				plannedImage(t, h, a), err)
+		}
+	}
+	if n := replaced(t, h, apps, before); n > 2 {
+		t.Fatalf("%d apps replaced; the app after the failure must not be", n)
 	}
 }

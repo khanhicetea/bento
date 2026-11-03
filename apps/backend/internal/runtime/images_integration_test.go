@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,21 +34,37 @@ func TestIntegrationBuildRuntimeImages(t *testing.T) {
 		{Kind: domain.RuntimePHP, Toolchain: "php", Version: "8.1"},
 		{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"},
 		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.4"},
-		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.2"}, // bookworm: the oldest glibc the shared Valkey must run on
+		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.2"},
+		{Kind: domain.RuntimeHTTP, Toolchain: "python", Version: "3.13"}, // compiled from source
 	}
 	for _, key := range keys {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 		start := time.Now()
-		id, spec, err := m.Ensure(ctx, key, func(s string) { t.Log(key.String(), s) })
+		spec, err := PlanImage(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		release := m.Hold(key)
+		b, err := m.Build(ctx, spec, time.Now(), false, func(s string) { t.Log(key.String(), s) })
+		release()
 		cancel()
 		if err != nil {
 			t.Fatalf("%s: %v", key, err)
 		}
-		t.Logf("%s -> %s (%s) in %s", key, spec.Tag(), id, time.Since(start).Round(time.Second))
-		// Deterministic: planning twice yields the same tag.
-		again, _ := PlanImage(key)
-		if again.Tag() != spec.Tag() {
-			t.Fatalf("non-deterministic tag %s vs %s", again.Tag(), spec.Tag())
+		t.Logf("%s -> %s (%s) in %s: %v", key, b.Tag, b.ID, time.Since(start).Round(time.Second), b.Manifest)
+		want := []string{"debian", "mise", "valkey", "debian-packages"}
+		if key.Kind == domain.RuntimePHP {
+			want = append(want, "php", "phpredis", "composer", "nginx", "node", "npm", "pnpm")
+		} else {
+			want = append(want, key.Toolchain)
+		}
+		for _, k := range want {
+			if b.Manifest[k] == "" {
+				t.Errorf("%s: manifest lacks %s: %v", key, k, b.Manifest)
+			}
+		}
+		if key.Kind == domain.RuntimeHTTP && !strings.HasPrefix(b.Manifest[key.Toolchain], key.Version) {
+			t.Errorf("%s resolved %s %s", key, key.Toolchain, b.Manifest[key.Toolchain])
 		}
 	}
 }

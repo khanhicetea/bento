@@ -102,6 +102,12 @@ func cleanupStack(stackID string) {
 			cli.VolumeRemove(ctx, v.Name, client.VolumeRemoveOptions{})
 		}
 	}
+	// Runtime builds are recorded per stack and labeled with it.
+	if is, err := cli.ImageList(ctx, client.ImageListOptions{Filters: f}); err == nil {
+		for _, i := range is.Items {
+			cli.ImageRemove(ctx, i.ID, client.ImageRemoveOptions{PruneChildren: true})
+		}
+	}
 }
 
 func (e *env) wait(op store.Operation, err error) store.Operation {

@@ -5,15 +5,67 @@ description: How Bento builds its curated runtime images and what is inside them
 
 Bento builds one image per runtime version through the Docker Engine API — no Docker CLI or BuildKit needed.
 
-- The build context is **embedded in the binary** and hashed together with the build arguments. The tag
-  `bento-runtime/<toolchain>:<version>-<hash>` changes whenever either changes.
-- Base images, s6-overlay, minicrond, Composer, Node.js, pnpm, and the PHP `redis` extension are pinned and
-  checksum-verified. Valkey is built once from a pinned, checksum-verified source release on the oldest Debian
-  release among the runtime bases, and that build is shared by every image.
-- Layers that do not depend on the PHP version (tools, Node.js, s6-overlay, Valkey) come first, so several PHP
-  versions on one host store them once.
+- The build context is **embedded in the binary** and hashed together with the build arguments. Each build gets its
+  own tag, `bento-runtime/<toolchain>:<version>-<hash>-<time>`.
+- **Floating:** base images follow a release line (`php:8.4-fpm-trixie`, `debian:trixie-slim`), toolchains follow a
+  version line through [mise](https://mise.jdx.dev) (`node@24`, `bun@1.3`, `python@3.13`, `pnpm@latest`), Composer
+  follows its `latest-2.x` channel, and phpredis is the newest PECL release. A rebuild picks up their patch releases
+  without a Bento upgrade. Python is compiled from source.
+- **Pinned and checksum-verified:** s6-overlay, minicrond, mise itself, and the deb.sury.org signing key. Valkey is
+  built once from a pinned, checksum-verified source release on the oldest Debian release among the runtime bases,
+  and that build is shared by every image. These change only with a Bento upgrade.
+- Each build records what it resolved: every base image id and the PHP, Composer, phpredis, Node.js, npm, pnpm, Bun,
+  Python, mise and Valkey versions, plus a digest of the installed Debian packages.
+- Official PHP bases are refused below the release that fixes known PHP vulnerabilities (8.2.35, 8.3.36, 8.4.27,
+  8.5.12).
 - PHP images include Node.js 24 LTS with `npm` and `pnpm`, so `npm ci && npm run build` works in the tool shell and
   deploy scripts. Caches go to the app's home folder.
+
+## Rebuild and roll out
+
+**System → Images → Runtimes** has one tile per runtime in use, with its current build and the apps on it.
+
+1. **Rebuild** pulls the bases again and rebuilds without the layer cache. If nothing changed, the new image is
+   discarded and the tile stays **Current**. Otherwise it becomes the current build: new apps start on it, and apps
+   already running stay on their build. Their rows show what would change, such as `php 8.4.30 -> 8.4.31`.
+   **Rebuild all** does this for every runtime.
+2. **Roll out** moves the apps on an older build to the current one. Running apps are replaced one at a time, each
+   briefly unavailable while it restarts. Stopped apps start on the new build next time. **Roll out** on an app row
+   moves only that app.
+3. **The first failed replacement stops the rollout.** The failed app, and every app not yet replaced, go back to
+   the build they ran before. Apps already confirmed on the new build keep it.
+4. **Roll back** on an app row puts it back on its previous build while that image still exists.
+
+A Bento upgrade that changes an image's inputs builds a new image and replaces apps on it automatically (see
+[Upgrade](/system/upgrade)); a rebuild never does.
+
+From the CLI:
+
+```bash
+bento images                                  # runtimes, current builds, apps behind
+bento images rebuild php-8.4                  # or: bento images rebuild --all
+bento images rollout php-8.4                  # every app on an older build
+bento images rollout php-8.4 --app shop       # one app
+bento images rollout php-8.4 --app shop --build 12   # roll back to build 12
+```
+
+## Tools you install
+
+`mise` is in every image, so the tool shell can add or switch toolchains for one app:
+
+```bash
+mise use -g node@22          # this app now runs node 22 everywhere
+mise use python@3.12         # in ~/app only (writes ~/app/mise.toml)
+```
+
+Your tools live in `~/.local/share/mise` and come before the image's own. They survive restarts, rebuilds and
+rollouts. They are **not backed up**, but your mise config (`~/.config/mise`, `mise.toml` in your code) is, so
+`mise install` brings them back after a restore. A `mise.toml` or `.tool-versions` in the app's home is trusted.
+
+<Callout type="warning" title="HTTP apps run your tools">
+For an HTTP app, a tool you install with `mise use -g` also replaces the one the app server runs: the System page
+still shows the runtime version it was created with.
+</Callout>
 
 ## Inside every image
 
@@ -21,6 +73,7 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 | --- | --- |
 | `bento-init` | Entry point; takes the per-app instance lock and starts s6-overlay as PID 1. |
 | s6-overlay | Supervises the runtime, minicrond, and Valkey, each as the app's user. A service turned off in the app's settings exits once and stays down. |
+| mise | Installs and switches toolchains for the app (see [Tools you install](#tools-you-install)). |
 | Valkey | `valkey-server` and `valkey-cli` (also as `redis-cli`). Runs only when the app's `valkey` setting is on, on `127.0.0.1:6379`. |
 | `bento-exec` | Tooling entry point for shells and exec; never starts daemons. |
 | `bento-ready` | Readiness probe: the runtime is up, the scheduler and Valkey answer (when on), and the HTTP port answers. A 5xx fails it only when you set a **Ready path**. |

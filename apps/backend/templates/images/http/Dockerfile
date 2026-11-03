@@ -1,7 +1,8 @@
 # Bento managed HTTP-process runtime image (Node.js, Bun, or Python toolchain).
-# Built once per toolchain version and shared by all HTTP apps on it.
+# Built once per toolchain version and shared by all HTTP apps on it. The
+# toolchain is installed by mise on Debian (MISE_TOOLS); Python is compiled
+# from source.
 # Built with the Docker Engine API (classic builder); no BuildKit features.
-ARG TOOLCHAIN_BASE
 ARG DEBIAN_BASE
 ARG VALKEY_BUILD_BASE
 
@@ -24,7 +25,15 @@ ARG VALKEY_SHA256
 COPY apt-sources.sh build-valkey.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
 
-FROM ${TOOLCHAIN_BASE}
+FROM ${DEBIAN_BASE} AS toolchain
+ARG MISE_VERSION
+ARG MISE_AMD64_SHA256
+ARG MISE_ARM64_SHA256
+ARG MISE_TOOLS
+COPY apt-sources.sh build-toolchain.sh /tmp/
+RUN sh /tmp/build-toolchain.sh
+
+FROM ${DEBIAN_BASE}
 ARG TOOLCHAIN
 ENV S6_READ_ONLY_ROOT=1 \
     S6_KEEP_ENV=1 \
@@ -33,16 +42,24 @@ ENV S6_READ_ONLY_ROOT=1 \
     S6_KILL_GRACETIME=3000 \
     S6_SERVICES_GRACETIME=8000 \
     BENTO_RUNTIME_KIND=http-process \
-    BENTO_TOOLCHAIN=${TOOLCHAIN}
-USER root
-# Valkey is built on another release: it must run on this toolchain's libc.
+    BENTO_TOOLCHAIN=${TOOLCHAIN} \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    PNPM_CONFIG_UPDATE_NOTIFIER=false \
+    MISE_HIDE_UPDATE_WARNING=1
+COPY --from=toolchain /opt/mise /opt/mise
+COPY --from=toolchain /rootfs/ /
+# Valkey is built on another release: it must run on this release's libc.
 COPY --from=valkey /rootfs/ /
 RUN set -eux; \
   apt-get update; \
-  apt-get install -y --no-install-recommends bash ca-certificates curl git openssh-client sqlite3 xz-utils; \
+  apt-get install -y --no-install-recommends bash ca-certificates curl git openssh-client sqlite3 xz-utils \
+    $(cat /usr/local/share/bento-toolchain-deps); \
   rm -rf /var/lib/apt/lists/*; \
+  mise --version; \
   /usr/local/bin/valkey-server --version
 COPY --from=artifacts /rootfs/ /
 COPY rootfs/ /
+COPY write-manifest.sh /tmp/
+RUN sh /tmp/write-manifest.sh
 WORKDIR /home
 ENTRYPOINT ["/usr/local/bin/bento-init"]

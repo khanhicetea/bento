@@ -691,3 +691,29 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
   verifies as before and is re-hashed at the next successful login (only if it is still the stored hash, sessions
   kept). `TestPasswordHashUsesOWASPParametersAndUpgradesOldHashes` covers both and refuses hashes with out-of-range
   parameters. bcrypt was not chosen: it is not memory-hard and truncates at 72 bytes (passwords allow 1024).
+
+## Floating runtime bases, mise toolchains, operator rebuild and rollout (2026-11-03; live Docker 29.8.1, amd64; dev mode)
+
+- `TestIntegrationBuildRuntimeImages` built php-8.4 (official base, 4m53s), php-7.4/8.0/8.1 (deb.sury.org),
+  node-24, bun-1.4, bun-1.2 and python-3.13 from floating bases with mise 2026.10.12. Manifests recorded e.g.
+  php-8.4: php 8.4.27 (≥ the 8.4.27 floor), composer 2.11.1 (latest-2.x, checksum from getcomposer.org), phpredis
+  6.3.0 (newest PECL), node 24.22.2, npm 11.19.1, pnpm 12.16.1; python-3.13: 3.13.18 compiled with gcc against
+  Debian's OpenSSL 3.5.7 (`ssl`, `sqlite3`, `ctypes`, `lzma`, `bz2`, `readline` import). Bun 1.2 now runs on trixie.
+- In the php-8.4 image as UID 5001 with a read-only root through `bento-exec bash -l`: the home's mise shims lead
+  `PATH`; `mise use -g node@22` (exit 0) switched `node` to 22.23.4 in later shells, and `mise use python@3.12` in
+  `~/app` installed a precompiled 3.12.16 into `~/.local/share/mise` (persisted across containers). Using mise's
+  `--system` installs for the image's tools was rejected: every later user install exited 1 trying to repair
+  symlinks in the read-only system directory (also on mise 2026.10.25).
+- Through `bento serve` on a disposable root: `bento images rebuild node-24` recorded the current build; a second
+  rebuild (pull + no cache) resolved the same base ids, versions and Debian package digest and was discarded.
+- Unit coverage (fake engine): unchanged rebuilds are discarded, changed ones leave apps on their build, new apps
+  get the current one, rollout of one app/all apps, readiness confirmation, rollback, `image.rollout-stop` reverting
+  only unconfirmed apps, the reconciler replacing rolled-out apps one at a time and stopping at the first failure
+  (`TestOperatorRolloutStopsAtFirstFailure`), Bento-upgrade rollouts still pausing, compare-and-set assignment,
+  schema 2 → 3 migration, stack-labeled builds not prunable by another stack, API refusals.
+- `make test-integration` passed as root (integration 567 s, runtime 75 s). `go test -race ./...`, vet, gofmt and
+  build passed; the committed-types check needs the regenerated `types.ts` committed. Web fmt/lint/typecheck/build
+  and `docs:build` passed.
+- Not verified: arm64 builds (mise arm64 checksum taken from the release's SHASUMS256.txt only); a rebuild that
+  actually changed a version on real Docker followed by a real rollout and rollback (covered on the fake engine); the
+  Runtimes UI in a browser.

@@ -345,6 +345,10 @@ func (r *Reconciler) submit(ctx context.Context, t *target, kind, targetKind, id
 // string.
 const imageTargetPrefix = "image:"
 
+// rolloutStopPrefix keys image.rollout-stop targets, whose id is an ImageKey
+// string.
+const rolloutStopPrefix = "image-rollout-stop:"
+
 // settleImages folds the outcome of every submitted image.prepare, including
 // those whose image is now built and that no app will look up again.
 func (r *Reconciler) settleImages(ctx context.Context) {
@@ -352,7 +356,30 @@ func (r *Reconciler) settleImages(ctx context.Context) {
 		if strings.HasPrefix(id, imageTargetPrefix) {
 			r.settle(ctx, t)
 		}
+		if strings.HasPrefix(id, rolloutStopPrefix) && r.settle(ctx, t) && t.PendingOp == "" {
+			delete(r.work, id)
+		}
 	}
+}
+
+// stopRollout submits one image.rollout-stop for a key whose rollout failed
+// while some of its apps are still unconfirmed on the rolled-out build.
+func (r *Reconciler) stopRollout(ctx context.Context, key string) error {
+	if t, ok := r.work[rolloutStopPrefix+key]; ok && t.PendingOp != "" {
+		return nil
+	}
+	// Only a rollout with unconfirmed apps gets a target: a halt on a Bento
+	// upgrade's rollout pauses instead and must not list one.
+	rolling, err := r.C.HasRollingBuilds(ctx, key)
+	if err != nil || !rolling {
+		return err
+	}
+	busy, err := store.ActiveForTarget(ctx, r.C.Store.DB(), key)
+	if err != nil || busy {
+		return err
+	}
+	r.submit(ctx, r.get(rolloutStopPrefix+key, 0), operations.KindImageRolloutStop, "image", key)
+	return nil
 }
 
 // forgetImages drops settled image targets whose image no running app still
@@ -536,6 +563,13 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		}
 	}
 	r.rollout(ctx, &ro)
+	for key := range ro.halted {
+		// An operator rollout stops at its first failure: the apps still
+		// waiting go back to their previous build instead of pausing.
+		if err := r.stopRollout(ctx, key); err != nil {
+			return err
+		}
+	}
 	// Only after a complete app scan: an aborted pass must not drop the
 	// backoff of an image some app still misses.
 	r.forgetImages(missing)

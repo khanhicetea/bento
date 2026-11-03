@@ -52,6 +52,11 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
     case "backup":
       void queryClient.invalidateQueries({ queryKey: keys.backups.all });
       break;
+    case "image":
+      // Runtime images and the Docker inventory sit under keys.system; a
+      // rollout changes which build each app runs.
+      void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+      break;
     default:
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "operations" });
   }

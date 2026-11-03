@@ -73,6 +73,9 @@ func (s *Server) routes() (http.Handler, []string) {
 	api("GET /api/v1/system", s.handleSystem)
 	api("GET /api/v1/system/docker", s.handleDockerInventory)
 	api("POST /api/v1/system/docker/images/{digest}/prune", s.handleImagePrune)
+	api("GET /api/v1/system/runtime-images", s.handleRuntimeImages)
+	api("POST /api/v1/system/runtime-images/{key}/rebuild", s.handleRuntimeRebuild)
+	api("POST /api/v1/system/runtime-images/{key}/rollout", s.handleRuntimeRollout)
 	api("GET /api/v1/catalog", s.handleCatalog)
 	api("PUT /api/v1/auth/password", s.handleSetPassword)
 

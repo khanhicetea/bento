@@ -71,6 +71,8 @@ Client (requires the running backend):
   tunnel | tunnel set-token (stdin) | tunnel disable
   hosts | host add --json FILE | host set --json FILE | host remove NAME
   retired | retired prune APP_ID                      interactive; lists what will be deleted
+  images | images rebuild KEY...|--all                runtime image builds; a rebuild pulls the newest bases and tools
+  images rollout KEY [--app SLUG]... [--build ID]     move apps to the current (or an earlier) build, one at a time
   backup run [--app SLUG] [--compression zstd|gzip|none] [--upload]
   backup list | backup runs | backup restore --artifact PATH --app SLUG --database DB
   backup schedule list|show ID|create --json FILE|update ID --json FILE|enable ID|disable ID|delete ID
@@ -572,6 +574,8 @@ func (r *runner) run(args []string) error {
 		return errors.New("usage: bento host add --json FILE | bento host set --json FILE | bento host remove NAME")
 	case "retired":
 		return r.retired(ctx, c, args[1:])
+	case "images":
+		return r.images(ctx, c, args[1:])
 	case "backup":
 		return r.backup(ctx, c, args[1:])
 	case "export":
@@ -1320,4 +1324,112 @@ func firstOr(s []string, fallback string) string {
 		return fallback
 	}
 	return s[0]
+}
+
+// images lists runtime image builds, rebuilds runtimes and rolls apps out.
+func (r *runner) images(ctx context.Context, c *Client, args []string) error {
+	usage := errors.New("usage: bento images | bento images rebuild KEY...|--all | " +
+		"bento images rollout KEY [--app SLUG]... [--build ID]")
+	list := func() (dto.RuntimeImageList, error) {
+		var l dto.RuntimeImageList
+		err := c.Do(ctx, "GET", "/api/v1/system/runtime-images", nil, &l, nil)
+		return l, err
+	}
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		if err := r.listFlags(flag.NewFlagSet("images", flag.ContinueOnError), args); err != nil {
+			return err
+		}
+		l, err := list()
+		if err != nil {
+			return err
+		}
+		if r.json {
+			r.printJSON(l)
+			return nil
+		}
+		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "KEY\tCURRENT BUILD\tBUILT\tAPPS\tBEHIND")
+		for _, img := range l.Images {
+			tag, built := "-", "-"
+			if img.Current != nil {
+				tag, built = img.Current.Tag, img.Current.BuiltAt
+			}
+			behind := 0
+			for _, a := range img.Apps {
+				if a.Behind {
+					behind++
+				}
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\n", img.Key, tag, built, len(img.Apps), behind)
+		}
+		return tw.Flush()
+	}
+	switch args[0] {
+	case "rebuild":
+		fs, rest := sub("images rebuild", args[1:])
+		all := fs.Bool("all", false, "rebuild every listed runtime")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		keys := fs.Args()
+		if *all == (len(keys) > 0) {
+			return usage
+		}
+		if *all {
+			l, err := list()
+			if err != nil {
+				return err
+			}
+			for _, img := range l.Images {
+				keys = append(keys, img.Key)
+			}
+		}
+		for _, key := range keys {
+			if _, err := c.Mutate(ctx, "POST", "/api/v1/system/runtime-images/"+url.PathEscape(key)+"/rebuild",
+				struct{}{}, r.wait, r.out); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "rollout":
+		if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+			return usage
+		}
+		key := args[1]
+		fs, rest := sub("images rollout", args[2:])
+		var slugs multiFlag
+		fs.Var(&slugs, "app", "app slug (repeatable; default every app on an older build)")
+		build := fs.Int64("build", 0, "build id to move to (default the current build)")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if fs.NArg() > 0 {
+			return usage
+		}
+		req := dto.RolloutRequest{BuildID: *build}
+		if len(slugs) > 0 {
+			l, err := list()
+			if err != nil {
+				return err
+			}
+			for _, slug := range slugs {
+				id := ""
+				for _, img := range l.Images {
+					for _, a := range img.Apps {
+						if img.Key == key && a.Slug == slug {
+							id = a.ID
+						}
+					}
+				}
+				if id == "" {
+					return fmt.Errorf("no app %s on runtime %s", slug, key)
+				}
+				req.AppIDs = append(req.AppIDs, id)
+			}
+		}
+		_, err := c.Mutate(ctx, "POST", "/api/v1/system/runtime-images/"+url.PathEscape(key)+"/rollout", req,
+			r.wait, r.out)
+		return err
+	}
+	return usage
 }

@@ -66,13 +66,13 @@ func TestClassifyInventory(t *testing.T) {
 			t.Errorf("image %s prunable=%v", img.ID, img.Prunable)
 		}
 	}
-	if _, ok := PrunableImage(containers, images, "sha256:built"); ok {
+	if _, ok := PrunableImage(containers, images, "sha256:built", n.StackID); ok {
 		t.Error("in-use image reported prunable")
 	}
-	if _, ok := PrunableImage(containers, images, "sha256:mysql"); ok {
+	if _, ok := PrunableImage(containers, images, "sha256:mysql", n.StackID); ok {
 		t.Error("pulled image reported prunable")
 	}
-	if _, ok := PrunableImage(containers, images, "sha256:oldbuild"); !ok {
+	if _, ok := PrunableImage(containers, images, "sha256:oldbuild", n.StackID); !ok {
 		t.Error("unused build not prunable")
 	}
 	if img := inv.Images[1]; len(img.UsedBy) != 0 {
@@ -99,5 +99,25 @@ func TestClassifyInventory(t *testing.T) {
 		if nw.Ownership != wantNet[nw.Name] {
 			t.Errorf("network %s: got %s want %s", nw.Name, nw.Ownership, wantNet[nw.Name])
 		}
+	}
+}
+
+// A runtime build recorded by another stack is attributed to it and never
+// prunable from this one, even when no container uses it.
+func TestOtherStacksBuildIsNotPrunable(t *testing.T) {
+	n := Names{StackID: "s1", StackName: "prod"}
+	images := []docker.ImageSummary{
+		{ID: "sha256:mine", Labels: map[string]string{LabelManaged: "true", LabelStackID: "s1"}},
+		{ID: "sha256:theirs", Labels: map[string]string{LabelManaged: "true", LabelStackID: "s2"}},
+	}
+	inv := n.ClassifyInventory(nil, images, nil, nil, nil)
+	if inv.Images[0].Ownership != OwnedStack || !inv.Images[0].Prunable {
+		t.Fatalf("own build %+v", inv.Images[0])
+	}
+	if inv.Images[1].Ownership != OwnedOtherStack || inv.Images[1].Prunable {
+		t.Fatalf("other stack's build %+v", inv.Images[1])
+	}
+	if _, ok := PrunableImage(nil, images, "sha256:theirs", "s1"); ok {
+		t.Fatal("another stack's build was prunable")
 	}
 }

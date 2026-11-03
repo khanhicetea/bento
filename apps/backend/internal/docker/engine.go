@@ -126,6 +126,7 @@ type Engine interface {
 		tag string,
 		buildContext io.Reader,
 		args, labels map[string]string,
+		opts BuildOptions,
 		progress func(string),
 	) (string, error)
 	ReadImageFile(ctx context.Context, image, path string, labels map[string]string) ([]byte, error)
@@ -268,11 +269,20 @@ type buildLine struct {
 	} `json:"aux"`
 }
 
+// BuildOptions selects how a build treats cached state. Pull fetches every
+// FROM reference again, so floating tags resolve to their newest image;
+// NoCache re-runs every step, so package installs and downloads resolve anew.
+type BuildOptions struct {
+	Pull    bool
+	NoCache bool
+}
+
 func (s *SDK) BuildImage(
 	ctx context.Context,
 	tag string,
 	buildContext io.Reader,
 	args, labels map[string]string,
+	opts BuildOptions,
 	progress func(string),
 ) (_ string, err error) {
 	ctx, touch, finish := progressBound(ctx, BuildStallTimeout, BuildTimeout, "build "+tag)
@@ -282,7 +292,7 @@ func (s *SDK) BuildImage(
 		buildArgs[k] = &v
 	}
 	res, err := s.c.ImageBuild(ctx, buildContext, client.ImageBuildOptions{
-		Tags: []string{tag}, Remove: true, ForceRemove: true, PullParent: false,
+		Tags: []string{tag}, Remove: true, ForceRemove: true, PullParent: opts.Pull, NoCache: opts.NoCache,
 		BuildArgs: buildArgs, Labels: labels, Version: build.BuilderV1, Dockerfile: "Dockerfile",
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,8 +82,8 @@ func TestMigrateUpgradesAfterCopyingState(t *testing.T) {
 	}
 	// The copy holds the pre-migration schema and data, privately.
 	copies := stateCopies(t, path)
-	if len(copies) != 1 || !strings.Contains(filepath.Base(copies[0]), ".schema-2.") {
-		t.Fatalf("want one schema-2 copy, got %v", copies)
+	if len(copies) != 1 || !strings.Contains(filepath.Base(copies[0]), fmt.Sprintf(".schema-%d.", SchemaVersion)) {
+		t.Fatalf("want one schema-%d copy, got %v", SchemaVersion, copies)
 	}
 	if info, _ := os.Stat(copies[0]); info.Mode().Perm() != 0o600 {
 		t.Fatalf("copy mode %v, want 0600", info.Mode().Perm())
@@ -108,7 +109,7 @@ func TestMigrateFailureLeavesStateUnchanged(t *testing.T) {
 		stage string
 		step  func(*sql.Tx) error
 	}{
-		"step error": {"step 2 to 3", func(tx *sql.Tx) error {
+		"step error": {fmt.Sprintf("step %d to %d", SchemaVersion, SchemaVersion+1), func(tx *sql.Tx) error {
 			if _, err := tx.Exec(`UPDATE settings SET value_json = '{"v":"half"}'`); err != nil {
 				return err
 			}
@@ -213,5 +214,31 @@ func TestSupportedVersionsStartAtBaseline(t *testing.T) {
 		if err := CheckCompatible(p); !errors.Is(err, ErrUnsupportedState) {
 			t.Fatalf("version %d must be refused: %v", v, err)
 		}
+	}
+}
+
+// A schema-2 state (before runtime builds) opens as the current schema with
+// the runtime build tables, keeping its rows.
+func TestMigrateFrom2AddsRuntimeBuilds(t *testing.T) {
+	path := newStateFile(t)
+	db := openRaw(t, path)
+	if _, err := db.Exec(`DROP TABLE app_runtime_builds; DROP TABLE runtime_builds; PRAGMA user_version = 2;`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if v := userVersion(t, s.db); v != SchemaVersion {
+		t.Fatalf("user_version %d, want %d", v, SchemaVersion)
+	}
+	var got map[string]string
+	if _, err := GetSetting(t.Context(), s.DB(), "probe", &got); err != nil || got["v"] != "before" {
+		t.Fatalf("rows lost: %v %v", got, err)
+	}
+	if _, err := ListRuntimeBuilds(t.Context(), s.DB()); err != nil {
+		t.Fatal(err)
 	}
 }

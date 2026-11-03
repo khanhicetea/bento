@@ -169,8 +169,9 @@ func Serve(opts ServeOptions) error {
 	if err := ctrl.Recover(ctx); err != nil {
 		return err
 	}
-	ctrl.Start(ctx)
 	rec := reconcile.New(ctrl, log)
+	ctrl.WakeReconciler = rec.Trigger // before Start: workers read it
+	ctrl.Start(ctx)
 	// Background loops end with ctx and are joined before the store closes.
 	var bg sync.WaitGroup
 	defer func() { cancel(); bg.Wait() }() // also on early error returns

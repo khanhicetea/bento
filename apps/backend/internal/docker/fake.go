@@ -29,6 +29,10 @@ type Fake struct {
 	Images     map[string]string
 	// ImageLabels holds labels by image ID (set by BuildImage).
 	ImageLabels map[string]map[string]string
+	// ImageFiles overrides ReadImageFile by path (any image).
+	ImageFiles map[string][]byte
+	// Builds records the options of every BuildImage call, in order.
+	Builds []BuildOptions
 	// ExecHook answers Exec calls; default exits 0.
 	ExecHook func(id string, req ExecRequest) ExecResult
 	// FailOn makes the named method return an error once (fault injection).
@@ -112,6 +116,7 @@ func (f *Fake) BuildImage(
 	tag string,
 	r io.Reader,
 	_, labels map[string]string,
+	opts BuildOptions,
 	_ func(string),
 ) (string, error) {
 	f.mu.Lock()
@@ -120,6 +125,7 @@ func (f *Fake) BuildImage(
 		return "", err
 	}
 	_, _ = io.Copy(io.Discard, r)
+	f.Builds = append(f.Builds, opts)
 	id := "sha256:built-" + tag
 	f.Images[tag] = id
 	f.ImageLabels[id] = labels
@@ -127,6 +133,12 @@ func (f *Fake) BuildImage(
 }
 
 func (f *Fake) ReadImageFile(_ context.Context, _, path string, _ map[string]string) ([]byte, error) {
+	f.mu.Lock()
+	data, ok := f.ImageFiles[path]
+	f.mu.Unlock()
+	if ok {
+		return data, nil
+	}
 	if path == "/etc/passwd" {
 		return []byte("root:x:0:0:root:/root:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n"), nil
 	}

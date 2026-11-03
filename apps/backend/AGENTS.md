@@ -40,7 +40,7 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 | Docker/filesystem effects | an operation handler in `internal/operations` |
 | Drift repair | `internal/reconcile` |
 | Container shape, labels, names, generated app config | `internal/runtime` (+ `templates/config`) |
-| Runtime images | `templates/images/{common,php,http}` and pins in `internal/domain/catalog.go` |
+| Runtime images | `templates/images/{common,php,php-sury,http}`, catalog and pins in `internal/domain/catalog.go`, builds and rollouts in `internal/operations/runtime_images.go` |
 | Edge Nginx | `internal/edge` + `templates/edge` + `internal/operations/edge.go` |
 | MySQL/PostgreSQL | `internal/dataservices` |
 | Persistence | `internal/store` |
@@ -89,12 +89,16 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 - **Image builds use the classic builder** (`build.BuilderV1`): no `RUN --mount`, no heredocs, no automatic
   `TARGETARCH` (use `dpkg --print-architecture`). Executable bits come from `assets.executable`, not the filesystem,
   because `embed.FS` drops modes — update that rule when adding scripts in new locations.
-- **Changing anything under `templates/images`** or a pinned version changes the image tag, so all apps of that
-  runtime are rebuilt and replaced. Upgrading a pinned artifact (s6-overlay, minicrond, Composer) means updating the
-  version **and both amd64/arm64 SHA-256s** in `domain.RuntimeArtifacts` (Valkey is a source tarball: `VALKEY_VERSION`
-  and its single `VALKEY_SHA256`, compiled once on `domain.ValkeyBuildBase` by
-  `templates/images/common/build-valkey.sh`; phpredis is `PHPREDIS_VERSION` and `PHPREDIS_SHA256`), then
-  running `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages`.
+- **Changing anything under `templates/images`** or a pinned version changes the image inputs
+  (`ImageSpec.Hash`), so every app of that runtime gets a new build and is replaced by the reconciler. Base images,
+  mise tool versions, Composer and phpredis float: never pin them by digest, and never let a deploy or restart pull a
+  newer one — only a build of new inputs or an operator `image.rebuild` builds, and only `image.rollout` moves apps
+  onto an operator rebuild. Apps run the build recorded in `app_runtime_builds` (`plannedBuild`/`ensureAppBuild`);
+  never resolve an app's image from a tag. Upgrading a pinned artifact (s6-overlay, minicrond, mise) means updating
+  the version **and both amd64/arm64 SHA-256s** in `domain.RuntimeArtifacts` (Valkey is a source tarball:
+  `VALKEY_VERSION` and its single `VALKEY_SHA256`, compiled once on `domain.ValkeyBuildBase` by
+  `templates/images/common/build-valkey.sh`), then running
+  `BENTO_DOCKER_TESTS=1 go test ./internal/runtime -run TestIntegrationBuildRuntimeImages`.
   A minicrond bump also needs `make vendor-minicrond-ui` (the scheduler gateway serves that vendored UI); review
   the diff of `internal/schedulerui`.
 - **Data-service readiness must use TCP.** First-boot entrypoints run a socket-only temporary server; a socket probe

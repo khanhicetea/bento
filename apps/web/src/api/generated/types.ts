@@ -860,6 +860,71 @@ export interface DockerInventory {
   volumes: DockerVolume[];
   networks: DockerNetwork[];
 }
+/**
+ * RuntimeBuild is one build of a managed runtime image. Manifest holds the
+ * tool versions it resolved and, under "base:<ref>", the image id each
+ * floating base resolved to.
+ */
+export interface RuntimeBuild {
+  id: number /* int64 */;
+  tag: string;
+  imageId: string;
+  builtAt: string;
+  current: boolean;
+  manifest: { [key: string]: string};
+}
+/**
+ * RuntimeImageApp is one provisioned app of a runtime.
+ */
+export interface RuntimeImageApp {
+  id: string;
+  slug: string;
+  desiredRuntime: DesiredRuntime;
+  /**
+   * BuildID is the build the app runs or will run (0: none built yet).
+   */
+  buildId: number /* int64 */;
+  /**
+   * Behind: a newer current build is available to roll out.
+   */
+  behind: boolean;
+  /**
+   * Rolling: a rollout assigned the build; the instance is not yet
+   * confirmed ready on it.
+   */
+  rolling: boolean;
+  /**
+   * RollbackBuildID is the earlier build the app can go back to (0: none).
+   */
+  rollbackBuildId: number /* int64 */;
+  /**
+   * Changes lists "name from -> to" for rolling out the current build.
+   */
+  changes: string[];
+}
+/**
+ * RuntimeImage is one runtime (php-8.4, node-24) and its builds.
+ */
+export interface RuntimeImage {
+  key: string;
+  kind: RuntimeKind;
+  toolchain: string;
+  version: string;
+  current?: RuntimeBuild;
+  builds: RuntimeBuild[];
+  apps: RuntimeImageApp[];
+}
+export interface RuntimeImageList {
+  images: RuntimeImage[];
+}
+/**
+ * RolloutRequest moves apps of a runtime to one of its builds. No buildId is
+ * the current build; no appIds is every app on another build.
+ */
+export interface RolloutRequest {
+  buildId?: number /* int64 */;
+  appIds?: string[];
+}
 export interface Session {
   authenticated: boolean;
   csrfToken?: string;

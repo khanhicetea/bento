@@ -140,6 +140,15 @@ const ValkeyDataDir = ".local/share/valkey"
 // rename, so the file itself is always a complete snapshot.
 var ResticValkeyExcludes = []string{ValkeyDataDir + "/temp-*.rdb"}
 
+// MiseDataDir holds the toolchains the operator installs with mise inside
+// the app (relative to the home). They are re-installable from the backed-up
+// mise config (`mise install`), so they and mise's download cache are never
+// backed up.
+const MiseDataDir = ".local/share/mise"
+
+// ResticMiseExcludes are mise files never backed up (relative to the home).
+var ResticMiseExcludes = []string{MiseDataDir, ".cache/mise"}
+
 // HomeSidecarName is the Bento identity record inside each home; it belongs
 // to one stack incarnation and is never backed up or restored.
 const HomeSidecarName = ".bento-identity.json"
@@ -267,7 +276,7 @@ func ResticExcludeLines(s ResticSettings, homeMount string, sqliteFiles []string
 		return neg + p
 	}
 	lines := []string{homeMount + "/" + HomeSidecarName}
-	for _, p := range slices.Concat(ResticMinicronExcludes, ResticValkeyExcludes) {
+	for _, p := range slices.Concat(ResticMinicronExcludes, ResticValkeyExcludes, ResticMiseExcludes) {
 		lines = append(lines, homeMount+"/"+p)
 	}
 	if s.DefaultExcludes {

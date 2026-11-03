@@ -41,7 +41,8 @@ func (c *Controller) OpenTool(ctx context.Context, app domain.App, lifetime time
 	if _, err := c.EnsureNetworks(ctx); err != nil {
 		return nil, err
 	}
-	imageID, _, err := c.Images.Ensure(ctx, app.Runtime.ImageKey(), nil)
+	build, err := c.ensureAppBuild(ctx, app, nil)
+	imageID := build.ImageID
 	if err != nil {
 		return nil, err
 	}

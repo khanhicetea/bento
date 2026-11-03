@@ -1025,3 +1025,55 @@ func TestServiceSettingsEndpoints(t *testing.T) {
 		t.Fatalf("service %+v", svc)
 	}
 }
+
+func TestRuntimeImagesAPI(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	resp, body := c.do("GET", "/api/v1/system/runtime-images", "", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: %d %s", resp.StatusCode, body)
+	}
+	var list dto.RuntimeImageList
+	if err := json.Unmarshal([]byte(body), &list); err != nil || list.Images == nil {
+		t.Fatalf("list %s: %v", body, err)
+	}
+	for _, path := range []string{"/api/v1/system/runtime-images/php-8.4/rebuild",
+		"/api/v1/system/runtime-images/php-8.4/rollout"} {
+		resp, _ := c.do("POST", path, `{}`, map[string]string{"Origin": origin})
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s without CSRF -> %d", path, resp.StatusCode)
+		}
+	}
+	cases := map[string]struct {
+		path, body string
+		status     int
+	}{
+		"unknown key":        {"/api/v1/system/runtime-images/php-9.9/rebuild", `{}`, http.StatusNotFound},
+		"traversal key":      {"/api/v1/system/runtime-images/..%2Fphp/rebuild", `{}`, http.StatusNotFound},
+		"rebuild body field": {"/api/v1/system/runtime-images/php-8.4/rebuild", `{"bogus":1}`, http.StatusBadRequest},
+		"rollout bad field":  {"/api/v1/system/runtime-images/php-8.4/rollout", `{"build":1}`, http.StatusBadRequest},
+		"rollout bad build":  {"/api/v1/system/runtime-images/php-8.4/rollout", `{"buildId":42}`, http.StatusNotFound},
+		"rollout bad app":    {"/api/v1/system/runtime-images/php-8.4/rollout", `{"appIds":["nope"]}`, http.StatusNotFound},
+	}
+	for name, tc := range cases {
+		if resp, body := c.write("POST", tc.path, tc.body); resp.StatusCode != tc.status {
+			t.Errorf("%s -> %d %s, want %d", name, resp.StatusCode, body, tc.status)
+		}
+	}
+	resp, body = c.write("POST", "/api/v1/system/runtime-images/php-8.4/rebuild", `{}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("rebuild: %d %s", resp.StatusCode, body)
+	}
+	var acc dto.Accepted
+	if err := json.Unmarshal([]byte(body), &acc); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.Wait(acc.Operation.ID); got.State != store.OpSucceeded {
+		t.Fatalf("rebuild op: %s %s", got.State, got.ErrorMessage)
+	}
+	resp, body = c.do("GET", "/api/v1/system/runtime-images", "", nil)
+	if err := json.Unmarshal([]byte(body), &list); err != nil || len(list.Images) != 1 ||
+		list.Images[0].Key != "php-8.4" || list.Images[0].Current == nil || list.Images[0].Builds == nil {
+		t.Fatalf("after rebuild %d %s", resp.StatusCode, body)
+	}
+}

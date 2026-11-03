@@ -16,6 +16,9 @@ drained before the service stops.
 If a new version changes an app's runtime image or generated configuration, Bento brings running apps up to date by
 replacing their containers — expect a brief restart per app. Check **Activity** after upgrading.
 
+PHP, Debian and toolchain patch releases don't need an upgrade: **System → Images → Rebuild** picks them up, and you
+choose when to roll apps onto the new build ([Runtime images](/reference/runtime-images#rebuild-and-roll-out)).
+
 <Callout type="note">
 Take a [stack export](/system/stacks#move-or-clone-a-whole-stack) before upgrading. Bento refuses to open state from a
 version it doesn't know rather than rewriting it.

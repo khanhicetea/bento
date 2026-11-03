@@ -87,6 +87,10 @@ export const api = {
     catalog: (signal?: AbortSignal) => get<T.Catalog>("/api/v1/catalog", signal),
     docker: (signal?: AbortSignal) => get<T.DockerInventory>("/api/v1/system/docker", signal),
     reconcile: (signal?: AbortSignal) => get<T.ReconcileStatus>("/api/v1/reconcile", signal),
+    runtimeImages: (signal?: AbortSignal) => get<T.RuntimeImageList>("/api/v1/system/runtime-images", signal),
+    rebuildRuntime: (key: string) => mutate("POST", `/api/v1/system/runtime-images/${enc(key)}/rebuild`),
+    rolloutRuntime: (key: string, body: T.RolloutRequest) =>
+      mutate("POST", `/api/v1/system/runtime-images/${enc(key)}/rollout`, body),
     pruneImage: (id: string, confirm: string) =>
       mutate("POST", `/api/v1/system/docker/images/${enc(id.replace(/^sha256:/, ""))}/prune`, {
         confirm,

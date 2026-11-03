@@ -7,32 +7,20 @@ import (
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
-	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 	"github.com/khanhicetea/bento/apps/backend/internal/testutil"
 )
 
-// staleImage makes the running app's image look like an older build: the
-// instance runs on "sha256:old" and the planned tag is absent, as after an
-// upgrade that changed the runtime image inputs.
-func staleImage(t *testing.T, h *testutil.Harness, app domain.App) (tag, containerID string) {
+// staleImage makes the running app's build predate the image inputs, as
+// after an upgrade that changed them: no usable build of its runtime exists.
+func staleImage(t *testing.T, h *testutil.Harness, app domain.App) (oldImage, containerID string) {
 	t.Helper()
-	spec, err := runtime.PlanImage(app.Runtime.ImageKey())
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.Fake.SetImage(spec.Tag(), "sha256:old")
-	op, err := h.C.RestartApp(t.Context(), app.ID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.Wait(op.ID)
 	obs, err := h.C.Observe(t.Context(), app)
 	if err != nil || !obs.Running {
 		t.Fatalf("app not running: %v", err)
 	}
-	h.Fake.SetImage(spec.Tag(), "")
-	return spec.Tag(), obs.ContainerID
+	h.StaleBuilds(t, app.Runtime.ImageKey())
+	return obs.Image, obs.ContainerID
 }
 
 func countOps(t *testing.T, h *testutil.Harness, kind, target string) (n int, last store.Operation) {
@@ -54,7 +42,7 @@ func countOps(t *testing.T, h *testutil.Harness, kind, target string) (n int, la
 
 func TestMissingImageIsPreparedBeforeRollout(t *testing.T) {
 	h, r, app := setup(t)
-	tag, before := staleImage(t, h, app)
+	oldImage, before := staleImage(t, h, app)
 	key := app.Runtime.ImageKey().String()
 	reconciles, _ := countOps(t, h, operations.KindAppReconcile, app.ID)
 
@@ -68,8 +56,8 @@ func TestMissingImageIsPreparedBeforeRollout(t *testing.T) {
 	if obs, _ := h.C.Observe(t.Context(), app); obs.ContainerID != before || !obs.Running {
 		t.Fatal("the running instance must keep serving while its image builds")
 	}
-	if _, ok, _ := h.Fake.ImageID(t.Context(), tag); !ok {
-		t.Fatal("planned tag not built")
+	if _, ok, _ := h.C.PlannedGeneration(t.Context(), app); !ok {
+		t.Fatal("planned build not recorded")
 	}
 
 	pass(t, h, r)
@@ -77,7 +65,7 @@ func TestMissingImageIsPreparedBeforeRollout(t *testing.T) {
 	if obs.ContainerID == before || !obs.Running {
 		t.Fatal("the app should be replaced once its image is ready")
 	}
-	if obs.Image == "sha256:old" {
+	if obs.Image == oldImage {
 		t.Fatal("replacement still runs the old image")
 	}
 	if n, _ := countOps(t, h, operations.KindImagePrepare, key); n != 1 {

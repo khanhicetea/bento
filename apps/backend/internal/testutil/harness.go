@@ -4,6 +4,7 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
+	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
+	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
@@ -22,6 +25,8 @@ type Harness struct {
 	Fake   *docker.Fake
 	Store  *store.Store
 	Layout platform.Layout
+
+	builds int
 }
 
 // New returns a started controller over a fake engine. Requires root because
@@ -109,4 +114,34 @@ func (h *Harness) WaitIdle() {
 		time.Sleep(10 * time.Millisecond)
 	}
 	h.T.Fatal("operations did not drain")
+}
+
+// StaleBuilds makes every recorded build of key predate the current image
+// inputs, as after a Bento upgrade that changed them: apps then need a new
+// build of the key.
+func (h *Harness) StaleBuilds(t *testing.T, key domain.ImageKey) {
+	t.Helper()
+	if _, err := h.Store.DB().ExecContext(t.Context(),
+		"UPDATE runtime_builds SET context_hash = 'stale-' || context_hash WHERE image_key = ?", key.String()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// NewBuild records a new current build of key's current inputs whose image is
+// imageID, as an operator rebuild that changed something does.
+func (h *Harness) NewBuild(t *testing.T, key domain.ImageKey, imageID string) store.RuntimeBuild {
+	t.Helper()
+	spec, err := runtime.PlanImage(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.builds++
+	b := store.RuntimeBuild{ImageKey: key.String(), ContextHash: spec.Hash,
+		Tag: fmt.Sprintf("%s-test%d", spec.BuildTag(time.Now()), h.builds), ImageID: imageID,
+		Manifest: map[string]string{"build": imageID}, BuiltAt: time.Now()}
+	if b.ID, err = store.InsertCurrentRuntimeBuild(t.Context(), h.Store.DB(), b); err != nil {
+		t.Fatal(err)
+	}
+	h.Fake.SetImage(b.Tag, imageID)
+	return b
 }
