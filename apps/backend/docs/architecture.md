@@ -532,9 +532,10 @@ only what it created.
 
 - `http.go`: strict decoding (`application/json`, 1 MiB, `DisallowUnknownFields`, no trailing data), error mapping to
   stable `dto.ErrorCode`s, `Idempotency-Key` format, path id validation.
-- `auth.go`: argon2id password (`settings.auth`), 12-hour sessions stored as SHA-256 token hashes, `HttpOnly`
+- `auth.go`: argon2id password (`settings.auth`; new hashes use OWASP's minimum, 19 MiB / 2 iterations / 1 lane,
+  and a hash with other parameters is re-hashed at the next successful login without revoking sessions), 12-hour sessions stored as SHA-256 token hashes, `HttpOnly`
   `SameSite=Strict` cookie, login rate limit (10 failures / 5 min, counting checks in flight, so a burst cannot all
-  pass before one fails) with at most 2 password checks (64 MiB argon2id each) at once — others get `429` unhashed —
+  pass before one fails) with at most 2 password checks at once — others get `429` unhashed —
   and for writes: exact `Origin` in
   `AllowedOrigins`, `Sec-Fetch-Site: same-origin` when present, and `X-CSRF-Token` equal to the session's token.
   Changing the password revokes every session (not API tokens).

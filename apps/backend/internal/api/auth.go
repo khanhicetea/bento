@@ -39,24 +39,50 @@ type PasswordRecord struct {
 	Hash string `json:"hash"`
 }
 
+// argon2id parameters for new hashes: OWASP's recommended minimum (19 MiB, 2
+// iterations, 1 lane). Each stored hash carries its own parameters, so older
+// hashes keep verifying and are upgraded at the next successful login.
+const (
+	argonTime    = 2
+	argonMemory  = 19 * 1024 // KiB
+	argonThreads = 1
+	argonKeyLen  = 32
+)
+
 // HashPassword derives an encoded argon2id hash.
 func HashPassword(password string) string {
 	salt := []byte(platform.RandomToken(16))
-	key := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
+	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
 	return fmt.Sprintf(
-		"argon2id$3$65536$2$%s$%s",
+		"argon2id$%d$%d$%d$%s$%s",
+		argonTime, argonMemory, argonThreads,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(key),
 	)
 }
 
-func verifyPassword(encoded, password string) bool {
-	parts := strings.Split(encoded, "$")
+// hashParams parses an encoded hash's argon2id parameters.
+func hashParams(encoded string) (parts []string, t, m, p uint32, ok bool) {
+	parts = strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[0] != "argon2id" {
-		return false
+		return nil, 0, 0, 0, false
 	}
-	var t, m, p uint32
 	if _, err := fmt.Sscanf(parts[1]+" "+parts[2]+" "+parts[3], "%d %d %d", &t, &m, &p); err != nil {
+		return nil, 0, 0, 0, false
+	}
+	return parts, t, m, p, true
+}
+
+// needsRehash reports whether a hash was made with other parameters than
+// HashPassword uses now.
+func needsRehash(encoded string) bool {
+	_, t, m, p, ok := hashParams(encoded)
+	return !ok || t != argonTime || m != argonMemory || p != argonThreads
+}
+
+func verifyPassword(encoded, password string) bool {
+	parts, t, m, p, ok := hashParams(encoded)
+	if !ok || m > 256*1024 || t > 16 || p == 0 || p > 16 {
 		return false
 	}
 	salt, err1 := base64.RawStdEncoding.DecodeString(parts[4])
@@ -66,6 +92,23 @@ func verifyPassword(encoded, password string) bool {
 	}
 	got := argon2.IDKey([]byte(password), salt, t, m, uint8(p), uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
+}
+
+// upgradeHash re-hashes a correct password whose stored hash uses older
+// parameters. It replaces the hash only if it is still the one that was
+// checked, so a concurrent password change wins, and it keeps every session.
+// A failure leaves the old hash, which still verifies.
+func (s *Server) upgradeHash(ctx context.Context, old, password string) {
+	err := s.Store.Tx(ctx, func(q store.Q) error {
+		var cur PasswordRecord
+		if _, err := store.GetSetting(ctx, q, authSetting, &cur); err != nil || cur.Hash != old {
+			return err
+		}
+		return store.PutSetting(ctx, q, authSetting, PasswordRecord{Hash: HashPassword(password)})
+	})
+	if err != nil {
+		s.Log.Warn("upgrade operator password hash", "err", err)
+	}
 }
 
 // ValidatePassword enforces a minimum operator password strength.
@@ -144,8 +187,8 @@ const (
 	maxLoginFailures = 10
 	loginWindow      = 5 * time.Minute
 	// maxConcurrentHashes bounds password checks in flight. Each one is an
-	// argon2id derivation holding 64 MiB, so this caps their memory at
-	// 128 MiB however many requests arrive at once.
+	// argon2id derivation holding 19 MiB (64 MiB for a hash from before
+	// 2026-11-03 until it is upgraded), however many requests arrive.
 	maxConcurrentHashes = 2
 )
 
@@ -382,6 +425,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			&apiError{status: http.StatusUnauthorized, code: dto.ErrorCodeUnauthorized, msg: "invalid password"},
 		)
 		return
+	}
+	if needsRehash(rec.Hash) {
+		s.upgradeHash(r.Context(), rec.Hash, req.Password)
 	}
 	token := platform.RandomToken(32)
 	sess := store.Session{

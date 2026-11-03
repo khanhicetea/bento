@@ -683,3 +683,11 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
   which needs the regenerated `types.ts` committed. Web checks and `docs:build` passed.
 - Not verified: a real issuance (no public DNS on the dev host), so the module's real file layout is from its source;
   arm64.
+
+## Operator password hash parameters (2026-11-03)
+
+- New hashes use argon2id at OWASP's minimum (19 MiB, 2 iterations, 1 lane) instead of 64 MiB / 3 / 2, so a
+  password check costs about a third of the memory. A stored hash keeps its own parameters: a hash from before
+  verifies as before and is re-hashed at the next successful login (only if it is still the stored hash, sessions
+  kept). `TestPasswordHashUsesOWASPParametersAndUpgradesOldHashes` covers both and refuses hashes with out-of-range
+  parameters. bcrypt was not chosen: it is not memory-hard and truncates at 72 bytes (passwords allow 1024).

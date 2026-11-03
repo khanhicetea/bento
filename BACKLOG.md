@@ -60,6 +60,8 @@ None open.
   - The import runs `tar` as root in the manifest's `svc.Image` (`internal/stack/volumes.go:30`) without checking it
     against the catalog.
   - Fix: use `openat`/`O_NOFOLLOW` directory fds, mask modes to `0o777`, and accept only catalog images.
+  - Decision (2026-11-03): keep stack export/import (the only whole-stack move and the documented pre-upgrade
+    snapshot) and fix these three before public use, rather than remove it.
 - **Client meta-commands in a crafted dump** (plausible). Restores replay dumps through `mysql` and `psql` exec'd as
   root in the service container. Both clients run shell commands from their input (`system`/`\!`), so a crafted
   artifact (a hand-placed file, or a dump in a tampered restic repository) could run commands next to the data

@@ -1,9 +1,15 @@
 package api
 
 import (
+	"encoding/base64"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
+
+	"golang.org/x/crypto/argon2"
+
+	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
 func TestLoginLimiterCountsAttemptsBeforeHashing(t *testing.T) {
@@ -86,5 +92,41 @@ func TestLoginBurstIsBoundedAndCounted(t *testing.T) {
 	resp, _ := c.do("POST", "/api/v1/session", `{"password":"`+password+`"}`, map[string]string{"Origin": origin})
 	if unauthorized == maxLoginFailures && resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("login after a spent budget -> %d", resp.StatusCode)
+	}
+}
+
+func TestPasswordHashUsesOWASPParametersAndUpgradesOldHashes(t *testing.T) {
+	h := HashPassword("a long enough password")
+	if !strings.HasPrefix(h, "argon2id$2$19456$1$") || needsRehash(h) || !verifyPassword(h, "a long enough password") {
+		t.Fatalf("new hash: %s", h)
+	}
+	// A hash made with the parameters used before 2026-11-03.
+	salt := []byte("0123456789abcdef")
+	key := argon2.IDKey([]byte(password), salt, 3, 64*1024, 2, 32)
+	old := "argon2id$3$65536$2$" + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key)
+	if !verifyPassword(old, password) || !needsRehash(old) {
+		t.Fatal("an old hash must verify and be marked for upgrade")
+	}
+	for _, bad := range []string{"argon2id$2$9999999$1$c2FsdA$a2V5", "argon2id$2$19456$0$c2FsdA$a2V5", "bcrypt$x"} {
+		if verifyPassword(bad, password) {
+			t.Errorf("%q verified", bad)
+		}
+	}
+
+	c, hs := newServer(t)
+	if err := store.PutSetting(t.Context(), hs.Store.DB(), authSetting, PasswordRecord{Hash: old}); err != nil {
+		t.Fatal(err)
+	}
+	c.login()
+	var rec PasswordRecord
+	if _, err := store.GetSetting(t.Context(), hs.Store.DB(), authSetting, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Hash == old || needsRehash(rec.Hash) || !verifyPassword(rec.Hash, password) {
+		t.Fatalf("login did not upgrade the hash: %s", rec.Hash)
+	}
+	resp, _ := c.do("GET", "/api/v1/apps", "", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatal("upgrading the hash must keep the session")
 	}
 }
