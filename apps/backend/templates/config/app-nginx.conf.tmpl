@@ -56,6 +56,17 @@ http {
     "1:https" on;
   }
 
+  # Browser caching for static files. Only URLs that change when the content
+  # changes are cached long: a query string (?v=, ?id=, ?ver=) or a
+  # fingerprinted name (main.3f2a9c1d.js, app-B7x9kQ2a.css: 8+ name characters
+  # including a digit after "." or "-"). Anything else is cached briefly, so an
+  # unversioned asset changed by a deploy is seen within minutes.
+  map "$is_args$uri" $bento_static_cache {
+    default "public, max-age=600";
+    "~^\?" "public, max-age=31536000, immutable";
+    "~[.-](?=[A-Za-z_]*[0-9])[A-Za-z0-9_]{8,}(?:\.[A-Za-z0-9]+)+$" "public, max-age=31536000, immutable";
+  }
+
   upstream bento_php {
     server unix:/run/php/fpm.sock;
   }
@@ -65,6 +76,13 @@ http {
     root {{.DocumentRoot}};
     index index.php index.html;
     charset utf-8;
+    # Redirects nginx makes itself (a directory without its trailing slash)
+    # stay relative: an absolute one would name this :{{.Port}} over http.
+    absolute_redirect off;
+{{- if eq .Routing "front-controller"}}
+    # Set to 0 only for static-looking URLs answered by PHP (see @bento_php_static).
+    set $bento_edge_expires "";
+{{- end}}
 
     # Refuse symlink traversal below the document root (the explicitly
     # configured release symlink, if any, lies before the checked part).
@@ -81,11 +99,24 @@ http {
     }
 
     location ~* \.(?:css|js|mjs|map|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot|webmanifest)$ {
-      expires 30d;
+      add_header Cache-Control $bento_static_cache;
       access_log off;
+{{- if eq .Routing "front-controller"}}
+      try_files $uri @bento_php_static;
+{{- else}}
       try_files $uri =404;
+{{- end}}
     }
 {{- if eq .Routing "front-controller"}}
+
+    # A static-looking URL with no file behind it is a route (a generated
+    # /js/lang.js, an /og-image.png). The edge's opt-in static cache ignores
+    # Cache-Control from apps, so X-Accel-Expires: 0 keeps these responses,
+    # which may be per-user, out of it. The edge strips the header.
+    location @bento_php_static {
+      set $bento_edge_expires 0;
+      rewrite ^ /index.php last;
+    }
 
     location / {
       try_files $uri $uri/ /index.php$is_args$args;
@@ -93,6 +124,7 @@ http {
 
     location ~ ^/index\.php(/|$) {
       fastcgi_split_path_info ^(/index\.php)(/.*)$;
+      add_header X-Accel-Expires $bento_edge_expires always;
       include /etc/bento/fastcgi.conf;
     }
 

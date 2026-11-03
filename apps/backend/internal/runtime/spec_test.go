@@ -166,6 +166,29 @@ func TestRenderedConfig(t *testing.T) {
 	if !strings.Contains(files["nginx.conf"], `location ~ /\.(?!well-known`) {
 		t.Fatal("dotfiles must be denied")
 	}
+	for _, want := range []string{"absolute_redirect off;", "try_files $uri @bento_php_static;", "set $bento_edge_expires 0;", "add_header X-Accel-Expires $bento_edge_expires always;", "add_header Cache-Control $bento_static_cache;"} {
+		if !strings.Contains(files["nginx.conf"], want) {
+			t.Errorf("front-controller nginx.conf missing %q", want)
+		}
+	}
+	if strings.Contains(files["nginx.conf"], "expires 30d") {
+		t.Error("unversioned static files must not be cached for 30 days")
+	}
+	legacy := testApp()
+	legacy.Runtime.PHP.Routing = domain.RoutingLegacy
+	cfg, _, _, err = RenderAppConfig(legacy, AppContext{TrustedProxies: []string{"10.200.0.2"}, ImagePasswd: []byte("root:x:0:0::/root:/bin/bash\nshop:x:1:1::/:/bin/sh\n"), ImageGroup: []byte("root:x:0:\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range cfg {
+		if f.name != "nginx.conf" {
+			continue
+		}
+		conf := string(f.data)
+		if !strings.Contains(conf, "absolute_redirect off;") || strings.Contains(conf, "bento_php_static") || strings.Contains(conf, "bento_edge_expires") {
+			t.Error("legacy routing: relative redirects, no front-controller fallback")
+		}
+	}
 	if strings.Contains(files["php-fpm.conf"], "\nuser =") {
 		t.Fatal("pool must not switch identity")
 	}

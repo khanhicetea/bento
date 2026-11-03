@@ -80,7 +80,8 @@ upstream {{.UpstreamName}} {
 {{- end}}
 {{- if .StaticCache}}
   # Static-extension responses are served from the edge cache. Opting in
-  # asserts they are not per-user (PHP apps serve them from disk, never PHP).
+  # asserts they are not per-user. PHP apps serve them from disk; one answered
+  # by the app's front controller carries X-Accel-Expires: 0 and is not stored.
   location ~* \.(?:css|js|mjs|map|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot|webmanifest)$ {
     proxy_cache bento_static;
     proxy_cache_key "{{.Name}}$host$request_uri";
