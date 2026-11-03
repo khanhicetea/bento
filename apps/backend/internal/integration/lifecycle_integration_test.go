@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -283,6 +284,15 @@ func TestIntegrationAppServices(t *testing.T) {
 	update(true, true)
 	if got := exec("valkey-cli", "PING"); got != "PONG" {
 		t.Fatalf("valkey PING: %q", got)
+	}
+	// Capped at a quarter of the app's memory limit; only keys with a TTL
+	// are evicted.
+	wantMax := strconv.Itoa(runtime.ValkeyMaxMemoryMB(app.Resources.MemoryMB) << 20)
+	if got := exec("valkey-cli", "CONFIG", "GET", "maxmemory"); got != "maxmemory\n"+wantMax {
+		t.Fatalf("valkey maxmemory: %q, want %s bytes", got, wantMax)
+	}
+	if got := exec("valkey-cli", "CONFIG", "GET", "maxmemory-policy"); got != "maxmemory-policy\nvolatile-lru" {
+		t.Fatalf("valkey maxmemory-policy: %q", got)
 	}
 	if got := exec("redis-cli", "PING"); got != "PONG" {
 		t.Fatalf("redis-cli alias PING: %q", got)

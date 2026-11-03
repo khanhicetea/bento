@@ -26,7 +26,7 @@ the command follows progress and exits when it finishes.
 bento status              # stack health
 bento ops                 # recent operations ("waiting on <id>" if queued)
 bento op <id>             # steps, events, errors, advice
-bento op cancel <id>      # cancel at the next step boundary
+bento op cancel <id>      # cancel at the next step boundary (forced after 30 s)
 ```
 
 `serve`, `init`, and `import` work on the stack folder directly — see [Stack](/cli/stack).

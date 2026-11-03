@@ -213,10 +213,14 @@ func TestValkeyAndMinicrondToggles(t *testing.T) {
 	if !strings.Contains(env, "BENTO_MINICROND=1\n") || !strings.Contains(env, "BENTO_VALKEY=0\n") || strings.Contains(env, "REDIS_") {
 		t.Fatalf("defaults: %s", env)
 	}
+	if strings.Contains(env, "BENTO_VALKEY_MAXMEMORY") {
+		t.Fatalf("no Valkey, no cap: %s", env)
+	}
 	on := testApp()
 	on.Valkey, on.Minicrond = true, false
+	on.Resources.MemoryMB = 1024
 	env = runtimeEnv(on)
-	for _, want := range []string{"BENTO_MINICROND=0\n", "BENTO_VALKEY=1\n", "REDIS_HOST=127.0.0.1\n", "REDIS_PORT=6379\n", "REDIS_URL=redis://127.0.0.1:6379\n"} {
+	for _, want := range []string{"BENTO_MINICROND=0\n", "BENTO_VALKEY=1\n", "BENTO_VALKEY_MAXMEMORY=256mb\n", "REDIS_HOST=127.0.0.1\n", "REDIS_PORT=6379\n", "REDIS_URL=redis://127.0.0.1:6379\n"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("runtime.env missing %q: %s", want, env)
 		}
@@ -435,5 +439,13 @@ func TestSuryPHPImagesBuildFromPackages(t *testing.T) {
 	}
 	if bytes.Equal(sury, plain) {
 		t.Fatal("php-sury must not reuse the official PHP Dockerfile")
+	}
+}
+
+func TestValkeyMaxMemoryIsAQuarterWithAFloor(t *testing.T) {
+	for in, want := range map[int]int{2048: 512, 512: 128, 64: 16, 0: 16} {
+		if got := ValkeyMaxMemoryMB(in); got != want {
+			t.Errorf("ValkeyMaxMemoryMB(%d) = %d, want %d", in, got, want)
+		}
 	}
 }

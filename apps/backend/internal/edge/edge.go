@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math/big"
 	"net/netip"
 	"os"
@@ -64,11 +65,18 @@ type Route struct {
 	AccessLog   bool
 	StaticCache bool
 	// AppUpstream is the app container alias host:port, re-resolved at runtime.
-	AppUpstream         string
-	ProxyUpstreams      []string
-	UpstreamName        string
-	UpstreamScheme      string
-	UpstreamURI         string
+	AppUpstream    string
+	ProxyUpstreams []string
+	UpstreamName   string
+	UpstreamScheme string
+	UpstreamURI    string
+	// UpstreamTLSName is set for an HTTPS upstream named by a DNS name: the
+	// edge sends it as SNI, verifies the upstream's certificate against it,
+	// and sends UpstreamHostHeader as Host. An HTTPS upstream named by an IP
+	// address leaves both empty: the connection is encrypted but the
+	// certificate is not verified, and Host stays the visitor's.
+	UpstreamTLSName     string
+	UpstreamHostHeader  string
 	MaxBodyMB           int
 	Unavailable         bool
 	HTTP3               bool
@@ -190,13 +198,17 @@ func Render(in Input) (map[string][]byte, error) {
 			upstreams[a.Slug] = AppUpstream{Name: r.UpstreamName, Server: r.AppUpstream}
 		case domain.HostTargetUpstream:
 			r.UpstreamName = "bento_host_" + upstreamIdent(h.Name)
-			scheme, uri := "http", ""
+			// The first URL decides the scheme, path and TLS name; validation
+			// keeps the others consistent with it.
+			scheme, first, uri := splitUpstream(h.Upstreams[0])
 			for _, u := range h.Upstreams {
-				sch, host, path := splitUpstream(u)
-				scheme, uri = sch, path
+				_, host, _ := splitUpstream(u)
 				r.ProxyUpstreams = append(r.ProxyUpstreams, host)
 			}
 			r.UpstreamScheme, r.UpstreamURI = scheme, uri
+			if scheme == "https" {
+				r.UpstreamTLSName, r.UpstreamHostHeader = upstreamTLSName(first)
+			}
 		case domain.HostTargetRedirect:
 			// A redirect to a host the edge serves uses that host's scheme
 			// and port; any other host keeps the request's scheme.
@@ -314,6 +326,24 @@ func splitUpstream(u string) (scheme, hostport, path string) {
 	return scheme, hostport, path
 }
 
+// upstreamTLSName returns the name an HTTPS upstream is verified against and
+// the Host header it is sent, or "" for both when it is named by an IP
+// address (no SNI is possible and a certificate for an address is rare).
+// hostport always carries a port (splitUpstream adds the default).
+func upstreamTLSName(hostport string) (name, hostHeader string) {
+	host, port := hostport, ""
+	if i := strings.LastIndex(hostport, ":"); i >= 0 && !strings.HasSuffix(hostport, "]") {
+		host, port = hostport[:i], hostport[i+1:]
+	}
+	if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+		return "", ""
+	}
+	if port == "443" || port == "" {
+		return host, host
+	}
+	return host, host + ":" + port
+}
+
 // Generations manages the on-disk config directories under edge/conf.
 type Generations struct {
 	Dir string // <root>/edge/conf
@@ -360,6 +390,35 @@ func (g Generations) Promote(name string) error {
 		return fmt.Errorf("keep previous edge generation: %w", err)
 	}
 	return nil
+}
+
+// loadedFile, beside the generation directories, records the digest of the
+// live generation the running edge last loaded: by starting on it, or by a
+// reload that was delivered. Promotion changes live before the reload, so a
+// lost reload leaves live and the loaded digest apart until a retry.
+const loadedFile = "loaded"
+
+// Digest identifies a generation's file set.
+func Digest(files map[string][]byte) string {
+	h := sha256.New()
+	for _, rel := range slices.Sorted(maps.Keys(files)) {
+		fmt.Fprintf(h, "%s\x00%d\x00", rel, len(files[rel]))
+		h.Write(files[rel])
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// MarkLoaded records that the running edge serves files.
+func (g Generations) MarkLoaded(files map[string][]byte) error {
+	return platform.AtomicWrite(filepath.Join(g.Dir, loadedFile), []byte(Digest(files)+"\n"), 0o644, platform.RootOwner)
+}
+
+// Loaded reports whether the running edge was last recorded serving files.
+// A missing record (a fresh root, or an edge from before the record existed)
+// reports false, which costs one redundant reload.
+func (g Generations) Loaded(files map[string][]byte) bool {
+	b, err := os.ReadFile(filepath.Join(g.Dir, loadedFile))
+	return err == nil && strings.TrimSpace(string(b)) == Digest(files)
 }
 
 // Same reports whether files equal the live generation byte for byte.

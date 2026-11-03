@@ -293,6 +293,15 @@ func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// A new image pin (a Bento upgrade) or container shape changes the
+	// fingerprint without changing any route: the edge must be recreated.
+	ins, err := c.Engine.Inspect(ctx, c.Names.EdgeContainer())
+	if err != nil {
+		return false, err
+	}
+	if ins != nil && ins.Config != nil && ins.Config.Labels[runtime.LabelGeneration] != edgeFingerprint(s, ns) {
+		return true, nil
+	}
 	// A warming app renders as unavailable until its operation sees it
 	// ready and refreshes the edge itself; that is not drift.
 	if c.anyWarming() {
@@ -302,7 +311,17 @@ func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return !c.edgeGenerations().Same(files), nil
+	// Live on disk but never loaded (a reload that was lost) is drift too.
+	gens := c.edgeGenerations()
+	return !gens.Same(files) || !gens.Loaded(files), nil
+}
+
+// markEdgeLoaded records that the running edge serves files. A failed record
+// only costs a redundant reload on the next pass, so it is a warning.
+func (c *Controller) markEdgeLoaded(ctx context.Context, r *Run, files map[string][]byte) {
+	if err := c.edgeGenerations().MarkLoaded(files); err != nil {
+		r.Warn(ctx, "record the loaded edge generation: %v", err)
+	}
 }
 
 // applyEdge renders routes from current desired state and activates them.
@@ -412,7 +431,11 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 				)
 			}
 		}
-		return c.recreateEdge(ctx, r, id, running, spec)
+		if err := c.recreateEdge(ctx, r, id, running, spec); err != nil {
+			return err
+		}
+		c.markEdgeLoaded(ctx, r, files)
+		return nil
 	}
 	if id == "" {
 		if id, err = c.Engine.Create(ctx, spec); err != nil {
@@ -423,21 +446,29 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 			return Fail("edge-start-failed", "Check that the chosen host ports are free.", "start edge: %v", err)
 		}
 		r.Info(ctx, "edge started")
+		c.markEdgeLoaded(ctx, r, files)
 		return nil
 	}
 	if !running {
-		return c.Engine.Start(ctx, id)
+		if err := c.Engine.Start(ctx, id); err != nil {
+			return err
+		}
+		c.markEdgeLoaded(ctx, r, files)
+		return nil
 	}
-	if changed {
+	// Reload when the generation changed, and also when an earlier reload of
+	// the live generation was never delivered.
+	if changed || !gens.Loaded(files) {
 		if err := c.Engine.Signal(ctx, id, "HUP"); err != nil {
 			return Fail(
 				"edge-reload-failed",
-				"The validated generation is live on disk; retry to reload.",
+				"The validated generation is live on disk; the reconciler retries the reload.",
 				"reload edge: %v",
 				err,
 			)
 		}
 		r.Info(ctx, "edge reloaded")
+		c.markEdgeLoaded(ctx, r, files)
 	}
 	return nil
 }
@@ -560,7 +591,7 @@ func (c *Controller) tunnelSpec(s domain.TunnelSettings, ns NetworkSettings) doc
 			Cmd:         []string{"tunnel", "--no-autoupdate", "run", "--token-file", "/etc/bento-tunnel/token"},
 			StopTimeout: &stop,
 			Labels: c.Names.Labels(runtime.RoleTunnel, map[string]string{
-				runtime.LabelGeneration: "token-" + strconv.FormatInt(s.TokenGeneration, 10),
+				runtime.LabelGeneration: tunnelGeneration(s),
 			}),
 		},
 		HostConfig: &container.HostConfig{
@@ -582,8 +613,32 @@ func (c *Controller) tunnelSpec(s domain.TunnelSettings, ns NetworkSettings) doc
 	}
 }
 
-// applyTunnel makes cloudflared match settings; token rotation recreates only
-// the tunnel container.
+// tunnelGeneration identifies the tunnel container's shape: the token
+// generation and the pinned image, so a Bento upgrade that bumps the
+// cloudflared pin recreates the tunnel.
+func tunnelGeneration(s domain.TunnelSettings) string {
+	return "token-" + strconv.FormatInt(s.TokenGeneration, 10) + "-" + platform.SHA256Hex([]byte(domain.TunnelImage))[:12]
+}
+
+// TunnelDrift reports whether an enabled tunnel is missing, stopped, or runs
+// an outdated token or image.
+func (c *Controller) TunnelDrift(ctx context.Context) (bool, error) {
+	s, err := c.TunnelSettings(ctx)
+	if err != nil || !s.Enabled {
+		return false, err
+	}
+	ins, err := c.Engine.Inspect(ctx, c.Names.TunnelContainer())
+	if err != nil {
+		return false, err
+	}
+	if ins == nil || ins.State == nil || !ins.State.Running {
+		return true, nil
+	}
+	return ins.Config == nil || ins.Config.Labels[runtime.LabelGeneration] != tunnelGeneration(s), nil
+}
+
+// applyTunnel makes cloudflared match settings; a token rotation or a new
+// image pin recreates only the tunnel container.
 func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 	s, err := c.TunnelSettings(ctx)
 	if err != nil {
@@ -620,7 +675,7 @@ func (c *Controller) applyTunnel(ctx context.Context, r *Run) error {
 			}
 			return nil
 		}
-		r.Info(ctx, "tunnel token changed; recreating only the tunnel container")
+		r.Info(ctx, "tunnel token or image changed; recreating only the tunnel container")
 		_ = c.Engine.Stop(ctx, ins.ID, 15*time.Second) // graceful stop is best effort; Remove forces
 		if err := c.Engine.Remove(ctx, ins.ID); err != nil {
 			return err

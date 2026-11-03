@@ -98,7 +98,11 @@ Every change with external effects follows the same path.
 2. **Execution** (`controller.go`): one dispatcher goroutine scans the `queued` operations oldest first, marks each
    one it can start `running`, and runs the handler registered for its kind (`registerHandlers` in `apps.go`) in its
    own worker, up to `bento serve --op-concurrency` (default 4) at once. Handlers call `r.Phase(ctx, name)`
-   between effects; that records the phase/event and is the **only** place a requested cancellation is honored.
+   between effects; that records the phase/event and is where a requested cancellation is honored cleanly. A
+   cancellation still unhonored after `Deps.CancelGrace` (30 s) is **forced**: `watchCancel` cancels the operation's
+   context, which ends the Docker call, pull, build or job wait in progress, and the operation ends `cancelled` with
+   `ErrForceCancelled` and a `cancellation forced` event. Cleanup that must finish (resuming stopped apps, rolling
+   back a clone, restoring the previous edge) already runs on `context.WithoutCancel` and is not interrupted.
 3. **Completion:** the handler returns a result (stored as JSON) or an error. `*OpError` carries a stable code and
    operator guidance; other errors become `failed` with generic guidance. A panic is caught and recorded.
 
@@ -156,6 +160,11 @@ Handlers re-read state from the store, so an operation that was superseded (e.g.
 and exits. `--op-concurrency 1` restores strictly serial execution; the maximum is 16. Shutdown stops dispatching and
 waits for every running operation.
 
+Engine calls have deadlines (`docker/deadline.go`): request/response calls 2 min (`Stop` adds its stop timeout), pulls
+end after 5 min without progress or 1 h in all, builds after 20 min without output or 2 h. The error wraps
+`docker.ErrEngineTimeout` and names the call. `Wait`, `Exec` and the streams (`Logs`, `Events`, `ExecAttach`,
+`CopyFrom`) have no fixed deadline: they are ended by their context, which forced cancellation reaches.
+
 Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remove|prune|reconcile|permissions`,
 `binding.add`, `database.add`, `service.create|reconcile`, `edge.apply`, `tunnel.apply`, `backup.run|restore`,
 `stack.export`.
@@ -200,14 +209,22 @@ debounces triggers for 2 s, and also runs a full `Pass` every 60 s. A pass:
 - for initialized data services, submits `service.reconcile` if the container is not running;
 - for provisioned apps: desired `stopped` but running → submit `app.reconcile`; desired `running` but missing, not
   running, or with a different planned fingerprint (`Controller.PlannedGeneration`, computed without writing files)
-  → submit `app.reconcile`. Health alone never triggers action;
+  → submit `app.reconcile`. Health alone never triggers action. A missing or stopped instance is repaired at once, in
+  parallel with other apps; a **running** instance with a different fingerprint or config drift is replaced as part of
+  a **rollout**, one app at a time (`Reconciler.rollout`), because a replacement stops the serving instance before the
+  new one is ready. When a rollout replacement fails, the other apps on the same runtime image key keep their working
+  instances (status `rollout paused: …`) until the failed app recovers — a later reconcile or operator operation on it
+  succeeds — or is no longer desired running; apps on other image keys continue. A finished rollout operation
+  triggers the next pass;
 - for a running app whose planned runtime image is not built (a changed image template or pinned artifact, such as a
   minicrond bump) → submit one `image.prepare` per runtime key instead, and leave the instance serving on its current
   image. The app is reconciled (replaced) only on a pass after the build has succeeded; the reconciler watches its
   pending prepares and triggers that pass as soon as one finishes. A failed build keeps the old instance and backs off
   under the `image:<key>` target. Apps that are missing or stopped build inline in `app.reconcile`, since nothing is
   serving;
-- ensures the edge and tunnel exist when enabled;
+- ensures the edge and tunnel exist when enabled, and match: the edge's rendered routes, its loaded generation and
+  its fingerprint (image pin, ports, bind; `EdgeConfigDrift`), the tunnel's token generation and image pin
+  (`TunnelDrift`);
 - removes exited tool containers owned by the stack.
 
 Each target has a retry budget: failures back off from 30 s doubling to 30 min; after 5 failures the target is
@@ -298,7 +315,9 @@ container as `BENTO_MINICROND`/`BENTO_VALKEY` in `runtime.env`, so toggling one 
 whose switch is off marks itself run-once (`s6-svc -O .`) and exits 0, so s6 neither restarts it nor counts a failure.
 `valkey` runs `valkey-server /etc/valkey/valkey.conf --dir $VALKEY_DATA` as the app UID: `bind 127.0.0.1 -::1`,
 port 6379 (`domain.ValkeyPort`, refused as an HTTP app port), `protected-mode yes`, no password (only the app's own
-container can reach it), no `maxmemory` (the container memory limit bounds it), RDB `save 3600 1 300 100 60 10000`
+container can reach it), `maxmemory` a quarter of the app's memory limit (`runtime.ValkeyMaxMemoryMB`, at least 16 MB, passed as
+`BENTO_VALKEY_MAXMEMORY` to the run script) with `maxmemory-policy volatile-lru` (only keys with a TTL are evicted;
+writes fail once only keys without one remain), RDB `save 3600 1 300 100 60 10000`
 to `dump.rdb` in `~/.local/share/valkey` (`0700`), no AOF, logs on stdout. `VALKEY_DATA` is a reserved env key.
 
 Every run script sources `env.bash`, which loads `runtime.env` and `credentials.env` key-by-key without shell
@@ -325,7 +344,10 @@ The edge (`edge` package + `operations/edge.go`):
    inside the running edge (or a throwaway validator container), and swapped with `live` using
    `renameat2(RENAME_EXCHANGE)`; the old generation is kept as `previous`.
 3. The edge container is recreated only when its own settings fingerprint changes (ports, bind, HTTP/3, image);
-   otherwise it gets `SIGHUP`. Includes in the generated config are relative, which is why candidates validate in place.
+   otherwise it gets `SIGHUP`. `edge/conf/loaded` records the digest (`edge.Digest`) of the generation the running edge
+   last loaded — after a start, a recreate, or a delivered `SIGHUP`. Promotion swaps `live` before the reload, so a
+   lost reload leaves `live` and `loaded` apart: `EdgeConfigDrift` reports that as drift and the next apply reloads
+   although nothing new renders. A missing record (an edge from before it existed) costs one redundant reload. Includes in the generated config are relative, which is why candidates validate in place.
    The pinned image is ensured (pulled if missing) on every apply, before validation and any create, because an
    image-only bump renders identical routes. A recreate validates with the new image (a validator container; the live
    generation too when routes did not change), then renames the old edge to `bento-<stack>-edge-previous`, creates
@@ -346,6 +368,13 @@ render re-parses the list. With the feature off the rendered config is byte-iden
 fingerprint ignores it (only enabling, bind or ports recreate the container; the trusted list only reloads).
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
+
+**Upstream hosts** load-balance their URLs in one `upstream` block; the first URL decides scheme, path and TLS name,
+and validation requires the same scheme for all and, for HTTPS, the same host name. An HTTPS upstream named by DNS
+is reached as that name: `proxy_ssl_server_name on`, `proxy_ssl_name <host>`, `proxy_ssl_verify on` against the edge
+image's `/etc/ssl/certs/ca-certificates.crt` (depth 4), and `Host: <host>[:port]` so SNI-routed hosts (Cloudflare,
+Vercel) answer; `X-Forwarded-Host` keeps the visitor's host. An HTTPS upstream named by an IP address is encrypted but
+not verified (`proxy_ssl_verify off`, no SNI) and keeps the visitor's `Host`.
 
 When the utils listener binds the apps network, every app and upstream host reserves
 `location ^~ /_bento/webhook/`, proxied through the shared `bento_utils` upstream (`<apps-gateway>:<port>`,
@@ -493,7 +522,9 @@ only what it created.
 - `http.go`: strict decoding (`application/json`, 1 MiB, `DisallowUnknownFields`, no trailing data), error mapping to
   stable `dto.ErrorCode`s, `Idempotency-Key` format, path id validation.
 - `auth.go`: argon2id password (`settings.auth`), 12-hour sessions stored as SHA-256 token hashes, `HttpOnly`
-  `SameSite=Strict` cookie, login rate limit (10 failures / 5 min), and for writes: exact `Origin` in
+  `SameSite=Strict` cookie, login rate limit (10 failures / 5 min, counting checks in flight, so a burst cannot all
+  pass before one fails) with at most 2 password checks (64 MiB argon2id each) at once — others get `429` unhashed —
+  and for writes: exact `Origin` in
   `AllowedOrigins`, `Sec-Fetch-Site: same-origin` when present, and `X-CSRF-Token` equal to the session's token.
   Changing the password revokes every session (not API tokens).
 - `scopes.go` + `tokens.go`: API tokens and scopes. `routeScopes` maps each route pattern to the least scope

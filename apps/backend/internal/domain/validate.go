@@ -344,6 +344,25 @@ func ValidateUpstream(raw string) error {
 	return nil
 }
 
+// sameUpstreamPeer checks that a load-balanced upstream URL can share one
+// Nginx upstream block with the first: the same scheme, and for HTTPS the
+// same host name, because the edge sends one SNI name and verifies every
+// server's certificate against it. Ports may differ.
+func sameUpstreamPeer(first, other string) error {
+	a, err1 := url.Parse(first)
+	b, err2 := url.Parse(other)
+	if err1 != nil || err2 != nil {
+		return nil // reported by ValidateUpstream
+	}
+	if a.Scheme != b.Scheme {
+		return errors.New("must use the same scheme as the first upstream")
+	}
+	if a.Scheme == "https" && !strings.EqualFold(a.Hostname(), b.Hostname()) {
+		return errors.New("HTTPS upstreams must share the first upstream's host name (the certificate name)")
+	}
+	return nil
+}
+
 // ValidateHost normalizes and checks an Ingress host in place. The app
 // target's existence is checked by the caller.
 func ValidateHost(h *Host, errs *ValidationErrors) {
@@ -366,6 +385,8 @@ func ValidateHost(h *Host, errs *ValidationErrors) {
 		}
 		for i, u := range h.Upstreams {
 			if err := ValidateUpstream(u); err != nil {
+				errs.Add(fmt.Sprintf("target.upstreams[%d]", i), "%s", err)
+			} else if err := sameUpstreamPeer(h.Upstreams[0], u); err != nil {
 				errs.Add(fmt.Sprintf("target.upstreams[%d]", i), "%s", err)
 			}
 		}

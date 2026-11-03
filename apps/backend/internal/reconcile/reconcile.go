@@ -34,6 +34,12 @@ type target struct {
 	// target, from any origin, restore the budget (see recovered).
 	OpTarget     string
 	LastFailedAt string
+	// Rollout marks an app whose pending or last failed operation replaces a
+	// running instance whose image or configuration drifted (see rollout).
+	Rollout bool
+	// Paused marks an app whose rollout waits on another app's failed one;
+	// LastError then says so.
+	Paused bool
 }
 
 // TargetStatus is the observable reconciliation state of one target.
@@ -288,7 +294,7 @@ func (r *Reconciler) settle(ctx context.Context, t *target) bool {
 	}
 	t.PendingOp = ""
 	if op.State == store.OpSucceeded {
-		t.Failures, t.LastError = 0, ""
+		t.Failures, t.LastError, t.Rollout = 0, "", false
 		return true
 	}
 	t.Failures++
@@ -314,7 +320,7 @@ func (r *Reconciler) recovered(ctx context.Context, t *target) {
 	if err != nil || len(ops) == 0 || ops[0].CreatedAt <= t.LastFailedAt {
 		return
 	}
-	t.Failures, t.LastError, t.NextAttempt = 0, "", time.Time{}
+	t.Failures, t.LastError, t.NextAttempt, t.Rollout = 0, "", time.Time{}, false
 }
 
 func (r *Reconciler) submit(ctx context.Context, t *target, kind, targetKind, id string) {
@@ -375,9 +381,10 @@ func (r *Reconciler) prepareImage(ctx context.Context, key string) error {
 	return nil
 }
 
-// watchImageOps triggers a pass when a pending image.prepare changes state,
-// so apps roll out as soon as their image is built rather than on the next
-// periodic pass.
+// watchImageOps triggers a pass when a pending image.prepare or rollout
+// replacement changes state, so apps roll out as soon as their image is
+// built, and the next app as soon as the previous one is replaced, rather
+// than on the next periodic pass.
 func (r *Reconciler) watchImageOps(ctx context.Context) {
 	ch, cancel := r.C.Subscribe()
 	defer cancel()
@@ -397,7 +404,7 @@ func (r *Reconciler) pendingImageOp(opID string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, t := range r.targets {
-		if strings.HasPrefix(id, imageTargetPrefix) && t.PendingOp == opID {
+		if (strings.HasPrefix(id, imageTargetPrefix) || t.Rollout) && t.PendingOp == opID {
 			return true
 		}
 	}
@@ -458,13 +465,26 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 	}
 	r.settleImages(ctx)
 	missing := map[string]bool{}
+	var ro rolloutPlan
 	for _, app := range apps {
 		t := r.get(app.ID, app.ConfigGeneration)
+		if t.Paused {
+			// Re-decided below; a paused app that no longer drifts must not
+			// keep reporting the pause.
+			t.Paused, t.LastError = false, ""
+		}
 		if !r.settle(ctx, t) {
+			ro.inFlight = ro.inFlight || t.Rollout
 			continue
 		}
 		if !app.Provisioned {
 			continue
+		}
+		key := app.Runtime.ImageKey().String()
+		if t.Rollout && t.Failures > 0 && app.DesiredRuntime == domain.DesiredRunning {
+			// Its replacement failed and nothing has fixed it since: other
+			// apps on the same runtime image wait for it.
+			ro.halt(key, app.Slug)
 		}
 		busy, err := store.ActiveForTarget(ctx, db, app.ID)
 		if err != nil {
@@ -497,19 +517,25 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 				// The instance keeps serving on its current image while the
 				// planned one builds; it is replaced only once the build has
 				// succeeded.
-				key := app.Runtime.ImageKey().String()
 				missing[key] = true
 				if err := r.prepareImage(ctx, key); err != nil {
 					return err
 				}
 				continue
 			}
-			need = drift == operations.DriftReplace
+			if drift == operations.DriftReplace {
+				// A serving instance is replaced only as part of the rollout.
+				ro.candidates = append(ro.candidates, rolloutCandidate{app: app, t: t, key: key})
+				continue
+			}
 		}
 		if need {
+			// A stopped or missing instance serves nothing: repair it now,
+			// in parallel with other apps.
 			r.submit(ctx, t, operations.KindAppReconcile, "app", app.ID)
 		}
 	}
+	r.rollout(ctx, &ro)
 	// Only after a complete app scan: an aborted pass must not drop the
 	// backoff of an image some app still misses.
 	r.forgetImages(missing)
@@ -517,6 +543,59 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		return err
 	}
 	return r.collectTools(ctx)
+}
+
+// rolloutPlan collects one pass's view of running apps that need replacing.
+type rolloutPlan struct {
+	// inFlight is set while a rollout replacement is still running.
+	inFlight bool
+	// halted maps a runtime image key to the app whose replacement on it
+	// failed.
+	halted     map[string]string
+	candidates []rolloutCandidate
+}
+
+type rolloutCandidate struct {
+	app domain.App
+	t   *target
+	key string
+}
+
+func (p *rolloutPlan) halt(key, slug string) {
+	if p.halted == nil {
+		p.halted = map[string]string{}
+	}
+	if _, ok := p.halted[key]; !ok {
+		p.halted[key] = slug
+	}
+}
+
+// rollout replaces running instances whose image or configuration drifted
+// (typically every app after a Bento upgrade) one at a time: a replacement
+// stops the serving instance before the new one is ready, so running them in
+// parallel would take several apps down at once, and a bad new image would
+// break all of them before the first failure showed. When a replacement
+// fails, the other apps on the same runtime image keep their working
+// instances until that app recovers (a later reconcile or operator
+// operation succeeds) or stops being desired running; apps on other images
+// continue.
+func (r *Reconciler) rollout(ctx context.Context, p *rolloutPlan) {
+	for _, c := range p.candidates {
+		if failed, ok := p.halted[c.key]; ok && failed != c.app.Slug {
+			c.t.Paused = true
+			c.t.LastError = fmt.Sprintf("rollout paused: replacing %s on runtime %s failed; this app keeps its "+
+				"current instance until %s is fixed", failed, c.key, failed)
+			continue
+		}
+		if p.inFlight {
+			continue // next in line; the finished rollout triggers a pass
+		}
+		r.submit(ctx, c.t, operations.KindAppReconcile, "app", c.app.ID)
+		if c.t.PendingOp != "" {
+			c.t.Rollout = true
+			p.inFlight = true
+		}
+	}
 }
 
 func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
@@ -539,7 +618,9 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 				}
 				need := ins == nil || ins.State == nil || !ins.State.Running
 				if !need {
-					// Re-rendered routes or templates differ from the live generation.
+					// Re-rendered routes or templates differ from the live
+					// generation, the live generation was never loaded, or
+					// the image pin or container shape changed.
 					if need, err = r.C.EdgeConfigDrift(ctx); err != nil {
 						t.LastError = err.Error()
 					}
@@ -562,11 +643,12 @@ func (r *Reconciler) edgeAndTunnel(ctx context.Context) error {
 				return err
 			}
 			if !busy {
-				ins, err := r.C.Engine.Inspect(ctx, r.C.Names.TunnelContainer())
+				// Missing, stopped, or an outdated token or image pin.
+				need, err := r.C.TunnelDrift(ctx)
 				if err != nil {
 					return err
 				}
-				if ins == nil || ins.State == nil || !ins.State.Running {
+				if need {
 					r.submit(ctx, t, operations.KindTunnelApply, "tunnel", "tunnel")
 				}
 			}

@@ -98,21 +98,21 @@ func (s *Server) confirmCurrentPassword(w http.ResponseWriter, r *http.Request, 
 	if p, ok := principalFrom(r.Context()); ok && p.Kind == "local" {
 		return true
 	}
-	if !s.limiter.allowed() {
-		writeError(w, s.Log, &apiError{status: http.StatusTooManyRequests, code: dto.ErrorCodeRateLimited,
-			msg: "too many failed password attempts; wait and retry"})
-		return false
-	}
 	var rec PasswordRecord
 	if _, err := store.GetSetting(r.Context(), s.Store.DB(), authSetting, &rec); err != nil {
 		writeError(w, s.Log, err)
 		return false
 	}
-	if current != "" && rec.Hash != "" && verifyPassword(rec.Hash, current) {
-		return true
-	}
-	if current != "" {
-		s.limiter.fail()
+	if current != "" && rec.Hash != "" {
+		match, admitted := s.limiter.checkPassword(rec.Hash, current)
+		if !admitted {
+			writeError(w, s.Log, &apiError{status: http.StatusTooManyRequests, code: dto.ErrorCodeRateLimited,
+				msg: "too many password attempts; wait and retry"})
+			return false
+		}
+		if match {
+			return true
+		}
 		select {
 		case <-r.Context().Done():
 		case <-time.After(300 * time.Millisecond):
@@ -138,16 +138,35 @@ func principalFrom(ctx context.Context) (principal, bool) {
 	return p, ok
 }
 
-// loginLimiter slows password guessing.
+const (
+	// maxLoginFailures failed password checks within loginWindow refuse
+	// further attempts until the oldest one ages out.
+	maxLoginFailures = 10
+	loginWindow      = 5 * time.Minute
+	// maxConcurrentHashes bounds password checks in flight. Each one is an
+	// argon2id derivation holding 64 MiB, so this caps their memory at
+	// 128 MiB however many requests arrive at once.
+	maxConcurrentHashes = 2
+)
+
+// loginLimiter slows password guessing and bounds the memory password checks
+// use. An attempt counts against the budget from the moment it is admitted,
+// before its password is hashed, so parallel guesses cannot all pass the
+// check while none has failed yet.
 type loginLimiter struct {
 	mu       sync.Mutex
 	failures []time.Time
+	pending  int // admitted attempts whose password check has not finished
 }
 
-func (l *loginLimiter) allowed() bool {
+// begin admits one password check, or reports false when the failure budget
+// (counting attempts in flight) is spent or maxConcurrentHashes checks are
+// already running. An admitted attempt must end with exactly one call of the
+// returned function: true for a correct password, false for a wrong one.
+func (l *loginLimiter) begin() (func(ok bool), bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	cutoff := time.Now().Add(-5 * time.Minute)
+	cutoff := time.Now().Add(-loginWindow)
 	kept := l.failures[:0]
 	for _, t := range l.failures {
 		if t.After(cutoff) {
@@ -155,13 +174,33 @@ func (l *loginLimiter) allowed() bool {
 		}
 	}
 	l.failures = kept
-	return len(l.failures) < 10
+	if len(l.failures)+l.pending >= maxLoginFailures || l.pending >= maxConcurrentHashes {
+		return nil, false
+	}
+	l.pending++
+	var once sync.Once
+	return func(ok bool) {
+		once.Do(func() {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.pending--
+			if !ok {
+				l.failures = append(l.failures, time.Now())
+			}
+		})
+	}, true
 }
 
-func (l *loginLimiter) fail() {
-	l.mu.Lock()
-	l.failures = append(l.failures, time.Now())
-	l.mu.Unlock()
+// checkPassword verifies a password under the limiter. It reports
+// (match, admitted); a refused attempt is never hashed.
+func (l *loginLimiter) checkPassword(encoded, password string) (bool, bool) {
+	done, ok := l.begin()
+	if !ok {
+		return false, false
+	}
+	match := verifyPassword(encoded, password)
+	done(match)
+	return match, true
 }
 
 func tokenHash(token string) string { return platform.SHA256Hex([]byte(token)) }
@@ -303,18 +342,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, &apiError{status: http.StatusForbidden, code: dto.ErrorCodeForbidden, msg: "origin not allowed"})
 		return
 	}
-	if !s.limiter.allowed() {
-		writeError(
-			w,
-			s.Log,
-			&apiError{
-				status: http.StatusTooManyRequests,
-				code:   dto.ErrorCodeRateLimited,
-				msg:    "too many failed logins; wait and retry",
-			},
-		)
-		return
-	}
 	var req dto.LoginRequest
 	if err := decode(w, r, &req); err != nil {
 		writeError(w, s.Log, err)
@@ -331,8 +358,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			msg: "no operator password is configured; run `bento auth set-password` on the host"})
 		return
 	}
-	if !verifyPassword(rec.Hash, req.Password) {
-		s.limiter.fail()
+	match, admitted := s.limiter.checkPassword(rec.Hash, req.Password)
+	if !admitted {
+		writeError(
+			w,
+			s.Log,
+			&apiError{
+				status: http.StatusTooManyRequests,
+				code:   dto.ErrorCodeRateLimited,
+				msg:    "too many login attempts; wait and retry",
+			},
+		)
+		return
+	}
+	if !match {
 		select { // slow guessing, but not past a client that already left
 		case <-r.Context().Done():
 		case <-time.After(300 * time.Millisecond):

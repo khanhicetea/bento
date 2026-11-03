@@ -630,3 +630,37 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
 - `make ci` and `make test-integration` passed as root (integration 404 s).
 - Not migrated: existing wildcard grants change only when provisioning runs for that binding (BACKLOG, Decisions).
   The dev stack keeps its old grants until it is reinitialised or its bindings are reprovisioned.
+
+## Production blockers 1, 4, 5, 7, 8, 9, 11 from the 2026-11-02 review (2026-11-03; live Docker 29.8.1, amd64)
+
+- **Login (1):** an attempt now counts against the 10-per-5-minute budget when it is admitted, before argon2id runs,
+  and at most 2 checks (64 MiB each) run at once; others get `429` without hashing. `TestLoginBurstIsBoundedAndCounted`
+  sends 24 parallel wrong logins: at most 10 were hashed, the rest rate limited, and the right password then waits.
+  Limiter unit tests cover the in-flight reservation and the concurrency cap. Not changed: the budget is still global,
+  so a host-local process can keep browser logins locked (root on the control socket is unaffected).
+- **HTTPS upstreams (4):** a DNS-named `https://` upstream renders `proxy_ssl_server_name on`, `proxy_ssl_name`,
+  `proxy_ssl_verify on` (depth 4) against `/etc/ssl/certs/ca-certificates.crt` (present in the pinned
+  `nginx:stable-trixie` edge image) and sends that name as `Host`; IP-named ones stay unverified. The rendered config
+  passed `nginx -t` in the edge image, and a live edge proxied `https://example.com` (200) and refused
+  `self-signed.badssl.com` with `upstream SSL certificate verify error: (18:self-signed certificate)` (502).
+  Validation now requires one scheme per host and, for HTTPS, one host name.
+- **Docker deadlines and forced cancellation (5):** `TestHungEngineCallsEndAtTheirDeadline` runs the real SDK against
+  a Unix socket that never answers: inspect and stop end with `ErrEngineTimeout`, a pull that stalls after its first
+  message ends with "made no progress". `TestCancelForcesAStuckOperationAfterTheGrace` (fake engine whose pull never
+  returns) shows a cancelled `tunnel.apply` ending `cancelled` after the grace with a `cancellation forced` event, and
+  the global `edge.apply` queued behind it then succeeding. Not exercised against a real wedged dockerd.
+- **Rollout (7):** `TestUpgradeRollsOutOneAppAtATime` replaces exactly one of three drifted apps per pass (it fails
+  with the old parallel submission: 3 after the first pass). `TestFailedReplacementPausesItsRuntimeOnly`: after
+  alpha's replacement fails, beta (same runtime) keeps its instance with `rollout paused`, an app on node 22 still
+  rolls out, and beta proceeds once an operator start of alpha succeeds.
+- **Edge reload and image drift (8, 9):** `edge/conf/loaded` records the loaded generation.
+  `TestLostEdgeReloadIsDriftAndRetried` injects a failed `SIGHUP` after promotion: `EdgeConfigDrift` reports drift,
+  the retry reloads with no route change, and a further apply sends no reload. `TestEdgeImagePinChangeIsDriftAndRecreates`
+  and `TestTunnelImagePinChangeIsDrift` relabel the containers as from another pin and see drift and a recreate.
+  The tunnel label format changed, so every enabled tunnel is recreated once after this upgrade. Tunnel and Cloudflare
+  not exercised live.
+- **Valkey (11):** `TestIntegrationAppServices` on a real node 24 app (512 MB): `CONFIG GET maxmemory` is 134217728
+  (a quarter) and `maxmemory-policy` is `volatile-lru`. The image template changed, so every runtime image rebuilds and
+  running apps are replaced, now one at a time.
+- `make ci` and `make test-integration` passed as root (integration 405 s, runtime 48 s); `bun run fmt:check`, `lint`,
+  `check`, `web:build` and `docs:build` passed. No DTO changed. Not verified: arm64, a real tunnel, ACME.

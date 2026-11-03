@@ -58,7 +58,9 @@ sessions, and queues. It is off by default; turn it on with the app's `valkey` s
   environment variables already define them — yours win.
 - The [Terminal](/apps/terminal)'s tool shell, one-off commands, and deploy commands reach it at the same address while
   the app is running. When the app is stopped, its Valkey is stopped too.
-- Its memory counts toward the app's **Memory** limit; there is no separate cap.
+- Its memory counts toward the app's **Memory** limit and is capped at a quarter of it (at least 16 MB). At the
+  cap, Valkey evicts the least recently used keys that have an expiry (cache entries, sessions); keys without one
+  (queues, locks) are never evicted, and writes fail once only those remain.
 - Data is snapshotted to `~/.local/share/valkey/dump.rdb` in the app's home (at most an hour after a single change,
   sooner when busy), so it survives restarts, and [app backups](/backups/app-backups) include it. A restored app
   starts from that snapshot.

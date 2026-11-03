@@ -92,6 +92,27 @@ func TestValidateRouteAndUpstream(t *testing.T) {
 	}
 }
 
+func TestValidateHostUpstreamsShareSchemeAndTLSName(t *testing.T) {
+	cases := map[string]struct {
+		upstreams []string
+		ok        bool
+	}{
+		"http pool":          {[]string{"http://10.0.0.1:80", "http://other.internal:8080"}, true},
+		"https ports differ": {[]string{"https://api.example.com", "https://API.example.com:8443"}, true},
+		"mixed scheme":       {[]string{"http://10.0.0.1", "https://10.0.0.1"}, false},
+		"https names differ": {[]string{"https://a.example.com", "https://b.example.com"}, false},
+		"https ip and name":  {[]string{"https://10.0.0.1", "https://a.example.com"}, false},
+	}
+	for name, tc := range cases {
+		h := Host{Name: "x.example.com", Target: HostTargetUpstream, Upstreams: tc.upstreams, Route: Route{TLS: TLSNone}}
+		var errs ValidationErrors
+		ValidateHost(&h, &errs)
+		if (errs.Err() == nil) != tc.ok {
+			t.Errorf("%s: ok=%v, errs=%v", name, tc.ok, errs.Err())
+		}
+	}
+}
+
 func TestValidateEnv(t *testing.T) {
 	var ok ValidationErrors
 	ValidateEnv([]EnvVar{{"APP_ENV", "production"}, {"_X1", ""}}, &ok)

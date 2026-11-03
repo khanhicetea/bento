@@ -10,6 +10,12 @@ own self-healing.
 - Click an operation to see each step, its events, and live output (deploy logs, backup output).
 - A failed operation explains what went wrong and what to do next, with the app's last log lines.
 - A queued operation shows what it's waiting on — operations on the *same* app run one at a time.
+- **Cancel** stops an operation at its next step. If it's stuck inside a step (a hung image pull or build, an
+  unresponsive Docker), the step itself is interrupted after 30 seconds and the operation ends **cancelled**; check
+  the app's state before retrying.
+- After a Bento upgrade, running apps whose image or configuration changed are replaced **one at a time**. If one
+  fails to come back, the other apps on the same runtime keep running their old instance and show *rollout paused*
+  until you fix the failed app (start, update, or redeploy it).
 
 Operations survive browser closes and Bento restarts. If Bento was stopped mid-operation, it's marked
 **interrupted** and **not** re-run automatically: check the state and run it again if needed.

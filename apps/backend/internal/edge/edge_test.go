@@ -376,3 +376,65 @@ func TestRenderFrontProxy(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderHTTPSUpstreamsVerifyByName(t *testing.T) {
+	files, err := Render(Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
+		Hosts: []domain.Host{
+			upstreamHost("named.example.com", true, "https://app.vercel.example/", "https://app.vercel.example:8443"),
+			upstreamHost("port.example.com", false, "https://api.example.net:8443/v1"),
+			upstreamHost("ip.example.com", false, "https://10.0.0.5:8443"),
+			upstreamHost("plain.example.com", false, "http://grafana.internal:3000"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := string(files["sites/host-named.example.com.conf"])
+	for _, want := range []string{
+		"proxy_ssl_server_name on;", "proxy_ssl_name app.vercel.example;", "proxy_ssl_verify on;",
+		"proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;", "proxy_ssl_verify_depth 4;",
+		"proxy_set_header Host app.vercel.example;", "proxy_set_header X-Forwarded-Host $bento_forwarded_host;",
+		"server app.vercel.example:443;", "server app.vercel.example:8443;",
+	} {
+		if !strings.Contains(named, want) {
+			t.Errorf("named HTTPS upstream missing %q", want)
+		}
+	}
+	// The cached static location proxies too: it must carry the same TLS.
+	if strings.Count(named, "proxy_ssl_verify on;") != 2 {
+		t.Error("both proxy locations of a cached HTTPS upstream must verify")
+	}
+	if strings.Contains(named, "proxy_set_header Host $bento_forwarded_host;") {
+		t.Error("named HTTPS upstream must not receive the visitor's Host")
+	}
+	port := string(files["sites/host-port.example.com.conf"])
+	if !strings.Contains(port, "proxy_set_header Host api.example.net:8443;") ||
+		!strings.Contains(port, "proxy_ssl_name api.example.net;") {
+		t.Error("a non-default port belongs in Host but not in the TLS name")
+	}
+	ip := string(files["sites/host-ip.example.com.conf"])
+	if !strings.Contains(ip, "proxy_ssl_verify off;") || strings.Contains(ip, "proxy_ssl_server_name") ||
+		!strings.Contains(ip, "proxy_set_header Host $bento_forwarded_host;") {
+		t.Error("an HTTPS upstream named by IP keeps the visitor's Host and cannot verify a name")
+	}
+	plain := string(files["sites/host-plain.example.com.conf"])
+	if strings.Contains(plain, "proxy_ssl") || !strings.Contains(plain, "proxy_set_header Host $bento_forwarded_host;") {
+		t.Error("plain HTTP upstreams are unchanged")
+	}
+}
+
+func TestUpstreamTLSName(t *testing.T) {
+	for in, want := range map[string][2]string{
+		"example.com:443":   {"example.com", "example.com"},
+		"example.com:8443":  {"example.com", "example.com:8443"},
+		"10.0.0.5:443":      {"", ""},
+		"[2001:db8::1]:443": {"", ""},
+		"[2001:db8::1]":     {"", ""},
+	} {
+		name, host := upstreamTLSName(in)
+		if name != want[0] || host != want[1] {
+			t.Errorf("%s -> %q %q, want %q %q", in, name, host, want[0], want[1])
+		}
+	}
+}

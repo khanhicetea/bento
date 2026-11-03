@@ -198,7 +198,9 @@ func (s *SDK) Close() error { return s.c.Close() }
 
 func IsNotFound(err error) bool { return cerrdefs.IsNotFound(err) }
 
-func (s *SDK) Version(ctx context.Context) (VersionInfo, error) {
+func (s *SDK) Version(ctx context.Context) (_ VersionInfo, err error) {
+	ctx, finish := bound(ctx, APITimeout, "version")
+	defer finish(&err)
 	v, err := s.c.ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
 		return VersionInfo{}, err
@@ -220,7 +222,9 @@ func versionLess(a, b string) bool {
 	return amaj < bmaj || (amaj == bmaj && amin < bmin)
 }
 
-func (s *SDK) ImageID(ctx context.Context, ref string) (string, bool, error) {
+func (s *SDK) ImageID(ctx context.Context, ref string) (_ string, _ bool, err error) {
+	ctx, finish := bound(ctx, APITimeout, "image inspect")
+	defer finish(&err)
 	res, err := s.c.ImageInspect(ctx, ref)
 	if IsNotFound(err) {
 		return "", false, nil
@@ -231,7 +235,9 @@ func (s *SDK) ImageID(ctx context.Context, ref string) (string, bool, error) {
 	return res.ID, true, nil
 }
 
-func (s *SDK) PullImage(ctx context.Context, ref string, progress func(string)) error {
+func (s *SDK) PullImage(ctx context.Context, ref string, progress func(string)) (err error) {
+	ctx, touch, finish := progressBound(ctx, PullStallTimeout, PullTimeout, "pull "+ref)
+	defer finish(&err)
 	resp, err := s.c.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
 		return err
@@ -242,6 +248,7 @@ func (s *SDK) PullImage(ctx context.Context, ref string, progress func(string)) 
 		if err != nil {
 			return err
 		}
+		touch()
 		if msg.Error != nil {
 			return fmt.Errorf("pull %s: %s", ref, msg.Error.Message)
 		}
@@ -267,7 +274,9 @@ func (s *SDK) BuildImage(
 	buildContext io.Reader,
 	args, labels map[string]string,
 	progress func(string),
-) (string, error) {
+) (_ string, err error) {
+	ctx, touch, finish := progressBound(ctx, BuildStallTimeout, BuildTimeout, "build "+tag)
+	defer finish(&err)
 	buildArgs := map[string]*string{}
 	for k, v := range args {
 		buildArgs[k] = &v
@@ -291,6 +300,7 @@ func (s *SDK) BuildImage(
 			}
 			return "", err
 		}
+		touch()
 		if line.Error != "" {
 			return "", fmt.Errorf("build %s failed: %s\n%s", tag, line.Error, strings.Join(tail, ""))
 		}
@@ -319,7 +329,9 @@ func (s *SDK) BuildImage(
 
 // ReadImageFile reads one regular file from an image by creating (never
 // starting) a throwaway container carrying the caller's ownership labels.
-func (s *SDK) ReadImageFile(ctx context.Context, image, path string, labels map[string]string) ([]byte, error) {
+func (s *SDK) ReadImageFile(ctx context.Context, image, path string, labels map[string]string) (_ []byte, err error) {
+	ctx, finish := bound(ctx, APITimeout, "read image file")
+	defer finish(&err)
 	created, err := s.c.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     &container.Config{Image: image, Entrypoint: []string{"/bin/true"}, Labels: labels},
 		HostConfig: &container.HostConfig{NetworkMode: "none"},
@@ -345,7 +357,9 @@ func (s *SDK) ReadImageFile(ctx context.Context, image, path string, labels map[
 	}
 }
 
-func (s *SDK) EnsureNetwork(ctx context.Context, spec NetworkSpec) (NetworkInfo, error) {
+func (s *SDK) EnsureNetwork(ctx context.Context, spec NetworkSpec) (_ NetworkInfo, err error) {
+	ctx, finish := bound(ctx, APITimeout, "network create")
+	defer finish(&err)
 	if existing, err := s.InspectNetwork(ctx, spec.Name); err != nil {
 		return NetworkInfo{}, err
 	} else if existing != nil {
@@ -373,7 +387,9 @@ func (s *SDK) EnsureNetwork(ctx context.Context, spec NetworkSpec) (NetworkInfo,
 }
 
 // UsedSubnets lists IPv4 subnets of every Docker network on the host.
-func (s *SDK) UsedSubnets(ctx context.Context) ([]netip.Prefix, error) {
+func (s *SDK) UsedSubnets(ctx context.Context) (_ []netip.Prefix, err error) {
+	ctx, finish := bound(ctx, APITimeout, "network list")
+	defer finish(&err)
 	res, err := s.c.NetworkList(ctx, client.NetworkListOptions{})
 	if err != nil {
 		return nil, err
@@ -389,7 +405,9 @@ func (s *SDK) UsedSubnets(ctx context.Context) ([]netip.Prefix, error) {
 	return out, nil
 }
 
-func (s *SDK) InspectNetwork(ctx context.Context, name string) (*NetworkInfo, error) {
+func (s *SDK) InspectNetwork(ctx context.Context, name string) (_ *NetworkInfo, err error) {
+	ctx, finish := bound(ctx, APITimeout, "network inspect")
+	defer finish(&err)
 	res, err := s.c.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
 	if IsNotFound(err) {
 		return nil, nil
@@ -411,7 +429,9 @@ func (s *SDK) InspectNetwork(ctx context.Context, name string) (*NetworkInfo, er
 	return info, nil
 }
 
-func (s *SDK) Inspect(ctx context.Context, nameOrID string) (*container.InspectResponse, error) {
+func (s *SDK) Inspect(ctx context.Context, nameOrID string) (_ *container.InspectResponse, err error) {
+	ctx, finish := bound(ctx, APITimeout, "container inspect")
+	defer finish(&err)
 	res, err := s.c.ContainerInspect(ctx, nameOrID, client.ContainerInspectOptions{})
 	if IsNotFound(err) {
 		return nil, nil
@@ -434,7 +454,9 @@ func labelFilters(labels map[string]string) client.Filters {
 	return f
 }
 
-func (s *SDK) List(ctx context.Context, labels map[string]string) ([]container.Summary, error) {
+func (s *SDK) List(ctx context.Context, labels map[string]string) (_ []container.Summary, err error) {
+	ctx, finish := bound(ctx, APITimeout, "container list")
+	defer finish(&err)
 	res, err := s.c.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: labelFilters(labels)})
 	if err != nil {
 		return nil, err
@@ -442,7 +464,9 @@ func (s *SDK) List(ctx context.Context, labels map[string]string) ([]container.S
 	return res.Items, nil
 }
 
-func (s *SDK) Create(ctx context.Context, spec ContainerSpec) (string, error) {
+func (s *SDK) Create(ctx context.Context, spec ContainerSpec) (_ string, err error) {
+	ctx, finish := bound(ctx, APITimeout, "container create")
+	defer finish(&err)
 	res, err := s.c.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: spec.Name, Config: spec.Config, HostConfig: spec.HostConfig, NetworkingConfig: spec.Networking,
 	})
@@ -452,38 +476,50 @@ func (s *SDK) Create(ctx context.Context, spec ContainerSpec) (string, error) {
 	return res.ID, nil
 }
 
-func (s *SDK) Start(ctx context.Context, id string) error {
-	_, err := s.c.ContainerStart(ctx, id, client.ContainerStartOptions{})
+func (s *SDK) Start(ctx context.Context, id string) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "container start")
+	defer finish(&err)
+	_, err = s.c.ContainerStart(ctx, id, client.ContainerStartOptions{})
 	return err
 }
 
-func (s *SDK) Stop(ctx context.Context, id string, timeout time.Duration) error {
+func (s *SDK) Stop(ctx context.Context, id string, timeout time.Duration) (err error) {
+	ctx, finish := bound(ctx, timeout+APITimeout, "container stop")
+	defer finish(&err)
 	secs := int(timeout.Seconds())
-	_, err := s.c.ContainerStop(ctx, id, client.ContainerStopOptions{Timeout: &secs})
+	_, err = s.c.ContainerStop(ctx, id, client.ContainerStopOptions{Timeout: &secs})
 	return err
 }
 
 // Remove removes a container. Anonymous volumes are never removed.
-func (s *SDK) Remove(ctx context.Context, id string) error {
-	_, err := s.c.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: false})
+func (s *SDK) Remove(ctx context.Context, id string) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "container remove")
+	defer finish(&err)
+	_, err = s.c.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: false})
 	if IsNotFound(err) {
 		return nil
 	}
 	return err
 }
 
-func (s *SDK) Rename(ctx context.Context, id, newName string) error {
-	_, err := s.c.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: newName})
+func (s *SDK) Rename(ctx context.Context, id, newName string) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "container rename")
+	defer finish(&err)
+	_, err = s.c.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: newName})
 	return err
 }
 
-func (s *SDK) Signal(ctx context.Context, id, signal string) error {
-	_, err := s.c.ContainerKill(ctx, id, client.ContainerKillOptions{Signal: signal})
+func (s *SDK) Signal(ctx context.Context, id, signal string) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "container kill")
+	defer finish(&err)
+	_, err = s.c.ContainerKill(ctx, id, client.ContainerKillOptions{Signal: signal})
 	return err
 }
 
-func (s *SDK) SetRestartPolicy(ctx context.Context, id string, policy container.RestartPolicyMode) error {
-	_, err := s.c.ContainerUpdate(
+func (s *SDK) SetRestartPolicy(ctx context.Context, id string, policy container.RestartPolicyMode) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "container update")
+	defer finish(&err)
+	_, err = s.c.ContainerUpdate(
 		ctx,
 		id,
 		client.ContainerUpdateOptions{RestartPolicy: &container.RestartPolicy{Name: policy}},
@@ -626,12 +662,16 @@ func (s *SDK) ExecAttach(ctx context.Context, id string, req ExecRequest, height
 	return &ExecSession{ID: created.ID, Conn: att.Conn, Read: att.Reader}, nil
 }
 
-func (s *SDK) ExecResize(ctx context.Context, execID string, height, width uint) error {
-	_, err := s.c.ExecResize(ctx, execID, client.ExecResizeOptions{Height: height, Width: width})
+func (s *SDK) ExecResize(ctx context.Context, execID string, height, width uint) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "exec resize")
+	defer finish(&err)
+	_, err = s.c.ExecResize(ctx, execID, client.ExecResizeOptions{Height: height, Width: width})
 	return err
 }
 
-func (s *SDK) ExecExitCode(ctx context.Context, execID string) (int, bool, error) {
+func (s *SDK) ExecExitCode(ctx context.Context, execID string) (_ int, _ bool, err error) {
+	ctx, finish := bound(ctx, APITimeout, "exec inspect")
+	defer finish(&err)
 	ins, err := s.c.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 	if err != nil {
 		return 0, false, err
@@ -669,7 +709,9 @@ func (s *SDK) Events(ctx context.Context, labels map[string]string) (<-chan even
 	return res.Messages, res.Err
 }
 
-func (s *SDK) VolumeCreate(ctx context.Context, name string, labels map[string]string) (VolumeInfo, error) {
+func (s *SDK) VolumeCreate(ctx context.Context, name string, labels map[string]string) (_ VolumeInfo, err error) {
+	ctx, finish := bound(ctx, APITimeout, "volume create")
+	defer finish(&err)
 	res, err := s.c.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Driver: "local", Labels: labels})
 	if err != nil {
 		return VolumeInfo{}, err
@@ -681,7 +723,9 @@ func volumeInfo(v volume.Volume) VolumeInfo {
 	return VolumeInfo{Name: v.Name, Mountpoint: v.Mountpoint, Labels: v.Labels}
 }
 
-func (s *SDK) VolumeInspect(ctx context.Context, name string) (*VolumeInfo, error) {
+func (s *SDK) VolumeInspect(ctx context.Context, name string) (_ *VolumeInfo, err error) {
+	ctx, finish := bound(ctx, APITimeout, "volume inspect")
+	defer finish(&err)
 	res, err := s.c.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if IsNotFound(err) {
 		return nil, nil
@@ -693,12 +737,16 @@ func (s *SDK) VolumeInspect(ctx context.Context, name string) (*VolumeInfo, erro
 	return &v, nil
 }
 
-func (s *SDK) VolumeRemove(ctx context.Context, name string) error {
-	_, err := s.c.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
+func (s *SDK) VolumeRemove(ctx context.Context, name string) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "volume remove")
+	defer finish(&err)
+	_, err = s.c.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
 	return err
 }
 
-func (s *SDK) ListImages(ctx context.Context) ([]ImageSummary, error) {
+func (s *SDK) ListImages(ctx context.Context) (_ []ImageSummary, err error) {
+	ctx, finish := bound(ctx, APITimeout, "image list")
+	defer finish(&err)
 	res, err := s.c.ImageList(ctx, client.ImageListOptions{})
 	if err != nil {
 		return nil, err
@@ -710,7 +758,9 @@ func (s *SDK) ListImages(ctx context.Context) ([]ImageSummary, error) {
 	return out, nil
 }
 
-func (s *SDK) RemoveImage(ctx context.Context, id string, tags []string) error {
+func (s *SDK) RemoveImage(ctx context.Context, id string, tags []string) (err error) {
+	ctx, finish := bound(ctx, APITimeout, "image remove")
+	defer finish(&err)
 	// Removing by ID fails for multi-tag images without force, so untag each
 	// reference; the last one deletes the image.
 	refs := tags
@@ -729,7 +779,9 @@ func (s *SDK) RemoveImage(ctx context.Context, id string, tags []string) error {
 	return nil
 }
 
-func (s *SDK) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
+func (s *SDK) ListVolumes(ctx context.Context) (_ []VolumeInfo, err error) {
+	ctx, finish := bound(ctx, APITimeout, "volume list")
+	defer finish(&err)
 	res, err := s.c.VolumeList(ctx, client.VolumeListOptions{})
 	if err != nil {
 		return nil, err
@@ -741,7 +793,9 @@ func (s *SDK) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
 	return out, nil
 }
 
-func (s *SDK) ListNetworks(ctx context.Context) ([]NetworkSummary, error) {
+func (s *SDK) ListNetworks(ctx context.Context) (_ []NetworkSummary, err error) {
+	ctx, finish := bound(ctx, APITimeout, "network list")
+	defer finish(&err)
 	res, err := s.c.NetworkList(ctx, client.NetworkListOptions{})
 	if err != nil {
 		return nil, err
@@ -795,7 +849,9 @@ type Process struct {
 
 // Stats takes a two-point sample (about one second) so CPU usage is a real
 // rate. Returns nil when the container is missing or not running.
-func (s *SDK) Stats(ctx context.Context, id string) (*Stats, error) {
+func (s *SDK) Stats(ctx context.Context, id string) (_ *Stats, err error) {
+	ctx, finish := bound(ctx, APITimeout, "container stats")
+	defer finish(&err)
 	res, err := s.c.ContainerStats(ctx, id, client.ContainerStatsOptions{IncludePreviousSample: true})
 	if IsNotFound(err) {
 		return nil, nil
@@ -856,7 +912,9 @@ var topColumns = []string{"pid", "ppid", "user", "pcpu", "pmem", "rss", "etime",
 
 // Top lists the container's processes. Returns nil when the container is
 // missing or not running.
-func (s *SDK) Top(ctx context.Context, id string) ([]Process, error) {
+func (s *SDK) Top(ctx context.Context, id string) (_ []Process, err error) {
+	ctx, finish := bound(ctx, APITimeout, "container top")
+	defer finish(&err)
 	res, err := s.c.ContainerTop(
 		ctx,
 		id,

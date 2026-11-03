@@ -51,8 +51,10 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 1. **Handlers never cause effects.** API handlers and CLI commands validate, persist intent, and `Submit` an operation
    in one transaction. Only operation handlers touch Docker or the filesystem.
 2. **No Docker call inside `Store.Tx`.** Read, release the transaction, then act.
-3. **Call `r.Phase(ctx, "…")` before each external effect** in a handler. It records progress and is the only place
-   cancellation is honored. Handlers must be safe to re-run after a partial failure.
+3. **Call `r.Phase(ctx, "…")` before each external effect** in a handler. It records progress and is where
+   cancellation is honored cleanly; a cancellation still pending after `CancelGrace` (30 s) cancels the operation's
+   context mid-effect. Cleanup that must finish runs on `context.WithoutCancel`. Handlers must be safe to re-run after
+   a partial failure.
 4. **Verify ownership before destroying anything.** Check `Names.OwnedBy` (labels + role, and app id where relevant)
    and, for app containers, `verifyOwnedInstance`. Never act on a resource just because its name matches. Scope label
    queries by `io.bento.stack-id` — imported clones share app ids across stacks.

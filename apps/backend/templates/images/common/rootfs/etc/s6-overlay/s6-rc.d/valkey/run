@@ -12,4 +12,9 @@ umask 077
 mkdir -p "$VALKEY_DATA"
 chmod 700 "$VALKEY_DATA"
 cd "$VALKEY_DATA"
-exec /usr/local/bin/valkey-server /etc/valkey/valkey.conf --dir "$VALKEY_DATA"
+args=(--dir "$VALKEY_DATA")
+# The cap is a quarter of the app's memory limit (BENTO_VALKEY_MAXMEMORY).
+if [[ -n "${BENTO_VALKEY_MAXMEMORY:-}" ]]; then
+  args+=(--maxmemory "$BENTO_VALKEY_MAXMEMORY")
+fi
+exec /usr/local/bin/valkey-server /etc/valkey/valkey.conf "${args[@]}"

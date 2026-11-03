@@ -26,6 +26,16 @@ const (
 // container, on domain.ValkeyPort, without a password.
 const ValkeyHost = "127.0.0.1"
 
+// ValkeyMaxMemoryMB caps an app's Valkey at a quarter of the app's memory
+// limit, which it shares with the app's own processes. Without a cap a
+// growing dataset meets the container's limit, where the kernel kills a
+// process (Valkey or the app) instead of Valkey evicting a key; a snapshot
+// fork can briefly double Valkey's footprint, which the remaining headroom
+// absorbs.
+func ValkeyMaxMemoryMB(appMemoryMB int) int {
+	return max(appMemoryMB/4, 16)
+}
+
 // SchedulerBasePath is the URL prefix minicrond serves under; the backend's
 // scheduler gateway on the management listener forwards exactly this prefix.
 func SchedulerBasePath(slug string) string { return "/apps/" + slug + "/scheduler" }
@@ -82,6 +92,7 @@ func RenderAppConfig(app domain.App, ctx AppContext) (config []file, identity []
 	env.add("BENTO_MINICROND", flag(app.Minicrond))
 	env.add("BENTO_VALKEY", flag(app.Valkey))
 	if app.Valkey {
+		env.add("BENTO_VALKEY_MAXMEMORY", strconv.Itoa(ValkeyMaxMemoryMB(app.Resources.MemoryMB))+"mb")
 		// Client defaults for the app's own Valkey; the app's env wins.
 		port := strconv.Itoa(domain.ValkeyPort)
 		for _, kv := range [][2]string{

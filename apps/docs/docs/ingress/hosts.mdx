@@ -31,5 +31,11 @@ Removing a host asks you to type `delete <host>`.
 Good to know:
 
 - Each domain belongs to exactly one target.
+- An `https://` upstream named by a domain is checked like a browser would: the edge sends that name (SNI and
+  `Host`) and verifies its certificate against public CAs, so hosts on Cloudflare, Vercel, or similar work. An
+  `https://` upstream named by an IP address is encrypted but its certificate is **not** verified — use it only on a
+  network you trust.
+- Several upstream URLs of one host must use the same scheme; several `https://` ones must share the same domain
+  (they may differ in port).
 - An app's **first** host is the address shown for it in the UI.
 - Removing an app removes its hosts.

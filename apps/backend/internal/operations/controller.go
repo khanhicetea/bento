@@ -40,6 +40,11 @@ func Fail(code, guidance, format string, args ...any) *OpError {
 
 var ErrCancelled = errors.New("operation cancelled at a safe boundary")
 
+// ErrForceCancelled ends an operation that did not reach a phase boundary
+// within CancelGrace of its cancellation request: its context was cancelled
+// while an effect (a Docker call, a pull, a job) was still in progress.
+var ErrForceCancelled = errors.New("operation cancelled while an effect was in progress")
+
 // Deps are the effects the controller uses.
 type Deps struct {
 	Store   *store.Store
@@ -63,7 +68,19 @@ type Deps struct {
 	// Concurrency bounds how many operations execute at once (default
 	// DefaultConcurrency). 1 restores strictly serial execution.
 	Concurrency int
+	// CancelGrace is how long a cancellation request waits for the handler
+	// to reach a phase boundary (default DefaultCancelGrace). After it the
+	// operation's context is cancelled, which ends a stuck Docker call,
+	// pull, build or job wait. Cleanup that must finish runs on
+	// context.WithoutCancel and is not interrupted.
+	CancelGrace time.Duration
+	// CancelPoll is how often a running operation's cancellation flag is
+	// read (default 1s).
+	CancelPoll time.Duration
 }
+
+// DefaultCancelGrace is the default CancelGrace.
+const DefaultCancelGrace = 30 * time.Second
 
 // DefaultConcurrency is the default number of operations executing at once.
 const DefaultConcurrency = 4
@@ -141,6 +158,12 @@ func NewController(d Deps) (*Controller, error) {
 	}
 	if d.Concurrency <= 0 {
 		d.Concurrency = DefaultConcurrency
+	}
+	if d.CancelGrace <= 0 {
+		d.CancelGrace = DefaultCancelGrace
+	}
+	if d.CancelPoll <= 0 {
+		d.CancelPoll = time.Second
 	}
 	stack, err := store.GetStackIdentity(context.Background(), d.Store.DB())
 	if err != nil {
@@ -566,6 +589,9 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	run := &Run{c: c, Op: op}
 	h := c.handlers[op.Kind]
 	c.Log.Info("operation started", "op", op.ID, "kind", op.Kind, "target", op.TargetID)
+	opCtx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
+	go c.watchCancel(opCtx, op.ID, stop)
 	result, err := func() (res any, err error) {
 		defer func() {
 			if p := recover(); p != nil {
@@ -573,8 +599,11 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 				err = Fail("internal", "Report this failure with the operation id.", "unexpected failure: %v", p)
 			}
 		}()
-		return h(ctx, run)
+		return h(opCtx, run)
 	}()
+	if err != nil && errors.Is(context.Cause(opCtx), ErrForceCancelled) && !errors.Is(err, ErrCancelled) {
+		err = fmt.Errorf("%w: %v", ErrForceCancelled, err)
+	}
 	var raw json.RawMessage
 	if result != nil {
 		var merr error
@@ -597,6 +626,39 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	c.notify(op.ID)
 }
 
+// watchCancel cancels a running operation's context once its cancellation
+// was requested CancelGrace ago and the handler has not honored it at a
+// phase boundary. It returns when the operation ends.
+func (c *Controller) watchCancel(ctx context.Context, id string, stop context.CancelCauseFunc) {
+	tick := time.NewTicker(c.CancelPoll)
+	defer tick.Stop()
+	var requested time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		if requested.IsZero() {
+			if store.CancelRequested(ctx, c.Store.DB(), id) {
+				requested = time.Now()
+			}
+			continue
+		}
+		if time.Since(requested) < c.CancelGrace {
+			continue
+		}
+		msg := fmt.Sprintf("cancellation forced after %s without a safe boundary; interrupting the step in progress",
+			c.CancelGrace)
+		if err := store.AppendEvent(context.WithoutCancel(ctx), c.Store.DB(), id, "warn", msg); err != nil {
+			c.Log.Warn("record operation event", "op", id, "err", err)
+		}
+		c.Log.Warn("operation cancellation forced", "op", id, "grace", c.CancelGrace)
+		stop(ErrForceCancelled)
+		return
+	}
+}
+
 // outcome maps a handler's result error to the terminal state, error code,
 // message, and guidance stored on the operation.
 func outcome(err error) (state store.OpState, code, msg, guidance string) {
@@ -606,6 +668,11 @@ func outcome(err error) (state store.OpState, code, msg, guidance string) {
 	if errors.Is(err, ErrCancelled) {
 		return store.OpCancelled, "cancelled", err.Error(),
 			"Effects completed before cancellation remain in place; inspect the target status."
+	}
+	if errors.Is(err, ErrForceCancelled) {
+		return store.OpCancelled, "cancelled", err.Error(),
+			"The step in progress was interrupted. Effects completed before it remain; the reconciler repairs " +
+				"runtime drift. Inspect the target status before retrying."
 	}
 	if oe, ok := errors.AsType[*OpError](err); ok {
 		return store.OpFailed, oe.Code, oe.Message, oe.Guidance
