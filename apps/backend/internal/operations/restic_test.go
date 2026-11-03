@@ -3,6 +3,7 @@ package operations
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -60,10 +62,16 @@ func resticHarness(t *testing.T, onExec func(args []string, req docker.ExecReque
 	return h, app
 }
 
+// resticInit initializes the app's repository and returns the stack backup
+// password it was encrypted with.
 func (h *harness) resticInit(app domain.App) string {
 	h.t.Helper()
-	op, key, err := h.c.SubmitResticInit(h.t.Context(), app.ID, "")
+	op, err := h.c.SubmitResticInit(h.t.Context(), app.ID, "")
 	h.mustSucceed(op, err)
+	key, err := backup.ReadStackKey(h.layout)
+	if err != nil {
+		h.t.Fatal(err)
+	}
 	return key
 }
 
@@ -85,9 +93,12 @@ func TestResticSettingsValidationAndSchedule(t *testing.T) {
 	}
 }
 
-func TestResticInitStoresKeyOnce(t *testing.T) {
+func TestResticInitUsesStackPassword(t *testing.T) {
 	h, app := resticHarness(t, nil)
 	ctx := t.Context()
+	if _, err := backup.ReadStackKey(h.layout); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the harness stack must start without a backup password: %v", err)
+	}
 	key := h.resticInit(app)
 	if len(key) < 40 {
 		t.Fatalf("weak key %q", key)
@@ -119,8 +130,43 @@ func TestResticInitStoresKeyOnce(t *testing.T) {
 			t.Fatalf("key persisted in operation %s", op.Kind)
 		}
 	}
-	if _, _, err := h.c.SubmitResticInit(ctx, app.ID, ""); !errors.Is(err, store.ErrConflict) {
+	if _, err := h.c.SubmitResticInit(ctx, app.ID, ""); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("second init must be refused, got %v", err)
+	}
+	// A second app's repository is encrypted with the same password.
+	other := h.createApp("blog")
+	o := domain.DefaultResticSettings()
+	o.Repository = "b2:bento/apps/blog"
+	if _, err := h.c.SaveResticSettings(ctx, other.ID, o, ""); err != nil {
+		t.Fatal(err)
+	}
+	if again := h.resticInit(other); again != key {
+		t.Fatal("the stack backup password changed between repositories")
+	}
+	if raw, err := os.ReadFile(h.c.resticKeyPath(other.ID)); err != nil || string(raw) != key {
+		t.Fatalf("second app key mismatch: %v", err)
+	}
+}
+
+// Connect with no key adopts the repository with the stack backup password;
+// a stack without one asks for the key instead of creating a password.
+func TestResticConnectDefaultsToStackPassword(t *testing.T) {
+	h, app := resticHarness(t, nil)
+	var verrs domain.ValidationErrors
+	if _, err := h.c.SubmitResticConnect(t.Context(), app.ID, "", ""); !errors.As(err, &verrs) {
+		t.Fatalf("connect without a key or stack password: %v", err)
+	}
+	if _, err := backup.ReadStackKey(h.layout); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("connect must never create the stack backup password")
+	}
+	key, _, err := backup.EnsureStackKey(h.layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := h.c.SubmitResticConnect(t.Context(), app.ID, "  ", "")
+	h.mustSucceed(op, err)
+	if raw, err := os.ReadFile(h.c.resticKeyPath(app.ID)); err != nil || string(raw) != key {
+		t.Fatalf("adopted key is not the stack password: %v", err)
 	}
 }
 
@@ -323,7 +369,7 @@ func TestResticInitFailsFastOnUnusableRemote(t *testing.T) {
 		}
 		return docker.ExecResult{Stdout: []byte("ready")}
 	}
-	op, _, err := h.c.SubmitResticInit(t.Context(), app.ID, "")
+	op, err := h.c.SubmitResticInit(t.Context(), app.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

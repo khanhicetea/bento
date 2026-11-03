@@ -284,12 +284,10 @@ func allTools() []Tool {
 		{
 			Name: "get_backup_status", Title: "Backup status", Scope: dto.TokenScopeRead, ReadOnly: true,
 			Idempotent:  true,
-			Description: "Database backup runs, per-app restic backups, and backup schedules.",
+			Description: "Per-app restic backups: repositories, schedules, snapshots and recent runs.",
 			Input:       object(map[string]any{}),
 			Run: func(ctx context.Context, b *Backend, _ json.RawMessage) (any, error) {
-				return combined(ctx, b, map[string]string{
-					"runs": "/api/v1/backups/runs", "appBackups": "/api/v1/backups/apps",
-					"schedules": "/api/v1/backups/schedules"})
+				return combined(ctx, b, map[string]string{"appBackups": "/api/v1/backups/apps"})
 			},
 		},
 		getTool("get_docker_inventory", "Docker inventory",
@@ -309,36 +307,6 @@ func allTools() []Tool {
 		appActionTool("backup_app", "Back up app",
 			"Run a restic backup of the app's home and databases to its configured repository.", "/restic/backup",
 			dto.TokenScopeOperate, false),
-		{
-			Name: "backup_databases", Title: "Back up databases", Scope: dto.TokenScopeOperate,
-			Description: "Dump databases to local backup artifacts: every database, or only one app's.",
-			Input: object(map[string]any{
-				"app":         str("Only this app's databases (slug or id). Omit for all."),
-				"compression": map[string]any{"type": "string", "enum": []string{"zstd", "gzip", "none"}},
-			}),
-			Run: func(ctx context.Context, b *Backend, raw json.RawMessage) (any, error) {
-				a, err := args[struct {
-					App         string `json:"app"`
-					Compression string `json:"compression"`
-				}](raw)
-				if err != nil {
-					return nil, err
-				}
-				req := dto.BackupRequest{Scope: "all", Compression: a.Compression}
-				if a.App != "" {
-					app, err := resolveApp(ctx, b, a.App)
-					if err != nil {
-						return nil, err
-					}
-					req.Scope, req.AppID = "app", app.ID
-				}
-				var out dto.Accepted
-				if err := b.call(ctx, http.MethodPost, "/api/v1/backups", req, &out); err != nil {
-					return nil, err
-				}
-				return acceptedOut(out), nil
-			},
-		},
 		{
 			Name: "restart_service", Title: "Restart data service", Scope: dto.TokenScopeOperate, Destructive: true,
 			Description: "Restart a MySQL or PostgreSQL service. Every app bound to it loses its connections.",

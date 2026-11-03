@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api"
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
@@ -139,9 +140,6 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 		if err := store.PutSetting(ctx, q, "edge", domain.DefaultEdgeSettings()); err != nil {
 			return err
 		}
-		if err := seedBackupSchedule(ctx, q); err != nil {
-			return err
-		}
 		for _, svc := range services {
 			svc.Volume = names.ServiceVolume(svc.Name)
 			svc.CreatedAt = time.Now().UTC()
@@ -166,7 +164,7 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 			return id, err
 		}
 	}
-	placeholder := "# rclone configuration for scheduled backup uploads (operator-owned, private).\n"
+	placeholder := "# rclone configuration for app backup repositories (operator-owned, private).\n"
 	if err := platform.AtomicWrite(
 		filepath.Join(layout.RcloneDir(), "rclone.conf"),
 		[]byte(placeholder),
@@ -175,20 +173,10 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 	); err != nil {
 		return id, err
 	}
-	return id, nil
-}
-
-// seedBackupSchedule stores the default (disabled) backup schedule.
-func seedBackupSchedule(ctx context.Context, q store.Q) error {
-	d := domain.DefaultBackupSchedule()
-	spec, err := json.Marshal(map[string]any{
-		"scope": d.Scope, "compression": d.Compression, "retain": d.Retain, "rcloneRemote": d.RcloneRemote,
-	})
-	if err != nil {
-		return err
+	// The stack backup password encrypts every app backup repository the
+	// stack initializes; `bento backup password` prints it.
+	if _, _, err := backup.EnsureStackKey(layout); err != nil {
+		return id, fmt.Errorf("stack backup password: %w", err)
 	}
-	now := platform.FormatTime(time.Now())
-	return store.PutSchedule(ctx, q, store.Schedule{
-		ID: store.BackupScheduleID, Kind: "backup", Name: d.Name, Cron: d.Cron, Enabled: d.Enabled, Spec: spec,
-	}, now)
+	return id, nil
 }

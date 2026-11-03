@@ -37,7 +37,6 @@ For any scoped caller, Bento also:
 
 - shows app **env values as `[redacted]`** and refuses env changes,
 - shows only the **env keys** of scheduler jobs, never their values,
-- refuses backup uploads to rclone remotes,
 - labels every operation it starts — `token:<name>` or `local:<scope>` — in **Activity**.
 
 Log lines come from your apps. Treat them as untrusted input to the model: a log line can contain text that looks
@@ -109,9 +108,9 @@ The same token also works on the REST API (`Authorization: Bearer …`) within i
 | `list_apps`, `get_app`, `get_app_readiness`, `get_app_metrics` | read | Apps by slug |
 | `get_app_logs` | read | Last 1–1000 lines (≤ 64 KB), secrets redacted |
 | `list_operations`, `get_operation`, `wait_operation` | read | Follow any operation; `wait_operation` blocks up to 120 s |
-| `list_services`, `get_reconcile_status`, `get_ingress`, `get_backup_status` | read | Data, drift repair, edge + hosts + tunnel, backups |
+| `list_services`, `get_reconcile_status`, `get_ingress`, `get_backup_status` | read | Data, drift repair, edge + hosts + tunnel, app backups |
 | `start_app`, `stop_app`, `restart_app`, `deploy_app` | operate | App lifecycle |
-| `backup_app`, `backup_databases` | operate | Restic app backup, local database dumps |
+| `backup_app` | operate | Restic app backup (home and databases) |
 | `restart_service`, `cancel_operation` | operate | Data service restart, cancel |
 | `create_app`, `update_app`, `publish_app`, `unpublish_app` | admin | App configuration |
 | `add_binding`, `add_database`, `set_git_source`, `save_host` | admin | Data, git, Ingress |

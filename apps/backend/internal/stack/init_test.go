@@ -62,11 +62,14 @@ func TestInitCreatesVersionedPrivateStack(t *testing.T) {
 	if err := store.CheckCompatible(l.Database()); err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range []string{l.SecretsDir(), l.RunDir(), l.BackupsDir()} {
+	for _, d := range []string{l.SecretsDir(), l.RunDir(), l.ResticKeyDir()} {
 		info, _ := os.Stat(d)
 		if info.Mode().Perm() != 0o700 {
 			t.Errorf("%s mode %v", d, info.Mode().Perm())
 		}
+	}
+	if info, err := os.Lstat(l.StackBackupKey()); err != nil || info.Mode().Perm() != 0o400 {
+		t.Fatalf("stack backup password: %v %v", info, err)
 	}
 	s, _ := store.Open(l.Database())
 	defer s.Close()

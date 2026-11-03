@@ -11,7 +11,7 @@ Anything destructive asks you to type an exact phrase:
 | --- | --- |
 | Remove an app | `delete <slug>` |
 | Permanently delete retained data | `delete` |
-| Restore a database dump over live data | `replace <database>` |
+| Restore a database from a backup over live data | `replace <database>` |
 | Export the whole stack | `export` |
 | Remove a domain | `delete <host>` |
 
@@ -19,7 +19,8 @@ Anything destructive asks you to type an exact phrase:
 
 Passwords, tokens, and keys are stored in private files and never appear in logs, the UI, or `docker inspect`.
 One-time secrets — a webhook secret, a backup repository key, a tunnel token — are shown **once**. Copy them when you
-see them.
+see them. The stack backup password is never shown by the UI or the API: print it on the host with
+`sudo bento backup password` and keep a copy off the host — without it, backups cannot be recovered.
 
 ## Containers are locked down
 

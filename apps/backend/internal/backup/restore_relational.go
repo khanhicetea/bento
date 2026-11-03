@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
@@ -79,11 +80,11 @@ func stagingNames(database string) (stage, trash string) {
 	return domain.ReservedDatabasePrefix + "rs_" + h, domain.ReservedDatabasePrefix + "rt_" + h
 }
 
-// RestoreRelational replaces an app-namespaced database with an artifact.
+// RestoreRelational replaces an app-namespaced database with a plain dump
+// file (restic has verified its content when it restored it).
 //
-// The artifact is first restored into a staging database as the binding
-// user. A corrupt or truncated artifact, or a statement the binding user may
-// not run, fails there and leaves the live database unchanged
+// The dump is first replayed into a staging database as the binding user. A
+// failing replay, or a statement the binding user may not run, fails there and leaves the live database unchanged
 // (LiveUnchangedError). The staging database then replaces the live one:
 // PostgreSQL renames the databases; MySQL moves every table in one RENAME
 // TABLE. A MySQL database with views, routines or events cannot be moved
@@ -189,7 +190,7 @@ func (d Deps) replayMySQL(
 	db, artifactPath string,
 	prepare func(charsetClause string) string,
 ) error {
-	src, err := Decompress(artifactPath)
+	src, err := os.Open(artifactPath)
 	if err != nil {
 		return err
 	}
@@ -477,7 +478,7 @@ func (d Deps) replayPostgres(
 	if _, err := d.Data.SQL(ctx, svc, id, db, lockdown); err != nil {
 		return err
 	}
-	src, err := Decompress(artifactPath)
+	src, err := os.Open(artifactPath)
 	if err != nil {
 		return err
 	}

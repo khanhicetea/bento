@@ -30,7 +30,6 @@ func (l Layout) ControlSocket() string  { return filepath.Join(l.Root, "run", "b
 func (l Layout) RelayDir() string       { return filepath.Join(l.Root, "run", "relay") }
 func (l Layout) LockDir() string        { return filepath.Join(l.Root, "locks") }
 func (l Layout) ControllerLock() string { return filepath.Join(l.Root, "locks", "controller.lock") }
-func (l Layout) BackupLock() string     { return filepath.Join(l.Root, "locks", "backup.lock") }
 func (l Layout) SecretsDir() string     { return filepath.Join(l.Root, "secrets") }
 func (l Layout) HomesDir() string       { return filepath.Join(l.Root, "homes") }
 func (l Layout) SQLiteDir() string      { return filepath.Join(l.Root, "sqlite") }
@@ -43,12 +42,16 @@ func (l Layout) EdgeACMEDir() string    { return filepath.Join(l.Root, "edge", "
 func (l Layout) EdgeCustomDir() string  { return filepath.Join(l.Root, "edge", "custom") }
 func (l Layout) TunnelDir() string      { return filepath.Join(l.Root, "cloudflared") }
 func (l Layout) DBAdminDir() string     { return filepath.Join(l.Root, "dbadmin") }
-func (l Layout) BackupsDir() string     { return filepath.Join(l.Root, "backups") }
 func (l Layout) RcloneDir() string      { return filepath.Join(l.Root, "rclone") }
 func (l Layout) CacheDir() string       { return filepath.Join(l.Root, "cache") }
 func (l Layout) StagingDir() string     { return filepath.Join(l.Root, "staging") }
 
-func (l Layout) Secret(name string) string  { return filepath.Join(l.Root, "secrets", name) }
+func (l Layout) Secret(name string) string { return filepath.Join(l.Root, "secrets", name) }
+
+// ResticKeyDir holds the restic repository keys; StackBackupKey is the stack
+// backup password every repository Bento initializes is encrypted with.
+func (l Layout) ResticKeyDir() string       { return filepath.Join(l.Root, "secrets", "restic") }
+func (l Layout) StackBackupKey() string     { return filepath.Join(l.ResticKeyDir(), "stack.key") }
 func (l Layout) AppHome(slug string) string { return filepath.Join(l.Root, "homes", slug) }
 func (l Layout) AppCode(slug string) string { return filepath.Join(l.AppHome(slug), "app") }
 func (l Layout) AppDir(appID string) string { return filepath.Join(l.Root, "apps", appID) }
@@ -108,7 +111,6 @@ func (l Layout) SkeletonDirs() map[string]uint32 {
 		l.EdgeACMEDir():   0o700,
 		l.EdgeCustomDir(): 0o755,
 		l.TunnelDir():     0o700,
-		l.BackupsDir():    0o700,
 		l.RcloneDir():     0o700,
 		l.CacheDir():      0o700,
 		l.StagingDir():    0o700,

@@ -1,24 +1,24 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
-// restoreEnv drives relational backups and restores of one app binding.
+// restoreEnv drives app backups (restic, on a local rclone remote) and
+// database restores of one app binding.
 type restoreEnv struct {
 	*env
 	svc domain.DataService
@@ -43,6 +43,15 @@ func newRestoreEnv(t *testing.T, engine domain.Engine, version string, start boo
 	if start {
 		e.wait(e.c.StartApp(ctx, app.ID, ""))
 	}
+	if err := os.WriteFile(filepath.Join(e.layout.RcloneDir(), "rclone.conf"), []byte("[dest]\ntype = local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings := domain.DefaultResticSettings()
+	settings.Repository = "dest:/config/rclone/repo"
+	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings, ""); err != nil {
+		t.Fatal(err)
+	}
+	e.wait(e.c.SubmitResticInit(ctx, app.ID, ""))
 	return &restoreEnv{env: e, svc: svc, app: app, b: app.Bindings[0], db: app.Bindings[0].Databases[0]}
 }
 
@@ -83,46 +92,24 @@ func (r *restoreEnv) admin(sql string) string {
 	return r.sql(r.svc, sql)
 }
 
+// backup takes an app backup and returns its snapshot id.
 func (r *restoreEnv) backup() string {
 	r.t.Helper()
-	op := r.wait(r.c.SubmitBackup(context.Background(), operations.BackupRequest{
-		Scope: "database", AppID: r.app.ID, Databases: []string{r.db}}, ""))
-	var res struct {
-		Artifacts []struct {
-			Path string `json:"path"`
-		} `json:"artifacts"`
+	r.wait(r.c.SubmitResticBackup(context.Background(), r.app.ID, "manual", ""))
+	v, err := r.c.ResticSettings(context.Background(), r.app.ID)
+	if err != nil || v.State.LastBackup == nil || !v.State.LastBackup.OK || v.State.LastBackup.SnapshotID == "" {
+		r.t.Fatalf("backup: %+v %v", v.State.LastBackup, err)
 	}
-	if err := json.Unmarshal(op.Result, &res); err != nil || len(res.Artifacts) != 1 {
-		r.t.Fatalf("backup result %s: %v", op.Result, err)
-	}
-	time.Sleep(5 * time.Millisecond) // artifact names have millisecond stamps
-	return res.Artifacts[0].Path
+	return v.State.LastBackup.SnapshotID
 }
 
-// writeArtifact publishes a hand-made artifact for the binding database.
-func (r *restoreEnv) writeArtifact(stamp string, raw []byte, compress bool) string {
-	r.t.Helper()
-	if compress {
-		var buf bytes.Buffer
-		zw, _ := zstd.NewWriter(&buf)
-		zw.Write(raw)
-		zw.Close()
-		raw = buf.Bytes()
-	}
-	rel := filepath.Join("shop", string(r.svc.Engine)+"-"+r.db+"-"+stamp+".sql.zst")
-	p := filepath.Join(r.layout.BackupsDir(), rel)
-	if err := os.WriteFile(p, raw, 0o600); err != nil {
-		r.t.Fatal(err)
-	}
-	return rel
-}
-
-// restore runs a restore and returns its method, or the failure hint.
-func (r *restoreEnv) restore(artifact string, wantOK bool) string {
+// restore runs restore-db from a snapshot and returns its method, or the
+// failure hint.
+func (r *restoreEnv) restore(snapshot string, wantOK bool) string {
 	r.t.Helper()
 	ctx := context.Background()
-	op, err := r.c.SubmitRestore(ctx, operations.RestoreRequest{AppID: r.app.ID, Database: r.db, Artifact: artifact},
-		"replace "+r.db, "")
+	op, err := r.c.SubmitResticRestoreDB(ctx, r.app.ID,
+		operations.ResticRestoreDBRequest{Snapshot: snapshot, Database: r.db}, "replace "+r.db, "")
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -137,7 +124,7 @@ func (r *restoreEnv) restore(artifact string, wantOK bool) string {
 			continue
 		}
 		if (got.State == store.OpSucceeded) != wantOK {
-			r.t.Fatalf("restore %s: %s %s: %s", artifact, got.State, got.ErrorCode, got.ErrorMessage)
+			r.t.Fatalf("restore %s: %s %s: %s", snapshot, got.State, got.ErrorCode, got.ErrorMessage)
 		}
 		if !wantOK {
 			return got.Guidance + " | " + got.ErrorMessage
@@ -150,6 +137,28 @@ func (r *restoreEnv) restore(artifact string, wantOK bool) string {
 	}
 	r.t.Fatal("restore timed out")
 	return ""
+}
+
+// replay restores a hand-made dump (one no Bento backup would produce)
+// straight through the backup package, as restore-db does after download.
+// It returns the method, or an error whose live-unchanged status matters.
+func (r *restoreEnv) replay(dump string) (string, error) {
+	r.t.Helper()
+	p := filepath.Join(r.t.TempDir(), "crafted.sql")
+	if err := os.WriteFile(p, []byte(dump), 0o600); err != nil {
+		r.t.Fatal(err)
+	}
+	ctx := context.Background()
+	return r.c.BackupDeps(nil).RestoreRelational(ctx, r.app, r.b, r.db, p, backup.RestoreOptions{
+		Quiesce: func(ctx context.Context) error {
+			return r.sdk.Stop(ctx, r.c.Names.AppContainer(r.app.ID), 10*time.Second)
+		},
+	})
+}
+
+func liveUnchanged(err error) bool {
+	lu := (*backup.LiveUnchangedError)(nil)
+	return errors.As(err, &lu)
 }
 
 func (r *restoreEnv) assertNoStaging() {
@@ -172,9 +181,8 @@ func (r *restoreEnv) assertNoStaging() {
 // a tables-only database is swapped in with the app running; a database with
 // a routine is rebuilt in place with the app stopped and restarted; every
 // restored object belongs to the binding user, never root; row data that
-// looks like a DEFINER clause survives; a truncated artifact and an artifact
-// with a statement the binding user may not run fail with the live database
-// unchanged.
+// looks like a DEFINER clause survives; a dump with a statement the binding
+// user may not run fails with the live database unchanged.
 func TestIntegrationRestoreMySQL(t *testing.T) {
 	for _, version := range []string{"8.0", "8.4", "9.7"} {
 		t.Run(version, func(t *testing.T) { restoreMySQLScenario(t, version) })
@@ -234,11 +242,12 @@ func restoreMySQLScenario(t *testing.T, version string) {
 	}
 	r.assertNoStaging()
 
-	// An artifact naming root as DEFINER restores, owned by the binding user.
-	crafted := r.writeArtifact("20260101T000000.001Z", []byte("CREATE TABLE notes (v TEXT);\n"+
-		"INSERT INTO notes VALUES ('crafted');\n"+
-		"CREATE DEFINER=`root`@`localhost` PROCEDURE evil() SQL SECURITY DEFINER SELECT CURRENT_USER();\n"), true)
-	r.restore(crafted, true)
+	// A dump naming root as DEFINER restores, owned by the binding user.
+	if _, err := r.replay("CREATE TABLE notes (v TEXT);\n" +
+		"INSERT INTO notes VALUES ('crafted');\n" +
+		"CREATE DEFINER=`root`@`localhost` PROCEDURE evil() SQL SECURITY DEFINER SELECT CURRENT_USER();\n"); err != nil {
+		t.Fatal(err)
+	}
 	if got := r.mustApp("CALL evil();"); got != definer {
 		t.Fatalf("crafted routine runs as %q, want %q", got, definer)
 	}
@@ -246,32 +255,21 @@ func restoreMySQLScenario(t *testing.T, version string) {
 
 	// Statements beyond the binding user's grants fail before the live
 	// database is touched.
-	escalate := r.writeArtifact("20260101T000000.002Z", []byte("CREATE TABLE notes (v TEXT);\n"+
-		"GRANT ALL PRIVILEGES ON *.* TO '"+r.b.Username+"'@'%';\n"), true)
-	if got := r.restore(escalate, false); !strings.Contains(got, "live database is unchanged") {
-		t.Fatalf("escalating artifact: %q", got)
+	if _, err := r.replay("CREATE TABLE notes (v TEXT);\n" +
+		"GRANT ALL PRIVILEGES ON *.* TO '" + r.b.Username + "'@'%';\n"); !liveUnchanged(err) {
+		t.Fatalf("escalating dump: %v", err)
 	}
 	if got := r.admin("SHOW GRANTS FOR '" + r.b.Username + "'@'%';"); strings.Contains(got, "ON *.*") &&
 		!strings.Contains(got, "GRANT USAGE ON *.*") {
 		t.Fatalf("binding user gained global grants: %s", got)
 	}
-
-	// A truncated artifact fails before the live database is touched.
-	raw, err := os.ReadFile(filepath.Join(r.layout.BackupsDir(), withRoutine))
-	if err != nil {
-		t.Fatal(err)
-	}
-	truncated := r.writeArtifact("20260101T000000.003Z", raw[:len(raw)/2], false)
-	if got := r.restore(truncated, false); !strings.Contains(got, "live database is unchanged") {
-		t.Fatalf("truncated artifact: %q", got)
-	}
 	if got := r.mustApp("SELECT COUNT(*) FROM notes; SELECT COUNT(*) FROM child;"); got != "1\n1" {
-		t.Fatalf("live data changed by failed restores: %q", got)
+		t.Fatalf("live data changed by a failed restore: %q", got)
 	}
 	r.assertNoStaging()
 }
 
-// TestIntegrationRestorePostgres restores PostgreSQL backups by swapping a
+// TestIntegrationRestorePostgres restores PostgreSQL app backups by swapping a
 // staging database in, replaying as the binding role (so RESET ROLE cannot
 // regain superuser), and leaves the live database unchanged on failure.
 func TestIntegrationRestorePostgres(t *testing.T) {
@@ -292,10 +290,9 @@ func TestIntegrationRestorePostgres(t *testing.T) {
 			}
 			r.assertNoStaging()
 
-			escalate := r.writeArtifact("20260101T000000.001Z", []byte("CREATE TABLE items (v text);\n"+
-				"RESET ROLE;\nCREATE ROLE bento_evil SUPERUSER;\n"), true)
-			if got := r.restore(escalate, false); !strings.Contains(got, "live database is unchanged") {
-				t.Fatalf("escalating artifact: %q", got)
+			if _, err := r.replay("CREATE TABLE items (v text);\n" +
+				"RESET ROLE;\nCREATE ROLE bento_evil SUPERUSER;\n"); !liveUnchanged(err) {
+				t.Fatalf("escalating dump: %v", err)
 			}
 			if got := r.admin("SELECT COUNT(*) FROM pg_roles WHERE rolname = 'bento_evil';"); got != "0" {
 				t.Fatal("RESET ROLE in a dump regained superuser")

@@ -341,12 +341,6 @@ type EnvVar struct {
 	Value string `json:"value"`
 }
 
-// BackupDeleteRequest removes one backup artifact; Confirm must be "delete".
-type BackupDeleteRequest struct {
-	Artifact string `json:"artifact"`
-	Confirm  string `json:"confirm"`
-}
-
 // ConfirmRequest carries an exact destructive confirmation phrase.
 type ConfirmRequest struct {
 	Confirm string `json:"confirm"`
@@ -708,85 +702,6 @@ type RetiredList struct {
 
 // ---- backups ----
 
-type BackupRequest struct {
-	// Scope is "all", "app", "binding", or "database" (Databases of AppID).
-	Scope     string   `json:"scope"`
-	AppID     string   `json:"appId,omitempty"`
-	BindingID string   `json:"bindingId,omitempty"`
-	Databases []string `json:"databases,omitempty"`
-	// Compression is "zstd" (default) or "gzip".
-	Compression string `json:"compression,omitempty"`
-	// RcloneRemote uploads new artifacts to this name:path; empty skips it.
-	RcloneRemote string `json:"rcloneRemote,omitempty"`
-}
-
-type BackupArtifact struct {
-	Path      string `json:"path"`
-	AppSlug   string `json:"appSlug"`
-	Engine    Engine `json:"engine"`
-	Database  string `json:"database"`
-	SizeBytes int    `json:"sizeBytes"`
-	CreatedAt string `json:"createdAt"`
-}
-
-type BackupArtifactList struct {
-	Artifacts []BackupArtifact `json:"artifacts"`
-}
-
-type BackupRun struct {
-	ID          string   `json:"id"`
-	Trigger     string   `json:"trigger"`
-	State       string   `json:"state"`
-	StartedAt   string   `json:"startedAt"`
-	FinishedAt  string   `json:"finishedAt,omitempty"`
-	Artifacts   []string `json:"artifacts"`
-	UploadState string   `json:"uploadState,omitempty"`
-	Error       string   `json:"error,omitempty"`
-}
-
-type BackupRunList struct {
-	Runs []BackupRun `json:"runs"`
-}
-
-// BackupSchedule is one backup schedule. Scope is "all", "app" (every
-// database of AppID), or "database" (Databases of AppID). Retain is how many
-// artifacts this schedule keeps per database. ID, NextRun, LastRun,
-// LastState, LastOpID and TimeZone are ignored on write.
-type BackupSchedule struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Enabled      bool     `json:"enabled"`
-	Cron         string   `json:"cron"`
-	Scope        string   `json:"scope"`
-	AppID        string   `json:"appId,omitempty"`
-	Databases    []string `json:"databases"`
-	Compression  string   `json:"compression"`
-	Retain       int      `json:"retain"`
-	RcloneRemote string   `json:"rcloneRemote"`
-	NextRun      string   `json:"nextRun,omitempty"`
-	LastRun      string   `json:"lastRun,omitempty"`
-	// LastState is the last run's operation state (queued, running,
-	// succeeded, failed, ...), or the scheduler's own outcome for a slot it
-	// did not run: missed, skipped, submit-failed. "submitted" means the
-	// run's operation has been pruned from history.
-	LastState string `json:"lastState,omitempty"`
-	LastOpID  string `json:"lastOpId,omitempty"`
-	// TimeZone is the server's zone that cron fields are read in, for
-	// example "UTC+07:00". Ignored on write.
-	TimeZone string `json:"timeZone,omitempty"`
-}
-
-type BackupScheduleList struct {
-	Schedules []BackupSchedule `json:"schedules"`
-	// TimeZone is the server's zone that cron fields are read in.
-	TimeZone string `json:"timeZone"`
-}
-
-// BackupScheduleEnable turns a schedule on or off.
-type BackupScheduleEnable struct {
-	Enabled bool `json:"enabled"`
-}
-
 // RcloneRemote is a configured rclone remote. Only its name and backend type
 // are exposed; every other key may be a credential.
 type RcloneRemote struct {
@@ -806,15 +721,6 @@ type RcloneStatus struct {
 // RcloneTestRequest lists a remote without changing it.
 type RcloneTestRequest struct {
 	Remote string `json:"remote"`
-}
-
-// RestoreRequest replaces an app database from an artifact. Confirm must be
-// exactly "replace <database>".
-type RestoreRequest struct {
-	Artifact string `json:"artifact"`
-	AppID    string `json:"appId"`
-	Database string `json:"database"`
-	Confirm  string `json:"confirm"`
 }
 
 type ExportRequest struct {
@@ -1336,8 +1242,24 @@ type Restic struct {
 	DefaultExcludes []string `json:"defaultExcludes"`
 }
 
+// ResticConnectRequest adopts an existing repository. An empty Key means
+// the stack backup password.
 type ResticConnectRequest struct {
 	Key string `json:"key"`
+}
+
+// ResticRestoreDBRequest replaces one database of an app with its dump in one
+// of the app's snapshots (operation kind restic.restore-db). Snapshot is a
+// full or short snapshot id, or "latest". Database is a relational database
+// name or a SQLite file id of the app. Binding is the binding id; it is
+// required when the name is in more than one binding (a MySQL and a
+// PostgreSQL binding both have <slug>_main). Confirm must be exactly
+// "replace <database>".
+type ResticRestoreDBRequest struct {
+	Snapshot string `json:"snapshot"`
+	Database string `json:"database"`
+	Binding  string `json:"binding,omitempty"`
+	Confirm  string `json:"confirm"`
 }
 
 type ResticKeyAddRequest struct {
@@ -1345,8 +1267,8 @@ type ResticKeyAddRequest struct {
 	Confirm string `json:"confirm"`
 }
 
-// ResticKeyAccepted carries a repository key exactly once, in the response
-// that created it.
+// ResticKeyAccepted carries an added access key exactly once, in the
+// response that created it.
 type ResticKeyAccepted struct {
 	Accepted `tstype:",extends"`
 	Key      string `json:"key"`
@@ -1375,8 +1297,9 @@ type ResticCloneRequest struct {
 
 // RestoreFromBackupInspectRequest previews a snapshot of an app backup made
 // on another stack (operation kind restic.inspect-remote). Repository is an
-// rclone remote path (name:path) and Key one of the repository's keys; it is
-// kept in a pending file for the operation and deleted at its end. An empty
+// rclone remote path (name:path) and Key one of the repository's keys (empty:
+// this stack's backup password); it is kept in a pending file for the
+// operation and deleted at its end. An empty
 // snapshot or "latest" means the newest; the result lists all snapshots.
 type RestoreFromBackupInspectRequest struct {
 	Repository   string `json:"repository"`
@@ -1504,4 +1427,7 @@ type AppBackupOverview struct {
 	Apps     []AppBackupSummary `json:"apps"`
 	Runs     []AppBackupRun     `json:"runs"`
 	TimeZone string             `json:"timeZone"`
+	// StackPassword reports whether the stack backup password exists. It is
+	// never sent; `bento backup password` prints it on the host.
+	StackPassword bool `json:"stackPassword"`
 }

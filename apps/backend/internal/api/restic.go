@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -62,7 +63,9 @@ func (s *Server) handleAppBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	out := dto.AppBackupOverview{Apps: []dto.AppBackupSummary{}, Runs: []dto.AppBackupRun{}, TimeZone: zoneLabel(now)}
+	_, keyErr := backup.ReadStackKey(s.Layout)
+	out := dto.AppBackupOverview{Apps: []dto.AppBackupSummary{}, Runs: []dto.AppBackupRun{}, TimeZone: zoneLabel(now),
+		StackPassword: keyErr == nil}
 	for _, a := range list {
 		v := a.View
 		out.Apps = append(out.Apps, dto.AppBackupSummary{
@@ -158,12 +161,12 @@ func (s *Server) handleResticInit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	op, key, err := s.C.SubmitResticInit(r.Context(), app.ID, idem)
+	op, err := s.C.SubmitResticInit(r.Context(), app.ID, idem)
 	if err != nil {
 		writeError(w, s.Log, err)
 		return
 	}
-	s.acceptedKey(w, op, key)
+	s.accepted(w, op, nil)
 }
 
 func (s *Server) handleResticConnect(w http.ResponseWriter, r *http.Request) {

@@ -32,7 +32,6 @@ type scheduleKind struct {
 }
 
 var scheduleKinds = map[string]scheduleKind{
-	"backup":     {Submit: submitScheduledBackup},
 	"app-backup": {Submit: submitScheduledResticBackup},
 }
 

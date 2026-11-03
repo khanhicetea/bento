@@ -1,51 +1,54 @@
 ---
-title: Database backups
-description: Schedule compressed dumps of MySQL, PostgreSQL, and SQLite, upload them off-site, and restore in place.
+title: Restore a database
+description: Roll back one MySQL, PostgreSQL, or SQLite database in place from an app backup snapshot.
 ---
 
-## Create a schedule
-
-**Backups → Schedules → New schedule**:
-
-| Field | Notes |
-| --- | --- |
-| **Name** | e.g. `nightly` |
-| **Cron** | e.g. `0 2 * * *` — in the **server's time zone** (shown on the tab) |
-| **Databases** | **All apps**, **One app**, or **Specific databases** of one app |
-| **Keep per database** | how many dumps this schedule keeps per database |
-| **Compression** | zstd (default) or gzip |
-| **rclone remote** | optional off-site copy, e.g. `b2:bucket/bento`. Press **Test** to check it. See [Off-site storage](/backups/rclone). |
-
-You can have as many schedules as you like — e.g. hourly for one busy database and nightly for everything.
-
-How it behaves:
-
-- Dumps are consistent snapshots (`--single-transaction` for MySQL, `pg_dump`, SQLite's online backup) taken while the
-  app runs.
-- A dump is kept only if it succeeded and isn't empty.
-- Retention only deletes this schedule's own dumps; manual backups are never deleted. Off-site copies are never
-  deleted by Bento — use your bucket's lifecycle rules.
-- Runs missed while Bento was down are recorded, not replayed.
+Every [app backup](/backups/app-backups) snapshot holds a dump of each database bound to the app. You can put one of
+them back over the live database without touching the rest of the app.
 
 ## Restore
 
 <Steps>
-  <Step title="Find the dump">
-    **Backups → Files**, or the app's **Backup** tab.
+  <Step title="Pick the snapshot">
+    App → **Backup** → **Snapshots**. Press **Restore DB** on the snapshot to restore from.
   </Step>
-  <Step title="Restore">
-    Press **Restore**, choose the target database, and type `replace <database>` to confirm.
+  <Step title="Pick the database and confirm">
+    Choose the database (a MySQL or PostgreSQL database name, or a SQLite file) and type `replace <database>` to
+    confirm.
   </Step>
 </Steps>
 
-Bento restores the dump into a temporary database first, as the app's own database user, then swaps it in for the
-live one. If the dump is damaged or contains a statement the app's user may not run, the restore fails and the live
-database is untouched. The app keeps running through the swap. MySQL cannot move views, stored procedures or events
-between databases, so a MySQL database that has them is rebuilt in place instead, with the app stopped for that step
-and started again after.
+From the CLI:
+
+```bash
+bento app restore-db shop --database shop --snapshot latest    # prompts for "replace shop"
+```
+
+An app with both a MySQL and a PostgreSQL binding has a `<slug>_main` database in each. The dialog lists every
+database with its engine; on the CLI add `--binding <id>` (from `bento app show`), otherwise the restore is refused.
+
+Bento downloads only that database's dump from the snapshot and checks the snapshot belongs to this app. It replays
+the dump into a temporary database first, as the app's own database user, then swaps it in for the live one. If the
+dump is damaged or contains a statement the app's user may not run, the restore fails and the live database is
+untouched. The app keeps running through the swap. MySQL cannot move views, stored procedures or events between
+databases, so a MySQL database that has them is rebuilt in place instead, with the app stopped for that step and
+started again after.
+
+A database restore runs alone: other operations wait until it finishes.
 
 <Callout type="warning">
-Restore replaces live data, including anything written since the dump. Everything in the restored database belongs
-to the app's user, so a MySQL dump with triggers or stored functions fails to restore: the app's user cannot create
-them. **SQLite** restores need the app stopped.
+Restore replaces live data, including anything written since the snapshot. Everything in the restored database
+belongs to the app's user, so a MySQL dump with triggers or stored functions fails to restore: the app's user cannot
+create them. **SQLite** restores need the app stopped.
 </Callout>
+
+## If it fails
+
+| Error | Meaning |
+| --- | --- |
+| `snapshot-invalid` | The snapshot belongs to another app or wasn't taken by Bento's app backup. |
+| `database-missing` | The snapshot was taken before the database was bound to the app. |
+| `restore-failed` | The restore didn't complete. The message says whether the live database is unchanged or may be partly replaced; if partly replaced, restore again or from another snapshot. |
+| `app-running` | A SQLite restore needs the app stopped. |
+
+To restore the whole app instead, **Clone** the snapshot into a new app — see [App backups](/backups/app-backups).

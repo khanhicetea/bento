@@ -44,9 +44,6 @@ const (
 	KindEdgeApply        = "edge.apply"
 	KindTunnelApply      = "tunnel.apply"
 	KindDBAdminApply     = "dbadmin.apply"
-	KindBackupRun        = "backup.run"
-	KindBackupRestore    = "backup.restore"
-	KindBackupDelete     = "backup.delete"
 	KindRcloneTest       = "backup.rclone-test"
 	KindStackExport      = "stack.export"
 	KindPermissions      = "app.permissions"
@@ -73,9 +70,7 @@ func (c *Controller) registerHandlers() {
 		KindEdgeApply:        c.handleEdgeApply,
 		KindTunnelApply:      c.handleTunnelApply,
 		KindDBAdminApply:     c.handleDBAdminApply,
-		KindBackupRun:        c.handleBackupRun,
-		KindBackupRestore:    c.handleBackupRestore,
-		KindBackupDelete:     c.handleBackupDelete,
+		KindResticRestoreDB:  c.handleResticRestoreDB,
 		KindRcloneTest:       c.handleRcloneTest,
 		KindStackExport:      c.handleStackExport,
 		KindPermissions:      c.handlePermissions,

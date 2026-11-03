@@ -193,11 +193,11 @@ func (r *Reconciler) pruneHistory(ctx context.Context) {
 	t := time.NewTicker(pruneInterval)
 	defer t.Stop()
 	for {
-		ops, runs, err := store.PruneHistory(ctx, r.C.Store.DB(), store.DefaultRetention)
+		ops, err := store.PruneHistory(ctx, r.C.Store.DB(), store.DefaultRetention)
 		if err != nil && ctx.Err() == nil {
 			r.Log.Warn("history prune failed", "err", err)
-		} else if ops+runs > 0 {
-			r.Log.Info("pruned history", "operations", ops, "backupRuns", runs)
+		} else if ops > 0 {
+			r.Log.Info("pruned history", "operations", ops)
 		}
 		select {
 		case <-ctx.Done():

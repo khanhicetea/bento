@@ -7,10 +7,6 @@ import (
 	"errors"
 )
 
-// BackupScheduleID is the backup schedule seeded by init. It is an
-// ordinary, deletable backup schedule.
-const BackupScheduleID = "backup-default"
-
 // Schedule is one durable, operator-editable scheduled job. The backend
 // scheduler submits an operation of Kind for each due slot; Spec is the
 // kind-specific configuration and never holds secrets.

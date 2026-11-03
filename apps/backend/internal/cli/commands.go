@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/url"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
@@ -61,8 +63,11 @@ Client (requires the running backend):
   app permissions SLUG --mode check|dry-run|shallow|recursive
   app git SLUG [--repo URL --branch B [--rotate-key] | --remove]   shows the deploy key to add to the repo
   app clone-from-backup SRC_SLUG --snapshot ID|latest --slug NEW [--keep-username] [--backup-after none|new-repo]
-  app restore-from-backup --repo REMOTE:PATH --key-file FILE --slug NEW [--snapshot ID|latest] [--keep-username] [--backup-after none|new-repo|same-repo]
-                                                      restore an app backup into a new, stopped app (prompts for "clone NEW")
+  app restore-from-backup --repo REMOTE:PATH [--key-file FILE] --slug NEW [--snapshot ID|latest] [--keep-username] [--backup-after none|new-repo|same-repo]
+                                                      restore an app backup into a new, stopped app (prompts for "clone NEW");
+                                                      without --key-file the stack backup password is used
+  app restore-db SLUG --database DB [--binding ID] [--snapshot ID|latest]
+                                                      replace one database with its dump in an app backup (prompts for "replace DB")
   app deploy SLUG                                     clones or resets to the branch, runs ~/deploy.sh, reloads
   app webhook SLUG [--enable | --rotate | --disable]  push-to-deploy URL, secret (shown once) and recent deliveries
   ops [--target ID] | op ID | op cancel ID
@@ -73,9 +78,7 @@ Client (requires the running backend):
   retired | retired prune APP_ID                      interactive; lists what will be deleted
   images | images rebuild KEY...|--all                runtime image builds; a rebuild pulls the newest bases and tools
   images rollout KEY [--app SLUG]... [--build ID]     move apps to the current (or an earlier) build, one at a time
-  backup run [--app SLUG] [--compression zstd|gzip|none] [--upload]
-  backup list | backup runs | backup restore --artifact PATH --app SLUG --database DB
-  backup schedule list|show ID|create --json FILE|update ID --json FILE|enable ID|disable ID|delete ID
+  backup password                                     print the stack backup password (root, reads this host's key file)
   export --to DIR
 
 Global flags: --json (machine output), --no-wait (return after acceptance)
@@ -274,6 +277,8 @@ func (r *runner) run(args []string) error {
 		if opts.Password == "" {
 			fmt.Fprintf(r.out, "then set the web password: bento --stack %s auth set-password\n", r.layout.Root)
 		}
+		fmt.Fprintf(r.out, "app backups are encrypted with the stack backup password; keep a copy off this host: bento --stack %s backup password\n",
+			r.layout.Root)
 		return nil
 	case "import":
 		fs, rest := sub("import", args[1:])
@@ -303,7 +308,7 @@ func (r *runner) run(args []string) error {
 		}
 		fmt.Fprintln(
 			r.out,
-			"imported. All apps are stopped and unpublished; edge, tunnel, and backup schedule are disabled until you enable them.",
+			"imported. All apps are stopped and unpublished; edge, tunnel, and backup schedules are disabled until you enable them.",
 		)
 		return nil
 	case "status":
@@ -577,7 +582,7 @@ func (r *runner) run(args []string) error {
 	case "images":
 		return r.images(ctx, c, args[1:])
 	case "backup":
-		return r.backup(ctx, c, args[1:])
+		return r.backup(args[1:])
 	case "export":
 		fs, rest := sub("export", args[1:])
 		to := fs.String("to", "", "empty destination directory outside the stack root")
@@ -607,7 +612,7 @@ func (r *runner) run(args []string) error {
 func (r *runner) restoreFromBackup(ctx context.Context, c *Client, args []string) error {
 	fs, rest := sub("app restore-from-backup", args)
 	repo := fs.String("repo", "", "rclone remote path of the repository (name:path)")
-	keyFile := fs.String("key-file", "", "file holding a repository key (from Add key on the source app)")
+	keyFile := fs.String("key-file", "", "file holding a repository key (default: this stack's backup password)")
 	newSlug := fs.String("slug", "", "slug of the new app")
 	snapshot := fs.String("snapshot", "latest", "snapshot id or latest")
 	keep := fs.Bool("keep-username", false, "reuse the source database user when it is free")
@@ -615,16 +620,19 @@ func (r *runner) restoreFromBackup(ctx context.Context, c *Client, args []string
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	if *repo == "" || *keyFile == "" || *newSlug == "" {
-		return errors.New("usage: bento app restore-from-backup --repo REMOTE:PATH --key-file FILE --slug NEW [--snapshot ID|latest]")
+	if *repo == "" || *newSlug == "" {
+		return errors.New("usage: bento app restore-from-backup --repo REMOTE:PATH [--key-file FILE] --slug NEW [--snapshot ID|latest]")
 	}
-	raw, err := os.ReadFile(*keyFile)
-	if err != nil {
-		return fmt.Errorf("read key file: %w", err)
-	}
-	key := strings.TrimSpace(string(raw))
-	if key == "" {
-		return errors.New("the key file is empty")
+	// An empty key means this stack's backup password, read by the backend.
+	var key string
+	if *keyFile != "" {
+		raw, err := os.ReadFile(*keyFile)
+		if err != nil {
+			return fmt.Errorf("read key file: %w", err)
+		}
+		if key = strings.TrimSpace(string(raw)); key == "" {
+			return errors.New("the key file is empty")
+		}
 	}
 	fmt.Fprintln(os.Stderr, "Creates a new app from the snapshot. The new app is left stopped and unpublished.")
 	got, err := confirmPrompt("clone " + *newSlug)
@@ -725,6 +733,28 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			return err
 		}
 		_, err = c.Mutate(ctx, "DELETE", base, dto.ConfirmRequest{Confirm: got}, r.wait, r.out)
+		return err
+	case "restore-db":
+		fs, rest := sub("app restore-db", args[2:])
+		db := fs.String("database", "", "database name, or SQLite file id")
+		binding := fs.String("binding", "", "binding id (app show); needed when two bindings have the database name")
+		snapshot := fs.String("snapshot", "latest", "snapshot id (as in the app's Backup tab) or latest")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *db == "" {
+			return errors.New("usage: bento app restore-db SLUG --database DB [--binding ID] [--snapshot ID|latest]")
+		}
+		fmt.Fprintf(os.Stderr, "Restore REPLACES the contents of %s with its dump in snapshot %s.\n", *db, *snapshot)
+		got, err := confirmPrompt("replace " + *db)
+		if err != nil {
+			return err
+		}
+		acc, err := c.Mutate(ctx, "POST", base+"/restic/restore-db",
+			dto.ResticRestoreDBRequest{Snapshot: *snapshot, Database: *db, Binding: *binding, Confirm: got}, r.wait, r.out)
+		if err == nil && r.wait && r.json {
+			r.printJSON(acc.Operation.Result)
+		}
 		return err
 	case "clone-from-backup":
 		fs, rest := sub("app clone-from-backup", args[2:])
@@ -1154,168 +1184,21 @@ func (r *runner) retired(ctx context.Context, c *Client, args []string) error {
 	return fmt.Errorf("no retired app %s", args[1])
 }
 
-func (r *runner) backup(ctx context.Context, c *Client, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: bento backup run|list|runs|restore|schedule")
+// backup prints the stack backup password. It reads the key file on this
+// host (root only) and never asks the backend: the API does not return it.
+func (r *runner) backup(args []string) error {
+	if len(args) != 1 || args[0] != "password" {
+		return errors.New("usage: bento backup password")
 	}
-	switch args[0] {
-	case "run":
-		fs, rest := sub("backup run", args[1:])
-		app := fs.String("app", "", "only this app")
-		db := fs.String("database", "", "only these comma-separated databases of --app")
-		comp := fs.String("compression", "zstd", "zstd or gzip")
-		remote := fs.String("upload", "", "upload new artifacts to this rclone name:path")
-		if err := fs.Parse(rest); err != nil {
-			return err
-		}
-		req := dto.BackupRequest{Scope: "all", Compression: *comp, RcloneRemote: *remote}
-		if *app != "" {
-			req.Scope, req.AppID = "app", *app
-		}
-		if *db != "" {
-			req.Scope, req.Databases = "database", strings.Split(*db, ",")
-		}
-		acc, err := c.Mutate(ctx, "POST", "/api/v1/backups", req, r.wait, r.out)
-		if err == nil && r.wait {
-			r.printJSON(acc.Operation.Result)
-		}
+	key, err := backup.ReadStackKey(r.layout)
+	if errors.Is(err, fs.ErrNotExist) {
+		return errors.New("this stack has no backup password yet; it is created when the first app backup repository is initialized")
+	}
+	if err != nil {
 		return err
-	case "list":
-		if err := r.listFlags(flag.NewFlagSet("backup list", flag.ContinueOnError), args[1:]); err != nil {
-			return err
-		}
-		var list dto.BackupArtifactList
-		if err := c.Do(ctx, "GET", "/api/v1/backups/artifacts", nil, &list, nil); err != nil {
-			return err
-		}
-		if r.json {
-			r.printJSON(list)
-			return nil
-		}
-		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "PATH\tENGINE\tDATABASE\tBYTES\tCREATED")
-		for _, a := range list.Artifacts {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", a.Path, a.Engine, a.Database, a.SizeBytes, a.CreatedAt)
-		}
-		return tw.Flush()
-	case "runs":
-		// Always JSON; --json is accepted for symmetry.
-		if err := r.listFlags(flag.NewFlagSet("backup runs", flag.ContinueOnError), args[1:]); err != nil {
-			return err
-		}
-		var list dto.BackupRunList
-		if err := c.Do(ctx, "GET", "/api/v1/backups/runs", nil, &list, nil); err != nil {
-			return err
-		}
-		r.printJSON(list)
-		return nil
-	case "restore":
-		fs, rest := sub("backup restore", args[1:])
-		art := fs.String("artifact", "", "artifact path from `backup list`")
-		app := fs.String("app", "", "app slug")
-		db := fs.String("database", "", "database name (or SQLite file id)")
-		if err := fs.Parse(rest); err != nil {
-			return err
-		}
-		fmt.Fprintf(os.Stderr, "Restore REPLACES the contents of %s with %s.\n", *db, *art)
-		got, err := confirmPrompt("replace " + *db)
-		if err != nil {
-			return err
-		}
-		_, err = c.Mutate(
-			ctx,
-			"POST",
-			"/api/v1/backups/restore",
-			dto.RestoreRequest{Artifact: *art, AppID: *app, Database: *db, Confirm: got},
-			r.wait,
-			r.out,
-		)
-		return err
-	case "schedule", "schedules":
-		return r.backupSchedule(ctx, c, args[1:])
 	}
-	return fmt.Errorf("unknown backup command %q", args[0])
-}
-
-func (r *runner) backupSchedule(ctx context.Context, c *Client, args []string) error {
-	const base = "/api/v1/backups/schedules"
-	usage := errors.New("usage: bento backup schedule list|show ID|create --json FILE|update ID --json FILE|enable ID|disable ID|delete ID")
-	if len(args) == 0 {
-		args = []string{"list"}
-	}
-	var out dto.BackupSchedule
-	switch args[0] {
-	case "list":
-		if err := r.listFlags(flag.NewFlagSet("backup schedule list", flag.ContinueOnError), args[1:]); err != nil {
-			return err
-		}
-		var list dto.BackupScheduleList
-		if err := c.Do(ctx, "GET", base, nil, &list, nil); err != nil {
-			return err
-		}
-		if r.json {
-			r.printJSON(list)
-			return nil
-		}
-		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tNAME\tENABLED\tCRON (%s)\tSCOPE\tKEEP\tNEXT\tLAST\tSTATE\n", list.TimeZone)
-		for _, s := range list.Schedules {
-			fmt.Fprintf(tw, "%s\t%s\t%t\t%s\t%s\t%d\t%s\t%s\t%s\n", s.ID, s.Name, s.Enabled, s.Cron, s.Scope, s.Retain,
-				s.NextRun, s.LastRun, s.LastState)
-		}
-		return tw.Flush()
-	case "show", "delete", "enable", "disable":
-		if len(args) != 2 {
-			return usage
-		}
-		path := base + "/" + url.PathEscape(args[1])
-		switch args[0] {
-		case "show":
-			if err := c.Do(ctx, "GET", path, nil, &out, nil); err != nil {
-				return err
-			}
-		case "delete":
-			return c.Do(ctx, "DELETE", path, nil, nil, nil)
-		default:
-			req := dto.BackupScheduleEnable{Enabled: args[0] == "enable"}
-			if err := c.Do(ctx, "POST", path+"/enabled", req, &out, nil); err != nil {
-				return err
-			}
-		}
-	case "create", "update":
-		name := "backup schedule " + args[0]
-		rest := args[1:]
-		path := base
-		if args[0] == "update" {
-			if len(rest) == 0 {
-				return usage
-			}
-			path += "/" + url.PathEscape(rest[0])
-			rest = rest[1:]
-		}
-		fs, rest := sub(name, rest)
-		file := fs.String("json", "", "schedule JSON file")
-		if err := fs.Parse(rest); err != nil {
-			return err
-		}
-		if *file == "" {
-			return usage
-		}
-		var in dto.BackupSchedule
-		if err := readJSONFile(*file, &in); err != nil {
-			return err
-		}
-		method := "POST"
-		if args[0] == "update" {
-			method = "PUT"
-		}
-		if err := c.Do(ctx, method, path, in, &out, nil); err != nil {
-			return err
-		}
-	default:
-		return usage
-	}
-	r.printJSON(out)
+	fmt.Fprintln(os.Stderr, "The stack backup password decrypts every app backup repository this stack initialized. Keep a copy off this host.")
+	fmt.Fprintln(r.out, key)
 	return nil
 }
 

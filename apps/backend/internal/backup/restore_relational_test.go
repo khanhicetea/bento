@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -12,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/klauspost/compress/zstd"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/dataservices"
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
@@ -156,25 +153,12 @@ func newRestoreHarness(t *testing.T, engine domain.Engine) *restoreHarness {
 	return &restoreHarness{t: t, deps: deps, server: s, b: b, root: root}
 }
 
-// artifact writes a zstd artifact; truncate keeps only the first half.
-func (h *restoreHarness) artifact(dump string, truncate bool) string {
+// artifact writes a plain dump file, as app backup restores it from a
+// snapshot.
+func (h *restoreHarness) artifact(dump string) string {
 	h.t.Helper()
-	var buf bytes.Buffer
-	zw, _ := zstd.NewWriter(&buf)
-	// Incompressible filler makes the frame long enough to truncate mid-stream.
-	filler := make([]byte, 256<<10)
-	for i := range filler {
-		filler[i] = byte(i*7919 + i/13)
-	}
-	zw.Write([]byte(dump))
-	zw.Write([]byte("-- " + hex.EncodeToString(filler) + "\n"))
-	zw.Close()
-	b := buf.Bytes()
-	if truncate {
-		b = b[:len(b)/2]
-	}
-	p := filepath.Join(h.root, "mysql-shop_main-20260101T000000.000Z.sql.zst")
-	if err := os.WriteFile(p, b, 0o600); err != nil {
+	p := filepath.Join(h.root, "mysql-db-shop_main.sql")
+	if err := os.WriteFile(p, []byte(dump), 0o600); err != nil {
 		h.t.Fatal(err)
 	}
 	return p
@@ -193,7 +177,7 @@ func TestRestoreMySQLSwapsStagedTablesAsBindingUser(t *testing.T) {
 	h.server.objects["shop_main"] = []dbObject{{"TABLE", "old"}, {"TRIGGER", "trg"}, {"VIEW", "v"}, {"EVENT", "ev"}}
 	h.server.objects[stage] = []dbObject{{"TABLE", "a"}, {"TABLE", "we`ird"}}
 	method, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact(mysqlDump, false), RestoreOptions{Quiesce: func(context.Context) error {
+		h.artifact(mysqlDump), RestoreOptions{Quiesce: func(context.Context) error {
 			t.Fatal("a swap must not stop the app")
 			return nil
 		}})
@@ -241,29 +225,11 @@ func TestRestoreMySQLSwapsStagedTablesAsBindingUser(t *testing.T) {
 	}
 }
 
-func TestRestoreMySQLTruncatedArtifactLeavesLiveUnchanged(t *testing.T) {
-	h := newRestoreHarness(t, domain.EngineMySQL)
-	stage, _ := stagingNames("shop_main")
-	_, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact(mysqlDump, true), RestoreOptions{})
-	var lu *LiveUnchangedError
-	if !errors.As(err, &lu) {
-		t.Fatalf("want LiveUnchangedError, got %v", err)
-	}
-	sql := h.server.adminSQL()
-	if strings.Contains(sql, "RENAME TABLE") || strings.Contains(sql, "DROP DATABASE IF EXISTS `shop_main`") {
-		t.Fatalf("live database touched:\n%s", sql)
-	}
-	if h.server.dbs[stage] || !h.server.dbs["shop_main"] {
-		t.Fatalf("databases after failure: %v", h.server.dbs)
-	}
-}
-
 func TestRestoreMySQLRejectedStatementLeavesLiveUnchanged(t *testing.T) {
 	h := newRestoreHarness(t, domain.EngineMySQL)
 	h.server.exit = 1
 	_, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact(mysqlDump, false), RestoreOptions{})
+		h.artifact(mysqlDump), RestoreOptions{})
 	var lu *LiveUnchangedError
 	if !errors.As(err, &lu) {
 		t.Fatalf("want LiveUnchangedError, got %v", err)
@@ -277,7 +243,7 @@ func TestRestoreMySQLCancelledBeforeSwapLeavesLiveUnchanged(t *testing.T) {
 	h := newRestoreHarness(t, domain.EngineMySQL)
 	cancelled := errors.New("cancelled")
 	_, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact(mysqlDump, false), RestoreOptions{Phase: func(_ context.Context, name string) error {
+		h.artifact(mysqlDump), RestoreOptions{Phase: func(_ context.Context, name string) error {
 			if name == "swap" {
 				return cancelled
 			}
@@ -299,7 +265,7 @@ func TestRestoreMySQLWithViewsRebuildsInPlaceAfterQuiesce(t *testing.T) {
 	h.server.objects[stage] = []dbObject{{"TABLE", "a"}, {"VIEW", "v"}}
 	quiesced := false
 	method, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact(mysqlDump, false), RestoreOptions{Quiesce: func(context.Context) error {
+		h.artifact(mysqlDump), RestoreOptions{Quiesce: func(context.Context) error {
 			if strings.Contains(h.server.adminSQL(), "DROP DATABASE IF EXISTS `shop_main`") {
 				t.Fatal("live database dropped before the app was stopped")
 			}
@@ -326,7 +292,7 @@ func TestRestoreRefusesForeignStagingDatabase(t *testing.T) {
 			h.server.dbs[stage] = true
 			h.server.owners[stage] = "someone"
 			_, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-				h.artifact(mysqlDump, false), RestoreOptions{})
+				h.artifact(mysqlDump), RestoreOptions{})
 			if err == nil || !strings.Contains(err.Error(), "refusing to drop") {
 				t.Fatalf("want refusal, got %v", err)
 			}
@@ -341,7 +307,7 @@ func TestRestorePostgresSwapsDatabasesAsBindingUser(t *testing.T) {
 	h := newRestoreHarness(t, domain.EnginePostgres)
 	stage, trash := stagingNames("shop_main")
 	method, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact("CREATE TABLE a (v text);\nRESET ROLE;\n", false), RestoreOptions{})
+		h.artifact("CREATE TABLE a (v text);\nRESET ROLE;\n"), RestoreOptions{})
 	if err != nil || method != RestoreSwapped {
 		t.Fatalf("restore: %q %v", method, err)
 	}
@@ -370,7 +336,7 @@ func TestRestorePostgresFailedSwapReopensLive(t *testing.T) {
 	stage, _ := stagingNames("shop_main")
 	h.server.fail = func(sql string) bool { return strings.Contains(sql, "COMMIT;") }
 	_, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
-		h.artifact("CREATE TABLE a (v text);\n", false), RestoreOptions{})
+		h.artifact("CREATE TABLE a (v text);\n"), RestoreOptions{})
 	var lu *LiveUnchangedError
 	if !errors.As(err, &lu) {
 		t.Fatalf("want LiveUnchangedError, got %v", err)

@@ -127,7 +127,7 @@ timeout = 30
 	if _, err := a.c.SaveResticSettings(ctx, src.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
-	op, _, err = a.c.SubmitResticInit(ctx, src.ID, "")
+	op, err = a.c.SubmitResticInit(ctx, src.ID, "")
 	a.wait(op, err)
 	a.wait(a.c.SubmitResticBackup(ctx, src.ID, "manual", ""))
 	op, key, err := a.c.SubmitResticKeyAdd(ctx, src.ID, "stack-b", "export shop", "")

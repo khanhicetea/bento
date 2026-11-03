@@ -9,9 +9,13 @@ only changes are uploaded.
 
 Set it up from the app's [Backup tab](/apps/backup#app-backup).
 
+Snapshots are encrypted with the [stack backup password](/backups#stack-backup-password). Keep a copy of it off the
+host.
+
 ## What gets saved
 
-1. A SQL dump of each database (taken first, so every upload referenced by the data is included).
+1. A plain SQL dump of each MySQL and PostgreSQL database (taken first, so every upload referenced by the data is
+   included).
 2. Safe copies of SQLite files and the scheduler's jobs.
 3. `app.json` — runtime, resources, domains, bindings, git source, the Valkey and scheduler settings, and environment
    variables **with secrets redacted**.
@@ -27,26 +31,29 @@ secrets and database passwords inside the (encrypted) snapshot, so a restored ap
 
 ## Restore
 
-App backups are **never** restored over the live app. Pick a snapshot and press **Restore into a new app**, giving it a
-new slug (e.g. `shop-restored`). Type `clone <new-slug>` to confirm. The new app is created **stopped**, so you can
-check it before publishing or moving domains.
+A whole app backup is **never** restored over the live app. Pick a snapshot and press **Clone** to restore it into a
+new app, giving it a new slug (e.g. `shop-restored`). Type `clone <new-slug>` to confirm. The new app is created
+**stopped**, so you can check it before publishing or moving domains.
 
-To roll back only the database of the live app, use [database backups](/backups/database) instead.
+To roll back only one database of the live app, press **Restore DB** on the snapshot instead — see
+[Restore a database](/backups/database).
 
 ## Restore on another server
 
 Useful for migrations and disaster recovery.
 
 <Steps>
-  <Step title="Create an access key on the source app">
-    In the source app's Backup tab, **Access keys → Add**. Copy the key — it's shown once.
+  <Step title="Get a key for the repository">
+    Either the source stack's backup password (`sudo bento backup password` on the source server), or an extra key:
+    in the source app's Backup tab, **Access keys → Add** and type `export <slug>`. Copy the key — it's shown once.
   </Step>
   <Step title="Add the same rclone remote on the new server">
     See [Off-site storage](/backups/rclone).
   </Step>
   <Step title="Restore">
     **Apps → From app backup**, enter the repository and key, and choose a slug. The new server needs a database
-    server of the same engine and version.
+    server of the same engine and version. Leave the key empty (or, with `bento app restore-from-backup`, leave
+    out `--key-file`) to use the new stack's own backup password — useful when both stacks share one.
   </Step>
 </Steps>
 
@@ -58,5 +65,6 @@ Useful for migrations and disaster recovery.
 - If a run warns about a stale lock, fix the remote's delete permission and press **Remove stale locks**.
 
 <Callout type="danger">
-Lose every key and the backups are gone for good. Store keys in a password manager, away from the server.
+Lose the stack backup password and every other key, and the backups cannot be recovered. Store them in a password
+manager, away from the server.
 </Callout>

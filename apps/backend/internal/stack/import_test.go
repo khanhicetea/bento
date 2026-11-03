@@ -63,7 +63,7 @@ func writeExport(t *testing.T) exportedStack {
 		if err := store.PutSetting(ctx, q, "edge", map[string]any{"enabled": true, "httpPort": 80}); err != nil {
 			return err
 		}
-		if err := store.PutSchedule(ctx, q, store.Schedule{ID: store.BackupScheduleID, Kind: "backup", Cron: "0 3 * * *",
+		if err := store.PutSchedule(ctx, q, store.Schedule{ID: "restic-" + app.ID, Kind: "app-backup", Cron: "0 3 * * *",
 			Enabled: true, LastSlot: "2026-01-01T00:00:00.000Z"}, "2026-01-01T00:00:00.000Z"); err != nil {
 			return err
 		}
@@ -187,7 +187,7 @@ func TestImportNeutralizesStateAndRestoresVolumes(t *testing.T) {
 	if ok, _ := store.GetSetting(ctx, db, "network", &map[string]any{}); ok {
 		t.Fatal("network plan survived import")
 	}
-	if sc, err := store.GetSchedule(ctx, db, store.BackupScheduleID); err != nil || sc.Enabled || sc.LastSlot != "" {
+	if sc, err := store.GetSchedule(ctx, db, "restic-a1b2c3"); err != nil || sc.Enabled || sc.LastSlot != "" {
 		t.Fatalf("schedule survived import enabled: %+v %v", sc, err)
 	}
 	for key, want := range map[string]string{"edge": "false", "tunnel": "false"} {

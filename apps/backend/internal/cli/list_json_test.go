@@ -32,15 +32,12 @@ func fakeBackend(t *testing.T) platform.Layout {
 		t.Fatal(err)
 	}
 	bodies := map[string]string{
-		"/api/v1/system":            `{"stackName":"dev"}`,
-		"/api/v1/apps":              `{"apps":[{"slug":"shop","hosts":[]}]}`,
-		"/api/v1/operations":        `{"operations":[{"id":"op1","kind":"app.start"}]}`,
-		"/api/v1/services":          `{"services":[{"name":"mysql84"}]}`,
-		"/api/v1/hosts":             `{"hosts":[{"name":"shop.example.com","target":{"kind":"app"}}]}`,
-		"/api/v1/retired":           `{"retired":[]}`,
-		"/api/v1/backups/artifacts": `{"artifacts":[{"path":"mysql84/shop.sql.zst","engine":"mysql"}]}`,
-		"/api/v1/backups/runs":      `{"runs":[]}`,
-		"/api/v1/backups/schedules": `{"timeZone":"UTC","schedules":[{"id":"s1","name":"nightly"}]}`,
+		"/api/v1/system":     `{"stackName":"dev"}`,
+		"/api/v1/apps":       `{"apps":[{"slug":"shop","hosts":[]}]}`,
+		"/api/v1/operations": `{"operations":[{"id":"op1","kind":"app.start"}]}`,
+		"/api/v1/services":   `{"services":[{"name":"mysql84"}]}`,
+		"/api/v1/hosts":      `{"hosts":[{"name":"shop.example.com","target":{"kind":"app"}}]}`,
+		"/api/v1/retired":    `{"retired":[]}`,
 	}
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, ok := bodies[r.URL.Path]
@@ -57,7 +54,7 @@ func fakeBackend(t *testing.T) platform.Layout {
 }
 
 // Every listing honors --json both before the command (global) and after it
-// (e2e finding: `bento backup list --json` printed the table).
+// (e2e finding: a listing given a trailing --json printed the table).
 func TestListCommandsHonorJSON(t *testing.T) {
 	layout := fakeBackend(t)
 	commands := [][]string{
@@ -67,9 +64,6 @@ func TestListCommandsHonorJSON(t *testing.T) {
 		{"services"},
 		{"hosts"},
 		{"retired"},
-		{"backup", "list"},
-		{"backup", "runs"},
-		{"backup", "schedule", "list"},
 	}
 	for _, cmd := range commands {
 		for _, mode := range []string{"global", "trailing"} {
@@ -92,17 +86,30 @@ func TestListCommandsHonorJSON(t *testing.T) {
 	}
 }
 
-func TestBackupListTableWithoutJSON(t *testing.T) {
-	layout := fakeBackend(t)
+// `bento backup password` reads the stack key on this host; it never asks
+// the backend, which does not serve it.
+func TestBackupPasswordReadsHostKey(t *testing.T) {
+	layout := platform.Layout{Root: t.TempDir()}
 	var out bytes.Buffer
 	r := &runner{layout: layout, wait: true, out: &out}
-	if err := r.run([]string{"backup", "list"}); err != nil {
+	if err := r.run([]string{"backup", "password"}); err == nil || !strings.Contains(err.Error(), "no backup password yet") {
+		t.Fatalf("missing key: %v", err)
+	}
+	if err := os.MkdirAll(layout.ResticKeyDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out.String(), "PATH") || !strings.Contains(out.String(), "mysql84/shop.sql.zst") {
-		t.Fatalf("table expected:\n%s", out.String())
+	if err := os.WriteFile(layout.StackBackupKey(), []byte("the-stack-password\n"), 0o400); err != nil {
+		t.Fatal(err)
 	}
-	if err := r.run([]string{"backup", "list", "extra"}); err == nil {
-		t.Fatal("a stray argument must be refused")
+	if err := r.run([]string{"backup", "password"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "the-stack-password\n" {
+		t.Fatalf("printed %q", out.String())
+	}
+	for _, args := range [][]string{{"backup"}, {"backup", "list"}, {"backup", "password", "extra"}} {
+		if err := r.run(args); err == nil {
+			t.Fatalf("%v must be refused", args)
+		}
 	}
 }

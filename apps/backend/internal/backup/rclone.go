@@ -205,37 +205,6 @@ func (d Deps) logTail(ctx context.Context, id string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// Upload copies exactly the given artifacts with rclone in an ephemeral
-// container: the config directory and the selected files (read-only).
-func (d Deps) Upload(ctx context.Context, remote string, artifacts []Artifact) error {
-	if len(artifacts) == 0 {
-		return nil
-	}
-	if err := d.checkRemote(remote); err != nil {
-		return err
-	}
-	var mounts []mount.Mount
-	for _, a := range artifacts {
-		mounts = append(
-			mounts,
-			mount.Mount{
-				Type:     mount.TypeBind,
-				Source:   filepath.Join(d.Layout.BackupsDir(), a.Path),
-				Target:   "/upload/" + a.Path,
-				ReadOnly: true,
-			},
-		)
-	}
-	code, tail, err := d.runRclone(ctx, []string{"copy", "/upload", remote, "--no-traverse"}, mounts)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return fmt.Errorf("rclone exited %d: %s", code, tail)
-	}
-	return nil
-}
-
 // rcloneDirNotFound is rclone's documented exit code for a missing directory.
 const rcloneDirNotFound = 3
 

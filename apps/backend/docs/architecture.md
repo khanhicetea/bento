@@ -81,8 +81,8 @@ connection, and `BEGIN IMMEDIATE` transactions.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
   target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
-  `operation_events` (≤200 events each), `sessions`, `api_tokens` (SHA-256 hashes, scope, expiry),
-  `backup_runs`.
+  `operation_events` (≤200 events each), `sessions`, `api_tokens` (SHA-256 hashes, scope, expiry). Schema 5
+  dropped `backup_runs` and the `backup` schedules with the database dump backups (app backup holds every dump).
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
   across a Docker call.
 
@@ -138,7 +138,7 @@ An `app.start` or `app.update` of an unprovisioned app is global because provisi
 services. The reasons for each global kind are the shared state it rewrites: the edge settings or several routes at once
 (`edge.apply`, `app.publish|unpublish|remove`), data services and their grants (`app.provision`, `binding.add`,
 `database.add`), removing from the image set (`image.prune`), home ownership (`app.permissions`), or every app at once
-(`stack.export`, `backup.*`).
+(`stack.export`), or a database in place (`restic.restore-db`).
 
 A dispatch pass loads every app once (for the claims of app operations) and records, for each queued operation that is
 blocked, the operation it waits behind. The API returns it as `waitingOn` on queued operations; the UI shows it on the
@@ -174,8 +174,8 @@ end after 5 min without progress or 1 h in all, builds after 20 min without outp
 `CopyFrom`) have no fixed deadline: they are ended by their context, which forced cancellation reaches.
 
 Operation kinds: `app.provision|start|stop|restart|update|publish|unpublish|remove|prune|reconcile|permissions`,
-`binding.add`, `database.add`, `service.create|reconcile`, `edge.apply`, `tunnel.apply`, `backup.run|restore`,
-`stack.export`.
+`binding.add`, `database.add`, `service.create|reconcile`, `edge.apply`, `tunnel.apply`, `backup.rclone-test`,
+`restic.*` (see *App backups*), `stack.export`.
 
 ### App lifecycle internals (`apps.go`)
 
@@ -469,32 +469,30 @@ Valkey lives in its own container, see *Inside a runtime container*).
 `ensureService(allowInit)` creates a volume only for a never-initialized service; for an initialized service a missing
 volume is a `volume-missing` failure. Volumes are never removed (except volumes a failing `import` created itself).
 
-`backup` streams `mysqldump`/`pg_dump` exec output through zstd/gzip into a `0600` partial, fsyncs, and renames only a
-non-empty result. SQLite uses `.backup` in a network-less job container that mounts only that binding directory and a
-private staging dir. The batch holds `locks/backup.lock`; retention runs only after the whole batch succeeds; rclone runs
-in a job container of the pinned image with the `rclone/` directory (writable, so OAuth token refreshes persist) and the
-new artifacts (read-only). Before any rclone container runs, `backup.checkRemote` requires `rclone.conf` to be a
-regular, unencrypted file that defines the remote; the API only ever reads section names and `type`. The rclone shell
-(`GET /backups/rclone/terminal`) is the same terminal machinery as app shells (`serveTerminal`, keyed by scope) over an
-idle `sleep` container of that image that mounts only `rclone/`; `backup.rclone-test` runs `rclone lsf --max-depth 1`
-and treats exit 3 (directory not found) as reachable. The stack-wide backup settings are the `backup-default` row of
-`schedules` (kind `backup`; spec: compression, retain, rclone remote); a backup request's `scheduleId` selects whose
-retention and remote apply.
+Backups are app backups only (restic, below); the `backup` package dumps and restores binding databases for them.
+`DumpPlain` streams `mysqldump`/`pg_dump` exec output into a `0600` file; SQLite uses `.backup` in a network-less job
+container that mounts only that binding directory and a private staging dir. rclone runs in job containers of the
+pinned image with the `rclone/` directory (writable, so OAuth token refreshes persist). Before any rclone container
+runs, `backup.checkRemote` requires `rclone.conf` to be a regular, unencrypted file that defines the remote; the API
+only ever reads section names and `type`. The rclone shell (`GET /backups/rclone/terminal`) is the same terminal
+machinery as app shells (`serveTerminal`, keyed by scope) over an idle `sleep` container of that image that mounts only
+`rclone/`; `backup.rclone-test` runs `rclone lsf --max-depth 1` and treats exit 3 (directory not found) as reachable.
+Database dump artifacts of older versions may remain in `<root>/backups/`; nothing reads them, export skips them.
 
 MySQL dumps pass through `definerFilter`, which removes `DEFINER=` from DDL lines and never touches `INSERT` lines,
-however the exec output is chunked. Relational restores (`backup.RestoreRelational`, used by `backup.restore` and by
-clones) never replay a dump as the administrator:
+however the exec output is chunked. Relational restores (`backup.RestoreRelational`, used by `restic.restore-db` and
+by clones) never replay a dump as the administrator:
 
-- The artifact is replayed into a staging database, `bento__rs_<sha256(db)[:16]>` (`domain.ReservedDatabasePrefix`
+- The dump is replayed into a staging database, `bento__rs_<sha256(db)[:16]>` (`domain.ReservedDatabasePrefix`
   is refused for app databases), as the binding user. MySQL logs in through a per-restore option file
   (`dataservices.AppClientFile`, `0400`, removed afterwards), after the restore stream passes the same
   `definerFilter`. PostgreSQL runs `psql -U <user>` over the local socket, not superuser plus `SET ROLE`. Every
   restored view, routine, trigger and event therefore belongs to the binding user, and a dump statement beyond the
   user's grants (`GRANT … ON *.*`, `RESET ROLE`, another database) fails. MySQL's binary log is on, so a dump with
   triggers or stored functions fails too, exactly as the app could not have created them itself.
-- A truncated or corrupt artifact (the read error is recorded by `checkedReader`, because the client may exit 0 on
-  the early end of input), a refused statement, or a cancellation before the `swap` phase drops the staging database
-  and leaves the live one untouched (`backup.LiveUnchangedError`, guidance "The live database is unchanged").
+- A failed replay (a read error is recorded by `checkedReader`, because the client may exit 0 on the early end of
+  input; restic has already verified the dump's content), a refused statement, or a cancellation before the `swap`
+  phase drops the staging database and leaves the live one untouched (`backup.LiveUnchangedError`, guidance "The live database is unchanged").
 - Swap: PostgreSQL refuses new connections to the live database, terminates its sessions and renames live → trash
   and staging → live in one transaction (a failed swap re-allows connections). MySQL moves every live table to
   `bento__rt_…` and every staged table into the live database in one `RENAME TABLE` (atomic; `lock_wait_timeout`
@@ -525,16 +523,22 @@ operation kind (with its claims) from `Submit`.
 
 ## App backups (restic): `operations/restic.go`, `backup/restic.go`
 
-The web Backup tab (`BackupPanel.tsx`) shows two independent cards: Database backup (`DatabaseBackupCard.tsx`, reads
-the stack's `backup` schedules and artifacts through the existing `/backups` endpoints) and App backup (the restic
-settings, repository, snapshots, keys). The cards share no state, and the tab adds no backend behaviour.
+App backup is the only backup method: each snapshot holds the home and a plain dump of every bound database. The web
+Backup tab (`BackupPanel.tsx`) shows the restic settings, repository, snapshots (Clone into a new app, Restore DB in
+place) and keys; the Backups page shows the stack-wide overview (`GET /backups/apps`), runs and rclone remotes.
 
 Each app may have one restic repository on an rclone remote: operator settings under `settings` key `restic:<appId>`,
 operation bookkeeping (repository id, cached snapshots/keys, last runs) under `restic-state:<appId>`, schedule row
-`restic-<appId>` of kind `app-backup`. The key lives in `secrets/restic/<appId>.key` (`0400`). Init and key-add
-generate a key at submission, write it to a `*.pending-*.key` file named (not contained) in the request, and return it
-once in the `202`. The operation consumes and deletes the pending file. Connect verifies an operator key with
-`restic cat config` before adopting it. Every job checks the repository id against the recorded one.
+`restic-<appId>` of kind `app-backup`. The key Bento uses lives in `secrets/restic/<appId>.key` (`0400`).
+
+The stack backup password, `secrets/restic/stack.key` (root, `0400`), is the key of every repository the stack
+initializes. `bento init` creates it, and `backup.EnsureStackKey` creates it on the first `restic.init` of an older
+stack (published with `link(2)`, so concurrent callers agree on one). The API never returns it; `bento backup password`
+reads the file on the host. It travels with export. Init writes the stack password, key-add a new random key, to a
+`*.pending-*.key` file named (not contained) in the request; only key-add returns its key, once, in the `202`. The
+operation consumes and deletes the pending file. Connect (and restore-from-backup) verifies an operator key with
+`restic cat config` before adopting it; an empty key means the stack password, and a stack without one refuses it
+rather than creating one. Every job checks the repository id against the recorded one.
 
 restic runs by exec in an idle job container of `bento-backup/restic:<version>-<hash>` (built by
 `ImageManager.EnsureRestic` from `templates/images-standalone/restic`: the pinned rclone image plus a SHA-256-pinned
@@ -556,8 +560,17 @@ binding/suffix/username, SQLite `fileId`/`fileName`, `minicron`, `secrets`); `re
 Valkey on starts from the backed-up `dump.rdb` (the clone checklist says so). When the app's `includeSecrets` setting
 is on, `secrets.json` (`0600` in staging) holds the redacted env values and
 binding passwords; `app.json` stays redacted, and `secretRedactor` scrubs those values from operation output. Restic
-exit 3 records the run as `partial` (not OK). There is no in-place restore: app backups restore only into a new app
-(clone, planned).
+exit 3 records the run as `partial` (not OK). Files are never restored over a live app (clone into a new app instead);
+a single database is, by `restic.restore-db`.
+
+`restic.restore-db` (`restic_restore_db.go`; global: it stages and grants on shared data services) needs the exact
+confirmation `replace <db>` and a database of one of the app's bindings. It resolves the snapshot in the app's own
+repository, reads `manifest.json`, refuses a snapshot of another app (`snapshot-invalid`) or one with no dump of that
+database and engine (`database-missing`), and restores only that dump (`restic restore --include
+/backup/bento/<file>`; the manifest path must match `^(db|sqlite)/[A-Za-z0-9_.-]+$`, so no glob reaches restic). The
+restored `bento/` tree must hold only directories and regular files. A relational dump goes through
+`backup.RestoreRelational` (the app keeps running through a swap; an in-place MySQL rebuild stops and restarts it); a
+SQLite file needs the app stopped (`app-running`) and replaces the binding file with `RestoreSQLite`.
 
 ## Transfer
 
@@ -586,7 +599,7 @@ only what it created.
   are closed to tokens by default. `requireAuth(scope)` checks a principal already in the context (control socket,
   or an MCP tool call re-entering the mux), else `Authorization: Bearer bento_pat_…` (no CSRF: browsers never send
   it unprompted), else the session. The socket accepts `X-Bento-Scope` to narrow itself (`bento mcp`). Restricted
-  callers see env values as `[redacted]`, cannot change env, and cannot upload backups; their operations get origin
+  callers see env values as `[redacted]`, cannot change env, and cannot restore databases; their operations get origin
   `token:<name>` / `local:<scope>` via `operations.WithOrigin`. Token management is full-scope only; import deletes
   every token.
 - `POST /mcp`: stateless Streamable HTTP for tokens and scoped sockets (sessions refused, foreign `Origin` refused).

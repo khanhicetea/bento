@@ -1,33 +1,23 @@
 ---
 title: Backup
-description: Protect one app — quick database dumps, full encrypted app backups, or both.
+description: Protect one app — encrypted snapshots of its files and every database, restored in place or into a new app.
 ---
 
-The **Backup** tab has two independent methods. Turning one on never affects the other.
+The **Backup** tab sets up the app's [app backup](/backups/app-backups): an encrypted restic repository on a remote,
+holding the app's code, uploads, `.env`, scheduled jobs, and a dump of every database bound to it. Only changes are
+uploaded after the first snapshot.
 
-| | **Database backup** | **App backup** |
-| --- | --- | --- |
-| Saves | the app's databases | everything: code, uploads, `.env`, databases, scheduled jobs |
-| Stored as | compressed SQL dumps | an encrypted restic repository (only changes uploaded) |
-| Restore | **in place**, one database at a time | **into a new app**, never over the live one |
-| Pick when | uploads live in S3 or similar | uploads or generated files live in the app's home |
+| Restore | How |
+| --- | --- |
+| One database, **in place** | **Restore DB** on a snapshot — [Restore a database](/backups/database) |
+| The whole app, **into a new app** | **Clone** on a snapshot — never over the live one |
 
-Most production apps benefit from both: dumps for a quick rollback, app backups for disaster recovery.
-
-## Database backup
-
-- **DB schedules** lists the schedules that cover this app. **Add schedule for this app** creates one prefilled for it.
-- **Last dumps** shows the newest dump of each database.
-- **Back up now** runs a one-off dump.
-
-Schedules, off-site upload, and restore are managed in the [Backups screen](/backups/database).
-
-## App backup
+## Set it up
 
 <Steps>
   <Step title="Choose a repository">
-    You need an rclone remote first (**Backups → Schedules → Open rclone shell**, `rclone config`). Then set
-    **Repository** to `remote:path`, e.g. `b2:bento/apps/shop` — one path per app.
+    You need an rclone remote first (**Backups → Remotes → Open shell**, `rclone config`). Then set **Repository**
+    to `remote:path`, e.g. `b2:bento/apps/shop` — one path per app.
   </Step>
   <Step title="Choose what to save">
     Keep **Paths** as `.` (the whole home) unless you have a reason not to. Add **Excludes** like `node_modules`, and
@@ -36,11 +26,21 @@ Schedules, off-site upload, and restore are managed in the [Backups screen](/bac
   <Step title="Set schedule and retention">
     A **Cron** schedule (server time zone) and how many hourly / daily / weekly / monthly snapshots to **Keep**.
   </Step>
-  <Step title="Create the repository and save the key">
-    Press **Create repository**. The key is shown **once** — **Copy key now** and store it in your password manager.
-    Without it, the backups can never be decrypted.
+  <Step title="Create the repository">
+    Press **Create repository**. It is encrypted with the [stack backup password](/backups#stack-backup-password),
+    the same for every app of this stack. To use a repository that already exists, enter its key under
+    **Existing** and press **Connect** — leave the key empty to use the stack backup password.
   </Step>
 </Steps>
 
-**Snapshots** lists every backup. From there you can **Restore into a new app**. Full details, including restoring on
-another server: [App backups](/backups/app-backups).
+<Callout type="danger">
+Print the stack backup password on the host with `sudo bento backup password` and keep a copy **off the host**. If
+it is lost, the backups cannot be recovered.
+</Callout>
+
+**Snapshots** lists every backup. Each one has **Restore DB** (replace one database of this app, type
+`replace <database>`) and **Clone** (restore into a new app, type `clone <new-slug>`). Full details, including
+restoring on another server: [App backups](/backups/app-backups).
+
+**Access keys → Add** creates an extra key for this repository, e.g. for another server. Type `export <slug>` to
+confirm; the key is shown **once**.

@@ -269,6 +269,58 @@ backend stopped, edge traffic and scheduled jobs continued.
 - `make test-integration` as root passed.
 - Not verified: MySQL 8.0/9.4 and PostgreSQL 14–17 flag rendering on a live server, arm64, the System page in a browser.
 
+## App backup only, stack backup password, database restore from a snapshot (2026-11-03, linux/amd64)
+
+- Database dump backups (artifacts, `backup` schedules, `backup_runs`, rclone upload) were removed; schema 5 drops
+  their table and schedules (`TestMigrateFrom4DropsDumpBackups`; schema 2/3 states still migrate to 5).
+- `sudo make ci` steps fmt-check, vet, race tests and build passed; `check-generated` passes once the regenerated
+  `types.ts` is committed (it compares against the index).
+- Unit: `backup.EnsureStackKey` (8 concurrent callers agree on one `0400` key, no leftovers; symlinked/empty/multi-line
+  keys refused), init uses the stack password for every repository, connect with an empty key adopts it and never
+  creates one, `restic.restore-db` validation (exact `replace <db>`, foreign database, malformed snapshot, no
+  repository), SQLite restore downloads only the `--include`d dump, refusals (`snapshot-invalid` for another app, a glob
+  or `..` in the manifest path; `database-missing`; `restore-failed` for a non-SQLite file) leave the database
+  untouched; API adversarial cases (CSRF, origin, unknown field, wrong confirmation, no repository, unknown app; token
+  scopes refused); `bento backup password`.
+- Real Docker (`BENTO_DOCKER_TESTS=1 go test -run 'Restic|Restore|Rclone' ./internal/integration/`, 30 min): passed.
+  `TestIntegrationResticAppBackup` restores the SQLite binding from the latest snapshot with real restic (`--include`
+  restores only that file, owned by the app UID). `TestIntegrationRestoreMySQL` (8.0, 8.4, 9.7) and
+  `TestIntegrationRestorePostgres` (16, 17) now back up with restic and restore through `restic.restore-db`: swap with
+  the app running, MySQL in-place rebuild with stop/restart, routines owned by the binding user; hand-made hostile dumps
+  (root DEFINER, `GRANT … ON *.*`, `RESET ROLE`) through `RestoreRelational` leave the live database unchanged.
+- Not verified: the web UI in a browser (Backups → Remotes, Restore DB dialog), a cloud remote, arm64.
+
+## App backup only: live run against Cloudflare R2 (2026-11-03, live Docker 29.8.1, amd64)
+
+Disposable `/srv/bento-e2e` stack (MySQL 8.4, PostgreSQL 18) built from the working tree, restic repositories on the
+R2 test bucket under a fresh prefix (deleted afterwards). One PHP 8.4 app with a MySQL, a PostgreSQL (two databases)
+and a SQLite binding, no git (code copied into the home).
+
+- Removed: every `/api/v1/backups`, `/backups/{artifacts,runs,restore,download,delete,schedules…}` route answers 404;
+  `bento backup run|list|runs|restore|schedule` exit 1 with `usage: bento backup password`.
+- Stack password: `init` writes `secrets/restic/stack.key` (root, `0400`); `backup password` prints it with the stderr
+  warning and refuses a non-root user; `restic/init` answers 202 with only `operation`/`statusUrl`; each app key file
+  equals the stack key; `GET /backups/apps` has `stackPassword: true`. rclone test: good remote 2s, bad endpoint fails
+  in 2s with rclone's DNS error.
+- Connect: a random key fails `restic-key-rejected`; `{"key":""}` connects with the stack password. Add key with
+  `export <slug>` returns a new 43-char key once (wrong confirmation 400).
+- `restic.restore-db`: MySQL (CLI) and PostgreSQL (REST) restored with `method: swap`, rows back to the snapshot's
+  counts, the app container never restarted; SQLite refused `app-running` before any download, restored when stopped
+  (short snapshot id, file owned by the app UID). Wrong confirmation 400 (CLI and REST), unbound database 404, malformed
+  snapshot 422, another app's snapshot in the same repository `snapshot-invalid`. A staging watcher saw only
+  `data/backup/bento/db/<the one dump>` downloaded; `staging/` was empty after every run.
+- Clone on stack (`restic/inspect`, `restic/clone`) and disaster restore (CLI without `--key-file`, REST with
+  `"key":""`): code, untracked file, MySQL/PostgreSQL/SQLite rows restored; a random key file fails `wrong key`.
+- Migration: a stack initialized by the committed binary (schema 4) with a dump schedule, one dump run and an
+  app-backup schedule opened with the new binary at schema 5: `backup` schedules and `backup_runs` gone, the
+  app-backup schedule kept, `backups/` files byte-identical. The pre-existing app keeps its own key (not the stack
+  password); `stack.key` appears with the next repository init, which uses it.
+- Finding: when an app has a MySQL and a PostgreSQL binding, both first databases are named `<slug>_main`; restore-db
+  by name always picks the MySQL one, so the PostgreSQL `<slug>_main` cannot be restored (request has no engine or
+  binding field). **Fixed the same day:** the request takes an optional `binding` (CLI `--binding`, sent by the UI);
+  a name in more than one binding without it is refused (`TestFindDatabaseRefusesAmbiguousName`).
+- Not run: the MySQL in-place path (views/routines → stop/restart) live, the web UI, arm64, Object Lock buckets.
+
 ## Not yet verified
 
 - A successful SSH deploy with a deploy key registered at a git host (only the rejection path ran live).

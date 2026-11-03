@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
+  Database,
   History,
   KeyRound,
   Link2,
@@ -29,26 +30,26 @@ import {
 import { formatBytes, formatRelative } from "../../lib/format.ts";
 import { useTrackOperation } from "../operations/OperationTracker.tsx";
 import { CloneFromBackupDialog } from "./CloneFromBackupDialog.tsx";
-import { DatabaseBackupCard } from "./DatabaseBackupCard.tsx";
 import { useOperationMutation } from "./useApplications.ts";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 
 /**
- * The app's Backup tab: two independent methods, one box each. Database backup is the stack's dump schedules shown
- * per app; app backup is a restic repository per app on an rclone remote.
+ * The app's Backup tab: one restic repository per app on an rclone remote, encrypted with the stack backup password.
+ * Each snapshot holds the home and a dump of every database, and restores into a new app or one database in place.
  */
 export function BackupPanel({ app }: { app: T.App }) {
-  return (
-    <div className="grid">
-      <DatabaseBackupCard app={app} />
-      <AppBackupBox app={app} />
-    </div>
-  );
-}
-
-function AppBackupBox({ app }: { app: T.App }) {
   const query = useQuery({
     queryKey: keys.apps.restic(app.id),
     queryFn: ({ signal }) => api.apps.restic.get(app.id, signal),
@@ -276,32 +277,31 @@ function NewKey({ value, children }: { value: string; children: React.ReactNode 
 }
 
 function SetupCell({ app, restic }: { app: T.App; restic: T.Restic }) {
-  const track = useTrackOperation();
-  const [createdKey, setCreatedKey] = useState("");
   const [connectKey, setConnectKey] = useState("");
-  const init = useMutation({
-    mutationFn: () => api.apps.restic.init(app.id),
-    onSuccess: ({ key, ...accepted }) => {
-      track(accepted);
-      setCreatedKey(key);
-    },
-  });
+  const init = useOperationMutation(() => api.apps.restic.init(app.id));
   const connect = useOperationMutation(() => api.apps.restic.connect(app.id, connectKey.trim()));
   return (
     <Cell title="Repository" icon={<Archive />} kind="tamago" className="cell--wide">
       <div className="grid gap-4">
-        <KeyValues items={[["Location", <code>{restic.settings.repository}</code>]]} />
-        {createdKey && (
-          <NewKey value={createdKey}>
-            It is not shown again. It decrypts every backup of this app. If every key is lost, the backups cannot be
-            recovered.
-          </NewKey>
-        )}
+        <KeyValues
+          items={[
+            ["Location", <code>{restic.settings.repository}</code>],
+            ["Key", "Stack backup password"],
+          ]}
+        />
+        <p className="notice notice--caution">
+          <TriangleAlert />
+          <strong>Keep password</strong>
+          <span>
+            Every repository this stack creates uses the stack backup password. If it is lost, the backups cannot be
+            recovered. Print it on the host with <code>bento backup password</code> and keep a copy off this host.
+          </span>
+        </p>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="grid content-start gap-2">
             <span className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">New</span>
             <div>
-              <Button disabled={init.isPending} onClick={() => init.mutate()}>
+              <Button disabled={init.isPending} onClick={() => init.mutate(undefined)}>
                 <Archive /> {init.isPending ? "Creating" : "Create repository"}
               </Button>
             </div>
@@ -319,12 +319,12 @@ function SetupCell({ app, restic }: { app: T.App; restic: T.Restic }) {
               <Input
                 type="password"
                 value={connectKey}
-                placeholder="Repository key"
+                placeholder="Key · empty: stack password"
                 aria-label="Existing repository key"
                 autoComplete="off"
                 onChange={(event) => setConnectKey(event.target.value)}
               />
-              <Button type="submit" variant="outline" disabled={!connectKey.trim() || connect.isPending}>
+              <Button type="submit" variant="outline" disabled={connect.isPending}>
                 <Link2 /> Connect
               </Button>
             </div>
@@ -410,9 +410,12 @@ function RepositoryCell({ app, restic }: { app: T.App; restic: T.Restic }) {
 
 function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
   const [target, setTarget] = useState<T.ResticSnapshot | null>(null);
+  const [dbTarget, setDbTarget] = useState<T.ResticSnapshot | null>(null);
+  const databases = appDatabases(app);
   return (
     <Cell title="Snapshots" icon={<History />} action={<span className="row__meta">{restic.snapshots.length}</span>}>
       <CloneFromBackupDialog app={app} snapshot={target} onClose={() => setTarget(null)} />
+      {dbTarget && <RestoreDatabaseDialog app={app} snapshot={dbTarget} onClose={() => setDbTarget(null)} />}
       {restic.snapshots.length === 0 ? (
         <p className="note">— No snapshots yet</p>
       ) : (
@@ -436,8 +439,18 @@ function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
                     {trigger && ` · ${trigger}`}
                   </small>
                 </span>
+                {databases.length > 0 && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    title="Replace one database of this app with its dump in the snapshot"
+                    onClick={() => setDbTarget(snapshot)}
+                  >
+                    <Database /> Restore DB
+                  </Button>
+                )}
                 <Button size="xs" variant="outline" title="Restore into a new app" onClick={() => setTarget(snapshot)}>
-                  <RotateCcw /> Restore
+                  <RotateCcw /> Clone
                 </Button>
               </div>
             );
@@ -445,6 +458,101 @@ function SnapshotsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
         </div>
       )}
     </Cell>
+  );
+}
+
+type RestoreTarget = { key: string; binding: string; name: string; engine: string; sqlite: boolean };
+
+const engineNames: Record<string, string> = { mysql: "MySQL", postgres: "PostgreSQL", sqlite: "SQLite" };
+
+/**
+ * Restore targets of an app: relational database names and SQLite file ids, each with its binding (a MySQL and a
+ * PostgreSQL binding both have `<slug>_main`, so the name alone is ambiguous).
+ */
+function appDatabases(app: T.App): RestoreTarget[] {
+  return app.bindings.flatMap((binding): RestoreTarget[] => {
+    const target = (name: string) => ({
+      key: `${binding.id}/${name}`,
+      binding: binding.id,
+      name,
+      engine: binding.engine,
+      sqlite: binding.engine === "sqlite",
+    });
+    if (binding.engine !== "sqlite") return binding.databases.map(target);
+    // The SQLite file id is the directory holding the database file.
+    const id = binding.sqlitePath?.split("/").filter(Boolean).at(-2);
+    return id ? [target(id)] : [];
+  });
+}
+
+/** Replaces one database with its dump in a snapshot. The confirmation is safety text: `replace <db>`, exact. */
+function RestoreDatabaseDialog({
+  app,
+  snapshot,
+  onClose,
+}: {
+  app: T.App;
+  snapshot: T.ResticSnapshot;
+  onClose: () => void;
+}) {
+  const databases = appDatabases(app);
+  const [selected, setSelected] = useState(databases[0]?.key ?? "");
+  const [confirm, setConfirm] = useState("");
+  const target = databases.find((db) => db.key === selected);
+  const database = target?.name ?? "";
+  const phrase = `replace ${database}`;
+  const blocked = !!target?.sqlite && app.desiredRuntime !== "stopped";
+  const restore = useOperationMutation(() =>
+    api.apps.restic.restoreDb(app.id, { snapshot: snapshot.id, database, binding: target?.binding, confirm }),
+  );
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-destructive">
+            <TriangleAlert className="size-4" aria-hidden="true" />
+            Restore a database from {snapshot.shortId}?
+          </DialogTitle>
+          <DialogDescription className="notice notice--warning notice--plain text-foreground">
+            The database is replaced with its dump in snapshot {snapshot.shortId} ({formatRelative(snapshot.time)}).
+            Changes made since then are lost. A dump that fails to replay leaves the live database unchanged.
+          </DialogDescription>
+        </DialogHeader>
+        <Field label="Database">
+          <NativeSelect
+            className="w-full"
+            value={selected}
+            onChange={(event) => {
+              setSelected(event.target.value);
+              setConfirm("");
+            }}
+          >
+            {databases.map((db) => (
+              <option key={db.key} value={db.key}>
+                {db.name} ({engineNames[db.engine] ?? db.engine})
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+        {blocked && <Alert variant="destructive">Stop the app first: a SQLite restore needs it stopped.</Alert>}
+        <Field label={`Type “${phrase}” to confirm`}>
+          <Input value={confirm} autoComplete="off" onChange={(event) => setConfirm(event.target.value)} />
+        </Field>
+        {restore.error && <Alert variant="destructive">{messageOf(restore.error)}</Alert>}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!database || confirm !== phrase || blocked || restore.isPending}
+            onClick={() => restore.mutate(undefined, { onSuccess: onClose })}
+          >
+            {restore.isPending ? "Restoring" : "Restore"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

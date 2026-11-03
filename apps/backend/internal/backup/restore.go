@@ -21,7 +21,7 @@ func (d Deps) RestoreSQLite(app domain.App, b domain.Binding, artifactPath strin
 	if err := platform.NoSymlinkBetween(d.Layout.SQLiteDir(), dir); err != nil {
 		return err
 	}
-	src, err := Decompress(artifactPath)
+	src, err := os.Open(artifactPath)
 	if err != nil {
 		return err
 	}

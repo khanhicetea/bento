@@ -50,11 +50,11 @@ func (s scope) String() string {
 // classified here.
 //
 // Never listed (session or unscoped CLI only): removing apps, hosts,
-// schedules or backups; restores and clones; prune; export; exec, terminals
+// schedules; restores and clones; prune; export; exec, terminals
 // and raw scheduler commands (importing or deleting app jobs; admin may
 // create and edit jobs through the typed routes); database-browser tickets; credentials (password,
-// tunnel token, restic settings and keys, webhook secrets); rclone; backup
-// downloads; image prune; and token management itself.
+// tunnel token, restic settings and keys, webhook secrets); rclone; image
+// prune; and token management itself.
 var routeScopes = map[string]scope{
 	"GET /api/v1/system":                             scopeRead,
 	"GET /api/v1/system/docker":                      scopeRead,
@@ -82,11 +82,7 @@ var routeScopes = map[string]scope{
 	"GET /api/v1/dbadmin":                            scopeRead,
 	"GET /api/v1/hosts":                              scopeRead,
 	"GET /api/v1/retired":                            scopeRead,
-	"GET /api/v1/backups/artifacts":                  scopeRead,
-	"GET /api/v1/backups/runs":                       scopeRead,
 	"GET /api/v1/backups/apps":                       scopeRead,
-	"GET /api/v1/backups/schedules":                  scopeRead,
-	"GET /api/v1/backups/schedules/{id}":             scopeRead,
 	"GET /api/v1/backups/rclone":                     scopeRead,
 
 	"POST /api/v1/apps/{id}/start":                             scopeOperate,
@@ -98,7 +94,6 @@ var routeScopes = map[string]scope{
 	"POST /api/v1/apps/{id}/restic/check":                      scopeOperate,
 	"POST /api/v1/operations/{id}/cancel":                      scopeOperate,
 	"POST /api/v1/services/{name}/restart":                     scopeOperate,
-	"POST /api/v1/backups":                                     scopeOperate,
 	"POST /api/v1/apps/{id}/scheduler/jobs/{name}/run":         scopeOperate,
 	"POST /api/v1/apps/{id}/scheduler/workers/{name}/{action}": scopeOperate,
 	"POST /api/v1/apps/{id}/scheduler/runs/{run}/stop":         scopeOperate,
@@ -117,9 +112,6 @@ var routeScopes = map[string]scope{
 	"PUT /api/v1/edge":                                     scopeAdmin,
 	"POST /api/v1/hosts":                                   scopeAdmin,
 	"PUT /api/v1/hosts/{name}":                             scopeAdmin,
-	"POST /api/v1/backups/schedules":                       scopeAdmin,
-	"PUT /api/v1/backups/schedules/{id}":                   scopeAdmin,
-	"POST /api/v1/backups/schedules/{id}/enabled":          scopeAdmin,
 	"POST /api/v1/apps/{id}/scheduler/jobs/{name}/enabled": scopeAdmin,
 	"POST /api/v1/apps/{id}/scheduler/jobs":                scopeAdmin,
 	// Moves apps onto other PHP/toolchain releases.

@@ -108,7 +108,7 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //     replaces the instances.
 //
 // Everything else runs alone: edge/tunnel/dbadmin apply, provision, publish,
-// unpublish, remove, bindings, permissions, backup, restore, export, image prune.
+// unpublish, remove, bindings, permissions, restic.restore-db, export, image prune.
 func classify(op store.Operation, lookup func(id string) (domain.App, error)) claims {
 	switch op.Kind {
 	case KindAppReconcile, KindAppStart, KindAppRestart, KindAppUpdate, KindAppDeploy, KindAppStop:

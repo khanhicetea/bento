@@ -106,18 +106,9 @@ func TestPruneHistory(t *testing.T) {
 	mk("old-done", OpSucceeded, old)
 	mk("new-done", OpFailed, platform.FormatTime(time.Now()))
 	mk("old-queued", OpQueued, "")
-	if err := InsertBackupRun(ctx, db, BackupRun{ID: "b-old", Trigger: "manual", State: "succeeded", StartedAt: old}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "UPDATE backup_runs SET finished_at=? WHERE id='b-old'", old); err != nil {
-		t.Fatal(err)
-	}
-	if err := InsertBackupRun(ctx, db, BackupRun{ID: "b-running", Trigger: "manual", State: "running", StartedAt: old}); err != nil {
-		t.Fatal(err)
-	}
-	ops, runs, err := PruneHistory(ctx, db, DefaultRetention)
-	if err != nil || ops != 1 || runs != 1 {
-		t.Fatalf("pruned ops=%d runs=%d err=%v", ops, runs, err)
+	ops, err := PruneHistory(ctx, db, DefaultRetention)
+	if err != nil || ops != 1 {
+		t.Fatalf("pruned ops=%d err=%v", ops, err)
 	}
 	if _, err := GetOperation(ctx, db, "old-done"); err == nil {
 		t.Fatal("old finished op should be pruned")
@@ -131,9 +122,5 @@ func TestPruneHistory(t *testing.T) {
 		if _, err := GetOperation(ctx, db, id); err != nil {
 			t.Fatalf("%s must be kept: %v", id, err)
 		}
-	}
-	rs, _ := ListBackupRuns(ctx, db, 10)
-	if len(rs) != 1 || rs[0].ID != "b-running" {
-		t.Fatalf("backup runs after prune: %+v", rs)
 	}
 }

@@ -1,8 +1,8 @@
 # Live end-to-end test guide
 
 A repeatable, hands-off run of a real Bento stack against real external services: GitHub (public and private repos,
-deploy keys, push webhooks), a Cloudflare Tunnel with real DNS, and S3-compatible storage (Cloudflare R2) for database
-dumps and restic app backups. It complements the Docker integration suite (`make -C apps/backend test-integration`),
+deploy keys, push webhooks), a Cloudflare Tunnel with real DNS, and S3-compatible storage (Cloudflare R2) for restic
+app backups (which hold the database dumps). It complements the Docker integration suite (`make -C apps/backend test-integration`),
 which never leaves the host.
 
 Written for an agent to follow end to end. The operator only provides the accounts once (see
@@ -25,7 +25,7 @@ Written for an agent to follow end to end. The operator only provides the accoun
 | Host | Linux amd64, root, Docker 25+, Go and Bun toolchains from `mise.toml` | build and run the stack |
 | GitHub | `gh auth login -h github.com -p https -w -s repo,admin:repo_hook,delete_repo` as a **test account**, then `gh auth setup-git` | repos, deploy keys, webhooks |
 | Cloudflare | account API token: zone policy (DNS Edit, Zone Read) on the test zone + account policy **Argo Tunnel (Legacy) Edit** | tunnel and hostnames |
-| S3 | bucket + key scoped to it (Get/Put/Delete/List) | DB dumps and restic repos |
+| S3 | bucket + key scoped to it (Get/Put/Delete/List) | restic repos |
 
 `~/.config/bento-e2e/env` (mode 0600, outside the repo):
 
@@ -192,14 +192,12 @@ no_check_bucket = true
 | Case | How | Expect |
 | --- | --- | --- |
 | Remote test | `$E/api.sh POST /api/v1/backups/rclone/test '{"remote":"e2es3:BUCKET/bento-e2e/db"}'`; repeat with a broken endpoint | succeeded within seconds; the broken one fails within seconds (at most 60s) with rclone's error |
-| DB dump + upload | `$B backup run --app e2e-php --upload e2es3:BUCKET/bento-e2e/db` (also `--compression gzip` on e2e-node) | `upload: succeeded`; artifacts in `backup list` and in the bucket |
-| DB restore | drop `hits` with `q.php`, then `echo "replace e2e_php_main" \| $B backup restore --artifact PATH --app e2e-php --database e2e_php_main` | wrong text refused; table back with the dump's row count |
-| App backup | `api.sh PUT /api/v1/apps/ID/restic` (repository `e2es3:BUCKET/bento-e2e/<run>/apps/e2e-php`, paths `["."]`, a retention that keeps at least one snapshot, e.g. `{"daily":7}`), `POST .../restic/init` (save `.key` to `~/.config/bento-e2e/*.restic.key`), `POST .../restic/backup` | snapshot listed, `lastBackup.ok` |
+| App backup | `api.sh PUT /api/v1/apps/ID/restic` (repository `e2es3:BUCKET/bento-e2e/<run>/apps/e2e-php`, paths `["."]`, a retention that keeps at least one snapshot, e.g. `{"daily":7}`), `POST .../restic/init`, `POST .../restic/backup`; save `sudo $B backup password` to `~/.config/bento-e2e/<run>.stack.key` | snapshot listed, `lastBackup.ok`; the init `202` carries no key |
+| DB restore | drop `hits` with `q.php`, then `echo "replace e2e_php_main" \| $B app restore-db e2e-php --database e2e_php_main --snapshot latest` | wrong text refused; table back with the snapshot's row count; the app stayed up (`method: swap`) |
 | Clone on stack | `POST .../restic/inspect` then `.../restic/clone` with `{"snapshot":"latest","slug":"e2e-php-clone","confirm":"clone e2e-php-clone"}`; add a host (`$B host add`), start, publish | code, untracked files, DB rows restored; new DB name and user; `redisCounter` resumes from the Valkey `dump.rdb` in the snapshot (it can lag the live value: an idle Valkey saves at most hourly) and the clone checklist says so |
-| Disaster restore | `echo "clone e2e-php-dr" \| $B app restore-from-backup --repo e2es3:... --key-file KEY --slug e2e-php-dr --snapshot latest` | stopped app plus a checklist (DB user, deploy key, hosts); a random key fails with `wrong key` |
+| Disaster restore | `echo "clone e2e-php-dr" \| $B app restore-from-backup --repo e2es3:... --key-file KEY --slug e2e-php-dr --snapshot latest` (KEY: the saved stack password; on the same stack `--key-file` can be left out) | stopped app plus a checklist (DB user, deploy key, hosts); a random key fails with `wrong key` |
 
-`$B backup list --json` (or `$B --json backup list`) prints the artifact list as JSON. The REST inspect and clone
-endpoints accept a full or short snapshot ID or `latest`, like the CLI.
+The REST inspect, clone and restore-db endpoints accept a full or short snapshot ID or `latest`, like the CLI.
 
 ## 7. Removal and retained data
 

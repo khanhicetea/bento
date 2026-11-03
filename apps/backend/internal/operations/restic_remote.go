@@ -68,9 +68,12 @@ func (c *Controller) validateRemoteInput(in ResticRemoteInput, needSlug bool) (s
 	} else if err := c.BackupDeps(nil).CheckRemote(in.Repository); err != nil {
 		errs.Add("repository", "%v", err)
 	}
-	key := strings.TrimSpace(in.Key)
-	if key == "" || len(key) > 1024 || strings.ContainsAny(key, "\x00\r\n") {
-		errs.Add("key", "paste the repository key")
+	key, err := c.operatorKey(in.Key)
+	var ve domain.ValidationErrors
+	if errors.As(err, &ve) {
+		errs = append(errs, ve...)
+	} else if err != nil {
+		errs.Add("key", "%v", err)
 	}
 	if in.Snapshot != "" && !validSnapshotRef(in.Snapshot) {
 		errs.Add("snapshot", "choose a snapshot")

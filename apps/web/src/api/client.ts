@@ -129,7 +129,7 @@ export const api = {
       get: (id: string, signal?: AbortSignal) => get<T.Restic>(`/api/v1/apps/${enc(id)}/restic`, signal),
       save: (id: string, body: T.ResticSettingsRequest) =>
         request<T.Restic>("PUT", `/api/v1/apps/${enc(id)}/restic`, body),
-      init: (id: string) => mutate<T.ResticKeyAccepted>("POST", `/api/v1/apps/${enc(id)}/restic/init`),
+      init: (id: string) => mutate("POST", `/api/v1/apps/${enc(id)}/restic/init`),
       connect: (id: string, key: string) =>
         mutate("POST", `/api/v1/apps/${enc(id)}/restic/connect`, { key } satisfies T.ResticConnectRequest),
       action: (id: string, action: "backup" | "refresh" | "check" | "unlock") =>
@@ -140,6 +140,8 @@ export const api = {
       inspect: (id: string, body: T.ResticInspectRequest) =>
         mutate("POST", `/api/v1/apps/${enc(id)}/restic/inspect`, body),
       clone: (id: string, body: T.ResticCloneRequest) => mutate("POST", `/api/v1/apps/${enc(id)}/restic/clone`, body),
+      restoreDb: (id: string, body: T.ResticRestoreDBRequest) =>
+        mutate("POST", `/api/v1/apps/${enc(id)}/restic/restore-db`, body),
     },
     logsUrl: (id: string, tail: number, follow: boolean) =>
       `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
@@ -195,23 +197,7 @@ export const api = {
       mutate("POST", `/api/v1/retired/${enc(appId)}/prune`, { confirm } satisfies T.ConfirmRequest),
   },
   backups: {
-    artifacts: (signal?: AbortSignal) => get<T.BackupArtifactList>("/api/v1/backups/artifacts", signal),
-    runs: (signal?: AbortSignal) => get<T.BackupRunList>("/api/v1/backups/runs", signal),
     apps: (signal?: AbortSignal) => get<T.AppBackupOverview>("/api/v1/backups/apps", signal),
-    run: (body: T.BackupRequest) => mutate("POST", "/api/v1/backups", body),
-    restore: (body: T.RestoreRequest) => mutate("POST", "/api/v1/backups/restore", body),
-    remove: (body: T.BackupDeleteRequest) => mutate("POST", "/api/v1/backups/delete", body),
-    downloadUrl: (path: string) => `/api/v1/backups/download?path=${enc(path)}`,
-    schedules: (signal?: AbortSignal) => get<T.BackupScheduleList>("/api/v1/backups/schedules", signal),
-    saveSchedule: (body: T.BackupSchedule) =>
-      body.id
-        ? request<T.BackupSchedule>("PUT", `/api/v1/backups/schedules/${enc(body.id)}`, body)
-        : request<T.BackupSchedule>("POST", "/api/v1/backups/schedules", body),
-    enableSchedule: (id: string, enabled: boolean) =>
-      request<T.BackupSchedule>("POST", `/api/v1/backups/schedules/${enc(id)}/enabled`, {
-        enabled,
-      } satisfies T.BackupScheduleEnable),
-    removeSchedule: (id: string) => request<void>("DELETE", `/api/v1/backups/schedules/${enc(id)}`),
     rclone: (signal?: AbortSignal) => get<T.RcloneStatus>("/api/v1/backups/rclone", signal),
     rcloneTest: (body: T.RcloneTestRequest) => mutate("POST", "/api/v1/backups/rclone/test", body),
     rcloneTerminalPath: "/api/v1/backups/rclone/terminal",

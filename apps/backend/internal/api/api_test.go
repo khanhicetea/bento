@@ -728,47 +728,6 @@ func TestRcloneEndpoints(t *testing.T) {
 	}
 }
 
-func TestScheduleReportsNextRunAndZone(t *testing.T) {
-	c, _ := newServer(t)
-	c.login()
-	resp, body := c.write("POST", "/api/v1/backups/schedules", `{"name":"often","enabled":true,"cron":"*/5 * * * *","scope":"all","compression":"zstd","retain":3,"rcloneRemote":""}`)
-	if resp.StatusCode != 200 {
-		t.Fatalf("put %d %s", resp.StatusCode, body)
-	}
-	var s dto.BackupSchedule
-	if err := json.Unmarshal([]byte(body), &s); err != nil {
-		t.Fatal(err)
-	}
-	next, err := time.Parse(time.RFC3339Nano, s.NextRun)
-	if err != nil || !next.After(time.Now()) || next.After(time.Now().Add(5*time.Minute)) || !strings.HasPrefix(s.TimeZone, "UTC") {
-		t.Fatalf("nextRun %q timeZone %q", s.NextRun, s.TimeZone)
-	}
-	// The whole object round-trips, including read-only fields.
-	resp, body = c.write("PUT", "/api/v1/backups/schedules/"+s.ID, body)
-	if resp.StatusCode != 200 {
-		t.Fatalf("round-trip put %d %s", resp.StatusCode, body)
-	}
-	resp, body = c.write("POST", "/api/v1/backups/schedules/"+s.ID+"/enabled", `{"enabled":false}`)
-	if resp.StatusCode != 200 || !strings.Contains(body, `"enabled":false`) || strings.Contains(body, "nextRun") {
-		t.Fatalf("disable %d %s", resp.StatusCode, body)
-	}
-	for _, bad := range []string{`{"name":"x","cron":"* * * * *","retain":3,"compression":"none"}`, `{"name":"x","cron":"* * * * *","retain":3,"unknown":1}`} {
-		if resp, body := c.write("POST", "/api/v1/backups/schedules", bad); resp.StatusCode < 400 {
-			t.Errorf("accepted %s: %d %s", bad, resp.StatusCode, body)
-		}
-	}
-	if resp, _ := c.write("PUT", "/api/v1/backups/schedules/nope", `{"name":"x","cron":"* * * * *","retain":3}`); resp.StatusCode != 404 {
-		t.Errorf("put missing -> %d", resp.StatusCode)
-	}
-	resp, _ = c.do("DELETE", "/api/v1/backups/schedules/"+s.ID, "", map[string]string{"Origin": "http://evil.test"})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("delete foreign origin -> %d", resp.StatusCode)
-	}
-	if resp, body := c.write("DELETE", "/api/v1/backups/schedules/"+s.ID, ""); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("delete %d %s", resp.StatusCode, body)
-	}
-}
-
 // A queued operation blocked behind another reports what it waits on; a
 // running or finished one does not.
 func TestQueuedOperationReportsWaitingOn(t *testing.T) {
@@ -906,6 +865,41 @@ func TestRestoreFromBackupEndpointsRefuseBadRequests(t *testing.T) {
 		`{"repository":"b2:bucket/shop","key":"a-key","slug":"shop-copy","confirm":"clone other"}`)
 	if resp.StatusCode == http.StatusAccepted {
 		t.Fatalf("wrong confirmation -> %d", resp.StatusCode)
+	}
+}
+
+func TestResticRestoreDBRefusesBadRequests(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	resp, out := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[],"bindings":[{"engine":"sqlite"}]}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create -> %d %s", resp.StatusCode, out)
+	}
+	var acc dto.Accepted
+	json.Unmarshal([]byte(out), &acc)
+	h.Wait(acc.Operation.ID)
+	const path = "/api/v1/apps/shop/restic/restore-db"
+	valid := `{"snapshot":"latest","database":"x","confirm":"replace x"}`
+	// Writes need the session CSRF token and exact origin.
+	if resp, _ := c.do("POST", path, valid, map[string]string{"Origin": origin}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("without csrf -> %d", resp.StatusCode)
+	}
+	if resp, _ := c.do("POST", path, valid, map[string]string{"Origin": "http://evil.test", "X-CSRF-Token": c.csrf}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign origin -> %d", resp.StatusCode)
+	}
+	for name, tc := range map[string]struct {
+		path, body string
+		status     int
+	}{
+		"unknown field":      {path, `{"snapshot":"latest","database":"x","confirm":"replace x","artifact":"a"}`, http.StatusBadRequest},
+		"wrong confirmation": {path, `{"snapshot":"latest","database":"x","confirm":"replace y"}`, http.StatusBadRequest},
+		"no repository":      {path, valid, http.StatusConflict},
+		"unknown app":        {"/api/v1/apps/nope/restic/restore-db", valid, http.StatusNotFound},
+	} {
+		resp, body := c.write("POST", tc.path, tc.body)
+		if resp.StatusCode != tc.status {
+			t.Errorf("%s -> %d %s, want %d", name, resp.StatusCode, body, tc.status)
+		}
 	}
 }
 

@@ -28,8 +28,7 @@ function invalidateFor(queryClient: QueryClient, op: T.Operation) {
       // Publication and removal change which hosts are live or exist.
       void queryClient.invalidateQueries({ queryKey: keys.hosts });
       if (op.kind === "app.remove") void queryClient.invalidateQueries({ queryKey: keys.retired });
-      if (op.kind === "backup.restore" || op.kind === "backup.delete" || op.kind.startsWith("restic."))
-        void queryClient.invalidateQueries({ queryKey: keys.backups.all });
+      if (op.kind.startsWith("restic.")) void queryClient.invalidateQueries({ queryKey: keys.backups.all });
       break;
     case "retired-app":
       void queryClient.invalidateQueries({ queryKey: keys.retired });

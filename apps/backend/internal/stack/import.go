@@ -30,7 +30,7 @@ type ImportOptions struct {
 }
 
 // Import stages an export into an empty root. The imported stack starts with
-// every app stopped and unpublished, no tunnel, no edge, no backup schedule,
+// every app stopped and unpublished, no tunnel, no edge, no enabled schedule,
 // and no replayable pending operations. Failure removes only resources this
 // import created.
 func Import(ctx context.Context, engine docker.Engine, log *slog.Logger, opts ImportOptions) (err error) {

@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/backup"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
@@ -31,6 +33,11 @@ func TestIntegrationResticAppBackup(t *testing.T) {
 		platform.Owner{UID: app.UID, GID: app.GID}); err != nil {
 		t.Fatal(err)
 	}
+	// The SQLite binding's database, restored by restore-db below.
+	bound := filepath.Join(e.layout.SQLiteFileDir(app.Bindings[0].SQLiteFileID), app.Slug+".db")
+	if err := platform.CopyFile(e.layout.Database(), bound, 0o600, platform.Owner{UID: app.UID, GID: app.GID}); err != nil {
+		t.Fatal(err)
+	}
 
 	settings := domain.DefaultResticSettings()
 	settings.Repository = "dest:/config/rclone/repo"
@@ -39,8 +46,12 @@ func TestIntegrationResticAppBackup(t *testing.T) {
 	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
-	op, key, err := e.c.SubmitResticInit(ctx, app.ID, "")
+	op, err := e.c.SubmitResticInit(ctx, app.ID, "")
 	e.wait(op, err)
+	key, err := backup.ReadStackKey(e.layout)
+	if err != nil {
+		t.Fatal(err)
+	}
 	e.wait(e.c.SubmitResticBackup(ctx, app.ID, "manual", ""))
 	v, _ := e.c.ResticSettings(ctx, app.ID)
 	if v.State.LastBackup == nil || !v.State.LastBackup.OK || len(v.State.Snapshots) != 1 {
@@ -52,6 +63,21 @@ func TestIntegrationResticAppBackup(t *testing.T) {
 	e.wait(op, err)
 	if extra == "" || extra == key {
 		t.Fatal("added key must be new")
+	}
+
+	// restore-db replaces the bound SQLite database with the snapshot's copy
+	// while the app is stopped.
+	if err := os.WriteFile(bound, []byte("damaged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db := app.Bindings[0].SQLiteFileID
+	e.wait(e.c.SubmitResticRestoreDB(ctx, app.ID, operations.ResticRestoreDBRequest{Snapshot: "latest", Database: db},
+		"replace "+db, ""))
+	if got, err := os.ReadFile(bound); err != nil || !strings.HasPrefix(string(got), "SQLite format 3\x00") {
+		t.Fatalf("restored database: %.20q %v", got, err)
+	}
+	if o, _, err := platform.StatOwner(bound); err != nil || o.UID != app.UID {
+		t.Fatalf("restored database owner %+v %v", o, err)
 	}
 
 	// Another app connects with the handed-over key. Its Backup tab lists only
@@ -98,7 +124,7 @@ func TestIntegrationResticUnreachableRemoteFailsFast(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now()
-	op, _, err := e.c.SubmitResticInit(ctx, app.ID, "")
+	op, err := e.c.SubmitResticInit(ctx, app.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

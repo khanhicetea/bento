@@ -14,7 +14,7 @@ bento [--stack ROOT] [--json] [--no-wait] <command>
 | Flag | Meaning |
 | --- | --- |
 | `--stack ROOT` | Stack folder. Defaults to `$BENTO_STACK_ROOT` — set it in root's `~/.bashrc`. |
-| `--json` | Machine-readable output. Listings (`status`, `apps`, `ops`, `services`, `hosts`, `retired`, `backup list`, `backup runs`, `backup schedule list`) also accept it after the command. |
+| `--json` | Machine-readable output. Listings (`status`, `apps`, `ops`, `services`, `hosts`, `retired`) also accept it after the command. |
 | `--no-wait` | Return as soon as the operation is accepted instead of following it. |
 
 ## How commands work
@@ -49,6 +49,6 @@ Every change carries an idempotency key, so retrying a command never runs it twi
 | [Apps](/cli/apps) | `apps`, `app show\|create\|update\|start\|stop\|restart\|publish\|unpublish\|remove`, `app logs\|exec\|shell\|minicrond\|permissions` |
 | [Deploy](/cli/deploy) | `app git`, `app deploy`, `app webhook` |
 | [Data](/cli/data) | `services`, `service add`, `app bind`, `app add-db`, `retired`, `retired prune` |
-| [Backups](/cli/backups) | `backup run\|list\|runs\|restore\|schedule`, `app restore-from-backup` |
+| [Backups](/cli/backups) | `backup password`, `app restore-db`, `app restore-from-backup` |
 | [Ingress](/cli/ingress) | `edge`, `edge set`, `hosts`, `host add\|set\|remove`, `tunnel`, `tunnel set-token\|disable` |
 | [Stack](/cli/stack) | `serve`, `init`, `import`, `export`, `version`, `status`, `auth set-password` |

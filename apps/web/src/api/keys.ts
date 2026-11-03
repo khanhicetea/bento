@@ -33,10 +33,7 @@ export const keys = {
   tokens: ["tokens"] as const,
   backups: {
     all: ["backups"] as const,
-    artifacts: ["backups", "artifacts"] as const,
-    runs: ["backups", "runs"] as const,
     apps: ["backups", "apps"] as const,
-    schedules: ["backups", "schedules"] as const,
     rclone: ["backups", "rclone"] as const,
   },
 };

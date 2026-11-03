@@ -29,7 +29,7 @@ const ApplicationID = 0x424E5431
 // migrations; every other version is refused without modifying the file.
 // A schema change bumps SchemaVersion and adds migrations[old] in the same
 // change (see docs/contributing.md).
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 // MigratableFromVersion is the oldest schema Open upgrades. Version 2 is the
 // production baseline: no deployment runs an older schema, so nothing below
@@ -59,6 +59,21 @@ type migration func(tx *sql.Tx) error
 
 // migrations[v] upgrades schema v to v+1. Every SchemaVersion bump adds one.
 var migrations = map[int64]migration{
+	// 5: database dump backups were removed; app backup (restic) holds every
+	// database dump. Their run history and schedules go. Artifacts already
+	// written under <root>/backups are files of the operator and are left
+	// in place.
+	4: func(tx *sql.Tx) error {
+		for _, q := range []string{
+			`DROP TABLE backup_runs`,
+			`DELETE FROM schedules WHERE kind = 'backup'`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		return nil
+	},
 	// 4: per-app protection toggles. Existing apps get the defaults (all on),
 	// which is what new apps get; dot files were already refused.
 	3: func(tx *sql.Tx) error {
@@ -510,17 +525,6 @@ CREATE TABLE retired_apps (
   retired_at     TEXT NOT NULL,
   artifacts_json TEXT NOT NULL,
   pruned_at      TEXT
-) STRICT;
-
-CREATE TABLE backup_runs (
-  id            TEXT PRIMARY KEY,
-  trigger       TEXT NOT NULL,
-  state         TEXT NOT NULL,
-  started_at    TEXT NOT NULL,
-  finished_at   TEXT,
-  artifacts_json TEXT NOT NULL DEFAULT '[]',
-  upload_state  TEXT NOT NULL DEFAULT '',
-  error_message TEXT NOT NULL DEFAULT ''
 ) STRICT;
 
 CREATE TABLE schedules (

@@ -33,7 +33,6 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 | Operations | `GET /operations`, `GET /operations/{id}`, `GET /operations/{id}/events` (SSE), `POST /operations/{id}/cancel` |
 | Data | `GET/POST /services`, `GET /retired`, `POST /retired/{id}/prune` |
 | Ingress | `GET/PUT /edge`, `GET /tunnel`, `PUT /tunnel/token`, `GET/POST /hosts`, `PUT/DELETE /hosts/{name}` |
-| Database backups | `GET /backups/artifacts`, `GET /backups/runs`, `POST /backups`, `POST /backups/restore`, `GET/POST /backups/schedules`, `GET/PUT/DELETE /backups/schedules/{id}`, `POST /backups/schedules/{id}/enabled` |
 | rclone | `GET /backups/rclone`, `POST /backups/rclone/test`, `GET /backups/rclone/terminal` (WebSocket) |
 | Stack | `POST /stack/export` |
 
@@ -41,15 +40,16 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 
 | Endpoint | Notes |
 | --- | --- |
-| `GET /backups/apps` | Every app's summary and recent runs |
+| `GET /backups/apps` | Every app's summary and recent runs; `stackPassword` says whether the stack backup password exists |
 | `GET/PUT /apps/{id}/restic` | Settings |
-| `POST /apps/{id}/restic/init` | Returns the key **once** |
-| `POST /apps/{id}/restic/connect` | Connect an existing repository |
+| `POST /apps/{id}/restic/init` | Create the repository with the stack backup password (never returned by the API) |
+| `POST /apps/{id}/restic/connect` | Connect an existing repository; an empty `key` uses the stack backup password |
 | `POST /apps/{id}/restic/{backup,refresh,check,unlock}` | Run, refresh snapshots, verify, remove stale locks |
 | `POST /apps/{id}/restic/keys` | Confirmation `export <slug>`; returns the key once |
 | `DELETE /apps/{id}/restic/keys/{keyId}` | Remove a key |
+| `POST /apps/{id}/restic/restore-db` | `{"snapshot": "latest"\|id, "database", "binding"?, "confirm": "replace <database>"}` (`binding` is required when the name is in two bindings); session or CLI only |
 | `POST /apps/{id}/restic/inspect`, `POST /apps/{id}/restic/clone` | Clone needs `clone <new-slug>` |
-| `POST /apps/restore-from-backup/inspect`, `POST /apps/restore-from-backup` | Another stack's repository; `clone <new-slug>` |
+| `POST /apps/restore-from-backup/inspect`, `POST /apps/restore-from-backup` | Another stack's repository; `clone <new-slug>`; an empty `key` uses this stack's backup password |
 
 MCP is served at `POST /mcp` (outside `/api/v1`) for API tokens; see [AI agents (MCP)](/cli/ai).
 

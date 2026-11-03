@@ -174,9 +174,9 @@ function CloneSteps({ source, onClose }: { source: CloneSource; onClose: () => v
         <DialogHeader>
           <DialogTitle>Restore from an app backup</DialogTitle>
           <DialogDescription>
-            Open the repository of an app backup made on another stack. Use a key from <b>Add key</b> on the source app.
-            The key is only used for this restore and is deleted afterwards, unless you keep backing up to the
-            repository.
+            Open the repository of an app backup. Use the source stack&apos;s backup password or a key from{" "}
+            <b>Add key</b> on the source app; leave the key empty to use this stack&apos;s backup password. The key is
+            only used for this restore and is deleted afterwards, unless you keep backing up to the repository.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -194,7 +194,7 @@ function CloneSteps({ source, onClose }: { source: CloneSource; onClose: () => v
               }}
             />
           </Field>
-          <Field label="Repository key">
+          <Field label="Repository key" hint="Empty: this stack's backup password">
             <Input
               type="password"
               value={key}
@@ -241,10 +241,7 @@ function CloneSteps({ source, onClose }: { source: CloneSource; onClose: () => v
               Continue
             </Button>
           ) : (
-            <Button
-              disabled={repository.trim() === "" || key.trim() === "" || read.isPending || reading}
-              onClick={() => read.mutate()}
-            >
+            <Button disabled={repository.trim() === "" || read.isPending || reading} onClick={() => read.mutate()}>
               Read repository
             </Button>
           )}

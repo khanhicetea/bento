@@ -69,7 +69,7 @@ type ResticView struct {
 	State      domain.ResticState
 }
 
-func (c *Controller) resticKeyDir() string { return filepath.Join(c.Layout.SecretsDir(), "restic") }
+func (c *Controller) resticKeyDir() string { return c.Layout.ResticKeyDir() }
 func (c *Controller) resticKeyPath(appID string) string {
 	return filepath.Join(c.resticKeyDir(), appID+".key")
 }
@@ -343,25 +343,49 @@ func (c *Controller) requireResticRepo(ctx context.Context, appID string) (domai
 	return app, v, nil
 }
 
-// SubmitResticInit generates the repository key and queues `restic init`.
-// The key is returned once, here; Bento never reveals it again.
-func (c *Controller) SubmitResticInit(ctx context.Context, appID, idem string) (store.Operation, string, error) {
+// SubmitResticInit queues `restic init` with the stack backup password,
+// creating that password if the stack has none yet. The password is never
+// returned: the operator reads it with `bento backup password`.
+func (c *Controller) SubmitResticInit(ctx context.Context, appID, idem string) (store.Operation, error) {
 	v, err := c.ResticSettings(ctx, appID)
 	if err != nil {
-		return store.Operation{}, "", err
+		return store.Operation{}, err
 	}
 	if !v.Configured || v.Settings.Repository == "" {
-		return store.Operation{}, "", fmt.Errorf("%w: save the app's restic settings first", store.ErrConflict)
+		return store.Operation{}, fmt.Errorf("%w: save the app's restic settings first", store.ErrConflict)
 	}
 	if v.State.RepositoryID != "" {
-		return store.Operation{}, "", fmt.Errorf(
+		return store.Operation{}, fmt.Errorf(
 			"%w: the repository is already initialized; add an access key instead", store.ErrConflict)
 	}
-	return c.submitWithPendingKey(ctx, KindResticInit, appID, newResticKey(), "", idem)
+	key, _, err := backup.EnsureStackKey(c.Layout)
+	if err != nil {
+		return store.Operation{}, fmt.Errorf("stack backup password: %w", err)
+	}
+	op, _, err := c.submitWithPendingKey(ctx, KindResticInit, appID, key, "", idem)
+	return op, err
+}
+
+// operatorKey validates a key pasted by the operator; empty means the stack
+// backup password.
+func (c *Controller) operatorKey(key string) (string, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		k, err := backup.ReadStackKey(c.Layout)
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", domain.ValidationErrors{{Field: "key", Message: "this stack has no backup password yet; paste the repository key"}}
+		}
+		return k, err
+	}
+	if len(key) > 1024 || strings.ContainsAny(key, "\x00\r\n") {
+		return "", domain.ValidationErrors{{Field: "key", Message: "paste the repository key"}}
+	}
+	return key, nil
 }
 
 // SubmitResticConnect queues verification of an existing repository with an
-// operator-supplied key, for example to restore into a new app.
+// operator-supplied key (empty: the stack backup password), for example to
+// restore into a new app.
 func (c *Controller) SubmitResticConnect(ctx context.Context, appID, key, idem string) (store.Operation, error) {
 	v, err := c.ResticSettings(ctx, appID)
 	if err != nil {
@@ -370,9 +394,9 @@ func (c *Controller) SubmitResticConnect(ctx context.Context, appID, key, idem s
 	if !v.Configured || v.Settings.Repository == "" {
 		return store.Operation{}, fmt.Errorf("%w: save the app's restic settings first", store.ErrConflict)
 	}
-	key = strings.TrimSpace(key)
-	if key == "" || len(key) > 1024 || strings.ContainsAny(key, "\x00\r\n") {
-		return store.Operation{}, domain.ValidationErrors{{Field: "key", Message: "paste the repository key"}}
+	key, err = c.operatorKey(key)
+	if err != nil {
+		return store.Operation{}, err
 	}
 	op, _, err := c.submitWithPendingKey(ctx, KindResticConnect, appID, key, "", idem)
 	return op, err

@@ -421,31 +421,25 @@ func truncate(s string, n int) string {
 	return s[:cut] + "…"
 }
 
-// DefaultRetention is how long finished operations and backup runs are kept.
+// DefaultRetention is how long finished operations are kept.
 const DefaultRetention = 30 * 24 * time.Hour
 
-// PruneHistory deletes terminal operations (with their events) and finished
-// backup runs that finished before now-retention. Queued and running
-// operations and unfinished backup runs are never pruned.
-func PruneHistory(ctx context.Context, q Q, retention time.Duration) (ops, runs int64, err error) {
+// PruneHistory deletes terminal operations (with their events) that
+// finished before now-retention. Queued and running operations are never
+// pruned.
+func PruneHistory(ctx context.Context, q Q, retention time.Duration) (int64, error) {
 	cutoff := platform.FormatTime(time.Now().Add(-retention))
 	const terminal = "state IN ('succeeded','failed','cancelled','interrupted') AND finished_at IS NOT NULL AND finished_at < ?"
-	if _, err = q.ExecContext(
+	if _, err := q.ExecContext(
 		ctx,
 		"DELETE FROM operation_events WHERE operation_id IN (SELECT id FROM operations WHERE "+terminal+")",
 		cutoff,
 	); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	res, err := q.ExecContext(ctx, "DELETE FROM operations WHERE "+terminal, cutoff)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	ops, _ = res.RowsAffected()
-	res, err = q.ExecContext(ctx, "DELETE FROM backup_runs WHERE finished_at IS NOT NULL AND finished_at < ?", cutoff)
-	if err != nil {
-		return ops, 0, err
-	}
-	runs, _ = res.RowsAffected()
-	return ops, runs, nil
+	return res.RowsAffected()
 }

@@ -327,13 +327,6 @@ export interface EnvVar {
   value: string;
 }
 /**
- * BackupDeleteRequest removes one backup artifact; Confirm must be "delete".
- */
-export interface BackupDeleteRequest {
-  artifact: string;
-  confirm: string;
-}
-/**
  * ConfirmRequest carries an exact destructive confirmation phrase.
  */
 export interface ConfirmRequest {
@@ -691,93 +684,6 @@ export interface RetiredApp {
 export interface RetiredList {
   retired: RetiredApp[];
 }
-export interface BackupRequest {
-  /**
-   * Scope is "all", "app", "binding", or "database" (Databases of AppID).
-   */
-  scope: string;
-  appId?: string;
-  bindingId?: string;
-  databases?: string[];
-  /**
-   * Compression is "zstd" (default) or "gzip".
-   */
-  compression?: string;
-  /**
-   * RcloneRemote uploads new artifacts to this name:path; empty skips it.
-   */
-  rcloneRemote?: string;
-}
-export interface BackupArtifact {
-  path: string;
-  appSlug: string;
-  engine: Engine;
-  database: string;
-  sizeBytes: number /* int */;
-  createdAt: string;
-}
-export interface BackupArtifactList {
-  artifacts: BackupArtifact[];
-}
-export interface BackupRun {
-  id: string;
-  trigger: string;
-  state: string;
-  startedAt: string;
-  finishedAt?: string;
-  artifacts: string[];
-  uploadState?: string;
-  error?: string;
-}
-export interface BackupRunList {
-  runs: BackupRun[];
-}
-/**
- * BackupSchedule is one backup schedule. Scope is "all", "app" (every
- * database of AppID), or "database" (Databases of AppID). Retain is how many
- * artifacts this schedule keeps per database. ID, NextRun, LastRun,
- * LastState, LastOpID and TimeZone are ignored on write.
- */
-export interface BackupSchedule {
-  id: string;
-  name: string;
-  enabled: boolean;
-  cron: string;
-  scope: string;
-  appId?: string;
-  databases: string[];
-  compression: string;
-  retain: number /* int */;
-  rcloneRemote: string;
-  nextRun?: string;
-  lastRun?: string;
-  /**
-   * LastState is the last run's operation state (queued, running,
-   * succeeded, failed, ...), or the scheduler's own outcome for a slot it
-   * did not run: missed, skipped, submit-failed. "submitted" means the
-   * run's operation has been pruned from history.
-   */
-  lastState?: string;
-  lastOpId?: string;
-  /**
-   * TimeZone is the server's zone that cron fields are read in, for
-   * example "UTC+07:00". Ignored on write.
-   */
-  timeZone?: string;
-}
-export interface BackupScheduleList {
-  schedules: BackupSchedule[];
-  /**
-   * TimeZone is the server's zone that cron fields are read in.
-   */
-  timeZone: string;
-}
-/**
- * BackupScheduleEnable turns a schedule on or off.
- */
-export interface BackupScheduleEnable {
-  enabled: boolean;
-}
 /**
  * RcloneRemote is a configured rclone remote. Only its name and backend type
  * are exposed; every other key may be a credential.
@@ -801,16 +707,6 @@ export interface RcloneStatus {
  */
 export interface RcloneTestRequest {
   remote: string;
-}
-/**
- * RestoreRequest replaces an app database from an artifact. Confirm must be
- * exactly "replace <database>".
- */
-export interface RestoreRequest {
-  artifact: string;
-  appId: string;
-  database: string;
-  confirm: string;
 }
 export interface ExportRequest {
   destination: string;
@@ -1326,16 +1222,35 @@ export interface Restic {
    */
   defaultExcludes: string[];
 }
+/**
+ * ResticConnectRequest adopts an existing repository. An empty Key means
+ * the stack backup password.
+ */
 export interface ResticConnectRequest {
   key: string;
+}
+/**
+ * ResticRestoreDBRequest replaces one database of an app with its dump in one
+ * of the app's snapshots (operation kind restic.restore-db). Snapshot is a
+ * full or short snapshot id, or "latest". Database is a relational database
+ * name or a SQLite file id of the app. Binding is the binding id; it is
+ * required when the name is in more than one binding (a MySQL and a
+ * PostgreSQL binding both have <slug>_main). Confirm must be exactly
+ * "replace <database>".
+ */
+export interface ResticRestoreDBRequest {
+  snapshot: string;
+  database: string;
+  binding?: string;
+  confirm: string;
 }
 export interface ResticKeyAddRequest {
   label: string;
   confirm: string;
 }
 /**
- * ResticKeyAccepted carries a repository key exactly once, in the response
- * that created it.
+ * ResticKeyAccepted carries an added access key exactly once, in the
+ * response that created it.
  */
 export interface ResticKeyAccepted extends Accepted {
   key: string;
@@ -1368,8 +1283,9 @@ export interface ResticCloneRequest {
 /**
  * RestoreFromBackupInspectRequest previews a snapshot of an app backup made
  * on another stack (operation kind restic.inspect-remote). Repository is an
- * rclone remote path (name:path) and Key one of the repository's keys; it is
- * kept in a pending file for the operation and deleted at its end. An empty
+ * rclone remote path (name:path) and Key one of the repository's keys (empty:
+ * this stack's backup password); it is kept in a pending file for the
+ * operation and deleted at its end. An empty
  * snapshot or "latest" means the newest; the result lists all snapshots.
  */
 export interface RestoreFromBackupInspectRequest {
@@ -1501,4 +1417,9 @@ export interface AppBackupOverview {
   apps: AppBackupSummary[];
   runs: AppBackupRun[];
   timeZone: string;
+  /**
+   * StackPassword reports whether the stack backup password exists. It is
+   * never sent; `bento backup password` prints it on the host.
+   */
+  stackPassword: boolean;
 }

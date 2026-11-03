@@ -217,6 +217,66 @@ func TestSupportedVersionsStartAtBaseline(t *testing.T) {
 	}
 }
 
+// addBackupRuns restores the schema-4 database-dump run table that
+// migration 4 drops, so a state older than 5 looks like one.
+func addBackupRuns(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(`CREATE TABLE backup_runs (
+  id            TEXT PRIMARY KEY,
+  trigger       TEXT NOT NULL,
+  state         TEXT NOT NULL,
+  started_at    TEXT NOT NULL,
+  finished_at   TEXT,
+  artifacts_json TEXT NOT NULL DEFAULT '[]',
+  upload_state  TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT ''
+) STRICT`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A schema-4 state opens without database-dump backups: their run table and
+// schedules are gone, app backup schedules and other rows are kept.
+func TestMigrateFrom4DropsDumpBackups(t *testing.T) {
+	path := newStateFile(t)
+	db := openRaw(t, path)
+	addBackupRuns(t, db)
+	for _, q := range []string{
+		`INSERT INTO backup_runs(id, trigger, state, started_at) VALUES('r1', 'manual', 'succeeded', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO schedules(id, kind, name, cron, enabled, spec_json, created_at, updated_at) VALUES('backup-default', 'backup', 'All backups', '30 2 * * *', 0, '{}', 'x', 'x')`,
+		`INSERT INTO schedules(id, kind, name, cron, enabled, spec_json, created_at, updated_at) VALUES('restic-a1', 'app-backup', '', '0 3 * * *', 1, '{}', 'x', 'x')`,
+		`PRAGMA user_version = 4`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if v := userVersion(t, s.db); v != SchemaVersion {
+		t.Fatalf("user_version %d, want %d", v, SchemaVersion)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'backup_runs'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("backup_runs still present (%d, %v)", n, err)
+	}
+	rows, err := ListSchedules(t.Context(), s.DB(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ID != "restic-a1" {
+		t.Fatalf("schedules after migration: %+v", rows)
+	}
+	var got map[string]string
+	if _, err := GetSetting(t.Context(), s.DB(), "probe", &got); err != nil || got["v"] != "before" {
+		t.Fatalf("rows lost: %v %v", got, err)
+	}
+}
+
 func dropProtectionColumns(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, col := range []string{"block_dotfiles", "block_php_probes", "block_sensitive_files"} {
@@ -248,6 +308,7 @@ func TestMigrateFrom3AddsProtection(t *testing.T) {
 	}
 	s.Close()
 	db := openRaw(t, path)
+	addBackupRuns(t, db)
 	dropProtectionColumns(t, db)
 	if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
 		t.Fatal(err)
@@ -275,6 +336,7 @@ func TestMigrateFrom3AddsProtection(t *testing.T) {
 func TestMigrateFrom2AddsRuntimeBuilds(t *testing.T) {
 	path := newStateFile(t)
 	db := openRaw(t, path)
+	addBackupRuns(t, db)
 	dropProtectionColumns(t, db)
 	if _, err := db.Exec(`DROP TABLE app_runtime_builds; DROP TABLE runtime_builds; PRAGMA user_version = 2;`); err != nil {
 		t.Fatal(err)

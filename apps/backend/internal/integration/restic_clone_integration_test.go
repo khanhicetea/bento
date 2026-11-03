@@ -114,7 +114,7 @@ timeout = 30
 	if _, err := e.c.SaveResticSettings(ctx, app.ID, settings, ""); err != nil {
 		t.Fatal(err)
 	}
-	op, _, err = e.c.SubmitResticInit(ctx, app.ID, "")
+	op, err = e.c.SubmitResticInit(ctx, app.ID, "")
 	e.wait(op, err)
 	e.wait(e.c.SubmitResticBackup(ctx, app.ID, "manual", ""))
 	v, _ := e.c.ResticSettings(ctx, app.ID)

@@ -71,10 +71,12 @@ export function describeOp(op: Pick<T.Operation, "kind" | "targetId">, targetLab
     "app.create": "Creating application",
     "app.update": "Updating",
     "app.remove": "Removing",
+    // Database dump backups were removed; their operations stay in history.
     "backup.run": "Running backup",
     "backup.restore": "Restoring backup",
     "backup.delete": "Deleting backup",
     "backup.rclone-test": "Testing rclone remote",
+    "restic.restore-db": "Restoring database of",
     "edge.update": "Updating edge",
     "proxy.upsert": "Saving proxy",
     "proxy.remove": "Removing proxy",

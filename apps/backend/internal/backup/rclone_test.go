@@ -83,54 +83,6 @@ func TestValidateRemote(t *testing.T) {
 	}
 }
 
-func TestUploadSpecIsScoped(t *testing.T) {
-	d, fake := rcloneDeps(t, sampleConf)
-	// A failing Remove keeps the container in the fake so its spec can be read.
-	fake.FailOn = map[string]error{"Remove": os.ErrPermission}
-	arts := []Artifact{{Path: "shop/mysql-shop-20260101T000000.000Z.sql.zst"}}
-	if err := d.Upload(t.Context(), "secure:daily", arts); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.ContainsFunc(fake.Calls, func(c string) bool { return strings.HasPrefix(c, "Remove ") }) {
-		t.Fatal("upload container was not removed")
-	}
-	spec := onlyContainer(t, fake)
-	if got := spec.Config.Cmd; !slices.Equal(got, []string{"copy", "/upload", "secure:daily", "--no-traverse"}) {
-		t.Fatalf("cmd %v", got)
-	}
-	assertHardened(t, spec)
-	mounts := map[string]bool{}
-	for _, m := range spec.HostConfig.Mounts {
-		mounts[m.Target] = m.ReadOnly
-	}
-	if ro, ok := mounts["/config/rclone"]; !ok || ro {
-		t.Fatalf("config dir must be mounted writable for token refresh: %v", mounts)
-	}
-	if ro, ok := mounts["/upload/shop/mysql-shop-20260101T000000.000Z.sql.zst"]; !ok || !ro || len(mounts) != 2 {
-		t.Fatalf("only the new artifact may be mounted, read-only: %v", mounts)
-	}
-}
-
-func TestUploadRefusesUnusableConfig(t *testing.T) {
-	arts := []Artifact{{Path: "shop/x.sql"}}
-	cases := map[string]struct{ conf, remote, want string }{
-		"missing":   {"", "s3:bucket", "missing"},
-		"encrypted": {"# Encrypted rclone configuration File\nRCLONE_ENCRYPT_V0:\nabc\n", "s3:bucket", "encrypted"},
-		"unknown":   {sampleConf, "gdrive:bento", "not configured"},
-		"empty":     {sampleConf, "", "invalid"},
-	}
-	for name, tc := range cases {
-		d, fake := rcloneDeps(t, tc.conf)
-		err := d.Upload(t.Context(), tc.remote, arts)
-		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: %v", name, err)
-		}
-		if slices.ContainsFunc(fake.Calls, func(c string) bool { return strings.HasPrefix(c, "Create ") }) {
-			t.Errorf("%s: a container was created", name)
-		}
-	}
-}
-
 func TestRcloneShellSpec(t *testing.T) {
 	d, _ := rcloneDeps(t, "")
 	spec := d.RcloneShellSpec("t1", time.Hour)
