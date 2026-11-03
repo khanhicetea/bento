@@ -77,6 +77,9 @@ type Deps struct {
 	// CancelPoll is how often a running operation's cancellation flag is
 	// read (default 1s).
 	CancelPoll time.Duration
+	// Now is the clock for persisted schedules such as ACME backoff
+	// (default time.Now; tests move it).
+	Now func() time.Time
 }
 
 // DefaultCancelGrace is the default CancelGrace.
@@ -164,6 +167,9 @@ func NewController(d Deps) (*Controller, error) {
 	}
 	if d.CancelPoll <= 0 {
 		d.CancelPoll = time.Second
+	}
+	if d.Now == nil {
+		d.Now = time.Now
 	}
 	stack, err := store.GetStackIdentity(context.Background(), d.Store.DB())
 	if err != nil {

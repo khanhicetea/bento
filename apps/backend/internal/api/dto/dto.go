@@ -613,9 +613,32 @@ type Host struct {
 	Route   Route      `json:"route"`
 	Enabled bool       `json:"enabled"`
 	// Live reports whether the running edge generation serves this host.
-	Live      bool   `json:"live"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	Live bool `json:"live"`
+	// Certificate is set for a live ACME host.
+	Certificate *HostCertificate `json:"certificate,omitempty"`
+	CreatedAt   string           `json:"createdAt"`
+	UpdatedAt   string           `json:"updatedAt"`
+}
+
+type HostCertificateState string
+
+const (
+	// HostCertificateStateIssued: a valid certificate is served.
+	HostCertificateStateIssued HostCertificateState = "issued"
+	// HostCertificateStateRequesting: the edge is asking the CA now.
+	HostCertificateStateRequesting HostCertificateState = "requesting"
+	// HostCertificateStateWaiting: the last attempt got no certificate; the
+	// boot certificate is served until RetryAt (saving the host retries now).
+	HostCertificateStateWaiting HostCertificateState = "waiting"
+)
+
+// HostCertificate is the ACME certificate state of a host.
+type HostCertificate struct {
+	State     HostCertificateState `json:"state"`
+	ExpiresAt string               `json:"expiresAt,omitempty"`
+	RetryAt   string               `json:"retryAt,omitempty"`
+	// Failures counts consecutive attempts that got no certificate.
+	Failures int `json:"failures"`
 }
 
 type HostList struct {

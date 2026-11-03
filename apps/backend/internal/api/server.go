@@ -1190,9 +1190,18 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		slugs[a.ID] = a.Slug
 	}
 	live := s.liveRoutes()
+	certs, err := s.C.ACMEStatus(r.Context())
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
 	out := dto.HostList{Hosts: []dto.Host{}}
 	for _, h := range hs {
-		out.Hosts = append(out.Hosts, hostToDTO(h, slugs[h.AppID], live[edge.RouteName(h.Name)]))
+		var cert *operations.ACMEHostStatus
+		if st, ok := certs[h.Name]; ok {
+			cert = &st
+		}
+		out.Hosts = append(out.Hosts, hostToDTO(h, slugs[h.AppID], live[edge.RouteName(h.Name)], cert))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

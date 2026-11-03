@@ -3,7 +3,9 @@
 Open findings from the production-readiness audit of 2026-11-01. The release blockers fixed since (the store
 migration framework, the edge image pull and recreate rollback, the env loader's trailing `=`, the scheduler UI
 served from the app's socket, relational restores dropping the live database first, MySQL restores creating
-root-owned objects, and MySQL grants whose `_` let one app use another's database) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
+root-owned objects, MySQL grants whose `_` let one app use another's database, and on 2026-11-03 the login burst,
+HTTPS upstream TLS, Docker deadlines and forced cancellation, one-at-a-time rollout, lost edge reloads, edge and
+cloudflared pin drift, the Valkey cap and ACME backoff) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
 unless they start with `apps/`. Line numbers are as of commit `8a88634` and drift; the named function or template is
 the stable reference.
 
@@ -18,28 +20,9 @@ None open.
 
 ### Control plane
 
-- **Docker calls have no deadlines, and running operations can't be cancelled** (confirmed).
-  - `docker.NewSDK` (`internal/docker/engine.go:186`) sets no timeouts.
-  - Handlers get the process context, and cancellation is honoured only at `Phase`.
-  - A wedged dockerd, registry pull, or image build hangs the operation forever while it holds its claims. A global
-    operation therefore stalls the executor.
-  - `Reconciler.Pass` (`internal/reconcile/reconcile.go:416`) has no deadline either.
-  - Fix: give each operation a context that `RequestCancel` cancels, set per-call deadlines on inspect/list/exec,
-    and put bounds on pull/build time and on each pass.
-- **An edge reload can be lost** (confirmed). `applyEdge` sends `SIGHUP` only when the generation changed. If
-  `Signal` fails, or the backend dies between `Promote` and the HUP, `live` already equals the render, so no later
-  apply reloads. The "retry to reload" hint is false. Failed promotes leave `candidate-*` directories behind.
-  - Fix: persist the hash of the last generation that was signalled and HUP whenever it differs.
-- **The reconciler never notices edge shape drift.** It only submits `edge.apply` when the edge is missing or stopped,
-  or the rendered config differs. After an upgrade that only bumps the edge image pin, the edge stays on the old
-  image until something else applies the edge. Compare the generation label in the reconciler; recreating is now
-  safe because a failed recreate rolls back.
-- **Upgrades replace apps 4 at a time, not one at a time** (confirmed). A `specVersion`, template, or pin bump makes
-  one reconciler pass submit `app.reconcile` for every drifted app (`reconcile.go:507-510`). That kind is parallel,
-  so up to `--op-concurrency` replacements run at once, contradicting `AGENTS.md`. Add a rollout limiter.
-- **cloudflared is never updated in place** (confirmed). The tunnel generation label is only `token-<n>`
-  (`tunnelSpec`), so a `TunnelImage` bump never recreates it. The pin `cloudflared:2025.9.1` is likely past
-  Cloudflare's support window.
+- **Forced cancellation can leave a replaced app stopped.** Since 2026-11-03 a cancellation is forced after 30 s
+  (`watchCancel`); a step interrupted between stopping and recreating an instance leaves the app down until the
+  reconciler repairs it. `Exec`/`Wait` and non-Docker steps (export file I/O) still have no deadline of their own.
 
 ### Images and supply chain
 
@@ -60,25 +43,13 @@ None open.
 
 ### Edge and ingress
 
-- **HTTPS upstream hosts:** no SNI and no certificate check. `templates/edge/edge-site.conf.tmpl` sets no
-  `proxy_ssl_server_name on` or `proxy_ssl_verify`. Cloudflare/Vercel-style upstreams fail the handshake, and any
-  upstream can be intercepted.
 - **Upstream hostnames resolve only when the config loads.** The template renders `server host:port;` with no `zone`
   or `resolve`. If the upstream's DNS is unavailable, `nginx -t` fails every edge apply, and after a reboot without
-  DNS the edge crash-loops. Changed IPs are never picked up. When upstreams of one host differ in scheme or path, the
-  last one wins (upstream grouping in `renderEdge`).
-- **Front proxy trust check** (confirmed). Trusted proxy CIDRs are checked against stack networks only if they
-  already exist (`internal/operations/accept.go:642-651`, `network.go:118-130`). On a fresh stack, `10.0.0.0/8` is
-  accepted and the network plan then allocates inside it, so any app can reach the PROXY-protocol ports and spoof
-  visitor IPs. Other stacks' networks and Docker bridges are never checked.
+  DNS the edge crash-loops. Changed IPs are never picked up. Mixed schemes, and HTTPS upstreams with different
+  names, are refused since 2026-11-03; paths of later URLs are still ignored.
 - **Recreate rollback with new routes.** When routes changed and a recreate fails, the restored old edge restarts on
   the new live generation, which was validated by the new image. Low risk while nginx stays on the same stable line;
   keeping the previous generation for the rollback path would close it.
-- **ACME has no guard rails.** Nothing refuses ACME when `httpPort != 80` and neither a tunnel nor a front proxy
-  terminates HTTP-01, so issuance fails repeatedly and counts against Let's Encrypt's failed-validation limit.
-- **Valkey has no memory cap.** `templates/images/common/rootfs/etc/valkey/valkey.conf` has no `maxmemory` and uses
-  `save`-only persistence. A cache with no TTL, or the extra memory of a background save, hits the container limit,
-  and the kernel may OOM-kill php-fpm instead. After a crash, up to an hour of data is lost.
 
 ### Data and transfer
 
@@ -106,11 +77,9 @@ None open.
 
 ### Auth
 
-- **Login rate limit.** `allowed()` runs before argon2 but `fail()` only after it (`internal/api/auth.go:111-135`,
-  `handleLogin` around 262-298), so concurrent attempts bypass the limit.
-  - Each attempt allocates 64 MiB, and there is no concurrency cap, so a burst can OOM the backend.
-  - The limiter is global, so a local process can lock the operator out.
-  - Fix: reserve the attempt first, put a semaphore around argon2, and key the limit per client.
+- **The login limiter is global** (since 2026-11-03 attempts are counted before hashing and at most 2 run at once).
+  Any process that can reach the loopback listener can keep browser logins rate limited; root on the control socket
+  is unaffected. Fix: key the budget per client or session.
 
 ## Hardening (low)
 
@@ -173,3 +142,6 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 - No deployment runs a schema older than 2, so `store.MigratableFromVersion` is 2 and nothing older is migrated.
 - The real-Docker suite (`make -C apps/backend test-integration`) runs on the local dev host, not in GitHub
   Actions. CI (`.github/workflows/ci.yml`) runs only on tags and releases.
+- The front-proxy trusted list is not checked against the stack networks before the network plan exists (a fresh
+  stack accepts `10.0.0.0/8`, then allocates the apps network inside it, so any app could spoof visitor IPs through
+  the PROXY-protocol ports). Accepted as is on 2026-11-03; operators should list only their front proxy's address.

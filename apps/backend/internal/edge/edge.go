@@ -118,6 +118,51 @@ type Input struct {
 	// cloudflared. Forwarding headers (scheme, visitor IP) are trusted only
 	// on connections from it; "" trusts none.
 	TunnelIP string
+	// ACMEHold names ACME hosts whose issuance is backing off (see
+	// PlanACME): they are served with the boot certificate and no
+	// acme_certificate, so the module does not retry them on every reload.
+	ACMEHold map[string]bool
+}
+
+// servedHosts returns the hosts the edge serves at all, by name.
+func servedHosts(hosts []domain.Host, apps map[string]domain.App) map[string]domain.Host {
+	served := map[string]domain.Host{}
+	for _, h := range hosts {
+		if !h.Enabled {
+			continue
+		}
+		var ok bool
+		switch h.Target {
+		case domain.HostTargetApp:
+			a, found := apps[h.AppID]
+			ok = found && a.Ingress == domain.IngressManaged && a.Publication == domain.Published
+		case domain.HostTargetUpstream:
+			ok = len(h.Upstreams) > 0
+		case domain.HostTargetRedirect:
+			ok = h.RedirectTo != ""
+		}
+		if ok {
+			served[h.Name] = h
+		}
+	}
+	return served
+}
+
+// ACMEHosts lists the served hosts whose certificate comes from ACME, in
+// name order.
+func ACMEHosts(in Input) []ACMEHost {
+	apps := make(map[string]domain.App, len(in.Apps))
+	for _, a := range in.Apps {
+		apps[a.ID] = a
+	}
+	var out []ACMEHost
+	for _, h := range servedHosts(in.Hosts, apps) {
+		if h.Route.TLS == domain.TLSACME {
+			out = append(out, ACMEHost{Name: h.Name, UpdatedAt: h.UpdatedAt})
+		}
+	}
+	slices.SortFunc(out, func(a, b ACMEHost) int { return strings.Compare(a.Name, b.Name) })
+	return out
 }
 
 // RouteName is the edge route (site file and drop-in directory) of a host.
@@ -147,28 +192,7 @@ func Render(in Input) (map[string][]byte, error) {
 	for _, a := range in.Apps {
 		apps[a.ID] = a
 	}
-	// routable reports whether a host is served at all.
-	routable := func(h domain.Host) bool {
-		if !h.Enabled {
-			return false
-		}
-		switch h.Target {
-		case domain.HostTargetApp:
-			a, ok := apps[h.AppID]
-			return ok && a.Ingress == domain.IngressManaged && a.Publication == domain.Published
-		case domain.HostTargetUpstream:
-			return len(h.Upstreams) > 0
-		case domain.HostTargetRedirect:
-			return h.RedirectTo != ""
-		}
-		return false
-	}
-	served := map[string]domain.Host{}
-	for _, h := range in.Hosts {
-		if routable(h) {
-			served[h.Name] = h
-		}
-	}
+	served := servedHosts(in.Hosts, apps)
 	var routes []Route
 	upstreams := map[string]AppUpstream{}
 	var anyACME bool
@@ -177,6 +201,9 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute(string(h.Target), RouteName(h.Name), h.Name, h.Route, s)
+		if r.ACME && in.ACMEHold[h.Name] {
+			r.ACME, r.CertFile, r.KeyFile = false, CertsMount+"/boot.crt", CertsMount+"/boot.key"
+		}
 		r.ClientAddr = "$remote_addr"
 		if front {
 			r.FrontHTTPPort, r.FrontHTTPSPort, r.ClientAddr = FrontHTTPPort, FrontHTTPSPort, "$bento_client_addr"

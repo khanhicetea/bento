@@ -369,6 +369,17 @@ fingerprint ignores it (only enabling, bind or ports recreate the container; the
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
+**ACME backoff** (`edge/acme.go`, `operations/edge.go`): the nginx ACME module keeps an unissued certificate's
+retry state in memory and resets it to "request now" on every reload, and Bento reloads on most app operations, so a
+host that cannot validate would burn the CA's failed-validation limit. `edge.PlanACME` keeps per-host state in the
+`acme` setting: a served ACME host gets a 5-minute attempt window; if no valid certificate for it appears in the
+module's state directory (`edge.IssuedCertificates` parses `*.crt` under `edge/acme`) the host is rendered with the
+boot certificate and no `acme_certificate` (`Input.ACMEHold`) until `RetryAt` (1 h doubling to 24 h). A save of
+the host (newer `UpdatedAt`) starts over; a valid certificate clears the state. The state is persisted only after
+an edge apply succeeds, and a state change is edge drift, so the reconciler opens and closes windows. Each failure is
+a warning on the `edge.apply`; `GET /hosts` reports `certificate` (`issued`/`requesting`/`waiting`). An apply also
+warns when ACME hosts exist, `httpPort` is not 80, and neither a front proxy nor the tunnel can carry HTTP-01.
+
 **Upstream hosts** load-balance their URLs in one `upstream` block; the first URL decides scheme, path and TLS name,
 and validation requires the same scheme for all and, for HTTPS, the same host name. An HTTPS upstream named by DNS
 is reached as that name: `proxy_ssl_server_name on`, `proxy_ssl_name <host>`, `proxy_ssl_verify on` against the edge

@@ -239,20 +239,40 @@ func (c *Controller) validateEdge(ctx context.Context, candidate string, running
 // renderEdge renders the complete edge configuration from current desired
 // state without touching the filesystem or Docker objects.
 // forApply marks a render that will be promoted (see holdRoute).
+// acmeSettingKey holds the per-host ACME issuance state (edge.PlanACME).
+const acmeSettingKey = "acme"
+
+// acmePlan is one render's ACME decision: the state to persist once the
+// render is live, and the hosts whose attempt window just closed.
+type acmePlan struct {
+	hosts      []edge.ACMEHost
+	prev, next map[string]edge.ACMEHostState
+	failed     []edge.ACMEFailure
+}
+
+func (p acmePlan) changed() bool { return !edge.SameACMEState(p.prev, p.next) }
+
+func (c *Controller) acmeState(ctx context.Context) (map[string]edge.ACMEHostState, error) {
+	st := map[string]edge.ACMEHostState{}
+	_, err := store.GetSetting(ctx, c.Store.DB(), acmeSettingKey, &st)
+	return st, err
+}
+
 func (c *Controller) renderEdge(
 	ctx context.Context,
 	s domain.EdgeSettings,
 	ns NetworkSettings,
 	warn func(string),
 	forApply bool,
-) (map[string][]byte, error) {
+) (map[string][]byte, acmePlan, error) {
+	var plan acmePlan
 	apps, err := store.ListApps(ctx, c.Store.DB())
 	if err != nil {
-		return nil, err
+		return nil, plan, err
 	}
 	hosts, err := store.ListHosts(ctx, c.Store.DB())
 	if err != nil {
-		return nil, err
+		return nil, plan, err
 	}
 	runningApps := map[string]bool{}
 	for _, a := range apps {
@@ -272,14 +292,85 @@ func (c *Controller) renderEdge(
 			warn("apps network gateway not found on this host; /_bento/webhook/* is not forwarded by the edge")
 		}
 	}
-	return edge.Render(edge.Input{
+	in := edge.Input{
 		Settings:      s,
 		Apps:          apps,
 		Hosts:         hosts,
 		Running:       runningApps,
 		UtilsUpstream: upstream,
 		TunnelIP:      ns.TunnelIP,
-	})
+	}
+	plan.hosts = edge.ACMEHosts(in)
+	if plan.prev, err = c.acmeState(ctx); err != nil {
+		return nil, plan, err
+	}
+	in.ACMEHold, plan.next, plan.failed = edge.PlanACME(c.Now(), plan.hosts,
+		edge.IssuedCertificates(c.Layout.EdgeACMEDir()), plan.prev)
+	files, err := edge.Render(in)
+	return files, plan, err
+}
+
+// persistACME records the ACME state of a render that is now live, and
+// reports hosts that just failed or cannot validate at all.
+func (c *Controller) persistACME(ctx context.Context, r *Run, s domain.EdgeSettings, plan acmePlan) error {
+	for _, f := range plan.failed {
+		r.Warn(ctx, "ACME: no certificate for %s within %s (attempt %d); serving the boot certificate and retrying "+
+			"at %s. Check that its DNS points here and port 80 is reachable from the internet, or save the host to "+
+			"retry now.", f.Host, edge.ACMEAttemptWindow, f.Failures, platform.FormatTime(f.RetryAt))
+	}
+	if len(plan.hosts) > 0 && s.HTTPPort != 80 && !s.FrontProxy.Enabled {
+		if ts, err := c.TunnelSettings(ctx); err == nil && !ts.Enabled {
+			r.Warn(ctx, "ACME HTTP-01 validation reaches port 80, but the edge listens on %d with no front proxy or "+
+				"tunnel; certificates issue only if something forwards port 80 to it.", s.HTTPPort)
+		}
+	}
+	if !plan.changed() {
+		return nil
+	}
+	return store.PutSetting(ctx, c.Store.DB(), acmeSettingKey, plan.next)
+}
+
+// ACMEStatus reports the certificate state of every served ACME host.
+func (c *Controller) ACMEStatus(ctx context.Context) (map[string]ACMEHostStatus, error) {
+	st, err := c.acmeState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	issued := edge.IssuedCertificates(c.Layout.EdgeACMEDir())
+	now := c.Now()
+	out := map[string]ACMEHostStatus{}
+	for name, exp := range issued {
+		if exp.After(now) {
+			out[name] = ACMEHostStatus{State: ACMEIssued, ExpiresAt: exp}
+		}
+	}
+	for name, h := range st {
+		if _, ok := out[name]; ok {
+			continue
+		}
+		hs := ACMEHostStatus{State: ACMERequesting, Failures: h.Failures}
+		if h.AttemptFrom.IsZero() && now.Before(h.RetryAt) {
+			hs.State, hs.RetryAt = ACMEWaiting, h.RetryAt
+		}
+		out[name] = hs
+	}
+	return out, nil
+}
+
+// ACME certificate states of a host.
+const (
+	ACMEIssued     = "issued"
+	ACMERequesting = "requesting"
+	ACMEWaiting    = "waiting"
+)
+
+// ACMEHostStatus is one host's certificate state. A host with no entry has
+// not been tried yet (requesting once the edge applies).
+type ACMEHostStatus struct {
+	State     string
+	ExpiresAt time.Time
+	RetryAt   time.Time
+	Failures  int
 }
 
 // EdgeConfigDrift reports whether the live edge generation differs from what
@@ -307,13 +398,14 @@ func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
 	if c.anyWarming() {
 		return false, nil
 	}
-	files, err := c.renderEdge(ctx, s, ns, nil, false)
+	files, plan, err := c.renderEdge(ctx, s, ns, nil, false)
 	if err != nil {
 		return false, err
 	}
-	// Live on disk but never loaded (a reload that was lost) is drift too.
+	// Live on disk but never loaded (a reload that was lost) is drift too,
+	// and so is ACME state to record (a window opened or closed).
 	gens := c.edgeGenerations()
-	return !gens.Same(files) || !gens.Loaded(files), nil
+	return !gens.Same(files) || !gens.Loaded(files) || plan.changed(), nil
 }
 
 // markEdgeLoaded records that the running edge serves files. A failed record
@@ -328,7 +420,7 @@ func (c *Controller) markEdgeLoaded(ctx context.Context, r *Run, files map[strin
 // Validation failure leaves the live generation untouched and sends no reload.
 // Operations on different apps run in parallel and each ends by applying the
 // whole edge, so the render-stage-promote-reload sequence is exclusive.
-func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
+func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 	c.edgeMu.Lock()
 	defer c.edgeMu.Unlock()
 	s, err := c.EdgeSettings(ctx)
@@ -362,10 +454,17 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) error {
 	if err != nil {
 		return err
 	}
-	files, err := c.renderEdge(ctx, s, ns, func(msg string) { r.Warn(ctx, "%s", msg) }, true)
+	files, plan, err := c.renderEdge(ctx, s, ns, func(msg string) { r.Warn(ctx, "%s", msg) }, true)
 	if err != nil {
 		return err
 	}
+	// The ACME state describes this render; it is recorded only once the
+	// render is live, so a failed apply leaves the previous windows intact.
+	defer func() {
+		if err == nil {
+			err = c.persistACME(ctx, r, s, plan)
+		}
+	}()
 	// The pinned image is needed by every path below (validator container,
 	// create, recreate), not only when routes changed: an upgrade that bumps
 	// only the image pin renders identical routes but recreates the edge, and

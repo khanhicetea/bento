@@ -586,8 +586,38 @@ export interface Host {
    * Live reports whether the running edge generation serves this host.
    */
   live: boolean;
+  /**
+   * Certificate is set for a live ACME host.
+   */
+  certificate?: HostCertificate;
   createdAt: string;
   updatedAt: string;
+}
+/**
+ * HostCertificateStateIssued: a valid certificate is served.
+ */
+export const HostCertificateStateIssued = "issued";
+/**
+ * HostCertificateStateRequesting: the edge is asking the CA now.
+ */
+export const HostCertificateStateRequesting = "requesting";
+/**
+ * HostCertificateStateWaiting: the last attempt got no certificate; the
+ * boot certificate is served until RetryAt (saving the host retries now).
+ */
+export const HostCertificateStateWaiting = "waiting";
+export type HostCertificateState = typeof HostCertificateStateIssued | typeof HostCertificateStateRequesting | typeof HostCertificateStateWaiting;
+/**
+ * HostCertificate is the ACME certificate state of a host.
+ */
+export interface HostCertificate {
+  state: HostCertificateState;
+  expiresAt?: string;
+  retryAt?: string;
+  /**
+   * Failures counts consecutive attempts that got no certificate.
+   */
+  failures: number /* int */;
 }
 export interface HostList {
   hosts: Host[];

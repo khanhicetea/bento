@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
+import { formatRelative } from "../../lib/format.ts";
 import { ConfirmDialog } from "../../components/ConfirmDialog.tsx";
 import {
   Cell,
@@ -679,7 +680,13 @@ function TunnelPanel() {
 }
 
 function HostsPanel() {
-  const query = useQuery({ queryKey: keys.hosts, queryFn: ({ signal }) => api.hosts.list(signal) });
+  const query = useQuery({
+    queryKey: keys.hosts,
+    queryFn: ({ signal }) => api.hosts.list(signal),
+    // Certificates issue and back off outside tracked operations.
+    refetchInterval: (q) =>
+      q.state.data?.hosts.some((h) => h.certificate && h.certificate.state !== "issued") ? 15_000 : false,
+  });
   // null: dialog closed; "new" | host name: adding or editing.
   const [editing, setEditing] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<T.Host | null>(null);
@@ -727,6 +734,22 @@ function HostsPanel() {
   );
 }
 
+/** ACME certificate state as a checklist fact: icon + word, then the time that matters. */
+function CertificateText({ certificate }: { certificate: T.HostCertificate }) {
+  switch (certificate.state) {
+    case "issued":
+      return <>✓ Valid · expires {formatRelative(certificate.expiresAt)}</>;
+    case "requesting":
+      return <>◌ Requesting</>;
+    case "waiting":
+      return (
+        <span className="text-[var(--tamago-ink)]" title="Save the host to retry now">
+          ▲ No cert · retry {formatRelative(certificate.retryAt)}
+        </span>
+      );
+  }
+}
+
 function HostTile({ host, onEdit, onRemove }: { host: T.Host; onEdit: () => void; onRemove: () => void }) {
   const scheme = host.route.tls === "none" ? "http" : "https";
   const redirect = host.target.kind === "redirect";
@@ -769,6 +792,14 @@ function HostTile({ host, onEdit, onRemove }: { host: T.Host; onEdit: () => void
           <dt>TLS</dt>
           <dd>{tlsLabels[host.route.tls]}</dd>
         </div>
+        {host.certificate && (
+          <div>
+            <dt>Certificate</dt>
+            <dd>
+              <CertificateText certificate={host.certificate} />
+            </dd>
+          </div>
+        )}
         {!redirect && (
           <div>
             <dt>HTTPS redirect</dt>

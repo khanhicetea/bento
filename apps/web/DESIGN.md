@@ -177,7 +177,7 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
   hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
-- **Ingress:** Edge / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles + Kara. Ingress owns
+- **Ingress:** Edge / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles (an ACME host adds a `CERTIFICATE` fact: `✓ VALID · expires in 61 days`, `◌ REQUESTING`, or `▲ NO CERT · retry in 2 hrs` in tamago ink) + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
   hosts and adds one through the same host dialog.
 - **Backups:** status row (last, next, schedules, not covered) then Files / App backups / Runs / Schedules.

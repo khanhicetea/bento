@@ -37,6 +37,12 @@ Each host picks a **TLS** mode:
 | **Self-signed** | Testing only. |
 | **None** | Plain HTTP. |
 
+An ACME host's tile shows its **Certificate**: **✓ Valid** with the expiry, **◌ Requesting**, or **▲ No cert** with
+the next retry. If no certificate arrives within 5 minutes — usually DNS points elsewhere or port 80 is blocked —
+the host is served with Bento's self-signed certificate and Bento waits before asking again: 1 hour, then 2, 4, 8, 16,
+and at most 24 hours. That keeps a broken host from using up Let's Encrypt's limit of 5 failed validations per hour.
+Fix DNS or the firewall, then **save the host** to retry at once. The Activity entry of the edge change says why.
+
 ## Traffic
 
 The **Traffic** panel shows live edge metrics — connections, connection states, and dropped requests.

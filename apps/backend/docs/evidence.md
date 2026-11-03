@@ -664,3 +664,22 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
   running apps are replaced, now one at a time.
 - `make ci` and `make test-integration` passed as root (integration 405 s, runtime 48 s); `bun run fmt:check`, `lint`,
   `check`, `web:build` and `docs:build` passed. No DTO changed. Not verified: arm64, a real tunnel, ACME.
+
+## ACME backoff across reloads (2026-11-03; live Docker 29.8.1, amd64)
+
+- Cause, from the nginx-acme source: an unissued certificate's state is copied into the new shared zone on reload
+  only when it is ready; otherwise it resets to "request now", and an invalid order stops only "until the next
+  configuration reload". Bento reloads the edge on most app operations, so a host that cannot validate was retried
+  on each reload, against Let's Encrypt's 5 failed validations per hostname per hour.
+- `edge.PlanACME` keeps per-host state in the `acme` setting: a 5-minute attempt window, then the boot certificate
+  until `RetryAt` (1 h doubling to 24 h); saving the host restarts it; a valid certificate in the state directory
+  (`edge.IssuedCertificates`, `<order_id>.crt` per the module source) clears it.
+- `TestACMEHostWithoutCertificateBacksOffAcrossReloads` (fake engine, test clock): requested at once, held with the
+  boot certificate after the window with a warning on the `edge.apply`, three applies during the backoff did not
+  request it again, the next window requested it, and a certificate file cleared the state and reported `issued`.
+  `TestSavingAWaitingACMEHostRetriesNow`, planner, scan and render unit tests.
+- The pinned edge image (ACME module loaded) passed `nginx -t` on a render with one held and one requesting host.
+- `make test-integration` passed as root (integration 417 s). `make ci` passed except the committed-types check,
+  which needs the regenerated `types.ts` committed. Web checks and `docs:build` passed.
+- Not verified: a real issuance (no public DNS on the dev host), so the module's real file layout is from its source;
+  arm64.

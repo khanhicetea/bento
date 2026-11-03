@@ -96,7 +96,7 @@ func routeToDTO(r domain.Route) dto.Route {
 	}
 }
 
-func hostToDTO(h domain.Host, appSlug string, live bool) dto.Host {
+func hostToDTO(h domain.Host, appSlug string, live bool, cert *operations.ACMEHostStatus) dto.Host {
 	t := dto.HostTarget{Kind: dto.HostTargetKind(h.Target), RedirectTo: h.RedirectTo}
 	switch h.Target {
 	case domain.HostTargetApp:
@@ -104,10 +104,24 @@ func hostToDTO(h domain.Host, appSlug string, live bool) dto.Host {
 	case domain.HostTargetUpstream:
 		t.Upstreams = nonNil(h.Upstreams)
 	}
-	return dto.Host{
+	out := dto.Host{
 		Name: h.Name, Target: t, Route: routeToDTO(h.Route), Enabled: h.Enabled, Live: live,
 		CreatedAt: platform.FormatTime(h.CreatedAt), UpdatedAt: platform.FormatTime(h.UpdatedAt),
 	}
+	if live && h.Route.TLS == domain.TLSACME {
+		c := dto.HostCertificate{State: dto.HostCertificateStateRequesting}
+		if cert != nil {
+			c = dto.HostCertificate{State: dto.HostCertificateState(cert.State), Failures: cert.Failures}
+			if !cert.ExpiresAt.IsZero() {
+				c.ExpiresAt = platform.FormatTime(cert.ExpiresAt)
+			}
+			if !cert.RetryAt.IsZero() {
+				c.RetryAt = platform.FormatTime(cert.RetryAt)
+			}
+		}
+		out.Certificate = &c
+	}
+	return out
 }
 
 func hostFromDTO(r dto.HostRequest) operations.HostInput {

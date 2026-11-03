@@ -579,7 +579,7 @@ func TestBootingAppIsNotRoutedByAnotherOperation(t *testing.T) {
 	}
 	routed := func() bool {
 		t.Helper()
-		files, err := h.c.renderEdge(ctx, s, ns, nil, false)
+		files, _, err := h.c.renderEdge(ctx, s, ns, nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
