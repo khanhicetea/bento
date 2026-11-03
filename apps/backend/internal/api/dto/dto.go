@@ -253,13 +253,38 @@ type App struct {
 	// container, with snapshots in the app home.
 	Valkey bool `json:"valkey"`
 	// Minicrond runs the app's scheduler (jobs and workers).
-	Minicrond   bool        `json:"minicrond"`
+	Minicrond bool `json:"minicrond"`
+	// Protection is what the app's Nginx layers answer with 404.
+	Protection  Protection  `json:"protection"`
 	Env         []EnvVar    `json:"env"`
 	Bindings    []Binding   `json:"bindings"`
 	IngressInfo IngressInfo `json:"ingressInfo"`
 	Reconcile   Reconcile   `json:"reconcile"`
 	CreatedAt   string      `json:"createdAt"`
 	UpdatedAt   string      `json:"updatedAt"`
+}
+
+// Protection selects the request classes an app's Nginx layers (the app-local
+// one and the edge routes that target the app) refuse with a plain 404.
+type Protection struct {
+	// BlockDotFiles refuses dot files and directories except /.well-known/.
+	BlockDotFiles bool `json:"blockDotFiles"`
+	// BlockPhpProbes refuses WordPress paths, database admin tools, webshell
+	// names, PHP source extensions and PHP under upload and dependency
+	// directories. Turn it off for WordPress or legacy PHP sites that serve
+	// such paths themselves.
+	BlockPhpProbes bool `json:"blockPhpProbes"`
+	// BlockSensitiveFiles refuses backup, dump, swap, archive, source map and
+	// package-manager metadata files.
+	BlockSensitiveFiles bool `json:"blockSensitiveFiles"`
+}
+
+// ProtectionPatch changes some protection settings; absent fields are kept
+// (all on for a new app).
+type ProtectionPatch struct {
+	BlockDotFiles       *bool `json:"blockDotFiles,omitempty"`
+	BlockPhpProbes      *bool `json:"blockPhpProbes,omitempty"`
+	BlockSensitiveFiles *bool `json:"blockSensitiveFiles,omitempty"`
 }
 
 type AppList struct {
@@ -283,6 +308,8 @@ type CreateAppRequest struct {
 	Valkey bool `json:"valkey,omitempty"`
 	// Minicrond runs the app's scheduler (default on).
 	Minicrond *bool `json:"minicrond,omitempty"`
+	// Protection overrides the all-on default.
+	Protection *ProtectionPatch `json:"protection,omitempty"`
 	// Hosts are Ingress hosts created together with the app, targeting it.
 	Hosts    []AppHostRequest `json:"hosts"`
 	Bindings []BindingRequest `json:"bindings"`
@@ -295,13 +322,14 @@ type AppHostRequest struct {
 }
 
 type UpdateAppRequest struct {
-	ExpectedGeneration int          `json:"expectedGeneration,omitempty"`
-	Runtime            *RuntimeSpec `json:"runtime,omitempty"`
-	Resources          *Resources   `json:"resources,omitempty"`
-	Ingress            *IngressMode `json:"ingress,omitempty"`
-	AccessLog          *bool        `json:"accessLog,omitempty"`
-	Valkey             *bool        `json:"valkey,omitempty"`
-	Minicrond          *bool        `json:"minicrond,omitempty"`
+	ExpectedGeneration int              `json:"expectedGeneration,omitempty"`
+	Runtime            *RuntimeSpec     `json:"runtime,omitempty"`
+	Resources          *Resources       `json:"resources,omitempty"`
+	Ingress            *IngressMode     `json:"ingress,omitempty"`
+	AccessLog          *bool            `json:"accessLog,omitempty"`
+	Valkey             *bool            `json:"valkey,omitempty"`
+	Minicrond          *bool            `json:"minicrond,omitempty"`
+	Protection         *ProtectionPatch `json:"protection,omitempty"`
 	// Env, when present, replaces the app's environment variables.
 	Env *[]EnvVar `json:"env,omitempty"`
 }

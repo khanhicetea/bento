@@ -36,6 +36,8 @@ type CreateAppInput struct {
 	Valkey bool
 	// Minicrond runs the app's scheduler; nil means on.
 	Minicrond *bool
+	// Protection overrides the all-on default; nil fields stay on.
+	Protection *domain.ProtectionPatch
 	// Hosts seeds Ingress hosts that target the new app.
 	Hosts    []AppHostInput
 	Bindings []BindingRequest
@@ -176,6 +178,7 @@ func (c *Controller) CreateApp(
 		ID: platform.NewAppID(), Slug: in.Slug, Runtime: in.Runtime, Resources: in.Resources,
 		DesiredRuntime: domain.DesiredStopped, Ingress: in.Ingress, Publication: domain.Unpublished,
 		AccessLog: in.AccessLog, Valkey: in.Valkey, Minicrond: in.Minicrond == nil || *in.Minicrond,
+		Protection:       domain.DefaultProtection().Apply(in.Protection),
 		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	op, existed, err := c.Submit(ctx, Submission{
@@ -236,6 +239,7 @@ type UpdateAppInput struct {
 	AccessLog          *bool
 	Valkey             *bool
 	Minicrond          *bool
+	Protection         *domain.ProtectionPatch
 	Env                *[]domain.EnvVar
 }
 
@@ -307,6 +311,7 @@ func (c *Controller) UpdateApp(
 			if in.Minicrond != nil {
 				cur.Minicrond = *in.Minicrond
 			}
+			cur.Protection = cur.Protection.Apply(in.Protection)
 			if in.Ingress != nil {
 				cur.Ingress = *in.Ingress
 				if cur.Ingress != domain.IngressManaged {

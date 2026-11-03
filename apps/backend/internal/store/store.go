@@ -29,7 +29,7 @@ const ApplicationID = 0x424E5431
 // migrations; every other version is refused without modifying the file.
 // A schema change bumps SchemaVersion and adds migrations[old] in the same
 // change (see docs/contributing.md).
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // MigratableFromVersion is the oldest schema Open upgrades. Version 2 is the
 // production baseline: no deployment runs an older schema, so nothing below
@@ -59,6 +59,18 @@ type migration func(tx *sql.Tx) error
 
 // migrations[v] upgrades schema v to v+1. Every SchemaVersion bump adds one.
 var migrations = map[int64]migration{
+	// 4: per-app protection toggles. Existing apps get the defaults (all on),
+	// which is what new apps get; dot files were already refused.
+	3: func(tx *sql.Tx) error {
+		for _, col := range []string{"block_dotfiles", "block_php_probes", "block_sensitive_files"} {
+			if _, err := tx.Exec(
+				`ALTER TABLE apps ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 1 CHECK (` + col + ` IN (0, 1))`,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	},
 	// 3: runtime image builds and the build each app runs. Apps start with no
 	// assignment and are assigned the current build of their runtime when
 	// they are next materialized.
@@ -385,6 +397,9 @@ CREATE TABLE apps (
   access_log             INTEGER NOT NULL DEFAULT 0 CHECK (access_log IN (0, 1)),
   valkey                 INTEGER NOT NULL DEFAULT 0 CHECK (valkey IN (0, 1)),
   minicrond              INTEGER NOT NULL DEFAULT 1 CHECK (minicrond IN (0, 1)),
+  block_dotfiles         INTEGER NOT NULL DEFAULT 1 CHECK (block_dotfiles IN (0, 1)),
+  block_php_probes       INTEGER NOT NULL DEFAULT 1 CHECK (block_php_probes IN (0, 1)),
+  block_sensitive_files  INTEGER NOT NULL DEFAULT 1 CHECK (block_sensitive_files IN (0, 1)),
   config_generation      INTEGER NOT NULL DEFAULT 1,
   credentials_generation INTEGER NOT NULL DEFAULT 1,
   provisioned            INTEGER NOT NULL DEFAULT 0,

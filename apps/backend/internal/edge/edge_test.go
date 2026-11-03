@@ -263,6 +263,56 @@ func TestRenderStaticCacheOnlyForOptedInApps(t *testing.T) {
 	}
 }
 
+func TestRenderProtectionOnlyForAppHosts(t *testing.T) {
+	app := func(slug string, p domain.Protection) domain.App {
+		return domain.App{ID: slug, Slug: slug, Ingress: domain.IngressManaged, Publication: domain.Published, Protection: p}
+	}
+	on := app("on", domain.DefaultProtection())
+	partial := app("partial", domain.Protection{BlockDotFiles: true})
+	off := app("off", domain.Protection{})
+	cached := appHost("cache.example.com", "on", domain.Route{TLS: domain.TLSNone, StaticCache: true})
+	files, err := Render(Input{
+		Settings:      domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
+		UtilsUpstream: "10.0.0.2:7781",
+		Apps:          []domain.App{on, partial, off},
+		Hosts: []domain.Host{
+			appHost("on.example.com", "on", domain.Route{TLS: domain.TLSNone}),
+			appHost("partial.example.com", "partial", domain.Route{TLS: domain.TLSNone}),
+			appHost("off.example.com", "off", domain.Route{TLS: domain.TLSNone}),
+			cached,
+			upstreamHost("up.example.com", true, "http://10.0.0.9:8080"),
+			{Name: "go.example.com", Target: domain.HostTargetRedirect, RedirectTo: "on.example.com", Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := func(host string) string { return string(files["sites/"+RouteName(host)+".conf"]) }
+	if c := site("on.example.com"); !strings.Contains(c, "wlwmanifest") || !strings.Contains(c, "composer") ||
+		!strings.Contains(c, `/\.(?!well-known`) || !strings.Contains(c, "return 404;") || strings.Contains(c, "deny") {
+		t.Fatalf("an app with everything on must carry every group:\n%s", c)
+	}
+	if c := site("partial.example.com"); !strings.Contains(c, "well-known") || strings.Contains(c, "wlwmanifest") || strings.Contains(c, "composer") {
+		t.Fatalf("only the dot file group is on:\n%s", c)
+	}
+	for _, host := range []string{"off.example.com", "up.example.com", "go.example.com"} {
+		if c := site(host); strings.Contains(c, "Bento protection") || strings.Contains(c, "well-known") {
+			t.Errorf("%s must carry no protection:\n%s", host, c)
+		}
+	}
+	// A blocked path must never reach the static cache location, which would
+	// otherwise match .map before the protection does.
+	c := site("cache.example.com")
+	block, static := strings.Index(c, "# Bento protection"), strings.Index(c, "proxy_cache bento_static;")
+	if block < 0 || static < 0 || block > static {
+		t.Fatalf("protection at %d, static cache at %d:\n%s", block, static, c)
+	}
+	// The webhook prefix location (^~) outranks every regex location.
+	if !strings.Contains(c, "location ^~ /_bento/webhook/") {
+		t.Fatal("webhook location missing")
+	}
+}
+
 func TestRenderStaticCacheForOptedInUpstreams(t *testing.T) {
 	files, err := Render(Input{
 		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},

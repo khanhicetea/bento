@@ -64,6 +64,10 @@ type Route struct {
 	Redirect    bool
 	AccessLog   bool
 	StaticCache bool
+	// Protection is the rendered protection location blocks (see
+	// runtime.ProtectionConfig). Only hosts that target an app carry it:
+	// external upstreams and redirects are operator-owned.
+	Protection string
 	// AppUpstream is the app container alias host:port, re-resolved at runtime.
 	AppUpstream    string
 	ProxyUpstreams []string
@@ -221,6 +225,7 @@ func Render(in Input) (map[string][]byte, error) {
 				r.MaxBodyMB = a.Runtime.PHP.UploadLimitMB
 			}
 			r.Unavailable = !in.Running[a.ID]
+			r.Protection = runtime.ProtectionConfig(a.Protection, "  ")
 			r.Includes = append(r.Includes, "app-"+a.Slug)
 			upstreams[a.Slug] = AppUpstream{Name: r.UpstreamName, Server: r.AppUpstream}
 		case domain.HostTargetUpstream:

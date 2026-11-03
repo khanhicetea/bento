@@ -529,6 +529,7 @@ func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool, ini []b
 		"TrustedProxies": ctx.TrustedProxies, "Workers": 1, "PHP": settings,
 		"FastCGIReadTimeout": max(120, settings.MaxExecutionSeconds+10),
 		"OpenBasedir":        openBasedir(app),
+		"Protection":         ProtectionConfig(app.Protection, "    "),
 	}
 	if frontend, err = assets.Render("app-nginx.conf.tmpl", data); err != nil {
 		return nil, nil, nil, nil, err

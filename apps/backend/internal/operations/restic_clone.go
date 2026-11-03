@@ -473,6 +473,10 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 	if in.Spec.Route != nil {
 		accessLog = in.Spec.Route.AccessLog
 	}
+	protection := domain.DefaultProtection()
+	if in.Spec.Protection != nil {
+		protection = *in.Spec.Protection
+	}
 	ingress := in.Spec.Ingress
 	if ingress == "" {
 		ingress = domain.IngressManaged
@@ -493,6 +497,7 @@ func (c *Controller) planClone(ctx context.Context, in cloneInput) (*clonePlan, 
 		ID: in.AppID, Slug: slug, Runtime: rt, Resources: res, DesiredRuntime: domain.DesiredStopped,
 		Ingress: ingress, Publication: domain.Unpublished, AccessLog: accessLog, HomePath: stored,
 		Valkey: in.Spec.Valkey, Minicrond: in.Spec.Minicrond == nil || *in.Spec.Minicrond,
+		Protection:       protection,
 		ConfigGeneration: 1, CredentialsGeneration: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	p.App = app

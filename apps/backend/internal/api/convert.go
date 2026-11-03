@@ -256,6 +256,11 @@ func (s *Server) appToDTO(ctx context.Context, app domain.App, detail bool) (dto
 	out.AccessLog = app.AccessLog
 	out.Valkey = app.Valkey
 	out.Minicrond = app.Minicrond
+	out.Protection = dto.Protection{
+		BlockDotFiles:       app.Protection.BlockDotFiles,
+		BlockPhpProbes:      app.Protection.BlockPHPProbes,
+		BlockSensitiveFiles: app.Protection.BlockSensitiveFiles,
+	}
 	out.Env = []dto.EnvVar{}
 	for _, e := range app.Runtime.Env {
 		if restricted(ctx) {
@@ -364,4 +369,15 @@ func webhookToDTO(w domain.Webhook, enabled bool, url string, targets []string) 
 		})
 	}
 	return out
+}
+
+func protectionPatchFromDTO(p *dto.ProtectionPatch) *domain.ProtectionPatch {
+	if p == nil {
+		return nil
+	}
+	return &domain.ProtectionPatch{
+		BlockDotFiles:       p.BlockDotFiles,
+		BlockPHPProbes:      p.BlockPhpProbes,
+		BlockSensitiveFiles: p.BlockSensitiveFiles,
+	}
 }

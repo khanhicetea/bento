@@ -59,11 +59,20 @@ bento app update shop --json patch.json
 ```
 
 `patch.json` may contain any of `runtime`, `resources`, `ingress` (`managed` | `external` | `none`), `accessLog`,
-`valkey`, `minicrond`, plus `expectedGeneration` to refuse the update if the app changed since you read it:
+`valkey`, `minicrond`, `protection`, plus `expectedGeneration` to refuse the update if the app changed since you read it:
 
 ```json
 { "resources": { "memoryMb": 1024 }, "expectedGeneration": 7 }
 ```
+
+`protection` takes `blockDotFiles`, `blockPhpProbes` and `blockSensitiveFiles` (all on by default; send only the ones
+to change). Turn the PHP filter off for a WordPress site:
+
+```json
+{ "protection": { "blockPhpProbes": false } }
+```
+
+See [request filters](/apps/settings#request-filters).
 
 ## Inspect and operate
 

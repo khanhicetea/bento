@@ -207,16 +207,18 @@ func ListLedger(ctx context.Context, q Q) ([]LedgerEntry, error) {
 // ---- apps ----
 
 const appColumns = `id, slug, uid, gid, runtime_json, resources_json, desired_runtime, ingress, publication,
-	access_log, valkey, minicrond, config_generation, credentials_generation, provisioned, created_at, updated_at, home_path`
+	access_log, valkey, minicrond, block_dotfiles, block_php_probes, block_sensitive_files,
+	config_generation, credentials_generation, provisioned, created_at, updated_at, home_path`
 
 func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	var a domain.App
 	var runtimeJSON, resourcesJSON, created, updated string
-	var provisioned, accessLog, valkey, minicrond int
+	var provisioned, accessLog, valkey, minicrond, blockDot, blockPHP, blockSensitive int
 	var homePath sql.NullString
 	err := row.Scan(
 		&a.ID, &a.Slug, &a.UID, &a.GID, &runtimeJSON, &resourcesJSON, &a.DesiredRuntime, &a.Ingress, &a.Publication,
-		&accessLog, &valkey, &minicrond, &a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
+		&accessLog, &valkey, &minicrond, &blockDot, &blockPHP, &blockSensitive,
+		&a.ConfigGeneration, &a.CredentialsGeneration, &provisioned, &created, &updated,
 		&homePath,
 	)
 	if err != nil {
@@ -233,6 +235,11 @@ func scanApp(row interface{ Scan(...any) error }) (domain.App, error) {
 	a.AccessLog = accessLog == 1
 	a.Valkey = valkey == 1
 	a.Minicrond = minicrond == 1
+	a.Protection = domain.Protection{
+		BlockDotFiles:       blockDot == 1,
+		BlockPHPProbes:      blockPHP == 1,
+		BlockSensitiveFiles: blockSensitive == 1,
+	}
 	a.CreatedAt = platform.ParseTime(created)
 	a.UpdatedAt = platform.ParseTime(updated)
 	return a, nil
@@ -260,9 +267,11 @@ func InsertApp(ctx context.Context, q Q, a domain.App) error {
 		}
 		homePath = a.HomePath
 	}
-	_, err := q.ExecContext(ctx, `INSERT INTO apps(`+appColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := q.ExecContext(ctx, `INSERT INTO apps(`+appColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.Slug, a.UID, a.GID, mustJSON(a.Runtime), mustJSON(a.Resources), a.DesiredRuntime, a.Ingress,
-		a.Publication, boolInt(a.AccessLog), boolInt(a.Valkey), boolInt(a.Minicrond), a.ConfigGeneration, a.CredentialsGeneration, provisioned,
+		a.Publication, boolInt(a.AccessLog), boolInt(a.Valkey), boolInt(a.Minicrond),
+		boolInt(a.Protection.BlockDotFiles), boolInt(a.Protection.BlockPHPProbes), boolInt(a.Protection.BlockSensitiveFiles),
+		a.ConfigGeneration, a.CredentialsGeneration, provisioned,
 		platform.FormatTime(a.CreatedAt), platform.FormatTime(a.UpdatedAt), homePath)
 	if isUniqueViolation(err) {
 		return fmt.Errorf("%w: app slug or uid already exists", ErrConflict)
@@ -279,7 +288,8 @@ func UpdateApp(ctx context.Context, q Q, a domain.App) error {
 	res, err := q.ExecContext(
 		ctx,
 		`UPDATE apps SET runtime_json=?, resources_json=?, desired_runtime=?, ingress=?, publication=?,
-		access_log=?, valkey=?, minicrond=?, config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
+		access_log=?, valkey=?, minicrond=?, block_dotfiles=?, block_php_probes=?, block_sensitive_files=?,
+		config_generation=?, credentials_generation=?, provisioned=?, updated_at=? WHERE id=?`,
 		mustJSON(a.Runtime),
 		mustJSON(a.Resources),
 		a.DesiredRuntime,
@@ -288,6 +298,9 @@ func UpdateApp(ctx context.Context, q Q, a domain.App) error {
 		boolInt(a.AccessLog),
 		boolInt(a.Valkey),
 		boolInt(a.Minicrond),
+		boolInt(a.Protection.BlockDotFiles),
+		boolInt(a.Protection.BlockPHPProbes),
+		boolInt(a.Protection.BlockSensitiveFiles),
 		a.ConfigGeneration,
 		a.CredentialsGeneration,
 		provisioned,

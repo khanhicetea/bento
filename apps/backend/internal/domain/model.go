@@ -59,7 +59,11 @@ type App struct {
 	Valkey bool
 	// Minicrond runs the app's scheduler (jobs, workers and Bento's internal
 	// tasks). On by default.
-	Minicrond        bool
+	Minicrond bool
+	// Protection says which hostile request classes the app's two Nginx
+	// layers (the app-local one and the edge routes that target the app)
+	// answer with 404. All on by default.
+	Protection       Protection
 	ConfigGeneration int64
 	// CredentialsGeneration increments whenever secret material mounted into
 	// the app changes. It is tracked separately so secrets never enter the
@@ -246,6 +250,53 @@ type VacuumSlot struct {
 
 // SQLiteContainerDir is where a SQLite binding directory is mounted.
 func (b Binding) SQLiteContainerDir() string { return "/var/lib/bento/sqlite/" + b.SQLiteFileID }
+
+// Protection selects the request classes an app's Nginx layers refuse with a
+// plain 404 (never 403, so a scanner learns nothing about what exists).
+// The zero value turns everything off; use DefaultProtection for a new app.
+type Protection struct {
+	// BlockDotFiles refuses every path with a dot-prefixed segment except
+	// /.well-known/.
+	BlockDotFiles bool `json:"blockDotFiles"`
+	// BlockPHPProbes refuses WordPress paths, database admin tools, known
+	// webshell names, PHP source extensions and PHP under upload, cache and
+	// dependency directories. Turn it off for WordPress or legacy PHP sites
+	// that serve such paths themselves.
+	BlockPHPProbes bool `json:"blockPhpProbes"`
+	// BlockSensitiveFiles refuses backup, dump, swap, archive, source map and
+	// package-manager metadata files.
+	BlockSensitiveFiles bool `json:"blockSensitiveFiles"`
+}
+
+// DefaultProtection is the protection a new app gets: everything on.
+func DefaultProtection() Protection {
+	return Protection{BlockDotFiles: true, BlockPHPProbes: true, BlockSensitiveFiles: true}
+}
+
+// ProtectionPatch is a partial protection change: nil fields keep the value
+// they are applied to.
+type ProtectionPatch struct {
+	BlockDotFiles       *bool `json:"blockDotFiles,omitempty"`
+	BlockPHPProbes      *bool `json:"blockPhpProbes,omitempty"`
+	BlockSensitiveFiles *bool `json:"blockSensitiveFiles,omitempty"`
+}
+
+// Apply returns p with the patch's set fields replaced.
+func (p Protection) Apply(patch *ProtectionPatch) Protection {
+	if patch == nil {
+		return p
+	}
+	if patch.BlockDotFiles != nil {
+		p.BlockDotFiles = *patch.BlockDotFiles
+	}
+	if patch.BlockPHPProbes != nil {
+		p.BlockPHPProbes = *patch.BlockPHPProbes
+	}
+	if patch.BlockSensitiveFiles != nil {
+		p.BlockSensitiveFiles = *patch.BlockSensitiveFiles
+	}
+	return p
+}
 
 // HostTarget says where an Ingress host sends its requests.
 type HostTarget string

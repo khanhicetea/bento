@@ -224,12 +224,47 @@ export interface App extends AppSummary {
    * Minicrond runs the app's scheduler (jobs and workers).
    */
   minicrond: boolean;
+  /**
+   * Protection is what the app's Nginx layers answer with 404.
+   */
+  protection: Protection;
   env: EnvVar[];
   bindings: Binding[];
   ingressInfo: IngressInfo;
   reconcile: Reconcile;
   createdAt: string;
   updatedAt: string;
+}
+/**
+ * Protection selects the request classes an app's Nginx layers (the app-local
+ * one and the edge routes that target the app) refuse with a plain 404.
+ */
+export interface Protection {
+  /**
+   * BlockDotFiles refuses dot files and directories except /.well-known/.
+   */
+  blockDotFiles: boolean;
+  /**
+   * BlockPhpProbes refuses WordPress paths, database admin tools, webshell
+   * names, PHP source extensions and PHP under upload and dependency
+   * directories. Turn it off for WordPress or legacy PHP sites that serve
+   * such paths themselves.
+   */
+  blockPhpProbes: boolean;
+  /**
+   * BlockSensitiveFiles refuses backup, dump, swap, archive, source map and
+   * package-manager metadata files.
+   */
+  blockSensitiveFiles: boolean;
+}
+/**
+ * ProtectionPatch changes some protection settings; absent fields are kept
+ * (all on for a new app).
+ */
+export interface ProtectionPatch {
+  blockDotFiles?: boolean;
+  blockPhpProbes?: boolean;
+  blockSensitiveFiles?: boolean;
 }
 export interface AppList {
   apps: AppSummary[];
@@ -253,6 +288,10 @@ export interface CreateAppRequest {
    */
   minicrond?: boolean;
   /**
+   * Protection overrides the all-on default.
+   */
+  protection?: ProtectionPatch;
+  /**
    * Hosts are Ingress hosts created together with the app, targeting it.
    */
   hosts: AppHostRequest[];
@@ -273,6 +312,7 @@ export interface UpdateAppRequest {
   accessLog?: boolean;
   valkey?: boolean;
   minicrond?: boolean;
+  protection?: ProtectionPatch;
   /**
    * Env, when present, replaces the app's environment variables.
    */

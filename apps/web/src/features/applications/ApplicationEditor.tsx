@@ -67,6 +67,15 @@ function SaveError({ save }: { save: CellSave }) {
   return save.error ? <p className="note note--bad mt-3">{messageOf(save.error)}</p> : null;
 }
 
+/** What each filter refuses; blocked requests get a plain 404, never a 403. */
+const PROTECTION_HINTS: Record<keyof T.Protection, string> = {
+  blockDotFiles: "404 for .env, .git, .htaccess and every dot path except /.well-known/. App and edge Nginx.",
+  blockPhpProbes:
+    "404 for WordPress paths, phpMyAdmin and webshell names, PHP source extensions and PHP under uploads, cache or vendor. Turn off for WordPress or legacy PHP sites. App and edge Nginx.",
+  blockSensitiveFiles:
+    "404 for backups, dumps, swap files, archives, source maps and package manager files. App and edge Nginx.",
+};
+
 /** Edit an app. The slug and runtime kind are fixed per app incarnation. */
 export function ApplicationEditor({ app }: { app: T.App }) {
   const catalog = useCatalog();
@@ -87,6 +96,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
   );
   const [ingress, setIngress] = useState<T.IngressMode>(app.ingress);
   const [accessLog, setAccessLog] = useState(app.accessLog);
+  const [protection, setProtection] = useState<T.Protection>(app.protection);
   const [valkey, setValkey] = useState(app.valkey);
   const [minicrond, setMinicrond] = useState(app.minicrond);
   const [hostDialog, setHostDialog] = useState(false);
@@ -103,7 +113,7 @@ export function ApplicationEditor({ app }: { app: T.App }) {
   const savePerformance = useCellSave(app, generation, setGeneration, () => ({
     runtime: { kind, php: phpWith(savedPhp, php, phpPerformanceKeys) },
   }));
-  const saveIngress = useCellSave(app, generation, setGeneration, () => ({ ingress, accessLog }));
+  const saveIngress = useCellSave(app, generation, setGeneration, () => ({ ingress, accessLog, protection }));
   const saveResources = useCellSave(app, generation, setGeneration, () => ({ resources, valkey, minicrond }));
   const saveEnv = useCellSave(app, generation, setGeneration, () => ({ env: env.value() }));
 
@@ -256,6 +266,30 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                 <Checkbox checked={accessLog} onCheckedChange={(checked) => setAccessLog(checked === true)} />
                 App access log
               </label>
+              <label className="check" title={PROTECTION_HINTS.blockDotFiles}>
+                <Checkbox
+                  checked={protection.blockDotFiles}
+                  onCheckedChange={(checked) => setProtection({ ...protection, blockDotFiles: checked === true })}
+                />
+                Block dot files
+              </label>
+              <label className="check" title={PROTECTION_HINTS.blockPhpProbes}>
+                <Checkbox
+                  checked={protection.blockPhpProbes}
+                  onCheckedChange={(checked) => setProtection({ ...protection, blockPhpProbes: checked === true })}
+                />
+                Block PHP probes
+              </label>
+              <label className="check" title={PROTECTION_HINTS.blockSensitiveFiles}>
+                <Checkbox
+                  checked={protection.blockSensitiveFiles}
+                  onCheckedChange={(checked) => setProtection({ ...protection, blockSensitiveFiles: checked === true })}
+                />
+                Block sensitive files
+              </label>
+              {protection.blockPhpProbes && kind === "php-fpm" && php.routing === "legacy" && (
+                <p className="note note--caution">Legacy PHP sites may need PHP probes off.</p>
+              )}
             </div>
             <SaveError save={saveIngress} />
           </Cell>

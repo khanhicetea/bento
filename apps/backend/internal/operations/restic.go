@@ -905,6 +905,9 @@ type AppSpec struct {
 	Valkey        bool               `json:"valkey,omitempty"`
 	// Minicrond is always written; a snapshot without it ran minicrond.
 	Minicrond *bool `json:"minicrond,omitempty"`
+	// Protection is always written; a snapshot without it predates the
+	// setting and gets the all-on default.
+	Protection *domain.Protection `json:"protection,omitempty"`
 	// Domains are the Ingress host names that targeted the app, display host
 	// first. A clone only lists them; hosts are re-pointed in Ingress.
 	Domains  []string         `json:"domains"`
@@ -1044,7 +1047,8 @@ func (c *Controller) appSpec(ctx context.Context, app domain.App, versions map[s
 	s := AppSpec{
 		FormatVersion: ResticFormatVersion, Slug: app.Slug, Runtime: rt, Resources: app.Resources,
 		Ingress: app.Ingress, AccessLog: app.AccessLog, Valkey: app.Valkey, Minicrond: &app.Minicrond,
-		Domains: []string{}, Bindings: []AppSpecBinding{},
+		Protection: &app.Protection,
+		Domains:    []string{}, Bindings: []AppSpecBinding{},
 	}
 	for _, h := range app.Hosts {
 		s.Domains = append(s.Domains, h.Name)

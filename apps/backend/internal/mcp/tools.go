@@ -389,6 +389,8 @@ func allTools() []Tool {
 				`"resources":{"memoryMb":512,"cpuMillis":1000,"pids":256},"ingress":"managed","hosts":[{"name":"shop.example.com"}],` +
 				`"bindings":[{"engine":"mysql"}]}. For kind "http-process" use "http":{"toolchain","version","argv","workdir","port","readyPath"}. ` +
 				`"valkey":true runs the app's own Valkey on 127.0.0.1:6379 (default off); "minicrond":false turns its scheduler off (default on). ` +
+				`"protection":{"blockDotFiles","blockPhpProbes","blockSensitiveFiles"} are the 404 filters of the app's Nginx layers (all default on; ` +
+				`turn blockPhpProbes off for WordPress or legacy PHP sites). ` +
 				"Read get_catalog for valid values.",
 			Input: object(map[string]any{"spec": freeform("CreateAppRequest.")}, "spec"),
 			Run: func(ctx context.Context, b *Backend, raw json.RawMessage) (any, error) {
@@ -407,7 +409,7 @@ func allTools() []Tool {
 		},
 		{
 			Name: "update_app", Title: "Update app", Scope: dto.TokenScopeAdmin, Destructive: true,
-			Description: "Change an app's runtime, resources, ingress mode, access log, Valkey or minicrond. changes is an UpdateAppRequest " +
+			Description: "Change an app's runtime, resources, ingress mode, access log, Valkey, minicrond or protection filters. changes is an UpdateAppRequest " +
 				`with only the fields to change, e.g. {"resources":{"memoryMb":1024,"cpuMillis":1000,"pids":256}}. ` +
 				"A running app is replaced with the new settings. Env changes are refused here.",
 			Input: object(map[string]any{"app": appProp, "changes": freeform("UpdateAppRequest.")}, "app", "changes"),

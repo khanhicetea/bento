@@ -72,6 +72,12 @@ connection, and `BEGIN IMMEDIATE` transactions.
 - **App home:** `apps.home_path` (NULL = `/home/<slug>`) is the in-container home (`domain.App.HomePath`, returned by
   `ContainerHome()`); the host path stays `homes/<slug>`. It is validated as `/home/<slug-shaped>`, written only at
   insert, and exposed read-only as the App DTO's `homePath`. `apps.access_log` toggles the app-local Nginx log.
+  `apps.block_dotfiles|block_php_probes|block_sensitive_files` (all default 1; `domain.Protection`) select request
+  classes both Nginx layers answer with 404 (never 403). `runtime.ProtectionConfig` renders the location blocks once
+  and two templates include the text: `app-nginx.conf.tmpl` (PHP apps) and `edge-site.conf.tmpl` (only hosts that
+  target an app; upstream and redirect hosts are operator-owned). The blocks sit before the static and
+  front-controller locations and after operator `routes/` includes, so a drop-in `location` can override them. A
+  change is a frontend-scope reload plus an edge apply; it never changes the container spec.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
   target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +

@@ -21,5 +21,10 @@ auth_basic "Staging";
 auth_basic_user_file /etc/bento-edge-custom/htpasswd;
 ```
 
+Bento's own [request filters](/apps/settings#request-filters) (404 for `.env`, `wp-login.php`, `backup.zip` and
+similar) come after the `routes/` includes in each server block. Nginx uses the first matching regex `location`, so
+your own regex (`location ~ …`), exact (`location = …`) or `^~` location for the same path wins. A plain prefix
+`location /x` does not: regex locations outrank it.
+
 Your files are validated with every edge change. A broken snippet fails the change with `edge-validation-failed` and
 the live edge stays untouched. Save any setting in **Ingress → Edge** to apply new snippets.

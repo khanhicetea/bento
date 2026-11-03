@@ -331,6 +331,16 @@ function Overview({ app }: { app: T.App }) {
                 ),
               ],
               ["Access log", app.accessLog ? "✓ On" : "— Off"],
+              [
+                "Blocking",
+                [
+                  app.protection.blockDotFiles && "Dot files",
+                  app.protection.blockPhpProbes && "PHP probes",
+                  app.protection.blockSensitiveFiles && "Sensitive files",
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "— Off",
+              ],
             ]}
           />
         </Cell>

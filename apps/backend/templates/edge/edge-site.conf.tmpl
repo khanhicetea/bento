@@ -78,6 +78,9 @@ upstream {{.UpstreamName}} {
     proxy_pass http://bento_utils;
   }
 {{- end}}
+{{- if .Protection}}
+{{.Protection}}
+{{- end}}
 {{- if .StaticCache}}
   # Static-extension responses are served from the edge cache. Opting in
   # asserts they are not per-user. PHP apps serve them from disk; one answered

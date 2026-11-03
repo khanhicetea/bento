@@ -909,6 +909,60 @@ func TestRestoreFromBackupEndpointsRefuseBadRequests(t *testing.T) {
 	}
 }
 
+func TestAppProtectionOverHTTP(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	appBody := func(extra string) string {
+		return `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[],"bindings":[]` + extra + `}`
+	}
+	// Adversarial input never reaches the store.
+	for name, body := range map[string]string{
+		"unknown protection field": appBody(`,"protection":{"blockEverything":true}`),
+		"non-boolean":              appBody(`,"protection":{"blockDotFiles":"yes"}`),
+		"wrong shape":              appBody(`,"protection":"off"`),
+	} {
+		if resp, out := c.write("POST", "/api/v1/apps", body); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s -> %d %s", name, resp.StatusCode, out)
+		}
+	}
+	// A group can be turned off at creation; the rest stay on.
+	resp, out := c.write("POST", "/api/v1/apps", appBody(`,"protection":{"blockPhpProbes":false}`))
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create -> %d %s", resp.StatusCode, out)
+	}
+	var acc dto.Accepted
+	json.Unmarshal([]byte(out), &acc)
+	h.Wait(acc.Operation.ID)
+	read := func() dto.Protection {
+		t.Helper()
+		_, body := c.do("GET", "/api/v1/apps/shop", "", nil)
+		var a dto.App
+		if err := json.Unmarshal([]byte(body), &a); err != nil {
+			t.Fatal(err)
+		}
+		return a.Protection
+	}
+	if got := read(); got != (dto.Protection{BlockDotFiles: true, BlockPhpProbes: false, BlockSensitiveFiles: true}) {
+		t.Fatalf("created protection %+v", got)
+	}
+	// A patch changes only the groups it names, and needs the session's CSRF token.
+	if resp, _ := c.do("PATCH", "/api/v1/apps/shop", `{"protection":{"blockDotFiles":false}}`, map[string]string{"Origin": origin}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("patch without CSRF -> %d", resp.StatusCode)
+	}
+	resp, out = c.write("PATCH", "/api/v1/apps/shop", `{"protection":{"blockPhpProbes":true,"blockSensitiveFiles":false}}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("patch -> %d %s", resp.StatusCode, out)
+	}
+	json.Unmarshal([]byte(out), &acc)
+	h.Wait(acc.Operation.ID)
+	if got := read(); got != (dto.Protection{BlockDotFiles: true, BlockPhpProbes: true, BlockSensitiveFiles: false}) {
+		t.Fatalf("patched protection %+v", got)
+	}
+	if resp, out = c.write("PATCH", "/api/v1/apps/shop", `{"protection":{"blockDotFiles":false,"extra":1}}`); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown field in patch -> %d %s", resp.StatusCode, out)
+	}
+}
+
 func TestHostEndpoints(t *testing.T) {
 	c, h := newServer(t)
 	c.login()

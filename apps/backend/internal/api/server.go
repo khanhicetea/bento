@@ -470,12 +470,13 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := operations.CreateAppInput{
-		Slug:      req.Slug,
-		Runtime:   runtimeFromDTO(req.Runtime),
-		Ingress:   domain.IngressMode(req.Ingress),
-		AccessLog: req.AccessLog,
-		Valkey:    req.Valkey,
-		Minicrond: req.Minicrond,
+		Slug:       req.Slug,
+		Runtime:    runtimeFromDTO(req.Runtime),
+		Ingress:    domain.IngressMode(req.Ingress),
+		AccessLog:  req.AccessLog,
+		Valkey:     req.Valkey,
+		Minicrond:  req.Minicrond,
+		Protection: protectionPatchFromDTO(req.Protection),
 	}
 	for _, h := range req.Hosts {
 		in.Hosts = append(in.Hosts, operations.AppHostInput{Name: h.Name, Route: routeFromDTO(h.Route)})
@@ -519,6 +520,7 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		AccessLog:          req.AccessLog,
 		Valkey:             req.Valkey,
 		Minicrond:          req.Minicrond,
+		Protection:         protectionPatchFromDTO(req.Protection),
 	}
 	if req.Runtime != nil {
 		rt := runtimeFromDTO(*req.Runtime)

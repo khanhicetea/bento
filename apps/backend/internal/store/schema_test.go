@@ -108,3 +108,32 @@ func TestAPITokens(t *testing.T) {
 		t.Fatalf("deleted token: %v", err)
 	}
 }
+
+func TestAppProtectionRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	s := newStore(t)
+	want := domain.Protection{BlockDotFiles: true, BlockPHPProbes: false, BlockSensitiveFiles: true}
+	if err := s.Tx(ctx, func(q Q) error {
+		uid, err := AllocateUID(ctx, q, domain.UIDRange{First: 20000, Last: 29999}, nil, "a1", "shop")
+		if err != nil {
+			return err
+		}
+		return InsertApp(ctx, q, domain.App{ID: "a1", Slug: "shop", UID: uid, GID: uid, Protection: want,
+			DesiredRuntime: domain.DesiredStopped, Ingress: domain.IngressNone, Publication: domain.Unpublished,
+			CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app, err := GetApp(ctx, s.DB(), "a1")
+	if err != nil || app.Protection != want {
+		t.Fatalf("inserted protection %+v %v", app.Protection, err)
+	}
+	app.Protection = domain.Protection{BlockDotFiles: false, BlockPHPProbes: true, BlockSensitiveFiles: false}
+	if err := UpdateApp(ctx, s.DB(), app); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GetApp(ctx, s.DB(), "a1")
+	if err != nil || got.Protection != app.Protection {
+		t.Fatalf("updated protection %+v %v", got.Protection, err)
+	}
+}

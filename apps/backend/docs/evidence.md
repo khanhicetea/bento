@@ -717,3 +717,35 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
 - Not verified: arm64 builds (mise arm64 checksum taken from the release's SHASUMS256.txt only); a rebuild that
   actually changed a version on real Docker followed by a real rollout and rollback (covered on the fake engine); the
   Runtimes UI in a browser.
+
+## Per-app request filters: dot files, PHP probes, sensitive files (2026-11-03; live Docker 29.8.1, amd64; dev mode)
+
+- New per-app setting `protection` (`blockDotFiles`, `blockPhpProbes`, `blockSensitiveFiles`, all on by default;
+  schema 3 → 4 adds three `apps` columns, existing apps get all on). `runtime.ProtectionConfig` renders the Nginx
+  location blocks once; the app-local Nginx (PHP apps) and every edge route that targets the app include the same text.
+  Every block is `return 404`: dot files used to be `deny all` (403) and now answer 404 too, so a refusal never
+  differs from "not found". Upstream and redirect hosts are not filtered.
+- `TestIntegrationProtectionNginx` renders the blocks into real Nginx (the edge image) and requests 101 paths
+  (28 legitimate, 73 hostile): all on blocks exactly the 73, each group alone blocks only its own paths, all off lets
+  everything through. Legitimate paths kept reachable include `/.well-known/…`, `/sitemap.xml.gz`, `/wp-contents`,
+  `/vendor/bootstrap/css/bootstrap.css`, `/info`, `/shell`, `/composer`; `/.well-known/../.env` is blocked (Nginx
+  normalizes it first). The patterns use PCRE lookarounds, which Go's `regexp` cannot evaluate, so only this test
+  vouches for them.
+- `nginx -t` accepted the full rendered `app-nginx.conf` of a PHP app in the php-8.4 runtime image for front-controller
+  and legacy routing, with protection on and off.
+- `TestIntegrationAppProtection` (real Docker, edge on a free port): with the defaults, a Node app behind the edge and
+  a PHP app on its own Nginx both answer 404 for `/.env`, `/wp-login.php`, `/wp-admin/`, `/composer.json` and
+  `/app.js.map`, and 200 for `/about` and `/robots.txt`; `/.well-known/acme-challenge/x` reaches the app through the
+  edge. After `PATCH` with all three off, `/.env` reaches the app in both layers and `/wp-admin/` reaches the PHP
+  front controller. The change reloaded Nginx; the PHP instance kept its container id (no replacement).
+- `specVersion` is unchanged: protection lives in `nginx.conf` (frontend scope), not in `AppContainerSpec`. A running
+  app picks up the blocks with its next reload (update, start or reconcile); nothing is replaced.
+- Upgrade note: schema 3 → 4 turns the PHP-probe and sensitive-file filters on for apps that already exist. A
+  WordPress or legacy PHP app that serves such paths must turn **Block PHP probes** (and possibly **Block sensitive
+  files**) off after upgrading.
+- Unit coverage: store migration 3 → 4 and 2 → 4, protection round trip, patch semantics on create/update, backup spec
+  round trip (a snapshot without the field clones with all on), edge rendering only for app hosts and before the static
+  cache location, API strict decoding and CSRF for the new field.
+- `make -C apps/backend ci` passed as root (gofmt, vet, race tests, generated-type drift, build); web fmt/lint/
+  typecheck/build and `docs:build` passed.
+- Not verified: arm64; a browser check of the Ingress settings cell (typecheck, lint, Prettier and the web build pass).

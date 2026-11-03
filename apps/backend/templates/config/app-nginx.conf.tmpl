@@ -91,12 +91,10 @@ http {
     location = /favicon.ico { access_log off; log_not_found off; }
     location = /robots.txt { access_log off; log_not_found off; }
 
-    # Never expose dotfiles; keep ACME's conventional path available.
-    location ~ /\.(?!well-known(?:/|$)) {
-      deny all;
-      access_log off;
-      log_not_found off;
-    }
+{{- if .Protection}}
+
+{{.Protection}}
+{{- end}}
 
     location ~* \.(?:css|js|mjs|map|jpg|jpeg|gif|png|svg|ico|webp|avif|woff|woff2|ttf|eot|webmanifest)$ {
       add_header Cache-Control $bento_static_cache;

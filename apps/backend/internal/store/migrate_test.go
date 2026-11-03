@@ -217,11 +217,65 @@ func TestSupportedVersionsStartAtBaseline(t *testing.T) {
 	}
 }
 
+func dropProtectionColumns(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, col := range []string{"block_dotfiles", "block_php_probes", "block_sensitive_files"} {
+		if _, err := db.Exec(`ALTER TABLE apps DROP COLUMN ` + col); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A schema-3 state (before per-app protection) opens as the current schema:
+// its apps keep their rows and get every protection filter on.
+func TestMigrateFrom3AddsProtection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bento.db")
+	s, err := Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := s.Tx(ctx, func(q Q) error {
+		uid, err := AllocateUID(ctx, q, domain.UIDRange{First: 20000, Last: 29999}, nil, "a1", "shop")
+		if err != nil {
+			return err
+		}
+		return InsertApp(ctx, q, domain.App{ID: "a1", Slug: "shop", UID: uid, GID: uid,
+			DesiredRuntime: domain.DesiredStopped, Ingress: domain.IngressNone, Publication: domain.Unpublished,
+			CreatedAt: time.Now(), UpdatedAt: time.Now()})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	db := openRaw(t, path)
+	dropProtectionColumns(t, db)
+	if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if v := userVersion(t, s.db); v != SchemaVersion {
+		t.Fatalf("user_version %d, want %d", v, SchemaVersion)
+	}
+	got, err := GetApp(ctx, s.DB(), "a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Slug != "shop" || got.Protection != domain.DefaultProtection() {
+		t.Fatalf("migrated app %q protection %+v", got.Slug, got.Protection)
+	}
+}
+
 // A schema-2 state (before runtime builds) opens as the current schema with
 // the runtime build tables, keeping its rows.
 func TestMigrateFrom2AddsRuntimeBuilds(t *testing.T) {
 	path := newStateFile(t)
 	db := openRaw(t, path)
+	dropProtectionColumns(t, db)
 	if _, err := db.Exec(`DROP TABLE app_runtime_builds; DROP TABLE runtime_builds; PRAGMA user_version = 2;`); err != nil {
 		t.Fatal(err)
 	}

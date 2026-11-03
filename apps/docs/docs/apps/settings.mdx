@@ -28,8 +28,36 @@ any other PHP setting goes.
 
 ## Ingress settings and Hosts
 
-Change the **Access** mode and the app's own access log. **Hosts** lists the domains pointing at this app; manage them
-in [Ingress](/ingress/hosts). A Public app needs at least one host to publish.
+Change the **Access** mode, the app's own access log and its request filters. **Hosts** lists the domains pointing at
+this app; manage them in [Ingress](/ingress/hosts). A Public app needs at least one host to publish.
+
+### Request filters
+
+Scanners hit every public site with the same requests: `/.env`, `/wp-login.php`, `/phpmyadmin/`, `backup.zip`. Three
+filters answer those with a plain **404 Not Found**. It is a 404 and not a 403 on purpose: a refusal that looks
+different from "no such page" tells the scanner the file exists.
+
+| Filter | Default | Blocks |
+| --- | --- | --- |
+| **Block dot files** | on | Any path with a dot-prefixed part (`.env`, `.git/`, `.htaccess`, `.DS_Store`), except `/.well-known/`. |
+| **Block PHP probes** | on | WordPress paths (`wp-admin`, `wp-login.php`, `wp-content`, `xmlrpc.php`…), phpMyAdmin and Adminer, webshell and `phpinfo` file names, PHP source extensions (`.phps`, `.phtml`, `.inc`, `.phar`), and PHP files under `uploads`, `files`, `images`, `media`, `storage`, `cache`, `tmp`, `logs`, `vendor` and similar directories. |
+| **Block sensitive files** | on | Backups and leftovers (`.bak`, `.old`, `.orig`, `~`, `.swp`), dumps and logs (`.sql`, `.dump`, `.sqlite`, `.log`), archives (`.zip`, `.tar.gz`, `.7z`…), source maps (`.map`), and package manager files (`composer.json`, `package.json`, lock files, `go.mod`, `requirements.txt`…). |
+
+The filters run in the **edge** for every host that points at this app, and in the app's own Nginx for PHP apps, so
+a PHP app is covered even when you reach it without the edge. Apps with external or private ingress get only the app's
+own Nginx filters (PHP apps). Hosts that proxy to an external upstream or redirect are not filtered.
+Changes apply with an Nginx reload. The app is not restarted.
+
+Turn a filter off when your site really serves what it blocks:
+
+- **WordPress and legacy PHP sites** (routing set to *Legacy*) turn **Block PHP probes** off. They serve `wp-*` paths
+  and PHP from many directories by design.
+- Turn **Block sensitive files** off if you publish downloads such as `.zip` or `.map` files, or serve
+  `package.json` on purpose.
+
+With a filter on, a path it matches is refused even when the file exists. Your own Nginx snippets in
+[`routes/`](/ingress/custom-nginx) are read first, so your own regex, exact or `^~` `location` wins for the paths it
+matches.
 
 ## Container settings
 

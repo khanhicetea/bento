@@ -171,7 +171,8 @@ With the edge bound to loopback and a tunnel configured, the webhook URL that Be
 | Private | `{"ingress":"none"}` on e2e-py | 404 through the tunnel and the edge; app stays healthy |
 | Unpublish/publish | `$B app unpublish|publish e2e-legacy` | 404, then 200 |
 | Stop/start | `$B app stop|start` | stop unpublishes first; start does **not** republish (documented) |
-| Legacy docroot | request `/.env`, `/.git/config`, `/.hidden.php` | 403 |
+| Legacy docroot | request `/.env`, `/.git/config`, `/.hidden.php` | 404 (protection on, the default) |
+| Request filters | request `/wp-login.php`, `/wp-admin/`, `/phpmyadmin/`, `/composer.json`, `/backup.zip`, `/app.js.map` on a PHP app, through the edge and straight to the app | 404 with the defaults; 200/own answer after `{"protection":{"blockPhpProbes":false,"blockSensitiveFiles":false}}`; `/.well-known/…` always reaches the app |
 
 ## 6. Backups
 
@@ -354,8 +355,10 @@ Earlier runs: sections 1–8 on 2026-10-11, 9 and 10 on 2026-10-12.
    and every listing also accepts `--json` after the command.
 4. ~~**REST restic inspect/clone** rejected `"snapshot":"latest"`.~~ **Fixed:** the API accepts `latest` and the
    operation resolves it to the source app's newest snapshot in the repository, shared with restore-from-backup.
-5. **Legacy PHP with docroot = repo root** serves non-dot files such as `composer.json`, `config.inc`, `vendor/*`.
-   Dotfiles are denied. Expected nginx behaviour, but worth a warning in the UI or docs.
+5. ~~**Legacy PHP with docroot = repo root** serves non-dot files such as `composer.json`, `config.inc`, `vendor/*`.~~
+   **Addressed:** per-app protection (on by default) answers 404 for dot files, package manager files, backups,
+   archives, source maps, `.inc`, and PHP under `vendor/`, upload and cache directories. A site that serves such paths
+   on purpose (WordPress) turns the filter off.
 6. **No ready path on a PHP app** means readiness probes request `/` and run app code a few times before the first
    visitor.
 7. **Failed deploy** leaves the new code on disk; a later manual restart serves it without the deploy step that

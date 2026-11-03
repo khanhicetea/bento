@@ -18,7 +18,7 @@ func testApp() domain.App {
 		ID: "aabc123", Slug: "shop", UID: 10000, GID: 10000,
 		Runtime:   domain.Runtime{Kind: domain.RuntimePHP, PHP: &domain.PHPRuntime{Version: "8.4", DocumentRoot: "public", Routing: "front-controller", Mode: "standard", UploadLimitMB: 64}},
 		Resources: domain.Resources{MemoryMB: 512, CPUMillis: 1000, PIDs: 256},
-		Minicrond: true,
+		Minicrond: true, Protection: domain.DefaultProtection(),
 		Bindings: []domain.Binding{
 			{ID: "b1", Engine: domain.EngineMySQL, Service: "mysql84", Username: "uaabc123", Password: "dbsecret12345", Databases: []string{"shop"}},
 			{ID: "b2", Engine: domain.EngineSQLite, SQLiteFileID: "shop_0123456789", Vacuum: &domain.VacuumSlot{DayOfWeek: 1, Hour: 2, Minute: 3}},
@@ -116,6 +116,7 @@ func TestFingerprintStableAndScoped(t *testing.T) {
 	b := testApp()
 	b.Runtime.PHP.Routing = "legacy"
 	b.AccessLog = true
+	b.Protection = domain.Protection{BlockDotFiles: true}
 	if Fingerprint(inputs(t, b)) != g1 {
 		t.Fatal("frontend change must not change the boot fingerprint")
 	}
@@ -164,7 +165,7 @@ func TestRenderedConfig(t *testing.T) {
 		t.Fatal("nginx trust/symlink policy")
 	}
 	if !strings.Contains(files["nginx.conf"], `location ~ /\.(?!well-known`) {
-		t.Fatal("dotfiles must be denied")
+		t.Fatal("dotfiles must be refused")
 	}
 	for _, want := range []string{"absolute_redirect off;", "try_files $uri @bento_php_static;", "set $bento_edge_expires 0;", "add_header X-Accel-Expires $bento_edge_expires always;", "add_header Cache-Control $bento_static_cache;"} {
 		if !strings.Contains(files["nginx.conf"], want) {
