@@ -316,7 +316,16 @@ binary with a different state schema refuses the old root, so a schema change ne
 repos is fine: push the current `scripts/e2e/apps/*` contents as a new commit, use a fresh branch name for the
 wrong-branch case, and a fresh bucket prefix per run so `restic init` does not meet an old repository.
 
-## Last run: 2026-11-02
+## Last run: 2026-11-06/07, real VPS
+
+Sections 1–9 on a fresh public Linode (Debian 13, Docker 29.9.3) following [`real-vps.md`](real-vps.md): fixture repos
+in a private Gitea on the VPS instead of the GitHub test account (Gitea webhooks instead of GitHub's), nip.io hosts on
+the public edge with Let's Encrypt staging instead of the tunnel, and an `rclone serve s3` endpoint instead of R2.
+Every case passed after six fixes; finding 13 is fixed. Not run: section 10 (Invoice Ninja; the 4 GB host was
+short of memory), the tunnel, GitHub webhooks, the Cachet admin and API steps, production ACME. Details are in
+`evidence.md` ("Real VPS run").
+
+## Run: 2026-11-02
 
 Fresh run of sections 1–8 after the runtime image changes (layer reorder, one shared Valkey build, phpredis and Bun
 pins, `vim-tiny`): new stack root and data volumes, Docker 29.8.1, amd64. Every case passed except the open findings

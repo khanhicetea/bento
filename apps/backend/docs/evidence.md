@@ -845,3 +845,66 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
 - `make -C apps/backend ci` passed as root. `make -C apps/backend test-integration` passed on this host
   (integration 889 s, runtime 432 s).
 - Not run: arm64; ACME issuance; the web checks (no frontend files changed).
+
+## Real VPS run (2026-11-06/07; Linode, Debian 13, Docker 29.9.3, amd64, public IPv4 + IPv6)
+
+First run on a fresh public host (`docs/real-vps.md`): install as `install.mdx` says (binary, `bento@.service`,
+`init --mysql 8.4 --postgres 18`), the edge on `0.0.0.0:80/443` with HTTP/3, Let's Encrypt **staging** on nip.io
+hosts, and the e2e fixtures from a private Gitea on the VPS (GitHub repository creation was not available to the
+agent). `make ci` (as root) and the real-Docker suite ran on the VPS.
+
+Verified live for the first time:
+
+- **ACME issuance.** Seven hosts (five apps, Laravel, Cachet, two redirect hosts) issued by Let's Encrypt staging in
+  10–15 s each. The module writes `edge/acme/bento_acme/<host>-<hash>.crt|.key`, which `edge.IssuedCertificates`
+  matches: hosts show `certificate.state: issued` with the expiry. HTTP redirects to HTTPS keep path and query.
+- **HTTP/3** over IPv4 and IPv6 (`curl --http3-only`, `HTTP/3.0` in the traffic log), `Alt-Svc: h3=":443"`.
+- **IPv6** with the visitor's address in the access and traffic logs (after the fix below).
+- **Gitea webhooks:** push → `deployed`, a push to another branch → `ignored-ref`, the generic bearer trigger → 202;
+  no signature, a wrong `X-Gitea-Signature`, a wrong bearer, a wrong path and a GET → 404.
+- **Host reboot:** `bento@prod` and Docker come back; running apps are healthy in ~40 s, a stopped app stays stopped,
+  certificates persist. **Docker restart** while the backend runs, and with it stopped (after the fix below).
+- **Backend SIGKILL mid-deploy:** the operation is `interrupted` in phase `deploy-script` after the systemd restart.
+- Backups to an S3 remote (rclone `serve s3` on the VPS): remote test, a broken endpoint failing in 2 s, app backup,
+  Restore DB (`swap`, 61 rows back, the app stayed up), restore-from-backup with the stack password and with a wrong key.
+- Removal, slug reuse refused, prune, UID not reused; private ingress, unpublish/publish, legacy dotfile protection
+  and every request filter; Laravel 13 (Classic recipe, MySQL queue drained by a minicrond worker, scheduler
+  heartbeats, Valkey cache, push-to-deploy); Cachet 3.x on PostgreSQL 18 behind the public edge (`/dashboard`
+  redirects to `https://`, Livewire URLs are `https`, no `http://` links).
+- Load through the edge (wrk, 200 connections, 20 s): Node 870 req/s, PHP 190 req/s (FPM saturated: 217 client
+  timeouts at 2 s, no edge errors, no non-2xx).
+
+Fixed (one commit each):
+
+- **IPv6 refused.** Docker 29 publishes `0.0.0.0` on IPv4 only; with only `[::]` added, IPv6 visitors arrive as the
+  bridge gateway (docker-proxy). The network plan records whether the kernel has IPv6; the apps network is then
+  dual-stack (Docker ULA /64) and an edge bound to all addresses publishes on `[::]` too.
+- **Edge not restored by Docker.** Reloads (`ContainerKill HUP`) and hourly log reopens (`USR1`) set Docker's
+  `HasBeenManuallyStopped`, so after any reload a Docker restart or reboot left the edge down until the backend
+  recreated it (reproduced with a scratch container: `docker kill -s HUP` sets the flag). Reload and reopen run
+  `nginx -s reload|reopen` in the container; `Engine.Signal` is gone.
+- **Orphaned deploy scripts.** A running tool container (32-minute `sleep`) of a backend that died kept running
+  `~/deploy.sh`; the reconciler now removes running tool and probe containers created before the backend started,
+  without the grace period (gone 10 s after the SIGKILL).
+- **Deploy failure summary** showed the line before the error (stdout and stderr on separate pipes): the script runs
+  with stderr merged into stdout. Seen live on the Classic recipe's first deploy (`~/app/.env is missing`).
+- **Webhook deliveries** read `deployed` for a deploy whose script failed: deliveries carry the operation state
+  (CLI column, UI badge `deploy failed`).
+- **ACME challenge warnings:** every Let's Encrypt validation request logged `using uninitialized "bento_route"`.
+
+Not fixed (`BACKLOG.md`): HTTPS fails for ~15 s while a host's first certificate is issued. The flag explains both
+reboots: before the first one the edge had been reloaded (not restored); before the second it had only been started
+by the backend, which clears the flag (restored).
+
+Not run: production Let's Encrypt, a real Cloudflare Tunnel, GitHub webhooks, Invoice Ninja (needs more than this
+4 GB host had free), arm64, the web UI in a browser (the embedded UI, login, a wrong password and an authenticated
+call were checked over loopback).
+
+Final run on the finished branch (schema merged into baseline 1, commit `e33226c`), on the VPS:
+
+- `make ci` as root passed. The real-Docker suite passed: integration 17/17, runtime 28/28 including
+  `TestIntegrationBuildRuntimeImages` (no skips).
+- `scripts/vps/final.sh` on a fresh stack: install, edge, five apps deployed from Gitea and healthy, five staging
+  certificates issued, every app 200 over IPv4 and IPv6, a Gitea push deployed (`succeeded`) and live.
+- Reboot with `bento@prod` disabled, after many edge reloads: Docker alone brought back the edge and all apps; the
+  sites answered 200 before the backend was started again.
