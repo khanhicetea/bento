@@ -141,3 +141,20 @@ func TestValidateResticSettingsCapsLists(t *testing.T) {
 		t.Fatalf("errors %v", msg)
 	}
 }
+
+func TestRedactorHidesBindingPasswordsAndSecretEnv(t *testing.T) {
+	a := App{
+		Bindings: []Binding{{Password: "db-password-123"}},
+		Runtime: Runtime{Env: []EnvVar{
+			{Key: "STRIPE_SECRET_KEY", Value: "sk_live_abcdefgh"},
+			{Key: "APP_KEY_TOKEN", Value: "sk_live_abcdefgh_longer"},
+			{Key: "SHORT_TOKEN", Value: "abc"},
+			{Key: "APP_ENV", Value: "production"},
+		}},
+	}
+	got := a.Redactor().Replace("db=db-password-123 stripe=sk_live_abcdefgh tok=sk_live_abcdefgh_longer short=abc env=production")
+	want := "db=[redacted] stripe=[redacted] tok=[redacted] short=abc env=production"
+	if got != want {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}

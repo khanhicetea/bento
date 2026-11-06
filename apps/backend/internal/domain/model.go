@@ -3,6 +3,7 @@
 package domain
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
@@ -83,12 +84,28 @@ type App struct {
 }
 
 // Redactor replaces the app's known secret values in app-controlled output.
+// Redactor hides the app's secrets in output it controls (logs, exec and
+// deploy output, scheduler run logs): binding passwords and the values of
+// env vars with a secret-looking name (SensitiveEnvKey). Env values shorter
+// than 8 characters are left alone so ordinary output is not mangled.
 func (a App) Redactor() *strings.Replacer {
-	var pairs []string
+	var secrets []string
 	for _, b := range a.Bindings {
 		if b.Password != "" {
-			pairs = append(pairs, b.Password, "[redacted]")
+			secrets = append(secrets, b.Password)
 		}
+	}
+	for _, e := range a.Runtime.Env {
+		if SensitiveEnvKey(e.Key) && len(e.Value) >= 8 {
+			secrets = append(secrets, e.Value)
+		}
+	}
+	// The replacer tries its pairs in order: longer secrets first, so one
+	// that contains another is hidden whole.
+	slices.SortFunc(secrets, func(x, y string) int { return len(y) - len(x) })
+	var pairs []string
+	for _, s := range slices.Compact(secrets) {
+		pairs = append(pairs, s, "[redacted]")
 	}
 	return strings.NewReplacer(pairs...)
 }

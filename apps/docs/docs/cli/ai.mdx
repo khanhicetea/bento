@@ -28,6 +28,12 @@ Every connection has one scope. The backend enforces it on every request; the cl
 | `operate` | Everything in `read`, plus start / stop / restart / deploy apps, run backups, restart data services, cancel operations, run scheduler jobs, start / stop / restart workers, stop runs |
 | `admin` | Everything in `operate`, plus create / update / publish apps, add bindings and databases, set git sources, save Ingress hosts, create / edit / enable / disable scheduler jobs, list / read / edit files in an app's `~/app` |
 
+<Callout type="warning" title="admin can run code in your apps">
+An `admin` caller can create a scheduler job (which an `operate` caller can then run), edit files in `~/app`, or point
+an app at another git repository and deploy it: each of these runs code of its choosing as the app. Give `admin` only
+to a client you would give a shell on the app.
+</Callout>
+
 No scope can delete or restore anything. Deleting apps, hosts, schedules, or backups; restores and clones;
 pruning retained data; export; exec and terminals; importing or deleting scheduler jobs; database-browser tickets; and every credential (password,
 tunnel token, restic keys, webhook secrets, API tokens) still need the web UI or the plain `bento` CLI, with their
@@ -36,6 +42,8 @@ exact confirmations.
 For any scoped caller, Bento also:
 
 - shows app **env values as `[redacted]`** and refuses env changes,
+- hides binding passwords and the values of env vars with a secret-looking name (`PASSWORD`, `SECRET`, `TOKEN`, …)
+  in logs, exec output, deploy output and scheduler run logs (for every caller, the web UI included),
 - shows only the **env keys** of scheduler jobs, never their values,
 - labels every operation it starts — `token:<name>` or `local:<scope>` — in **Activity**.
 

@@ -26,10 +26,6 @@ None open.
 
 ## Hardening (low)
 
-- **Admin tokens can run code in apps.** An admin token can create a scheduler job, and an operate token runs it
-  (`internal/api/scopes.go:105-121`). File PUT and git repoint plus deploy reach the same result. The docs say no
-  scope reaches exec. Either document admin as code execution or narrow it. Run logs and file reads redact only
-  binding passwords, not operator env values.
 - **Webhook replay.** The HMAC covers only the body; the delivery id is unsigned and there is no timestamp
   (`internal/domain/webhook.go:108`, `internal/operations/webhook.go:200`). A replay only redeploys the branch head.
 - **Isolation (design).** Apps share one flat network and can reach each other's listeners and the utils listener.
