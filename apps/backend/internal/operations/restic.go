@@ -1101,7 +1101,10 @@ func (c *Controller) serviceVersions(ctx context.Context, app domain.App) map[st
 }
 
 // homeSQLiteFiles lists SQLite files to snapshot with .backup: minicrond's
-// jobs database (never its log database) plus the operator's SQLitePaths.
+// jobs database (never its log database), the operator's SQLitePaths, and
+// every other SQLite database found in the backed-up paths. A database the
+// app writes while restic reads it raw can be captured torn (Laravel's
+// database/database.sqlite), so none is copied raw.
 func (c *Controller) homeSQLiteFiles(app domain.App, s domain.ResticSettings) []string {
 	home := c.Layout.AppHome(app.Slug)
 	var out []string
@@ -1109,10 +1112,82 @@ func (c *Controller) homeSQLiteFiles(app domain.App, s domain.ResticSettings) []
 	if platform.NoSymlinkBetween(home, dir) == nil && backup.IsSQLiteFile(filepath.Join(dir, domain.MinicronDBFile)) {
 		out = append(out, domain.MinicronDataDir+"/"+domain.MinicronDBFile)
 	}
-	for _, p := range s.SQLitePaths {
+	for _, p := range slices.Concat(s.SQLitePaths, discoverHomeSQLite(home, s)) {
 		if !slices.Contains(out, p) {
 			out = append(out, p)
 		}
+	}
+	return out
+}
+
+// sqliteExtensions are the file names discoverHomeSQLite opens to check for
+// the SQLite header.
+var sqliteExtensions = []string{".sqlite", ".sqlite3", ".db", ".db3", ".s3db", ".sl3"}
+
+// discoverHomeSQLiteLimit caps the databases found and the entries walked.
+const (
+	discoverHomeSQLiteLimit   = 100
+	discoverHomeSQLiteEntries = 500_000
+)
+
+// discoverHomeSQLite finds SQLite databases (by extension, then by header) in
+// the backed-up paths of a home. It never follows a symlink and skips trees
+// that are excluded, re-creatable (.git, node_modules, vendor), or Bento's
+// own (minicrond's and mise's data, caches).
+func discoverHomeSQLite(home string, s domain.ResticSettings) []string {
+	skip := slices.Concat([]string{".git", "node_modules", "vendor", domain.MinicronDataDir, domain.MiseDataDir, ".cache"},
+		domain.ResticDefaultExcludes)
+	excluded := func(rel string) bool {
+		for _, p := range slices.Concat(skip, s.Excludes) {
+			p = strings.TrimSuffix(strings.TrimPrefix(p, "./"), "/")
+			if p == "" || strings.HasPrefix(p, "!") {
+				continue
+			}
+			if rel == p || strings.HasPrefix(rel, p+"/") {
+				return true
+			}
+			if !strings.Contains(p, "/") {
+				if ok, _ := filepath.Match(p, filepath.Base(rel)); ok {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	var out []string
+	walked := 0
+	for _, root := range s.Paths {
+		start := filepath.Join(home, root)
+		if platform.NoSymlinkBetween(home, start) != nil {
+			continue
+		}
+		_ = filepath.WalkDir(start, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if walked++; walked > discoverHomeSQLiteEntries || len(out) >= discoverHomeSQLiteLimit {
+				return filepath.SkipAll
+			}
+			rel, rerr := filepath.Rel(home, p)
+			if rerr != nil || rel == "." {
+				return nil
+			}
+			rel = filepath.ToSlash(rel)
+			if excluded(rel) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.Type()&fs.ModeSymlink != 0 || !d.Type().IsRegular() {
+				return nil
+			}
+			if slices.Contains(sqliteExtensions, strings.ToLower(filepath.Ext(rel))) && backup.IsSQLiteFile(p) &&
+				!slices.Contains(out, rel) {
+				out = append(out, rel)
+			}
+			return nil
+		})
 	}
 	return out
 }

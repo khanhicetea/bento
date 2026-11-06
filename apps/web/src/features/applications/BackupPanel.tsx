@@ -213,11 +213,11 @@ function SettingsCell({ app, restic }: { app: T.App; restic: T.Restic }) {
             <Field label="Excludes" hint="restic patterns · ! re-includes · .nobackup skips dir">
               <textarea className={textarea} value={excludes} onChange={(event) => setExcludes(event.target.value)} />
             </Field>
-            <Field label="SQLite files" hint="Copied with .backup · Processes & Tasks DB always">
+            <Field label="SQLite files" hint="*.sqlite, *.db found anyway · list other names">
               <textarea
                 className={textarea}
                 value={sqlitePaths}
-                placeholder="app/database/database.sqlite"
+                placeholder="app/storage/data.bin"
                 onChange={(event) => setSqlitePaths(event.target.value)}
               />
             </Field>

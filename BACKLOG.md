@@ -39,9 +39,6 @@ None open.
 
 ### Data and transfer
 
-- **Restic copies unlisted SQLite files raw while the app runs** (plausible). `internal/operations/restic.go:1077-1090`
-  snapshots only `minicron.db` and the listed paths. Other SQLite files in the home (for example Laravel's
-  `database/database.sqlite`) can be torn.
 
 ### Auth
 

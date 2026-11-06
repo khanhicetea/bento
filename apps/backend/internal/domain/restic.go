@@ -20,8 +20,9 @@ type ResticSettings struct {
 	// home; one without matches a name anywhere. A leading "!" negates.
 	Excludes        []string `json:"excludes"`
 	DefaultExcludes bool     `json:"defaultExcludes"`
-	// SQLitePaths are extra SQLite files in the home snapshotted with
-	// .backup instead of being copied while live.
+	// SQLitePaths are SQLite files in the home snapshotted with .backup
+	// instead of being copied while live, in addition to the databases a
+	// backup finds by name (*.sqlite, *.db, ...) in its paths.
 	SQLitePaths []string        `json:"sqlitePaths"`
 	Retention   ResticRetention `json:"retention"`
 	Schedule    ResticSchedule  `json:"schedule"`

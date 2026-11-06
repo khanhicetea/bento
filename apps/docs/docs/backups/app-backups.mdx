@@ -16,7 +16,9 @@ host.
 
 1. A plain SQL dump of each MySQL and PostgreSQL database (taken first, so every upload referenced by the data is
    included).
-2. Safe copies of SQLite files and the scheduler's jobs.
+2. Safe copies (SQLite `.backup`, never a raw copy of a live file) of every SQLite database in the saved paths —
+   files named `*.sqlite`, `*.sqlite3`, `*.db`, `*.db3`, `*.s3db` or `*.sl3`, outside `.git`, `node_modules`,
+   `vendor` and your excludes — plus any other file you list under **SQLite files**, and the scheduler's jobs.
 3. `app.json` — runtime, resources, domains, bindings, git source, the Valkey and scheduler settings, and environment
    variables **with secrets redacted**.
 4. The home folder, minus your excludes — including the app's [Valkey](/apps/data#valkey) snapshot, `dump.rdb`, when

@@ -3,6 +3,8 @@ package operations
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/network"
@@ -115,5 +117,38 @@ func TestServiceRestartAppliesCatalogPatchImage(t *testing.T) {
 	ins, err := h.fake.Inspect(ctx, h.c.Names.ServiceContainer(svcName))
 	if err != nil || ins == nil || ins.Config.Image != catalog {
 		t.Fatalf("service container not on the catalog image: %+v %v", ins, err)
+	}
+}
+
+// SQLite databases in the backed-up paths are found by name and header,
+// without following links, outside excluded and re-creatable trees.
+func TestDiscoverHomeSQLite(t *testing.T) {
+	home := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(home, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db := "SQLite format 3\x00" + strings.Repeat("x", 84)
+	write("app/database/database.sqlite", db)
+	write("app/storage/cache.db", db)
+	write("app/storage/notes.db", "not a database at all, just text")
+	write("app/node_modules/pkg/test.sqlite", db)
+	write("app/vendor/x/fixture.db", db)
+	write("app/skipme/a.sqlite", db)
+	write(".local/share/minicron/minicron-logs.db", db)
+	write("other/outside.sqlite", db)
+	if err := os.Symlink("/etc/passwd", filepath.Join(home, "app/link.db")); err != nil {
+		t.Fatal(err)
+	}
+	got := discoverHomeSQLite(home, domain.ResticSettings{Paths: []string{"app", ".local"}, Excludes: []string{"skipme"}})
+	slices.Sort(got)
+	want := []string{"app/database/database.sqlite", "app/storage/cache.db"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("found %v, want %v", got, want)
 	}
 }
