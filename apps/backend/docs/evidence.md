@@ -900,16 +900,17 @@ Fixed (one commit each):
   Verified live: a new host answered with `bento-pending` from t+0 s, then the staging certificate; no
   `cannot load certificate`. `TestIntegrationEdgeFirstACMEHostKeepsEdgeRunning` checks the handshake on a real edge.
 
-The manual-stop flag explains both reboots: before the first one the edge had been reloaded (not restored); before the second it had only been started
-by the backend, which clears the flag (restored).
+The manual-stop flag explains both reboots: before the first one the edge had been reloaded (not restored); before
+the second it had only been started by the backend, which clears the flag (restored).
 
 Not run: production Let's Encrypt, a real Cloudflare Tunnel, GitHub webhooks, Invoice Ninja (needs more than this
 4 GB host had free), arm64, the web UI in a browser (the embedded UI, login, a wrong password and an authenticated
 call were checked over loopback).
 
-Final run on the finished branch (schema merged into baseline 1, commit `e33226c`), on the VPS:
+Final run on the finished branch (commit `b3fa1e1`: schema baseline 1 and the placeholder certificate), on the VPS;
+the dev host only edited and built:
 
-- `make ci` as root passed. The real-Docker suite passed: integration 17/17, runtime 28/28 including
+- `bun run fmt:check`, `lint`, `check` and `web:build` passed. `make ci` as root passed. The real-Docker suite passed: integration 17/17, runtime 28/28 including
   `TestIntegrationBuildRuntimeImages` (no skips).
 - `scripts/vps/final.sh` on a fresh stack: install, edge, five apps deployed from Gitea and healthy, five staging
   certificates issued, every app 200 over IPv4 and IPv6, a Gitea push deployed (`succeeded`) and live.

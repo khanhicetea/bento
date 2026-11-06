@@ -16,7 +16,7 @@ The dev host only edits code and builds; every test, including `make ci`, runs o
 | OS | Debian GNU/Linux 13 (trixie), x86_64 |
 | Size | 2 vCPU, 3.8 GiB RAM, 79 GB disk |
 | Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd), Compose v5.7.0; installed 2026-11-06 via get.docker.com |
-| Tooling | Go 1.27.0 (`/usr/local/go`), gcc (race tests), git, jq, rsync |
+| Tooling | Go 1.27.0 (`/usr/local/go`), Bun 1.4.0, gcc (race tests), git, jq, rsync |
 
 ## Access
 
@@ -80,7 +80,8 @@ ssh bento-test 'apt-get update && apt-get install -y curl ca-certificates rsync 
 ## 2. Tests
 
 ```bash
-scripts/vps/sync.sh && ssh bento-test 'cd /root/src/apps/backend && make ci'      # gofmt, vet, race tests, types, build
+scripts/vps/sync.sh && ssh bento-test 'cd /root/src && bun install --frozen-lockfile &&
+  bun run fmt:check && bun run lint && bun run check && bun run web:build && make -C apps/backend ci'
 ```
 
 Real-Docker suite: build the test binaries on the dev host, run them on the VPS from the package directories (the
@@ -134,6 +135,7 @@ re-add the public key.
 ## Log
 
 - **2026-11-06:** Key access verified. Debian 13 x86_64; Docker Engine 29.9.3 installed (step 1).
-- **2026-11-06/07:** First real-server run, recorded in `evidence.md` ("Real VPS run"). Six fixes, one commit each
+- **2026-11-06/07:** First real-server run, recorded in `evidence.md` ("Real VPS run"). Seven fixes, one commit each
   (IPv6 edge, edge restartability, orphaned deploy scripts, deploy summary order, webhook delivery outcome, ACME
-  challenge warnings), then the schema merged into one baseline and a final run on a fresh stack.
+  challenge warnings, the placeholder certificate during first issuance), then the schema merged into one baseline and
+  a final run on a fresh stack. Bun 1.4.0 is installed too, so the web checks run here as well.
