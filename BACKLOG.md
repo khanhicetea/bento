@@ -26,8 +26,6 @@ None open.
 
 ## Hardening (low)
 
-- **Webhook replay.** The HMAC covers only the body; the delivery id is unsigned and there is no timestamp
-  (`internal/domain/webhook.go:108`, `internal/operations/webhook.go:200`). A replay only redeploys the branch head.
 - **Isolation (design).** Apps share one flat network and can reach each other's listeners and the utils listener.
   App homes have no disk quota, so one app can fill the disk that holds `bento.db`.
 

@@ -19,7 +19,9 @@ import (
 )
 
 func githubPush(secret, delivery, ref string) (http.Header, []byte) {
-	body := []byte(`{"ref":"` + ref + `","after":"` + testCommit + `","pusher":{"name":"kit"}}`)
+	// Real push bodies differ per push (commits, timestamps); the delivery id
+	// stands in for that here.
+	body := []byte(`{"ref":"` + ref + `","after":"` + testCommit + `","pusher":{"name":"kit"},"x_delivery":"` + delivery + `"}`)
 	m := hmac.New(sha256.New, []byte(secret))
 	m.Write(body)
 	h := http.Header{}
@@ -393,5 +395,28 @@ func TestAppsGatewayIsTheHostAddressInTheSubnet(t *testing.T) {
 	h := newHarness(t)
 	if gw, err := h.c.AppsGateway(t.Context()); err != nil || gw != "" {
 		t.Fatalf("reading the gateway must never plan networks: %q %v", gw, err)
+	}
+}
+
+// A captured signed delivery replayed under a new (unsigned) delivery id is
+// recognized by its body and does not deploy again.
+func TestWebhookReplayWithNewDeliveryIDIsDuplicate(t *testing.T) {
+	h := newHarness(t)
+	_, w := h.webhookApp("shop")
+	ctx := t.Context()
+	var key string
+	var req docker.ExecRequest
+	h.fake.ExecHook = deployHook("BENTO_COMMIT="+testCommit+"\n", "", 0, &key, &req)
+	hd, body := githubPush(w.Secret, "d-1", "refs/heads/main")
+	first, err := h.c.HandleWebhook(ctx, w.HookID, hd, body)
+	if err != nil || first.Result != "deployed" {
+		t.Fatalf("push: %+v %v", first, err)
+	}
+	op, _ := store.GetOperation(ctx, h.store.DB(), first.OperationID)
+	h.wait(op)
+	hd.Set("X-GitHub-Delivery", "d-replayed")
+	replay, err := h.c.HandleWebhook(ctx, w.HookID, hd, body)
+	if err != nil || replay.Result != "duplicate" || replay.OperationID != first.OperationID {
+		t.Fatalf("replay under a new delivery id: %+v %v", replay, err)
 	}
 }

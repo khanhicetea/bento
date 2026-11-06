@@ -2,9 +2,12 @@ package operations
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
@@ -121,6 +124,10 @@ func (c *Controller) HandleWebhook(
 	c.webhookMu.Lock()
 	defer c.webhookMu.Unlock()
 	ev := domain.ParseWebhook(h, body, g.Branch)
+	if strings.Contains(auth, "HMAC") {
+		sum := sha256.Sum256(body)
+		ev.BodyDigest = hex.EncodeToString(sum[:16])
+	}
 	d := domain.WebhookDelivery{
 		At:         time.Now().UTC(),
 		Provider:   ev.Provider,
@@ -198,8 +205,13 @@ func (c *Controller) submitWebhookDeploy(
 		}
 	}
 	var idem string
-	if ev.DeliveryID != "" {
-		idem = "webhook:" + app.ID + ":" + ev.Provider + ":" + ev.DeliveryID
+	key := ev.DeliveryID
+	if ev.BodyDigest != "" {
+		// A signed body, not its unsigned delivery id, identifies the push.
+		key = "body-" + ev.BodyDigest
+	}
+	if key != "" {
+		idem = "webhook:" + app.ID + ":" + ev.Provider + ":" + key
 		// Providers reuse the delivery ID on "Redeliver", which operators use
 		// after fixing a failed deploy. Dedupe only against a delivery that is
 		// queued, running, or succeeded; after a failure, chain a new key off

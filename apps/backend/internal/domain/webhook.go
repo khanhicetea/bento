@@ -166,6 +166,10 @@ type WebhookEvent struct {
 	Commit  string
 	Deleted bool
 	Pusher  string
+	// BodyDigest identifies the signed body of an HMAC-verified delivery.
+	// Its delivery id header is not signed, so a captured delivery replayed
+	// under a new id is recognized by its body (every push body differs).
+	BodyDigest string
 }
 
 var (
