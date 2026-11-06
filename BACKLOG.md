@@ -39,9 +39,6 @@ None open.
 
 ### Data and transfer
 
-- **Export has no integrity protection.** There is no fsync of `stack.tar.zst` or the volume tars
-  (`internal/operations/transfer.go:260-270`), and the manifest records no checksums. Tool shells and exec containers
-  keep writing to app homes during the "quiesced" export.
 - **Restic copies unlisted SQLite files raw while the app runs** (plausible). `internal/operations/restic.go:1077-1090`
   snapshots only `minicron.db` and the listed paths. Other SQLite files in the home (for example Laravel's
   `database/database.sqlite`) can be torn.

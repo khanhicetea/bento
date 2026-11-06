@@ -9,8 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 	"github.com/khanhicetea/bento/apps/backend/internal/transfer"
 )
@@ -24,6 +27,24 @@ func exportFixture(t *testing.T) (*harness, domain.App) {
 	// "ready" satisfies app readiness; exit 0 the service readiness.
 	h.fake.ExecHook = func(string, docker.ExecRequest) docker.ExecResult {
 		return docker.ExecResult{Stdout: []byte("ready OK")}
+	}
+	// The volume job writes its tar into the export directory (/x).
+	h.fake.WaitHook = func(spec docker.ContainerSpec) (int64, error) {
+		cmd := spec.Config.Cmd
+		for i, a := range cmd {
+			if a != "-cf" || i+1 >= len(cmd) {
+				continue
+			}
+			for _, m := range spec.HostConfig.Mounts {
+				if m.Target == "/x" {
+					name := strings.TrimPrefix(cmd[i+1], "/x/")
+					if err := os.WriteFile(filepath.Join(m.Source, name), []byte("volume"), 0o600); err != nil {
+						return 1, err
+					}
+				}
+			}
+		}
+		return 0, nil
 	}
 	app := h.createApp("shop")
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
@@ -64,9 +85,19 @@ func (h *harness) assertResumed(app domain.App, serviceRunning bool) {
 func TestExportQuiescesArchivesAndResumes(t *testing.T) {
 	h, app := exportFixture(t)
 	ctx := t.Context()
+	// An open tool shell would keep writing to the home during the archive.
+	shell, err := h.fake.Create(ctx, docker.ContainerSpec{Name: "shell", Config: &container.Config{
+		Labels: h.c.Names.Labels(runtime.RoleTool, map[string]string{runtime.LabelAppID: app.ID})}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.fake.Containers[shell].State = "running"
 	stops := h.fake.CallCount("Stop")
 	dest := filepath.Join(t.TempDir(), "export")
 	got := h.mustSucceed(h.c.SubmitExport(ctx, dest, "export", ""))
+	if _, ok := h.fake.Containers[shell]; ok {
+		t.Fatal("export must remove the stack's tool containers before archiving")
+	}
 
 	var res map[string]any
 	if err := json.Unmarshal(got.Result, &res); err != nil {
@@ -86,6 +117,18 @@ func TestExportQuiescesArchivesAndResumes(t *testing.T) {
 	if s := m.Services[0]; s.Name != "mysql84" || s.VolumeFile != "volume-mysql84.tar" || s.Image != domain.MySQLVersions["8.4"] {
 		t.Fatalf("service entry %+v", s)
 	}
+	if err := m.Validate(store.SchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := transfer.Verify(dest, m); err != nil {
+		t.Fatalf("a fresh export must verify: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "state.db"), []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := transfer.Verify(dest, m); err == nil {
+		t.Fatal("a changed file must fail verification")
+	}
 	for _, f := range []string{"state.db", "stack.tar.zst", "manifest.json"} {
 		info, err := os.Stat(filepath.Join(dest, f))
 		if err != nil || info.Mode().Perm() != 0o600 {
@@ -95,7 +138,7 @@ func TestExportQuiescesArchivesAndResumes(t *testing.T) {
 	if n := h.fake.CallCount("Stop") - stops; n != 2 {
 		t.Fatalf("export must stop exactly the running app and service, stopped %d", n)
 	}
-	want := []string{"quiesce", "snapshot-state", "archive-root", "archive-volume mysql84", "resume"}
+	want := []string{"quiesce", "snapshot-state", "archive-root", "archive-volume mysql84", "seal", "resume"}
 	if p := h.phases(got.ID); !slices.Equal(p[:len(want)], want) {
 		t.Fatalf("phases %v", p)
 	}

@@ -3,6 +3,8 @@ package transfer
 
 import (
 	"archive/tar"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +47,9 @@ type Manifest struct {
 	StateFile     string         `json:"stateFile"`
 	RootArchive   string         `json:"rootArchive"`
 	Services      []ServiceEntry `json:"services"`
+	// Checksums holds the SHA-256 (hex) of every file the manifest names,
+	// computed after the files were synced to disk (Seal).
+	Checksums map[string]string `json:"checksums"`
 }
 
 // Validate checks the manifest; its state schema must be one of the accepted
@@ -59,12 +64,100 @@ func (m Manifest) Validate(schemaVersions ...int) error {
 	if !slices.Contains(schemaVersions, m.SchemaVersion) {
 		return fmt.Errorf("transfer holds state schema %d; this Bento supports %v", m.SchemaVersion, schemaVersions)
 	}
-	for _, f := range append([]string{m.StateFile, m.RootArchive}, volumeFiles(m)...) {
+	for _, f := range m.files() {
 		if f == "" || strings.ContainsAny(f, "/\\") || strings.HasPrefix(f, ".") {
 			return fmt.Errorf("manifest references unsafe file %q", f)
 		}
+		if len(m.Checksums[f]) != 64 {
+			return fmt.Errorf("manifest has no checksum for %s", f)
+		}
 	}
 	return nil
+}
+
+// files lists every file the manifest names.
+func (m Manifest) files() []string {
+	return append([]string{m.StateFile, m.RootArchive}, volumeFiles(m)...)
+}
+
+// Seal syncs every file the manifest names to disk, records their SHA-256,
+// and writes the manifest last (synced, then the directory), so an export
+// that a crash or a full disk cut short has no manifest to import from.
+func Seal(dir string, m *Manifest) error {
+	m.Checksums = map[string]string{}
+	for _, name := range m.files() {
+		sum, err := hashFile(filepath.Join(dir, name), true)
+		if err != nil {
+			return fmt.Errorf("seal %s: %w", name, err)
+		}
+		m.Checksums[name] = sum
+	}
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, ".manifest.json.tmp")
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(b, '\n'))
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, filepath.Join(dir, "manifest.json"))
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return syncDir(dir)
+}
+
+// Verify checks every file against the manifest's checksums before anything
+// is imported from it.
+func Verify(dir string, m Manifest) error {
+	for _, name := range m.files() {
+		sum, err := hashFile(filepath.Join(dir, name), false)
+		if err != nil {
+			return fmt.Errorf("verify %s: %w", name, err)
+		}
+		if sum != m.Checksums[name] {
+			return fmt.Errorf("%s does not match its checksum: the export is damaged or was changed", name)
+		}
+	}
+	return nil
+}
+
+func hashFile(path string, sync bool) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	if sync {
+		if err := f.Sync(); err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 func volumeFiles(m Manifest) []string {
@@ -75,6 +168,8 @@ func volumeFiles(m Manifest) []string {
 	return out
 }
 
+// WriteManifest writes the manifest as it is (tests and tooling); exports
+// use Seal.
 func WriteManifest(dir string, m Manifest) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

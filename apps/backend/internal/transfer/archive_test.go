@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -114,8 +115,9 @@ func TestArchiveRoundTripPreservesModesAndSkips(t *testing.T) {
 }
 
 func TestManifestValidation(t *testing.T) {
+	sum := strings.Repeat("a", 64)
 	m := Manifest{Format: FormatName, Version: FormatVersion, SchemaVersion: 1, StateFile: "state.db", RootArchive: "stack.tar.zst",
-		Services: []ServiceEntry{{VolumeFile: "../x"}}}
+		Services: []ServiceEntry{{VolumeFile: "../x"}}, Checksums: map[string]string{"state.db": sum, "stack.tar.zst": sum}}
 	if m.Validate(1) == nil {
 		t.Fatal("unsafe volume file accepted")
 	}
@@ -125,6 +127,10 @@ func TestManifestValidation(t *testing.T) {
 	}
 	if err := m.Validate(1); err != nil {
 		t.Fatal(err)
+	}
+	delete(m.Checksums, "stack.tar.zst")
+	if m.Validate(1) == nil {
+		t.Fatal("a file without a checksum accepted")
 	}
 }
 

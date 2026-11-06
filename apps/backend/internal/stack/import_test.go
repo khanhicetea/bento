@@ -108,7 +108,7 @@ func writeExport(t *testing.T) exportedStack {
 		Services: []transfer.ServiceEntry{{Name: "mysql84", Engine: "mysql", Version: "8.4", Image: domain.MySQLVersions["8.4"],
 			VolumeFile: "volume-mysql84.tar", SourceVolume: "bento-prod-mysql84-data"}},
 	}
-	if err := transfer.WriteManifest(dest, m); err != nil {
+	if err := transfer.Seal(dest, &m); err != nil {
 		t.Fatal(err)
 	}
 	return exportedStack{dir: dest, stackID: id.ID, app: app}
@@ -339,6 +339,15 @@ func rewriteArchivedSidecar(t *testing.T, exp exportedStack) {
 		t.Fatal(err)
 	}
 	out.Close()
+	// Checksums detect damage, not intent: the identity check is what must
+	// refuse this, so the edited export is resealed.
+	m, err := transfer.ReadManifest(exp.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transfer.Seal(exp.dir, &m); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestImportRefusesNonEmptyRootUntouched(t *testing.T) {
@@ -366,9 +375,6 @@ func TestImportUsesCatalogServiceImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Services[0].Image = "evil.example/rootkit:latest"
-	if err := transfer.WriteManifest(exp.dir, m); err != nil {
-		t.Fatal(err)
-	}
 	st, err := store.Open(filepath.Join(exp.dir, "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -377,6 +383,10 @@ func TestImportUsesCatalogServiceImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Close()
+	// Checksums detect damage, not intent: a tamperer reseals.
+	if err := transfer.Seal(exp.dir, &m); err != nil {
+		t.Fatal(err)
+	}
 	root := filepath.Join(t.TempDir(), "clone")
 	fake := docker.NewFake()
 	rng := &domain.UIDRange{First: 50000, Last: 59999}
@@ -394,5 +404,27 @@ func TestImportUsesCatalogServiceImages(t *testing.T) {
 	svc, err := store.GetService(ctx, openImported(t, root).DB(), "mysql84")
 	if err != nil || svc.Image != domain.MySQLVersions["8.4"] {
 		t.Fatalf("imported service image %q %v", svc.Image, err)
+	}
+}
+
+// An export that changed after it was sealed (a truncated copy, a bit flip,
+// an edited archive) is refused before anything is created.
+func TestImportRefusesExportThatDoesNotMatchItsChecksums(t *testing.T) {
+	exp := writeExport(t)
+	f, err := os.OpenFile(filepath.Join(exp.dir, "stack.tar.zst"), os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte("x"))
+	f.Close()
+	root := filepath.Join(t.TempDir(), "clone")
+	fake := docker.NewFake()
+	err = Import(t.Context(), fake, discard, ImportOptions{Root: root, From: exp.dir, Name: "clone",
+		NewUIDRange: &domain.UIDRange{First: 50000, Last: 59999}})
+	if err == nil || !strings.Contains(err.Error(), "does not match its checksum") {
+		t.Fatalf("import of a changed export: %v", err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, fs.ErrNotExist) || len(fake.Calls) != 0 {
+		t.Fatalf("a refused import created something: root %v, calls %v", err, fake.Calls)
 	}
 }

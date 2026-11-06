@@ -114,6 +114,9 @@ func readExport(
 	if err := m.Validate(store.SupportedVersions()...); err != nil {
 		return "", m, "", err
 	}
+	if err := transfer.Verify(from, m); err != nil {
+		return "", m, "", err
+	}
 	if v, verr := engine.Version(ctx); verr == nil && m.Arch != "" && v.Arch != m.Arch {
 		return "", m, "", fmt.Errorf("export was taken on %s; this Docker host is %s", m.Arch, v.Arch)
 	}

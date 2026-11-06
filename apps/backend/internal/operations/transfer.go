@@ -178,7 +178,10 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 	if m.Services, err = c.archiveVolumes(ctx, r, dest, services); err != nil {
 		return nil, err
 	}
-	if err := transfer.WriteManifest(dest, m); err != nil {
+	if err := r.Phase(ctx, "seal"); err != nil {
+		return nil, err
+	}
+	if err := transfer.Seal(dest, &m); err != nil {
 		return nil, err
 	}
 	if err := privatize(dest); err != nil {
@@ -188,13 +191,27 @@ func (c *Controller) handleStackExport(ctx context.Context, r *Run) (res any, er
 	return map[string]any{"destination": dest, "services": len(m.Services), "apps": len(apps)}, nil
 }
 
-// quiesceForExport stops every running app and data service. It returns what
-// it stopped, including on error, so the caller can restart exactly that set.
+// quiesceForExport stops every running app and data service, and removes the
+// stack's tool containers (shells and exec sessions write to app homes too;
+// the export is a global operation, so no operation is using one). It returns
+// what it stopped, including on error, so the caller can restart exactly
+// that set.
 func (c *Controller) quiesceForExport(
 	ctx context.Context,
 	apps []domain.App,
 	services []store.ServiceRow,
 ) (stoppedApps []domain.App, stoppedServices []store.ServiceRow, err error) {
+	tools, err := c.Engine.List(ctx, map[string]string{runtime.LabelStackID: c.Stack.ID})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, t := range tools {
+		if c.Names.OwnedBy(t.Labels, runtime.RoleTool, "") {
+			if err := c.Engine.Remove(ctx, t.ID); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
 	for _, a := range apps {
 		obs, err := c.observe(ctx, a)
 		if err != nil {
