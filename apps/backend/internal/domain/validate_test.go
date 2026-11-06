@@ -102,6 +102,10 @@ func TestValidateHostUpstreamsShareSchemeAndTLSName(t *testing.T) {
 		"mixed scheme":       {[]string{"http://10.0.0.1", "https://10.0.0.1"}, false},
 		"https names differ": {[]string{"https://a.example.com", "https://b.example.com"}, false},
 		"https ip and name":  {[]string{"https://10.0.0.1", "https://a.example.com"}, false},
+		"same path":          {[]string{"http://10.0.0.1/api", "http://10.0.0.2:8080/api"}, true},
+		"empty and root":     {[]string{"http://10.0.0.1", "http://10.0.0.2/"}, true},
+		"paths differ":       {[]string{"http://10.0.0.1/api", "http://10.0.0.2/v2"}, false},
+		"path and none":      {[]string{"http://10.0.0.1/api", "http://10.0.0.2"}, false},
 	}
 	for name, tc := range cases {
 		h := Host{Name: "x.example.com", Target: HostTargetUpstream, Upstreams: tc.upstreams, Route: Route{TLS: TLSNone}}

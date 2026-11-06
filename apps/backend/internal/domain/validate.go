@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/url"
@@ -345,9 +346,10 @@ func ValidateUpstream(raw string) error {
 }
 
 // sameUpstreamPeer checks that a load-balanced upstream URL can share one
-// Nginx upstream block with the first: the same scheme, and for HTTPS the
-// same host name, because the edge sends one SNI name and verifies every
-// server's certificate against it. Ports may differ.
+// Nginx upstream block with the first: the same scheme and path, because the
+// edge renders one proxy_pass from the first URL, and for HTTPS the same host
+// name, because the edge sends one SNI name and verifies every server's
+// certificate against it. Ports may differ; an empty path is "/".
 func sameUpstreamPeer(first, other string) error {
 	a, err1 := url.Parse(first)
 	b, err2 := url.Parse(other)
@@ -356,6 +358,9 @@ func sameUpstreamPeer(first, other string) error {
 	}
 	if a.Scheme != b.Scheme {
 		return errors.New("must use the same scheme as the first upstream")
+	}
+	if cmp.Or(a.EscapedPath(), "/") != cmp.Or(b.EscapedPath(), "/") {
+		return errors.New("must use the same path as the first upstream")
 	}
 	if a.Scheme == "https" && !strings.EqualFold(a.Hostname(), b.Hostname()) {
 		return errors.New("HTTPS upstreams must share the first upstream's host name (the certificate name)")

@@ -47,8 +47,6 @@ None open.
 
 ### Edge and ingress
 
-- **Paths of later upstream URLs are ignored.** The first URL decides the scheme, path and TLS name. Mixed schemes,
-  and HTTPS upstreams with different names, are refused since 2026-11-03.
 - **Recreate rollback with new routes.** When routes changed and a recreate fails, the restored old edge restarts on
   the new live generation, which was validated by the new image. Low risk while nginx stays on the same stable line;
   keeping the previous generation for the rollback path would close it.
