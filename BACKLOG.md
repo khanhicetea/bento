@@ -22,11 +22,7 @@ None open.
 
 ## Before public traffic
 
-### Edge and ingress
-
-- **Recreate rollback with new routes.** When routes changed and a recreate fails, the restored old edge restarts on
-  the new live generation, which was validated by the new image. Low risk while nginx stays on the same stable line;
-  keeping the previous generation for the rollback path would close it.
+None open.
 
 ## Hardening (low)
 

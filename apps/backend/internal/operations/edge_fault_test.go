@@ -2,6 +2,8 @@ package operations
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -265,6 +267,43 @@ func TestEdgeRecreateFailureRestoresPreviousEdge(t *testing.T) {
 				t.Fatalf("the failed new edge must be removed, %d edge containers remain", len(list))
 			}
 		})
+	}
+}
+
+// When an apply both promotes new routes and recreates the edge, a failed
+// recreate restarts the old edge on its own previous generation, never on
+// routes that only the new image validated.
+func TestEdgeRecreateFailureRevertsNewRoutes(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	oldID := startEdge(t, h)
+	site := filepath.Join(h.c.Layout.EdgeConfDir(), "live", "sites", "host-new.example.com.conf")
+	simulateEdgeUpgrade(t, h, oldID)
+	h.fake.FailOn = map[string]error{"Start " + h.c.Names.EdgeContainer(): errors.New("port is already allocated")}
+	_, op, err := h.c.CreateHost(ctx, HostInput{Name: "new.example.com", Target: domain.HostTargetRedirect,
+		RedirectTo: "elsewhere.example.com", Enabled: true, Route: domain.Route{TLS: domain.TLSNone}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.wait(op); got.State != store.OpFailed || got.ErrorCode != "edge-start-failed" {
+		t.Fatalf("want edge-start-failed, got %s %s", got.State, got.ErrorCode)
+	}
+	if _, err := os.Stat(site); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the restored edge would start on the new routes: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(h.c.Layout.EdgeConfDir(), "previous")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("the reverted generation must not stay as previous")
+	}
+	if ins, _ := h.fake.Inspect(ctx, h.c.Names.EdgeContainer()); ins == nil || ins.ID != oldID || !ins.State.Running {
+		t.Fatal("the previous edge must be restored and running")
+	}
+	// The next apply, once the edge can start, promotes the host again.
+	h.fake.FailOn = nil
+	if op, err := reapplyEdge(t, h); err != nil || op.State != store.OpSucceeded {
+		t.Fatalf("retry: %v %s %s", err, op.State, op.ErrorMessage)
+	}
+	if _, err := os.Stat(site); err != nil {
+		t.Fatalf("the retried apply must serve the host: %v", err)
 	}
 }
 

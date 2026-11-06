@@ -585,7 +585,13 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 				)
 			}
 		}
-		if err := c.recreateEdge(ctx, r, id, running, spec); err != nil {
+		// When this apply promoted new routes, a failed recreate puts the
+		// previous generation back before the old edge restarts.
+		var revert func() error
+		if changed {
+			revert = gens.Revert
+		}
+		if err := c.recreateEdge(ctx, r, id, running, spec, revert); err != nil {
 			return err
 		}
 		c.markEdgeLoaded(ctx, r, files)
@@ -632,8 +638,16 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 // runs: the old edge is renamed aside, the new one is created under the edge
 // name, the old one is stopped to free its ports, and the new one is started.
 // Any failure removes the new container and puts the old edge back under its
-// name, running if it was. The live generation on disk is shared by both.
-func (c *Controller) recreateEdge(ctx context.Context, r *Run, oldID string, wasRunning bool, spec docker.ContainerSpec) error {
+// name, running if it was. The live generation on disk is shared by both;
+// revert (when not nil) restores the old edge's generation on failure.
+func (c *Controller) recreateEdge(
+	ctx context.Context,
+	r *Run,
+	oldID string,
+	wasRunning bool,
+	spec docker.ContainerSpec,
+	revert func() error,
+) error {
 	r.Info(ctx, "edge settings or image changed; recreating edge")
 	name, prev := c.Names.EdgeContainer(), c.Names.EdgePreviousContainer()
 	if err := c.Engine.Rename(ctx, oldID, prev); err != nil {
@@ -644,13 +658,13 @@ func (c *Controller) recreateEdge(ctx context.Context, r *Run, oldID string, was
 	bg := context.WithoutCancel(ctx)
 	newID, err := c.Engine.Create(bg, spec)
 	if err != nil {
-		return c.restorePreviousEdge(bg, r, oldID, wasRunning, "", "edge-create-failed", "create edge: %v", err)
+		return c.restorePreviousEdge(bg, r, oldID, wasRunning, revert, "", "edge-create-failed", "create edge: %v", err)
 	}
 	if err := c.Engine.Stop(bg, oldID, 15*time.Second); err != nil {
-		return c.restorePreviousEdge(bg, r, oldID, wasRunning, newID, "edge-recreate-failed", "stop previous edge: %v", err)
+		return c.restorePreviousEdge(bg, r, oldID, wasRunning, revert, newID, "edge-recreate-failed", "stop previous edge: %v", err)
 	}
 	if err := c.Engine.Start(bg, newID); err != nil {
-		return c.restorePreviousEdge(bg, r, oldID, wasRunning, newID, "edge-start-failed", "start edge: %v", err)
+		return c.restorePreviousEdge(bg, r, oldID, wasRunning, revert, newID, "edge-start-failed", "start edge: %v", err)
 	}
 	if err := c.Engine.Remove(bg, oldID); err != nil {
 		// The new edge serves; the next apply removes the leftover.
@@ -666,10 +680,16 @@ func (c *Controller) restorePreviousEdge(
 	r *Run,
 	oldID string,
 	wasRunning bool,
+	revert func() error,
 	newID, code, format string,
 	cause error,
 ) error {
 	failure := fmt.Errorf(format, cause)
+	if revert != nil {
+		if err := revert(); err != nil {
+			r.Warn(ctx, "the previous edge restarts on the new routes: %v", err)
+		}
+	}
 	if newID != "" {
 		if err := c.Engine.Remove(ctx, newID); err != nil {
 			return Fail(code,

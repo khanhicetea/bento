@@ -467,6 +467,21 @@ func (g Generations) MarkLoaded(files map[string][]byte) error {
 // Loaded reports whether the running edge was last recorded serving files.
 // A missing record (a fresh root, or an edge from before the record existed)
 // reports false, which costs one redundant reload.
+// Revert puts the previous generation back live and drops the one it
+// replaces: an edge recreate that fails after promoting new routes restarts
+// the old edge on what it last ran, never on routes only the new image
+// validated. Without a previous generation it does nothing.
+func (g Generations) Revert() error {
+	prev := filepath.Join(g.Dir, "previous")
+	if _, err := os.Lstat(prev); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err := unix.Renameat2(unix.AT_FDCWD, prev, unix.AT_FDCWD, g.Live(), unix.RENAME_EXCHANGE); err != nil {
+		return fmt.Errorf("revert edge generation: %w", err)
+	}
+	return os.RemoveAll(prev)
+}
+
 func (g Generations) Loaded(files map[string][]byte) bool {
 	b, err := os.ReadFile(filepath.Join(g.Dir, loadedFile))
 	return err == nil && strings.TrimSpace(string(b)) == Digest(files)
