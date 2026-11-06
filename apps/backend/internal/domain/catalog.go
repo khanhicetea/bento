@@ -155,7 +155,7 @@ const (
 )
 
 var MySQLVersions = map[string]string{
-	"8.0": "mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b", // EOL upstream; kept for existing volumes, 8.0 -> 8.4 in-place upgrade is supported
+	"8.0": "mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b", // EOL upstream. No version is upgraded in place: move a database to a newer service by dump and restore
 	"8.4": "mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69",
 	"9.7": "mysql:9.7@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54", // LTS
 }
