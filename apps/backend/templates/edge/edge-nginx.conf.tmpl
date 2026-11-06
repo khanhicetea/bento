@@ -163,6 +163,11 @@ http {
                         '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time '
                         'route=$bento_route host=$host';
   access_log off;
+  # $bento_route is set by each route's rewrite directives. Requests answered
+  # before the rewrite phase (ACME HTTP-01 challenges) log an empty route;
+  # without this every Let's Encrypt validation writes a warning per
+  # validation server to the error log.
+  uninitialized_variable_warn off;
 {{- if .Traffic}}
 
   # Traffic reports (GoAccess): one file per host with its access log on,

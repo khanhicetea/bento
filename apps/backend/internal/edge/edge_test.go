@@ -379,6 +379,8 @@ func TestRenderFrontProxy(t *testing.T) {
 		"map $bento_via_front $bento_alt_svc {\n    default 'h3=\":8443\"; ma=86400';\n    1       \"\";",
 		"listen 8080 proxy_protocol default_server;", "listen 8443 ssl proxy_protocol default_server;",
 		"log_format bento_edge '$bento_client_addr - ",
+		// ACME challenges are answered before any route sets $bento_route.
+		"uninitialized_variable_warn off;",
 	} {
 		if !strings.Contains(main, want) {
 			t.Errorf("main config missing %q", want)
