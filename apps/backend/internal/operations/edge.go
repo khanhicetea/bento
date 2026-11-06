@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -371,7 +372,7 @@ func (c *Controller) renderEdge(
 		return nil, plan, err
 	}
 	in.ACMEHold, plan.next, plan.failed = edge.PlanACME(c.Now(), plan.hosts,
-		edge.IssuedCertificates(c.Layout.EdgeACMEDir()), plan.prev)
+		edge.IssuedCertificates(c.acmeStateDir(s)), plan.prev)
 	files, err := edge.Render(in)
 	return files, plan, err
 }
@@ -396,13 +397,23 @@ func (c *Controller) persistACME(ctx context.Context, r *Run, s domain.EdgeSetti
 	return store.PutSetting(ctx, c.Store.DB(), acmeSettingKey, plan.next)
 }
 
+// acmeStateDir is the host directory of the ACME module's state for the
+// configured CA: certificates issued by another CA never count as issued.
+func (c *Controller) acmeStateDir(s domain.EdgeSettings) string {
+	return filepath.Join(c.Layout.EdgeACMEDir(), edge.ACMEStateName(s.ACMEURL))
+}
+
 // ACMEStatus reports the certificate state of every served ACME host.
 func (c *Controller) ACMEStatus(ctx context.Context) (map[string]ACMEHostStatus, error) {
 	st, err := c.acmeState(ctx)
 	if err != nil {
 		return nil, err
 	}
-	issued := edge.IssuedCertificates(c.Layout.EdgeACMEDir())
+	s, err := c.EdgeSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	issued := edge.IssuedCertificates(c.acmeStateDir(s))
 	now := c.Now()
 	out := map[string]ACMEHostStatus{}
 	for name, exp := range issued {

@@ -128,10 +128,27 @@ func TestRenderHeldACMEHostUsesBootCertificate(t *testing.T) {
 	if strings.Contains(held, "acme_certificate") || !strings.Contains(held, "ssl_certificate "+CertsMount+"/boot.crt;") {
 		t.Fatalf("held host must serve the boot certificate:\n%s", held)
 	}
-	if !strings.Contains(string(files["sites/host-ok.example.com.conf"]), "acme_certificate bento_acme;") {
+	if !strings.Contains(string(files["sites/host-ok.example.com.conf"]), "acme_certificate bento_acme-") {
 		t.Fatal("other ACME hosts keep requesting")
 	}
 	if got := ACMEHosts(Input{Hosts: []domain.Host{h1, h2, upstreamHost("plain.example.com", false, "http://10.0.0.1")}}); len(got) != 2 {
 		t.Fatalf("ACMEHosts: %+v", got)
+	}
+}
+
+func TestACMEStateNameIsPerDirectory(t *testing.T) {
+	prod := ACMEStateName("https://acme-v02.api.letsencrypt.org/directory")
+	staging := ACMEStateName("https://acme-staging-v02.api.letsencrypt.org/directory")
+	if prod == staging || !strings.HasPrefix(prod, "bento_acme-") || prod != ACMEStateName("https://acme-v02.api.letsencrypt.org/directory") {
+		t.Fatalf("state names %q %q", prod, staging)
+	}
+	files, err := Render(Input{Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443, ACMEURL: "https://acme-v02.api.letsencrypt.org/directory"},
+		Hosts: []domain.Host{{Name: "r.example.com", Target: domain.HostTargetRedirect, RedirectTo: "x.example.com", Enabled: true,
+			Route: domain.Route{TLS: domain.TLSACME}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(files["nginx.conf"]), "state_path /var/lib/bento-acme/"+prod+";") {
+		t.Fatalf("the module's state path must be the directory's:\n%s", files["nginx.conf"])
 	}
 }

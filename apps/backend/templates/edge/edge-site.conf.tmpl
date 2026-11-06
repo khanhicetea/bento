@@ -209,7 +209,7 @@ server {
   server_name {{.ServerNames}};
 {{- template "bento-front-reject" .}}
 {{- if .ACME}}
-  acme_certificate bento_acme;
+  acme_certificate {{.ACMEIssuer}};
   ssl_certificate $bento_acme_certificate;
   ssl_certificate_key $bento_acme_certificate_key;
   ssl_certificate_cache max=10;

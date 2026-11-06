@@ -59,7 +59,7 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 		"server_name pub.example.com;", "proxy_pass http://bento_app_pub;",
 		"proxy_set_header X-Forwarded-For $remote_addr;", "proxy_set_header X-Forwarded-Proto $bento_proto;",
 		"proxy_set_header X-Forwarded-Port $bento_port;",
-		"acme_certificate bento_acme;", "return 301 https://$host$bento_https_suffix$request_uri;", "listen 443 quic;",
+		"acme_certificate bento_acme-", "return 301 https://$host$bento_https_suffix$request_uri;", "listen 443 quic;",
 		"location ^~ /_bento/webhook/ {", "proxy_pass http://bento_utils;",
 		"include /etc/bento-edge-custom/routes/host-pub.example.com/*.conf;",
 		"include /etc/bento-edge-custom/routes/app-pub/*.conf;",
@@ -106,7 +106,7 @@ func TestRenderTLSIsPerHost(t *testing.T) {
 	}
 	pub := string(files["sites/host-shop.example.com.conf"])
 	internal := string(files["sites/host-shop.internal.test.conf"])
-	if !strings.Contains(pub, "acme_certificate bento_acme;") || strings.Contains(pub, "boot.crt") ||
+	if !strings.Contains(pub, "acme_certificate bento_acme-") || strings.Contains(pub, "boot.crt") ||
 		!strings.Contains(pub, "ssl_certificate $bento_acme_certificate;") ||
 		!strings.Contains(pub, "ssl_certificate_key $bento_acme_certificate_key;") {
 		t.Fatal("ACME host must use ACME only")

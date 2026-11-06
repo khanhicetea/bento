@@ -94,6 +94,7 @@ type Route struct {
 	Unavailable         bool
 	HTTP3               bool
 	IPv6                bool
+	ACMEIssuer          string
 	HTTPSAdvertisedPort int
 	// UtilsUpstream is the backend's utils listener (host:port) that
 	// /_bento/webhook/* is proxied to; "" leaves the path to the upstream.
@@ -288,7 +289,8 @@ func Render(in Input) (map[string][]byte, error) {
 	slices.SortFunc(routes, func(a, b Route) int { return strings.Compare(a.Name, b.Name) })
 	files := map[string][]byte{}
 	main, err := assets.Render("edge-nginx.conf.tmpl", map[string]any{
-		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3, "IPv6": !in.NoIPv6,
+		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "ACMEState": ACMEStateName(s.ACMEURL),
+		"HTTP3": s.HTTP3, "IPv6": !in.NoIPv6,
 		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
 		"TunnelIP": in.TunnelIP, "HTTPSPortSuffix": suffix, "HTTPPortSuffix": httpSuffix,
 		"HTTPPort": httpPort, "HTTPSPort": s.HTTPSPort,
@@ -359,7 +361,7 @@ func baseRoute(
 	case domain.TLSSelfSigned:
 		r.TLS, r.CertFile, r.KeyFile = true, CertsMount+"/boot.crt", CertsMount+"/boot.key"
 	case domain.TLSACME:
-		r.TLS, r.ACME = true, true
+		r.TLS, r.ACME, r.ACMEIssuer = true, true, ACMEStateName(s.ACMEURL)
 	case domain.TLSExternal:
 		r.TLS = true
 		r.CertFile = CertsMount + "/external/" + route.CertName + "/fullchain.pem"

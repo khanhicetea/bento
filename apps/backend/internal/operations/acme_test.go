@@ -46,7 +46,7 @@ func issueCert(t *testing.T, dir, name string, notAfter time.Time) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := filepath.Join(dir, "bento_acme", "order.crt")
+	p := filepath.Join(dir, "order.crt")
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestACMEHostWithoutCertificateBacksOffAcrossReloads(t *testing.T) {
 		}
 		return st[name]
 	}
-	if !strings.Contains(site(), "acme_certificate bento_acme;") || status().State != ACMERequesting {
+	if !strings.Contains(site(), "acme_certificate bento_acme-") || status().State != ACMERequesting {
 		t.Fatalf("a new ACME host is requested at once: %+v", status())
 	}
 	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || drift {
@@ -112,12 +112,24 @@ func TestACMEHostWithoutCertificateBacksOffAcrossReloads(t *testing.T) {
 		t.Fatalf("the end of the backoff is drift: %v %v", drift, err)
 	}
 	submitEdgeApply(t, h)
-	if !strings.Contains(site(), "acme_certificate bento_acme;") || status().State != ACMERequesting {
+	if !strings.Contains(site(), "acme_certificate bento_acme-") || status().State != ACMERequesting {
 		t.Fatal("a new window requests the certificate again")
 	}
 
+	// A certificate from another CA (staging, before the switch to
+	// production) is not this CA's: the host still requests its own.
+	issueCert(t, filepath.Join(h.layout.EdgeACMEDir(), edge.ACMEStateName("https://acme-staging-v02.api.letsencrypt.org/directory")),
+		name, clock.Now().Add(90*24*time.Hour))
+	if st := status(); st.State == ACMEIssued {
+		t.Fatal("a certificate issued by another ACME directory counts as issued")
+	}
+
 	// The certificate arrives: state cleared, reported issued.
-	issueCert(t, h.layout.EdgeACMEDir(), name, clock.Now().Add(90*24*time.Hour))
+	s, err := h.c.EdgeSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issueCert(t, h.c.acmeStateDir(s), name, clock.Now().Add(90*24*time.Hour))
 	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || !drift {
 		t.Fatalf("issuance clears state, which is drift: %v %v", drift, err)
 	}

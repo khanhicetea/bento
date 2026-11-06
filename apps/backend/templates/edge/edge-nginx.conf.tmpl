@@ -27,12 +27,14 @@ http {
 {{- if .ACME}}
 
   acme_shared_zone zone=ngx_acme_shared:10M;
-  acme_issuer bento_acme {
+  # The issuer and its state are named per ACME directory URL: the module
+  # keeps certificates in its shared zone by issuer name across reloads.
+  acme_issuer {{.ACMEState}} {
     uri {{quote .ACMEURL}};
 {{- if .ACMEEmail}}
     contact {{quote .ACMEEmail}};
 {{- end}}
-    state_path /var/lib/bento-acme/bento_acme;
+    state_path /var/lib/bento-acme/{{.ACMEState}};
     accept_terms_of_service;
   }
 

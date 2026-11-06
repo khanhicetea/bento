@@ -1,7 +1,9 @@
 package edge
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"io/fs"
 	"maps"
@@ -109,6 +111,16 @@ func SameACMEState(a, b map[string]ACMEHostState) bool {
 		return x.AttemptFrom.Equal(y.AttemptFrom) && x.Failures == y.Failures && x.RetryAt.Equal(y.RetryAt) &&
 			x.HostUpdatedAt.Equal(y.HostUpdatedAt)
 	})
+}
+
+// ACMEStateName names the module's issuer and its state directory (under
+// ACMEMount) for one ACME directory URL. Certificates and the account belong to the CA that
+// issued them: with one shared directory, switching from Let's Encrypt
+// staging to production kept serving the staging certificates (valid until
+// they expire) while the module asked production for their renewal info.
+func ACMEStateName(directoryURL string) string {
+	sum := sha256.Sum256([]byte(directoryURL))
+	return "bento_acme-" + hex.EncodeToString(sum[:6])
 }
 
 // IssuedCertificates scans the ACME module's state directory for issued
