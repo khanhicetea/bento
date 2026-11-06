@@ -30,6 +30,13 @@ Each app runs as its own user, with a read-only system, no extra Linux capabilit
 This isolation protects apps from each other's mistakes. It is not a sandbox for code from strangers.
 </Callout>
 
+What apps share:
+
+- **One network.** An app can reach any other app's port (and Bento's webhook listener). Put a password or token in
+  front of anything an app serves that other apps must not use, or run those apps in a separate stack.
+- **One disk.** App homes have no quota. `bento status` and **System** show the free space of the stack's disk and
+  flag it when it runs low; an app that fills it also stops Bento from saving its own state.
+
 ## The UI is private
 
 The management UI only listens on the server itself. Reach it with an SSH tunnel; never publish it.

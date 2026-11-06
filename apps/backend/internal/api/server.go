@@ -251,6 +251,10 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	st := dto.SystemStatus{StackID: s.C.Stack.ID, StackName: s.C.Stack.Name, Root: s.Layout.Root, Version: s.Version,
 		StartedAt: platform.FormatTime(s.StartedAt)}
+	if free, total, err := platform.DiskSpace(s.Layout.Root); err == nil {
+		st.DiskFreeBytes, st.DiskTotalBytes = int64(free), int64(total)
+		st.DiskLow = free < 2<<30 || free*20 < total
+	}
 	if v, err := s.C.Engine.Version(ctx); err != nil {
 		st.DockerError = "docker unavailable"
 		s.Log.Warn("docker version", "err", err)

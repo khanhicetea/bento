@@ -13,7 +13,7 @@ import {
   PageHeader,
   StateBadge,
 } from "../../components/DomainState.tsx";
-import { formatRelative } from "../../lib/format.ts";
+import { formatBytes, formatRelative } from "../../lib/format.ts";
 import { DataServices } from "../data/DatabasesPage.tsx";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,17 @@ function Overview() {
               ["ID", <CopyableCode value={status.stackId} />],
               ["Root", <CopyableCode value={status.root} />],
               ["Arch", status.arch],
+              ...(status.diskTotalBytes > 0
+                ? ([
+                    [
+                      "Disk",
+                      <span className={status.diskLow ? "text-destructive" : undefined}>
+                        {status.diskLow ? "▲ " : ""}
+                        {formatBytes(status.diskFreeBytes)} free of {formatBytes(status.diskTotalBytes)}
+                      </span>,
+                    ],
+                  ] as Array<[string, React.ReactNode]>)
+                : []),
               ...(status.dockerError
                 ? ([["Docker", <span className="text-destructive">{status.dockerError}</span>]] as Array<
                     [string, React.ReactNode]

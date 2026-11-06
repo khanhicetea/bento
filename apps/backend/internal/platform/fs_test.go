@@ -147,3 +147,13 @@ func TestLockExclusion(t *testing.T) {
 	}
 	b.Release()
 }
+
+func TestDiskSpace(t *testing.T) {
+	free, total, err := DiskSpace(t.TempDir())
+	if err != nil || total == 0 || free > total {
+		t.Fatalf("free %d total %d err %v", free, total, err)
+	}
+	if _, _, err := DiskSpace("/no/such/dir"); err == nil {
+		t.Fatal("a missing directory must fail")
+	}
+}

@@ -852,6 +852,13 @@ type SystemStatus struct {
 	Apps          int    `json:"apps"`
 	RunningApps   int    `json:"runningApps"`
 	QueuedOps     int    `json:"queuedOps"`
+	// DiskFreeBytes and DiskTotalBytes describe the filesystem of the stack
+	// root, which holds bento.db and every app home (0 when unreadable).
+	DiskFreeBytes  int64 `json:"diskFreeBytes"`
+	DiskTotalBytes int64 `json:"diskTotalBytes"`
+	// DiskLow is true below 2 GiB or 5% free: app homes have no quota, so an
+	// app filling the disk also stops Bento from recording state.
+	DiskLow bool `json:"diskLow"`
 }
 
 // DockerOwnership attributes a Docker resource to this or another Bento stack.

@@ -26,8 +26,7 @@ None open.
 
 ## Hardening (low)
 
-- **Isolation (design).** Apps share one flat network and can reach each other's listeners and the utils listener.
-  App homes have no disk quota, so one app can fill the disk that holds `bento.db`.
+None open.
 
 ## Never verified live
 
@@ -44,6 +43,13 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 ## Decisions
 
+- Apps share one apps network: each can reach the others' listeners and the backend's utils listener (which serves
+  only self-authenticating routes: webhooks and database-browser tickets). Bento isolates apps by UID, read-only
+  roots, dropped capabilities and private data credentials, not by network; Docker's no-inter-container option
+  would also cut the edge off from the apps, and per-app networks (the edge, tunnel and tools joining each) are a
+  redesign, not a fix. Apps that must not reach each other's listeners belong in separate stacks or behind
+  authentication. App homes have no disk quota; `bento status` and **System** show the stack root's free space and
+  flag it below 2 GiB or 5%.
 - A forced cancellation (30 s after the request) cancels the step's context, which every Docker call, `Exec` and
   `Wait` included, honors. Plain file I/O (an export writing its archives) cannot be interrupted and ends on its own;
   the export is a global operation, so nothing else waits on a half-written file.

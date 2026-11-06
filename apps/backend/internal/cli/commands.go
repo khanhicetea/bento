@@ -340,6 +340,13 @@ func (r *runner) run(args []string) error {
 			st.RunningApps,
 			st.QueuedOps,
 		)
+		if st.DiskTotalBytes > 0 {
+			fmt.Fprintf(r.out, "disk %.1f GB free of %.1f GB", float64(st.DiskFreeBytes)/1e9, float64(st.DiskTotalBytes)/1e9)
+			if st.DiskLow {
+				fmt.Fprint(r.out, " (LOW: free space before an app fills the disk that holds bento.db)")
+			}
+			fmt.Fprintln(r.out)
+		}
 		return nil
 	case "mcp":
 		return r.runMCP(ctx, args[1:])
