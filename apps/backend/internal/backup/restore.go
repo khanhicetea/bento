@@ -4,47 +4,57 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
 // RestoreSQLite replaces the binding's database file. The app must be
-// stopped so no writer holds the file.
+// stopped so no writer holds the file. The directory belongs to the app, so
+// every step works relative to a descriptor of it opened without following a
+// link: the database is written, owned and renamed into place by name inside
+// that directory and never through a path the app could redirect.
 func (d Deps) RestoreSQLite(app domain.App, b domain.Binding, artifactPath string) error {
 	dir := d.Layout.SQLiteFileDir(b.SQLiteFileID)
 	if err := platform.NoSymlinkBetween(d.Layout.SQLiteDir(), dir); err != nil {
 		return err
 	}
+	dfd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", dir, err)
+	}
+	defer unix.Close(dfd)
 	src, err := os.Open(artifactPath)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
-	partial := filepath.Join(dir, ".restore-"+platform.RandomHex(6))
-	f, err := os.OpenFile(partial, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	partial := ".restore-" + platform.RandomHex(6)
+	fd, err := unix.Openat(dfd, partial, unix.O_CREAT|unix.O_EXCL|unix.O_WRONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
-		return err
+		return fmt.Errorf("create %s: %w", partial, err)
 	}
+	f := os.NewFile(uintptr(fd), partial)
+	discard := func() { _ = unix.Unlinkat(dfd, partial, 0) }
 	head := make([]byte, 16)
 	n, err := io.ReadFull(src, head)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		_ = f.Close()
-		_ = os.Remove(partial)
+		discard()
 		return fmt.Errorf("read artifact: %w", err)
 	}
 	if n < 16 || string(head[:15]) != "SQLite format 3" {
 		_ = f.Close()
-		_ = os.Remove(partial)
+		discard()
 		return errors.New("artifact is not a SQLite database")
 	}
-	// Any write, copy, sync, or close failure aborts before the rename so a
-	// truncated database is never published.
+	// Any write, copy, sync, chown or close failure aborts before the rename
+	// so a truncated database is never published.
 	_, err = f.Write(head)
 	if err == nil {
 		_, err = io.Copy(f, src)
@@ -52,27 +62,30 @@ func (d Deps) RestoreSQLite(app domain.App, b domain.Binding, artifactPath strin
 	if err == nil {
 		err = f.Sync()
 	}
+	if err == nil {
+		err = f.Chown(app.UID, app.GID)
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		_ = os.Remove(partial)
+		discard()
 		return err
 	}
-	if err := os.Lchown(partial, app.UID, app.GID); err != nil {
-		_ = os.Remove(partial)
-		return err
-	}
-	target := filepath.Join(dir, app.Slug+".db")
+	target := app.Slug + ".db"
 	// Stale journal files of the replaced database must not be replayed
 	// against the restored file; they may or may not exist.
 	for _, sfx := range []string{"-wal", "-shm"} {
-		if err := os.Remove(target + sfx); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			_ = os.Remove(partial)
+		if err := unix.Unlinkat(dfd, target+sfx, 0); err != nil && !errors.Is(err, unix.ENOENT) {
+			discard()
 			return fmt.Errorf("remove stale journal: %w", err)
 		}
 	}
-	return os.Rename(partial, target)
+	if err := unix.Renameat(dfd, partial, dfd, target); err != nil {
+		discard()
+		return err
+	}
+	return unix.Fsync(dfd)
 }
 
 // dumpPeekBytes is how much of a MySQL dump is inspected for its charset.
