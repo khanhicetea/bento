@@ -627,6 +627,18 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 		}
 	}
 	state, code, msg, guidance := outcome(err)
+	if err != nil && ctx.Err() != nil {
+		// The backend stopped (its context ends after the shutdown drain)
+		// while the step ran: interrupted, as the next start would record it.
+		phase := op.Phase
+		if cur, gerr := store.GetOperation(context.WithoutCancel(ctx), db, op.ID); gerr == nil {
+			phase = cur.Phase
+		}
+		state, code = store.OpInterrupted, "interrupted"
+		msg = fmt.Sprintf("backend stopped during phase %q", phase)
+		guidance = "Inspect the target status; intent is preserved and reconciliation converges safe state. " +
+			"Resubmit the operation explicitly if still required."
+	}
 	if err != nil {
 		if aerr := store.AppendEvent(context.WithoutCancel(ctx), db, op.ID, "error", msg); aerr != nil {
 			c.Log.Warn("record operation event", "op", op.ID, "err", aerr)

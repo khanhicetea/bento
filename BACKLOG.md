@@ -42,10 +42,6 @@ None open.
 - **Tool containers act outside operations.** `OpenTool` (`internal/operations/tools.go:41-62`) runs
   `EnsureNetworks`, `Images.Ensure`, and `WriteAppConfig` with no claims. It can race an operation and rewrite config
   that `scopedReloads` just restored after a failed validation.
-- **Shutdown records cancelled operations as `failed`, not `interrupted`** (`internal/cli/serve.go:287`,
-  `internal/operations/controller.go:585-594`).
-- **SQLite durability.** The store opens with `synchronous(NORMAL)` (`internal/store/store.go`), so the last
-  acknowledged commits can roll back on power loss. `FULL` is affordable at this write rate.
 - **Store and reconciler bookkeeping.**
   - A crash between `Submit` and `saveSchedule` reruns a scheduled slot (`internal/operations/schedules.go:143-150`).
   - `AppendEvent` does `MAX(seq)` and then `INSERT` outside a transaction (`internal/store/operations.go:331`).

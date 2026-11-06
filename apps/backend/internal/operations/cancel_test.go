@@ -108,3 +108,24 @@ func TestCancelWatcherLeavesUncancelledOperationsAlone(t *testing.T) {
 		t.Fatal("an operation that was never cancelled must not be marked forced")
 	}
 }
+
+// An operation still running when the backend stops (its context ends after
+// the shutdown drain) is recorded interrupted, as the next start would.
+func TestBackendStopInterruptsRunningOperation(t *testing.T) {
+	eng := &hungPulls{started: make(chan struct{}, 1)}
+	h := newHarnessWith(t, func(d *Deps) {
+		eng.Engine = d.Engine
+		d.Engine = eng
+	})
+	stuck := submitTunnelApply(t, h)
+	select {
+	case <-eng.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the tunnel apply never reached its pull")
+	}
+	h.cancel()
+	got := h.wait(stuck)
+	if got.State != store.OpInterrupted || got.ErrorCode != "interrupted" || !strings.Contains(got.ErrorMessage, "backend stopped during phase") {
+		t.Fatalf("operation stopped by the backend ended %s %s: %s", got.State, got.ErrorCode, got.ErrorMessage)
+	}
+}
