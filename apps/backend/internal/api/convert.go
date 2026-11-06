@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/api/dto"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
@@ -11,6 +12,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
+	"github.com/khanhicetea/bento/apps/backend/internal/traffic"
 )
 
 func nonNil[T any](s []T) []T {
@@ -120,6 +122,53 @@ func hostToDTO(h domain.Host, appSlug string, live bool, cert *operations.ACMEHo
 			}
 		}
 		out.Certificate = &c
+	}
+	return out
+}
+
+func hostTrafficToDTO(
+	h domain.Host,
+	r traffic.Report,
+	generated time.Time,
+	ok bool,
+	st operations.TrafficHostStatus,
+	pending int64,
+) dto.HostTraffic {
+	out := dto.HostTraffic{
+		Host: h.Name, AccessLog: h.Route.AccessLog, State: dto.HostTrafficStateOff,
+		KeepDays: traffic.KeepDays, IntervalMinutes: int(traffic.Interval / time.Minute),
+		LastError: st.Error, PendingBytes: pending,
+		Days: []dto.TrafficCount{}, Hours: []dto.TrafficCount{}, Statuses: []dto.TrafficCount{},
+		Codes: []dto.TrafficCount{}, Paths: []dto.TrafficPath{}, Clients: []dto.TrafficCount{},
+		Agents: []dto.TrafficCount{}, Referrers: []dto.TrafficCount{},
+	}
+	if !st.LastRun.IsZero() {
+		out.LastRunAt = platform.FormatTime(st.LastRun)
+	}
+	if h.Route.AccessLog {
+		out.State = dto.HostTrafficStateWaiting
+	}
+	if !ok {
+		return out
+	}
+	out.State = dto.HostTrafficStateReady
+	out.GeneratedAt = platform.FormatTime(generated)
+	out.From, out.To = r.From, r.To
+	out.Requests, out.Visitors, out.Bytes, out.Invalid = r.Requests, r.Visitors, r.Bytes, r.Invalid
+	counts := func(in []traffic.Count) []dto.TrafficCount {
+		res := make([]dto.TrafficCount, 0, len(in))
+		for _, c := range in {
+			res = append(res, dto.TrafficCount{Label: c.Label, Requests: c.Requests, Visitors: c.Visitors, Bytes: c.Bytes})
+		}
+		return res
+	}
+	out.Days, out.Hours, out.Statuses, out.Codes = counts(r.Days), counts(r.Hours), counts(r.Statuses), counts(r.Codes)
+	out.Clients, out.Agents, out.Referrers = counts(r.Clients), counts(r.Agents), counts(r.Referrers)
+	for _, p := range r.Paths {
+		out.Paths = append(out.Paths, dto.TrafficPath{
+			Method: p.Method, Path: p.Path, Requests: p.Requests, Visitors: p.Visitors, Bytes: p.Bytes,
+			AvgMs: float64(p.AvgMicros) / 1000, MaxMs: float64(p.MaxMicros) / 1000,
+		})
 	}
 	return out
 }

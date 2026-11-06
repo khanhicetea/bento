@@ -1932,6 +1932,89 @@ button.row:hover {
 .rate-chart__tip[data-side="left"] {
   translate: calc(-100% - 0.5rem) 0;
 }
+/* Traffic: requests per day, one baseline-anchored bar per day with a 2 px surface gap. */
+.day-bars {
+  display: grid;
+  gap: 0.375rem;
+}
+.day-bars__max {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+.day-bars__plot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 9rem;
+  border-bottom: 1px solid var(--border);
+  background-image: linear-gradient(var(--border) 1px, transparent 1px);
+  background-size: 100% 50%;
+  background-position: 0 -1px;
+  touch-action: none;
+}
+.day-bars__slot {
+  display: flex;
+  flex: 1 1 0;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+.day-bars__bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--primary);
+}
+.day-bars__slot[data-active] {
+  background: rgb(36 30 26 / 0.06);
+}
+.dark .day-bars__slot[data-active] {
+  background: rgb(255 255 255 / 0.06);
+}
+.day-bars__tip {
+  position: absolute;
+  top: 0;
+  translate: 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.day-bars__tip[data-side="left"] {
+  translate: calc(-100% - 0.5rem) 0;
+}
+.day-bars__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+/* Ranked facts with long labels (paths, agents): the label truncates, the value never does. */
+.kv--rank dt {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Paths, IPs and domains are data: case and spacing are kept (paths are case-sensitive). */
+.kv--rank dt > span,
+.seg > .seg__data {
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-code);
+  font-weight: 500;
+}
+.kv--rank dt > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kv--rank dd {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .rate-chart__empty {
   position: absolute;
   inset: 0;

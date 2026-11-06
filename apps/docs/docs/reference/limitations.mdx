@@ -11,7 +11,8 @@ description: Known limits of the current release, stated plainly.
 - **Trusted code only.** Not a sandbox for hostile tenants. Curated runtime images only.
 - **Loopback management.** Remote access needs your own secure tunnel.
 - **Generated web config.** App Nginx and FPM config is generated; customization is through edge drop-ins and
-  `.user.ini`. Access logs go to the bounded container log; there are no access-log reports.
+  `.user.ini`. Access logs go to the bounded container log; edge hosts with the access log on also get an hourly
+  [traffic report](/ingress/traffic) of page requests (30 days). App-local Nginx access logs have no report.
 
 ## Not yet verified
 

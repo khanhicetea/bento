@@ -185,6 +185,7 @@ export const api = {
     update: (name: string, body: T.HostRequest) => mutate("PUT", `/api/v1/hosts/${enc(name)}`, body),
     remove: (name: string, confirm: string) =>
       mutate("DELETE", `/api/v1/hosts/${enc(name)}`, { confirm } satisfies T.ConfirmRequest),
+    traffic: (name: string, signal?: AbortSignal) => get<T.HostTraffic>(`/api/v1/hosts/${enc(name)}/traffic`, signal),
   },
   tokens: {
     list: (signal?: AbortSignal) => get<T.APITokenList>("/api/v1/tokens", signal),

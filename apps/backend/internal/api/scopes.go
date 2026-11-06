@@ -81,6 +81,7 @@ var routeScopes = map[string]scope{
 	"GET /api/v1/utils":                              scopeRead,
 	"GET /api/v1/dbadmin":                            scopeRead,
 	"GET /api/v1/hosts":                              scopeRead,
+	"GET /api/v1/hosts/{name}/traffic":               scopeRead,
 	"GET /api/v1/retired":                            scopeRead,
 	"GET /api/v1/backups/apps":                       scopeRead,
 	"GET /api/v1/backups/rclone":                     scopeRead,

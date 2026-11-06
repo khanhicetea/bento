@@ -1,0 +1,47 @@
+---
+title: Traffic reports
+description: Hourly per-host reports of page requests, built from the edge access log with GoAccess.
+---
+
+**Ingress → Traffic** shows a report for each host whose **Access log** is on: requests, visitors and data sent per
+day, server-error share, top and slowest paths, status codes, top clients, agents (including crawlers) and referring
+sites. A host tile with the access log on also has a **Traffic** button.
+
+## Turn it on
+
+Edit the host and switch **Access log** on. The first report appears within an hour; after that it is updated
+**every hour**, a few minutes past the hour. The report covers the **last 30 days**.
+
+## What is counted
+
+Only page requests are written to the report's log:
+
+- **Not counted:** static files (CSS, JS, images, fonts, media, source maps), dotfiles such as `/.env` or `/.git/…`
+  (`/.well-known/` is counted), `404` responses, and connections the edge refused.
+- **No query strings.** Paths and referrers are logged without `?…`, so tokens in URLs never reach the report.
+- **Visitors** are unique combinations of IP address, day and user agent.
+- Client addresses are the visitor's real IP when it arrives through the [tunnel](/ingress/tunnel) or a trusted
+  [front proxy](/ingress/front-proxy).
+
+The full, unfiltered access log still goes to the edge's container log, as before.
+
+## How it works
+
+The edge writes each access-logged host's page requests to its own file under `traffic/logs/` in the stack root.
+Every hour the backend moves those files aside, tells the edge to reopen its logs (no reload, no dropped requests),
+and runs [GoAccess](https://goaccess.io/) once per host in a short-lived container with no network. GoAccess adds the
+hour to the host's database under `traffic/hosts/<host>/` and writes the report the UI shows. The moved files are
+deleted once they are in the report.
+
+The live files hold at most an hour of page requests and are deleted once read. Each database keeps 30 days of
+aggregates; its size grows with the number of distinct paths, client IPs and user agents, not with the request count.
+
+## Good to know
+
+- If a run fails, the report shows **Run failed** with the reason, keeps the unread hours, and the next hourly run
+  retries them. Hours GoAccess could not read for 7 days are dropped.
+- Turning the access log **off** stops new data and hides the host from the Traffic tab; its report is kept and shows
+  again when you turn the log back on (days older than 30 still drop off). Removing the host deletes its report.
+- Reports are **not exported** with the stack; on a new host they start again from new traffic.
+- The first run pulls the pinned GoAccess image, so the host needs to reach Docker Hub once.
+- Report times follow the edge's clock (UTC unless you changed it), not your browser's time zone.

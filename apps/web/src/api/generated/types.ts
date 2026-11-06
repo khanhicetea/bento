@@ -656,6 +656,90 @@ export interface HostList {
   hosts: Host[];
 }
 /**
+ * HostTrafficStateOff: the host's access log is off and it has no report.
+ */
+export const HostTrafficStateOff = "off";
+/**
+ * HostTrafficStateWaiting: the access log is on; the first report is
+ * written at the next hourly run.
+ */
+export const HostTrafficStateWaiting = "waiting";
+/**
+ * HostTrafficStateReady: a report exists (while the access log is off it
+ * gets no new data; days older than KeepDays still drop off).
+ */
+export const HostTrafficStateReady = "ready";
+export type HostTrafficState = typeof HostTrafficStateOff | typeof HostTrafficStateWaiting | typeof HostTrafficStateReady;
+/**
+ * HostTraffic is a host's traffic report: its edge access log, page requests
+ * only (no static files, dotfiles or 404s, no query strings), aggregated
+ * hourly over the last KeepDays days.
+ */
+export interface HostTraffic {
+  host: string;
+  accessLog: boolean;
+  state: HostTrafficState;
+  keepDays: number /* int */;
+  intervalMinutes: number /* int */;
+  /**
+   * GeneratedAt is when the report was written; LastRunAt and LastError
+   * describe the last run since the backend started.
+   */
+  generatedAt?: string;
+  lastRunAt?: string;
+  lastError?: string;
+  /**
+   * PendingBytes is logged traffic not yet in the report.
+   */
+  pendingBytes: number /* int64 */;
+  /**
+   * From and To are the first and last day with data (YYYY-MM-DD).
+   */
+  from?: string;
+  to?: string;
+  requests: number /* int64 */;
+  visitors: number /* int64 */;
+  bytes: number /* int64 */;
+  /**
+   * Invalid counts log lines that could not be read.
+   */
+  invalid: number /* int64 */;
+  /**
+   * Days are oldest first; Hours "00"–"23" (edge local time).
+   */
+  days: TrafficCount[];
+  hours: TrafficCount[];
+  /**
+   * Statuses are classes ("2xx"), Codes single codes ("502"). These and
+   * the lists below are ordered by requests, most first, at most 50 each.
+   */
+  statuses: TrafficCount[];
+  codes: TrafficCount[];
+  paths: TrafficPath[];
+  clients: TrafficCount[];
+  agents: TrafficCount[];
+  referrers: TrafficCount[];
+}
+export interface TrafficCount {
+  label: string;
+  requests: number /* int64 */;
+  visitors: number /* int64 */;
+  bytes: number /* int64 */;
+}
+/**
+ * TrafficPath is one request path (without query string). Times are
+ * milliseconds.
+ */
+export interface TrafficPath {
+  method: string;
+  path: string;
+  requests: number /* int64 */;
+  visitors: number /* int64 */;
+  bytes: number /* int64 */;
+  avgMs: number /* float64 */;
+  maxMs: number /* float64 */;
+}
+/**
  * HostRequest creates (POST) or replaces (PUT) an Ingress host. On PUT the
  * name must match the path.
  */

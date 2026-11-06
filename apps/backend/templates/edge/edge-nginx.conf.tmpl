@@ -163,6 +163,34 @@ http {
                         '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time '
                         'route=$bento_route host=$host';
   access_log off;
+{{- if .Traffic}}
+
+  # Traffic reports (GoAccess): one file per host with its access log on,
+  # rotated hourly by the backend. Page requests only: static assets,
+  # dotfiles (except /.well-known/), 404s and refused connections are not
+  # written. Paths and referrers are logged without their query string.
+  map $uri $bento_traffic_page {
+    ~^/\.well-known/  1;
+    ~/\.              0;
+    ~*\.(?:css|js|mjs|map|jpg|jpeg|gif|png|svg|ico|webp|avif|bmp|woff|woff2|ttf|otf|eot|webmanifest|mp4|webm|mp3|ogg|wasm)$  0;
+    default           1;
+  }
+  map $status $bento_traffic {
+    404     0;
+    444     0;
+    default $bento_traffic_page;
+  }
+  map $request_uri $bento_traffic_path {
+    ~^([^?]*)  $1;
+  }
+  map $http_referer $bento_traffic_referer {
+    ""           "-";
+    ~^([^?#]*)   $1;
+  }
+  log_format bento_traffic '{{if .FrontProxy}}$bento_client_addr{{else}}$remote_addr{{end}} [$time_local] '
+                           '"$request_method $bento_traffic_path $server_protocol" $status $body_bytes_sent '
+                           '"$bento_traffic_referer" "$http_user_agent" $request_time';
+{{- end}}
 
   ssl_protocols TLSv1.2 TLSv1.3;
   ssl_prefer_server_ciphers off;

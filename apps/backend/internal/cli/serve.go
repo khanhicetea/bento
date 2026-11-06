@@ -177,6 +177,7 @@ func Serve(opts ServeOptions) error {
 	defer func() { cancel(); bg.Wait() }() // also on early error returns
 	bg.Go(func() { rec.Run(ctx) })
 	bg.Go(func() { ctrl.RunSchedules(ctx) })
+	bg.Go(func() { ctrl.RunTraffic(ctx) })
 	// The relay child runs as an app UID; /proc/self/exe is a magic link, so
 	// the binary need not live in a directory that UID can traverse.
 	relay := scheduler.NewRelayManager(layout, "/proc/self/exe", log)

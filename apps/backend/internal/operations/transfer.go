@@ -27,6 +27,9 @@ import (
 var RootSkip = map[string]bool{
 	"bento.db": true, "bento.db-wal": true, "bento.db-shm": true, "run": true, "locks": true,
 	"cache": true, "staging": true, "backups": true, store.StateBackupsDir: true,
+	// Traffic reports are host-local: live access logs grow while the archive
+	// is written, and the reports rebuild from new traffic on the new host.
+	"traffic": true,
 }
 
 // SubmitExport requires confirm "export" because it briefly stops running

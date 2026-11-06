@@ -56,6 +56,9 @@ upstream {{.UpstreamName}} {
 {{- if .AccessLog}}
   access_log /dev/stdout bento_edge;
 {{- end}}
+{{- if .TrafficLog}}
+  access_log {{.TrafficLog}} bento_traffic if=$bento_traffic;
+{{- end}}
   client_max_body_size {{.MaxBodyMB}}m;
 {{- range .Includes}}
   include /etc/bento-edge-custom/routes/{{.}}/*.conf;
@@ -133,6 +136,9 @@ upstream {{.UpstreamName}} {
   set $bento_route "{{.Name}}";
 {{- if .AccessLog}}
   access_log /dev/stdout bento_edge;
+{{- end}}
+{{- if .TrafficLog}}
+  access_log {{.TrafficLog}} bento_traffic if=$bento_traffic;
 {{- end}}
 {{- range .Includes}}
   include /etc/bento-edge-custom/routes/{{.}}/*.conf;

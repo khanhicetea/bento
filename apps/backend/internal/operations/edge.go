@@ -81,7 +81,7 @@ func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 		V     int
 		Front *frontListeners `json:",omitempty"`
 	}{edgeContainerSettings{s.Enabled, s.Bind, s.HTTPPort, s.HTTPSPort, s.HTTP3, s.ACMEEmail, s.ACMEURL},
-		ns.EdgeIP, domain.EdgeImage, 1, front})
+		ns.EdgeIP, domain.EdgeImage, 2, front})
 	return platform.SHA256Hex(b)[:20]
 }
 
@@ -128,6 +128,8 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker
 				{Type: mount.TypeBind, Source: c.Layout.EdgeCertsDir(), Target: edge.CertsMount, ReadOnly: true},
 				{Type: mount.TypeBind, Source: c.Layout.EdgeCustomDir(), Target: edge.CustomMount, ReadOnly: true},
 				{Type: mount.TypeBind, Source: c.Layout.EdgeACMEDir(), Target: edge.ACMEMount},
+				// Per-host traffic access logs; the backend rotates them.
+				{Type: mount.TypeBind, Source: c.Layout.TrafficLogsDir(), Target: edge.LogsMount},
 			},
 			Tmpfs: map[string]string{
 				"/var/cache/nginx": "rw,nosuid,nodev,size=256m",
@@ -163,7 +165,10 @@ func (c *Controller) prepareEdgeDirs() error {
 	if err := edge.EnsureBootCert(c.Layout.EdgeCertsDir()); err != nil {
 		return err
 	}
-	return platform.EnsureDir(c.Layout.EdgeACMEDir(), 0o700, platform.Owner{UID: EdgeNginxUID, GID: EdgeNginxUID})
+	if err := platform.EnsureDir(c.Layout.EdgeACMEDir(), 0o700, platform.Owner{UID: EdgeNginxUID, GID: EdgeNginxUID}); err != nil {
+		return err
+	}
+	return c.prepareTrafficDirs()
 }
 
 // edgeContainer returns the running owned edge container id, or "".

@@ -41,7 +41,10 @@ const (
 	// HooksMount holds the backend's webhook socket. It is the only backend
 	// endpoint the edge can reach and serves nothing but webhook deliveries.
 	HooksMount = "/var/lib/bento-hooks"
-	LiveConf   = ConfMount + "/live/nginx.conf"
+	// LogsMount holds the per-host traffic access logs (TrafficLogFile),
+	// rotated by the backend's traffic loop.
+	LogsMount = "/var/log/bento-edge"
+	LiveConf  = ConfMount + "/live/nginx.conf"
 	// StubStatusPort is the edge's loopback-only stub_status listener. It sits
 	// in an uncommon high range so operator drop-ins are unlikely to collide.
 	StubStatusPort = 57319
@@ -63,6 +66,9 @@ type Route struct {
 	KeyFile     string
 	Redirect    bool
 	AccessLog   bool
+	// TrafficLog is the host's filtered access log file for its traffic
+	// report; set whenever AccessLog is.
+	TrafficLog  string
 	StaticCache bool
 	// Protection is the rendered protection location blocks (see
 	// runtime.ProtectionConfig). Only hosts that target an app carry it:
@@ -172,6 +178,11 @@ func ACMEHosts(in Input) []ACMEHost {
 // RouteName is the edge route (site file and drop-in directory) of a host.
 func RouteName(host string) string { return "host-" + host }
 
+// TrafficLogFile is the name of a host's traffic access log in LogsMount (and
+// in the stack's traffic/logs directory). Host names are normalized domains,
+// so the name is a safe single path element.
+func TrafficLogFile(host string) string { return host + ".log" }
+
 // Render produces the full candidate file set, keyed by relative path: one
 // site per enabled host whose target is routable, and one upstream per app
 // that at least one host routes to.
@@ -199,7 +210,7 @@ func Render(in Input) (map[string][]byte, error) {
 	served := servedHosts(in.Hosts, apps)
 	var routes []Route
 	upstreams := map[string]AppUpstream{}
-	var anyACME bool
+	var anyACME, anyTraffic bool
 	for _, h := range in.Hosts {
 		if _, ok := served[h.Name]; !ok {
 			continue
@@ -256,6 +267,10 @@ func Render(in Input) (map[string][]byte, error) {
 				}
 			}
 		}
+		if r.AccessLog {
+			r.TrafficLog = LogsMount + "/" + TrafficLogFile(h.Name)
+			anyTraffic = true
+		}
 		anyACME = anyACME || r.ACME
 		routes = append(routes, r)
 	}
@@ -268,6 +283,7 @@ func Render(in Input) (map[string][]byte, error) {
 		"HTTPPort": httpPort, "HTTPSPort": s.HTTPSPort,
 		"FrontProxy": front, "FrontTrusted": trusted,
 		"FrontHTTPPort": FrontHTTPPort, "FrontHTTPSPort": FrontHTTPSPort,
+		"Traffic": anyTraffic,
 	})
 	if err != nil {
 		return nil, err

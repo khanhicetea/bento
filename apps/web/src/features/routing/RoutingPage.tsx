@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ExternalLink, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
+import { Activity, BarChart3, ExternalLink, Lock, Network, Pencil, Plus, Trash2, Waypoints } from "lucide-react";
 import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { formatRelative } from "../../lib/format.ts";
@@ -21,40 +21,47 @@ import { Mascot } from "../../components/Mascot.tsx";
 import { Link } from "wouter";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { HostDialogBody, targetLabels, tlsLabels } from "./HostDialog.tsx";
+import { TrafficPanel } from "./TrafficPanel.tsx";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-type Tab = "edge" | "tunnel" | "utils";
-const tabLabels: Record<Tab, string> = { edge: "Edge", tunnel: "Tunnel", utils: "Utils" };
+type Tab = "edge" | "traffic" | "tunnel" | "utils";
+const tabLabels: Record<Tab, string> = { edge: "Edge", traffic: "Traffic", tunnel: "Tunnel", utils: "Utils" };
 
 export function RoutingPage() {
   const [tab, setTab] = useState<Tab>("edge");
+  const [trafficHost, setTrafficHost] = useState<string | null>(null);
+  const showTraffic = (host: string) => {
+    setTrafficHost(host);
+    setTab("traffic");
+  };
   return (
     <>
       <PageHeader title="Ingress" />
       <div className="seg mb-5" role="tablist" aria-label="Ingress sections">
-        {(["edge", "tunnel", "utils"] as const).map((value) => (
+        {(["edge", "traffic", "tunnel", "utils"] as const).map((value) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>
             {tabLabels[value]}
           </button>
         ))}
       </div>
-      {tab === "edge" && <EdgePanel />}
+      {tab === "edge" && <EdgePanel onTraffic={showTraffic} />}
+      {tab === "traffic" && <TrafficPanel host={trafficHost} onHost={setTrafficHost} />}
       {tab === "tunnel" && <TunnelPanel />}
       {tab === "utils" && <UtilsPanel />}
     </>
   );
 }
 
-function EdgePanel() {
+function EdgePanel({ onTraffic }: { onTraffic: (host: string) => void }) {
   const query = useQuery({ queryKey: keys.edge, queryFn: ({ signal }) => api.edge.get(signal) });
   if (query.isPending) return <DomainLoading label="edge" />;
   if (query.error) return <DomainError message={messageOf(query.error)} onRetry={() => void query.refetch()} />;
   return (
     <>
       <EdgeForm status={query.data} />
-      <HostsPanel />
+      <HostsPanel onTraffic={onTraffic} />
     </>
   );
 }
@@ -679,7 +686,7 @@ function TunnelPanel() {
   );
 }
 
-function HostsPanel() {
+function HostsPanel({ onTraffic }: { onTraffic: (host: string) => void }) {
   const query = useQuery({
     queryKey: keys.hosts,
     queryFn: ({ signal }) => api.hosts.list(signal),
@@ -705,6 +712,7 @@ function HostsPanel() {
               host={host}
               onEdit={() => setEditing(host.name)}
               onRemove={() => setRemoveTarget(host)}
+              onTraffic={() => onTraffic(host.name)}
             />
           ))}
           <button type="button" className="cell tile tile--add" onClick={() => setEditing("new")}>
@@ -750,7 +758,17 @@ function CertificateText({ certificate }: { certificate: T.HostCertificate }) {
   }
 }
 
-function HostTile({ host, onEdit, onRemove }: { host: T.Host; onEdit: () => void; onRemove: () => void }) {
+function HostTile({
+  host,
+  onEdit,
+  onRemove,
+  onTraffic,
+}: {
+  host: T.Host;
+  onEdit: () => void;
+  onRemove: () => void;
+  onTraffic: () => void;
+}) {
   const scheme = host.route.tls === "none" ? "http" : "https";
   const redirect = host.target.kind === "redirect";
   return (
@@ -821,6 +839,11 @@ function HostTile({ host, onEdit, onRemove }: { host: T.Host; onEdit: () => void
         <Button variant="outline" onClick={onEdit}>
           <Pencil /> Edit
         </Button>
+        {host.route.accessLog && (
+          <Button variant="ghost" onClick={onTraffic}>
+            <BarChart3 /> Traffic
+          </Button>
+        )}
         <Button variant="danger" size="icon" aria-label={`Remove ${host.name}`} onClick={onRemove}>
           <Trash2 />
         </Button>

@@ -667,6 +667,75 @@ type HostList struct {
 	Hosts []Host `json:"hosts"`
 }
 
+type HostTrafficState string
+
+const (
+	// HostTrafficStateOff: the host's access log is off and it has no report.
+	HostTrafficStateOff HostTrafficState = "off"
+	// HostTrafficStateWaiting: the access log is on; the first report is
+	// written at the next hourly run.
+	HostTrafficStateWaiting HostTrafficState = "waiting"
+	// HostTrafficStateReady: a report exists (while the access log is off it
+	// gets no new data; days older than KeepDays still drop off).
+	HostTrafficStateReady HostTrafficState = "ready"
+)
+
+// HostTraffic is a host's traffic report: its edge access log, page requests
+// only (no static files, dotfiles or 404s, no query strings), aggregated
+// hourly over the last KeepDays days.
+type HostTraffic struct {
+	Host            string           `json:"host"`
+	AccessLog       bool             `json:"accessLog"`
+	State           HostTrafficState `json:"state"`
+	KeepDays        int              `json:"keepDays"`
+	IntervalMinutes int              `json:"intervalMinutes"`
+	// GeneratedAt is when the report was written; LastRunAt and LastError
+	// describe the last run since the backend started.
+	GeneratedAt string `json:"generatedAt,omitempty"`
+	LastRunAt   string `json:"lastRunAt,omitempty"`
+	LastError   string `json:"lastError,omitempty"`
+	// PendingBytes is logged traffic not yet in the report.
+	PendingBytes int64 `json:"pendingBytes"`
+	// From and To are the first and last day with data (YYYY-MM-DD).
+	From     string `json:"from,omitempty"`
+	To       string `json:"to,omitempty"`
+	Requests int64  `json:"requests"`
+	Visitors int64  `json:"visitors"`
+	Bytes    int64  `json:"bytes"`
+	// Invalid counts log lines that could not be read.
+	Invalid int64 `json:"invalid"`
+	// Days are oldest first; Hours "00"–"23" (edge local time).
+	Days  []TrafficCount `json:"days"`
+	Hours []TrafficCount `json:"hours"`
+	// Statuses are classes ("2xx"), Codes single codes ("502"). These and
+	// the lists below are ordered by requests, most first, at most 50 each.
+	Statuses  []TrafficCount `json:"statuses"`
+	Codes     []TrafficCount `json:"codes"`
+	Paths     []TrafficPath  `json:"paths"`
+	Clients   []TrafficCount `json:"clients"`
+	Agents    []TrafficCount `json:"agents"`
+	Referrers []TrafficCount `json:"referrers"`
+}
+
+type TrafficCount struct {
+	Label    string `json:"label"`
+	Requests int64  `json:"requests"`
+	Visitors int64  `json:"visitors"`
+	Bytes    int64  `json:"bytes"`
+}
+
+// TrafficPath is one request path (without query string). Times are
+// milliseconds.
+type TrafficPath struct {
+	Method   string  `json:"method"`
+	Path     string  `json:"path"`
+	Requests int64   `json:"requests"`
+	Visitors int64   `json:"visitors"`
+	Bytes    int64   `json:"bytes"`
+	AvgMs    float64 `json:"avgMs"`
+	MaxMs    float64 `json:"maxMs"`
+}
+
 // HostRequest creates (POST) or replaces (PUT) an Ingress host. On PUT the
 // name must match the path.
 type HostRequest struct {

@@ -35,6 +35,9 @@ type Fake struct {
 	Builds []BuildOptions
 	// ExecHook answers Exec calls; default exits 0.
 	ExecHook func(id string, req ExecRequest) ExecResult
+	// WaitHook answers Wait calls with the container's spec (to model a job's
+	// effects); default exits 0.
+	WaitHook func(spec ContainerSpec) (int64, error)
 	// FailOn makes the named method return an error once (fault injection).
 	// A key may also be a full call ("Create <name>", "Start <name>") to fail
 	// only the call on that container.
@@ -359,7 +362,19 @@ func (f *Fake) SetRestartPolicy(_ context.Context, id string, p container.Restar
 	return f.record("SetRestartPolicy " + id + " " + string(p))
 }
 
-func (f *Fake) Wait(context.Context, string) (int64, error) { return 0, nil }
+func (f *Fake) Wait(_ context.Context, id string) (int64, error) {
+	f.mu.Lock()
+	hook := f.WaitHook
+	var spec ContainerSpec
+	if c := f.find(id); c != nil {
+		spec = c.Spec
+	}
+	f.mu.Unlock()
+	if hook == nil {
+		return 0, nil
+	}
+	return hook(spec)
+}
 
 func (f *Fake) Exec(_ context.Context, id string, req ExecRequest) (ExecResult, error) {
 	f.mu.Lock()

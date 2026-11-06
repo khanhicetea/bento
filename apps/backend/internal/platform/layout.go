@@ -46,6 +46,16 @@ func (l Layout) RcloneDir() string      { return filepath.Join(l.Root, "rclone")
 func (l Layout) CacheDir() string       { return filepath.Join(l.Root, "cache") }
 func (l Layout) StagingDir() string     { return filepath.Join(l.Root, "staging") }
 
+// TrafficDir holds host traffic reports: TrafficLogsDir is the edge's live
+// per-host access log files (mounted into the edge), TrafficHostDir a host's
+// GoAccess database, pending rotated logs and last report. Export skips it.
+func (l Layout) TrafficDir() string     { return filepath.Join(l.Root, "traffic") }
+func (l Layout) TrafficLogsDir() string { return filepath.Join(l.Root, "traffic", "logs") }
+func (l Layout) TrafficHostsDir() string {
+	return filepath.Join(l.Root, "traffic", "hosts")
+}
+func (l Layout) TrafficHostDir(host string) string { return filepath.Join(l.TrafficHostsDir(), host) }
+
 func (l Layout) Secret(name string) string { return filepath.Join(l.Root, "secrets", name) }
 
 // ResticKeyDir holds the restic repository keys; StackBackupKey is the stack

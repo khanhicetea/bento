@@ -162,7 +162,8 @@ Parallel handlers share four things, each serialized inside the handlers:
   warming, so the reconciler does not queue an `edge.apply` for a route that is about to be restored. The flag clears
   on readiness or when the operation ends.
 
-Lock order when nested: image tag lock, `edgeMu`, `netMu`; `runMu` (running, warming and waiting state) is a leaf.
+Lock order when nested: image tag lock, `trafficMu`, `edgeMu`, `netMu`; `runMu` (running, warming and waiting state)
+and `trafficStatusMu` are leaves.
 
 Handlers re-read state from the store, so an operation that was superseded (e.g. `start` after a later `stop`) notices
 and exits. `--op-concurrency 1` restores strictly serial execution; the maximum is 16. Shutdown stops dispatching and
@@ -454,6 +455,39 @@ configured branch deploys, and the payload never chooses what is fetched. A queu
 kept with their result, the verifying credential, and the pusher. The `utils` setting's `baseUrl` (pure display
 intent, `PUT /api/v1/utils`) builds full webhook URLs and database browser links; without it the app's display host (its first enabled
 host) is used when the edge forwards webhooks. Removing the git source or the app destroys the webhook.
+
+## Host traffic reports: `operations/traffic.go`, `traffic`
+
+A host with `route.accessLog` gets, besides its unfiltered `access_log /dev/stdout bento_edge`, a second
+`access_log /var/log/bento-edge/<host>.log bento_traffic if=$bento_traffic` (`edge.TrafficLogFile`; `edge.LogsMount`
+is `traffic/logs/` of the stack root, mounted read-write; edge shape version 2). The `bento_traffic` maps and
+`log_format` are rendered only when some served host has its access log on, so other stacks render byte-identical
+config. They skip static extensions, dotfiles (not `/.well-known/`), `404` and `444`, and log `$request_uri` and the
+referrer without `?…`.
+
+`Controller.RunTraffic` (started by `serve` beside the scheduler) runs `TrafficCycle` two minutes after every
+`traffic.Interval` (1 h, wall clock). It is housekeeping, not an operation: nothing in it changes desired or runtime
+state, a failure is logged and kept in memory (`TrafficStatus`, shown on the report), and the next run retries. A
+cycle, under `trafficMu`:
+
+1. under `edgeMu` (so no recreate interleaves), renames each non-empty regular `traffic/logs/<host>.log` (normalized
+   host names only; symlinks and other names are ignored) to `traffic/hosts/<host>/pending/<UTC>.log`, then sends the
+   running, owned edge `USR1` whenever anything was renamed or any pending file exists. Without a running edge
+   nothing writes and no signal is needed. If the signal is not delivered, no pending file is read this cycle: the
+   edge may still be writing to it;
+2. waits 2 s for workers to reopen, then for each host directory: a host that no longer exists loses its directory;
+   otherwise up to 48 pending files go to one GoAccess job (`domain.GoAccessImage`, pinned by digest and pulled on
+   first use; network `none`, read-only root, `CapDrop ALL`, `no-new-privileges`, 512 MiB, 1 CPU, 64 pids, 10 min,
+   only the host's directory mounted at `/traffic`). `traffic.Args` runs `--restore --persist --keep-last=30
+   --no-query-string --max-items=50`, ignores unshown panels, and writes `report.next.json`; on exit 0 it is renamed
+   to `report.json` and the files read are deleted. GoAccess remembers each file's inode and last line, so re-reading
+   a file after a crash between the run and the delete adds nothing (verified). With no pending file, a report older
+   than 24 h is rewritten from the database so `--keep-last` drops old days. Pending files older than 7 days are
+   dropped with a warning.
+
+`GET /api/v1/hosts/{name}/traffic` (read scope) only reads `report.json` and parses it with `traffic.Parse` into
+`dto.HostTraffic` (`off` / `waiting` / `ready`, plus the last run's error and pending bytes); an unreadable report is
+`503`. `traffic/` is skipped by export (`RootSkip`).
 
 ## Data services and backups
 

@@ -147,6 +147,8 @@ Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one
 | Metric      | Number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 %                                                                                                              |
 | Live chart  | Metric header + 2 px shu line over a flat 8 % shu area, dashed mid gridline, max value top-left; hover = crosshair + sumi tooltip. Client-side history only (last 60 polls)                               |
 | Fact row    | `LABEL ······ value`: dotted leader between caption and value                                                                                                                                             |
+| Rank list   | Fact rows, most first, for top-n lists: the label truncates (full text as tooltip), the value never wraps                                                                                                 |
+| Day bars    | Shu bar per day from the baseline, 4 px rounded top, 2 px gap, half-height hairline, max top-left, first/last date under; hover = column tint + sumi tooltip; sr-only table                               |
 | Operation   | Tamago cell: title + `n / m`, progress bar, step list ✓ done, ● current, ○ next                                                                                                                           |
 | Notice      | Caution (tamago, ▲), Warning (ume, !), Note (busy tint, i): CAPS heading + one line                                                                                                                       |
 | Toast       | Nori bar: ✓ + VERB + target + one link                                                                                                                                                                    |
@@ -177,9 +179,13 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
   hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
-- **Ingress:** Edge / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles (an ACME host adds a `CERTIFICATE` fact: `✓ VALID · expires in 61 days`, `◌ REQUESTING`, or `▲ NO CERT · retry in 2 hrs` in tamago ink) + Kara. Ingress owns
+- **Ingress:** Edge / Traffic / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles (an ACME host adds a `CERTIFICATE` fact: `✓ VALID · expires in 61 days`, `◌ REQUESTING`, or `▲ NO CERT · retry in 2 hrs` in tamago ink) + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
-  hosts and adds one through the same host dialog.
+  hosts and adds one through the same host dialog. A host tile with its access log on has a ghost **Traffic** button.
+  Traffic: round host filters (access-logged hosts only), then the hourly report: optional ume `RUN FAILED` (wide,
+  first), four metrics (REQUESTS, VISITORS, DATA SENT, SERVER ERRORS: tamago with ▲ at ≥ 1 %), day bars (wide,
+  `Updated … · n pending` in the head); Top / Slowest paths; Status codes, Top clients, Agents, Referrers as rank
+  lists. No report yet: tamago cell, mascot `busy`, `FIRST REPORT`; access log off: mascot `idle`.
 - **Backups:** status row (last, next, backup password ✓ SET / NOT YET, not covered) then App backups / Runs /
   Remotes (rclone remotes list + Open shell in the foot, Test remote form cell). App detail → Backup: Snapshots rows
   offer Restore DB (in place, requires `replace <db>`) and Clone (new app, requires `clone <slug>`).

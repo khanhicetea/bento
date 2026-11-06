@@ -159,6 +159,7 @@ func (s *Server) routes() (http.Handler, []string) {
 	api("POST /api/v1/hosts", s.handleCreateHost)
 	api("PUT /api/v1/hosts/{name}", s.handleUpdateHost)
 	api("DELETE /api/v1/hosts/{name}", s.handleDeleteHost)
+	api("GET /api/v1/hosts/{name}/traffic", s.handleHostTraffic)
 
 	api("GET /api/v1/retired", s.handleListRetired)
 	api("POST /api/v1/retired/{id}/prune", s.handlePrune)
@@ -1270,6 +1271,33 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 }
 
 // hostPath reads and normalizes the {name} host path segment.
+// handleHostTraffic serves a host's last traffic report. It only reads the
+// report file; the hourly traffic loop writes it.
+func (s *Server) handleHostTraffic(w http.ResponseWriter, r *http.Request) {
+	name, err := hostPath(r)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	h, err := store.GetHost(r.Context(), s.Store.DB(), name)
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
+	report, generated, ok, err := s.C.TrafficReport(h.Name)
+	if err != nil {
+		s.Log.Warn("traffic report unreadable", "host", h.Name, "err", err)
+		writeError(w, s.Log, &apiError{
+			status: http.StatusServiceUnavailable,
+			code:   dto.ErrorCodeUnavailable,
+			msg:    "the traffic report is unreadable; the next hourly run rewrites it",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, hostTrafficToDTO(h, report, generated, ok,
+		s.C.TrafficStatus(h.Name), s.C.TrafficPending(h.Name)))
+}
+
 func hostPath(r *http.Request) (string, error) {
 	n, err := domain.NormalizeDomain(r.PathValue("name"))
 	if err != nil {

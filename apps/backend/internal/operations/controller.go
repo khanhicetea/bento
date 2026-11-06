@@ -137,6 +137,12 @@ type Controller struct {
 	// webhookMu serializes webhook deliveries so coalescing sees queued
 	// deploys. Only HandleWebhook takes it, before any other controller lock.
 	webhookMu sync.Mutex
+
+	// trafficMu runs one traffic cycle at a time; it is taken before edgeMu.
+	// trafficStatusMu (a leaf) guards trafficStatus.
+	trafficMu       sync.Mutex
+	trafficStatusMu sync.Mutex
+	trafficStatus   map[string]TrafficHostStatus
 }
 
 type warmState struct {

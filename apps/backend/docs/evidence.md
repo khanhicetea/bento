@@ -801,3 +801,20 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
 - `make -C apps/backend ci` passed as root (gofmt, vet, race tests, generated-type drift, build); web fmt/lint/
   typecheck/build and `docs:build` passed.
 - Not verified: arm64; a browser check of the Ingress settings cell (typecheck, lint, Prettier and the web build pass).
+
+## Host traffic reports with GoAccess (2026-11-05; live Docker 29.8.1, amd64)
+
+- GoAccess 1.12 (`allinurl/goaccess:1.12`, multi-arch index digest pinned; only amd64 executed) with the exact
+  `traffic.Args`: an empty database directory with `--restore` works (the directory must exist); a second file adds
+  to the totals; re-reading the same path and inode adds nothing; a copy under a new name is counted again (Bento
+  never re-reads a deleted file); a restore-only run with no log and closed stdin rewrites the report; ignored panels
+  are absent from the JSON. 400,000 generated lines (75 MB) took 5.3 s. The real output is the parser fixture
+  `internal/traffic/testdata/goaccess-1.12.json`.
+- `TestIntegrationTrafficReport` (real edge and GoAccess): an access-logged redirect host on a loopback port; of
+  `/`, `/blog/post?token=…`, `/blog/post`, `/app.css`, `/img/logo.PNG`, `/.env`, `/.git/config` only the three page
+  requests reach the traffic log, without query strings, and the referrer loses its query. A cycle rotates the file,
+  delivers `USR1` to the hardened edge (read-only root, `CHOWN`/`DAC_OVERRIDE`), and the report holds 3 requests with
+  no invalid lines. A request after the cycle lands in the reopened live file and the next cycle reports 4. The edge
+  keeps running.
+- Not run: arm64, the `404`/`444` filter against a real upstream (rendered and covered by config tests only), the
+  hourly timer itself (cycles were called directly), and a front-proxy or tunnel client address in the traffic log.

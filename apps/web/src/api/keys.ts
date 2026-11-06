@@ -29,6 +29,7 @@ export const keys = {
   utils: ["utils"] as const,
   dbadmin: ["dbadmin"] as const,
   hosts: ["hosts"] as const,
+  hostTraffic: (name: string) => ["hosts", "traffic", name] as const,
   retired: ["retired"] as const,
   tokens: ["tokens"] as const,
   backups: {

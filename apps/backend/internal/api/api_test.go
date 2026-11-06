@@ -1125,3 +1125,64 @@ func TestRuntimeImagesAPI(t *testing.T) {
 		t.Fatalf("after rebuild %d %s", resp.StatusCode, body)
 	}
 }
+
+func TestHostTrafficEndpoint(t *testing.T) {
+	c, h := newServer(t)
+	resp, _ := c.do("GET", "/api/v1/hosts/shop.example.com/traffic", "", nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated traffic -> %d", resp.StatusCode)
+	}
+	c.login()
+	_, body := c.write("POST", "/api/v1/apps", `{"slug":"shop","runtime":{"kind":"http-process","http":{"toolchain":"node","version":"24","argv":["node","s.js"]}},"hosts":[{"name":"shop.example.com","route":{"tls":"self-signed","accessLog":true}},{"name":"quiet.example.com","route":{"tls":"self-signed"}}]}`)
+	var acc dto.Accepted
+	json.Unmarshal([]byte(body), &acc)
+	h.Wait(acc.Operation.ID)
+	for path, status := range map[string]int{
+		"/api/v1/hosts/not_a_host/traffic":       400,
+		"/api/v1/hosts/..%2F..%2Fetc/traffic":    400,
+		"/api/v1/hosts/gone.example.com/traffic": 404,
+	} {
+		if resp, body := c.do("GET", path, "", nil); resp.StatusCode != status {
+			t.Errorf("%s -> %d (want %d) %s", path, resp.StatusCode, status, body)
+		}
+	}
+	get := func(host string) dto.HostTraffic {
+		t.Helper()
+		resp, body := c.do("GET", "/api/v1/hosts/"+host+"/traffic", "", nil)
+		var out dto.HostTraffic
+		if resp.StatusCode != 200 || json.Unmarshal([]byte(body), &out) != nil {
+			t.Fatalf("traffic %s -> %d %s", host, resp.StatusCode, body)
+		}
+		return out
+	}
+	if got := get("quiet.example.com"); got.State != dto.HostTrafficStateOff || got.AccessLog || got.Paths == nil {
+		t.Fatalf("host without access log: %+v", got)
+	}
+	if got := get("Shop.Example.com"); got.State != dto.HostTrafficStateWaiting || !got.AccessLog || got.KeepDays != 30 ||
+		got.IntervalMinutes != 60 {
+		t.Fatalf("access log on, no report yet: %+v", got)
+	}
+	// A written report is served as is; a corrupt one is unavailable.
+	dir := h.Layout.TrafficHostDir("shop.example.com")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile("../traffic/testdata/goaccess-1.12.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "report.json"), fixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := get("shop.example.com")
+	if got.State != dto.HostTrafficStateReady || got.Requests != 100 || got.From != "2026-11-03" || got.GeneratedAt == "" ||
+		len(got.Paths) == 0 || got.Paths[0].AvgMs != 973.647 || got.Codes[0].Label != "200" {
+		t.Fatalf("ready report: %+v", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "report.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if resp, body := c.do("GET", "/api/v1/hosts/shop.example.com/traffic", "", nil); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("corrupt report -> %d %s", resp.StatusCode, body)
+	}
+}

@@ -142,6 +142,9 @@ const (
 	RcloneImage = "rclone/rclone:1.71.1@sha256:d5971950c2b370fb04dd3292541b5bda6d9103143fd7e345aeb435a399388afc"
 	// AdminerImage serves the database browser (one shared container).
 	AdminerImage = "adminer:5.5.1@sha256:6c19fd07aaf25361fbc1541a7015c86cf670b830951cfb0d47869f34ec0ef2cf"
+	// GoAccessImage aggregates rotated edge access logs into host traffic
+	// reports (one short-lived, network-less container per host and run).
+	GoAccessImage = "allinurl/goaccess:1.12@sha256:9e6dfd4abce94bd7c2907c1840b7b35f666587d56b24ffbb930b4782a87ea172"
 )
 
 // MySQL database defaults for newly created app databases and for restores
