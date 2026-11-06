@@ -329,25 +329,20 @@ const maxEventsPerOperation = 200
 const TruncatedEventMessage = "earlier events truncated"
 
 func AppendEvent(ctx context.Context, q Q, id, level, message string) error {
-	var seq int
+	// One statement picks the next seq and inserts it, so two writers can
+	// never take the same seq.
+	var next int
+	at := now()
 	if err := q.QueryRowContext(
 		ctx,
-		"SELECT COALESCE(MAX(seq),0) FROM operation_events WHERE operation_id=?",
+		"INSERT INTO operation_events(operation_id, seq, at, level, message) "+
+			"SELECT ?, COALESCE(MAX(seq),0)+1, ?, ?, ? FROM operation_events WHERE operation_id=? RETURNING seq",
 		id,
-	).Scan(&seq); err != nil {
-		return err
-	}
-	next := seq + 1
-	at := now()
-	if _, err := q.ExecContext(
-		ctx,
-		"INSERT INTO operation_events(operation_id, seq, at, level, message) VALUES(?,?,?,?,?)",
-		id,
-		next,
 		at,
 		level,
 		truncate(message, 1000),
-	); err != nil {
+		id,
+	).Scan(&next); err != nil {
 		return err
 	}
 	if next <= maxEventsPerOperation {
