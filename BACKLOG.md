@@ -37,10 +37,6 @@ None open.
 - **Tool containers act outside operations.** `OpenTool` (`internal/operations/tools.go:41-62`) runs
   `EnsureNetworks`, `Images.Ensure`, and `WriteAppConfig` with no claims. It can race an operation and rewrite config
   that `scopedReloads` just restored after a failed validation.
-- **Store and reconciler bookkeeping.**
-  - A crash between `Submit` and `saveSchedule` reruns a scheduled slot (`internal/operations/schedules.go:143-150`).
-  - `AppendEvent` does `MAX(seq)` and then `INSERT` outside a transaction (`internal/store/operations.go:331`).
-  - The reconciler's `targets` map never forgets removed apps.
 - **Edge templates.**
   - The static-cache `add_header` stops server-level headers from being inherited (`edge-site.conf.tmpl` around
     line 83), so `Alt-Svc` and any HSTS from drop-ins are lost on cached assets.

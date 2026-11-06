@@ -144,3 +144,25 @@ func TestCollectToolsSkipsGraceForPreviousBackend(t *testing.T) {
 			exists(h, "tool-before-restart"), exists(h, "tool-after-restart"))
 	}
 }
+
+// A removed app's target (its backoff and last error) is forgotten.
+func TestPassForgetsRemovedApps(t *testing.T) {
+	h, r, app := setup(t)
+	ctx := t.Context()
+	r.passMu.Lock()
+	r.beginPass()
+	r.get(app.ID, app.ConfigGeneration).LastError = "boom"
+	r.get("a0000000gone0", 1).LastError = "left over"
+	r.endPass()
+	r.passMu.Unlock()
+	if err := r.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.targets["a0000000gone0"]; ok {
+		t.Fatal("the target of an app that no longer exists was kept")
+	}
+	if _, ok := r.targets[app.ID]; !ok {
+		t.Fatal("a live app's target was dropped")
+	}
+	_ = h
+}

@@ -494,6 +494,7 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	r.forgetRemovedApps(apps)
 	r.settleImages(ctx)
 	missing := map[string]bool{}
 	var ro rolloutPlan
@@ -797,4 +798,24 @@ func (r *Reconciler) collectTools(ctx context.Context) error {
 
 func collectable(state string) bool {
 	return state == "exited" || state == "created" || state == "dead"
+}
+
+// forgetRemovedApps drops the targets of apps that no longer exist (every
+// other target is keyed by a fixed name or a prefix with ":"), so a removed
+// app's backoff and errors do not stay in the reconciler for the life of the
+// backend. Callers hold passMu.
+func (r *Reconciler) forgetRemovedApps(apps []domain.App) {
+	live := make(map[string]bool, len(apps))
+	for _, a := range apps {
+		live[a.ID] = true
+	}
+	for id, t := range r.work {
+		switch {
+		case live[id], strings.Contains(id, ":"), id == "edge", id == "tunnel", id == "dbadmin":
+		case t.PendingOp != "":
+			// Keep it until its operation settles.
+		default:
+			delete(r.work, id)
+		}
+	}
 }
