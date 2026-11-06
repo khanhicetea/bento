@@ -30,8 +30,19 @@ func (t *ToolSession) Close() {
 }
 
 // OpenTool starts a tooling container: same image and identity, home and
-// bound data only, no daemons, no persistent-instance lock, no backups.
+// bound data only, no daemons, no persistent-instance lock, no backups. It
+// runs outside operations (terminals, exec, file access), so it never writes
+// the app's generated config: it uses the files the last operation
+// materialized, which an operation may be restoring after a failed
+// validation at the same moment.
 func (c *Controller) OpenTool(ctx context.Context, app domain.App, lifetime time.Duration) (*ToolSession, error) {
+	return c.openTool(ctx, app, lifetime, false)
+}
+
+// openTool is OpenTool; writeConfig materializes the app's generated config
+// first, which only an operation holding the app may do (deploy, so its
+// script sees the env saved since the last start).
+func (c *Controller) openTool(ctx context.Context, app domain.App, lifetime time.Duration, writeConfig bool) (*ToolSession, error) {
 	if !app.Provisioned {
 		return nil, Fail("not-provisioned", "Wait for provisioning to finish.", "app %s is not provisioned", app.Slug)
 	}
@@ -54,10 +65,13 @@ func (c *Controller) OpenTool(ctx context.Context, app domain.App, lifetime time
 	if err != nil {
 		return nil, err
 	}
-	m, err := runtime.WriteAppConfig(
-		app,
-		runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group},
-	)
+	actx := runtime.AppContext{Layout: c.Layout, TrustedProxies: ns.TrustedProxies(), ImagePasswd: passwd, ImageGroup: group}
+	var m runtime.Materialized
+	if writeConfig {
+		m, err = runtime.WriteAppConfig(app, actx)
+	} else {
+		_, _, m, err = runtime.RenderAppConfig(app, actx)
+	}
 	if err != nil {
 		return nil, err
 	}

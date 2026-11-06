@@ -238,7 +238,7 @@ func (c *Controller) handleDeploy(ctx context.Context, r *Run) (any, error) {
 	if err := r.Phase(ctx, "open-tool"); err != nil {
 		return nil, err
 	}
-	tool, err := c.OpenTool(ctx, app, deployToolLifetime)
+	tool, err := c.openTool(ctx, app, deployToolLifetime, true)
 	if err != nil {
 		return nil, err
 	}

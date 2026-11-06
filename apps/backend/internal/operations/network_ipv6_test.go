@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/network"
 
@@ -165,5 +166,31 @@ func TestEdgeSpecHasResourceLimits(t *testing.T) {
 	r := spec.HostConfig.Resources
 	if r.Memory != edgeMemory || r.MemorySwap != edgeMemory || r.PidsLimit == nil || *r.PidsLimit != edgePIDs {
 		t.Fatalf("edge resources %+v", r)
+	}
+}
+
+// A tool session (terminal, exec, file access) runs outside operations and
+// never rewrites the app's generated config: an operation may be restoring
+// it after a failed validation at that moment.
+func TestOpenToolDoesNotWriteAppConfig(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	app := h.createApp("shop")
+	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
+	cfg := filepath.Join(h.c.Layout.AppConfigDir(app.ID), "minicrond.toml")
+	if err := os.WriteFile(cfg, []byte("# restored by an operation\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetApp(ctx, h.store.DB(), app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := h.c.OpenTool(ctx, got, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool.Close()
+	if b, _ := os.ReadFile(cfg); string(b) != "# restored by an operation\n" {
+		t.Fatalf("OpenTool rewrote the app config:\n%s", b)
 	}
 }
