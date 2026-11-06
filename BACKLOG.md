@@ -53,12 +53,6 @@ None open.
 
 ### Data and transfer
 
-- **Client meta-commands in a crafted dump** (plausible). Restores replay dumps through `mysql` and `psql` exec'd as
-  root in the service container. Both clients run shell commands from their input (`system`/`\!`), so a crafted
-  artifact (a hand-placed file, or a dump in a tampered restic repository) could run commands next to the data
-  volume and `/run/bento-secrets`. Bento's own dumps never contain them. Fix: pass `--skip-system-command` where the
-  pinned `mysql` client supports it, put `\restrict <random>` in front of the `psql` stream, and run the exec as the
-  image's database user.
 - **Off-site dumps are plaintext.** `internal/backup/rclone.go:229` runs a plain `rclone copy`. Nothing requires or
   suggests a `crypt` remote, and remote copies are never pruned.
 - **Export has no integrity protection.** There is no fsync of `stack.tar.zst` or the volume tars

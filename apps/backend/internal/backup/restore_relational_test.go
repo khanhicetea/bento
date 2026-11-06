@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -34,6 +35,7 @@ type fakeServer struct {
 
 type replay struct {
 	cmd   []string
+	user  string
 	stdin string
 	cnf   string // option file contents at the time of the replay
 }
@@ -58,7 +60,7 @@ func (s *fakeServer) hook(layout platform.Layout) func(string, docker.ExecReques
 		isReplay := (req.Cmd[0] == "mysql" && !strings.Contains(strings.Join(req.Cmd, " "), "client.cnf")) ||
 			(req.Cmd[0] == "psql" && req.Cmd[2] != "postgres")
 		if isReplay {
-			r := replay{cmd: req.Cmd, stdin: sql}
+			r := replay{cmd: req.Cmd, user: req.User, stdin: sql}
 			for _, a := range req.Cmd {
 				if p, ok := strings.CutPrefix(a, "--defaults-extra-file=/run/bento-secrets/"); ok {
 					b, _ := os.ReadFile(filepath.Join(layout.ServicesDir(), "db", "secrets", p))
@@ -191,6 +193,10 @@ func TestRestoreMySQLSwapsStagedTablesAsBindingUser(t *testing.T) {
 	if r.cmd[len(r.cmd)-1] != stage {
 		t.Fatalf("replayed into %v, want the staging database", r.cmd)
 	}
+	// The dump never reaches the client's own commands (system, source).
+	if !slices.Contains(r.cmd, "--commands=OFF") || !slices.Contains(r.cmd, "--skip-system-command") {
+		t.Fatalf("mysql replay with client commands enabled: %v", r.cmd)
+	}
 	if !strings.Contains(r.cnf, "user=uapp\n") || strings.Contains(r.cnf, "root") {
 		t.Fatalf("replay must log in as the binding user, cnf:\n%s", r.cnf)
 	}
@@ -315,7 +321,8 @@ func TestRestorePostgresSwapsDatabasesAsBindingUser(t *testing.T) {
 	if strings.Join(r.cmd[:5], " ") != "psql -U uapp -d "+stage {
 		t.Fatalf("replay must connect as the binding user to the staging database: %v", r.cmd)
 	}
-	if !strings.HasPrefix(r.stdin, "CREATE TABLE a") {
+	// After the \restrict line, the dump itself, without a SET ROLE prefix.
+	if _, dump, _ := strings.Cut(r.stdin, "\n"); dump != "CREATE TABLE a (v text);\nRESET ROLE;\n" {
 		t.Fatalf("the dump must reach psql unchanged, without a SET ROLE prefix:\n%.80s", r.stdin)
 	}
 	sql := h.server.adminSQL()
@@ -346,5 +353,46 @@ func TestRestorePostgresFailedSwapReopensLive(t *testing.T) {
 	}
 	if h.server.dbs[stage] {
 		t.Fatal("staging database left after a failed swap")
+	}
+}
+
+// psql replays run as the image's database user in restricted mode with a
+// key the dump cannot know; the dump's own \restrict lines are dropped.
+func TestRestorePostgresReplayIsRestricted(t *testing.T) {
+	h := newRestoreHarness(t, domain.EnginePostgres)
+	dump := "\\restrict dumpkey\nCREATE TABLE t (a int);\n\\! id\nCOPY t FROM stdin;\n1\n\\.\n\\unrestrict dumpkey\n"
+	if _, err := h.deps.RestoreRelational(context.Background(), domain.App{}, h.b, "shop_main",
+		h.artifact(dump), RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.server.replays) != 1 {
+		t.Fatalf("replays: %+v", h.server.replays)
+	}
+	r := h.server.replays[0]
+	if r.user != "postgres" {
+		t.Fatalf("psql replay ran as %q", r.user)
+	}
+	first, rest, _ := strings.Cut(r.stdin, "\n")
+	key, ok := strings.CutPrefix(first, "\\restrict ")
+	if !ok || len(key) != 32 || key == "dumpkey" {
+		t.Fatalf("replay does not start restricted: %q", first)
+	}
+	if strings.Contains(rest, "restrict") {
+		t.Fatalf("the dump's own restrict lines must be dropped:\n%s", rest)
+	}
+	if !strings.Contains(rest, "\\! id\n") || !strings.Contains(rest, "COPY t FROM stdin;\n1\n\\.\n") {
+		t.Fatalf("other lines must pass unchanged (psql refuses \\! itself):\n%s", rest)
+	}
+}
+
+func TestRestrictFilterHandlesLongLinesAndNoFinalNewline(t *testing.T) {
+	long := strings.Repeat("x", 200<<10)
+	in := "\\restrict k\n" + long + "\n  \\restrict kept\n\\unrestrict k"
+	out, err := io.ReadAll(newRestrictFilter(strings.NewReader(in)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != long+"\n  \\restrict kept\n" {
+		t.Fatalf("filtered %d bytes: %.40q...%q", len(out), out, out[max(0, len(out)-30):])
 	}
 }

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -213,8 +214,13 @@ func (d Deps) replayMySQL(
 	defer remove()
 	stream, finish := stripDefiners(peek)
 	var stderr strings.Builder
+	// The dump is replayed by the client as root in the service container, so
+	// a crafted artifact must not reach the client's own commands: `system`
+	// and `\!` run shell commands, and `source` would read a file next to the
+	// secrets (and echo it in the syntax error). DELIMITER keeps working.
 	res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{
-		Cmd: []string{"mysql", "--defaults-extra-file=" + cnf, db}, Stdin: stream,
+		Cmd:    []string{"mysql", "--defaults-extra-file=" + cnf, "--commands=OFF", "--skip-system-command", db},
+		Stdin:  stream,
 		Stdout: io.Discard, Stderr: &limitWriter{w: &stderr, n: 4096},
 	})
 	finish()
@@ -485,9 +491,16 @@ func (d Deps) replayPostgres(
 	defer src.Close()
 	in := &checkedReader{r: src}
 	var stderr strings.Builder
+	// psql runs `\!` shell commands and reads files with `\i`: a crafted
+	// artifact gets restricted mode with a key it cannot know (the dump's own
+	// \restrict lines, written by pg_dump 17.6+, are dropped), and the client
+	// runs as the image's database user instead of root.
+	key := platform.RandomHex(16)
 	res, err := d.Engine.Exec(ctx, id, docker.ExecRequest{
-		Cmd:   []string{"psql", "-U", b.Username, "-d", db, "-X", "-q", "-v", "ON_ERROR_STOP=1"},
-		Stdin: in, Stdout: io.Discard, Stderr: &limitWriter{w: &stderr, n: 4096},
+		User:   "postgres",
+		Cmd:    []string{"psql", "-U", b.Username, "-d", db, "-X", "-q", "-v", "ON_ERROR_STOP=1"},
+		Stdin:  io.MultiReader(strings.NewReader("\\restrict "+key+"\n"), newRestrictFilter(in)),
+		Stdout: io.Discard, Stderr: &limitWriter{w: &stderr, n: 4096},
 	})
 	if rerr := in.Err(); rerr != nil {
 		return fmt.Errorf("read artifact: %w", rerr)
@@ -547,4 +560,53 @@ func (c *checkedReader) Err() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.err
+}
+
+// restrictFilter drops psql's \restrict and \unrestrict lines from a dump
+// stream, so the replay stays in the restricted mode Bento put it in. It
+// looks only at line starts and passes everything else through unchanged.
+type restrictFilter struct {
+	r       *bufio.Reader
+	pending []byte
+	mid     bool // inside a line whose start was already checked
+	err     error
+}
+
+func newRestrictFilter(r io.Reader) *restrictFilter {
+	return &restrictFilter{r: bufio.NewReaderSize(r, 64<<10)}
+}
+
+func (f *restrictFilter) Read(p []byte) (int, error) {
+	for len(f.pending) == 0 {
+		if f.err != nil {
+			return 0, f.err
+		}
+		if !f.mid {
+			head, _ := f.r.Peek(len(`\unrestrict `))
+			if bytes.HasPrefix(head, []byte(`\restrict `)) || bytes.HasPrefix(head, []byte(`\unrestrict `)) {
+				for {
+					_, err := f.r.ReadSlice('\n')
+					if err == nil {
+						break
+					}
+					if !errors.Is(err, bufio.ErrBufferFull) {
+						f.err = err
+						break
+					}
+				}
+				continue
+			}
+		}
+		chunk, err := f.r.ReadSlice('\n')
+		f.pending = chunk
+		if len(chunk) > 0 {
+			f.mid = chunk[len(chunk)-1] != '\n'
+		}
+		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
+			f.err = err
+		}
+	}
+	n := copy(p, f.pending)
+	f.pending = f.pending[n:]
+	return n, nil
 }
