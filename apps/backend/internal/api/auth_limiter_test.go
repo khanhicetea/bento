@@ -15,30 +15,30 @@ import (
 func TestLoginLimiterCountsAttemptsBeforeHashing(t *testing.T) {
 	var l loginLimiter
 	var dones []func(bool)
-	for range maxConcurrentHashes {
-		done, ok := l.begin()
+	for range maxClientHashes {
+		done, ok := l.begin("uid:0")
 		if !ok {
 			t.Fatal("an attempt under the concurrency cap was refused")
 		}
 		dones = append(dones, done)
 	}
-	if _, ok := l.begin(); ok {
-		t.Fatal("an attempt beyond maxConcurrentHashes was admitted")
+	if _, ok := l.begin("uid:0"); ok {
+		t.Fatal("an attempt beyond maxClientHashes was admitted")
 	}
 	dones[0](true)
 	dones[0](false) // a second call is ignored
-	if l.pending != maxConcurrentHashes-1 || len(l.failures) != 0 {
-		t.Fatalf("after one success: pending=%d failures=%d", l.pending, len(l.failures))
+	if b := l.clients["uid:0"]; l.pending != maxClientHashes-1 || b.pending != maxClientHashes-1 || len(b.failures) != 0 {
+		t.Fatalf("after one success: pending=%d client=%+v", l.pending, b)
 	}
 	dones[1](false)
 	for i := 1; i < maxLoginFailures; i++ {
-		done, ok := l.begin()
+		done, ok := l.begin("uid:0")
 		if !ok {
 			t.Fatalf("attempt %d refused before the budget was spent", i+1)
 		}
 		done(false)
 	}
-	if _, ok := l.begin(); ok {
+	if _, ok := l.begin("uid:0"); ok {
 		t.Fatal("attempt admitted after maxLoginFailures failures")
 	}
 }
@@ -46,19 +46,70 @@ func TestLoginLimiterCountsAttemptsBeforeHashing(t *testing.T) {
 func TestLoginLimiterReservesBudgetForInFlightAttempts(t *testing.T) {
 	var l loginLimiter
 	for range maxLoginFailures - 1 {
-		done, _ := l.begin()
+		done, _ := l.begin("uid:0")
 		done(false)
 	}
-	done, ok := l.begin()
+	done, ok := l.begin("uid:0")
 	if !ok {
 		t.Fatal("last attempt of the budget refused")
 	}
-	if _, ok := l.begin(); ok {
+	if _, ok := l.begin("uid:0"); ok {
 		t.Fatal("an attempt was admitted while the last budget slot was in flight")
 	}
 	done(true)
-	if _, ok := l.begin(); !ok {
+	if _, ok := l.begin("uid:0"); !ok {
 		t.Fatal("a successful attempt did not return its budget slot")
+	}
+}
+
+// One local user spending its budget does not rate limit another (the
+// operator's browser behind an SSH tunnel); hashes in flight stay bounded in
+// all.
+func TestLoginLimiterBudgetsArePerClient(t *testing.T) {
+	var l loginLimiter
+	for range maxLoginFailures {
+		done, ok := l.begin("uid:1001")
+		if !ok {
+			t.Fatal("refused before the budget was spent")
+		}
+		done(false)
+	}
+	if _, ok := l.begin("uid:1001"); ok {
+		t.Fatal("the guessing client must be refused")
+	}
+	done, ok := l.begin("uid:0")
+	if !ok {
+		t.Fatal("another client must keep its own budget")
+	}
+	done(true)
+	var dones []func(bool)
+	for _, c := range []string{"a", "a", "b", "b"} {
+		d, ok := l.begin(c)
+		if !ok {
+			t.Fatalf("client %s refused under the caps", c)
+		}
+		dones = append(dones, d)
+	}
+	if _, ok := l.begin("c"); ok {
+		t.Fatal("more than maxConcurrentHashes checks in flight")
+	}
+	for _, d := range dones {
+		d(true)
+	}
+}
+
+func TestTCPOwnerMatchesTheClientEnd(t *testing.T) {
+	table := `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:1E64 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1001 1 0
+   1: 0100007F:1E64 0100007F:D431 01 00000000:00000000 00:00000000 00000000     0        0 1002 1 0
+   2: 0100007F:D431 0100007F:1E64 01 00000000:00000000 00:00000000 00000000  1000        0 1003 1 0
+`
+	// 0x1E64 = 7780 (the listener), 0xD431 = 54321 (the client's port).
+	if uid, ok := tcpOwner(table, 54321, 7780); !ok || uid != "1000" {
+		t.Fatalf("owner %q %v", uid, ok)
+	}
+	if _, ok := tcpOwner(table, 40000, 7780); ok {
+		t.Fatal("an unknown port matched")
 	}
 }
 

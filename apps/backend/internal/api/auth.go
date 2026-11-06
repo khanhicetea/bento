@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -147,7 +149,7 @@ func (s *Server) confirmCurrentPassword(w http.ResponseWriter, r *http.Request, 
 		return false
 	}
 	if current != "" && rec.Hash != "" {
-		match, admitted := s.limiter.checkPassword(rec.Hash, current)
+		match, admitted := s.limiter.checkPassword(loginClient(r), rec.Hash, current)
 		if !admitted {
 			writeError(w, s.Log, &apiError{status: http.StatusTooManyRequests, code: dto.ErrorCodeRateLimited,
 				msg: "too many password attempts; wait and retry"})
@@ -183,67 +185,140 @@ func principalFrom(ctx context.Context) (principal, bool) {
 
 const (
 	// maxLoginFailures failed password checks within loginWindow refuse
-	// further attempts until the oldest one ages out.
+	// further attempts from the same client until the oldest one ages out.
 	maxLoginFailures = 10
 	loginWindow      = 5 * time.Minute
 	// maxConcurrentHashes bounds password checks in flight. Each one is an
 	// argon2id derivation holding 19 MiB (64 MiB for a hash from before
-	// 2026-11-03 until it is upgraded), however many requests arrive.
-	maxConcurrentHashes = 2
+	// 2026-11-03 until it is upgraded), however many requests arrive; one
+	// client gets at most maxClientHashes of them.
+	maxConcurrentHashes = 4
+	maxClientHashes     = 2
 )
 
 // loginLimiter slows password guessing and bounds the memory password checks
-// use. An attempt counts against the budget from the moment it is admitted,
-// before its password is hashed, so parallel guesses cannot all pass the
-// check while none has failed yet.
+// use. Budgets are per client (the local user that opened the connection, see
+// loginClient), so one local process cannot keep the operator's browser
+// logins rate limited. An attempt counts against its client's budget from the
+// moment it is admitted, before its password is hashed, so parallel guesses
+// cannot all pass the check while none has failed yet.
 type loginLimiter struct {
-	mu       sync.Mutex
-	failures []time.Time
-	pending  int // admitted attempts whose password check has not finished
+	mu      sync.Mutex
+	clients map[string]*loginBudget
+	pending int // admitted attempts of every client whose check has not finished
 }
 
-// begin admits one password check, or reports false when the failure budget
-// (counting attempts in flight) is spent or maxConcurrentHashes checks are
-// already running. An admitted attempt must end with exactly one call of the
-// returned function: true for a correct password, false for a wrong one.
-func (l *loginLimiter) begin() (func(ok bool), bool) {
+type loginBudget struct {
+	failures []time.Time
+	pending  int
+}
+
+// begin admits one password check for client, or reports false when the
+// client's failure budget (counting its attempts in flight) is spent, it has
+// maxClientHashes checks running, or maxConcurrentHashes run in all. An
+// admitted attempt must end with exactly one call of the returned function:
+// true for a correct password, false for a wrong one.
+func (l *loginLimiter) begin(client string) (func(ok bool), bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.clients == nil {
+		l.clients = map[string]*loginBudget{}
+	}
 	cutoff := time.Now().Add(-loginWindow)
-	kept := l.failures[:0]
-	for _, t := range l.failures {
-		if t.After(cutoff) {
-			kept = append(kept, t)
+	for k, b := range l.clients {
+		kept := b.failures[:0]
+		for _, t := range b.failures {
+			if t.After(cutoff) {
+				kept = append(kept, t)
+			}
+		}
+		b.failures = kept
+		if len(b.failures) == 0 && b.pending == 0 && k != client {
+			delete(l.clients, k)
 		}
 	}
-	l.failures = kept
-	if len(l.failures)+l.pending >= maxLoginFailures || l.pending >= maxConcurrentHashes {
+	b := l.clients[client]
+	if b == nil {
+		b = &loginBudget{}
+		l.clients[client] = b
+	}
+	if len(b.failures)+b.pending >= maxLoginFailures || b.pending >= maxClientHashes || l.pending >= maxConcurrentHashes {
 		return nil, false
 	}
+	b.pending++
 	l.pending++
 	var once sync.Once
 	return func(ok bool) {
 		once.Do(func() {
 			l.mu.Lock()
 			defer l.mu.Unlock()
+			b.pending--
 			l.pending--
 			if !ok {
-				l.failures = append(l.failures, time.Now())
+				b.failures = append(b.failures, time.Now())
 			}
 		})
 	}, true
 }
 
-// checkPassword verifies a password under the limiter. It reports
+// checkPassword verifies a password under client's budget. It reports
 // (match, admitted); a refused attempt is never hashed.
-func (l *loginLimiter) checkPassword(encoded, password string) (bool, bool) {
-	done, ok := l.begin()
+func (l *loginLimiter) checkPassword(client, encoded, password string) (bool, bool) {
+	done, ok := l.begin(client)
 	if !ok {
 		return false, false
 	}
 	match := verifyPassword(encoded, password)
 	done(match)
 	return match, true
+}
+
+// loginClient names the client a login attempt counts against: the local
+// user (uid) owning the other end of a loopback TCP connection, read from
+// /proc/net/tcp{,6}. Every browser reaches the loopback listener from
+// 127.0.0.1 (an SSH tunnel's sshd runs as the operator), so addresses would
+// not tell an operator from another local user. "unknown" when the owner
+// cannot be read.
+func loginClient(r *http.Request) string {
+	c, _ := r.Context().Value(connKey{}).(net.Conn)
+	if c == nil {
+		return "unknown"
+	}
+	local, ok1 := c.LocalAddr().(*net.TCPAddr)
+	remote, ok2 := c.RemoteAddr().(*net.TCPAddr)
+	if !ok1 || !ok2 {
+		return "unknown"
+	}
+	for _, f := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if uid, ok := tcpOwner(string(b), remote.Port, local.Port); ok {
+			return "uid:" + uid
+		}
+	}
+	return "unknown"
+}
+
+// tcpOwner finds, in /proc/net/tcp text, the socket whose local port is
+// localPort and whose peer port is peerPort, and returns its owner uid.
+func tcpOwner(table string, localPort, peerPort int) (string, bool) {
+	want := func(addr string, port int) bool {
+		_, hexPort, ok := strings.Cut(addr, ":")
+		p, err := strconv.ParseUint(hexPort, 16, 16)
+		return ok && err == nil && int(p) == port
+	}
+	for line := range strings.SplitSeq(table, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 8 || f[0] == "sl" {
+			continue
+		}
+		if want(f[1], localPort) && want(f[2], peerPort) {
+			return f[7], true
+		}
+	}
+	return "", false
 }
 
 func tokenHash(token string) string { return platform.SHA256Hex([]byte(token)) }
@@ -401,7 +476,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			msg: "no operator password is configured; run `bento auth set-password` on the host"})
 		return
 	}
-	match, admitted := s.limiter.checkPassword(rec.Hash, req.Password)
+	match, admitted := s.limiter.checkPassword(loginClient(r), rec.Hash, req.Password)
 	if !admitted {
 		writeError(
 			w,

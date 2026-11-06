@@ -219,8 +219,10 @@ func Serve(opts ServeOptions) error {
 	web := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    64 << 10,
+		// Login budgets are per local user (api.loginClient).
+		ConnContext:    api.ConnContext,
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
 	}
 	local := &http.Server{
 		Handler:           srv.LocalOnly(handler),

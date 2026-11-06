@@ -37,15 +37,6 @@ None open.
   the new live generation, which was validated by the new image. Low risk while nginx stays on the same stable line;
   keeping the previous generation for the rollback path would close it.
 
-### Data and transfer
-
-
-### Auth
-
-- **The login limiter is global** (since 2026-11-03 attempts are counted before hashing and at most 2 run at once).
-  Any process that can reach the loopback listener can keep browser logins rate limited; root on the control socket
-  is unaffected. Fix: key the budget per client or session.
-
 ## Hardening (low)
 
 - **Admin tokens can run code in apps.** An admin token can create a scheduler job, and an operate token runs it
