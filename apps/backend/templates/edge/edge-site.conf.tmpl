@@ -111,6 +111,9 @@ upstream {{.UpstreamName}} {
     proxy_cache_lock on;
     proxy_cache_bypass $http_authorization;
     proxy_no_cache $http_authorization;
+    # Any add_header here would drop the server's (Alt-Svc, a drop-in's
+    # HSTS) on cached assets; merge keeps them.
+    add_header_inherit merge;
     add_header X-Bento-Cache $upstream_cache_status always;
 {{- template "bento-proxy" .}}
 {{- if .UpstreamURI}}
