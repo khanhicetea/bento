@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -324,7 +326,11 @@ func (s *Server) serveTerminal(
 	owner := "local"
 	if p.Kind == "session" {
 		// WebSocket upgrades are GETs: enforce exact Origin and the CSRF token.
-		if !s.originAllowed(r.Header.Get("Origin")) || r.URL.Query().Get("csrf") != p.Session.CSRFToken {
+		// Browsers cannot set headers on a WebSocket, so the token travels as
+		// an offered subprotocol (never in the URL) and is compared in
+		// constant time.
+		if !s.originAllowed(r.Header.Get("Origin")) ||
+			subtle.ConstantTimeCompare([]byte(terminalCSRF(r)), []byte(p.Session.CSRFToken)) != 1 {
 			writeError(
 				w,
 				s.Log,
@@ -367,7 +373,11 @@ func (s *Server) serveTerminal(
 			return
 		}
 	}
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true}) // origin verified above
+	// The token subprotocol is never selected (echoed); terminalProtocol is.
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true, // origin verified above
+		Subprotocols:       []string{terminalProtocol},
+	})
 	if err != nil {
 		t.detach(gen)
 		return
@@ -454,4 +464,23 @@ func (s *Server) serveTerminal(
 			t.kill()
 		}
 	}
+}
+
+// terminalProtocol is the subprotocol the terminal WebSocket speaks; a
+// browser also offers terminalCSRFPrefix+<CSRF token>.
+const (
+	terminalProtocol   = "bento.v1"
+	terminalCSRFPrefix = "bento.csrf."
+)
+
+// terminalCSRF returns the CSRF token a browser offered as a subprotocol.
+func terminalCSRF(r *http.Request) string {
+	for _, v := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for p := range strings.SplitSeq(v, ",") {
+			if tok, ok := strings.CutPrefix(strings.TrimSpace(p), terminalCSRFPrefix); ok {
+				return tok
+			}
+		}
+	}
+	return ""
 }

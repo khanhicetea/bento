@@ -116,7 +116,10 @@ export function TerminalView({ path, children }: { path: string; children?: Reac
 
     const connect = () => {
       setState(everConnected ? "reconnecting" : "connecting");
-      const ws = new WebSocket(api.terminalUrl(path, terminal.cols, terminal.rows, loadSession(key)));
+      const ws = new WebSocket(
+        api.terminalUrl(path, terminal.cols, terminal.rows, loadSession(key)),
+        api.terminalProtocols(),
+      );
       ws.binaryType = "arraybuffer";
       current = ws;
       setSocket(ws);

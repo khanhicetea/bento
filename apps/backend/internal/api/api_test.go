@@ -721,13 +721,30 @@ func TestRcloneEndpoints(t *testing.T) {
 	}
 
 	// The shell upgrade is a GET: it must enforce Origin and the CSRF token itself.
-	for name, q := range map[string]string{"no csrf": "", "wrong csrf": "?csrf=nope"} {
-		resp, _ = c.do("GET", "/api/v1/backups/rclone/terminal"+q, "", map[string]string{"Origin": origin})
+	for name, hdr := range map[string]map[string]string{
+		"no csrf":           {"Origin": origin},
+		"wrong csrf":        {"Origin": origin, "Sec-WebSocket-Protocol": "bento.v1, bento.csrf.nope"},
+		"csrf in the URL":   {"Origin": origin, "X-Query": "csrf"},
+		"empty subprotocol": {"Origin": origin, "Sec-WebSocket-Protocol": "bento.v1, bento.csrf."},
+	} {
+		path := "/api/v1/backups/rclone/terminal"
+		if hdr["X-Query"] != "" {
+			path += "?csrf=" + c.csrf // the old place no longer authenticates
+		}
+		resp, _ = c.do("GET", path, "", hdr)
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("terminal %s -> %d", name, resp.StatusCode)
 		}
 	}
-	resp, _ = c.do("GET", "/api/v1/backups/rclone/terminal?csrf="+c.csrf, "", map[string]string{"Origin": "http://evil.test"})
+	// The right token passes the check (this plain GET then fails the
+	// WebSocket handshake itself).
+	resp, _ = c.do("GET", "/api/v1/backups/rclone/terminal", "", map[string]string{"Origin": origin,
+		"Sec-WebSocket-Protocol": "bento.v1, bento.csrf." + c.csrf})
+	if resp.StatusCode == http.StatusForbidden {
+		t.Error("the CSRF token offered as a subprotocol was refused")
+	}
+	resp, _ = c.do("GET", "/api/v1/backups/rclone/terminal", "", map[string]string{"Origin": "http://evil.test",
+		"Sec-WebSocket-Protocol": "bento.v1, bento.csrf." + c.csrf})
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("terminal foreign origin -> %d", resp.StatusCode)
 	}

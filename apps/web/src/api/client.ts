@@ -210,10 +210,12 @@ export const api = {
     url.protocol = `${scheme}:`;
     url.searchParams.set("cols", String(cols));
     url.searchParams.set("rows", String(rows));
-    url.searchParams.set("csrf", csrfToken);
     if (session) url.searchParams.set("session", session);
     return url.toString();
   },
+  // The CSRF token goes as an offered subprotocol, never in the URL; the
+  // server selects "bento.v1".
+  terminalProtocols: () => ["bento.v1", `bento.csrf.${csrfToken}`],
 };
 
 export function messageOf(error: unknown): string {

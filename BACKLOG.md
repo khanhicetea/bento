@@ -32,8 +32,6 @@ None open.
   binding passwords, not operator env values.
 - **Webhook replay.** The HMAC covers only the body; the delivery id is unsigned and there is no timestamp
   (`internal/domain/webhook.go:108`, `internal/operations/webhook.go:200`). A replay only redeploys the branch head.
-- **Terminal CSRF check.** `internal/api/terminal.go:333` compares the token with `!=` and the token travels in the
-  query string.
 - **SQLite restore race.** `internal/backup/restore.go:107-161` checks for symlinks, then writes as root into the
   app-owned directory (the app is stopped). Use `O_NOFOLLOW` directory fds.
 - **Tool containers act outside operations.** `OpenTool` (`internal/operations/tools.go:41-62`) runs
