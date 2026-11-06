@@ -258,10 +258,14 @@ http {
   # Unknown Host/SNI is rejected.
   server {
     listen 80 default_server;
+{{- if .IPv6}}
     listen [::]:80 default_server;
+{{- end}}
 {{- if .FrontProxy}}
     listen {{.FrontHTTPPort}} proxy_protocol default_server;
+{{- if .IPv6}}
     listen [::]:{{.FrontHTTPPort}} proxy_protocol default_server;
+{{- end}}
 {{- end}}
     server_name _;
     set $bento_route "-";
@@ -269,14 +273,20 @@ http {
   }
   server {
     listen 443 ssl default_server;
+{{- if .IPv6}}
     listen [::]:443 ssl default_server;
+{{- end}}
 {{- if .FrontProxy}}
     listen {{.FrontHTTPSPort}} ssl proxy_protocol default_server;
+{{- if .IPv6}}
     listen [::]:{{.FrontHTTPSPort}} ssl proxy_protocol default_server;
+{{- end}}
 {{- end}}
 {{- if .HTTP3}}
     listen 443 quic reuseport default_server;
+{{- if .IPv6}}
     listen [::]:443 quic reuseport default_server;
+{{- end}}
 {{- end}}
     http2 on;
     server_name _;

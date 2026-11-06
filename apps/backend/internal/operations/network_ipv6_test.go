@@ -152,3 +152,18 @@ func TestDiscoverHomeSQLite(t *testing.T) {
 		t.Fatalf("found %v, want %v", got, want)
 	}
 }
+
+// The edge container is bounded like every other stack container.
+func TestEdgeSpecHasResourceLimits(t *testing.T) {
+	h := newHarness(t)
+	s := domain.DefaultEdgeSettings()
+	s.Enabled = true
+	spec, err := h.c.edgeSpec(s, NetworkSettings{EdgeIP: "10.0.0.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := spec.HostConfig.Resources
+	if r.Memory != edgeMemory || r.MemorySwap != edgeMemory || r.PidsLimit == nil || *r.PidsLimit != edgePIDs {
+		t.Fatalf("edge resources %+v", r)
+	}
+}

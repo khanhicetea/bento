@@ -157,10 +157,14 @@ upstream {{.UpstreamName}} {
 
 server {
   listen 80;
+{{- if .IPv6}}
   listen [::]:80;
+{{- end}}
 {{- if .FrontHTTPPort}}
   listen {{.FrontHTTPPort}} proxy_protocol;
+{{- if .IPv6}}
   listen [::]:{{.FrontHTTPPort}} proxy_protocol;
+{{- end}}
 {{- end}}
   server_name {{.ServerNames}};
 {{- template "bento-front-reject" .}}
@@ -181,14 +185,20 @@ server {
 
 server {
   listen 443 ssl;
+{{- if .IPv6}}
   listen [::]:443 ssl;
+{{- end}}
 {{- if .FrontHTTPSPort}}
   listen {{.FrontHTTPSPort}} ssl proxy_protocol;
+{{- if .IPv6}}
   listen [::]:{{.FrontHTTPSPort}} ssl proxy_protocol;
+{{- end}}
 {{- end}}
 {{- if .HTTP3}}
   listen 443 quic;
+{{- if .IPv6}}
   listen [::]:443 quic;
+{{- end}}
 {{- if .FrontHTTPSPort}}
   add_header Alt-Svc $bento_alt_svc always;
 {{- else}}

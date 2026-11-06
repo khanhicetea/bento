@@ -73,8 +73,15 @@ type frontListeners struct {
 // than reloaded to pick up a change: 2 added the traffic logs mount, 3 loads
 // the ACME module unconditionally (nginx segfaults when a reload adds a
 // load_module, so an edge started without it must cold-start with it), 4
-// mounts the pending certificate.
-const edgeShapeVersion = 4
+// mounts the pending certificate, 5 bounds memory and PIDs.
+const edgeShapeVersion = 5
+
+// The edge container's limits: nginx with its workers, the 320 MiB of tmpfs
+// caches and the ACME zone fit well within them.
+const (
+	edgeMemory = 1 << 30
+	edgePIDs   = 1024
+)
 
 func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 	var front *frontListeners
@@ -160,10 +167,13 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker
 				"/tmp":             "rw,nosuid,nodev,size=64m",
 			},
 			ReadonlyRootfs: true,
-			CapDrop:        []string{"ALL"},
-			CapAdd:         []string{"NET_BIND_SERVICE", "SETUID", "SETGID", "CHOWN", "DAC_OVERRIDE"},
-			SecurityOpt:    []string{"no-new-privileges:true"},
-			LogConfig:      container.LogConfig{Type: "local", Config: map[string]string{"max-size": "20m", "max-file": "5"}},
+			// Bounded like every other stack container: the tmpfs caches
+			// (256m + 64m) count against the memory limit.
+			Resources:   container.Resources{Memory: edgeMemory, MemorySwap: edgeMemory, PidsLimit: new(int64(edgePIDs))},
+			CapDrop:     []string{"ALL"},
+			CapAdd:      []string{"NET_BIND_SERVICE", "SETUID", "SETGID", "CHOWN", "DAC_OVERRIDE"},
+			SecurityOpt: []string{"no-new-privileges:true"},
+			LogConfig:   container.LogConfig{Type: "local", Config: map[string]string{"max-size": "20m", "max-file": "5"}},
 		},
 		Networking: &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{
 			c.Names.AppsNetwork(): {IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr(ns.EdgeIP)}},
@@ -354,6 +364,7 @@ func (c *Controller) renderEdge(
 		Running:       runningApps,
 		UtilsUpstream: upstream,
 		TunnelIP:      ns.TunnelIP,
+		NoIPv6:        !platform.HostIPv6(),
 	}
 	plan.hosts = edge.ACMEHosts(in)
 	if plan.prev, err = c.acmeState(ctx); err != nil {

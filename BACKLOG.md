@@ -37,7 +37,6 @@ None open.
 - **Tool containers act outside operations.** `OpenTool` (`internal/operations/tools.go:41-62`) runs
   `EnsureNetworks`, `Images.Ensure`, and `WriteAppConfig` with no claims. It can race an operation and rewrite config
   that `scopedReloads` just restored after a failed validation.
-- **Edge container.** It has no memory or PID limit. `listen [::]` fails on hosts booted with `ipv6.disable=1`.
 - **Isolation (design).** Apps share one flat network and can reach each other's listeners and the utils listener.
   App homes have no disk quota, so one app can fill the disk that holds `bento.db`.
 

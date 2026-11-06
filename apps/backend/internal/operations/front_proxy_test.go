@@ -130,7 +130,7 @@ func TestEdgeFingerprintStableWithoutFrontProxy(t *testing.T) {
 		I  string
 		V  int
 	}{legacySettings{true, "0.0.0.0", 80, 443, true, "ops@example.com", "https://acme.test/dir"}, ns.EdgeIP, domain.EdgeImage,
-		4}) // shape version 4: the pending certificate mount
+		5}) // shape version 5: memory and PID limits
 	legacy := platform.SHA256Hex(b)[:20]
 	s.FrontProxy = domain.DefaultEdgeSettings().FrontProxy
 	if got := edgeFingerprint(s, ns); got != legacy {

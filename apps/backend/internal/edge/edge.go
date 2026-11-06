@@ -93,6 +93,7 @@ type Route struct {
 	MaxBodyMB           int
 	Unavailable         bool
 	HTTP3               bool
+	IPv6                bool
 	HTTPSAdvertisedPort int
 	// UtilsUpstream is the backend's utils listener (host:port) that
 	// /_bento/webhook/* is proxied to; "" leaves the path to the upstream.
@@ -135,6 +136,9 @@ type Input struct {
 	// PlanACME): they are served with the boot certificate and no
 	// acme_certificate, so the module does not retry them on every reload.
 	ACMEHold map[string]bool
+	// NoIPv6 renders no IPv6 listeners: on a host booted with
+	// ipv6.disable=1 nginx refuses `listen [::]` and the edge cannot start.
+	NoIPv6 bool
 }
 
 // servedHosts returns the hosts the edge serves at all, by name.
@@ -219,6 +223,7 @@ func Render(in Input) (map[string][]byte, error) {
 			continue
 		}
 		r := baseRoute(string(h.Target), RouteName(h.Name), h.Name, h.Route, s)
+		r.IPv6 = !in.NoIPv6
 		if r.ACME && in.ACMEHold[h.Name] {
 			r.ACME, r.CertFile, r.KeyFile = false, CertsMount+"/boot.crt", CertsMount+"/boot.key"
 		}
@@ -283,7 +288,7 @@ func Render(in Input) (map[string][]byte, error) {
 	slices.SortFunc(routes, func(a, b Route) int { return strings.Compare(a.Name, b.Name) })
 	files := map[string][]byte{}
 	main, err := assets.Render("edge-nginx.conf.tmpl", map[string]any{
-		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3,
+		"ACME": anyACME, "ACMEURL": s.ACMEURL, "ACMEEmail": s.ACMEEmail, "HTTP3": s.HTTP3, "IPv6": !in.NoIPv6,
 		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
 		"TunnelIP": in.TunnelIP, "HTTPSPortSuffix": suffix, "HTTPPortSuffix": httpSuffix,
 		"HTTPPort": httpPort, "HTTPSPort": s.HTTPSPort,

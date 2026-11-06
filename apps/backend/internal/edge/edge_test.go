@@ -578,3 +578,30 @@ func TestRenderCachedAssetsKeepServerHeaders(t *testing.T) {
 		t.Fatalf("the cache location must merge the server's headers:\n%s", site)
 	}
 }
+
+// A host booted with ipv6.disable=1 cannot open IPv6 sockets: no IPv6
+// listener may be rendered there, or nginx refuses the whole configuration.
+func TestRenderWithoutIPv6(t *testing.T) {
+	app := domain.App{ID: "a1", Slug: "shop", Ingress: domain.IngressManaged, Publication: domain.Published,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}}}
+	in := Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443, HTTP3: true},
+		Apps:     []domain.App{app},
+		Hosts:    []domain.Host{appHost("shop.example.com", "a1", domain.Route{TLS: domain.TLSSelfSigned})},
+		Running:  map[string]bool{"a1": true},
+	}
+	for _, noV6 := range []bool{false, true} {
+		in.NoIPv6 = noV6
+		files, err := Render(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all := string(files["nginx.conf"]) + string(files["sites/host-shop.example.com.conf"])
+		if got := strings.Contains(all, "listen [::]"); got == noV6 {
+			t.Fatalf("NoIPv6=%v: IPv6 listeners rendered=%v", noV6, got)
+		}
+		if !strings.Contains(all, "listen 443 ssl;") {
+			t.Fatal("IPv4 listeners must always be rendered")
+		}
+	}
+}
