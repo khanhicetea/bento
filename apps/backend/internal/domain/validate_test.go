@@ -208,3 +208,21 @@ func TestResticExcludesValkeyTempSnapshots(t *testing.T) {
 		t.Fatalf("excludes %v", lines)
 	}
 }
+
+// Paths rendered into generated configuration cannot end or extend a
+// directive.
+func TestConfigPathsAreAllowListed(t *testing.T) {
+	for _, bad := range []string{"public;\n  location / { return 200; }", "web$host", "a{b}", "pub lic", "x\ny"} {
+		rt := Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", DocumentRoot: bad}}
+		var errs ValidationErrors
+		ValidateRuntime(&rt, &errs)
+		if errs.Err() == nil {
+			t.Errorf("documentRoot %q accepted", bad)
+		}
+	}
+	for _, good := range []string{"public", "web/public_html", "dist-1.2", "", "./public/"} {
+		if _, err := CleanConfigPath(good); err != nil {
+			t.Errorf("%q refused: %v", good, err)
+		}
+	}
+}

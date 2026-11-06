@@ -96,6 +96,24 @@ func NormalizeDomain(name string) (string, error) {
 }
 
 // CleanRelative validates a path relative to an app-controlled base directory.
+// configPathPattern limits paths rendered into generated configuration
+// (nginx `root`, run scripts): CleanRelative alone admits a newline, `;`,
+// `{` or `$`, which would end or extend the directive.
+var configPathPattern = regexp.MustCompile(`^[A-Za-z0-9._@+~=,/-]*$`)
+
+// CleanConfigPath is CleanRelative for a path that generated configuration
+// renders, restricted to configPathPattern.
+func CleanConfigPath(p string) (string, error) {
+	c, err := CleanRelative(p)
+	if err != nil {
+		return "", err
+	}
+	if !configPathPattern.MatchString(c) {
+		return "", errors.New("may contain only letters, digits and . _ @ + ~ = , / -")
+	}
+	return c, nil
+}
+
 func CleanRelative(p string) (string, error) {
 	if p == "" || p == "." {
 		return "", nil
@@ -203,7 +221,7 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 		if _, ok := PHPVersions[p.Version]; !ok {
 			errs.Add("runtime.php.version", "unsupported; choose one of %s", strings.Join(SortedKeys(PHPVersions), ", "))
 		}
-		if dr, err := CleanRelative(p.DocumentRoot); err != nil {
+		if dr, err := CleanConfigPath(p.DocumentRoot); err != nil {
 			errs.Add("runtime.php.documentRoot", "%s", err)
 		} else {
 			p.DocumentRoot = dr
@@ -230,7 +248,7 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 			errs.Add("runtime.php.readyPath", "must be an absolute URL path")
 		}
 		if p.ReleaseSymlink != "" {
-			rs, err := CleanRelative(p.ReleaseSymlink)
+			rs, err := CleanConfigPath(p.ReleaseSymlink)
 			if err != nil || rs == "" || strings.Contains(rs, "/") {
 				errs.Add("runtime.php.releaseSymlink", "must be a single path component inside the app code directory")
 			}
@@ -267,7 +285,7 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 				errs.Add("runtime.http.argv", "argument %d is invalid", i)
 			}
 		}
-		if wd, err := CleanRelative(h.Workdir); err != nil {
+		if wd, err := CleanConfigPath(h.Workdir); err != nil {
 			errs.Add("runtime.http.workdir", "%s", err)
 		} else {
 			h.Workdir = wd

@@ -32,9 +32,6 @@ None open.
   binding passwords, not operator env values.
 - **Webhook replay.** The HMAC covers only the body; the delivery id is unsigned and there is no timestamp
   (`internal/domain/webhook.go:108`, `internal/operations/webhook.go:200`). A replay only redeploys the branch head.
-- **`documentRoot` is rendered unescaped.** It goes into `root {{.DocumentRoot}};`
-  (`templates/config/app-nginx.conf.tmpl:65`), and `CleanRelative` (`internal/domain/validate.go:98`) allows
-  newline, `;`, `{` and `$`. Impact stays within the app's own nginx; add a character allow-list.
 - **Terminal CSRF check.** `internal/api/terminal.go:333` compares the token with `!=` and the token travels in the
   query string.
 - **SQLite restore race.** `internal/backup/restore.go:107-161` checks for symlinks, then writes as root into the
