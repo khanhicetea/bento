@@ -229,7 +229,7 @@ func (c *Controller) rotateTrafficLogs(ctx context.Context) (reopened bool, err 
 	if !running {
 		return false, nil
 	}
-	if err := c.Engine.Signal(ctx, id, "USR1"); err != nil {
+	if err := c.edgeControl(ctx, id, "reopen"); err != nil {
 		return false, fmt.Errorf("reopen edge logs: %w", err)
 	}
 	return true, nil

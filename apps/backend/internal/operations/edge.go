@@ -209,6 +209,26 @@ func (c *Controller) edgeContainer(ctx context.Context) (string, bool, error) {
 	return ins.ID, ins.State != nil && ins.State.Running, nil
 }
 
+// edgeControl sends the running edge an nginx control action (reload,
+// reopen) through nginx -s in the container. Never through Docker's kill API:
+// any signal sent that way marks the container as manually stopped, and an
+// unless-stopped container so marked is not started again when Docker
+// restarts or the host reboots, which would leave every site down until the
+// backend repairs it.
+func (c *Controller) edgeControl(ctx context.Context, id, action string) error {
+	res, err := c.Engine.Exec(ctx, id, docker.ExecRequest{
+		Cmd:         []string{"nginx", "-e", "stderr", "-c", edge.LiveConf, "-s", action},
+		OutputLimit: 16 << 10,
+	})
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("nginx -s %s exited with status %d: %s", action, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
 // validateEdge runs nginx -t against a candidate: inside the running edge
 // when available, otherwise in a scoped, networked validator container.
 func (c *Controller) validateEdge(ctx context.Context, candidate string, running string) error {
@@ -584,7 +604,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 	// Reload when the generation changed, and also when an earlier reload of
 	// the live generation was never delivered.
 	if changed || !gens.Loaded(files) {
-		if err := c.Engine.Signal(ctx, id, "HUP"); err != nil {
+		if err := c.edgeControl(ctx, id, "reload"); err != nil {
 			return Fail(
 				"edge-reload-failed",
 				"The validated generation is live on disk; the reconciler retries the reload.",

@@ -708,13 +708,13 @@ func TestRestartWithoutHeldRouteLeavesEdgeAlone(t *testing.T) {
 	app := h.createApp("shop")
 	h.mustSucceed(h.c.StartApp(ctx, app.ID, ""))
 	h.mustSucceed(h.c.PublishApp(ctx, app.ID, ""))
-	signals := h.fake.CallCount("Signal")
+	signals := edgeControls(h, "reload")
 	op := h.mustSucceed(h.c.RestartApp(ctx, app.ID, ""))
 	events, _ := store.ListEvents(ctx, h.store.DB(), op.ID, 0)
 	if slices.ContainsFunc(events, func(e store.OpEvent) bool { return strings.Contains(e.Message, "refreshing routes") }) {
 		t.Fatal("restart refreshed routes that no other operation held")
 	}
-	if h.fake.CallCount("Signal") != signals {
+	if edgeControls(h, "reload") != signals {
 		t.Fatal("restart reloaded the edge")
 	}
 }

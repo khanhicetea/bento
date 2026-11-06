@@ -347,12 +347,6 @@ func (f *Fake) Rename(_ context.Context, id, newName string) error {
 	return nil
 }
 
-func (f *Fake) Signal(_ context.Context, id, sig string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.record("Signal " + id + " " + sig)
-}
-
 func (f *Fake) SetRestartPolicy(_ context.Context, id string, p container.RestartPolicyMode) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

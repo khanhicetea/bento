@@ -145,7 +145,6 @@ type Engine interface {
 	// Rename changes a container's name (running or not); it never touches
 	// the container's state, mounts, or networks.
 	Rename(ctx context.Context, id, newName string) error
-	Signal(ctx context.Context, id, signal string) error
 	SetRestartPolicy(ctx context.Context, id string, policy container.RestartPolicyMode) error
 	Wait(ctx context.Context, id string) (int64, error)
 	Exec(ctx context.Context, id string, req ExecRequest) (ExecResult, error)
@@ -522,13 +521,6 @@ func (s *SDK) Rename(ctx context.Context, id, newName string) (err error) {
 	ctx, finish := bound(ctx, APITimeout, "container rename")
 	defer finish(&err)
 	_, err = s.c.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: newName})
-	return err
-}
-
-func (s *SDK) Signal(ctx context.Context, id, signal string) (err error) {
-	ctx, finish := bound(ctx, APITimeout, "container kill")
-	defer finish(&err)
-	_, err = s.c.ContainerKill(ctx, id, client.ContainerKillOptions{Signal: signal})
 	return err
 }
 

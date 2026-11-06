@@ -75,17 +75,6 @@ func pendingLogs(t *testing.T, h *harness, host string) []string {
 	return names
 }
 
-// edgeSignals counts the signals sig recorded by the fake engine.
-func edgeSignals(h *harness, sig string) int {
-	n := 0
-	for _, c := range h.fake.Calls {
-		if strings.HasPrefix(c, "Signal ") && strings.HasSuffix(c, " "+sig) {
-			n++
-		}
-	}
-	return n
-}
-
 func TestTrafficLogRenderedOnlyForAccessLogHosts(t *testing.T) {
 	h := trafficHarness(t, true)
 	live := filepath.Join(h.c.Layout.EdgeConfDir(), "live")
@@ -124,7 +113,7 @@ func TestTrafficCycleRotatesReopensAndReports(t *testing.T) {
 	if err := h.c.TrafficCycle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if edgeSignals(h, "USR1") == 0 {
+	if edgeControls(h, "reopen") == 0 {
 		t.Fatalf("the edge was not asked to reopen its logs: %v", h.fake.Calls)
 	}
 	if _, err := os.Stat(filepath.Join(h.c.Layout.TrafficLogsDir(), edge.TrafficLogFile(trafficHost))); !errors.Is(err, os.ErrNotExist) {
@@ -201,7 +190,7 @@ func TestTrafficUndeliveredReopenDefersReading(t *testing.T) {
 	var code int64
 	jobs := goAccessJobs(t, h, &code)
 	writeTrafficLog(t, h, trafficHost, "line\n")
-	h.fake.FailOn = map[string]error{"Signal": errors.New("injected Signal failure")}
+	h.fake.FailOn = map[string]error{edgeControlCall(h, "reopen"): errors.New("injected reopen failure")}
 	if err := h.c.TrafficCycle(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -216,11 +205,11 @@ func TestTrafficUndeliveredReopenDefersReading(t *testing.T) {
 		t.Fatalf("status = %+v", st)
 	}
 	// Nothing new was logged, but the next run still reopens before reading.
-	before := edgeSignals(h, "USR1")
+	before := edgeControls(h, "reopen")
 	if err := h.c.TrafficCycle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if edgeSignals(h, "USR1") != before+1 {
+	if edgeControls(h, "reopen") != before+1 {
 		t.Fatal("leftover rotated logs were read without reopening the edge's logs first")
 	}
 	if len(*jobs) != 1 || len(pendingLogs(t, h, trafficHost)) != 0 {
@@ -238,7 +227,7 @@ func TestTrafficWithoutRunningEdgeReadsWithoutSignal(t *testing.T) {
 	if err := h.c.TrafficCycle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if edgeSignals(h, "USR1") != 0 {
+	if edgeControls(h, "reopen") != 0 {
 		t.Fatal("a stopped edge was signalled")
 	}
 	if len(*jobs) != 1 {

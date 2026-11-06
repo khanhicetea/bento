@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/edge"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
@@ -23,6 +24,29 @@ func countCalls(h *harness, prefix string) int {
 	return h.fake.CallCount(prefix)
 }
 
+// edgeControlCall is the fake engine's record of `nginx -s action` run in
+// the edge container (the key FailOn matches).
+func edgeControlCall(h *harness, action string) string {
+	id := ""
+	for _, c := range h.fake.Containers {
+		if c.Name == h.c.Names.EdgeContainer() {
+			id = c.ID
+		}
+	}
+	return "Exec " + id + " nginx -e stderr -c " + edge.LiveConf + " -s " + action
+}
+
+// edgeControls counts `nginx -s action` runs in any container.
+func edgeControls(h *harness, action string) int {
+	n := 0
+	for _, c := range h.fake.Calls {
+		if strings.HasPrefix(c, "Exec ") && strings.HasSuffix(c, " nginx -e stderr -c "+edge.LiveConf+" -s "+action) {
+			n++
+		}
+	}
+	return n
+}
+
 // A reload lost after the new generation was promoted must not leave the
 // edge serving the old configuration: the live generation was never loaded,
 // which is drift, and the retry reloads even though nothing new renders.
@@ -36,7 +60,7 @@ func TestLostEdgeReloadIsDriftAndRetried(t *testing.T) {
 	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || drift {
 		t.Fatalf("drift after a clean apply: %v %v", drift, err)
 	}
-	h.fake.FailOn = map[string]error{"Signal": errors.New("injected lost reload")}
+	h.fake.FailOn = map[string]error{edgeControlCall(h, "reload"): errors.New("injected lost reload")}
 	if got := submitUnpublish(t, h, app.ID); got.State != store.OpSucceeded &&
 		!strings.Contains(got.ErrorMessage, "injected lost reload") &&
 		!hasWarning(h, got.ID, "injected lost reload") {
@@ -45,20 +69,20 @@ func TestLostEdgeReloadIsDriftAndRetried(t *testing.T) {
 	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || !drift {
 		t.Fatalf("a promoted but never loaded generation must be drift: %v %v", drift, err)
 	}
-	before := countCalls(h, "Signal")
+	before := edgeControls(h, "reload")
 	if got := submitEdgeApply(t, h); got.State != store.OpSucceeded {
 		t.Fatalf("edge apply retry: %s %s", got.State, got.ErrorMessage)
 	}
-	if countCalls(h, "Signal") != before+1 {
+	if edgeControls(h, "reload") != before+1 {
 		t.Fatal("the retry must reload the edge although no route changed")
 	}
 	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || drift {
 		t.Fatalf("drift after the retried reload: %v %v", drift, err)
 	}
 	// Once loaded, an apply with nothing new sends no reload.
-	before = countCalls(h, "Signal")
+	before = edgeControls(h, "reload")
 	submitEdgeApply(t, h)
-	if countCalls(h, "Signal") != before {
+	if edgeControls(h, "reload") != before {
 		t.Fatal("an unchanged, loaded generation must not be reloaded")
 	}
 }
