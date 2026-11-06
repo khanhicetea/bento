@@ -276,3 +276,11 @@ func TestHostNamesUnique(t *testing.T) {
 		t.Fatal("expected a foreign key refusal")
 	}
 }
+
+func TestStoreSyncsEveryCommit(t *testing.T) {
+	s := newStore(t)
+	var mode int
+	if err := s.db.QueryRow("PRAGMA synchronous").Scan(&mode); err != nil || mode != 2 {
+		t.Fatalf("synchronous = %d (%v), want 2 (FULL)", mode, err)
+	}
+}

@@ -131,7 +131,10 @@ func dsn(path string) string {
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "busy_timeout(5000)")
-	q.Add("_pragma", "synchronous(NORMAL)")
+	// FULL: in WAL mode NORMAL can roll back the last acknowledged commits
+	// on power loss (an accepted operation, a password change); the control
+	// plane's write rate makes the extra fsync per commit irrelevant.
+	q.Add("_pragma", "synchronous(FULL)")
 	q.Add("_txlock", "immediate")
 	u.RawQuery = q.Encode()
 	return u.String()
