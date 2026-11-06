@@ -22,15 +22,6 @@ None open.
 
 ## Before public traffic
 
-### Control plane
-
-- **Forced cancellation can leave a replaced app stopped.** Since 2026-11-03 a cancellation is forced after 30 s
-  (`watchCancel`); a step interrupted between stopping and recreating an instance leaves the app down until the
-  reconciler repairs it. `Exec`/`Wait` and non-Docker steps (export file I/O) still have no deadline of their own.
-
-### Images and supply chain
-
-
 ### Edge and ingress
 
 - **Recreate rollback with new routes.** When routes changed and a recreate fails, the restored old edge restarts on
@@ -86,6 +77,9 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 ## Decisions
 
+- A forced cancellation (30 s after the request) cancels the step's context, which every Docker call, `Exec` and
+  `Wait` included, honors. Plain file I/O (an export writing its archives) cannot be interrupted and ends on its own;
+  the export is a global operation, so nothing else waits on a half-written file.
 - Runtime image tool channels float on purpose (base images, mise channels such as `bun@1.3` and `pnpm@latest`,
   Composer, phpredis from PECL): that is how their security and patch releases arrive. They resolve only when an
   operator rebuilds (`bento images rebuild`, which also bypasses the layer cache) and rolls apps out one at a time,

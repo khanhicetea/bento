@@ -3,6 +3,7 @@ package operations
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,6 +49,8 @@ func TestCancelForcesAStuckOperationAfterTheGrace(t *testing.T) {
 		d.Engine = eng
 		d.CancelGrace, d.CancelPoll = 300*time.Millisecond, 20*time.Millisecond
 	})
+	var wakes atomic.Int32
+	h.c.WakeReconciler = func() { wakes.Add(1) }
 	stuck := submitTunnelApply(t, h)
 	select {
 	case <-eng.started:
@@ -84,6 +87,10 @@ func TestCancelForcesAStuckOperationAfterTheGrace(t *testing.T) {
 	}
 	if !forced {
 		t.Fatal("the forced cancellation is not in the operation journal")
+	}
+	// The interrupted step may have left its target half done.
+	if wakes.Load() == 0 {
+		t.Fatal("a forced cancellation must wake the reconciler")
 	}
 	if got := h.wait(behind); got.State != store.OpSucceeded {
 		t.Fatalf("operation queued behind the stuck one: %s %s", got.State, got.ErrorMessage)

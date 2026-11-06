@@ -639,6 +639,12 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 		c.Log.Error("finish operation", "op", op.ID, "err", ferr)
 	}
 	c.notify(op.ID)
+	// A failed or cancelled step can leave its target half done (a forced
+	// cancellation between stopping and recreating an instance leaves the app
+	// down): the reconciler repairs it now instead of at its next interval.
+	if err != nil && c.WakeReconciler != nil {
+		c.WakeReconciler()
+	}
 }
 
 // watchCancel cancels a running operation's context once its cancellation
