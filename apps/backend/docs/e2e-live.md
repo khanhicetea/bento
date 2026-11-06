@@ -378,10 +378,10 @@ Earlier runs: sections 1–8 on 2026-10-11, 9 and 10 on 2026-10-12.
 12. ~~**Workers ignore scheduler `[defaults]`; exhausted workers are invisible.**~~ **Fixed in minicrond 0.4.4:**
     workers inherit `env_base` and `working_dir`; an exhausted worker shows `worker_state.status: exhausted` in
     `list`, `worker_exhaustions` in `status`, and **Exhausted** in the Scheduler UI. Verified live.
-13. **Deploy log order across stdout and stderr is not guaranteed.** Docker reads the two pipes separately, so lines
-    written microseconds apart can arrive swapped. Seen live: `echo "deploying …"` then `echo "~/app/.env is missing"
-    >&2; exit 1` was journalled stderr first, and the failure summary was `deploying 40bd081 …`. Fix: run the script
-    with stderr merged into stdout (one pipe keeps order), or document that the summary can miss by one line.
+13. ~~**Deploy log order across stdout and stderr is not guaranteed.**~~ Docker reads the two pipes separately, so
+    lines written microseconds apart arrived swapped, and the failure summary was `deploying 40bd081 …` instead of
+    `~/app/.env is missing`. **Fixed:** `~/deploy.sh` runs with stderr merged into stdout (one pipe keeps order); its
+    lines are all journalled at info level. Verified live on the real VPS (2026-11-06).
 14. ~~**The Classic recipe fails the first deploy of an app that was never started.**~~ `minicrond reload` needed
     the scheduler socket, which only exists in a running app container. **Fixed** by finding 11: the recipes no
     longer call `minicrond`. Not re-run live from a stopped app.

@@ -435,7 +435,12 @@ func (c *Controller) runDeployScript(
 	d DeployRequest,
 	commit string,
 ) error {
-	req, err := ExecRequestFor(app, []string{app.ContainerHome() + "/" + DeployScriptName}, "")
+	// Docker carries stdout and stderr on separate pipes and delivers them
+	// independently, so a script's last line (`echo "missing .env" >&2;
+	// exit 1`) could arrive before the stdout line printed just before it and
+	// the failure summary would show the wrong line (seen live). The script
+	// runs with stderr merged into stdout: one pipe keeps the order.
+	req, err := ExecRequestFor(app, []string{"/bin/sh", "-c", `exec "$0" 2>&1`, app.ContainerHome() + "/" + DeployScriptName}, "")
 	if err != nil {
 		return err
 	}
@@ -457,9 +462,8 @@ func (c *Controller) runDeployScript(
 			"BENTO_WEBHOOK_PUSHER="+d.Pusher,
 		)
 	}
-	// Both streams feed one log as Docker delivers them, so the error that
-	// ended the script is journalled after the output before it and is what
-	// the failure summary shows.
+	// The script's output arrives on stdout; stderr only carries bento-exec's
+	// own refusals. Both feed one log, and the last line is the summary.
 	out := newScriptLog(ctx, r, "deploy.sh: ", app.Redactor())
 	stdout, stderr := out.Stream(false), out.Stream(true)
 	req.Stdout, req.Stderr = stdout, stderr

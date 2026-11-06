@@ -246,6 +246,11 @@ func TestDeployRunsHomeScriptAsAppWithNormalizedEnv(t *testing.T) {
 	if want := app.ContainerHome() + "/" + DeployScriptName; !slices.Contains(script.Cmd, want) || script.Cmd[0] != "/usr/local/bin/bento-exec" {
 		t.Fatalf("deploy.sh must run through bento-exec: %v", script.Cmd)
 	}
+	// One pipe for both streams keeps the order of the script's output, so the
+	// failure summary is the line the script printed last.
+	if want := []string{"/bin/sh", "-c", `exec "$0" 2>&1`, app.ContainerHome() + "/" + DeployScriptName}; !slices.Equal(script.Cmd[1:], want) {
+		t.Fatalf("deploy.sh must run with stderr merged into stdout: %v", script.Cmd)
+	}
 	if want := fmt.Sprintf("%d:%d", app.UID, app.GID); script.User != want {
 		t.Fatalf("deploy.sh must run as the app identity, got %q", script.User)
 	}
