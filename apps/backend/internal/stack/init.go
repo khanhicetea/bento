@@ -94,7 +94,7 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 	names := runtime.Names{StackID: id.ID, StackName: id.Name}
 	var services []domain.DataService
 	if opts.MySQL != "" {
-		img, ok := domain.MySQLVersions[opts.MySQL]
+		img, ok := domain.ServiceImage(domain.EngineMySQL, opts.MySQL)
 		if !ok {
 			return id, fmt.Errorf("unsupported MySQL version %q", opts.MySQL)
 		}
@@ -109,7 +109,7 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 		)
 	}
 	if opts.Postgres != "" {
-		img, ok := domain.PostgresVersions[opts.Postgres]
+		img, ok := domain.ServiceImage(domain.EnginePostgres, opts.Postgres)
 		if !ok {
 			return id, fmt.Errorf("unsupported PostgreSQL version %q", opts.Postgres)
 		}

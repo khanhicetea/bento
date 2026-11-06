@@ -544,14 +544,7 @@ func (c *Controller) CreateService(
 	engine domain.Engine,
 	version, idem string,
 ) (domain.DataService, store.Operation, error) {
-	var image string
-	var ok bool
-	switch engine {
-	case domain.EngineMySQL:
-		image, ok = domain.MySQLVersions[version]
-	case domain.EnginePostgres:
-		image, ok = domain.PostgresVersions[version]
-	}
+	image, ok := domain.ServiceImage(engine, version)
 	if !ok {
 		return domain.DataService{}, store.Operation{}, domain.ValidationErrors{{
 			Field:   "version",

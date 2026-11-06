@@ -241,6 +241,9 @@ func rewriteImportedState(
 			return err
 		}
 	}
+	if err := catalogServiceImages(ctx, q); err != nil {
+		return err
+	}
 	if uidRange != nil {
 		return moveUIDRange(ctx, q, *uidRange)
 	}
@@ -374,10 +377,53 @@ func restoreServiceVolumes(
 			return created, err
 		}
 		created = append(created, vol)
-		if err := restoreVolume(ctx, engine, names, svc.Image, vol, from, svc.VolumeFile); err != nil {
+		// The archive is unpacked as root by tar in the catalog image of the
+		// service's version, never in the image the manifest names.
+		image, ok := domain.ServiceImage(domain.Engine(svc.Engine), svc.Version)
+		if !ok {
+			return created, fmt.Errorf("service %s uses %s %s, which this Bento does not support", svc.Name, svc.Engine, svc.Version)
+		}
+		if err := restoreVolume(ctx, engine, names, image, vol, from, svc.VolumeFile); err != nil {
 			return created, err
 		}
 		log.Info("restored volume", "service", svc.Name, "volume", vol)
 	}
 	return created, nil
+}
+
+// catalogServiceImages sets every imported data service's image to the
+// catalog image of its engine and version. The image the state names is
+// never trusted: data services run as root next to their volume and the
+// stack's secrets, so a tampered export must not choose what runs there. A
+// service whose engine or version this Bento does not support is refused.
+func catalogServiceImages(ctx context.Context, q store.Q) error {
+	rows, err := q.QueryContext(ctx, "SELECT name, engine, version FROM data_services")
+	if err != nil {
+		return err
+	}
+	type svc struct{ name, engine, version string }
+	var all []svc
+	for rows.Next() {
+		var s svc
+		if err := rows.Scan(&s.name, &s.engine, &s.version); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, s)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, s := range all {
+		img, ok := domain.ServiceImage(domain.Engine(s.engine), s.version)
+		if !ok {
+			return fmt.Errorf("%w: data service %s uses %s %s, which this Bento does not support",
+				store.ErrUnsupportedState, s.name, s.engine, s.version)
+		}
+		if _, err := q.ExecContext(ctx, "UPDATE data_services SET image=? WHERE name=?", img, s.name); err != nil {
+			return err
+		}
+	}
+	return nil
 }

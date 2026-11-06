@@ -160,6 +160,21 @@ var MySQLVersions = map[string]string{
 	"9.7": "mysql:9.7@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54", // LTS
 }
 
+// ServiceImage is the catalog image of a data service engine and version.
+// A data service only ever runs the catalog image of its version: images are
+// never taken from imported state or archives.
+func ServiceImage(engine Engine, version string) (string, bool) {
+	switch engine {
+	case EngineMySQL:
+		img, ok := MySQLVersions[version]
+		return img, ok
+	case EnginePostgres:
+		img, ok := PostgresVersions[version]
+		return img, ok
+	}
+	return "", false
+}
+
 // PostgreSQL 17+ use the pglayers "full" profile (official postgres base plus
 // prebuilt extensions such as pgvector, PostGIS, pg_cron, and timescaledb, with
 // shared_preload_libraries preconfigured). pglayers does not publish 14-16, so

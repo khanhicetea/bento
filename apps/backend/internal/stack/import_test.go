@@ -354,3 +354,45 @@ func TestImportRefusesNonEmptyRootUntouched(t *testing.T) {
 		t.Fatal("refusal modified the root")
 	}
 }
+
+// A tampered export cannot choose what runs as root next to the data: the
+// volume is restored and the service later runs in the catalog image of its
+// version, whatever the manifest and the state name.
+func TestImportUsesCatalogServiceImages(t *testing.T) {
+	exp := writeExport(t)
+	ctx := t.Context()
+	m, err := transfer.ReadManifest(exp.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Services[0].Image = "evil.example/rootkit:latest"
+	if err := transfer.WriteManifest(exp.dir, m); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(exp.dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().ExecContext(ctx, "UPDATE data_services SET image='evil.example/rootkit:latest'"); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	root := filepath.Join(t.TempDir(), "clone")
+	fake := docker.NewFake()
+	rng := &domain.UIDRange{First: 50000, Last: 59999}
+	if err := Import(ctx, fake, discard, ImportOptions{Root: root, From: exp.dir, Name: "clone", NewUIDRange: rng}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fake.Calls {
+		if strings.Contains(c, "evil.example") {
+			t.Fatalf("the manifest's image was used: %s", c)
+		}
+	}
+	if fake.CallCount("PullImage "+domain.MySQLVersions["8.4"]) != 1 {
+		t.Fatalf("restore must use the catalog image: %v", fake.Calls)
+	}
+	svc, err := store.GetService(ctx, openImported(t, root).DB(), "mysql84")
+	if err != nil || svc.Image != domain.MySQLVersions["8.4"] {
+		t.Fatalf("imported service image %q %v", svc.Image, err)
+	}
+}
