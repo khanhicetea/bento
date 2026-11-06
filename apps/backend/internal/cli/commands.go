@@ -946,7 +946,11 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			)
 		}
 		for _, d := range hook.Deliveries {
-			fmt.Fprintf(r.out, "%s  %-9s %-10s %-12s %s %s\n", d.At, d.Provider, d.Event, d.Result, d.OperationID, d.Detail)
+			op := d.OperationID
+			if d.OperationState != "" {
+				op += " " + d.OperationState
+			}
+			fmt.Fprintf(r.out, "%s  %-9s %-10s %-12s %s %s\n", d.At, d.Provider, d.Event, d.Result, op, d.Detail)
 		}
 		return nil
 	case "logs":

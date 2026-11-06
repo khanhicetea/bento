@@ -430,6 +430,13 @@ export interface WebhookDelivery {
   result: string;
   detail: string;
   operationId: string;
+  /**
+   * OperationState is the deploy operation's state (queued, running,
+   * succeeded, failed, cancelled, interrupted): Result "deployed" only
+   * records that the deploy was submitted. Empty without an operation or
+   * once it was pruned from history.
+   */
+  operationState: string;
 }
 /**
  * WebhookSecret answers enabling or rotating a webhook. Secret is shown only

@@ -279,6 +279,18 @@ const deliveryTone: Record<string, string> = {
   refused: "failed",
 };
 
+// "deployed" only records that the deploy was submitted; once its operation
+// is known, a deploy that did not succeed is shown as such.
+function deliveryBadge(d: T.WebhookDelivery): { state: string; label: string } {
+  if (d.result === "deployed" && d.operationState && d.operationState !== "succeeded") {
+    return {
+      state: d.operationState,
+      label: d.operationState === "failed" ? "deploy failed" : `deploy ${d.operationState}`,
+    };
+  }
+  return { state: deliveryTone[d.result] ?? "stopped", label: d.result };
+}
+
 function DeliveryTimeline({ deliveries }: { deliveries: T.WebhookDelivery[] }) {
   const [open, setOpen] = useState("");
   if (deliveries.length === 0) {
@@ -293,6 +305,7 @@ function DeliveryTimeline({ deliveries }: { deliveries: T.WebhookDelivery[] }) {
         {deliveries.map((d) => {
           const id = `${d.at}-${d.deliveryId}-${d.result}`;
           const expanded = open === id;
+          const badge = deliveryBadge(d);
           return (
             <li key={id} data-result={d.result}>
               <button
@@ -312,7 +325,7 @@ function DeliveryTimeline({ deliveries }: { deliveries: T.WebhookDelivery[] }) {
                 <time className="note" title={d.at}>
                   {formatRelative(d.at)}
                 </time>
-                <StateBadge state={deliveryTone[d.result] ?? "stopped"} label={d.result} />
+                <StateBadge state={badge.state} label={badge.label} />
               </button>
               {expanded && <DeliveryTrace delivery={d} />}
             </li>
@@ -346,7 +359,7 @@ function DeliveryTrace({ delivery: d }: { delivery: T.WebhookDelivery }) {
             <span>Verified with {d.auth}</span>
           </li>
         )}
-        <li data-level={d.result === "refused" ? "error" : undefined}>
+        <li data-level={d.result === "refused" || d.operationState === "failed" ? "error" : undefined}>
           <time />
           <span>
             <strong>{d.result}</strong>

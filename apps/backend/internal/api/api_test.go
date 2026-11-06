@@ -462,6 +462,11 @@ func TestWebhookEndpoints(t *testing.T) {
 	if len(got.Deliveries) != 1 || got.Deliveries[0].Provider != "generic" || got.Deliveries[0].Result != "deployed" {
 		t.Fatalf("delivery history: %s", out)
 	}
+	// "deployed" is only the submission: the view carries the deploy
+	// operation's own state, so a failed deploy does not look deployed.
+	if st := got.Deliveries[0].OperationState; st == "" {
+		t.Fatalf("delivery without its operation state: %s", out)
+	}
 	if resp, _ := c.write("DELETE", "/api/v1/apps/shop/webhook", ""); resp.StatusCode != 200 {
 		t.Fatalf("disable -> %d", resp.StatusCode)
 	}

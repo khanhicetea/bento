@@ -730,7 +730,23 @@ func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, webhookToDTO(hook, found, s.webhookBase(r, app), s.utilsTargets()))
+	out := webhookToDTO(hook, found, s.webhookBase(r, app), s.utilsTargets())
+	s.resolveDeliveryOperations(r.Context(), out.Deliveries)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// resolveDeliveryOperations fills in how each delivery's deploy went: the
+// delivery itself only records that a deploy was submitted, so a failing
+// deploy script would otherwise still read "deployed".
+func (s *Server) resolveDeliveryOperations(ctx context.Context, ds []dto.WebhookDelivery) {
+	for i, d := range ds {
+		if d.OperationID == "" {
+			continue
+		}
+		if op, err := store.GetOperation(ctx, s.Store.DB(), d.OperationID); err == nil {
+			ds[i].OperationState = string(op.State)
+		}
+	}
 }
 
 // handleEnableWebhook creates the webhook or rotates its secret. It is the

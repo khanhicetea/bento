@@ -444,6 +444,11 @@ type WebhookDelivery struct {
 	Result      string `json:"result"`
 	Detail      string `json:"detail"`
 	OperationID string `json:"operationId"`
+	// OperationState is the deploy operation's state (queued, running,
+	// succeeded, failed, cancelled, interrupted): Result "deployed" only
+	// records that the deploy was submitted. Empty without an operation or
+	// once it was pruned from history.
+	OperationState string `json:"operationState"`
 }
 
 // WebhookSecret answers enabling or rotating a webhook. Secret is shown only
