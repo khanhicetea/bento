@@ -15,8 +15,12 @@ bento edge set --json /root/edge.json | tail -1
 bash /root/apps.sh 2>&1 | grep -E "deploy key added|^error" 
 bash /root/deploy.sh 2>&1 | tail -7
 echo "== waiting for certificates"
-for i in $(seq 1 60); do n=$(ls /srv/bento/prod/edge/acme/bento_acme/*.crt 2>/dev/null | wc -l); [ "$n" -ge 5 ] && break; sleep 5; done
-echo "certs: $n"
+# Issued certificates as Bento reports them (the module's state directory is per ACME directory URL).
+for i in $(seq 1 60); do
+  n=$(bento --json hosts | jq '[.hosts[] | select(.certificate.state == "issued")] | length')
+  [ "$n" -ge 5 ] && break; sleep 5
+done
+echo "certs issued: $n of 5"
 for a in e2e-node e2e-php e2e-legacy e2e-bun e2e-py; do
   echo "$a v4 $(curl -sk https://$a.$D/ | head -c 90) | v6 $(curl -sk -o /dev/null -w '%{http_code}' -g --resolve "$a.$D:443:[$V6]" https://$a.$D/)"
 done
