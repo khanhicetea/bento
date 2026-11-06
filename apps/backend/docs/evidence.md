@@ -943,5 +943,11 @@ Every finding open in `BACKLOG.md` was fixed (one commit each) or recorded as a 
 - **Invoice Ninja v5 (section 10, first run on this host):** 1536 MB app, 317 migrations on MySQL 8.4, account and
   seed, API login, client and invoice `0001`, minicrond worker running, incremental deploy in 5 s.
 
+- **arm64, emulated:** with qemu-user and binfmt on the amd64 VPS, the whole Go unit suite compiled for arm64 passed
+  (`GOARCH=arm64 go test ./...`, 19 packages), and the arm64 release binary (`ELF ... ARM aarch64`) ran `init` and
+  `serve` against the real Docker until its MySQL 8.4 service was healthy. All 13 pinned image digests in
+  `internal/domain` are multi-arch indexes with `linux/arm64` (adminer, goaccess, cloudflared, pglayers 17/18, MySQL
+  8.0/8.4/9.7, nginx, PostgreSQL 14–16, rclone).
+
 Not run: GitHub webhooks and a Cloudflare Tunnel (both need writes to external accounts that the agent's permission
-check refused), arm64.
+check refused), and arm64 on arm64 hardware (runtime image builds and app containers as arm64).
