@@ -28,6 +28,12 @@ type NetworkSettings struct {
 	DataSubnet string `json:"dataSubnet"`
 	EdgeIP     string `json:"edgeIp"`
 	TunnelIP   string `json:"tunnelIp"`
+	// AppsIPv6 makes the apps network dual-stack (Docker picks a ULA /64), so
+	// the edge can publish on [::] and still see IPv6 visitors' addresses:
+	// a port published on [::] to an IPv4-only network goes through
+	// docker-proxy, and every IPv6 visitor arrives as the bridge gateway.
+	// Decided once, when the plan is made, from the host kernel.
+	AppsIPv6 bool `json:"appsIpv6,omitempty"`
 }
 
 const networkSettingKey = "network"
@@ -81,8 +87,9 @@ func overlaps(p netip.Prefix, used []netip.Prefix) bool {
 	return slices.ContainsFunc(used, p.Overlaps)
 }
 
-// PlanNetworks picks two unused subnets.
-func PlanNetworks(used []netip.Prefix) (NetworkSettings, error) {
+// PlanNetworks picks two unused subnets. ipv6 makes the apps network
+// dual-stack.
+func PlanNetworks(used []netip.Prefix, ipv6 bool) (NetworkSettings, error) {
 	var picked []netip.Prefix
 	for _, c := range candidateSubnets() {
 		if overlaps(c, used) || overlaps(c, picked) {
@@ -102,6 +109,7 @@ func PlanNetworks(used []netip.Prefix) (NetworkSettings, error) {
 		DataSubnet: picked[1].String(),
 		EdgeIP:     netip.AddrFrom4([4]byte{base[0], base[1], base[2], 2}).String(),
 		TunnelIP:   netip.AddrFrom4([4]byte{base[0], base[1], base[2], 3}).String(),
+		AppsIPv6:   ipv6,
 	}, nil
 }
 
@@ -124,7 +132,7 @@ func (c *Controller) networkPlan(ctx context.Context) (NetworkSettings, error) {
 	if err != nil {
 		return ns, err
 	}
-	if ns, err = PlanNetworks(used); err != nil {
+	if ns, err = PlanNetworks(used, platform.HostIPv6()); err != nil {
 		return ns, err
 	}
 	return ns, store.PutSetting(ctx, c.Store.DB(), networkSettingKey, ns)
@@ -144,9 +152,10 @@ func (c *Controller) EnsureNetworks(ctx context.Context) (NetworkSettings, error
 		subnet   string
 		internal bool
 		dynamic  bool
+		ipv6     bool
 	}{
-		{c.Names.AppsNetwork(), ns.AppsSubnet, false, true},
-		{c.Names.DataNetwork(), ns.DataSubnet, true, false},
+		{c.Names.AppsNetwork(), ns.AppsSubnet, false, true, ns.AppsIPv6},
+		{c.Names.DataNetwork(), ns.DataSubnet, true, false, false},
 	} {
 		existing, err := c.Engine.InspectNetwork(ctx, n.name)
 		if err != nil {
@@ -164,6 +173,7 @@ func (c *Controller) EnsureNetworks(ctx context.Context) (NetworkSettings, error
 			Name:     n.name,
 			Internal: n.internal,
 			Subnet:   subnet,
+			IPv6:     n.ipv6,
 			Labels:   c.Names.Labels(runtime.RoleNetwork, nil),
 		}
 		if n.dynamic {

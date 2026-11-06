@@ -3,6 +3,8 @@ package platform
 import (
 	"net"
 	"net/netip"
+	"os"
+	"strings"
 )
 
 // HostAddrIn returns this host's interface address inside prefix, or "" when
@@ -22,4 +24,12 @@ func HostAddrIn(prefix netip.Prefix) string {
 		}
 	}
 	return ""
+}
+
+// HostIPv6 reports whether the host kernel has IPv6 enabled, which Docker
+// needs for a dual-stack bridge. A host booted with ipv6.disable=1 has no
+// /proc/sys/net/ipv6 at all.
+func HostIPv6() bool {
+	b, err := os.ReadFile("/proc/sys/net/ipv6/conf/all/disable_ipv6")
+	return err == nil && strings.TrimSpace(string(b)) == "0"
 }

@@ -96,13 +96,28 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker
 	if err != nil {
 		return docker.ContainerSpec{}, invalidEdgeBind(err)
 	}
+	// Docker publishes 0.0.0.0 on IPv4 only. "All addresses" also means [::]
+	// when the apps network is dual-stack; on an IPv4-only network IPv6
+	// visitors would all arrive as the bridge gateway, so they are not
+	// accepted there at all.
+	binds := []netip.Addr{bind}
+	if bind.IsUnspecified() && ns.AppsIPv6 {
+		binds = append(binds, netip.IPv6Unspecified())
+	}
+	publish := func(port int) []network.PortBinding {
+		var out []network.PortBinding
+		for _, a := range binds {
+			out = append(out, network.PortBinding{HostIP: a, HostPort: strconv.Itoa(port)})
+		}
+		return out
+	}
 	ports := network.PortMap{
-		network.MustParsePort("80/tcp"):  {{HostIP: bind, HostPort: strconv.Itoa(s.HTTPPort)}},
-		network.MustParsePort("443/tcp"): {{HostIP: bind, HostPort: strconv.Itoa(s.HTTPSPort)}},
+		network.MustParsePort("80/tcp"):  publish(s.HTTPPort),
+		network.MustParsePort("443/tcp"): publish(s.HTTPSPort),
 	}
 	exposed := network.PortSet{network.MustParsePort("80/tcp"): {}, network.MustParsePort("443/tcp"): {}}
 	if s.HTTP3 {
-		ports[network.MustParsePort("443/udp")] = []network.PortBinding{{HostIP: bind, HostPort: strconv.Itoa(s.HTTPSPort)}}
+		ports[network.MustParsePort("443/udp")] = publish(s.HTTPSPort)
 		exposed[network.MustParsePort("443/udp")] = struct{}{}
 	}
 	if fp := s.FrontProxy; fp.Enabled {

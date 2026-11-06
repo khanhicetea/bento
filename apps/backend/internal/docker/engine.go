@@ -83,7 +83,10 @@ type NetworkSpec struct {
 	Internal bool
 	Subnet   netip.Prefix
 	IPRange  netip.Prefix
-	Labels   map[string]string
+	// IPv6 adds an IPv6 subnet that Docker allocates from its default pools
+	// (a ULA /64), next to the IPv4 Subnet.
+	IPv6   bool
+	Labels map[string]string
 }
 
 type VolumeInfo struct {
@@ -376,6 +379,9 @@ func (s *SDK) EnsureNetwork(ctx context.Context, spec NetworkSpec) (_ NetworkInf
 		return *existing, nil
 	}
 	opts := client.NetworkCreateOptions{Driver: "bridge", Internal: spec.Internal, Labels: spec.Labels}
+	if spec.IPv6 {
+		opts.EnableIPv6 = &spec.IPv6
+	}
 	if spec.Subnet.IsValid() {
 		cfg := network.IPAMConfig{Subnet: spec.Subnet}
 		if spec.IPRange.IsValid() {
