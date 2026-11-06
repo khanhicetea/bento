@@ -726,11 +726,11 @@ const orphanGrace = 2 * time.Minute
 // active operation claims them. A running backup job container is removed
 // too once the operation named by its label has finished: restic and SQLite
 // snapshot jobs idle indefinitely and would otherwise outlive a crashed
-// backend, holding repository locks. A running tool or probe container
-// created before this backend started is removed as well: no session or
-// operation of this process uses it, and whatever was exec'd in it keeps
-// running (a deploy script interrupted by a crash went on changing the app
-// for up to its 32 minutes while its operation already read interrupted).
+// backend, holding repository locks. Any running ephemeral container created
+// before this backend started is removed as well: no session or operation of
+// this process uses it, and whatever was exec'd in it keeps running (a
+// deploy script interrupted by a crash went on changing the app for up to
+// its 32 minutes while its operation already read interrupted).
 func (r *Reconciler) collectTools(ctx context.Context) error {
 	list, err := r.C.Engine.List(ctx, map[string]string{runtime.LabelStackID: r.C.Stack.ID})
 	if err != nil {
@@ -746,9 +746,11 @@ func (r *Reconciler) collectTools(ctx context.Context) error {
 			continue
 		}
 		created := time.Unix(t.Created, 0)
-		if role != runtime.RoleBackup && t.Created != 0 && created.Before(r.started) && !collectable(string(t.State)) {
+		if t.Created != 0 && created.Before(r.started) && !collectable(string(t.State)) {
 			// Running since before this backend: no grace, the crash that
-			// orphaned it may have left a deploy script going.
+			// orphaned it may have left a deploy script going, and a SQLite
+			// dump job (labelled with a session, not an operation) would
+			// otherwise idle out its hour.
 			if err := r.C.Engine.Remove(ctx, t.ID); err != nil {
 				r.Log.Warn("remove tool container of a previous backend", "container", t.ID, "err", err)
 			}

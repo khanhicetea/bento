@@ -198,6 +198,8 @@ func TestRecoverRollsBackInterruptedClone(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(staging, "secrets.json"), []byte("{}"), 0o600))
 	aside := filepath.Join(h.layout.HomesDir(), ".clone-"+op.ID)
 	must(t, os.MkdirAll(aside, 0o700))
+	sqliteOut := filepath.Join(h.layout.StagingDir(), "backup-0a1b2c")
+	must(t, os.MkdirAll(sqliteOut, 0o700))
 	jobID, err := h.fake.Create(ctx, docker.ContainerSpec{Name: "job", Config: &container.Config{
 		Labels: h.c.Names.Labels(runtime.RoleBackup, map[string]string{runtime.LabelOperation: op.ID})}})
 	must(t, err)
@@ -224,7 +226,7 @@ func TestRecoverRollsBackInterruptedClone(t *testing.T) {
 	if _, err := os.Lstat(h.layout.AppHome("shop-copy")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("the partial home must be removed")
 	}
-	for _, p := range []string{filepath.Join(h.layout.StagingDir(), "restic-"+op.ID), aside} {
+	for _, p := range []string{filepath.Join(h.layout.StagingDir(), "restic-"+op.ID), aside, sqliteOut} {
 		if _, err := os.Lstat(p); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("%s must be removed", p)
 		}

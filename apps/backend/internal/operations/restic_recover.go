@@ -38,7 +38,9 @@ func (c *Controller) stagingLeftovers() []string {
 	var out []string
 	if entries, err := os.ReadDir(c.Layout.StagingDir()); err == nil {
 		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "restic-") || strings.HasPrefix(e.Name(), "home-sqlite-") {
+			// backup-*: a SQLite binding's online .backup output (dumpSQLite).
+			if strings.HasPrefix(e.Name(), "restic-") || strings.HasPrefix(e.Name(), "home-sqlite-") ||
+				strings.HasPrefix(e.Name(), "backup-") {
 				out = append(out, filepath.Join(c.Layout.StagingDir(), e.Name()))
 			}
 		}

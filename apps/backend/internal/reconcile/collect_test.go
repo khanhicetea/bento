@@ -100,14 +100,16 @@ func TestCollectToolsRemovesRunningJobsOfFinishedOperations(t *testing.T) {
 	job := func(id string) map[string]string {
 		return n.Labels(runtime.RoleBackup, map[string]string{runtime.LabelOperation: id})
 	}
-	addEphemeral(t, h, "running-job-finished-op", job(op(true)), "running", time.Hour)
-	addEphemeral(t, h, "running-job-active-op", job(op(false)), "running", time.Hour)
-	addEphemeral(t, h, "running-volume-transfer", job("vol-abcde"), "running", time.Hour)
+	addEphemeral(t, h, "running-job-finished-op", job(op(true)), "running", 10*time.Minute)
+	addEphemeral(t, h, "running-job-active-op", job(op(false)), "running", 10*time.Minute)
+	addEphemeral(t, h, "running-volume-transfer", job("vol-abcde"), "running", 10*time.Minute)
 	addEphemeral(t, h, "running-tool-finished-op", n.Labels(runtime.RoleTool, map[string]string{runtime.LabelOperation: op(true)}), "running", 10*time.Minute)
 	// A backend killed mid-deploy leaves its tool container running the
 	// script: once a new backend runs, no session can own it.
 	addEphemeral(t, h, "running-tool-previous-backend", n.Labels(runtime.RoleTool, map[string]string{runtime.LabelOperation: "tddc3ddd465"}), "running", time.Hour)
 	addEphemeral(t, h, "running-probe-previous-backend", n.Labels(runtime.RoleProbe, nil), "running", time.Hour)
+	// A SQLite dump job is labelled with its tool session, not an operation.
+	addEphemeral(t, h, "running-sqlite-job-previous-backend", job("t0a1b2c3d4e"), "running", time.Hour)
 	r.started = time.Now().Add(-30 * time.Minute)
 
 	if err := r.collectTools(ctx); err != nil {
@@ -117,6 +119,7 @@ func TestCollectToolsRemovesRunningJobsOfFinishedOperations(t *testing.T) {
 		"running-job-finished-op": false, "running-job-active-op": true,
 		"running-volume-transfer": true, "running-tool-finished-op": true,
 		"running-tool-previous-backend": false, "running-probe-previous-backend": false,
+		"running-sqlite-job-previous-backend": false,
 	} {
 		if got := exists(h, name); got != want {
 			t.Errorf("%s exists=%v, want %v", name, got, want)
