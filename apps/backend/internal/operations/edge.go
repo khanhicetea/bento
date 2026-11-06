@@ -69,6 +69,12 @@ type frontListeners struct {
 	HTTPSPort int
 }
 
+// edgeShapeVersion is bumped whenever a running edge must be recreated rather
+// than reloaded to pick up a change: 2 added the traffic logs mount, 3 loads
+// the ACME module unconditionally (nginx segfaults when a reload adds a
+// load_module, so an edge started without it must cold-start with it).
+const edgeShapeVersion = 3
+
 func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 	var front *frontListeners
 	if fp := s.FrontProxy; fp.Enabled {
@@ -81,7 +87,7 @@ func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 		V     int
 		Front *frontListeners `json:",omitempty"`
 	}{edgeContainerSettings{s.Enabled, s.Bind, s.HTTPPort, s.HTTPSPort, s.HTTP3, s.ACMEEmail, s.ACMEURL},
-		ns.EdgeIP, domain.EdgeImage, 2, front})
+		ns.EdgeIP, domain.EdgeImage, edgeShapeVersion, front})
 	return platform.SHA256Hex(b)[:20]
 }
 

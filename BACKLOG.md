@@ -5,7 +5,8 @@ migration framework, the edge image pull and recreate rollback, the env loader's
 served from the app's socket, relational restores dropping the live database first, MySQL restores creating
 root-owned objects, MySQL grants whose `_` let one app use another's database, and on 2026-11-03 the login burst,
 HTTPS upstream TLS, Docker deadlines and forced cancellation, one-at-a-time rollout, lost edge reloads, edge and
-cloudflared pin drift, the Valkey cap and ACME backoff) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
+cloudflared pin drift, the Valkey cap and ACME backoff; on 2026-11-06 Restore DB matching the binding's service, upstream
+hostnames resolved at run time, and the edge crash on its first ACME host) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
 unless they start with `apps/`. Line numbers are as of commit `8a88634` and drift; the named function or template is
 the stable reference.
 
@@ -43,10 +44,12 @@ None open.
 
 ### Edge and ingress
 
-- **Upstream hostnames resolve only when the config loads.** The template renders `server host:port;` with no `zone`
-  or `resolve`. If the upstream's DNS is unavailable, `nginx -t` fails every edge apply, and after a reboot without
-  DNS the edge crash-loops. Changed IPs are never picked up. Mixed schemes, and HTTPS upstreams with different
-  names, are refused since 2026-11-03; paths of later URLs are still ignored.
+- **Paths of later upstream URLs are ignored.** The first URL decides the scheme, path and TLS name. Mixed schemes,
+  and HTTPS upstreams with different names, are refused since 2026-11-03.
+- **No ACME certificate has been issued live.** `edge.IssuedCertificates` finds certificates by scanning `*.crt`
+  under `edge/acme`; that layout comes from the module source. If it is wrong, working ACME hosts are held on the boot
+  certificate in each retry window. Run one Let's Encrypt staging issuance before public traffic. Pebble cannot be
+  used as is: the module ignores `SSL_CERT_FILE`, and the issuer has no trusted-CA setting.
 - **Recreate rollback with new routes.** When routes changed and a recreate fails, the restored old edge restarts on
   the new live generation, which was validated by the new image. Low risk while nginx stays on the same stable line;
   keeping the previous generation for the rollback path would close it.
