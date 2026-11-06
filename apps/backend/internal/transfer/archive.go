@@ -171,8 +171,13 @@ func ArchiveRoot(root string, w io.Writer, skip map[string]bool) error {
 var ErrUnsafeArchive = errors.New("unsafe archive entry")
 
 // ExtractRoot safely extracts a root archive into an empty directory:
-// relative clean names only, no parent traversal, symlinks must be relative
-// and stay inside the root, existing files are never overwritten.
+// relative clean names only, no parent traversal, existing files are never
+// overwritten, and nothing is written through a symlink. Outside the app
+// areas (inAppArea) symlinks must be relative and, followed the way the
+// kernel follows them, stay inside the root (a lexical check alone lets
+// `d -> .` plus `e -> d/d/d/..` escape). Owners and modes are set on open
+// descriptors, never by a path that could be a link; setuid and setgid bits
+// are dropped.
 func ExtractRoot(r io.Reader, root string) error {
 	zr, err := zstd.NewReader(r)
 	if err != nil {
@@ -187,6 +192,7 @@ func ExtractRoot(r io.Reader, root string) error {
 		mtime    time.Time
 	}
 	var dirs []dirMeta
+	var links []string
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -207,11 +213,20 @@ func ExtractRoot(r io.Reader, root string) error {
 		if err := noSymlinkParents(root, target); err != nil {
 			return err
 		}
-		mode := os.FileMode(h.Mode) & 0o7777
+		// Permission bits only, plus the sticky bit on directories (shared
+		// tmp directories): setuid and setgid never survive an import.
+		mode := os.FileMode(h.Mode) & 0o777
 		switch h.Typeflag {
 		case tar.TypeDir:
-			if err := os.Mkdir(target, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+			if err := os.Mkdir(target, 0o700); errors.Is(err, fs.ErrExist) {
+				if info, lerr := os.Lstat(target); lerr != nil || !info.IsDir() {
+					return fmt.Errorf("%w: directory %q over a non-directory", ErrUnsafeArchive, h.Name)
+				}
+			} else if err != nil {
 				return err
+			}
+			if h.Mode&0o1000 != 0 {
+				mode |= os.ModeSticky
 			}
 			dirs = append(dirs, dirMeta{target, mode, h.Uid, h.Gid, h.ModTime})
 		case tar.TypeReg:
@@ -219,20 +234,31 @@ func ExtractRoot(r io.Reader, root string) error {
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
-				_ = f.Close() // the copy error takes precedence
-				return err
+			_, err = io.Copy(f, tr)
+			if err == nil {
+				err = f.Chown(h.Uid, h.Gid)
 			}
-			if err := f.Close(); err != nil {
-				return err
+			if err == nil {
+				err = f.Chmod(mode)
 			}
-			if err := os.Lchown(target, h.Uid, h.Gid); err != nil {
-				return err
+			if cerr := f.Close(); err == nil {
+				err = cerr
 			}
-			if err := os.Chmod(target, mode); err != nil {
+			if err != nil {
 				return err
 			}
 		case tar.TypeSymlink:
+			if inAppArea(clean) {
+				// The app's own files: links point into its container (a
+				// Python venv's bin/python3 -> /usr/local/bin/python3,
+				// Laravel's public/storage). The app can create any such link
+				// itself, and extraction never writes through one.
+				if err := os.Symlink(h.Linkname, target); err != nil {
+					return err
+				}
+				_ = os.Lchown(target, h.Uid, h.Gid)
+				continue
+			}
 			if filepath.IsAbs(h.Linkname) {
 				return fmt.Errorf("%w: absolute symlink %q", ErrUnsafeArchive, h.Name)
 			}
@@ -244,17 +270,89 @@ func ExtractRoot(r io.Reader, root string) error {
 				return err
 			}
 			_ = os.Lchown(target, h.Uid, h.Gid)
+			links = append(links, target)
 		default:
 			return fmt.Errorf("%w: unsupported type for %q", ErrUnsafeArchive, h.Name)
 		}
 	}
+	// Links are checked once every entry exists, since a link may point
+	// through links extracted after it.
+	for _, l := range links {
+		if err := resolvesInside(root, l); err != nil {
+			return err
+		}
+	}
 	for _, d := range slices.Backward(dirs) {
-		if err := os.Lchown(d.path, d.uid, d.gid); err != nil {
+		if err := setDirMeta(d.path, d.uid, d.gid, d.mode); err != nil {
 			return err
 		}
-		if err := os.Chmod(d.path, d.mode); err != nil {
+	}
+	return nil
+}
+
+// inAppArea reports whether a root-relative entry lies inside an app's own
+// directory (homes/<slug>/… or sqlite/<dir>/…), whose contents the app
+// controls at run time. The app directory itself is not in it.
+func inAppArea(clean string) bool {
+	parts := strings.Split(clean, string(filepath.Separator))
+	return len(parts) >= 3 && (parts[0] == "homes" || parts[0] == "sqlite")
+}
+
+// setDirMeta sets a directory's owner and mode through a descriptor opened
+// without following a final symlink.
+func setDirMeta(path string, uid, gid int, mode os.FileMode) error {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("%w: directory %s: %v", ErrUnsafeArchive, path, err)
+	}
+	f := os.NewFile(uintptr(fd), path)
+	defer f.Close()
+	if err := f.Chown(uid, gid); err != nil {
+		return err
+	}
+	return f.Chmod(mode)
+}
+
+// resolvesInside follows path the way the kernel would, component by
+// component, and fails if it ever leaves root. Links pointing at entries that
+// do not exist are fine as long as their text stays inside.
+func resolvesInside(root, path string) error {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+	pending := strings.Split(rel, string(filepath.Separator))
+	var cur []string
+	for hops := 0; len(pending) > 0; {
+		c := pending[0]
+		pending = pending[1:]
+		switch c {
+		case "", ".":
+			continue
+		case "..":
+			if len(cur) == 0 {
+				return fmt.Errorf("%w: %s resolves outside the root", ErrUnsafeArchive, path)
+			}
+			cur = cur[:len(cur)-1]
+			continue
+		}
+		next := filepath.Join(append([]string{root}, append(cur, c)...)...)
+		info, err := os.Lstat(next)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			cur = append(cur, c)
+			continue
+		}
+		if hops++; hops > 40 {
+			return fmt.Errorf("%w: too many links resolving %s", ErrUnsafeArchive, path)
+		}
+		link, err := os.Readlink(next)
+		if err != nil {
 			return err
 		}
+		if filepath.IsAbs(link) {
+			return fmt.Errorf("%w: %s resolves through absolute link %s", ErrUnsafeArchive, path, next)
+		}
+		pending = append(strings.Split(link, string(filepath.Separator)), pending...)
 	}
 	return nil
 }

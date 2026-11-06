@@ -46,6 +46,35 @@ func TestExtractRejectsUnsafeEntries(t *testing.T) {
 			{Name: "d/l/x", Typeflag: tar.TypeReg, Mode: 0o644, Uid: uid, Gid: gid},
 		},
 		"device node": {{Name: "dev", Typeflag: tar.TypeChar, Mode: 0o644, Uid: uid, Gid: gid}},
+		// Lexically inside (root/d/d/d/.. is root/d/d), but d is the root, so
+		// the kernel resolves e to the root's parent.
+		"symlink chain escape": {
+			{Name: "d", Typeflag: tar.TypeSymlink, Linkname: ".", Uid: uid, Gid: gid},
+			{Name: "e", Typeflag: tar.TypeSymlink, Linkname: "d/d/d/..", Uid: uid, Gid: gid},
+		},
+		// A directory entry on top of a link: setting its mode must never
+		// follow the link.
+		"absolute link at app dir": {
+			{Name: "homes/", Typeflag: tar.TypeDir, Mode: 0o711, Uid: uid, Gid: gid},
+			{Name: "homes/shop", Typeflag: tar.TypeSymlink, Linkname: "/etc", Uid: uid, Gid: gid},
+		},
+		"escape via app link": {
+			{Name: "homes/", Typeflag: tar.TypeDir, Mode: 0o711, Uid: uid, Gid: gid},
+			{Name: "homes/shop/", Typeflag: tar.TypeDir, Mode: 0o750, Uid: uid, Gid: gid},
+			{Name: "homes/shop/out", Typeflag: tar.TypeSymlink, Linkname: "/etc", Uid: uid, Gid: gid},
+			{Name: "edge", Typeflag: tar.TypeSymlink, Linkname: "homes/shop/out", Uid: uid, Gid: gid},
+		},
+		"write through app link": {
+			{Name: "homes/", Typeflag: tar.TypeDir, Mode: 0o711, Uid: uid, Gid: gid},
+			{Name: "homes/shop/", Typeflag: tar.TypeDir, Mode: 0o750, Uid: uid, Gid: gid},
+			{Name: "homes/shop/out", Typeflag: tar.TypeSymlink, Linkname: "/tmp", Uid: uid, Gid: gid},
+			{Name: "homes/shop/out/x", Typeflag: tar.TypeReg, Mode: 0o644, Uid: uid, Gid: gid},
+		},
+		"directory over symlink": {
+			{Name: "t/", Typeflag: tar.TypeDir, Mode: 0o755, Uid: uid, Gid: gid},
+			{Name: "l", Typeflag: tar.TypeSymlink, Linkname: "t", Uid: uid, Gid: gid},
+			{Name: "l/", Typeflag: tar.TypeDir, Mode: 0o777, Uid: uid, Gid: gid},
+		},
 	}
 	for name, entries := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -96,5 +125,41 @@ func TestManifestValidation(t *testing.T) {
 	}
 	if err := m.Validate(1); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// setuid and setgid never survive an import; the sticky bit on a directory
+// does, and links that stay inside the root are kept.
+func TestExtractDropsSetuidAndKeepsInnerLinks(t *testing.T) {
+	uid, gid := os.Getuid(), os.Getgid()
+	root := t.TempDir()
+	entries := []tar.Header{
+		{Name: "bin/", Typeflag: tar.TypeDir, Mode: 0o2755, Uid: uid, Gid: gid},
+		{Name: "bin/tool", Typeflag: tar.TypeReg, Mode: 0o4755, Uid: uid, Gid: gid},
+		{Name: "tmp/", Typeflag: tar.TypeDir, Mode: 0o1777, Uid: uid, Gid: gid},
+		{Name: "a/", Typeflag: tar.TypeDir, Mode: 0o755, Uid: uid, Gid: gid},
+		{Name: "a/up", Typeflag: tar.TypeSymlink, Linkname: "../bin", Uid: uid, Gid: gid},
+		{Name: "dangling", Typeflag: tar.TypeSymlink, Linkname: "missing/file", Uid: uid, Gid: gid},
+		// An app's own links point into its container and are kept as they are.
+		{Name: "homes/", Typeflag: tar.TypeDir, Mode: 0o711, Uid: uid, Gid: gid},
+		{Name: "homes/py/", Typeflag: tar.TypeDir, Mode: 0o750, Uid: uid, Gid: gid},
+		{Name: "homes/py/app/", Typeflag: tar.TypeDir, Mode: 0o755, Uid: uid, Gid: gid},
+		{Name: "homes/py/app/python3", Typeflag: tar.TypeSymlink, Linkname: "/usr/local/bin/python3", Uid: uid, Gid: gid},
+		{Name: "homes/py/app/storage", Typeflag: tar.TypeSymlink, Linkname: "../../../..", Uid: uid, Gid: gid},
+	}
+	if err := ExtractRoot(bytes.NewReader(archive(t, entries)), root); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Stat(filepath.Join(root, "bin/tool")); info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 || info.Mode().Perm() != 0o755 {
+		t.Fatalf("file mode %v", info.Mode())
+	}
+	if info, _ := os.Stat(filepath.Join(root, "bin")); info.Mode()&os.ModeSetgid != 0 {
+		t.Fatalf("directory mode %v", info.Mode())
+	}
+	if info, _ := os.Stat(filepath.Join(root, "tmp")); info.Mode()&os.ModeSticky == 0 || info.Mode().Perm() != 0o777 {
+		t.Fatalf("sticky directory mode %v", info.Mode())
+	}
+	if l, _ := os.Readlink(filepath.Join(root, "homes/py/app/python3")); l != "/usr/local/bin/python3" {
+		t.Fatalf("app link %q", l)
 	}
 }
