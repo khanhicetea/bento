@@ -830,6 +830,12 @@ function HostTile({
             <dd>{host.route.staticCache ? "✓ On" : "— Off"}</dd>
           </div>
         )}
+        {!redirect && host.route.maxBodyMb ? (
+          <div>
+            <dt>Body limit</dt>
+            <dd>{host.route.maxBodyMb} MB</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Access log</dt>
           <dd>{host.route.accessLog ? "✓ On" : "— Off"}</dd>

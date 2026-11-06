@@ -124,6 +124,11 @@ export interface Route {
   redirectHttps: boolean;
   accessLog: boolean;
   staticCache?: boolean;
+  /**
+   * MaxBodyMB limits request bodies through the edge; 0 or absent uses the
+   * PHP app's upload limit, or 64 MB for HTTP apps and upstreams.
+   */
+  maxBodyMb?: number /* int */;
 }
 /**
  * Binding never carries a password.

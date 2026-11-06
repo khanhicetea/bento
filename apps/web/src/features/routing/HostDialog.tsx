@@ -186,6 +186,19 @@ export function HostDialogBody({
             <option value="external">External certificate</option>
           </NativeSelect>
         </Field>
+        {form.kind !== "redirect" && (
+          <Field label="Body limit" hint="MB · empty = app upload limit or 64">
+            <Input
+              type="number"
+              min={1}
+              max={10240}
+              value={route.maxBodyMb ?? ""}
+              onChange={(event) =>
+                setRoute({ maxBodyMb: event.target.value === "" ? undefined : Number(event.target.value) })
+              }
+            />
+          </Field>
+        )}
         {route.tls === "external" && (
           <Field label="Certificate name" hint="edge/certs/external/<name>/">
             <Input

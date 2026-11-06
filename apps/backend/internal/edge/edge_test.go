@@ -537,3 +537,44 @@ func TestEnsurePendingCert(t *testing.T) {
 		t.Fatal("an existing pending pair must be kept")
 	}
 }
+
+// A host's body limit overrides the default.
+func TestRenderHostBodyLimit(t *testing.T) {
+	app := domain.App{ID: "a1", Slug: "shop", Ingress: domain.IngressManaged, Publication: domain.Published,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}}}
+	files, err := Render(Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443, HTTP3: true},
+		Apps:     []domain.App{app},
+		Hosts: []domain.Host{
+			appHost("big.example.com", "a1", domain.Route{TLS: domain.TLSSelfSigned, MaxBodyMB: 512, StaticCache: true}),
+			appHost("plain.example.com", "a1", domain.Route{TLS: domain.TLSNone}),
+		},
+		Running: map[string]bool{"a1": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	big, plain := string(files["sites/host-big.example.com.conf"]), string(files["sites/host-plain.example.com.conf"])
+	if !strings.Contains(big, "client_max_body_size 512m;") || !strings.Contains(plain, "client_max_body_size 64m;") {
+		t.Fatal("the host body limit must override the 64 MB default")
+	}
+}
+
+// Cached assets keep the server's headers (Alt-Svc, a drop-in's HSTS): the
+// cache location's own add_header must not drop them.
+func TestRenderCachedAssetsKeepServerHeaders(t *testing.T) {
+	app := domain.App{ID: "a1", Slug: "shop", Ingress: domain.IngressManaged, Publication: domain.Published,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}}}
+	files, err := Render(Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443, HTTP3: true},
+		Apps:     []domain.App{app},
+		Hosts:    []domain.Host{appHost("shop.example.com", "a1", domain.Route{TLS: domain.TLSSelfSigned, StaticCache: true})},
+		Running:  map[string]bool{"a1": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if site := string(files["sites/host-shop.example.com.conf"]); !strings.Contains(site, "add_header_inherit merge;\n    add_header X-Bento-Cache") {
+		t.Fatalf("the cache location must merge the server's headers:\n%s", site)
+	}
+}

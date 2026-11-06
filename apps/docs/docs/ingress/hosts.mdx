@@ -21,6 +21,8 @@ Then set the host's options:
 - **HTTPS redirect** — send `http://` visitors to `https://`.
 - **Static cache** — cache CSS, JS, images, and fonts in the edge's memory for 10 minutes (upstreams' own cache
   headers are respected).
+- **Body limit** — the largest request body the edge accepts, in MB. Empty uses the app's upload limit (PHP) or
+  64 MB.
 - **Access log** — log requests at the edge and build an hourly [traffic report](/ingress/traffic) for the host.
 
 ## Edit or remove

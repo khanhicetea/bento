@@ -42,7 +42,7 @@ bento host remove grafana.example.com    # type "delete grafana.example.com"
 </Tabs>
 
 `route` fields: `tls` (`none` | `self-signed` | `acme` | `external`), `certName` (external TLS), `redirectHttps`,
-`accessLog`, `staticCache`.
+`accessLog`, `staticCache`, `maxBodyMb` (request body limit, 1–10240; omitted = the PHP app's upload limit, or 64).
 
 ## Tunnel
 

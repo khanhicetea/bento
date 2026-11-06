@@ -162,6 +162,9 @@ type Route struct {
 	RedirectHTTPS bool    `json:"redirectHttps"`
 	AccessLog     bool    `json:"accessLog"`
 	StaticCache   bool    `json:"staticCache,omitempty"`
+	// MaxBodyMB limits request bodies through the edge; 0 or absent uses the
+	// PHP app's upload limit, or 64 MB for HTTP apps and upstreams.
+	MaxBodyMB int `json:"maxBodyMb,omitempty"`
 }
 
 // Binding never carries a password.

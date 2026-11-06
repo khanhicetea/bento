@@ -346,6 +346,9 @@ func ValidateRoute(r *Route, field string, errs *ValidationErrors) {
 	if r.TLS == TLSNone && r.RedirectHTTPS {
 		errs.Add(field+".redirectHttps", "requires TLS")
 	}
+	if r.MaxBodyMB < 0 || r.MaxBodyMB > 10240 {
+		errs.Add(field+".maxBodyMb", "must be between 1 and 10240, or 0 for the default")
+	}
 }
 
 // ValidateUpstream checks a reverse-proxy upstream URL.

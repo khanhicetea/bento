@@ -85,6 +85,7 @@ func routeFromDTO(r *dto.Route) domain.Route {
 		RedirectHTTPS: r.RedirectHTTPS,
 		AccessLog:     r.AccessLog,
 		StaticCache:   r.StaticCache,
+		MaxBodyMB:     r.MaxBodyMB,
 	}
 }
 
@@ -95,6 +96,7 @@ func routeToDTO(r domain.Route) dto.Route {
 		RedirectHTTPS: r.RedirectHTTPS,
 		AccessLog:     r.AccessLog,
 		StaticCache:   r.StaticCache,
+		MaxBodyMB:     r.MaxBodyMB,
 	}
 }
 

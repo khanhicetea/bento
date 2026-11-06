@@ -270,6 +270,9 @@ func Render(in Input) (map[string][]byte, error) {
 				}
 			}
 		}
+		if h.Route.MaxBodyMB > 0 {
+			r.MaxBodyMB = h.Route.MaxBodyMB
+		}
 		if r.AccessLog {
 			r.TrafficLog = LogsMount + "/" + TrafficLogFile(h.Name)
 			anyTraffic = true

@@ -217,6 +217,9 @@ type Route struct {
 	// operator asserts those responses are not per-user; proxies additionally
 	// honor the upstream's Cache-Control and Set-Cookie.
 	StaticCache bool `json:"staticCache,omitempty"`
+	// MaxBodyMB limits request bodies through the edge; 0 uses the PHP
+	// app's upload limit, or 64 MB for HTTP apps and upstreams.
+	MaxBodyMB int `json:"maxBodyMb,omitempty"`
 }
 
 type Engine string
