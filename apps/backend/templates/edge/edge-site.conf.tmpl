@@ -3,9 +3,13 @@
 # Upstream {{.UpstreamName}} is shared by every host of the app (upstreams/).
 {{- end}}
 {{- if .ProxyUpstreams}}
+# Names are resolved at run time through the http-level resolver (resolve):
+# a name that does not resolve yet gives this host 502s instead of failing
+# the whole edge config, and changed addresses are picked up.
 upstream {{.UpstreamName}} {
+  zone {{.UpstreamName}} 64k;
 {{- range .ProxyUpstreams}}
-  server {{.}};
+  server {{.}} resolve;
 {{- end}}
   keepalive 32;
 }

@@ -445,7 +445,10 @@ func TestRenderHTTPSUpstreamsVerifyByName(t *testing.T) {
 		"proxy_ssl_server_name on;", "proxy_ssl_name app.vercel.example;", "proxy_ssl_verify on;",
 		"proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;", "proxy_ssl_verify_depth 4;",
 		"proxy_set_header Host app.vercel.example;", "proxy_set_header X-Forwarded-Host $bento_forwarded_host;",
-		"server app.vercel.example:443;", "server app.vercel.example:8443;",
+		// Resolved at run time, so an unresolvable name cannot fail nginx -t
+		// for the whole edge.
+		"zone bento_host_" + upstreamIdent("named.example.com") + " 64k;",
+		"server app.vercel.example:443 resolve;", "server app.vercel.example:8443 resolve;",
 	} {
 		if !strings.Contains(named, want) {
 			t.Errorf("named HTTPS upstream missing %q", want)

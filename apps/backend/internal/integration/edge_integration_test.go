@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
@@ -131,4 +132,55 @@ func TestIntegrationEdgeRecreateAndRollback(t *testing.T) {
 		t.Fatal("the restored edge must serve on its previous port")
 	}
 	e.assertNoPreviousEdge()
+}
+
+// edgeGet fetches / for host through the edge on 127.0.0.1:port.
+func edgeGet(t *testing.T, port int, host string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/", port), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = host
+	c := &http.Client{Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", host, err)
+	}
+	res.Body.Close()
+	return res.StatusCode
+}
+
+// An upstream named by DNS is resolved at run time: a name that does not
+// resolve gives that host 502s and never fails the edge config, so the edge
+// keeps serving every other host (and would start after a reboot without
+// DNS).
+func TestIntegrationEdgeUnresolvableUpstream(t *testing.T) {
+	e := setup(t)
+	p1, p2 := freePort(t), freePort(t)
+	if op := e.configureEdge(p1, p2); op.State != store.OpSucceeded {
+		t.Fatalf("enable edge: %s: %s", op.ErrorCode, op.ErrorMessage)
+	}
+	ctx := context.Background()
+	_, op, err := e.c.CreateHost(ctx, operations.HostInput{Name: "gone.example.com", Target: domain.HostTargetUpstream,
+		Upstreams: []string{"http://no-such-host.invalid:8080"}, Enabled: true,
+		Route: domain.Route{TLS: domain.TLSNone}}, "")
+	if got := e.wait(op, err); got.State != store.OpSucceeded {
+		t.Fatalf("an unresolvable upstream must not fail the edge apply: %s: %s", got.ErrorCode, got.ErrorMessage)
+	}
+	_, op, err = e.c.CreateHost(ctx, operations.HostInput{Name: "away.example.com", Target: domain.HostTargetRedirect,
+		RedirectTo: "elsewhere.example.com", Enabled: true, Route: domain.Route{TLS: domain.TLSNone}}, "")
+	if got := e.wait(op, err); got.State != store.OpSucceeded {
+		t.Fatalf("a second host next to the unresolvable one: %s: %s", got.ErrorCode, got.ErrorMessage)
+	}
+	if _, running := e.edgeID(); !running {
+		t.Fatal("the edge must keep running")
+	}
+	if code := edgeGet(t, p1, "gone.example.com"); code != http.StatusBadGateway {
+		t.Fatalf("the unresolvable host: want 502, got %d", code)
+	}
+	if code := edgeGet(t, p1, "away.example.com"); code < 300 || code > 399 {
+		t.Fatalf("the other host must keep serving its redirect, got %d", code)
+	}
 }
