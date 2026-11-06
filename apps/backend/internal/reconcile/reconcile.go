@@ -74,6 +74,9 @@ type Reconciler struct {
 	resets  map[string]bool
 	passes  int
 	trigger chan struct{}
+	// started is when this backend process began. Tool and probe containers
+	// belong to sessions and operations of the process that created them.
+	started time.Time
 }
 
 func New(c *operations.Controller, log *slog.Logger) *Reconciler {
@@ -86,6 +89,7 @@ func New(c *operations.Controller, log *slog.Logger) *Reconciler {
 		targets:     map[string]*target{},
 		resets:      map[string]bool{},
 		trigger:     make(chan struct{}, 1),
+		started:     time.Now(),
 	}
 }
 
@@ -722,7 +726,11 @@ const orphanGrace = 2 * time.Minute
 // active operation claims them. A running backup job container is removed
 // too once the operation named by its label has finished: restic and SQLite
 // snapshot jobs idle indefinitely and would otherwise outlive a crashed
-// backend, holding repository locks.
+// backend, holding repository locks. A running tool or probe container
+// created before this backend started is removed as well: no session or
+// operation of this process uses it, and whatever was exec'd in it keeps
+// running (a deploy script interrupted by a crash went on changing the app
+// for up to its 32 minutes while its operation already read interrupted).
 func (r *Reconciler) collectTools(ctx context.Context) error {
 	list, err := r.C.Engine.List(ctx, map[string]string{runtime.LabelStackID: r.C.Stack.ID})
 	if err != nil {
@@ -737,12 +745,24 @@ func (r *Reconciler) collectTools(ctx context.Context) error {
 		if !r.C.Names.OwnedBy(t.Labels, role, "") {
 			continue
 		}
-		if t.Created == 0 || now.Sub(time.Unix(t.Created, 0)) < orphanGrace {
+		created := time.Unix(t.Created, 0)
+		if role != runtime.RoleBackup && t.Created != 0 && created.Before(r.started) && !collectable(string(t.State)) {
+			// Running since before this backend: no grace, the crash that
+			// orphaned it may have left a deploy script going.
+			if err := r.C.Engine.Remove(ctx, t.ID); err != nil {
+				r.Log.Warn("remove tool container of a previous backend", "container", t.ID, "err", err)
+			}
+			continue
+		}
+		if t.Created == 0 || now.Sub(created) < orphanGrace {
 			continue
 		}
 		if !collectable(string(t.State)) {
-			// Running: only a backup job of a known, finished operation. Labels
-			// that are not operation ids (volume transfers) never match.
+			if role != runtime.RoleBackup {
+				continue
+			}
+			// Running backup job: only one of a known, finished operation.
+			// Labels that are not operation ids (volume transfers) never match.
 			opID := t.Labels[runtime.LabelOperation]
 			if role != runtime.RoleBackup || opID == "" {
 				continue
