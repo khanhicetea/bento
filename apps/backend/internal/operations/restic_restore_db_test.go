@@ -153,6 +153,28 @@ func TestResticRestoreDBRefusesUnusableSnapshots(t *testing.T) {
 	}
 }
 
+// An app bound to two MySQL services has shop_main on both: the restore of
+// one binding must take that service's dump, never the first one listed.
+func TestSnapshotDumpMatchesBindingService(t *testing.T) {
+	man := ResticManifest{Dumps: []ResticDump{
+		{File: "db/mysql80-shop_main.sql.zst", Engine: domain.EngineMySQL, Service: "mysql80", Database: "shop_main", Binding: 0},
+		{File: "db/mysql84-shop_main.sql.zst", Engine: domain.EngineMySQL, Service: "mysql84", Database: "shop_main", Binding: 1},
+		{File: "sqlite/shop_f1.db", Engine: domain.EngineSQLite, Database: "shop_f1", FileID: "shop_f1"},
+	}}
+	for _, svc := range []string{"mysql80", "mysql84"} {
+		d, ok := snapshotDump(man, domain.Binding{Engine: domain.EngineMySQL, Service: svc}, "shop_main")
+		if !ok || d.Service != svc {
+			t.Fatalf("binding on %s got dump %+v (found %v)", svc, d, ok)
+		}
+	}
+	if d, ok := snapshotDump(man, domain.Binding{Engine: domain.EngineMySQL, Service: "mysql97"}, "shop_main"); ok {
+		t.Fatalf("a service with no dump in the snapshot got %+v", d)
+	}
+	if d, ok := snapshotDump(man, domain.Binding{Engine: domain.EngineSQLite, SQLiteFileID: "shop_f1"}, "shop_f1"); !ok || d.FileID != "shop_f1" {
+		t.Fatalf("sqlite dump: %+v %v", d, ok)
+	}
+}
+
 // MySQL and PostgreSQL bindings both start with <slug>_main: a restore by
 // name alone must not guess which one to replace.
 func TestFindDatabaseRefusesAmbiguousName(t *testing.T) {

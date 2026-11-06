@@ -63,10 +63,16 @@ func (c *Controller) SubmitResticRestoreDB(
 var dumpFileName = regexp.MustCompile(`^(db|sqlite)/[A-Za-z0-9_.-]+$`)
 
 // snapshotDump finds the dump of database in a manifest. Only a dump of the
-// binding's engine qualifies.
+// binding's engine qualifies, and for MySQL and PostgreSQL only one taken
+// from the binding's service: every relational binding's first database is
+// <slug>_main, so an app bound to two services of one engine has two dumps
+// with the same name.
 func snapshotDump(man ResticManifest, b domain.Binding, database string) (ResticDump, bool) {
 	for _, d := range man.Dumps {
 		if d.Engine != b.Engine {
+			continue
+		}
+		if d.Engine != domain.EngineSQLite && d.Service != b.Service {
 			continue
 		}
 		if d.Database == database || (d.Engine == domain.EngineSQLite && d.FileID == database) {
