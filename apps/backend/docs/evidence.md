@@ -818,3 +818,30 @@ came back as `root@localhost` with `SQL SECURITY DEFINER`.
   keeps running.
 - Not run: arm64, the `404`/`444` filter against a real upstream (rendered and covered by config tests only), the
   hourly timer itself (cycles were called directly), and a front-proxy or tunnel client address in the traffic log.
+
+## Restore DB service match, runtime upstream resolution, ACME module reload crash (2026-11-06; live Docker 29.8.1, amd64)
+
+- **Restore DB.** `snapshotDump` matched a dump by engine and database name only. An app bound to two MySQL services
+  has `<slug>_main` on both, so restoring one binding could replay the other service's dump. A relational dump must
+  now come from the binding's service. `TestSnapshotDumpMatchesBindingService` covers it.
+- **Upstream hosts.** `server host:port;` was resolved when the config loaded: with nginx 1.30.6 (the pinned edge
+  image) an unresolvable name fails `nginx -t` (`host not found in upstream`), so one bad upstream blocked every edge
+  apply, and an edge booting without DNS would not start. Upstream-host blocks now carry `zone` and
+  `server … resolve`, through the existing `127.0.0.11` resolver. In the pinned image, `nginx -t` accepts `resolve`
+  for both IP literals and names. `TestIntegrationEdgeUnresolvableUpstream` (real edge): a host whose upstream is
+  `no-such-host.invalid` applies, answers 502, and a second host keeps serving. With the old template the same test
+  fails at `nginx -t`.
+- **ACME module on reload (found while setting up a live ACME check).** `load_module ngx_http_acme_module.so` was
+  rendered only when an ACME host existed. The reload that adds the first ACME host to a running edge adds the module,
+  and the nginx 1.30.6 master segfaults (exit 139), so every host goes down. Docker did not restart it: the edge had
+  been up for less than 10 s. Reproduced outside Bento with Bento's rendered `previous` → `live` configs. A reload
+  that drops the module, and reloads with the module always loaded (both directions), do not crash. The module is now
+  loaded unconditionally. The edge shape version goes to 3, so an upgraded edge is recreated (cold start), never
+  reloaded into the module. `TestIntegrationEdgeFirstACMEHostKeepsEdgeRunning` fails with the old template and passes
+  with the fix.
+- **ACME issuance itself is still not verified live.** A Pebble run reached the issuer only to fail TLS: the module
+  ignores `SSL_CERT_FILE` (an `env` drop-in in `main.d`), and the issuer has no trusted-CA setting, so Pebble's CA
+  cannot be trusted without a product change. A Let's Encrypt staging issuance on a public host is still needed.
+- `make -C apps/backend ci` passed as root. `make -C apps/backend test-integration` passed on this host
+  (integration 889 s, runtime 432 s).
+- Not run: arm64; ACME issuance; the web checks (no frontend files changed).
