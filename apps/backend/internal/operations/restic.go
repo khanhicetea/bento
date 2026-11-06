@@ -266,7 +266,10 @@ func submitScheduledResticBackup(ctx context.Context, c *Controller, s store.Sch
 	if err := s.DecodeSpec(&spec); err != nil {
 		return store.Operation{}, err
 	}
-	return c.SubmitResticBackup(ctx, spec.AppID, "schedule", "")
+	// Keyed by schedule and slot: when the backend dies between submitting
+	// and recording the slot, the replay of the slot finds this operation
+	// instead of running a second backup.
+	return c.SubmitResticBackup(ctx, spec.AppID, "schedule", "schedule:"+s.ID+":"+s.LastSlot)
 }
 
 // updateResticState applies fn to the stored state. With a repoID the update

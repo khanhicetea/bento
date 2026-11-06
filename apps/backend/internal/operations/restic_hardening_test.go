@@ -306,3 +306,27 @@ func TestResticRefreshListsOnlyTheAppsSnapshots(t *testing.T) {
 		t.Fatalf("snapshots args %q", got)
 	}
 }
+
+// A scheduled run is keyed by its slot: submitting the same slot again (the
+// backend died before recording it) finds the first run.
+func TestScheduledBackupSlotIsSubmittedOnce(t *testing.T) {
+	h, app := resticHarness(t, nil)
+	ctx := t.Context()
+	h.resticInit(app)
+	spec, _ := json.Marshal(resticScheduleSpec{AppID: app.ID})
+	s := store.Schedule{ID: "restic-" + app.ID, Kind: "app-backup", Cron: "0 3 * * *", Enabled: true,
+		Spec: spec, LastSlot: "2026-11-07T03:00:00.000Z"}
+	first, err := submitScheduledResticBackup(ctx, h.c, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := submitScheduledResticBackup(ctx, h.c, s)
+	if err != nil || again.ID != first.ID {
+		t.Fatalf("a replayed slot submitted %s (first %s): %v", again.ID, first.ID, err)
+	}
+	s.LastSlot = "2026-11-08T03:00:00.000Z"
+	next, err := submitScheduledResticBackup(ctx, h.c, s)
+	if err != nil || next.ID == first.ID {
+		t.Fatalf("the next slot must get its own run: %v", err)
+	}
+}
