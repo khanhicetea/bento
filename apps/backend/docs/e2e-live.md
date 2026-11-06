@@ -321,9 +321,9 @@ wrong-branch case, and a fresh bucket prefix per run so `restic init` does not m
 Sections 1–9 on a fresh public Linode (Debian 13, Docker 29.9.3) following [`real-vps.md`](real-vps.md): fixture repos
 in a private Gitea on the VPS instead of the GitHub test account (Gitea webhooks instead of GitHub's), nip.io hosts on
 the public edge with Let's Encrypt staging instead of the tunnel, and an `rclone serve s3` endpoint instead of R2.
-Every case passed after six fixes; finding 13 is fixed. Not run: section 10 (Invoice Ninja; the 4 GB host was
-short of memory), the tunnel, GitHub webhooks, the Cachet admin and API steps, production ACME. Details are in
-`evidence.md` ("Real VPS run").
+Every case passed after the fixes; finding 13 is fixed. Section 10 (Invoice Ninja) and a production Let's Encrypt
+issuance ran in the backlog-closure pass that followed. Not run: the tunnel, GitHub webhooks (both need external
+account writes), the Cachet admin and API steps. Details are in `evidence.md` ("Real VPS run", "Backlog closure").
 
 ## Run: 2026-11-02
 

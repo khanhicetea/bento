@@ -139,3 +139,6 @@ re-add the public key.
   (IPv6 edge, edge restartability, orphaned deploy scripts, deploy summary order, webhook delivery outcome, ACME
   challenge warnings, the placeholder certificate during first issuance), then the schema merged into one baseline and
   a final run on a fresh stack. Bun 1.4.0 is installed too, so the web checks run here as well.
+- **2026-11-07:** Every open backlog finding fixed or decided, verified here (`evidence.md`, "Backlog closure"),
+  including a production Let's Encrypt certificate and Invoice Ninja. Gitea also hosts `e2e-laravel`, `e2e-cachet`
+  and `e2e-invoiceninja`.

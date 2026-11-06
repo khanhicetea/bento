@@ -34,7 +34,7 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 - arm64 execution, and whether the non-PHP digest pins are multi-arch index digests.
 - External certificates, a real Cloudflare Tunnel, and GitHub/GitLab/Bitbucket webhook deliveries (Gitea and the
-  generic bearer trigger ran live on 2026-11-06; ACME staging issuance, HTTP/3 and IPv6 too).
+  generic bearer trigger ran live on 2026-11-06; ACME staging and production issuance, HTTP/3 and IPv6 too).
 - SQLite restore. Relational restores of large databases (the swap is verified on small ones with MySQL 8.0/8.4/9.7
   and PostgreSQL 16/17), and a MySQL swap while the app holds a long transaction (`lock_wait_timeout` 60s).
 - Crash recovery mid-clone (`restic.recover` runs a database drop) on real Docker. Interrupted or tampered imports.

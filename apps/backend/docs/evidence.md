@@ -916,3 +916,32 @@ the dev host only edited and built:
   certificates issued, every app 200 over IPv4 and IPv6, a Gitea push deployed (`succeeded`) and live.
 - Reboot with `bento@prod` disabled, after many edge reloads: Docker alone brought back the edge and all apps; the
   sites answered 200 before the backend was started again.
+
+## Backlog closure on the real VPS (2026-11-07; same host)
+
+Every finding open in `BACKLOG.md` was fixed (one commit each) or recorded as a decision, then verified on the VPS
+(`make ci`, the web checks, and live where a live check applies). Live checks:
+
+- **Stack import:** the VPS stack (with a Python venv's `bin/python3 -> /usr/local/bin/python3`) exported and
+  imported as a clone whose app started with its venv; before, every absolute link failed the import. Tampered
+  copies are refused by checksum; an open `app exec` session is removed when the export quiesces; data services run
+  only catalog images whatever the manifest names.
+- **Restores:** `system id` and `source <secret file>` in a dump were checked to run as root (the secret echoed in the
+  syntax error); with `--commands=OFF --skip-system-command` (MySQL 8.0.46/8.4.13/9.7.4) and `\restrict` as the
+  `postgres` user (PostgreSQL 14.24–18.6) both are refused; a live PostgreSQL 18 Restore DB swapped in.
+- **Patch images:** `mysql84` moved from 8.4.6 to the catalog 8.4.13 on restart with every row kept.
+- **SQLite in homes:** an unlisted `database/database.sqlite` came back from a clone with a clean integrity check.
+- **Login budgets:** a second local user rate limited after 10 guesses while the operator logged in.
+- **Terminal CSRF:** the token travels as a WebSocket subprotocol (`bento.v1` selected); a wrong one is refused.
+- **Edge:** cached assets keep `Alt-Svc` (`x-bento-cache: HIT`); a 1 MB host body limit answers 413 to 2 MB; the
+  edge runs with 1 GiB / 1024 PIDs; on the VPS booted with `ipv6.disable=1` the stack plans an IPv4-only network and
+  the edge starts without IPv6 listeners.
+- **Webhook replay:** a signed delivery resent under a new delivery id answers `duplicate`.
+- **Production Let's Encrypt (first time):** switching from staging kept serving the staging certificates (fixed: the
+  ACME issuer and its state are per directory URL); after the fix production issued `CN=YE1` and `curl` without
+  `-k` answers 200.
+- **Invoice Ninja v5 (section 10, first run on this host):** 1536 MB app, 317 migrations on MySQL 8.4, account and
+  seed, API login, client and invoice `0001`, minicrond worker running, incremental deploy in 5 s.
+
+Not run: GitHub webhooks and a Cloudflare Tunnel (both need writes to external accounts that the agent's permission
+check refused), arm64.
