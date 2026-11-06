@@ -99,12 +99,6 @@ None open.
     line 83), so `Alt-Svc` and any HSTS from drop-ins are lost on cached assets.
   - The body limit is hard-coded at 64 MB for HTTP apps and upstream hosts.
 - **Edge container.** It has no memory or PID limit. `listen [::]` fails on hosts booted with `ipv6.disable=1`.
-- **Backup housekeeping.**
-  - The empty-artifact check looks at the compressed size, which is never zero (`internal/backup/backup.go:169`).
-  - There is no free-space check before dumps.
-  - Crash leftovers are never cleaned up: `.partial-*` files, `staging/backup-*` directories, and `dumpSQLite`
-    containers without an operation label.
-  - There is no directory fsync after publishing or renaming.
 - **Isolation (design).** Apps share one flat network and can reach each other's listeners and the utils listener.
   App homes have no disk quota, so one app can fill the disk that holds `bento.db`.
 

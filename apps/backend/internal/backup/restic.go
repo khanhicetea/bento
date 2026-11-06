@@ -300,7 +300,7 @@ func (d Deps) DumpPlain(ctx context.Context, t Target, path string) error {
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriterSize(f, 1<<20)
+	w := bufio.NewWriterSize(&reserveWriter{w: f, dir: filepath.Dir(path)}, 1<<20)
 	switch t.Binding.Engine {
 	case domain.EngineMySQL, domain.EnginePostgres:
 		err = d.dumpRelational(ctx, t, w)
@@ -426,4 +426,45 @@ func IsSQLiteFile(path string) bool {
 		return false
 	}
 	return string(head[:15]) == "SQLite format 3"
+}
+
+// DumpDiskReserve is the free space a staged dump leaves on the filesystem
+// it is written to: staging lives in the stack root, next to bento.db, and a
+// dump that filled the disk would take the control plane's state with it.
+const DumpDiskReserve = 1 << 30
+
+// freeSpace reports the bytes available on dir's filesystem (replaced in
+// tests).
+var freeSpace = func(dir string) (uint64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(dir, &st); err != nil {
+		return 0, err
+	}
+	return st.Bavail * uint64(st.Bsize), nil
+}
+
+// reserveWriter fails a dump before it eats into DumpDiskReserve. It checks
+// before the first write and then every 64 MB written.
+type reserveWriter struct {
+	w       io.Writer
+	dir     string
+	unknown bool  // free space could not be read: write on
+	pending int64 // bytes since the last check; 0 checks before the next write
+}
+
+func (r *reserveWriter) Write(p []byte) (int, error) {
+	if !r.unknown && (r.pending == 0 || r.pending >= 64<<20) {
+		r.pending = 0
+		free, err := freeSpace(r.dir)
+		switch {
+		case err != nil:
+			r.unknown = true
+		case free < DumpDiskReserve+uint64(len(p)):
+			return 0, fmt.Errorf("stopped the dump: %d MB free on the stack root's disk, and Bento keeps %d MB free for its state",
+				free>>20, uint64(DumpDiskReserve)>>20)
+		}
+	}
+	n, err := r.w.Write(p)
+	r.pending += int64(n)
+	return n, err
 }
