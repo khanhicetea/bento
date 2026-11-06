@@ -1,10 +1,15 @@
 package edge
 
 import (
+	"crypto/x509"
+	"encoding/pem"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
 func appHost(name, appID string, route domain.Route) domain.Host {
@@ -101,8 +106,21 @@ func TestRenderTLSIsPerHost(t *testing.T) {
 	}
 	pub := string(files["sites/host-shop.example.com.conf"])
 	internal := string(files["sites/host-shop.internal.test.conf"])
-	if !strings.Contains(pub, "acme_certificate bento_acme;") || strings.Contains(pub, "boot.crt") {
+	if !strings.Contains(pub, "acme_certificate bento_acme;") || strings.Contains(pub, "boot.crt") ||
+		!strings.Contains(pub, "ssl_certificate $bento_acme_certificate;") ||
+		!strings.Contains(pub, "ssl_certificate_key $bento_acme_certificate_key;") {
 		t.Fatal("ACME host must use ACME only")
+	}
+	// Until the first issuance the module's variables are empty: the pending
+	// placeholder answers instead of a failed handshake.
+	main := string(files["nginx.conf"])
+	for _, want := range []string{
+		"map $acme_certificate $bento_acme_certificate {\n    \"\"      " + PendingMount + "/pending.crt;\n    default $acme_certificate;",
+		"map $acme_certificate_key $bento_acme_certificate_key {\n    \"\"      " + PendingMount + "/pending.key;\n    default $acme_certificate_key;",
+	} {
+		if !strings.Contains(main, want) {
+			t.Fatalf("main config missing %q", want)
+		}
 	}
 	if !strings.Contains(internal, "ssl_certificate /etc/bento-edge-certs/boot.crt;") ||
 		strings.Contains(internal, "acme_certificate") {
@@ -491,5 +509,31 @@ func TestUpstreamTLSName(t *testing.T) {
 		if name != want[0] || host != want[1] {
 			t.Errorf("%s -> %q %q, want %q %q", in, name, host, want[0], want[1])
 		}
+	}
+}
+
+// The pending placeholder is written once, owned as asked, with a private key.
+func TestEnsurePendingCert(t *testing.T) {
+	dir := t.TempDir()
+	owner := platform.Owner{UID: os.Getuid(), GID: os.Getgid()}
+	if err := EnsurePendingCert(dir, owner); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := os.Stat(filepath.Join(dir, "pending.key"))
+	crtBytes, err := os.ReadFile(filepath.Join(dir, "pending.crt"))
+	if err != nil || key == nil || key.Mode().Perm() != 0o600 {
+		t.Fatalf("pending pair: key %v, crt %v", key, err)
+	}
+	block, _ := pem.Decode(crtBytes)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || cert.Subject.CommonName != "bento-pending" || len(cert.DNSNames) != 0 {
+		t.Fatalf("pending certificate: %v %+v", err, cert)
+	}
+	before, _ := os.ReadFile(filepath.Join(dir, "pending.key"))
+	if err := EnsurePendingCert(dir, owner); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(filepath.Join(dir, "pending.key")); string(after) != string(before) {
+		t.Fatal("an existing pending pair must be kept")
 	}
 }

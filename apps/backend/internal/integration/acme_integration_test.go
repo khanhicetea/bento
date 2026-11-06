@@ -2,6 +2,9 @@ package integration
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -41,5 +44,17 @@ func TestIntegrationEdgeFirstACMEHostKeepsEdgeRunning(t *testing.T) {
 	}
 	if !edgeAnswers(httpPort) {
 		t.Fatal("edge must keep serving")
+	}
+	// Until its first certificate is issued (never, with this issuer) the host
+	// presents the pending placeholder instead of failing the handshake.
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp",
+		fmt.Sprintf("127.0.0.1:%d", httpsPort),
+		&tls.Config{ServerName: "first-acme.example.org", InsecureSkipVerify: true}) //nolint:gosec // placeholder is self-signed
+	if err != nil {
+		t.Fatalf("TLS handshake for an ACME host awaiting its certificate: %v", err)
+	}
+	defer conn.Close()
+	if cn := conn.ConnectionState().PeerCertificates[0].Subject.CommonName; cn != "bento-pending" {
+		t.Fatalf("awaiting host presented %q, want the bento-pending placeholder", cn)
 	}
 }

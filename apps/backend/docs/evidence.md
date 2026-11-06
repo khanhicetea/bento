@@ -891,9 +891,16 @@ Fixed (one commit each):
 - **Webhook deliveries** read `deployed` for a deploy whose script failed: deliveries carry the operation state
   (CLI column, UI badge `deploy failed`).
 - **ACME challenge warnings:** every Let's Encrypt validation request logged `using uninitialized "bento_route"`.
+- **Failed handshakes during first issuance.** Until the module has a host's certificate its variables are empty, so
+  every HTTPS handshake for the host failed (`cannot load certificate "/etc/bento-edge/live/"`): ~15 s on a working
+  host, up to the 5-minute attempt window on a failing one, and `redirectHttps` sent port-80 visitors there. Mapping
+  empty variables to the boot certificate failed live: variable certificates are loaded per handshake by the
+  unprivileged worker, which cannot read the root-only boot key. A separate placeholder pair (`bento-pending`, owned
+  by the nginx UID, key 0600, mounted read-only at `/etc/bento-edge-pending`; edge shape 4) is presented instead.
+  Verified live: a new host answered with `bento-pending` from t+0 s, then the staging certificate; no
+  `cannot load certificate`. `TestIntegrationEdgeFirstACMEHostKeepsEdgeRunning` checks the handshake on a real edge.
 
-Not fixed (`BACKLOG.md`): HTTPS fails for ~15 s while a host's first certificate is issued. The flag explains both
-reboots: before the first one the edge had been reloaded (not restored); before the second it had only been started
+The manual-stop flag explains both reboots: before the first one the edge had been reloaded (not restored); before the second it had only been started
 by the backend, which clears the flag (restored).
 
 Not run: production Let's Encrypt, a real Cloudflare Tunnel, GitHub webhooks, Invoice Ninja (needs more than this

@@ -72,8 +72,9 @@ type frontListeners struct {
 // edgeShapeVersion is bumped whenever a running edge must be recreated rather
 // than reloaded to pick up a change: 2 added the traffic logs mount, 3 loads
 // the ACME module unconditionally (nginx segfaults when a reload adds a
-// load_module, so an edge started without it must cold-start with it).
-const edgeShapeVersion = 3
+// load_module, so an edge started without it must cold-start with it), 4
+// mounts the pending certificate.
+const edgeShapeVersion = 4
 
 func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 	var front *frontListeners
@@ -149,6 +150,7 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker
 				{Type: mount.TypeBind, Source: c.Layout.EdgeCertsDir(), Target: edge.CertsMount, ReadOnly: true},
 				{Type: mount.TypeBind, Source: c.Layout.EdgeCustomDir(), Target: edge.CustomMount, ReadOnly: true},
 				{Type: mount.TypeBind, Source: c.Layout.EdgeACMEDir(), Target: edge.ACMEMount},
+				{Type: mount.TypeBind, Source: c.Layout.EdgePendingDir(), Target: edge.PendingMount, ReadOnly: true},
 				// Per-host traffic access logs; the backend rotates them.
 				{Type: mount.TypeBind, Source: c.Layout.TrafficLogsDir(), Target: edge.LogsMount},
 			},
@@ -186,7 +188,14 @@ func (c *Controller) prepareEdgeDirs() error {
 	if err := edge.EnsureBootCert(c.Layout.EdgeCertsDir()); err != nil {
 		return err
 	}
-	if err := platform.EnsureDir(c.Layout.EdgeACMEDir(), 0o700, platform.Owner{UID: EdgeNginxUID, GID: EdgeNginxUID}); err != nil {
+	nginx := platform.Owner{UID: EdgeNginxUID, GID: EdgeNginxUID}
+	if err := platform.EnsureDir(c.Layout.EdgeACMEDir(), 0o700, nginx); err != nil {
+		return err
+	}
+	if err := platform.EnsureDir(c.Layout.EdgePendingDir(), 0o700, nginx); err != nil {
+		return err
+	}
+	if err := edge.EnsurePendingCert(c.Layout.EdgePendingDir(), nginx); err != nil {
 		return err
 	}
 	return c.prepareTrafficDirs()

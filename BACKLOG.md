@@ -8,7 +8,8 @@ HTTPS upstream TLS, Docker deadlines and forced cancellation, one-at-a-time roll
 cloudflared pin drift, the Valkey cap and ACME backoff; on 2026-11-06 Restore DB matching the binding's service, upstream
 hostnames resolved at run time, and the edge crash on its first ACME host; and from the real-VPS run of 2026-11-06,
 the IPv4-only edge, edge reloads that kept Docker from restarting the edge, deploy scripts left running by a crashed
-backend, the deploy summary order, webhook deliveries hiding failed deploys, and the ACME challenge warning) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
+backend, the deploy summary order, webhook deliveries hiding failed deploys, the ACME challenge warning, and failed
+handshakes during a host's first issuance) are recorded in `apps/backend/docs/evidence.md`. Paths are relative to `apps/backend/`
 unless they start with `apps/`. Line numbers are as of commit `8a88634` and drift; the named function or template is
 the stable reference.
 
@@ -48,12 +49,6 @@ None open.
 
 - **Paths of later upstream URLs are ignored.** The first URL decides the scheme, path and TLS name. Mixed schemes,
   and HTTPS upstreams with different names, are refused since 2026-11-03.
-- **HTTPS fails during a host's first issuance.** Until the ACME module has a certificate for a host, its variables
-  are empty and every handshake for that host fails (`cannot load certificate`), for about 15 s on a working host and
-  up to the 5-minute attempt window on a failing one (then `PlanACME` holds it on the boot certificate). With
-  `redirectHttps` on, port 80 visitors are sent to that failing HTTPS. Serving the boot certificate meanwhile through
-  a `map` does not work: variable certificates are read per handshake by the unprivileged worker, which cannot read the
-  root-only boot key. Production Let's Encrypt was not run (staging only; nip.io shares rate limits).
 - **Recreate rollback with new routes.** When routes changed and a recreate fails, the restored old edge restarts on
   the new live generation, which was validated by the new image. Low risk while nginx stays on the same stable line;
   keeping the previous generation for the rollback path would close it.

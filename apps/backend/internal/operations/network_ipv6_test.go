@@ -1,11 +1,14 @@
 package operations
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/moby/moby/api/types/network"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/edge"
 )
 
 func TestPlanNetworksRecordsIPv6(t *testing.T) {
@@ -54,6 +57,35 @@ func TestEdgeSpecPublishesIPv6OnDualStack(t *testing.T) {
 			if len(got) != 1 || got[0] != c.bind {
 				t.Errorf("bind %s ipv6=%v: %s published on %v", c.bind, c.v6, p, got)
 			}
+		}
+	}
+}
+
+// ACME hosts present the pending placeholder until their first issuance, so
+// the edge mounts it read-only; preparing the edge creates it.
+func TestEdgeSpecMountsPendingCertificate(t *testing.T) {
+	h := newHarness(t)
+	s := domain.DefaultEdgeSettings()
+	s.Enabled = true
+	spec, err := h.c.edgeSpec(s, NetworkSettings{EdgeIP: "10.0.0.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, m := range spec.HostConfig.Mounts {
+		if m.Target == edge.PendingMount {
+			found = m.Source == h.c.Layout.EdgePendingDir() && m.ReadOnly
+		}
+	}
+	if !found {
+		t.Fatalf("pending certificate not mounted read-only: %+v", spec.HostConfig.Mounts)
+	}
+	if err := h.c.prepareEdgeDirs(); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"pending.crt", "pending.key"} {
+		if _, err := os.Stat(filepath.Join(h.c.Layout.EdgePendingDir(), f)); err != nil {
+			t.Fatalf("prepareEdgeDirs did not create %s: %v", f, err)
 		}
 	}
 }

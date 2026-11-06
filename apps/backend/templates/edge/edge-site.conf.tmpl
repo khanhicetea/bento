@@ -197,8 +197,8 @@ server {
 {{- template "bento-front-reject" .}}
 {{- if .ACME}}
   acme_certificate bento_acme;
-  ssl_certificate $acme_certificate;
-  ssl_certificate_key $acme_certificate_key;
+  ssl_certificate $bento_acme_certificate;
+  ssl_certificate_key $bento_acme_certificate_key;
   ssl_certificate_cache max=10;
 {{- else}}
   ssl_certificate {{.CertFile}};

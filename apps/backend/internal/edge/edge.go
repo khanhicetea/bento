@@ -38,6 +38,9 @@ const (
 	CertsMount  = "/etc/bento-edge-certs"
 	CustomMount = "/etc/bento-edge-custom"
 	ACMEMount   = "/var/lib/bento-acme"
+	// PendingMount holds the placeholder certificate an ACME host presents
+	// until its first certificate is issued (EnsurePendingCert).
+	PendingMount = "/etc/bento-edge-pending"
 	// HooksMount holds the backend's webhook socket. It is the only backend
 	// endpoint the edge can reach and serves nothing but webhook deliveries.
 	HooksMount = "/var/lib/bento-hooks"
@@ -491,7 +494,23 @@ func (g Generations) Same(files map[string][]byte) bool {
 
 // EnsureBootCert creates the shared self-signed boot certificate once.
 func EnsureBootCert(certsDir string) error {
-	crt, key := filepath.Join(certsDir, "boot.crt"), filepath.Join(certsDir, "boot.key")
+	return ensureSelfSigned(certsDir, "boot", "bento-boot", platform.RootOwner)
+}
+
+// EnsurePendingCert creates the placeholder certificate once: a self-signed
+// pair that ACME hosts present until their first certificate is issued. The
+// ACME module's certificate variables are empty until then, and nginx loads
+// a variable certificate per handshake in the unprivileged worker, so this
+// pair is owned by the worker (owner). It is used for nothing else, and no
+// client trusts it.
+func EnsurePendingCert(dir string, owner platform.Owner) error {
+	return ensureSelfSigned(dir, "pending", "bento-pending", owner)
+}
+
+// ensureSelfSigned writes <name>.key (0600) and <name>.crt (0644) in dir,
+// owned by owner, unless both exist.
+func ensureSelfSigned(dir, name, commonName string, owner platform.Owner) error {
+	crt, key := filepath.Join(dir, name+".crt"), filepath.Join(dir, name+".key")
 	if _, err := os.Stat(crt); err == nil {
 		if _, err := os.Stat(key); err == nil {
 			return nil
@@ -506,7 +525,7 @@ func EnsureBootCert(certsDir string) error {
 		return err
 	}
 	tmpl := &x509.Certificate{
-		SerialNumber: serial, Subject: pkix.Name{CommonName: "bento-boot", Organization: []string{"Bento"}},
+		SerialNumber: serial, Subject: pkix.Name{CommonName: commonName, Organization: []string{"Bento"}},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(30, 0, 0),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
@@ -518,18 +537,8 @@ func EnsureBootCert(certsDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := platform.AtomicWrite(
-		key,
-		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}),
-		0o600,
-		platform.RootOwner,
-	); err != nil {
+	if err := platform.AtomicWrite(key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}), 0o600, owner); err != nil {
 		return err
 	}
-	return platform.AtomicWrite(
-		crt,
-		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		0o644,
-		platform.RootOwner,
-	)
+	return platform.AtomicWrite(crt, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644, owner)
 }

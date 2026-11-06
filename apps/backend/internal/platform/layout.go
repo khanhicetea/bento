@@ -39,6 +39,10 @@ func (l Layout) EdgeDir() string        { return filepath.Join(l.Root, "edge") }
 func (l Layout) EdgeConfDir() string    { return filepath.Join(l.Root, "edge", "conf") }
 func (l Layout) EdgeCertsDir() string   { return filepath.Join(l.Root, "edge", "certs") }
 func (l Layout) EdgeACMEDir() string    { return filepath.Join(l.Root, "edge", "acme") }
+
+// EdgePendingDir holds the placeholder certificate ACME hosts present until
+// their first certificate is issued (owned by the edge's nginx user).
+func (l Layout) EdgePendingDir() string { return filepath.Join(l.Root, "edge", "pending") }
 func (l Layout) EdgeCustomDir() string  { return filepath.Join(l.Root, "edge", "custom") }
 func (l Layout) TunnelDir() string      { return filepath.Join(l.Root, "cloudflared") }
 func (l Layout) DBAdminDir() string     { return filepath.Join(l.Root, "dbadmin") }

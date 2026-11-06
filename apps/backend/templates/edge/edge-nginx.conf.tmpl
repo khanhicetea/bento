@@ -35,6 +35,19 @@ http {
     state_path /var/lib/bento-acme/bento_acme;
     accept_terms_of_service;
   }
+
+  # The module's variables stay empty until a host's first certificate is
+  # issued, and an empty ssl_certificate fails every handshake for that host.
+  # Meanwhile it presents the pending placeholder (owned by the worker, which
+  # loads variable certificates per handshake). HTTP-01 runs on port 80.
+  map $acme_certificate $bento_acme_certificate {
+    ""      /etc/bento-edge-pending/pending.crt;
+    default $acme_certificate;
+  }
+  map $acme_certificate_key $bento_acme_certificate_key {
+    ""      /etc/bento-edge-pending/pending.key;
+    default $acme_certificate_key;
+  }
 {{- end}}
 
   include /etc/nginx/mime.types;
