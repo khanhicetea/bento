@@ -58,9 +58,10 @@ One SQLite file (`bento.db`, `0600`) opened with `modernc.org/sqlite` (pure Go),
 connection, and `BEGIN IMMEDIATE` transactions.
 
 - **Versioning:** `PRAGMA application_id = 0x424E5431` marks a Bento Go database, `PRAGMA user_version` is the schema
-  version (currently 2: the shared Redis was removed and `apps` gained `valkey`/`minicrond`). `store.CheckCompatible`
+  version (currently 1: the baseline every stack is created with, `store.MigratableFromVersion`). `store.CheckCompatible`
   probes with `mode=ro&immutable=1`, so refusing a foreign, older, newer, or non-SQLite file writes nothing (not even
-  `-wal`/`-shm`). Version 2 is the production baseline (`store.MigratableFromVersion`); nothing older is accepted.
+  `-wal`/`-shm`). Earlier development schemas (2–5) were folded into this baseline on 2026-11-07 before any stack
+  ran in production; a state file from them is refused as written by a newer Bento.
 - **Migrations:** `store.Open` upgrades a file from `MigratableFromVersion` up to `SchemaVersion` after
   `quick_check`. It first writes a consistent copy (`VACUUM INTO`, `0600`) to
   `state-backups/bento.db.schema-<from>.<utc>` (`0700`, skipped by export), then runs `migrations[v]` for each step in
@@ -81,8 +82,8 @@ connection, and `BEGIN IMMEDIATE` transactions.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
   target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
-  `operation_events` (≤200 events each), `sessions`, `api_tokens` (SHA-256 hashes, scope, expiry). Schema 5
-  dropped `backup_runs` and the `backup` schedules with the database dump backups (app backup holds every dump).
+  `operation_events` (≤200 events each), `sessions`, `api_tokens` (SHA-256 hashes, scope, expiry),
+  `runtime_builds` + `app_runtime_builds` (managed runtime images and the build each app runs).
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
   across a Docker call.
 

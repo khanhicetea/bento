@@ -11,7 +11,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
-// RuntimeBuild is one built managed runtime image (see runtimeBuildsSchema).
+// RuntimeBuild is one built managed runtime image (see the runtime_builds table).
 type RuntimeBuild struct {
 	ID          int64
 	ImageKey    string

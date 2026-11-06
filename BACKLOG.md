@@ -144,7 +144,9 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 - Wildcard MySQL grants from before 2026-11-02 are replaced only when provisioning runs for that binding (start of an
   unprovisioned app, Add binding, Add database); there is no stack-wide migration because no production stack ran the
   old grants. Databases an app created through such a grant (for example `axb_main`) are not detected.
-- No deployment runs a schema older than 2, so `store.MigratableFromVersion` is 2 and nothing older is migrated.
+- No stack runs in production yet, so on 2026-11-07 every schema change so far was folded into one baseline, schema 1
+  (`store.SchemaVersion` and `store.MigratableFromVersion`), with no migrations. Development stacks on schemas 2–5
+  are re-initialized, not migrated. The next schema change adds `migrations[1]`.
 - The real-Docker suite (`make -C apps/backend test-integration`) runs on the local dev host, not in GitHub
   Actions. CI (`.github/workflows/ci.yml`) runs only on tags and releases.
 - The front-proxy trusted list is not checked against the stack networks before the network plan exists (a fresh

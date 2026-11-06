@@ -29,12 +29,11 @@ const ApplicationID = 0x424E5431
 // migrations; every other version is refused without modifying the file.
 // A schema change bumps SchemaVersion and adds migrations[old] in the same
 // change (see docs/contributing.md).
-const SchemaVersion = 5
+const SchemaVersion = 1
 
-// MigratableFromVersion is the oldest schema Open upgrades. Version 2 is the
-// production baseline: no deployment runs an older schema, so nothing below
-// it is migrated.
-const MigratableFromVersion = 2
+// MigratableFromVersion is the oldest schema Open upgrades. Schema 1 is the
+// baseline that every stack is created with; nothing older exists.
+const MigratableFromVersion = 1
 
 // StateBackupsDir is the stack-root directory that holds the copy of the
 // state database taken before each migration. Export skips it.
@@ -57,43 +56,9 @@ func SupportedVersions() []int {
 // rows it cannot map (ErrUnsupportedState) rather than drop or guess them.
 type migration func(tx *sql.Tx) error
 
-// migrations[v] upgrades schema v to v+1. Every SchemaVersion bump adds one.
-var migrations = map[int64]migration{
-	// 5: database dump backups were removed; app backup (restic) holds every
-	// database dump. Their run history and schedules go. Artifacts already
-	// written under <root>/backups are files of the operator and are left
-	// in place.
-	4: func(tx *sql.Tx) error {
-		for _, q := range []string{
-			`DROP TABLE backup_runs`,
-			`DELETE FROM schedules WHERE kind = 'backup'`,
-		} {
-			if _, err := tx.Exec(q); err != nil {
-				return err
-			}
-		}
-		return nil
-	},
-	// 4: per-app protection toggles. Existing apps get the defaults (all on),
-	// which is what new apps get; dot files were already refused.
-	3: func(tx *sql.Tx) error {
-		for _, col := range []string{"block_dotfiles", "block_php_probes", "block_sensitive_files"} {
-			if _, err := tx.Exec(
-				`ALTER TABLE apps ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 1 CHECK (` + col + ` IN (0, 1))`,
-			); err != nil {
-				return err
-			}
-		}
-		return nil
-	},
-	// 3: runtime image builds and the build each app runs. Apps start with no
-	// assignment and are assigned the current build of their runtime when
-	// they are next materialized.
-	2: func(tx *sql.Tx) error {
-		_, err := tx.Exec(runtimeBuildsSchema)
-		return err
-	},
-}
+// migrations[v] upgrades schema v to v+1. Every SchemaVersion bump adds one;
+// the baseline has none.
+var migrations = map[int64]migration{}
 
 // TransferFormatVersion versions the serialized export manifest.
 const TransferFormatVersion = 1
@@ -544,31 +509,11 @@ CREATE TABLE schedules (
   updated_at   TEXT NOT NULL
 ) STRICT;
 
-` + runtimeBuildsSchema + `
--- Scoped bearer credentials for automation. Only the SHA-256 of the secret
--- is stored.
-CREATE TABLE api_tokens (
-  id           TEXT PRIMARY KEY,
-  name         TEXT NOT NULL UNIQUE,
-  scope        TEXT NOT NULL CHECK (scope IN ('read','operate','admin')),
-  token_hash   TEXT NOT NULL UNIQUE,
-  created_at   TEXT NOT NULL,
-  expires_at   TEXT NOT NULL DEFAULT '',
-  last_used_at TEXT NOT NULL DEFAULT ''
-) STRICT;
-`
-
-// runtimeBuildsSchema holds managed runtime image builds. A build is one image
-// built from one set of Bento-owned inputs (context_hash) of a runtime key;
-// its floating bases and tool channels resolved to manifest_json. current
-// marks the build new apps of that key and inputs are given. Rows are deleted
-// when their image is pruned.
-//
-// app_runtime_builds records the build each app runs (or will run once
-// replaced). previous_build_id is the build before the last rollout, for
-// rolling back; rolling marks an assignment written by a rollout whose
-// instance has not been replaced on it yet, which a failed rollout reverts.
-const runtimeBuildsSchema = `
+-- Managed runtime image builds. A build is one image built from one set of
+-- Bento-owned inputs (context_hash) of a runtime key; its floating bases and
+-- tool channels resolved to manifest_json. current marks the build new apps
+-- of that key and inputs are given. Rows are deleted when their image is
+-- pruned.
 CREATE TABLE runtime_builds (
   id            INTEGER PRIMARY KEY,
   image_key     TEXT NOT NULL,
@@ -582,11 +527,27 @@ CREATE TABLE runtime_builds (
 
 CREATE UNIQUE INDEX runtime_builds_current ON runtime_builds(image_key, context_hash) WHERE current = 1;
 
+-- The build each app runs (or will run once replaced). previous_build_id is
+-- the build before the last rollout, for rolling back; rolling marks an
+-- assignment written by a rollout whose instance has not been replaced on it
+-- yet, which a failed rollout reverts.
 CREATE TABLE app_runtime_builds (
   app_id            TEXT PRIMARY KEY REFERENCES apps(id) ON DELETE CASCADE,
   build_id          INTEGER NOT NULL REFERENCES runtime_builds(id) ON DELETE CASCADE,
   previous_build_id INTEGER REFERENCES runtime_builds(id) ON DELETE SET NULL,
   rolling           INTEGER NOT NULL DEFAULT 0 CHECK (rolling IN (0, 1)),
   updated_at        TEXT NOT NULL
+) STRICT;
+
+-- Scoped bearer credentials for automation. Only the SHA-256 of the secret
+-- is stored.
+CREATE TABLE api_tokens (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL UNIQUE,
+  scope        TEXT NOT NULL CHECK (scope IN ('read','operate','admin')),
+  token_hash   TEXT NOT NULL UNIQUE,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL DEFAULT '',
+  last_used_at TEXT NOT NULL DEFAULT ''
 ) STRICT;
 `
