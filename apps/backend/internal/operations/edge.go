@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -235,7 +236,19 @@ func (c *Controller) edgeContainer(ctx context.Context) (string, bool, error) {
 // unless-stopped container so marked is not started again when Docker
 // restarts or the host reboots, which would leave every site down until the
 // backend repairs it.
+//
+// A reload returns only once it is in effect: nginx -s only signals the
+// master, which starts new workers and retitles the old ones "is shutting
+// down" when they stop accepting. Until then a request could still meet the
+// old configuration right after the operation reported success.
 func (c *Controller) edgeControl(ctx context.Context, id, action string) error {
+	var before []string
+	if action == "reload" {
+		var err error
+		if before, err = c.edgeWorkers(ctx, id); err != nil {
+			return err
+		}
+	}
 	res, err := c.Engine.Exec(ctx, id, docker.ExecRequest{
 		Cmd:         []string{"nginx", "-e", "stderr", "-c", edge.LiveConf, "-s", action},
 		OutputLimit: 16 << 10,
@@ -246,7 +259,51 @@ func (c *Controller) edgeControl(ctx context.Context, id, action string) error {
 	if res.ExitCode != 0 {
 		return fmt.Errorf("nginx -s %s exited with status %d: %s", action, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 	}
+	deadline := time.Now().Add(edgeReloadTimeout)
+	for len(before) > 0 {
+		now, err := c.edgeWorkers(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(now, func(pid string) bool { return slices.Contains(before, pid) }) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the edge did not apply its reload within %s", edgeReloadTimeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(c.PollInterval):
+		}
+	}
 	return nil
+}
+
+// edgeReloadTimeout bounds the wait for a reload to take effect.
+var edgeReloadTimeout = 15 * time.Second
+
+// edgeWorkers lists the PIDs of the edge's accepting nginx workers (not the
+// ones shutting down after a reload).
+func (c *Controller) edgeWorkers(ctx context.Context, id string) ([]string, error) {
+	const script = `for p in /proc/[0-9]*; do
+  t=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) || continue
+  case "$t" in "nginx: worker process is shutting down"*) ;; "nginx: worker process"*) echo "${p#/proc/}" ;; esac
+done`
+	res, err := c.Engine.Exec(ctx, id, docker.ExecRequest{Cmd: []string{"sh", "-c", script}, OutputLimit: 16 << 10})
+	if err != nil {
+		return nil, err
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("list edge workers: exit %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	var pids []string
+	for _, f := range strings.Fields(string(res.Stdout)) {
+		if _, err := strconv.Atoi(f); err == nil {
+			pids = append(pids, f)
+		}
+	}
+	return pids, nil
 }
 
 // validateEdge runs nginx -t against a candidate: inside the running edge

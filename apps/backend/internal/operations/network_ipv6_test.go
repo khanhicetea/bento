@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/edge"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
@@ -192,5 +194,40 @@ func TestOpenToolDoesNotWriteAppConfig(t *testing.T) {
 	tool.Close()
 	if b, _ := os.ReadFile(cfg); string(b) != "# restored by an operation\n" {
 		t.Fatalf("OpenTool rewrote the app config:\n%s", b)
+	}
+}
+
+// A reload reports success only once no worker of the old configuration
+// still accepts connections.
+func TestEdgeReloadWaitsForNewWorkers(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	var mu sync.Mutex
+	listings := []string{"11\n12\n", "11\n13\n", "13\n14\n"}
+	listed := 0
+	h.fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
+		if req.Cmd[0] != "sh" {
+			return docker.ExecResult{}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		out := listings[min(listed, len(listings)-1)]
+		listed++
+		return docker.ExecResult{Stdout: []byte(out)}
+	}
+	if err := h.c.edgeControl(ctx, "edge", "reload"); err != nil {
+		t.Fatal(err)
+	}
+	if listed != 3 {
+		t.Fatalf("listed the workers %d times, want until the old ones were gone (3)", listed)
+	}
+	// Old workers that never stop accepting fail the reload.
+	defer func(d time.Duration) { edgeReloadTimeout = d }(edgeReloadTimeout)
+	edgeReloadTimeout = 50 * time.Millisecond
+	h.fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
+		return docker.ExecResult{Stdout: []byte("11\n")}
+	}
+	if err := h.c.edgeControl(ctx, "edge", "reload"); err == nil || !strings.Contains(err.Error(), "did not apply its reload") {
+		t.Fatalf("a reload that never takes effect: %v", err)
 	}
 }
