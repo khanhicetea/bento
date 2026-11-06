@@ -30,20 +30,8 @@ None open.
 
 ### Images and supply chain
 
-- **Runtime images never get security updates** (confirmed).
-  - The image tag hashes only the build context and args (`internal/runtime/images.go:36-78`), and `Ensure` builds
-    only when the tag is missing. Debian packages (openssl, nginx, glibc, libcurl) stay frozen until a Bento release
-    changes a build input. Nothing can force a rebuild.
-  - Plausible: the classic builder without `NoCache` reuses the cached `apt-get` layer even on a rebuild.
-  - Fix: a scheduled or operator-triggered rebuild with `NoCache` that rolls apps one at a time.
 - **Data-service images are frozen per service.** The image is stored in the service row when the service is
   created, so MySQL/PostgreSQL patch releases never reach existing services. A same-major patch path is needed.
-- **Unpinned build inputs.**
-  - `templates/images/php/Dockerfile:24` runs `pecl install redis` with no version or checksum.
-  - Bun images are pinned by tag only (`internal/domain/catalog.go:36-37`).
-  - pnpm's native binary is checked only against the npm registry's own hash.
-- **Version comment.** `internal/domain/catalog.go:133` says an in-place 8.0 → 8.4 MySQL upgrade is supported; no
-  code does that.
 
 ### Edge and ingress
 
@@ -53,8 +41,6 @@ None open.
 
 ### Data and transfer
 
-- **Off-site dumps are plaintext.** `internal/backup/rclone.go:229` runs a plain `rclone copy`. Nothing requires or
-  suggests a `crypt` remote, and remote copies are never pruned.
 - **Export has no integrity protection.** There is no fsync of `stack.tar.zst` or the volume tars
   (`internal/operations/transfer.go:260-270`), and the manifest records no checksums. Tool shells and exec containers
   keep writing to app homes during the "quiesced" export.
@@ -117,6 +103,11 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 ## Decisions
 
+- Runtime image tool channels float on purpose (base images, mise channels such as `bun@1.3` and `pnpm@latest`,
+  Composer, phpredis from PECL): that is how their security and patch releases arrive. They resolve only when an
+  operator rebuilds (`bento images rebuild`, which also bypasses the layer cache) and rolls apps out one at a time,
+  and each build records what it resolved. Artifacts Bento installs itself (s6-overlay, minicrond, mise, restic,
+  Valkey) are pinned with checksums.
 - Wildcard MySQL grants from before 2026-11-02 are replaced only when provisioning runs for that binding (start of an
   unprovisioned app, Add binding, Add database); there is no stack-wide migration because no production stack ran the
   old grants. Databases an app created through such a grant (for example `axb_main`) are not detected.
