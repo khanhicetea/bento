@@ -172,11 +172,17 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 			)
 		}
 		id = ins.ID
-		if ins.Config.Labels[runtime.LabelServiceSettings] != spec.Config.Labels[runtime.LabelServiceSettings] {
-			// Tuned settings changed: replace the container on the same
-			// volume. Ownership and the volume mount were verified above.
+		settingsChanged := ins.Config.Labels[runtime.LabelServiceSettings] != spec.Config.Labels[runtime.LabelServiceSettings]
+		imageChanged := ins.Config.Image != spec.Config.Image
+		if settingsChanged || imageChanged {
+			// Tuned settings or the (patch) image changed: replace the
+			// container on the same volume. Ownership and the volume mount
+			// were verified above.
 			if err := r.Phase(ctx, "apply-settings"); err != nil {
 				return "", err
+			}
+			if imageChanged {
+				r.Info(ctx, "updating %s from %s to %s", svc.Name, ins.Config.Image, spec.Config.Image)
 			}
 			if ins.State != nil && ins.State.Running {
 				r.Info(ctx, "stopping %s to apply settings", svc.Name)

@@ -996,6 +996,9 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 			Tunables:    []dto.ServiceTunable{},
 		}
 		maps.Copy(svc.Settings, row.Settings)
+		if img, ok := domain.ServiceImage(row.Engine, row.Version); ok && img != row.Image {
+			svc.UpdateAvailable = true
+		}
 		for _, t := range domain.ServiceTunables[row.Engine] {
 			mx := domain.FormatSize(t.Max)
 			mn := domain.FormatSize(t.Min)

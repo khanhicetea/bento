@@ -765,6 +765,18 @@ func InsertService(ctx context.Context, q Q, s domain.DataService) error {
 }
 
 // SetServiceSettings replaces a service's tuned parameters.
+// SetServiceImage records the image a data service runs.
+func SetServiceImage(ctx context.Context, q Q, name, image string) error {
+	res, err := q.ExecContext(ctx, "UPDATE data_services SET image = ? WHERE name = ?", image, name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func SetServiceSettings(ctx context.Context, q Q, name string, settings domain.ServiceSettings) error {
 	res, err := q.ExecContext(ctx, "UPDATE data_services SET settings_json = ? WHERE name = ?", settingsJSON(settings), name)
 	if err != nil {

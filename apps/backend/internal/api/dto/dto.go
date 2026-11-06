@@ -516,6 +516,9 @@ type Service struct {
 	// SettingsApplied is false while the container runs with other settings
 	// than the saved ones (a configure did not finish yet).
 	SettingsApplied bool `json:"settingsApplied"`
+	// UpdateAvailable is true when this Bento ships a newer image of the
+	// service's version (a patch release); a restart moves the service onto it.
+	UpdateAvailable bool `json:"updateAvailable"`
 	// Tunables lists the parameters this engine allows tuning.
 	Tunables []ServiceTunable `json:"tunables"`
 }

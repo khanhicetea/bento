@@ -598,15 +598,26 @@ func (c *Controller) ConfigureService(
 	return op, err
 }
 
-// RestartService restarts a data service with its saved settings.
+// RestartService restarts a data service with its saved settings, on the
+// catalog image of its version: a Bento release that moves a version to a
+// newer patch image reaches an existing service when it is next restarted.
+// The engine version itself never changes.
 func (c *Controller) RestartService(ctx context.Context, name, idem string) (store.Operation, error) {
-	if _, err := store.GetService(ctx, c.Store.DB(), name); errors.Is(err, store.ErrNotFound) {
+	svc, err := store.GetService(ctx, c.Store.DB(), name)
+	if errors.Is(err, store.ErrNotFound) {
 		return store.Operation{}, fmt.Errorf("%w: service %s", store.ErrNotFound, name)
 	} else if err != nil {
 		return store.Operation{}, err
 	}
+	image, _ := domain.ServiceImage(svc.Engine, svc.Version)
 	op, _, err := c.Submit(ctx, Submission{
 		Kind: KindServiceRestart, TargetKind: "service", TargetID: name, IdempotencyKey: idem,
+		Mutate: func(ctx context.Context, q store.Q) error {
+			if image == "" || image == svc.Image {
+				return nil
+			}
+			return store.SetServiceImage(ctx, q, name, image)
+		},
 	})
 	return op, err
 }

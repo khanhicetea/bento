@@ -16,6 +16,9 @@ drained before the service stops.
 If a new version changes an app's runtime image or generated configuration, Bento brings running apps up to date by
 replacing their containers — expect a brief restart per app. Check **Activity** after upgrading.
 
+Databases keep their image until you restart them: a new Bento version can ship a newer patch image of MySQL or
+PostgreSQL, and **System → Restart** on that service applies it (it never changes the engine version).
+
 PHP, Debian and toolchain patch releases don't need an upgrade: **System → Images → Rebuild** picks them up, and you
 choose when to roll apps onto the new build ([Runtime images](/reference/runtime-images#rebuild-and-roll-out)).
 

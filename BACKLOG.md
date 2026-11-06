@@ -30,8 +30,6 @@ None open.
 
 ### Images and supply chain
 
-- **Data-service images are frozen per service.** The image is stored in the service row when the service is
-  created, so MySQL/PostgreSQL patch releases never reach existing services. A same-major patch path is needed.
 
 ### Edge and ingress
 

@@ -120,6 +120,7 @@ function ServiceTile({ service: s }: { service: T.Service }) {
         </p>
       )}
       {!s.settingsApplied && <p className="note note--caution">▲ Settings not applied · restart</p>}
+      {s.updateAvailable && <p className="note note--caution">▲ Patch image ready · restart</p>}
       {s.message && s.state !== "healthy" && <p className="note note--bad">{s.message}</p>}
       {s.initialized && (
         <div className="flex flex-wrap gap-2">

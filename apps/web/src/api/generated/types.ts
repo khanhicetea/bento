@@ -504,6 +504,11 @@ export interface Service {
    */
   settingsApplied: boolean;
   /**
+   * UpdateAvailable is true when this Bento ships a newer image of the
+   * service's version (a patch release); a restart moves the service onto it.
+   */
+  updateAvailable: boolean;
+  /**
    * Tunables lists the parameters this engine allows tuning.
    */
   tunables: ServiceTunable[];

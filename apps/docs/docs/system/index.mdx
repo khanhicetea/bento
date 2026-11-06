@@ -30,6 +30,8 @@ If Home is all green, everything is as you asked.
 Each MySQL and PostgreSQL service has a tile under **Data services** with two actions:
 
 - **Restart** stops the service cleanly and starts it again. Apps using it lose their connection until it is ready.
+  When an upgraded Bento ships a newer patch image of the service's version, the tile shows **▲ Patch image ready**
+  and the restart moves the service onto it (same version, same volume; `bento services` lists it as well).
 - **Tune** sets the main server parameters. Sizes take a `K`, `M`, or `G` unit; leave a field empty for the engine
   default. **Save & restart** replaces the service container on the same volume, so data is kept, but apps lose their
   connection for a few seconds.

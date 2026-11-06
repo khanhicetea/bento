@@ -71,7 +71,8 @@ Client (requires the running backend):
   app deploy SLUG                                     clones or resets to the branch, runs ~/deploy.sh, reloads
   app webhook SLUG [--enable | --rotate | --disable]  push-to-deploy URL, secret (shown once) and recent deliveries
   ops [--target ID] | op ID | op cancel ID
-  services | service add --engine mysql|postgres --version V
+  services | service add --engine mysql|postgres --version V | service restart NAME
+                                                      restart also applies a newer patch image of the version
   edge | edge set --json FILE
   tunnel | tunnel set-token (stdin) | tunnel disable
   hosts | host add --json FILE | host set --json FILE | host remove NAME
@@ -459,12 +460,21 @@ func (r *runner) run(args []string) error {
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tENGINE\tVERSION\tSTATE\tVOLUME")
+		fmt.Fprintln(tw, "NAME\tENGINE\tVERSION\tSTATE\tVOLUME\tUPDATE")
 		for _, s := range list.Services {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.Engine, s.Version, s.State, s.Volume)
+			update := "-"
+			if s.UpdateAvailable {
+				update = "patch image; restart to apply"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Engine, s.Version, s.State, s.Volume, update)
 		}
 		return tw.Flush()
 	case "service":
+		if len(args) == 3 && args[1] == "restart" {
+			// Also moves the service onto a newer patch image of its version.
+			_, err := c.Mutate(ctx, "POST", "/api/v1/services/"+url.PathEscape(args[2])+"/restart", nil, r.wait, r.out)
+			return err
+		}
 		fs, rest := sub("service add", args[min(2, len(args)):])
 		engine := fs.String("engine", "", "mysql or postgres")
 		ver := fs.String("version", "", "version")
@@ -472,7 +482,7 @@ func (r *runner) run(args []string) error {
 			return err
 		}
 		if len(args) < 2 || args[1] != "add" {
-			return errors.New("usage: bento service add --engine E --version V")
+			return errors.New("usage: bento service add --engine E --version V | bento service restart NAME")
 		}
 		_, err := c.Mutate(
 			ctx,

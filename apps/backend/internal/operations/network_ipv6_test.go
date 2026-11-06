@@ -9,6 +9,7 @@ import (
 
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/edge"
+	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
 func TestPlanNetworksRecordsIPv6(t *testing.T) {
@@ -87,5 +88,32 @@ func TestEdgeSpecMountsPendingCertificate(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(h.c.Layout.EdgePendingDir(), f)); err != nil {
 			t.Fatalf("prepareEdgeDirs did not create %s: %v", f, err)
 		}
+	}
+}
+
+// A data service created on an older patch image of its version moves onto
+// the catalog image when it is restarted, on the same volume.
+func TestServiceRestartAppliesCatalogPatchImage(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	created, op, err := h.c.CreateService(ctx, domain.EngineMySQL, "8.4", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.mustSucceed(op, nil)
+	svcName := created.Name
+	catalog, _ := domain.ServiceImage(domain.EngineMySQL, "8.4")
+	old := catalog + "-older"
+	if err := store.SetServiceImage(ctx, h.store.DB(), svcName, old); err != nil {
+		t.Fatal(err)
+	}
+	h.mustSucceed(h.c.RestartService(ctx, svcName, ""))
+	got, err := store.GetService(ctx, h.store.DB(), svcName)
+	if err != nil || got.Image != catalog {
+		t.Fatalf("restart left the service on %q (%v)", got.Image, err)
+	}
+	ins, err := h.fake.Inspect(ctx, h.c.Names.ServiceContainer(svcName))
+	if err != nil || ins == nil || ins.Config.Image != catalog {
+		t.Fatalf("service container not on the catalog image: %+v %v", ins, err)
 	}
 }

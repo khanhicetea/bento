@@ -9,9 +9,11 @@ description: Data services, bindings, and databases from the CLI.
 bento services
 bento service add --engine mysql --version 8.4        # MySQL 8.0 | 8.4 | 9.7
 bento service add --engine postgres --version 17      # PostgreSQL 14–18
+bento service restart mysql84                         # also applies a newer patch image of 8.4
 ```
 
-Services are never removed by Bento.
+Services are never removed by Bento. `bento services` shows `patch image; restart to apply` when an upgraded Bento ships
+a newer image of a service's version; the restart moves it there on the same volume (never to another version).
 
 ## Bindings
 
