@@ -33,8 +33,10 @@ None open.
 These come from `apps/backend/docs/evidence.md` and the audit:
 
 - External certificates, and GitLab/Bitbucket webhook deliveries (Gitea and the generic bearer trigger ran live on
-  2026-11-06; ACME staging and production issuance, HTTP/3, IPv6, a real Cloudflare Tunnel and GitHub deliveries on
-  2026-11-07).
+  2026-11-06; ACME staging and production issuance, HTTP/3, IPv6, a real Cloudflare Tunnel, GitHub deliveries, a
+  front proxy over Tailscale and an nginx reverse proxy as a CDN stand-in on 2026-11-07).
+- A real CDN (Cloudflare proxied DNS, BunnyCDN) in front of `httpProxies`; an HAProxy front proxy (`send-proxy-v2`);
+  WebSockets and long-lived streams through a front proxy.
 - SQLite restore. Relational restores of large databases (the swap is verified on small ones with MySQL 8.0/8.4/9.7
   and PostgreSQL 16/17), and a MySQL swap while the app holds a long transaction (`lock_wait_timeout` 60s).
 - Crash recovery mid-clone (`restic.recover` runs a database drop) on real Docker. Interrupted or tampered imports.

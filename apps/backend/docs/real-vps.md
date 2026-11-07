@@ -179,3 +179,6 @@ re-add the public key.
   a failed snapshot). The Cachet admin password and API token are in `/root/.config/bento-test/`.
 - **2026-11-07:** arm64 host `bento-arm` added: unit (race), integration and runtime suites, then the `final.sh` smoke
   run and a reboot, all on real arm64 hardware (`evidence.md`, "arm64 on real hardware").
+- **2026-11-07:** Both hosts joined a tailnet (ephemeral key from the user): `bento-test` became a public nginx front
+  (its Bento edge off) for the stack on `bento-arm`, in PROXY-protocol and CDN-style modes. Four fixes (`evidence.md`,
+  "Front proxy over Tailscale"). `bento-arm` keeps `tailscale set --snat-subnet-routes=false`.

@@ -1031,3 +1031,45 @@ Native arm64, no emulation: `uname -m` is `aarch64` and Docker reports `arm64`. 
 - **Reboot:** all five apps answered 200 at 21 s of uptime; certificates kept, no operations needed.
 
 No arm64-specific defects were found.
+
+## Front proxy over Tailscale, CDN-style HTTP proxies (2026-11-07; both VPSes, Tailscale 1.104.5)
+
+`bento-arm` (arm64) ran the Bento stack; `bento-test` (amd64) was the public front: its own Bento edge turned off,
+Debian's nginx with the stream module on 80/443, configured exactly as `ingress/front-proxy.mdx` shows, reaching the
+arm host over a tailnet (direct connection). Hosts `fp-*` and `l7*-*.104.64.207.10.nip.io` resolve to the front;
+visitors were the arm host's public IPv4/IPv6 (over the internet) and the front itself.
+
+Fixed (one commit each):
+
+- **Every front-proxied request failed behind Tailscale** (`9907763`). Docker forwards the PROXY ports to the edge
+  container and Tailscale masquerades forwarded traffic by default (`ts-postrouting`), so the edge saw the host's own
+  apps-bridge address (`10.200.0.128`), not the VPS's tailnet IP, and closed every connection (444; the front logged
+  `Connection reset by peer`, visitors got an empty reply). Its log showed only the visitor address. The edge log now
+  ends with `peer=`, and the guide adds `tailscale set --snat-subnet-routes=false` and troubleshooting. Verified both
+  ways: `peer=10.200.0.128` with SNAT, `peer=100.81.253.27` and 200 without.
+- **An edge reload dropped in-flight ACME challenges** (`81fbbe1`). Adding a second host while the first validated:
+  the same token got 200 from some workers and 301 from others (nginx-acme #26); once the module did not order again
+  and the host sat in the 1-hour backoff. A window the edge reloaded in now ends in a 1-minute retry, not counted.
+  Live: a host that cannot validate, with a reload in its window, went `waiting` for 1 minute with `failures: 0`, and
+  the next undisturbed window counted (`failures: 1`, 1 hour).
+- **No way to run behind a TLS-terminating CDN or reverse proxy** (`d0d7508`). Through an nginx `proxy_pass` front:
+  plain HTTP to the edge with the HTTPS redirect looped (`301` six times), and HTTPS to the edge served the front's
+  IP to the app. New edge setting `httpProxies`. Live, with the front appending `X-Forwarded-For`: both modes 200 with
+  the visitor's IPv4 or IPv6, `HTTPS=on`, port 443, one hop; a visitor's forged `X-Forwarded-For` ignored (last
+  address wins); an unlisted peer's `X-Forwarded-For`/`-Proto` ignored and its plain HTTP still redirected; a listed
+  peer's garbage `X-Forwarded-For` falls back to the peer; no `Alt-Svc` through the proxy.
+- **The edge served nothing after starting without its VPN address** (`0845af5`). `tailscale down` then an edge
+  restart: Docker failed to bind the tailnet IP, and the reconciler's start left the edge running with no published
+  ports, so direct visitors got nothing too, Bento said `healthy`, and it stayed that way after Tailscale came back
+  (3 minutes watched). Now the front ports are published only while the address exists, and a running edge missing
+  a port binding is recreated. Live: the broken edge was repaired 7 s after the backend started; with the VPN down
+  the edge dropped only the front ports (6 s, warning in Activity) and direct stayed 200, even across a `docker
+  restart`; with the VPN back the front path returned in 19 s.
+
+Verified through the front proxy (PROXY protocol): ACME HTTP-01 issued for front-only hostnames; HTTPS 200 with the
+visitor's real IPv4 and IPv6 (`REMOTE_ADDR`, `X-Forwarded-For`), `HTTPS=on`, `X-Forwarded-Port: 443`, no port in
+`Host`; HTTP gets one 301 to `https://host/` without `:8443`; forged `X-Forwarded-For`, `X-Real-IP`,
+`X-Forwarded-Proto`, `CF-Connecting-IP` ignored; a PROXY header sent by a visitor to the front: 400; an untrusted
+tailnet peer on the PROXY ports: closed, with or without a header; the trusted front without a header: refused; no
+`Alt-Svc` on this path; a push-to-deploy bearer trigger through it: 202 and deployed, wrong bearer 404; a reboot of
+the Bento host: direct, front and HTTP-proxy paths 200 by 25 s of uptime.
