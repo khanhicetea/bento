@@ -63,4 +63,5 @@ sessions, and queues. It is off by default; turn it on with the app's `valkey` s
   (queues, locks) are never evicted, and writes fail once only those remain.
 - Data is snapshotted to `~/.local/share/valkey/dump.rdb` in the app's home (at most an hour after a single change,
   sooner when busy), so it survives restarts, and [app backups](/backups/app-backups) include it. A restored app
-  starts from that snapshot.
+  starts from that snapshot. A snapshot that fails (for example, the disk is full) is logged and retried; writes keep
+  working, but changes since the last good snapshot are lost if the app restarts before one succeeds.
