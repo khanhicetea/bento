@@ -1,0 +1,68 @@
+---
+title: CDN or reverse proxy
+description: Put a CDN or another HTTP reverse proxy in front of the edge and keep visitor IPs and HTTPS.
+---
+
+Use this when something in front of Bento **ends TLS itself** and forwards HTTP requests to the edge: Cloudflare with
+proxied (orange-cloud) DNS, another CDN, a load balancer, or Nginx with `proxy_pass` on another server.
+
+```text
+visitor ──TLS──▶ CDN / proxy ──HTTP or HTTPS──▶ Bento edge :80/:443 ──▶ app
+```
+
+Without telling Bento about the proxy, the edge cannot believe the headers it adds, so:
+
+- every app sees the **proxy's** IP instead of the visitor's;
+- a proxy that talks plain HTTP to the edge (Cloudflare's "Flexible" mode) meets the host's HTTP → HTTPS redirect,
+  sends the visitor back to HTTPS on the proxy, and loops forever.
+
+If the server in front can forward raw TCP instead, a [front proxy](/ingress/front-proxy) is simpler: TLS and
+certificates stay on Bento.
+
+## Set it up
+
+In **Ingress → Edge → HTTP proxies**, list the proxy's addresses as IPs or CIDRs, comma separated. For Cloudflare,
+use its published ranges ([IPv4](https://www.cloudflare.com/ips-v4/), [IPv6](https://www.cloudflare.com/ips-v6/)).
+Save; the edge reloads.
+
+From the CLI, add `"httpProxies": ["173.245.48.0/20", "2400:cb00::/32"]` to the edge settings
+(see [CLI → Ingress](/cli/ingress)).
+
+The proxy must send:
+
+- `X-Forwarded-For`, **appending** the address it received the request from (Nginx: `$proxy_add_x_forwarded_for`;
+  CDNs do this by default). Bento takes the **last** address, the one the proxy itself added, so a visitor cannot
+  smuggle a fake one in front.
+- `X-Forwarded-Proto: https` for HTTPS visitors.
+- the visitor's `Host`.
+
+Prefer HTTPS from the proxy to the edge (Cloudflare "Full (strict)"): the edge keeps its ACME certificates, which the
+proxy can verify. Plain HTTP works too, but the hop between them is unencrypted.
+
+## What your apps see
+
+| Value | Through a listed proxy | From anyone else |
+| --- | --- | --- |
+| Visitor IP (`X-Forwarded-For`, PHP `REMOTE_ADDR`) | last `X-Forwarded-For` address | the connecting IP |
+| `X-Forwarded-Proto` / `HTTPS` | the proxy's `X-Forwarded-Proto` | the edge's own scheme |
+| `X-Forwarded-Port` | `443` / `80` | the edge's published port |
+| HTTP → HTTPS redirect | only when the proxy says `http` | when the request is plain HTTP |
+
+The edge never advertises HTTP/3 to visitors who came through a listed proxy: they reach the proxy, not the edge.
+
+## Security
+
+- Forwarding headers are believed only from a **listed** peer. Anyone else's `X-Forwarded-For`,
+  `X-Forwarded-Proto` or `X-Real-IP` is overwritten with the edge's own view.
+- A listed proxy can claim any visitor IP. List only proxies you control or trust, and only their addresses: never a
+  whole provider's range you do not use.
+- Bento refuses catch-all ranges (`0.0.0.0/0`, `::/0`) and ranges that overlap its own Docker networks.
+- If the origin should only be reached through the CDN, firewall ports 80 and 443 to the CDN's ranges.
+
+## Troubleshooting
+
+**Apps still see the proxy's IP.** The connecting address is not in the list. The edge log line ends with `peer=` and
+the address it saw (`docker logs bento-<stack>-edge`); add it.
+
+**Redirect loop.** The proxy talks plain HTTP to the edge and is not listed, or it does not send
+`X-Forwarded-Proto`.

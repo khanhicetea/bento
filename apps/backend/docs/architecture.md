@@ -410,9 +410,16 @@ visitors used the standard ports: `$bento_std_ports` drops the port suffix and f
 sent because UDP is not forwarded. Accept refuses catch-all prefixes and prefixes overlapping the stack networks; the
 render re-parses the list. With the feature off the rendered config is byte-identical to before, and the edge
 fingerprint ignores it (only enabling, bind or ports recreate the container; the trusted list only reloads). The
-access log line of an edge with a front proxy ends with `peer=$realip_remote_addr`, which names a
+access log line of an edge with a front proxy (or HTTP proxies) ends with `peer=$realip_remote_addr`, which names a
 NAT that hides the proxy (Tailscale masquerades traffic Docker forwards unless `--snat-subnet-routes=false`).
 
+**HTTP proxies** (`edge.httpProxies`, empty by default): CDNs or reverse proxies that end TLS and connect to the
+edge's own ports. A `geo` on `$realip_remote_addr` sets `$bento_from_http_proxy`; together with the tunnel it forms
+`$bento_forwarded`, which replaces `$bento_from_tunnel` in the `X-Forwarded-Proto`, port and suffix maps (so a proxy
+that talks plain HTTP is not redirected to HTTPS in a loop). The visitor is the last `X-Forwarded-For` address (the
+one the proxy appended, matched as hex digits, dots and colons only) through `$bento_client_addr`; `real_ip_header`
+stays the tunnel's `CF-Connecting-IP`. `Alt-Svc` is empty for these visitors. Up to 64 entries (Cloudflare publishes
+22 ranges), validated like the front proxy list; the list only reloads, and with it empty the config is unchanged.
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
