@@ -30,7 +30,10 @@ database with its engine; on the CLI add `--binding <id>` (from `bento app show`
 Bento downloads only that database's dump from the snapshot and checks the snapshot belongs to this app. It replays
 the dump into a temporary database first, as the app's own database user, then swaps it in for the live one. If the
 dump is damaged or contains a statement the app's user may not run, the restore fails and the live database is
-untouched. The app keeps running through the swap. MySQL cannot move views, stored procedures or events between
+untouched. The app keeps running through the swap. On PostgreSQL the swap ends the app's open database connections,
+so the app must reconnect on its next query, as connection pools normally do; an app that exits on a lost connection
+(for example a Node `pg` pool without an `error` handler) is restarted by Bento within seconds, and a request in
+between gets an error. MySQL cannot move views, stored procedures or events between
 databases, so a MySQL database that has them is rebuilt in place instead, with the app stopped for that step and
 started again after.
 
