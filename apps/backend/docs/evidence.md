@@ -1003,5 +1003,7 @@ fixtures on the test account. The stack kept its public edge, so each app had bo
 - **Boot order:** the e2e-php 500s after the reboot were requests that arrived before MySQL accepted connections
   (ready 16 s after the Docker daemon). Recorded as a decision in `BACKLOG.md`: Bento does not hold routes back at
   boot, so sites come back even when the backend does not.
+- **Final checks on `75fd4a9`, on the VPS:** web checks and `make ci` exit 0; real-Docker suite 17 integration and 28
+  runtime tests passed (runtime images rebuilt cold for the new Valkey config), 0 skipped.
 
 Not run: arm64 on arm64 hardware.
