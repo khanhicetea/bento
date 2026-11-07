@@ -41,7 +41,7 @@ A Bento upgrade that changes an image's inputs builds a new image and replaces a
 
 Apps keep serving while images build. A build is limited to a quarter of the host's memory (at least 1 GiB) and a low
 CPU share, so it takes longer on a busy host rather than slowing your apps. Bento doesn't start a build while the host
-has less than 768 MiB of memory and swap available: the build fails with `build-memory`, apps stay on their current
+has less than 1 GiB of memory and swap available: the build fails with `build-memory`, apps stay on their current
 build, and Bento retries later. On a small host, add swap or stop what you don't need.
 
 From the CLI:

@@ -160,6 +160,7 @@ func Serve(opts ServeOptions) error {
 		Layout:        layout,
 		HostIDs:       platform.FileHostIDs{},
 		Log:           log,
+		MemAvailable:  platform.HostMemAvailable,
 		UtilsAppsPort: appsPort(utilsAddrs),
 		Concurrency:   opts.OpConcurrency,
 	})

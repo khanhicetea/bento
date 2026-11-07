@@ -52,6 +52,9 @@ type Deps struct {
 	Layout  platform.Layout
 	HostIDs platform.HostIDs
 	Log     *slog.Logger
+	// MemAvailable reports the host memory a runtime image build may use
+	// (platform.HostMemAvailable); nil skips the free-memory check.
+	MemAvailable func() (int64, bool)
 	// Probe performs the direct HTTP readiness request from the backend.
 	Probe func(ctx context.Context, url string) (int, error)
 	// ReadyTimeout bounds readiness waits.
@@ -187,7 +190,7 @@ func NewController(d Deps) (*Controller, error) {
 	names := runtime.Names{StackID: stack.ID, StackName: stack.Name}
 	c := &Controller{
 		Deps: d, Stack: stack, Names: names,
-		Images:    &runtime.ImageManager{Engine: d.Engine, Layout: d.Layout, Names: names},
+		Images:    &runtime.ImageManager{Engine: d.Engine, Layout: d.Layout, Names: names, MemAvailable: d.MemAvailable},
 		wake:      make(chan struct{}, 1),
 		done:      make(chan struct{}),
 		listeners: map[chan string]struct{}{},

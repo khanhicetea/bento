@@ -141,17 +141,17 @@ const (
 var ErrBuildMemory = errors.New("not enough free memory to build safely")
 
 // BuildMemoryReserve is the available memory (free swap included) a build
-// needs before it starts. On the VPS the largest steps fit well inside the
-// 1 GiB cap: the Valkey compile peaked at 473 MiB and the Python toolchain
-// compile finished within it.
-const BuildMemoryReserve = 768 << 20
-
-// hostMemAvailable is replaced in tests.
-var hostMemAvailable = platform.HostMemAvailable
+// needs before it starts: room for a build at the cap's floor. The largest
+// steps measured on the VPSes peak below it (the toolchain compile at 781 MiB
+// on arm64, the Valkey compile at 473 MiB).
+const BuildMemoryReserve = MinBuildMemory
 
 // checkBuildMemory refuses a build when the host lacks BuildMemoryReserve.
-func checkBuildMemory() error {
-	if avail, ok := hostMemAvailable(); ok && avail < BuildMemoryReserve {
+func (m *ImageManager) checkBuildMemory() error {
+	if m.MemAvailable == nil {
+		return nil
+	}
+	if avail, ok := m.MemAvailable(); ok && avail < BuildMemoryReserve {
 		return fmt.Errorf("%w: %d MiB available, a build needs %d MiB", ErrBuildMemory, avail>>20, BuildMemoryReserve>>20)
 	}
 	return nil
@@ -176,6 +176,9 @@ type ImageManager struct {
 	Engine docker.Engine
 	Layout platform.Layout
 	Names  Names
+	// MemAvailable reports the memory a build may use (free swap included);
+	// nil skips the check (tests).
+	MemAvailable func() (int64, bool)
 
 	prune  sync.RWMutex // Hold holds it shared, Remove exclusively
 	mu     sync.Mutex   // guards tags and builds
@@ -254,7 +257,7 @@ func (m *ImageManager) Build(
 		}
 	}
 	defer func() { <-slots }()
-	if err := checkBuildMemory(); err != nil {
+	if err := m.checkBuildMemory(); err != nil {
 		return Build{}, err
 	}
 	tag := spec.BuildTag(at)

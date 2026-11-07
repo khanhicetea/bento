@@ -145,22 +145,20 @@ func TestBuildRecordsManifestAndBases(t *testing.T) {
 // A host without room for a build refuses it before anything runs: a build
 // that pushes a host without swap out of memory stops it from serving.
 func TestBuildRefusedWithoutFreeMemory(t *testing.T) {
-	prev := hostMemAvailable
-	t.Cleanup(func() { hostMemAvailable = prev })
 	fake := docker.NewFake()
 	m := &ImageManager{Engine: fake}
 	spec, err := PlanImage(phpKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hostMemAvailable = func() (int64, bool) { return BuildMemoryReserve - 1, true }
+	m.MemAvailable = func() (int64, bool) { return BuildMemoryReserve - 1, true }
 	if _, err := m.Build(t.Context(), spec, time.Now(), false, nil); !errors.Is(err, ErrBuildMemory) {
 		t.Fatalf("build on a full host: %v", err)
 	}
 	if len(fake.Builds) != 0 {
 		t.Fatal("a refused build reached the engine")
 	}
-	hostMemAvailable = func() (int64, bool) { return BuildMemoryReserve, true }
+	m.MemAvailable = func() (int64, bool) { return BuildMemoryReserve, true }
 	if _, err := m.Build(t.Context(), spec, time.Now(), false, nil); err != nil {
 		t.Fatalf("build with room: %v", err)
 	}

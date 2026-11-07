@@ -329,7 +329,7 @@ per key and inputs is **current**. `app_runtime_builds` records the build each a
 Builds run on the same host as the apps and databases they serve, and compile from source (Python, Valkey).
 `runtime.BuildLimits` caps every build step at a quarter of host memory (at least 1 GiB) without swap, and gives it a
 quarter of the default CPU weight (`CPUShares` 256), so the serving containers keep their share and a build that needs
-more fails alone. Before a build starts, `checkBuildMemory` requires `BuildMemoryReserve` (768 MiB) of `MemAvailable`
+more fails alone. Before a build starts, `checkBuildMemory` requires `BuildMemoryReserve` (1 GiB, room for a build at the cap's floor) of `MemAvailable`
 plus free swap and otherwise fails with `ErrBuildMemory` (operation code `build-memory`): apps keep their current
 build and the reconciler retries with backoff. Without these, two builds on a 2-vCPU, 3.7 GiB host that also ran eight
 data services took all its memory; with no swap it thrashed, every app was unreachable for 53 minutes, and the kernel
