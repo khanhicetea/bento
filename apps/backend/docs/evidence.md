@@ -980,7 +980,8 @@ fixtures on the test account. The stack kept its public edge, so each app had bo
 - **Reboot:** the tunnel came back `healthy` by itself and every tunnel host answered as before. e2e-php answered 500 for
   the first seconds: Docker restarts every container at once and MySQL accepted connections 16 s after the daemon
   started; it served 200 from then on. That is the app needing its database, not a Bento fault.
-- **Checks on `85d1f29`:** web checks and `make ci` on the VPS, exit 0.
+- **Checks on `85d1f29`:** web checks and `make ci` on the VPS, exit 0; real-Docker suite 17 integration and 28
+  runtime tests passed, 0 skipped.
 
 Observed, not changed: the app-local Valkey logs the generic `vm.overcommit_memory` warning on hosts with the default
 heuristic overcommit; its snapshots fork a process capped at a quarter of the app's memory.
