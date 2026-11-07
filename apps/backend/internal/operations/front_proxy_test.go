@@ -3,6 +3,7 @@ package operations
 import (
 	"encoding/json"
 	"errors"
+	"net/netip"
 	"slices"
 	"strconv"
 	"testing"
@@ -152,8 +153,21 @@ func TestEdgeFingerprintStableWithoutFrontProxy(t *testing.T) {
 	}
 }
 
+// stubHostAddrs makes addrs the only specific addresses this host has.
+func stubHostAddrs(t *testing.T, addrs ...string) {
+	t.Helper()
+	have := map[netip.Addr]bool{}
+	for _, a := range addrs {
+		have[netip.MustParseAddr(a)] = true
+	}
+	prev := hostHasAddr
+	hostHasAddr = func(a netip.Addr) bool { return a.IsUnspecified() || have[a] }
+	t.Cleanup(func() { hostHasAddr = prev })
+}
+
 func TestEdgeSpecPublishesFrontProxyPorts(t *testing.T) {
 	h := newHarness(t)
+	stubHostAddrs(t, "100.101.102.103")
 	s := frontSettings("100.64.0.1/32")
 	s.FrontProxy.Bind, s.FrontProxy.HTTPPort, s.FrontProxy.HTTPSPort = "100.101.102.103", 18080, 18443
 	spec, err := h.c.edgeSpec(s, NetworkSettings{EdgeIP: "10.0.0.2"})
@@ -233,5 +247,93 @@ func TestEdgeFingerprintIgnoresHTTPProxies(t *testing.T) {
 	s.HTTPProxies = []string{"173.245.48.0/20"}
 	if edgeFingerprint(s, ns) != before {
 		t.Fatal("HTTP proxies must not recreate the edge")
+	}
+}
+
+// A front proxy bound to a VPN address that is not up yet (a reboot, the VPN
+// restarting) must not keep the main listeners from starting: its ports are
+// left out until the address appears, which changes the fingerprint.
+func TestFrontProxyPortsWaitForTheirBindAddress(t *testing.T) {
+	h := newHarness(t)
+	ns := NetworkSettings{EdgeIP: "10.0.0.2"}
+	s := frontSettings("100.64.0.1/32")
+	s.FrontProxy.Bind = "100.101.102.103"
+	off := s
+	off.FrontProxy.Enabled = false
+	stubHostAddrs(t)
+	spec, err := h.c.edgeSpec(s, ns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.HostConfig.PortBindings) != 2 || edgeFingerprint(s, ns) != edgeFingerprint(off, ns) {
+		t.Fatalf("without its bind address the front proxy publishes nothing: %v", spec.HostConfig.PortBindings)
+	}
+	stubHostAddrs(t, "100.101.102.103")
+	spec, err = h.c.edgeSpec(s, ns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.HostConfig.PortBindings) != 4 || edgeFingerprint(s, ns) == edgeFingerprint(off, ns) {
+		t.Fatalf("with its bind address the front proxy ports are published: %v", spec.HostConfig.PortBindings)
+	}
+}
+
+func TestFrontProxyAddressAppearingRecreatesTheEdge(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	s := frontSettings("100.64.0.1/32")
+	s.FrontProxy.Bind = "100.101.102.103"
+	if err := store.PutSetting(ctx, h.store.DB(), edgeSettingKey, s); err != nil {
+		t.Fatal(err)
+	}
+	stubHostAddrs(t)
+	if got := submitEdgeApply(t, h); got.State != store.OpSucceeded {
+		t.Fatalf("edge apply without the VPN: %s %s", got.State, got.ErrorMessage)
+	}
+	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || drift {
+		t.Fatalf("drift while the address is missing: %v %v", drift, err)
+	}
+	stubHostAddrs(t, "100.101.102.103")
+	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || !drift {
+		t.Fatalf("the address appearing must be drift: %v %v", drift, err)
+	}
+	if got := submitEdgeApply(t, h); got.State != store.OpSucceeded {
+		t.Fatalf("edge apply with the VPN: %s %s", got.State, got.ErrorMessage)
+	}
+	ins, err := h.fake.Inspect(ctx, h.c.Names.EdgeContainer())
+	if err != nil || ins == nil {
+		t.Fatal(err)
+	}
+	if _, ok := ins.HostConfig.PortBindings[network.MustParsePort("8443/tcp")]; !ok {
+		t.Fatal("the recreated edge must publish the front proxy ports")
+	}
+}
+
+// Docker can start an edge whose port setup failed with no ports at all; it
+// serves nothing, so it is drift and is recreated.
+func TestEdgeRunningWithoutItsPortsIsRecreated(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	enableEdge(t, h)
+	if got := submitEdgeApply(t, h); got.State != store.OpSucceeded {
+		t.Fatalf("edge apply: %s %s", got.State, got.ErrorMessage)
+	}
+	for _, c := range h.fake.Containers {
+		if c.Name == h.c.Names.EdgeContainer() {
+			c.NoPorts = true
+		}
+	}
+	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || !drift {
+		t.Fatalf("an edge without its published ports must be drift: %v %v", drift, err)
+	}
+	created := countCalls(h, "Create")
+	if got := submitEdgeApply(t, h); got.State != store.OpSucceeded {
+		t.Fatalf("edge apply: %s %s", got.State, got.ErrorMessage)
+	}
+	if countCalls(h, "Create") <= created {
+		t.Fatal("the edge must be recreated")
+	}
+	if drift, err := h.c.EdgeConfigDrift(ctx); err != nil || drift {
+		t.Fatalf("drift after recreate: %v %v", drift, err)
 	}
 }

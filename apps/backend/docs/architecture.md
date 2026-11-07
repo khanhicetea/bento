@@ -410,6 +410,10 @@ visitors used the standard ports: `$bento_std_ports` drops the port suffix and f
 sent because UDP is not forwarded. Accept refuses catch-all prefixes and prefixes overlapping the stack networks; the
 render re-parses the list. With the feature off the rendered config is byte-identical to before, and the edge
 fingerprint ignores it (only enabling, bind or ports recreate the container; the trusted list only reloads). The
+front ports are published, and counted in the fingerprint, only while their bind address exists on the host
+(`frontPublished`): a tailnet IP that is not up must not keep the main listeners from starting, and its appearing
+recreates the edge. Docker can also leave an edge running with no published ports when its port setup failed;
+`edgePortsMissing` makes that drift, and the apply recreates it. The
 access log line of an edge with a front proxy (or HTTP proxies) ends with `peer=$realip_remote_addr`, which names a
 NAT that hides the proxy (Tailscale masquerades traffic Docker forwards unless `--snat-subnet-routes=false`).
 

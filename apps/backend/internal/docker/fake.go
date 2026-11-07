@@ -60,6 +60,9 @@ type FakeContainer struct {
 	// reports for a stopped container (e.g. "created").
 	Created time.Time
 	State   string
+	// NoPorts makes a running container report no published ports, as Docker
+	// does when it starts one whose port setup failed.
+	NoPorts bool
 }
 
 func NewFake() *Fake {
@@ -207,6 +210,12 @@ func (f *Fake) Inspect(_ context.Context, nameOrID string) (*container.InspectRe
 	if c.Spec.Networking != nil {
 		for name := range c.Spec.Networking.EndpointsConfig {
 			res.NetworkSettings.Networks[name] = &network.EndpointSettings{IPAddress: c.IP}
+		}
+	}
+	if c.Running && !c.NoPorts && c.Spec.HostConfig != nil {
+		res.NetworkSettings.Ports = network.PortMap{}
+		for p, b := range c.Spec.HostConfig.PortBindings {
+			res.NetworkSettings.Ports[p] = slices.Clone(b)
 		}
 	}
 	return res, nil

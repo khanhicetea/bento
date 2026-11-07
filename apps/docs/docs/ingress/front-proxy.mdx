@@ -154,7 +154,8 @@ visitor is talking to the edge's PROXY ports directly.
 ## Limits
 
 - HTTP/3 is not offered to visitors on this path, because the VPS forwards TCP only. Browsers use HTTP/2.
-- If the bind address is a tailnet IP, the edge cannot start until that interface is up after a reboot. Bento
-  retries until it starts.
+- If the bind address is a tailnet IP that is not up yet (after a reboot, or while Tailscale is down), the edge runs
+  without the front proxy ports, so direct and LAN visitors are still served, and Activity shows a warning. Once the
+  address appears, Bento restarts the edge with them, within about a minute.
 - Every request makes an extra trip through the VPS. Pick a VPS region close to the server and check that
   `tailscale status` shows a direct connection.

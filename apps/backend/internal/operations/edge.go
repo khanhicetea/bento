@@ -85,9 +85,41 @@ const (
 	edgePIDs   = 1024
 )
 
+// hostHasAddr is platform.HostHasAddr; tests replace it.
+var hostHasAddr = platform.HostHasAddr
+
+// frontPublished reports whether the edge publishes the front proxy ports.
+// Their bind address is often a VPN address (a tailnet IP) that exists only
+// once the VPN is up: until then they are left out, so the main listeners
+// still start, and the address appearing changes the fingerprint, which
+// recreates the edge with them.
+func frontPublished(s domain.EdgeSettings) bool {
+	if !s.FrontProxy.Enabled {
+		return false
+	}
+	bind, err := parseEdgeBind(s.FrontProxy.Bind)
+	return err == nil && hostHasAddr(bind)
+}
+
+// edgePortsMissing reports whether a running edge lacks a host port binding
+// it was created with. Docker can start a container whose port setup failed
+// (a bind address that vanished) with no ports at all, which serves nothing
+// while looking healthy.
+func edgePortsMissing(ins *container.InspectResponse) bool {
+	if ins == nil || ins.State == nil || !ins.State.Running || ins.HostConfig == nil {
+		return false
+	}
+	for p, b := range ins.HostConfig.PortBindings {
+		if len(b) > 0 && (ins.NetworkSettings == nil || len(ins.NetworkSettings.Ports[p]) == 0) {
+			return true
+		}
+	}
+	return false
+}
+
 func edgeFingerprint(s domain.EdgeSettings, ns NetworkSettings) string {
 	var front *frontListeners
-	if fp := s.FrontProxy; fp.Enabled {
+	if fp := s.FrontProxy; frontPublished(s) {
 		front = &frontListeners{fp.Bind, fp.HTTPPort, fp.HTTPSPort}
 	}
 	b, _ := json.Marshal(struct {
@@ -130,7 +162,7 @@ func (c *Controller) edgeSpec(s domain.EdgeSettings, ns NetworkSettings) (docker
 		ports[network.MustParsePort("443/udp")] = publish(s.HTTPSPort)
 		exposed[network.MustParsePort("443/udp")] = struct{}{}
 	}
-	if fp := s.FrontProxy; fp.Enabled {
+	if fp := s.FrontProxy; frontPublished(s) {
 		fbind, err := parseEdgeBind(fp.Bind)
 		if err != nil {
 			return docker.ContainerSpec{}, invalidEdgeBind(err)
@@ -530,7 +562,8 @@ func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if ins != nil && ins.Config != nil && ins.Config.Labels[runtime.LabelGeneration] != edgeFingerprint(s, ns) {
+	if ins != nil && ins.Config != nil &&
+		(ins.Config.Labels[runtime.LabelGeneration] != edgeFingerprint(s, ns) || edgePortsMissing(ins)) {
 		return true, nil
 	}
 	// A warming app renders as unavailable until its operation sees it
@@ -626,6 +659,10 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 	if err != nil {
 		return err
 	}
+	if s.FrontProxy.Enabled && !frontPublished(s) {
+		r.Warn(ctx, "front proxy bind address %s is not on this host (is the VPN up?); the edge runs without the "+
+			"front proxy ports and adds them once the address appears", s.FrontProxy.Bind)
+	}
 	gen := spec.Config.Labels[runtime.LabelGeneration]
 	recreate := false
 	if id != "" {
@@ -634,6 +671,10 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 			return err
 		}
 		recreate = ins == nil || ins.Config == nil || ins.Config.Labels[runtime.LabelGeneration] != gen
+		if !recreate && edgePortsMissing(ins) {
+			r.Warn(ctx, "the edge is running without its published ports; recreating it")
+			recreate = true
+		}
 	}
 	gens := c.edgeGenerations()
 	changed := !gens.Same(files)

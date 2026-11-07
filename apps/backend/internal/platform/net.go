@@ -27,6 +27,26 @@ func HostAddrIn(prefix netip.Prefix) string {
 	return ""
 }
 
+// HostHasAddr reports whether an interface of this host has address a; the
+// unspecified address (all interfaces) always counts.
+func HostHasAddr(a netip.Addr) bool {
+	if a.IsUnspecified() {
+		return true
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, x := range addrs {
+		if n, ok := x.(*net.IPNet); ok {
+			if ip, ok := netip.AddrFromSlice(n.IP); ok && ip.Unmap() == a.Unmap() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // HostIPv6 reports whether the host kernel has IPv6 enabled, which Docker
 // needs for a dual-stack bridge. A host booted with ipv6.disable=1 has no
 // /proc/sys/net/ipv6 at all.
