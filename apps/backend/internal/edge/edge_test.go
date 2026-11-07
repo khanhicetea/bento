@@ -50,7 +50,7 @@ func TestRenderOnlyManagedPublishedRoutes(t *testing.T) {
 		t.Fatalf("expected main + 1 upstream + 1 site, got %d", len(files))
 	}
 	up := string(files["upstreams/app-pub.conf"])
-	for _, want := range []string{"upstream bento_app_pub {", "server app-a1:3000 resolve;", "keepalive 16;"} {
+	for _, want := range []string{"upstream bento_app_pub {", "resolver 127.0.0.11 valid=1s ipv6=off;", "server app-a1:3000 resolve max_fails=0;", "keepalive 16;"} {
 		if !strings.Contains(up, want) {
 			t.Errorf("upstream missing %q", want)
 		}

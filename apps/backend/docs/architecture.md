@@ -386,9 +386,16 @@ The edge (`edge` package + `operations/edge.go`):
 1. `edge.Render` builds the full file set from current intent: one `sites/host-<name>.conf` per enabled host whose
    target is routable (an app host only while the app is `managed` + `published`), and one
    `upstreams/app-<slug>.conf` per app that a served host targets, shared by all of the app's hosts. TLS is per host,
-   so each site has its own server blocks. Redirect hosts only `return 301`. App upstreams use `set $bento_upstream http://app-<id>:<port>; proxy_pass $bento_upstream;` with
-   `resolver 127.0.0.11 valid=10s`, so a replaced container is re-resolved without a reload. Forwarding headers are
-   overwritten, not appended.
+   so each site has its own server blocks. Redirect hosts only `return 301`. An app upstream is one
+   `server app-<id>:<port> resolve max_fails=0;` (keepalive 16) with its own `resolver 127.0.0.11 valid=1s`, so a
+   replaced container is re-resolved without a reload. Both settings keep a replacement's outage to the time the app
+   is really down. The alias does not resolve between the removal of the old instance and the creation of the new
+   one, and nginx keeps that answer for the resolver's valid time: at the http-level 10 s (still used by upstream
+   hosts) a replaced app stayed on 502 for up to 10 s after it was serving. And nginx skips failure accounting for a
+   lone server only when it is not resolved at run time, so the refused connections of a stopping instance would mark
+   the app down for `fail_timeout` (10 s) and keep answering `502 no live upstreams`. A single-URL upstream host also
+   gets `max_fails=0`; several URLs keep the defaults so a failing one is skipped. Forwarding headers are overwritten,
+   not appended.
 2. If the output differs from `edge/conf/live`, it is staged in `edge/conf/candidate-*`, validated with `nginx -t`
    inside the running edge (or a throwaway validator container), and swapped with `live` using
    `renameat2(RENAME_EXCHANGE)`; the old generation is kept as `previous`.

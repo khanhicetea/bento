@@ -5,11 +5,13 @@
 {{- if .ProxyUpstreams}}
 # Names are resolved at run time through the http-level resolver (resolve):
 # a name that does not resolve yet gives this host 502s instead of failing
-# the whole edge config, and changed addresses are picked up.
+# the whole edge config, and changed addresses are picked up. A single URL is
+# never marked unavailable (max_fails=0, see edge-upstream.conf): there is no
+# other server to send its visitors to.
 upstream {{.UpstreamName}} {
   zone {{.UpstreamName}} 64k;
 {{- range .ProxyUpstreams}}
-  server {{.}} resolve;
+  server {{.}} resolve{{if eq (len $.ProxyUpstreams) 1}} max_fails=0{{end}};
 {{- end}}
   keepalive 32;
 }

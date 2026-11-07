@@ -20,8 +20,8 @@ events {
 }
 
 http {
-  # Docker's embedded DNS. Short validity so replaced app containers are
-  # re-resolved; app upstreams use variables to force runtime resolution.
+  # Docker's embedded DNS for upstream hosts named by DNS (resolve). App
+  # upstreams set their own shorter validity (edge-upstream.conf).
   resolver 127.0.0.11 valid=10s ipv6=off;
   resolver_timeout 5s;
 {{- if .ACME}}

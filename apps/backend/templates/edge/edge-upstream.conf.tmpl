@@ -1,8 +1,17 @@
 # The alias is re-resolved through Docker DNS (resolve), so a replaced app
 # container is picked up while idle connections are still reused.
+# max_fails=0: nginx exempts a single server from failure accounting only when
+# it is not resolved at run time, so without it the refused connections of a
+# stopping instance would mark the app down for fail_timeout (10s) and keep
+# answering 502 after the new instance is serving.
+# The alias does not resolve between the removal of the old instance and the
+# creation of the new one, and nginx keeps that answer for the resolver's
+# valid time: 1s here (Docker's embedded DNS is local) instead of the
+# http-level 10s, so a replaced app serves within a second of listening.
 upstream {{.Name}} {
   zone {{.Name}} 64k;
-  server {{.Server}} resolve;
+  resolver 127.0.0.11 valid=1s ipv6=off;
+  server {{.Server}} resolve max_fails=0;
   keepalive 16;
   # Below the app-local nginx's 30s keepalive_timeout so the edge never reuses
   # a connection the app is closing.

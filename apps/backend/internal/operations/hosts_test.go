@@ -76,7 +76,7 @@ func TestHostLifecycleRendersAndRemoves(t *testing.T) {
 		Upstreams: []string{"http://10.0.0.9:8080"}, Enabled: true}, "")
 	h.mustSucceed(op, err)
 	site, _ := os.ReadFile(filepath.Join(h.c.Layout.EdgeConfDir(), "live", "sites", "host-shop.example.com.conf"))
-	if !strings.Contains(string(site), "server 10.0.0.9:8080 resolve;") {
+	if !strings.Contains(string(site), "server 10.0.0.9:8080 resolve max_fails=0;") {
 		t.Fatalf("host not re-pointed:\n%s", site)
 	}
 	if got, _ := store.GetApp(ctx, h.store.DB(), app.ID); len(got.Hosts) != 0 {
