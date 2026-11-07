@@ -2,8 +2,10 @@
 # Final smoke on a fresh stack: install, public edge + ACME staging, five apps from Gitea, HTTPS/IPv6, webhook.
 set -uo pipefail
 export BENTO_STACK_ROOT=/srv/bento/prod
-D=104.64.207.10.nip.io
-V6=2600:3c15::2000:86ff:fe39:93f1
+# The host's public addresses (both test hosts have them on their interface); nip.io names resolve to IPv4.
+IP4=$(ip -4 route get 1.1.1.1 | grep -o 'src [^ ]*' | cut -d' ' -f2)
+V6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null | grep -o 'src [^ ]*' | cut -d' ' -f2)
+D=$IP4.nip.io
 bash /root/reset.sh
 bash /root/install.sh 2>&1 | tail -3
 cat > /root/edge.json <<'J'

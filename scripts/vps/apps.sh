@@ -2,7 +2,10 @@
 # Create the e2e fixture apps on the VPS stack (section 3 of e2e-live.md, with nip.io hosts and ACME).
 set -uo pipefail
 export BENTO_STACK_ROOT=/srv/bento/prod
-D=104.64.207.10.nip.io
+# The host's public addresses (both test hosts have them on their interface); nip.io names resolve to IPv4.
+IP4=$(ip -4 route get 1.1.1.1 | grep -o 'src [^ ]*' | cut -d' ' -f2)
+V6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null | grep -o 'src [^ ]*' | cut -d' ' -f2)
+D=$IP4.nip.io
 T=$(cat /root/.config/bento-test/gitea-token)
 R='{"tls":"acme","redirectHttps":true,"accessLog":true}'
 mk() { # slug runtime-json bindings-json [extra]
