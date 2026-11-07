@@ -29,6 +29,16 @@ const (
 	// ACMEFirstBackoff doubles per consecutive failure up to ACMEMaxBackoff.
 	ACMEFirstBackoff = time.Hour
 	ACMEMaxBackoff   = 24 * time.Hour
+	// ACMEReloadRetry is the short hold that ends a window the edge reloaded
+	// in: the module keeps in-flight challenges per configuration cycle
+	// (nginx-acme #26), so a reload can fail a validation that would have
+	// passed, and the module does not always order again before the window
+	// closes. The hold and its release are reloads of their own, so the next
+	// window starts with a fresh order. At most ACMEMaxReloadRetries windows
+	// per host (until it is issued or saved), so a host that cannot validate
+	// still reaches the backoff.
+	ACMEReloadRetry      = time.Minute
+	ACMEMaxReloadRetries = 2
 )
 
 // ACMEHostState is the persisted issuance state of one ACME host that has no
@@ -39,6 +49,10 @@ type ACMEHostState struct {
 	AttemptFrom time.Time `json:"attemptFrom,omitzero"`
 	Failures    int       `json:"failures,omitempty"`
 	RetryAt     time.Time `json:"retryAt,omitzero"`
+	// Reloaded is set when the edge reloaded during the current window
+	// (MarkACMEReloaded); ReloadRetries counts the windows forgiven for it.
+	Reloaded      bool `json:"reloaded,omitempty"`
+	ReloadRetries int  `json:"reloadRetries,omitempty"`
 	// HostUpdatedAt is the host's UpdatedAt when the state was recorded; a
 	// later save of the host (an operator retry) starts over.
 	HostUpdatedAt time.Time `json:"hostUpdatedAt"`
@@ -50,11 +64,14 @@ type ACMEHost struct {
 	UpdatedAt time.Time
 }
 
-// ACMEFailure reports a window that closed without a certificate.
+// ACMEFailure reports a window that closed without a certificate. Reloaded
+// marks a window the edge reloaded in: it is retried after ACMEReloadRetry
+// and not counted in Failures.
 type ACMEFailure struct {
 	Host     string
 	Failures int
 	RetryAt  time.Time
+	Reloaded bool
 }
 
 // PlanACME decides which ACME hosts are held (served with the boot
@@ -80,8 +97,16 @@ func PlanACME(
 		switch {
 		case !st.AttemptFrom.IsZero() && now.Sub(st.AttemptFrom) < ACMEAttemptWindow:
 			// Inside the attempt window.
+		case !st.AttemptFrom.IsZero() && st.Reloaded && st.ReloadRetries < ACMEMaxReloadRetries:
+			st.ReloadRetries++
+			st.Reloaded = false
+			st.AttemptFrom = time.Time{}
+			st.RetryAt = now.Add(ACMEReloadRetry)
+			failed = append(failed, ACMEFailure{Host: h.Name, Failures: st.Failures, RetryAt: st.RetryAt, Reloaded: true})
+			hold[h.Name] = true
 		case !st.AttemptFrom.IsZero():
 			st.Failures++
+			st.Reloaded = false
 			st.AttemptFrom = time.Time{}
 			st.RetryAt = now.Add(ACMEBackoff(st.Failures))
 			failed = append(failed, ACMEFailure{Host: h.Name, Failures: st.Failures, RetryAt: st.RetryAt})
@@ -94,6 +119,19 @@ func PlanACME(
 		next[h.Name] = st
 	}
 	return hold, next, failed
+}
+
+// MarkACMEReloaded records that the edge reloaded (or restarted) at now, the
+// time the state was planned: every window opened before it may have lost an
+// in-flight challenge. A window opened by this render is not marked; its
+// reload is what starts the order.
+func MarkACMEReloaded(state map[string]ACMEHostState, now time.Time) {
+	for name, st := range state {
+		if !st.AttemptFrom.IsZero() && st.AttemptFrom.Before(now) && !st.Reloaded {
+			st.Reloaded = true
+			state[name] = st
+		}
+	}
 }
 
 // ACMEBackoff is the wait after the n-th consecutive failed window.
@@ -109,7 +147,7 @@ func ACMEBackoff(n int) time.Duration {
 func SameACMEState(a, b map[string]ACMEHostState) bool {
 	return maps.EqualFunc(a, b, func(x, y ACMEHostState) bool {
 		return x.AttemptFrom.Equal(y.AttemptFrom) && x.Failures == y.Failures && x.RetryAt.Equal(y.RetryAt) &&
-			x.HostUpdatedAt.Equal(y.HostUpdatedAt)
+			x.Reloaded == y.Reloaded && x.ReloadRetries == y.ReloadRetries && x.HostUpdatedAt.Equal(y.HostUpdatedAt)
 	})
 }
 

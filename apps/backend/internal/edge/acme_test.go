@@ -70,6 +70,60 @@ func TestPlanACMEBacksOffAcrossRenders(t *testing.T) {
 	}
 }
 
+func TestPlanACMERetriesAWindowTheEdgeReloadedIn(t *testing.T) {
+	t0 := time.Date(2026, 11, 7, 4, 12, 0, 0, time.UTC)
+	hosts := []ACMEHost{{Name: "a.example.com", UpdatedAt: t0.Add(-time.Hour)}}
+	_, st, _ := PlanACME(t0, hosts, nil, nil)
+	// The reload that opens the window starts the order: not a disturbance.
+	MarkACMEReloaded(st, t0)
+	if st["a.example.com"].Reloaded {
+		t.Fatal("the window's own reload must not mark it")
+	}
+	// Another host's change reloads the edge during the window.
+	MarkACMEReloaded(st, t0.Add(5*time.Second))
+	if !st["a.example.com"].Reloaded {
+		t.Fatal("a reload inside the window must mark it")
+	}
+	// The window closes without a certificate: a short hold, no failure.
+	hold, st, failed := PlanACME(t0.Add(ACMEAttemptWindow), hosts, nil, st)
+	a := st["a.example.com"]
+	if !hold["a.example.com"] || len(failed) != 1 || !failed[0].Reloaded || a.Failures != 0 ||
+		a.ReloadRetries != 1 || a.Reloaded || !a.RetryAt.Equal(t0.Add(ACMEAttemptWindow+ACMEReloadRetry)) {
+		t.Fatalf("reloaded window: hold=%v failed=%+v st=%+v", hold, failed, a)
+	}
+	// The hold ends: a new window; without a reload in it, a failure counts.
+	retry := a.RetryAt
+	hold, st, _ = PlanACME(retry, hosts, nil, st)
+	if hold["a.example.com"] || !st["a.example.com"].AttemptFrom.Equal(retry) {
+		t.Fatal("a new window opens after the short hold")
+	}
+	_, st, failed = PlanACME(retry.Add(ACMEAttemptWindow), hosts, nil, st)
+	if failed[0].Reloaded || failed[0].Failures != 1 ||
+		!failed[0].RetryAt.Equal(retry.Add(ACMEAttemptWindow+ACMEFirstBackoff)) {
+		t.Fatalf("an undisturbed window must count: %+v", failed)
+	}
+	// Reloads forgive at most ACMEMaxReloadRetries windows per host.
+	now := st["a.example.com"].RetryAt
+	for i := 0; ; i++ {
+		_, st, _ = PlanACME(now, hosts, nil, st)
+		MarkACMEReloaded(st, now.Add(time.Second))
+		now = now.Add(ACMEAttemptWindow)
+		_, st, failed = PlanACME(now, hosts, nil, st)
+		if !failed[0].Reloaded {
+			if i != ACMEMaxReloadRetries-1 || failed[0].Failures != 2 {
+				t.Fatalf("after %d forgiven windows: %+v", i, failed)
+			}
+			break
+		}
+		now = failed[0].RetryAt
+	}
+	// A held host (no open window) is not marked.
+	MarkACMEReloaded(st, now.Add(time.Minute))
+	if st["a.example.com"].Reloaded {
+		t.Fatal("a reload while backing off must not mark the host")
+	}
+}
+
 func TestACMEBackoffDoublesToADay(t *testing.T) {
 	want := []time.Duration{time.Hour, 2 * time.Hour, 4 * time.Hour, 8 * time.Hour, 16 * time.Hour, 24 * time.Hour, 24 * time.Hour}
 	for i, w := range want {

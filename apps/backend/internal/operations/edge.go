@@ -368,6 +368,7 @@ const acmeSettingKey = "acme"
 // acmePlan is one render's ACME decision: the state to persist once the
 // render is live, and the hosts whose attempt window just closed.
 type acmePlan struct {
+	now        time.Time
 	hosts      []edge.ACMEHost
 	prev, next map[string]edge.ACMEHostState
 	failed     []edge.ACMEFailure
@@ -424,11 +425,11 @@ func (c *Controller) renderEdge(
 		TunnelIP:      ns.TunnelIP,
 		NoIPv6:        !platform.HostIPv6(),
 	}
-	plan.hosts = edge.ACMEHosts(in)
+	plan.now, plan.hosts = c.Now(), edge.ACMEHosts(in)
 	if plan.prev, err = c.acmeState(ctx); err != nil {
 		return nil, plan, err
 	}
-	in.ACMEHold, plan.next, plan.failed = edge.PlanACME(c.Now(), plan.hosts,
+	in.ACMEHold, plan.next, plan.failed = edge.PlanACME(plan.now, plan.hosts,
 		edge.IssuedCertificates(c.acmeStateDir(s)), plan.prev)
 	files, err := edge.Render(in)
 	return files, plan, err
@@ -438,6 +439,11 @@ func (c *Controller) renderEdge(
 // reports hosts that just failed or cannot validate at all.
 func (c *Controller) persistACME(ctx context.Context, r *Run, s domain.EdgeSettings, plan acmePlan) error {
 	for _, f := range plan.failed {
+		if f.Reloaded {
+			r.Info(ctx, "ACME: no certificate for %s yet, and the edge reloaded during its validation (which can drop "+
+				"the challenge); ordering again at %s", f.Host, platform.FormatTime(f.RetryAt))
+			continue
+		}
 		r.Warn(ctx, "ACME: no certificate for %s within %s (attempt %d); serving the boot certificate and retrying "+
 			"at %s. Check that its DNS points here and port 80 is reachable from the internet, or save the host to "+
 			"retry now.", f.Host, edge.ACMEAttemptWindow, f.Failures, platform.FormatTime(f.RetryAt))
@@ -594,8 +600,13 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 	}
 	// The ACME state describes this render; it is recorded only once the
 	// render is live, so a failed apply leaves the previous windows intact.
+	// A reload or restart of the edge may drop in-flight ACME challenges.
+	var loaded bool
 	defer func() {
 		if err == nil {
+			if loaded {
+				edge.MarkACMEReloaded(plan.next, plan.now)
+			}
 			err = c.persistACME(ctx, r, s, plan)
 		}
 	}()
@@ -674,6 +685,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 			return err
 		}
 		c.markEdgeLoaded(ctx, r, files)
+		loaded = true
 		return nil
 	}
 	if id == "" {
@@ -686,6 +698,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 		}
 		r.Info(ctx, "edge started")
 		c.markEdgeLoaded(ctx, r, files)
+		loaded = true
 		return nil
 	}
 	if !running {
@@ -693,6 +706,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 			return err
 		}
 		c.markEdgeLoaded(ctx, r, files)
+		loaded = true
 		return nil
 	}
 	// Reload when the generation changed, and also when an earlier reload of
@@ -708,6 +722,7 @@ func (c *Controller) applyEdge(ctx context.Context, r *Run) (err error) {
 		}
 		r.Info(ctx, "edge reloaded")
 		c.markEdgeLoaded(ctx, r, files)
+		loaded = true
 	}
 	return nil
 }
