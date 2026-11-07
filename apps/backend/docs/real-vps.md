@@ -81,6 +81,8 @@ VPS (`scp scripts/vps/*.sh bento-test:/root/`).
 | `push.sh REPO BRANCH SED FILE` | VPS | edit one file in a Gitea repo and push (webhook tests) |
 | `lara.sh` | VPS | the Laravel fixture of `e2e-live.md` section 8, pushed to Gitea |
 | `final.sh` | VPS | the smoke run: reset, install, edge, apps, certificates, HTTPS on IPv4/IPv6, a Gitea push-to-deploy |
+| `dbmatrix.sh [ENGINE:VERSION...]` | VPS | per database version: service, a fixture app (`APP=php\|legacy\|node\|py`), add-db, backup and restore-db, the database browser (`dbadmin.py`), service restart, remove and prune |
+| `dbtune.sh` | VPS | every MySQL/PostgreSQL service: apply non-default settings, check the server reports them, reset |
 
 ## 1. Bootstrap the host
 
@@ -182,3 +184,5 @@ re-add the public key.
 - **2026-11-07:** Both hosts joined a tailnet (ephemeral key from the user): `bento-test` became a public nginx front
   (its Bento edge off) for the stack on `bento-arm`, in PROXY-protocol and CDN-style modes. Four fixes (`evidence.md`,
   "Front proxy over Tailscale"). `bento-arm` keeps `tailscale set --snat-subnet-routes=false`.
+- **2026-11-07:** Every supported MySQL (8.0, 8.4, 9.7) and PostgreSQL (14–18) version on both hosts with
+  `dbmatrix.sh` and `dbtune.sh` (`evidence.md`, "Database versions"). The stacks keep all eight services.

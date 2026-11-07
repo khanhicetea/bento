@@ -1076,3 +1076,25 @@ the Bento host: direct, front and HTTP-proxy paths 200 by 25 s of uptime.
 
 Final checks on `0845af5`: web checks and `make ci` on the amd64 VPS, `go vet` and `go test -race ./...` on the arm64
 host, all exit 0; the real-Docker suite passed on both, 17 integration and 28 runtime tests each, 0 skipped.
+
+## Database versions (2026-11-07; both VPSes: amd64 and arm64, `b7d1ffa`)
+
+Every supported version, MySQL 8.0, 8.4, 9.7 and PostgreSQL 14, 15, 16, 17, 18, on both hosts, with
+`scripts/vps/dbmatrix.sh` and `dbtune.sh`. Per version: `service add` and healthy; a fixture app bound to it from the
+host's Gitea (PHP 8.4 with Valkey on MySQL, Node 22 `pg` on PostgreSQL), deployed, started, published, answering with
+the server's version and writing a row per request; `app add-db` (a second database with its grants); a restic backup
+to the S3 endpoint, ten more writes, `restore-db` (swap) back to the snapshot's rows; the database browser (UI session,
+single-use ticket on the utils listener, Adminer listing the app's table and running `SELECT version()`); `service
+restart` with the app reconnecting; `app remove` and `retired prune` (drops the databases and user). Older clients
+against the newest and oldest servers: PHP 7.4 (`mysqli`/PDO) on MySQL 8.0 and 9.7, Python psycopg 3.2 on PostgreSQL
+14 and 18. 24 runs, all passed, on both architectures: servers 8.0.46, 8.4.13, 9.7.4, 14.24, 15.19, 16.15, 17.11 and
+18.6. Tuning: each service took five non-default parameters through `PUT /services/{name}/settings`, restarted
+healthy, the server reported them, and a reset restored the defaults.
+
+Found:
+
+- **The docs said the app keeps running through a PostgreSQL restore** (`e68760e`). The swap terminates the app's
+  sessions on that database; the Node fixture's `pg.Pool` has no `error` handler, so it exited, Bento restarted it
+  within about 2 s, and one request got 502. Every PostgreSQL version, both hosts. The restore guide now says so.
+- **MySQL's buffer pool rounding was invisible** (`b7d1ffa`). `innodb_buffer_pool_size=192M` ran as 256M on every
+  MySQL version (128M chunks, one instance); 384M applied exactly. The setting's help and the System docs now say so.
