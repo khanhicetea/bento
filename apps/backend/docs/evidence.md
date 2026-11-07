@@ -1073,3 +1073,6 @@ visitor's real IPv4 and IPv6 (`REMOTE_ADDR`, `X-Forwarded-For`), `HTTPS=on`, `X-
 tailnet peer on the PROXY ports: closed, with or without a header; the trusted front without a header: refused; no
 `Alt-Svc` on this path; a push-to-deploy bearer trigger through it: 202 and deployed, wrong bearer 404; a reboot of
 the Bento host: direct, front and HTTP-proxy paths 200 by 25 s of uptime.
+
+Final checks on `0845af5`: web checks and `make ci` on the amd64 VPS, `go vet` and `go test -race ./...` on the arm64
+host, all exit 0; the real-Docker suite passed on both, 17 integration and 28 runtime tests each, 0 skipped.
