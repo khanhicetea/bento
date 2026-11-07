@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -112,7 +113,36 @@ func TestServiceRestartAppliesCatalogPatchImage(t *testing.T) {
 	if err := store.SetServiceImage(ctx, h.store.DB(), svcName, old); err != nil {
 		t.Fatal(err)
 	}
+	// The new patch image is not on the host yet. A failed pull leaves the
+	// service running on its old image.
+	h.fake.SetImage(catalog, "")
+	h.fake.FailOn = map[string]error{"PullImage": errors.New("registry down")}
+	op, err = h.c.RestartService(ctx, svcName, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := h.wait(op); got.State != store.OpFailed || got.ErrorCode != "pull-failed" {
+		t.Fatalf("restart with a failing pull: %s %s", got.State, got.ErrorCode)
+	}
+	if ins, _ := h.fake.Inspect(ctx, h.c.Names.ServiceContainer(svcName)); ins == nil || !ins.State.Running {
+		t.Fatal("a failed pull stopped the service")
+	}
+	// The pull happens before the stop: the service keeps serving while the
+	// image downloads.
+	before := len(h.fake.Calls)
 	h.mustSucceed(h.c.RestartService(ctx, svcName, ""))
+	pull, stop := -1, -1
+	for i, call := range h.fake.Calls[before:] {
+		if pull < 0 && strings.HasPrefix(call, "PullImage "+catalog) {
+			pull = i
+		}
+		if stop < 0 && strings.HasPrefix(call, "Stop ") {
+			stop = i
+		}
+	}
+	if pull < 0 || stop < 0 || pull > stop {
+		t.Fatalf("restart must pull before it stops the service: %v", h.fake.Calls[before:])
+	}
 	got, err := store.GetService(ctx, h.store.DB(), svcName)
 	if err != nil || got.Image != catalog {
 		t.Fatalf("restart left the service on %q (%v)", got.Image, err)

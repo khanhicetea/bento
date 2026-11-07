@@ -129,13 +129,8 @@ func (c *Controller) ensureService(ctx context.Context, r *Run, svc store.Servic
 			svc.Name,
 		)
 	}
-	if _, ok, err := c.Engine.ImageID(ctx, svc.Image); err != nil {
+	if err := c.pullServiceImage(ctx, r, svc); err != nil {
 		return "", err
-	} else if !ok {
-		r.Info(ctx, "pulling %s", svc.Image)
-		if err := c.Engine.PullImage(ctx, svc.Image, nil); err != nil {
-			return "", Fail("pull-failed", "Check registry connectivity.", "pull %s: %v", svc.Image, err)
-		}
 	}
 	spec := c.Data().ContainerSpec(svc.DataService)
 	ins, err := c.Engine.Inspect(ctx, spec.Name)
@@ -320,6 +315,15 @@ func (c *Controller) handleServiceRestart(ctx context.Context, r *Run) (any, err
 				"container %s is not owned by this stack", c.Names.ServiceContainer(svc.Name))
 		}
 		if ins.State != nil && ins.State.Running {
+			// A new patch image is pulled while the old container still
+			// serves: a pull takes up to minutes, and a failed one leaves
+			// the service running.
+			if err := r.Phase(ctx, "pull"); err != nil {
+				return nil, err
+			}
+			if err := c.pullServiceImage(ctx, r, svc); err != nil {
+				return nil, err
+			}
 			if err := r.Phase(ctx, "stop"); err != nil {
 				return nil, err
 			}
@@ -336,6 +340,20 @@ func (c *Controller) handleServiceRestart(ctx context.Context, r *Run) (any, err
 		return nil, err
 	}
 	return map[string]any{"containerId": id}, nil
+}
+
+// pullServiceImage pulls the service's catalog image unless it is present.
+func (c *Controller) pullServiceImage(ctx context.Context, r *Run, svc store.ServiceRow) error {
+	if _, ok, err := c.Engine.ImageID(ctx, svc.Image); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	r.Info(ctx, "pulling %s", svc.Image)
+	if err := c.Engine.PullImage(ctx, svc.Image, nil); err != nil {
+		return Fail("pull-failed", "Check registry connectivity.", "pull %s: %v", svc.Image, err)
+	}
+	return nil
 }
 
 func (c *Controller) loadEstablishedService(ctx context.Context, name string) (store.ServiceRow, error) {

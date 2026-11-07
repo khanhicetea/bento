@@ -533,6 +533,8 @@ Valkey lives in its own container, see *Inside a runtime container*).
 
 `ensureService(allowInit)` creates a volume only for a never-initialized service; for an initialized service a missing
 volume is a `volume-missing` failure. Volumes are never removed (except volumes a failing `import` created itself).
+`service.restart` (which also moves a service to its catalog patch image) pulls that image before it stops the running
+container: a pull takes up to minutes, and a failed one leaves the service running on its old image.
 
 Backups are app backups only (restic, below); the `backup` package dumps and restores binding databases for them.
 `DumpPlain` streams `mysqldump`/`pg_dump` exec output into a `0600` file; SQLite uses `.backup` in a network-less job
