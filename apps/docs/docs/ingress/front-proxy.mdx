@@ -17,6 +17,19 @@ visitor ──TLS──▶ VPS :443 ──PROXY + TLS over tailnet──▶ Bent
 ## Set it up
 
 <Steps>
+  <Step title="Stop Tailscale rewriting the VPS's address">
+    On the **Bento server**, run once:
+
+    ```bash
+    tailscale set --snat-subnet-routes=false
+    ```
+
+    Docker forwards the front proxy ports to the edge container, and by default Tailscale masquerades every
+    connection it forwards, so the edge would see the server's own Docker address instead of the VPS's tailnet IP,
+    refuse it as untrusted, and every visitor would get an empty reply. The setting is kept across restarts. If this
+    server also advertises subnet routes, devices on those subnets then see tailnet addresses and need a route back.
+    With WireGuard or another link, make sure nothing NATs traffic from the VPS on its way to Docker.
+  </Step>
   <Step title="Turn on the front proxy in Bento">
     In **Ingress → Edge → Front proxy**:
 
@@ -124,6 +137,19 @@ addresses in `BENTO_TRUSTED_PROXIES` as before. With the front proxy on, the web
 - Bento refuses a trusted list that is a catch-all (`0.0.0.0/0`, `::/0`) or that overlaps its own Docker networks,
   because any container there could otherwise reach the edge and claim any visitor IP.
 - Bind the front proxy ports to the tailnet IP, so nothing else on the LAN or internet can reach them.
+
+## Troubleshooting
+
+**Visitors get an empty reply** (curl: `Empty reply from server`, Nginx on the VPS: `Connection reset by peer while
+proxying`). The edge closed the connection because the peer was not a trusted proxy. Its log line shows the address it
+saw as `peer=` (`docker logs bento-<stack>-edge`):
+
+- `peer=` is the server's own address on a Docker network (such as `10.200.0.128`): Tailscale or another NAT rewrote
+  the VPS's address. See the first step.
+- `peer=` is another address: add it to **Trusted proxies**, if it really is your VPS.
+
+**Requests answer `400`.** The VPS is not sending a PROXY header (`proxy_protocol on;`, HAProxy `send-proxy-v2`), or a
+visitor is talking to the edge's PROXY ports directly.
 
 ## Limits
 

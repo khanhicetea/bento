@@ -176,7 +176,7 @@ http {
 
   log_format bento_edge '{{if .FrontProxy}}$bento_client_addr{{else}}$remote_addr{{end}} - [$time_local] "$request" $status $body_bytes_sent '
                         '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time '
-                        'route=$bento_route host=$host';
+                        'route=$bento_route host=$host{{if .FrontProxy}} peer=$realip_remote_addr{{end}}';
   access_log off;
   # $bento_route is set by each route's rewrite directives. Requests answered
   # before the rewrite phase (ACME HTTP-01 challenges) log an empty route;
