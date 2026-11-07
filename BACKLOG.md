@@ -34,8 +34,9 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 
 - arm64 on arm64 hardware: runtime image builds and app containers. (Under qemu on amd64 the arm64 unit suite and
   binary ran on 2026-11-07, and every pinned digest is a multi-arch index with `linux/arm64`.)
-- External certificates, a real Cloudflare Tunnel, and GitHub/GitLab/Bitbucket webhook deliveries (Gitea and the
-  generic bearer trigger ran live on 2026-11-06; ACME staging and production issuance, HTTP/3 and IPv6 too).
+- External certificates, and GitLab/Bitbucket webhook deliveries (Gitea and the generic bearer trigger ran live on
+  2026-11-06; ACME staging and production issuance, HTTP/3, IPv6, a real Cloudflare Tunnel and GitHub deliveries on
+  2026-11-07).
 - SQLite restore. Relational restores of large databases (the swap is verified on small ones with MySQL 8.0/8.4/9.7
   and PostgreSQL 16/17), and a MySQL swap while the app holds a long transaction (`lock_wait_timeout` 60s).
 - Crash recovery mid-clone (`restic.recover` runs a database drop) on real Docker. Interrupted or tampered imports.
@@ -67,6 +68,12 @@ These come from `apps/backend/docs/evidence.md` and the audit:
   are re-initialized, not migrated. The next schema change adds `migrations[1]`.
 - The real-Docker suite (`make -C apps/backend test-integration`) runs on the local dev host, not in GitHub
   Actions. CI (`.github/workflows/ci.yml`) runs only on tags and releases.
+- After a host reboot Docker restarts every container at once, without ordering, and the edge routes to an app as soon
+  as its container runs. An app that needs its database answers errors until the database accepts connections (MySQL
+  8.4 took 16 s on the 2 vCPU test VPS). Bento does not hold routes back at boot: the edge, apps and data services come
+  back under their restart policies even when the backend is down or late, and gating them on the backend would
+  trade a few seconds of app errors for an outage whenever it is. Apps that must not error at boot retry their first
+  connection.
 - The front-proxy trusted list is not checked against the stack networks before the network plan exists (a fresh
   stack accepts `10.0.0.0/8`, then allocates the apps network inside it, so any app could spoof visitor IPs through
   the PROXY-protocol ports). Accepted as is on 2026-11-03; operators should list only their front proxy's address.

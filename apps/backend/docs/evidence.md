@@ -983,7 +983,25 @@ fixtures on the test account. The stack kept its public edge, so each app had bo
 - **Checks on `85d1f29`:** web checks and `make ci` on the VPS, exit 0; real-Docker suite 17 integration and 28
   runtime tests passed, 0 skipped.
 
-Observed, not changed: the app-local Valkey logs the generic `vm.overcommit_memory` warning on hosts with the default
-heuristic overcommit; its snapshots fork a process capped at a quarter of the app's memory.
+## Cachet through the tunnel, Valkey snapshot failures, boot order (2026-11-07; same host, `75fd4a9`)
+
+- **Cachet 3.x, all of section 9:** deployed from the GitHub fork (HTTPS, branch `3.x`, PostgreSQL 18, Valkey) on
+  `e2e-cachet.aitea.app` through the tunnel. Admin user and Sanctum token through a script in the app's `tmp/`;
+  `POST /api/components` and `/api/incidents` 201, both on `/`; scheduler and worker imported (`env_base: inherit`,
+  `working_dir: ~/app`), five queued `inspire` jobs drained to 0, `failed_jobs` 0; GitHub push to deploy (ping 200,
+  push 202, mark live, worker PID 63347 → 64613); a pushed migration that throws failed the deploy with
+  `~/deploy.sh exited with status 1: e2e: intentional migration failure` while `/` kept 200, and the revert deployed;
+  Livewire login through the tunnel redirected to `/dashboard` (200, no `http://` links). Two stale hooks on the fork
+  from earlier dev-host runs were deleted.
+- **Valkey stopped accepting writes after one failed snapshot (fixed).** The app-local Valkey logged the
+  `vm.overcommit_memory` warning: with the default heuristic overcommit a snapshot fork can be refused, and Valkey's
+  default `stop-writes-on-bgsave-error yes` then answers every write with `MISCONF` until a later snapshot succeeds.
+  Reproduced on e2e-php by making `~/.local/share/valkey` unwritable (as a full home would): `BGSAVE` failed and `SET`
+  returned `MISCONF`. The config now sets `stop-writes-on-bgsave-error no`; after the upgrade the backend rebuilt the
+  runtime images and replaced the running apps by itself (40 s), and the same test gives `rdb_last_bgsave_status:err`
+  with `SET` → `OK`, then `ok` once the directory is writable again.
+- **Boot order:** the e2e-php 500s after the reboot were requests that arrived before MySQL accepted connections
+  (ready 16 s after the Docker daemon). Recorded as a decision in `BACKLOG.md`: Bento does not hold routes back at
+  boot, so sites come back even when the backend does not.
 
 Not run: arm64 on arm64 hardware.

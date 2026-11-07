@@ -160,4 +160,6 @@ re-add the public key.
   including a production Let's Encrypt certificate and Invoice Ninja. Gitea also hosts `e2e-laravel`, `e2e-cachet`
   and `e2e-invoiceninja`.
 - **2026-11-07:** The Cloudflare Tunnel and GitHub cases ran here with the e2e tunnel and the test account (one fix:
-  repository-switch guidance). The tunnel token is set on `bento@prod`; `e2e-php` deploys from GitHub.
+  repository-switch guidance). The tunnel token is set on `bento@prod`; `e2e-php` deploys from GitHub. Then Cachet
+  from the GitHub fork through the tunnel (all of `e2e-live.md` section 9) and one more fix (app Valkey writable after
+  a failed snapshot). The Cachet admin password and API token are in `/root/.config/bento-test/`.

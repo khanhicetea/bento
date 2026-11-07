@@ -324,8 +324,9 @@ the public edge with Let's Encrypt staging instead of the tunnel, and an `rclone
 Every case passed after the fixes; finding 13 is fixed. Section 10 (Invoice Ninja) and a production Let's Encrypt
 issuance ran in the backlog-closure pass that followed. The tunnel and GitHub cases (private repo with a deploy key,
 push to deploy, wrong branch, forged calls, external and private ingress, ACME behind the tunnel, reboot) then ran on
-the same VPS with the e2e tunnel and the test account. Not run: the Cachet admin and API steps. Details are in
-`evidence.md` ("Real VPS run", "Backlog closure", "Cloudflare Tunnel and GitHub on the real VPS").
+the same VPS with the e2e tunnel and the test account, and so did all of section 9 (Cachet from the GitHub fork,
+admin and API steps included). Details are in `evidence.md` ("Real VPS run", "Backlog closure", "Cloudflare Tunnel
+and GitHub on the real VPS", "Cachet through the tunnel").
 
 ## Run: 2026-11-02
 
