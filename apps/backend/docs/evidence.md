@@ -1013,4 +1013,21 @@ fixtures on the test account. The stack kept its public edge, so each app had bo
 - **Final checks on `75fd4a9`, on the VPS:** web checks and `make ci` exit 0; real-Docker suite 17 integration and 28
   runtime tests passed (runtime images rebuilt cold for the new Valkey config), 0 skipped.
 
-Not run: arm64 on arm64 hardware.
+## arm64 on real hardware (2026-11-07; Hetzner, Debian 13 aarch64, 2 vCPU, Docker 29.9.3; `eff9d14`)
+
+Native arm64, no emulation: `uname -m` is `aarch64` and Docker reports `arm64`. Steps from `real-vps.md` with
+`BENTO_VPS=bento-arm`.
+
+- **Unit suite:** `go vet ./...` and `go test -race -count=1 ./...`, built and run natively, exit 0.
+- **Real-Docker suite** (test binaries cross-built with `GOARCH=arm64`): 17 integration and 28 runtime tests passed,
+  0 skipped. `TestIntegrationBuildRuntimeImages` built every runtime image from cold caches in 883 s, so the mise
+  toolchains, Valkey, minicrond, s6-overlay and restic artifacts all resolve and verify for arm64.
+- **Smoke run (`final.sh`):** fresh `init` with MySQL 8.4 and PostgreSQL 18, public edge with HTTP/3 and Let's Encrypt
+  staging, the five fixture apps from a Gitea on the host. All five `healthy`, 5 of 5 certificates issued, each app
+  200 with its runtime and database versions (PHP 7.4.33 and 8.4.27 with Valkey, Node 22.23.4, Bun 1.3.14, Python
+  3.13.18 with psycopg, MySQL 8.4.13, PostgreSQL 18.6) over IPv4 and IPv6; a Gitea push deployed and went live.
+  Every container (apps, edge, MySQL, PostgreSQL) runs an `arm64` image.
+- **From outside** (the amd64 VPS): 200 over IPv4 and IPv6, and over HTTP/3 (`--http3-only`, HTTP version 3).
+- **Reboot:** all five apps answered 200 at 21 s of uptime; certificates kept, no operations needed.
+
+No arm64-specific defects were found.

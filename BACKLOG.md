@@ -32,8 +32,6 @@ None open.
 
 These come from `apps/backend/docs/evidence.md` and the audit:
 
-- arm64 on arm64 hardware: runtime image builds and app containers. (Under qemu on amd64 the arm64 unit suite and
-  binary ran on 2026-11-07, and every pinned digest is a multi-arch index with `linux/arm64`.)
 - External certificates, and GitLab/Bitbucket webhook deliveries (Gitea and the generic bearer trigger ran live on
   2026-11-06; ACME staging and production issuance, HTTP/3, IPv6, a real Cloudflare Tunnel and GitHub deliveries on
   2026-11-07).

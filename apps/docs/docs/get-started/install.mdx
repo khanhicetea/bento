@@ -16,7 +16,7 @@ Running `bento` as a normal user (even one in the `docker` group) fails: the con
 
 ## Before you start
 
-- A Linux server, **amd64** (arm64 builds exist but are not yet verified end to end).
+- A Linux server, **amd64** or **arm64**.
 - A fresh or dedicated machine is best. Bento will want ports **80** and **443** if you use its built-in edge.
 - A domain you can point at the server, if you want public HTTPS.
 
@@ -34,7 +34,8 @@ Running `bento` as a normal user (even one in the `docker` group) fails: the con
     Already have Docker from your distribution's packages? Fine — just check the version.
   </Step>
   <Step title="Install the Bento binary">
-    Download `bento-linux-amd64` from the [releases page](https://github.com/khanhicetea/bento/releases), then:
+    Download `bento-linux-amd64` (or `bento-linux-arm64` on arm64) from the
+    [releases page](https://github.com/khanhicetea/bento/releases), then:
 
     ```bash
     install -m 0755 bento-linux-amd64 /usr/local/bin/bento

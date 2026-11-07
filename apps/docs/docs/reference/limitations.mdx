@@ -16,9 +16,9 @@ description: Known limits of the current release, stated plainly.
 
 ## Not yet verified
 
-Verified end to end on **linux/amd64 with PHP 8.4 and Node.js 24**. Not yet exercised end to end:
+Verified end to end on **linux/amd64 and linux/arm64** (Debian 13, Docker 29) with PHP 7.4 and 8.4, Node.js 22 and
+24, Bun 1.3, Python 3.13, MySQL 8.4 and PostgreSQL 18: Let's Encrypt certificates, HTTP/3 and IPv6 on the edge, a
+Cloudflare Tunnel, GitHub and Gitea push to deploy, and backups to S3-compatible storage. Not yet exercised end to end:
 
-- arm64 builds
-- other runtime versions
-- live Cloudflare Tunnel, ACME, and HTTP/3
-- rclone uploads
+- other runtime and database versions (their images build and pass the image tests)
+- GitLab and Bitbucket webhooks

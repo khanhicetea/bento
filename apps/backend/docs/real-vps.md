@@ -18,6 +18,20 @@ The dev host only edits code and builds; every test, including `make ci`, runs o
 | Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd), Compose v5.7.0; installed 2026-11-06 via get.docker.com |
 | Tooling | Go 1.27.0 (`/usr/local/go`), Bun 1.4.0, gcc (race tests), git, jq, rsync |
 
+The arm64 host is a second, equally disposable box:
+
+| Item | Value |
+| --- | --- |
+| Provider | Hetzner (`ssh bento-arm`, same key and `~/.ssh/config` entry shape as `bento-test`) |
+| Address | `2.31.150.195`, `2a01:4f8:1c1c:b3ca::1` |
+| OS | Debian GNU/Linux 13 (trixie), aarch64 |
+| Size | 2 vCPU, 3.7 GiB RAM, 38 GB disk |
+| Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd); installed 2026-11-07 via get.docker.com |
+| Tooling | Go 1.27.0 (`go1.27.0.linux-arm64`), gcc, git, jq, rsync; no Bun (the web checks run on `bento-test`) |
+
+The scripts target it with `BENTO_VPS=bento-arm` (and `BENTO_ARCH=arm64` for `ship.sh`); build the test binaries
+with `GOARCH=arm64`. Everything else in this guide applies as written.
+
 ## Access
 
 From the dev host, the key `~/.ssh/bento_test_ed25519` (comment `claude-bento-test`) is authorized for `root`. The
@@ -46,8 +60,8 @@ Run everything non-interactively: `ssh -o BatchMode=yes bento-test '...'`. The s
   only, which app tool containers reach and the internet does not.
 - **No secrets in this file or in the repo.** UI, Gitea, S3 and stack backup passwords live on the VPS under
   `/root/.config/bento-test/` (mode 0600); the scripts read them from there.
-- **Report honestly.** A check counts as run only if it ran on this host. This host is amd64, so arm64 still needs another
-  machine.
+- **Report honestly.** A check counts as run only if it ran on one of these hosts; arm64 counts only on `bento-arm`, never
+  under emulation.
 
 ## Scripts
 
@@ -163,3 +177,5 @@ re-add the public key.
   repository-switch guidance). The tunnel token is set on `bento@prod`; `e2e-php` deploys from GitHub. Then Cachet
   from the GitHub fork through the tunnel (all of `e2e-live.md` section 9) and one more fix (app Valkey writable after
   a failed snapshot). The Cachet admin password and API token are in `/root/.config/bento-test/`.
+- **2026-11-07:** arm64 host `bento-arm` added: unit (race), integration and runtime suites, then the `final.sh` smoke
+  run and a reboot, all on real arm64 hardware (`evidence.md`, "arm64 on real hardware").
