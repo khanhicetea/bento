@@ -1003,6 +1003,13 @@ fixtures on the test account. The stack kept its public edge, so each app had bo
 - **Boot order:** the e2e-php 500s after the reboot were requests that arrived before MySQL accepted connections
   (ready 16 s after the Docker daemon). Recorded as a decision in `BACKLOG.md`: Bento does not hold routes back at
   boot, so sites come back even when the backend does not.
+- **Boot order, measured (second reboot, `75fd4a9`):** a systemd unit polled each app through the local edge once a
+  second from 5 s after boot. The Docker daemon was up at 11 s; PostgreSQL 18 accepted connections at about 36 s and
+  MySQL 8.4 at about 38 s (every container starts at once on 2 vCPU). Until then apps answered 502 (container still
+  starting), 500 (e2e-node, database refused) or held the request (Cachet, waiting on PostgreSQL); e2e-legacy (no
+  query on `/`) was 200 at 15 s, e2e-node at 33 s, Cachet at 41 s, and all stayed 200. The Cachet queue worker, which
+  started before PostgreSQL, was `running` with `failures: 0` afterwards, and the backend queued no operations: Docker's
+  restart policies alone brought the stack back.
 - **Final checks on `75fd4a9`, on the VPS:** web checks and `make ci` exit 0; real-Docker suite 17 integration and 28
   runtime tests passed (runtime images rebuilt cold for the new Valkey config), 0 skipped.
 

@@ -69,8 +69,9 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 - The real-Docker suite (`make -C apps/backend test-integration`) runs on the local dev host, not in GitHub
   Actions. CI (`.github/workflows/ci.yml`) runs only on tags and releases.
 - After a host reboot Docker restarts every container at once, without ordering, and the edge routes to an app as soon
-  as its container runs. An app that needs its database answers errors until the database accepts connections (MySQL
-  8.4 took 16 s on the 2 vCPU test VPS). Bento does not hold routes back at boot: the edge, apps and data services come
+  as its container runs. An app that needs its database answers errors until the database accepts connections (on
+  the 2 vCPU test VPS, measured per second on 2026-11-07: databases ready about 25 s after the Docker daemon, every
+  app 200 by 41 s after boot, queue workers unharmed; see `apps/backend/docs/evidence.md`). Bento does not hold routes back at boot: the edge, apps and data services come
   back under their restart policies even when the backend is down or late, and gating them on the backend would
   trade a few seconds of app errors for an outage whenever it is. Apps that must not error at boot retry their first
   connection.
