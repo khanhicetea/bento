@@ -518,7 +518,7 @@ func deployFailure(app domain.App, g domain.GitSource, exit int, gitLog []string
 	case exit == 65:
 		return Fail(
 			"git-origin-mismatch",
-			"Point the app at the repository already checked out, or move the existing code away.",
+			"Point the app at the repository already checked out, or move the files out of app/ (keep the empty directory) so the next deploy clones the new one.",
 			"%s",
 			detail,
 		)

@@ -13,6 +13,10 @@ In the **Deploy** tab, under **Repository**:
 2. Copy the **Deploy key** Bento generated and add it to the repository as a **read-only** deploy key.
 3. Press **Deploy**.
 
+Deploy clones only into an empty `app/` directory. To switch an app to a different repository, move the files out of
+`/home/<slug>/app` (keep the empty directory itself, and copy back untracked files such as `.env` afterwards), then
+deploy; until then deploys refuse with `git-origin-mismatch`.
+
 ## What a deploy does
 
 1. Fetches the branch into `/home/<slug>/app`. Files git doesn't track — `.env`, `vendor/`, `node_modules/`, uploads —
