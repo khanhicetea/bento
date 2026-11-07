@@ -41,7 +41,8 @@ Each MySQL and PostgreSQL service has a tile under **Data services** with two ac
 | MySQL | `innodb_buffer_pool_size`, `innodb_redo_log_capacity`, `max_connections`, `max_allowed_packet`, `tmp_table_size` |
 | PostgreSQL | `shared_buffers`, `effective_cache_size`, `work_mem`, `maintenance_work_mem`, `max_connections` |
 
-Memory parameters can't exceed the host's memory. If the server won't start with new values, the tile shows it as
+Memory parameters can't exceed the host's memory. MySQL rounds `innodb_buffer_pool_size` up to a multiple of 128M (its
+chunk size), so `192M` uses `256M`: pick a multiple of 128M. If the server won't start with new values, the tile shows it as
 unhealthy: open **Tune** again and lower them. Bento doesn't touch configuration files inside the volume, so settings
 you made with `SET PERSIST` or `ALTER SYSTEM` still apply, but the values set here win.
 

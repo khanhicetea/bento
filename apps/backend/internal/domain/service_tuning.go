@@ -43,7 +43,7 @@ type ServiceTunable struct {
 var ServiceTunables = map[Engine][]ServiceTunable{
 	EngineMySQL: {
 		{Key: "innodb_buffer_pool_size", Label: "Buffer pool", Kind: TunableSize, Min: 32 << 20, Max: 1 << 40, Memory: true, Default: "128M",
-			Help: "InnoDB data and index cache; the main memory knob"},
+			Help: "InnoDB data and index cache; the main memory knob. MySQL rounds it up to a multiple of 128M"},
 		{Key: "innodb_redo_log_capacity", Label: "Redo log", Kind: TunableSize, Min: 8 << 20, Max: 128 << 30, Default: "100M",
 			Help: "Redo log disk space; larger smooths heavy writes"},
 		{Key: "max_connections", Label: "Connections", Kind: TunableInt, Min: 10, Max: 100000, Default: "151",
