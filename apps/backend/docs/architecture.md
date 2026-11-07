@@ -409,7 +409,10 @@ through a map (`$bento_client_addr`), not `real_ip_header`, which belongs to the
 visitors used the standard ports: `$bento_std_ports` drops the port suffix and forwards 80/443, and `Alt-Svc` is not
 sent because UDP is not forwarded. Accept refuses catch-all prefixes and prefixes overlapping the stack networks; the
 render re-parses the list. With the feature off the rendered config is byte-identical to before, and the edge
-fingerprint ignores it (only enabling, bind or ports recreate the container; the trusted list only reloads).
+fingerprint ignores it (only enabling, bind or ports recreate the container; the trusted list only reloads). The
+access log line of an edge with a front proxy ends with `peer=$realip_remote_addr`, which names a
+NAT that hides the proxy (Tailscale masquerades traffic Docker forwards unless `--snat-subnet-routes=false`).
+
 
 Publication is persisted only after `checkReady` passes, and route activation is the last step of start/publish.
 
@@ -422,7 +425,11 @@ boot certificate and no `acme_certificate` (`Input.ACMEHold`) until `RetryAt` (1
 the host (newer `UpdatedAt`) starts over; a valid certificate clears the state. The state is persisted only after
 an edge apply succeeds, and a state change is edge drift, so the reconciler opens and closes windows. Each failure is
 a warning on the `edge.apply`; `GET /hosts` reports `certificate` (`issued`/`requesting`/`waiting`). An apply also
-warns when ACME hosts exist, `httpPort` is not 80, and neither a front proxy nor the tunnel can carry HTTP-01.
+warns when ACME hosts exist, `httpPort` is not 80, and neither a front proxy nor the tunnel can carry HTTP-01. The
+module also drops in-flight challenge data on reload (nginx-acme #26): an apply that reloads, restarts or recreates
+the edge marks every window opened before it (`MarkACMEReloaded`), and a marked window that closes without a
+certificate ends in a 1-minute hold (`ACMEReloadRetry`, an Info line) instead of a failure, at most
+`ACMEMaxReloadRetries` (2) times per host.
 
 **Upstream hosts** load-balance their URLs in one `upstream` block; the first URL decides scheme, path and TLS name,
 and validation requires the same scheme for all and, for HTTPS, the same host name. An HTTPS upstream named by DNS

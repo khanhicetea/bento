@@ -367,6 +367,11 @@ type EdgeSettings struct {
 	// FrontProxy adds listeners for a TCP proxy in front of the edge (for
 	// example a public VPS forwarding over a VPN) that speaks PROXY protocol.
 	FrontProxy FrontProxySettings `json:"frontProxy"`
+	// HTTPProxies are reverse proxies or CDNs (IP addresses or CIDRs) that
+	// end TLS themselves and connect to the edge's own ports. Only from these
+	// peers does the edge believe X-Forwarded-For (its last address, the one
+	// the proxy added) and X-Forwarded-Proto.
+	HTTPProxies []string `json:"httpProxies"`
 }
 
 // FrontProxySettings are extra edge listeners that expect a PROXY protocol
@@ -384,8 +389,9 @@ type FrontProxySettings struct {
 func DefaultEdgeSettings() EdgeSettings {
 	return EdgeSettings{
 		Enabled: false, Bind: "0.0.0.0", HTTPPort: 80, HTTPSPort: 443,
-		ACMEURL:    "https://acme-v02.api.letsencrypt.org/directory",
-		FrontProxy: FrontProxySettings{Bind: "0.0.0.0", HTTPPort: 8080, HTTPSPort: 8443, TrustedProxies: []string{}},
+		ACMEURL:     "https://acme-v02.api.letsencrypt.org/directory",
+		FrontProxy:  FrontProxySettings{Bind: "0.0.0.0", HTTPPort: 8080, HTTPSPort: 8443, TrustedProxies: []string{}},
+		HTTPProxies: []string{},
 	}
 }
 

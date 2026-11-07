@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/moby/moby/api/types/network"
@@ -176,5 +177,61 @@ func TestEdgeSpecPublishesFrontProxyPorts(t *testing.T) {
 	}
 	if len(spec.HostConfig.PortBindings) != 2 {
 		t.Fatalf("a disabled front proxy publishes nothing: %v", spec.HostConfig.PortBindings)
+	}
+}
+
+func TestConfigureEdgeValidatesHTTPProxies(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	if err := store.PutSetting(ctx, h.c.Store.DB(), networkSettingKey,
+		NetworkSettings{AppsSubnet: "10.200.0.0/24", DataSubnet: "10.200.1.0/24"}); err != nil {
+		t.Fatal(err)
+	}
+	with := func(p ...string) domain.EdgeSettings {
+		s := domain.DefaultEdgeSettings()
+		s.Enabled, s.HTTPProxies = true, p
+		return s
+	}
+	tooMany := make([]string, maxHTTPProxies+1)
+	for i := range tooMany {
+		tooMany[i] = "192.0.2." + strconv.Itoa(i)
+	}
+	for name, s := range map[string]domain.EdgeSettings{
+		"catch-all v4":       with("0.0.0.0/0"),
+		"catch-all v6":       with("::/0"),
+		"not an address":     with("cdn.example.com"),
+		"nginx injection":    with("173.245.48.0/20 1; } server {"),
+		"overlaps apps":      with("10.200.0.0/16"),
+		"tunnel address":     with("10.200.0.3"),
+		"more than the list": with(tooMany...),
+	} {
+		_, err := h.c.ConfigureEdge(ctx, s, "")
+		if !slices.Contains(validationFields(err), "httpProxies") {
+			t.Errorf("%s: expected an httpProxies validation error, got %v", name, err)
+		}
+	}
+	// Cloudflare's published ranges fit, canonicalised.
+	if _, err := h.c.ConfigureEdge(ctx, with(" 173.245.48.1/20", "2400:cb00::/32", "173.245.48.0/20", "198.51.100.7"), ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.c.EdgeSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"173.245.48.0/20", "2400:cb00::/32", "198.51.100.7/32"}; !slices.Equal(got.HTTPProxies, want) {
+		t.Fatalf("HTTP proxies = %v, want %v", got.HTTPProxies, want)
+	}
+}
+
+// Trusting HTTP proxies only changes rendered config: the edge is reloaded,
+// never recreated.
+func TestEdgeFingerprintIgnoresHTTPProxies(t *testing.T) {
+	ns := NetworkSettings{EdgeIP: "10.200.0.2"}
+	s := domain.DefaultEdgeSettings()
+	s.Enabled = true
+	before := edgeFingerprint(s, ns)
+	s.HTTPProxies = []string{"173.245.48.0/20"}
+	if edgeFingerprint(s, ns) != before {
+		t.Fatal("HTTP proxies must not recreate the edge")
 	}
 }

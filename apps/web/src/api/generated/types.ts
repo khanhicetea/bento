@@ -561,6 +561,12 @@ export interface EdgeSettings {
    * the edge, such as a public VPS forwarding to a homelab over a VPN.
    */
   frontProxy: FrontProxySettings;
+  /**
+   * HTTPProxies are reverse proxies or CDNs (IP addresses or CIDRs) in
+   * front of the edge's own ports whose X-Forwarded-For and
+   * X-Forwarded-Proto headers are believed.
+   */
+  httpProxies: string[];
 }
 /**
  * FrontProxySettings are edge listeners that expect a PROXY protocol header.

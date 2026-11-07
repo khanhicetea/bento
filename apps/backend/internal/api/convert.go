@@ -62,6 +62,7 @@ func edgeToDTO(s domain.EdgeSettings) dto.EdgeSettings {
 		ACMEEmail: s.ACMEEmail, ACMEURL: s.ACMEURL,
 		FrontProxy: dto.FrontProxySettings{Enabled: fp.Enabled, Bind: fp.Bind, HTTPPort: fp.HTTPPort,
 			HTTPSPort: fp.HTTPSPort, TrustedProxies: nonNil(fp.TrustedProxies)},
+		HTTPProxies: nonNil(s.HTTPProxies),
 	}
 }
 
@@ -72,6 +73,7 @@ func edgeFromDTO(s dto.EdgeSettings) domain.EdgeSettings {
 		ACMEEmail: s.ACMEEmail, ACMEURL: s.ACMEURL,
 		FrontProxy: domain.FrontProxySettings{Enabled: fp.Enabled, Bind: fp.Bind, HTTPPort: fp.HTTPPort,
 			HTTPSPort: fp.HTTPSPort, TrustedProxies: nonNil(fp.TrustedProxies)},
+		HTTPProxies: nonNil(s.HTTPProxies),
 	}
 }
 

@@ -87,7 +87,31 @@ http {
     default 0;
   }
 {{- end}}
-{{- $std := "$bento_from_tunnel"}}
+{{- $fwd := "$bento_from_tunnel"}}
+{{- if .HTTPProxies}}
+{{- $fwd = "$bento_forwarded"}}
+
+  # Reverse proxies or CDNs in front of the edge's own ports (httpProxies) end
+  # TLS themselves. Their X-Forwarded-Proto and X-Forwarded-For are believed
+  # only from these peers; the visitor is the last X-Forwarded-For address,
+  # the one the proxy added. Every other client gets the edge's own view.
+  geo $realip_remote_addr $bento_from_http_proxy {
+    default 0;
+{{- range .HTTPProxies}}
+    {{.}} 1;
+{{- end}}
+  }
+  map $http_x_forwarded_for $bento_xff_client {
+    default $remote_addr;
+    "~(?:^|,)[ ]*(?<bento_xff_last>[0-9A-Fa-f:.]+)[ ]*$" $bento_xff_last;
+  }
+  # Tunnel or HTTP proxy: forwarding headers describe the visitor.
+  map "$bento_from_tunnel$bento_from_http_proxy" $bento_forwarded {
+    default 0;
+    ~1      1;
+  }
+{{- end}}
+{{- $std := $fwd}}
 {{- if .FrontProxy}}
 {{- $std = "$bento_std_ports"}}
 
@@ -110,25 +134,51 @@ http {
     default 0;
     "1:0"   1;
   }
-  # Tunnel or front proxy: the visitor used the standard ports.
-  map "$bento_from_tunnel:$bento_via_front" $bento_std_ports {
+  # Tunnel, HTTP proxy or front proxy: the visitor used the standard ports.
+  map "{{$fwd}}:$bento_via_front" $bento_std_ports {
     default 0;
     "1:0"   1;
     "0:1"   1;
   }
+{{- end}}
+{{- if .ClientMap}}
+  # The visitor's address: from the PROXY header on the front proxy ports,
+  # from X-Forwarded-For for an HTTP proxy, otherwise the peer (or, through
+  # the tunnel, CF-Connecting-IP via the realip module).
+{{- if and .FrontProxy .HTTPProxies}}
+  map "$bento_via_front:$bento_from_http_proxy" $bento_client_addr {
+    default $remote_addr;
+    ~^1:    $proxy_protocol_addr;
+    "0:1"   $bento_xff_client;
+  }
+{{- else if .FrontProxy}}
   map $bento_via_front $bento_client_addr {
     default $remote_addr;
     1       $proxy_protocol_addr;
   }
+{{- else}}
+  map $bento_from_http_proxy $bento_client_addr {
+    default $remote_addr;
+    1       $bento_xff_client;
+  }
+{{- end}}
 {{- if .HTTP3}}
-  # UDP is not forwarded through the front proxy, so HTTP/3 is not offered.
-  map $bento_via_front $bento_alt_svc {
+  # UDP is not forwarded through a front proxy, and an HTTP proxy's visitors
+  # reach the proxy, not this edge: HTTP/3 is not offered to either.
+{{- if and .FrontProxy .HTTPProxies}}
+  map "$bento_via_front$bento_from_http_proxy" $bento_alt_svc {
+    default 'h3=":{{.HTTPSPort}}"; ma=86400';
+    ~1      "";
+  }
+{{- else}}
+  map {{if .FrontProxy}}$bento_via_front{{else}}$bento_from_http_proxy{{end}} $bento_alt_svc {
     default 'h3=":{{.HTTPSPort}}"; ma=86400';
     1       "";
   }
 {{- end}}
 {{- end}}
-  map "$bento_from_tunnel:$http_x_forwarded_proto" $bento_proto {
+{{- end}}
+  map "{{$fwd}}:$http_x_forwarded_proto" $bento_proto {
     default   $scheme;
     "1:https" https;
     "1:http"  http;
@@ -147,13 +197,13 @@ http {
     https   {{.HTTPSPort}};
   }
 {{- end}}
-  map "$bento_from_tunnel:$http_x_forwarded_proto" $bento_port {
+  map "{{$fwd}}:$http_x_forwarded_proto" $bento_port {
     default   $bento_published_port;
     "1:https" 443;
     "1:http"  80;
   }
   # Port suffixes for redirects: the edge's published ports, or none for
-  # visitors who came through the tunnel on Cloudflare's standard ports.
+  # visitors who came through the tunnel or a proxy on the standard ports.
   map {{$std}} $bento_https_suffix {
     default "{{.HTTPSPortSuffix}}";
     1       "";
@@ -174,9 +224,9 @@ http {
     1       $host;
   }
 
-  log_format bento_edge '{{if .FrontProxy}}$bento_client_addr{{else}}$remote_addr{{end}} - [$time_local] "$request" $status $body_bytes_sent '
+  log_format bento_edge '{{if .ClientMap}}$bento_client_addr{{else}}$remote_addr{{end}} - [$time_local] "$request" $status $body_bytes_sent '
                         '"$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time '
-                        'route=$bento_route host=$host{{if .FrontProxy}} peer=$realip_remote_addr{{end}}';
+                        'route=$bento_route host=$host{{if .ClientMap}} peer=$realip_remote_addr{{end}}';
   access_log off;
   # $bento_route is set by each route's rewrite directives. Requests answered
   # before the rewrite phase (ACME HTTP-01 challenges) log an empty route;
@@ -207,7 +257,7 @@ http {
     ""           "-";
     ~^([^?#]*)   $1;
   }
-  log_format bento_traffic '{{if .FrontProxy}}$bento_client_addr{{else}}$remote_addr{{end}} [$time_local] '
+  log_format bento_traffic '{{if .ClientMap}}$bento_client_addr{{else}}$remote_addr{{end}} [$time_local] '
                            '"$request_method $bento_traffic_path $server_protocol" $status $body_bytes_sent '
                            '"$bento_traffic_referer" "$http_user_agent" $request_time';
 {{- end}}

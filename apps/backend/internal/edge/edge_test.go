@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -443,6 +444,114 @@ func TestRenderFrontProxy(t *testing.T) {
 		in.Settings.FrontProxy = domain.FrontProxySettings{Enabled: true, TrustedProxies: bad}
 		if _, err := Render(in); err == nil {
 			t.Errorf("trusted %q must be refused at render", bad)
+		}
+	}
+}
+
+func TestRenderHTTPProxies(t *testing.T) {
+	app := domain.App{ID: "a1", Slug: "shop", Ingress: domain.IngressManaged, Publication: domain.Published,
+		Runtime: domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Port: 3000}}}
+	in := Input{
+		Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 8443, HTTP3: true, ACMEURL: "https://acme.test/dir",
+			HTTPProxies: []string{"173.245.48.0/20", "2400:cb00::/32"}},
+		Apps:          []domain.App{app},
+		Hosts:         []domain.Host{appHost("shop.example.com", "a1", domain.Route{TLS: domain.TLSACME, RedirectHTTPS: true})},
+		Running:       map[string]bool{"a1": true},
+		UtilsUpstream: "10.200.0.1:7781",
+		TunnelIP:      "10.200.0.3",
+	}
+	files, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(files["nginx.conf"])
+	for _, want := range []string{
+		// The peer decides trust; the tunnel keeps its own realip header.
+		"geo $realip_remote_addr $bento_from_http_proxy {\n    default 0;\n    173.245.48.0/20 1;\n    2400:cb00::/32 1;\n  }",
+		"real_ip_header CF-Connecting-IP;",
+		"map \"$bento_from_tunnel$bento_from_http_proxy\" $bento_forwarded {\n    default 0;\n    ~1      1;",
+		// X-Forwarded-Proto from a trusted proxy ends the redirect loop of a
+		// proxy that talks plain HTTP to the edge.
+		"map \"$bento_forwarded:$http_x_forwarded_proto\" $bento_proto {\n    default   $scheme;\n    \"1:https\" https;",
+		"map \"$bento_forwarded:$http_x_forwarded_proto\" $bento_port {",
+		"map $bento_forwarded $bento_https_suffix {\n    default \":8443\";\n    1       \"\";",
+		"map $bento_from_http_proxy $bento_client_addr {\n    default $remote_addr;\n    1       $bento_xff_client;",
+		"map $bento_from_http_proxy $bento_alt_svc {\n    default 'h3=\":8443\"; ma=86400';\n    1       \"\";",
+		"log_format bento_edge '$bento_client_addr - ", " peer=$realip_remote_addr';",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main config missing %q", want)
+		}
+	}
+	site := string(files["sites/host-shop.example.com.conf"])
+	for _, want := range []string{
+		"if ($bento_proto = http) {", "add_header Alt-Svc $bento_alt_svc always;",
+		"proxy_set_header X-Forwarded-For $bento_client_addr;", "proxy_set_header X-Real-IP $bento_client_addr;",
+	} {
+		if !strings.Contains(site, want) {
+			t.Errorf("site missing %q", want)
+		}
+	}
+	if strings.Contains(site, "proxy_protocol") {
+		t.Error("HTTP proxies add no PROXY protocol listener")
+	}
+
+	// The visitor is the last X-Forwarded-For address: the one the proxy added.
+	re := regexp.MustCompile(`"~(\(\?:\^\|,\)\[ \]\*\(\?<bento_xff_last>[^"]+)" \$bento_xff_last;`)
+	m := re.FindStringSubmatch(main)
+	if m == nil {
+		t.Fatal("X-Forwarded-For map missing")
+	}
+	last := regexp.MustCompile(strings.Replace(m[1], "?<bento_xff_last>", "?P<last>", 1))
+	for xff, want := range map[string]string{
+		"203.0.113.7":                       "203.0.113.7",
+		"6.6.6.6, 203.0.113.7":              "203.0.113.7",
+		"6.6.6.6,2001:db8::7":               "2001:db8::7",
+		"203.0.113.7 , ":                    "",
+		"<script>":                          "",
+		"6.6.6.6, 203.0.113.7\r\nX-Evil: 1": "",
+	} {
+		got := ""
+		if sm := last.FindStringSubmatch(xff); sm != nil {
+			got = sm[1]
+		}
+		if got != want {
+			t.Errorf("X-Forwarded-For %q: client %q, want %q", xff, got, want)
+		}
+	}
+
+	// With a front proxy too: its listeners keep the PROXY address.
+	in.Settings.FrontProxy = domain.FrontProxySettings{Enabled: true, TrustedProxies: []string{"100.64.0.1/32"}}
+	files, err = Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main = string(files["nginx.conf"])
+	for _, want := range []string{
+		"map \"$bento_via_front:$bento_from_http_proxy\" $bento_client_addr {\n    default $remote_addr;\n    ~^1:    $proxy_protocol_addr;\n    \"0:1\"   $bento_xff_client;",
+		"map \"$bento_forwarded:$bento_via_front\" $bento_std_ports {",
+		"map \"$bento_via_front$bento_from_http_proxy\" $bento_alt_svc {",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("front proxy and HTTP proxies: main config missing %q", want)
+		}
+	}
+
+	// Off: the edge renders as before, with no HTTP proxy variable.
+	in.Settings.FrontProxy.Enabled, in.Settings.HTTPProxies = false, nil
+	files, err = Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, b := range files {
+		if strings.Contains(string(b), "bento_from_http_proxy") || strings.Contains(string(b), "bento_xff") {
+			t.Errorf("%s mentions HTTP proxies while none are set", name)
+		}
+	}
+	for _, bad := range [][]string{{"0.0.0.0/0"}, {"173.245.48.0/20 1; }"}} {
+		in.Settings.HTTPProxies = bad
+		if _, err := Render(in); err == nil {
+			t.Errorf("HTTP proxies %q must be refused at render", bad)
 		}
 	}
 }

@@ -658,6 +658,12 @@ func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, i
 		}
 	}
 	validateFrontProxy(&s, stackNets, &errs)
+	httpProxies, ok := canonicalTrustedProxies(s.HTTPProxies, stackNets, maxHTTPProxies)
+	s.HTTPProxies = httpProxies
+	if !ok {
+		errs.Add("httpProxies",
+			"must be at most %d IP addresses or CIDRs, not catch-all ranges or Bento's own networks", maxHTTPProxies)
+	}
 	if err := errs.Err(); err != nil {
 		return store.Operation{}, err
 	}
@@ -669,8 +675,12 @@ func (c *Controller) ConfigureEdge(ctx context.Context, s domain.EdgeSettings, i
 }
 
 // maxTrustedProxies bounds the front proxy allow-list; it names a handful of
-// proxy hosts, not a network.
-const maxTrustedProxies = 16
+// proxy hosts, not a network. maxHTTPProxies leaves room for a CDN's
+// published ranges (Cloudflare lists 22).
+const (
+	maxTrustedProxies = 16
+	maxHTTPProxies    = 64
+)
 
 // validateFrontProxy fills defaults, canonicalises the trusted list, and checks
 // the listeners. A disabled front proxy keeps its values but needs no peers.
@@ -686,7 +696,7 @@ func validateFrontProxy(s *domain.EdgeSettings, stackNets []netip.Prefix, errs *
 	if fp.HTTPSPort == 0 {
 		fp.HTTPSPort = def.HTTPSPort
 	}
-	trusted, ok := canonicalTrustedProxies(fp.TrustedProxies, stackNets)
+	trusted, ok := canonicalTrustedProxies(fp.TrustedProxies, stackNets, maxTrustedProxies)
 	fp.TrustedProxies = trusted
 	if !ok {
 		errs.Add("frontProxy.trustedProxies",
@@ -726,9 +736,9 @@ func validateFrontProxy(s *domain.EdgeSettings, stackNets []netip.Prefix, errs *
 // into masked, de-duplicated prefixes. Catch-all ranges and prefixes that
 // overlap the stack's own networks are refused: a container there could
 // otherwise connect to the edge directly and claim any client address.
-func canonicalTrustedProxies(in []string, stackNets []netip.Prefix) ([]string, bool) {
+func canonicalTrustedProxies(in []string, stackNets []netip.Prefix, limit int) ([]string, bool) {
 	out := []string{}
-	if len(in) > maxTrustedProxies {
+	if len(in) > limit {
 		return out, false
 	}
 	seen := map[netip.Prefix]bool{}

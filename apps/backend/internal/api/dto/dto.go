@@ -573,6 +573,10 @@ type EdgeSettings struct {
 	// FrontProxy adds PROXY protocol listeners for a TCP proxy in front of
 	// the edge, such as a public VPS forwarding to a homelab over a VPN.
 	FrontProxy FrontProxySettings `json:"frontProxy"`
+	// HTTPProxies are reverse proxies or CDNs (IP addresses or CIDRs) in
+	// front of the edge's own ports whose X-Forwarded-For and
+	// X-Forwarded-Proto headers are believed.
+	HTTPProxies []string `json:"httpProxies"`
 }
 
 // FrontProxySettings are edge listeners that expect a PROXY protocol header.

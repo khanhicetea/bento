@@ -324,9 +324,11 @@ function EdgeConfigCell({ status }: { status: T.EdgeStatus }) {
   const setFront = (next: Partial<T.FrontProxySettings>) =>
     setSettings({ ...settings, frontProxy: { ...settings.frontProxy, ...next } });
   const [trusted, setTrusted] = useState(saved.frontProxy.trustedProxies.join(", "));
+  const [httpProxies, setHTTPProxies] = useState(saved.httpProxies.join(", "));
   const reset = () => {
     setSettings(saved);
     setTrusted(saved.frontProxy.trustedProxies.join(", "));
+    setHTTPProxies(saved.httpProxies.join(", "));
   };
   const front = settings.frontProxy;
   return (
@@ -455,6 +457,27 @@ function EdgeConfigCell({ status }: { status: T.EdgeStatus }) {
               </Field>
             </>
           )}
+        </div>
+        <div className="grid gap-3 border-t border-border pt-3">
+          <Field
+            label="HTTP proxies"
+            hint="CDN or reverse proxy IPs or CIDRs that end TLS before the edge, comma separated. Only their X-Forwarded-For and X-Forwarded-Proto are believed."
+          >
+            <Input
+              value={httpProxies}
+              placeholder="173.245.48.0/20"
+              spellCheck={false}
+              onChange={(event) => {
+                setHTTPProxies(event.target.value);
+                set({
+                  httpProxies: event.target.value
+                    .split(/[\s,]+/)
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                });
+              }}
+            />
+          </Field>
         </div>
       </div>
       {save.error && <p className="note note--bad mt-3">{messageOf(save.error)}</p>}

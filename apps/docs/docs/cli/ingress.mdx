@@ -11,6 +11,9 @@ echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":fal
        "acmeEmail":"you@example.com","acmeUrl":""}' | bento edge set --json -
 ```
 
+Optional fields: `frontProxy` ([Front proxy](/ingress/front-proxy)) and `httpProxies`, the addresses of a CDN or
+reverse proxy whose forwarding headers the edge believes ([CDN or reverse proxy](/ingress/http-proxy)).
+
 ## Hosts
 
 ```bash

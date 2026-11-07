@@ -111,6 +111,9 @@ type Route struct {
 	FrontHTTPSPort int
 	// ClientAddr is the nginx variable holding the visitor's address.
 	ClientAddr string
+	// AltSvcVar uses $bento_alt_svc, which is empty for visitors who came
+	// through a front proxy or an HTTP proxy (they cannot reach UDP 443).
+	AltSvcVar bool
 }
 
 // AppUpstream is one app's shared upstream block. It is rendered once per app
@@ -211,6 +214,11 @@ func Render(in Input) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	httpProxies, err := proxyPrefixes("HTTP proxy", s.HTTPProxies)
+	if err != nil {
+		return nil, err
+	}
+	clientMap := front || len(httpProxies) > 0
 	apps := make(map[string]domain.App, len(in.Apps))
 	for _, a := range in.Apps {
 		apps[a.ID] = a
@@ -230,7 +238,10 @@ func Render(in Input) (map[string][]byte, error) {
 		}
 		r.ClientAddr = "$remote_addr"
 		if front {
-			r.FrontHTTPPort, r.FrontHTTPSPort, r.ClientAddr = FrontHTTPPort, FrontHTTPSPort, "$bento_client_addr"
+			r.FrontHTTPPort, r.FrontHTTPSPort = FrontHTTPPort, FrontHTTPSPort
+		}
+		if clientMap {
+			r.ClientAddr, r.AltSvcVar = "$bento_client_addr", true
 		}
 		r.UtilsUpstream = in.UtilsUpstream
 		r.MaxBodyMB = 64
@@ -294,7 +305,7 @@ func Render(in Input) (map[string][]byte, error) {
 		"UtilsUpstream": in.UtilsUpstream, "StubStatusPort": StubStatusPort,
 		"TunnelIP": in.TunnelIP, "HTTPSPortSuffix": suffix, "HTTPPortSuffix": httpSuffix,
 		"HTTPPort": httpPort, "HTTPSPort": s.HTTPSPort,
-		"FrontProxy": front, "FrontTrusted": trusted,
+		"FrontProxy": front, "FrontTrusted": trusted, "HTTPProxies": httpProxies, "ClientMap": clientMap,
 		"FrontHTTPPort": FrontHTTPPort, "FrontHTTPSPort": FrontHTTPSPort,
 		"Traffic": anyTraffic,
 	})
@@ -329,15 +340,22 @@ func frontProxy(fp domain.FrontProxySettings) (bool, []string, error) {
 	if len(fp.TrustedProxies) == 0 {
 		return false, nil, errors.New("front proxy has no trusted proxies")
 	}
-	out := make([]string, 0, len(fp.TrustedProxies))
-	for _, t := range fp.TrustedProxies {
+	out, err := proxyPrefixes("front proxy trusted proxy", fp.TrustedProxies)
+	return err == nil, out, err
+}
+
+// proxyPrefixes masks a validated list of trusted peers; anything that does
+// not parse as a non-catch-all prefix is refused rather than rendered.
+func proxyPrefixes(what string, in []string) ([]string, error) {
+	out := make([]string, 0, len(in))
+	for _, t := range in {
 		p, err := netip.ParsePrefix(t)
 		if err != nil || p.Bits() == 0 {
-			return false, nil, fmt.Errorf("front proxy trusted proxy %q is not a CIDR", t)
+			return nil, fmt.Errorf("%s %q is not a CIDR", what, t)
 		}
 		out = append(out, p.Masked().String())
 	}
-	return true, out, nil
+	return out, nil
 }
 
 // upstreamIdent makes a host name a unique nginx upstream identifier: dots

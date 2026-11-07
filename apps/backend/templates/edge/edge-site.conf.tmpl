@@ -17,8 +17,9 @@ upstream {{.UpstreamName}} {
 {{- define "bento-proxy"}}
     proxy_http_version 1.1;
     # Security-relevant forwarding headers are overwritten, never appended.
-    # $remote_addr, $bento_proto and $bento_port are the visitor's when the
-    # request came through the tunnel; $bento_forwarded_host carries the
+    # The client address, $bento_proto and $bento_port are the visitor's when
+    # the request came through the tunnel or a trusted proxy;
+    # $bento_forwarded_host carries the
     # edge's published port when it is not standard (edge-nginx.conf).
 {{- if .UpstreamTLSName}}
     # An HTTPS upstream named by DNS is reached as that name: SNI, the
@@ -199,7 +200,7 @@ server {
 {{- if .IPv6}}
   listen [::]:443 quic;
 {{- end}}
-{{- if .FrontHTTPSPort}}
+{{- if .AltSvcVar}}
   add_header Alt-Svc $bento_alt_svc always;
 {{- else}}
   add_header Alt-Svc 'h3=":{{.HTTPSAdvertisedPort}}"; ma=86400' always;
