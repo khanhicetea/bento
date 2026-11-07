@@ -949,5 +949,40 @@ Every finding open in `BACKLOG.md` was fixed (one commit each) or recorded as a 
   `internal/domain` are multi-arch indexes with `linux/arm64` (adminer, goaccess, cloudflared, pglayers 17/18, MySQL
   8.0/8.4/9.7, nginx, PostgreSQL 14–16, rclone).
 
-Not run: GitHub webhooks and a Cloudflare Tunnel (both need writes to external accounts that the agent's permission
-check refused), and arm64 on arm64 hardware (runtime image builds and app containers as arm64).
+Not run in this pass: GitHub webhooks and a Cloudflare Tunnel (run next, below), and arm64 on arm64 hardware (runtime
+image builds and app containers as arm64).
+
+## Cloudflare Tunnel and GitHub on the real VPS (2026-11-07; same host, `85d1f29`)
+
+The e2e tunnel (`bento-e2e`, no other connector running) attached to the VPS stack with `tunnel set-token`; GitHub
+fixtures on the test account. The stack kept its public edge, so each app had both a nip.io host and an
+`e2e-*.aitea.app` host routed through the tunnel to `bento-prod-edge:80`.
+
+- **Tunnel:** `tunnel set-token` brought it to `healthy` in Bento and on Cloudflare (4 connections). Through Cloudflare,
+  e2e-node, e2e-legacy, e2e-py and e2e-php answered 200 over HTTPS; the app saw `HTTPS=on`, `X-Forwarded-Proto:
+  https` and the real client address, and plain `http://` through Cloudflare reached it as `http`.
+- **ACME behind the tunnel:** a host with `tls: acme`, `redirectHttps: true` (e2e-php.aitea.app) answered 200 through
+  the tunnel without a redirect loop, plain HTTP got one 301 to `https://`, and HTTP-01 through Cloudflare and the
+  tunnel issued its staging certificate (`CN=e2e-php.aitea.app`).
+- **Private GitHub repo:** `app git` with the SSH URL, the deploy key added read-only with `gh repo deploy-key add`,
+  deploy cloned and ran `~/deploy.sh`.
+- **Switching repository (fixed):** the app's checkout was still the Gitea repository, so the deploy refused with
+  `git-origin-mismatch` and said to "move the existing code away". Moving `app/` away then made every deploy and
+  `app exec` refuse with `app code directory ... is missing` (Bento will not recreate durable state empty). The
+  guidance now says to empty `app/` and keep the directory, and `apps/deploy.mdx` documents switching repositories;
+  done that way, the next deploy cloned the GitHub repository.
+- **GitHub push to deploy, through the tunnel:** ping 200; push 202, delivery `github push deployed`, operation
+  succeeded, new mark live (6 to 11 polls); push to a `feature-*` branch: `ignored-ref`; unsigned POST, a wrong
+  `X-Hub-Signature-256`, a wrong bearer, a wrong path and a GET: all 404. (A hook edit without the secret made GitHub
+  send unsigned pushes; Bento answered 404 to them, as it should; GitHub redelivery after restoring the secret: 202.)
+- **Ingress modes:** e2e-bun `external`, routed by the tunnel to its `internalUrl`: 200 through the tunnel, 404 on the
+  edge, 502 while stopped, 200 after start. e2e-py `none`: 404 through the tunnel and on the edge, app healthy.
+- **Reboot:** the tunnel came back `healthy` by itself and every tunnel host answered as before. e2e-php answered 500 for
+  the first seconds: Docker restarts every container at once and MySQL accepted connections 16 s after the daemon
+  started; it served 200 from then on. That is the app needing its database, not a Bento fault.
+- **Checks on `85d1f29`:** web checks and `make ci` on the VPS, exit 0.
+
+Observed, not changed: the app-local Valkey logs the generic `vm.overcommit_memory` warning on hosts with the default
+heuristic overcommit; its snapshots fork a process capped at a quarter of the app's memory.
+
+Not run: arm64 on arm64 hardware.

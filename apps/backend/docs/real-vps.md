@@ -123,6 +123,23 @@ The rest of [`e2e-live.md`](e2e-live.md) (deploy cases, ingress modes, backups w
 runs the same way, with Gitea repos (`ssh://git@172.17.0.1:2222/e2e/<repo>.git`) in place of GitHub and nip.io hosts
 in place of the tunnel.
 
+### Tunnel and GitHub
+
+The e2e Cloudflare tunnel and the GitHub test account of [`e2e-live.md`](e2e-live.md) work here too. Their credentials
+stay on the dev host (`~/.config/bento-e2e/`, `gh`); only the tunnel token goes to the VPS, on stdin. Make sure no
+other stack runs the `bento-e2e` connector, then:
+
+```bash
+set -a; . ~/.config/bento-e2e/env; set +a; TID=$(cat ~/.config/bento-e2e/tunnel-id)
+curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" \
+  https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/cfd_tunnel/$TID/token | jq -r .result |
+  ssh bento-test 'BENTO_STACK_ROOT=/srv/bento/prod bento tunnel set-token'
+E2E_STACK=prod scripts/e2e/cf-host.sh add e2e-node      # routes to bento-prod-edge:80
+```
+
+Then add `e2e-node.aitea.app` as a host (`tls: none`, or `acme` with `redirectHttps`), and for GitHub follow
+`e2e-live.md` section 4 with `gh` on the dev host. `tunnel disable` on the VPS releases the tunnel for the dev host.
+
 ## Reset
 
 ```bash
@@ -142,3 +159,5 @@ re-add the public key.
 - **2026-11-07:** Every open backlog finding fixed or decided, verified here (`evidence.md`, "Backlog closure"),
   including a production Let's Encrypt certificate and Invoice Ninja. Gitea also hosts `e2e-laravel`, `e2e-cachet`
   and `e2e-invoiceninja`.
+- **2026-11-07:** The Cloudflare Tunnel and GitHub cases ran here with the e2e tunnel and the test account (one fix:
+  repository-switch guidance). The tunnel token is set on `bento@prod`; `e2e-php` deploys from GitHub.

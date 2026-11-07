@@ -322,8 +322,10 @@ Sections 1–9 on a fresh public Linode (Debian 13, Docker 29.9.3) following [`r
 in a private Gitea on the VPS instead of the GitHub test account (Gitea webhooks instead of GitHub's), nip.io hosts on
 the public edge with Let's Encrypt staging instead of the tunnel, and an `rclone serve s3` endpoint instead of R2.
 Every case passed after the fixes; finding 13 is fixed. Section 10 (Invoice Ninja) and a production Let's Encrypt
-issuance ran in the backlog-closure pass that followed. Not run: the tunnel, GitHub webhooks (both need external
-account writes), the Cachet admin and API steps. Details are in `evidence.md` ("Real VPS run", "Backlog closure").
+issuance ran in the backlog-closure pass that followed. The tunnel and GitHub cases (private repo with a deploy key,
+push to deploy, wrong branch, forged calls, external and private ingress, ACME behind the tunnel, reboot) then ran on
+the same VPS with the e2e tunnel and the test account. Not run: the Cachet admin and API steps. Details are in
+`evidence.md` ("Real VPS run", "Backlog closure", "Cloudflare Tunnel and GitHub on the real VPS").
 
 ## Run: 2026-11-02
 
