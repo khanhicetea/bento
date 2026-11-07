@@ -152,6 +152,17 @@ func (c *Controller) ensureCurrentBuild(
 	return c.recordBuild(ctx, spec, b)
 }
 
+// buildFailure turns a managed image build error into the operation's
+// failure; a build refused for lack of memory gets its own code and guidance.
+func buildFailure(err error, guidance string) error {
+	if errors.Is(err, runtime.ErrBuildMemory) {
+		return Fail("build-memory",
+			"Free memory on the host (stop apps or services you do not need) or add memory or swap. Apps keep their current build; Bento retries with backoff, and Images → Rebuild retries now.",
+			"managed image: %v", err)
+	}
+	return Fail("image", guidance, "managed image: %v", err)
+}
+
 func (c *Controller) recordBuild(ctx context.Context, spec runtime.ImageSpec, b runtime.Build) (store.RuntimeBuild, error) {
 	rb := store.RuntimeBuild{ImageKey: spec.Key.String(), ContextHash: spec.Hash, Tag: b.Tag, ImageID: b.ID,
 		Manifest: b.Manifest, BuiltAt: time.Now().UTC(), Current: true}
@@ -261,8 +272,7 @@ func (c *Controller) handleImageRebuild(ctx context.Context, r *Run) (any, error
 	}
 	b, err := c.Images.Build(ctx, spec, time.Now(), true, func(s string) { r.Info(ctx, "%s", s) })
 	if err != nil {
-		return nil, Fail("image", "Check Docker connectivity and build output; apps keep their current build.",
-			"managed image: %v", err)
+		return nil, buildFailure(err, "Check Docker connectivity and build output; apps keep their current build.")
 	}
 	if hasCur && maps.Equal(cur.Manifest, b.Manifest) {
 		if err := r.Phase(ctx, "discard-image"); err != nil {

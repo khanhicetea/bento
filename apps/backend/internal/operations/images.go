@@ -78,8 +78,7 @@ func (c *Controller) handleImagePrepare(ctx context.Context, r *Run) (any, error
 	}
 	b, err := c.ensureCurrentBuild(ctx, spec, func(s string) { r.Info(ctx, "%s", s) })
 	if err != nil {
-		return nil, Fail("image", "Check Docker connectivity and build output; running apps keep their current image.",
-			"managed image: %v", err)
+		return nil, buildFailure(err, "Check Docker connectivity and build output; running apps keep their current image.")
 	}
 	return map[string]any{"key": key.String(), "tag": b.Tag, "image": b.ImageID}, nil
 }

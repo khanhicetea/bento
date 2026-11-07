@@ -326,6 +326,15 @@ per key and inputs is **current**. `app_runtime_builds` records the build each a
 - Pruning an image deletes its build rows; assignments to them cascade away, and those apps fall back to the current
   build.
 
+Builds run on the same host as the apps and databases they serve, and compile from source (Python, Valkey).
+`runtime.BuildLimits` caps every build step at a quarter of host memory (at least 1 GiB) without swap, and gives it a
+quarter of the default CPU weight (`CPUShares` 256), so the serving containers keep their share and a build that needs
+more fails alone. Before a build starts, `checkBuildMemory` requires `BuildMemoryReserve` (768 MiB) of `MemAvailable`
+plus free swap and otherwise fails with `ErrBuildMemory` (operation code `build-memory`): apps keep their current
+build and the reconciler retries with backoff. Without these, two builds on a 2-vCPU, 3.7 GiB host that also ran eight
+data services took all its memory; with no swap it thrashed, every app was unreachable for 53 minutes, and the kernel
+then killed `mysqld`.
+
 Builds use the Engine API classic builder (`build.BuilderV1`), so the Dockerfiles use no BuildKit features. Tar
 headers use fixed modes and mtimes so the context is byte-reproducible. Toolchains are installed in a `toolchain`
 stage, identical in every Dockerfile (`common/build-toolchain.sh`): mise installs `MISE_TOOLS` into `/opt/mise` at its

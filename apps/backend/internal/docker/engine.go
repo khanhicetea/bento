@@ -277,6 +277,11 @@ type buildLine struct {
 type BuildOptions struct {
 	Pull    bool
 	NoCache bool
+	// Memory caps each build step's container (bytes, no swap beyond it);
+	// 0 leaves it unlimited. CPUShares weighs its CPU against the serving
+	// containers (default 1024); 0 keeps the default.
+	Memory    int64
+	CPUShares int64
 }
 
 func (s *SDK) BuildImage(
@@ -296,6 +301,7 @@ func (s *SDK) BuildImage(
 	res, err := s.c.ImageBuild(ctx, buildContext, client.ImageBuildOptions{
 		Tags: []string{tag}, Remove: true, ForceRemove: true, PullParent: opts.Pull, NoCache: opts.NoCache,
 		BuildArgs: buildArgs, Labels: labels, Version: build.BuilderV1, Dockerfile: "Dockerfile",
+		Memory: opts.Memory, MemorySwap: opts.Memory, CPUShares: opts.CPUShares,
 	})
 	if err != nil {
 		return "", err

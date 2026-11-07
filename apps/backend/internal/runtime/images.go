@@ -119,6 +119,54 @@ func ParseManifest(raw []byte) map[string]string {
 // with the apps it will replace.
 const MaxConcurrentBuilds = 2
 
+// Builds run next to the apps and databases they rebuild for, and compile
+// from source (Python, Valkey). Unbounded, two builds on a small host took
+// all of its memory: the host stopped serving and answering SSH. Each build
+// step is therefore capped at a quarter of host memory (at least
+// MinBuildMemory, so a 2 GiB host can still build), without swap, so a build
+// that needs more fails alone, and runs at a quarter of the default CPU weight
+// so the serving containers keep their share.
+const (
+	MinBuildMemory   = 1 << 30
+	BuildCPUShares   = 256
+	buildMemoryShare = 4
+)
+
+// ErrBuildMemory refuses a build on a host without room for it. Without swap,
+// a host that runs out of memory thrashes for many minutes before the kernel
+// kills something (on the arm64 test host: every app unreachable for 53
+// minutes, then mysqld killed), so a build that may not fit is not started:
+// it fails, apps keep serving on their current build, and the operation is
+// retried later.
+var ErrBuildMemory = errors.New("not enough free memory to build safely")
+
+// BuildMemoryReserve is the available memory (free swap included) a build
+// needs before it starts. On the VPS the largest steps fit well inside the
+// 1 GiB cap: the Valkey compile peaked at 473 MiB and the Python toolchain
+// compile finished within it.
+const BuildMemoryReserve = 768 << 20
+
+// hostMemAvailable is replaced in tests.
+var hostMemAvailable = platform.HostMemAvailable
+
+// checkBuildMemory refuses a build when the host lacks BuildMemoryReserve.
+func checkBuildMemory() error {
+	if avail, ok := hostMemAvailable(); ok && avail < BuildMemoryReserve {
+		return fmt.Errorf("%w: %d MiB available, a build needs %d MiB", ErrBuildMemory, avail>>20, BuildMemoryReserve>>20)
+	}
+	return nil
+}
+
+// BuildLimits adds the build resource limits to opts.
+func BuildLimits(opts docker.BuildOptions) docker.BuildOptions {
+	opts.Memory = MinBuildMemory
+	if total, ok := platform.HostMemory(); ok && total/buildMemoryShare > opts.Memory {
+		opts.Memory = total / buildMemoryShare
+	}
+	opts.CPUShares = BuildCPUShares
+	return opts
+}
+
 // ImageManager builds managed images and caches their identity files.
 // Operations run in parallel: builds of one runtime key are serialized
 // (Hold), builds of different keys run concurrently up to
@@ -206,6 +254,9 @@ func (m *ImageManager) Build(
 		}
 	}
 	defer func() { <-slots }()
+	if err := checkBuildMemory(); err != nil {
+		return Build{}, err
+	}
 	tag := spec.BuildTag(at)
 	for {
 		// A tag names exactly one build: never move an existing one.
@@ -228,7 +279,7 @@ func (m *ImageManager) Build(
 		labels[LabelStackID] = m.Names.StackID
 	}
 	id, err := m.Engine.BuildImage(ctx, tag, bytes.NewReader(spec.Context), spec.Args, labels,
-		docker.BuildOptions{Pull: true, NoCache: refresh}, progress)
+		BuildLimits(docker.BuildOptions{Pull: true, NoCache: refresh}), progress)
 	if err != nil {
 		return Build{}, err
 	}
@@ -346,6 +397,6 @@ func (m *ImageManager) EnsureRestic(ctx context.Context, progress func(string)) 
 	}
 	labels := map[string]string{LabelManaged: "true", "io.bento.context-hash": spec.Hash}
 	id, err := m.Engine.BuildImage(ctx, tag, bytes.NewReader(spec.Context), spec.Args, labels,
-		docker.BuildOptions{}, progress)
+		BuildLimits(docker.BuildOptions{}), progress)
 	return id, tag, err
 }

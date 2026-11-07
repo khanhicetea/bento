@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
+	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 )
 
 // slowBuilds records how many builds run at once and per tag.
@@ -126,7 +128,40 @@ func TestBuildRecordsManifestAndBases(t *testing.T) {
 		b.Manifest[ManifestBasePrefix+domain.PHPVersions["8.4"]] != "sha256:php-base" || len(b.Manifest) != 3 {
 		t.Fatalf("manifest %v", b.Manifest)
 	}
-	if got := fake.Builds[len(fake.Builds)-1]; !got.Pull || !got.NoCache {
+	got := fake.Builds[len(fake.Builds)-1]
+	if !got.Pull || !got.NoCache {
 		t.Fatalf("a refresh build must pull and bypass the cache: %+v", got)
+	}
+	// A build must not be able to take the host's memory or CPU from the
+	// serving containers.
+	if got.Memory < MinBuildMemory || got.CPUShares != BuildCPUShares {
+		t.Fatalf("build without resource limits: %+v", got)
+	}
+	if total, ok := platform.HostMemory(); ok && total/4 > MinBuildMemory && got.Memory != total/4 {
+		t.Fatalf("build memory %d, want a quarter of %d", got.Memory, total)
+	}
+}
+
+// A host without room for a build refuses it before anything runs: a build
+// that pushes a host without swap out of memory stops it from serving.
+func TestBuildRefusedWithoutFreeMemory(t *testing.T) {
+	prev := hostMemAvailable
+	t.Cleanup(func() { hostMemAvailable = prev })
+	fake := docker.NewFake()
+	m := &ImageManager{Engine: fake}
+	spec, err := PlanImage(phpKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostMemAvailable = func() (int64, bool) { return BuildMemoryReserve - 1, true }
+	if _, err := m.Build(t.Context(), spec, time.Now(), false, nil); !errors.Is(err, ErrBuildMemory) {
+		t.Fatalf("build on a full host: %v", err)
+	}
+	if len(fake.Builds) != 0 {
+		t.Fatal("a refused build reached the engine")
+	}
+	hostMemAvailable = func() (int64, bool) { return BuildMemoryReserve, true }
+	if _, err := m.Build(t.Context(), spec, time.Now(), false, nil); err != nil {
+		t.Fatalf("build with room: %v", err)
 	}
 }
