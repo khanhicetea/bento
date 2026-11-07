@@ -368,6 +368,11 @@ Every run script sources `env.bash`, which loads `runtime.env` and `credentials.
 evaluation. `bento-finish` applies bounded backoff and halts the container after 5 failures of a service within
 120 s, handing restart backoff to Docker.
 
+A stop is part of every replacement, and the app serves nothing until the new instance listens, so it must be quick.
+s6 stops each service with up to `S6_SERVICES_GRACETIME` (8 s) for a graceful exit, then signals whatever is left
+(processes no service supervises) and waits `S6_KILL_GRACETIME` before `SIGKILL`. That last wait is spent in full
+even when nothing is left, so it is 500 ms: at the s6 default of 3 s it was most of an app's swap time.
+
 ## Networking and ingress
 
 `Controller.EnsureNetworks` persists a network plan (two free `/24`s from `10.200.0.0/13`): the **apps** network
