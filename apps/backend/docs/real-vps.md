@@ -83,6 +83,7 @@ VPS (`scp scripts/vps/*.sh bento-test:/root/`).
 | `final.sh` | VPS | the smoke run: reset, install, edge, apps, certificates, HTTPS on IPv4/IPv6, a Gitea push-to-deploy |
 | `dbmatrix.sh [ENGINE:VERSION...]` | VPS | per database version: service, a fixture app (`APP=php\|legacy\|node\|py`), add-db, backup and restore-db, the database browser (`dbadmin.py`), service restart, remove and prune |
 | `dbtune.sh` | VPS | every MySQL/PostgreSQL service: apply non-default settings, check the server reports them, reset |
+| `probe.py run LOG ADDR HOST[=MUST]...` / `report LOG [FROM TO]` | VPS | availability probe: a new TLS connection to each host every 100 ms, then outage windows per host |
 
 ## 1. Bootstrap the host
 
@@ -156,6 +157,26 @@ E2E_STACK=prod scripts/e2e/cf-host.sh add e2e-node      # routes to bento-prod-e
 Then add `e2e-node.aitea.app` as a host (`tls: none`, or `acme` with `redirectHttps`), and for GitHub follow
 `e2e-live.md` section 4 with `gh` on the dev host. `tunnel disable` on the VPS releases the tunnel for the dev host.
 
+### Release swap test
+
+What a release does to serving traffic: build a test binary for each step on the dev host (a template comment in
+`templates/images/common/write-manifest.sh` changes every runtime image's inputs; newer digests in
+`domain.EdgeImage`, `MySQLVersions` and `PostgresVersions` stand in for a new edge and database patch image), start
+the probe on the VPS against the e2e apps through the public edge, then install each binary and restart `bento@prod`:
+
+```bash
+ssh bento-test 'D=104.64.207.10; nohup python3 -I /root/probe.py run /root/swap.log $D \
+  e2e-php.$D.nip.io=hits e2e-node.$D.nip.io=hits e2e-legacy.$D.nip.io=hits >/dev/null 2>&1 &'
+# per step: install the binary, systemctl restart bento@prod, wait until no operation is queued or running
+ssh bento-test 'python3 -I /root/probe.py report /root/swap.log FROM_MS TO_MS'
+```
+
+`=hits` makes a request fail unless the body has `hits`, which the fixtures print only after a database round trip.
+Then `bento service restart` each service with a pending patch image (remove the new image first with `docker rmi` to
+time a real pull), `bento images rebuild --all` and `bento app restart` each app. A swap's outage starts when
+the old instance stops; compare it with the operation's phase timestamps (`bento --json op ID`) and the edge's error
+log (`docker logs bento-prod-edge`) to see which step it waited on.
+
 ## Reset
 
 ```bash
@@ -186,3 +207,7 @@ re-add the public key.
   "Front proxy over Tailscale"). `bento-arm` keeps `tailscale set --snat-subnet-routes=false`.
 - **2026-11-07:** Every supported MySQL (8.0, 8.4, 9.7) and PostgreSQL (14–18) version on both hosts with
   `dbmatrix.sh` and `dbtune.sh` (`evidence.md`, "Database versions"). The stacks keep all eight services.
+- **2026-11-07/08:** Release swap test on both hosts with `probe.py` (`evidence.md`, "Release swaps"): four fixes
+  (app stop time, the edge's view of a replaced app, the database patch-image pull, build memory and CPU limits).
+  `bento-arm` ran out of memory during builds and later filled its disk with superseded builds; it now has a 2 GiB
+  `/swapfile` (in `/etc/fstab`), and unused runtime builds were removed on both hosts. Both run `86f8fba`.

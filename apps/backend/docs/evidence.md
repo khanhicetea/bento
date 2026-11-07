@@ -1098,3 +1098,85 @@ Found:
   within about 2 s, and one request got 502. Every PostgreSQL version, both hosts. The restore guide now says so.
 - **MySQL's buffer pool rounding was invisible** (`b7d1ffa`). `innodb_buffer_pool_size=192M` ran as 256M on every
   MySQL version (128M chunks, one instance); 384M applied exactly. The setting's help and the System docs now say so.
+
+## Release swaps (2026-11-07/08; both VPSes: amd64 and arm64)
+
+What a Bento release does to serving traffic, with `scripts/vps/probe.py` against the e2e apps through the public edge
+(a new TLS connection per request, every 100 ms per app; a request fails unless it gets 200 with `hits`, which the
+fixtures print only after a database round trip). Each "release" was a test binary: a template comment changed every
+runtime image's inputs, and newer upstream digests of `nginx:stable-trixie`, `mysql:8.4`, `postgres:16-trixie` and
+pglayers 18 stood in for a new edge and database patch image. Method: `real-vps.md`, "Release swap test". Both stacks
+carried every MySQL and PostgreSQL service of the database matrix and 9 (amd64) or 13 (arm64) apps.
+
+Unchanged by these fixes:
+
+- **Upgrading the binary** without changed inputs (install, `systemctl restart bento@prod`): 0 failed requests, 0
+  containers replaced, both hosts.
+- **Building images** while apps serve: 0 failed requests in every build window on amd64, including a 72-minute
+  `images rebuild --all` without cache (about 160,000 requests) and 1 h 40 min of capped builds (about 186,000; slowest
+  984 ms). Identical rebuilds were discarded as designed.
+- **The edge image swap** (create the new edge, stop the old, start the new): connections refused for 1.1 to 1.9 s.
+  The two containers cannot publish the same ports at once, so that is the floor.
+
+Found and fixed:
+
+- **An app swap waited 3.5 s on s6** (`7c902b1`). Every service stopped within 60 ms, then s6-overlay spent
+  `S6_KILL_GRACETIME` (3000 ms) in full before killing leftovers that were not there. Now 500 ms; services keep their
+  8 s grace. A throwaway container of the PHP image stopped in 3558 ms at 3000 and 468 ms at 200. The old value lives
+  in the old image, so the release that ships the fix still swaps slowly once.
+- **The edge kept a replaced app on 502 for up to 10 s after it was serving** (`4b0ee44`). Two causes, both in the
+  edge error log: `no live upstreams` after refused connections (with `resolve`, nginx counts failures even for a lone
+  server: `fail_timeout` 10 s), and the alias's missing answer between the old container's removal and the new one's
+  creation kept for the resolver's `valid=10s`. With `max_fails=0` and a per-upstream `valid=1s` the edge served the
+  new instance 0.8 s after it started.
+
+  | App swap outage per app | amd64 | arm64 |
+  | --- | --- | --- |
+  | before (release 1) | 3.8 to 5.2 s | 4.5 to 7.8 s |
+  | old s6 grace in the outgoing image, `max_fails` hit (release 2) | 7.6 to 18.1 s | 7.3 to 18.7 s |
+  | s6 grace and `max_fails=0` (release 3) | 0.9 to 2.2 s, one 12.8 s (DNS) | 3.4 to 5.3 s |
+  | all three (release 4) | 3.5 to 4.3 s | not measured (host out of memory, below) |
+  | `app restart` (same container, no DNS change) | 0.9 to 2.7 s | |
+
+  What remains of a swap on amd64: the app's own nginx gone 0.25 s after the stop starts, the container gone 0.5 s
+  later, Docker's teardown about 0.8 s, remove, create and start about 0.9 s, then the app's boot. Overlapping old and
+  new instances would remove the rest; the instance lock forbids it on purpose.
+- **A database patch-image restart was down for the whole download** (`c85a998`). `service restart` stopped the
+  service and then pulled: 47 s (MySQL 8.4) and 86 s (pglayers 18) of pull with the database down, so the apps on it
+  failed for 55.7 s and 92.1 s. Now the pull comes first and a failed pull leaves the service running; with real pulls
+  (56 s and 75 s, images removed first) the apps failed for 5.8 s and 4.6 s. Data intact, versions unchanged.
+- **Image builds took the arm64 host down** (`ea94186`, `86f8fba`). Release 4's two parallel builds (Python and
+  Valkey compile from source) on the 2-vCPU, 3.7 GiB host without swap, already at 3.3 GiB in use with eight data
+  services: the host thrashed, every app was unreachable for 53 minutes (TLS handshake timeouts, 500s, 502s), SSH did
+  not answer, and the kernel then killed `mysqld`. Build steps are now capped at a quarter of host memory (at least
+  1 GiB, no swap) at a quarter of the default CPU weight, and a build does not start without 1 GiB of available memory
+  plus free swap (`build-memory`). Verified: build containers ran with `Memory=1073741824`, `MemorySwap` equal,
+  `CPUShares=256`; the largest steps peaked at 781 MiB (arm64 toolchain) and 473 MiB (Valkey), 0 OOM kills; the arm64
+  host refused builds at 425 MiB available and kept serving; with a 2 GiB swapfile it built Python in 13 minutes.
+  Capped builds are slower on a busy host (a PHP image took 56 minutes under the probe's load); apps keep serving on
+  their current build meanwhile.
+
+Not fixed, reported:
+
+- **Superseded runtime builds are never removed.** Each release that changes image inputs adds a build per runtime;
+  on the arm64 host 75 images (31 GB) filled the 38 GB disk. Valkey then could not save on shutdown and refused to
+  exit, the app's restart failed writing `resolv.conf`, and e2e-php answered 502 until 35 unused builds were removed
+  (18 GB). That restart operation stayed `running` after a forced cancel while a later `app start` of the same app
+  succeeded.
+- **A global operation waits for running builds**, and everything queued after it waits too: after an upgrade that
+  also changed the edge pin, app operations sat queued for 5 to 25 minutes behind the builds. Serving was unaffected.
+
+Final run on `ea94186`, then `86f8fba` (the real pins again, so every image rebuilt, the edge went back to its pinned
+image and the three services had a patch image to apply):
+
+- amd64: 90 minutes of capped builds, 0 failed of about 118,000 requests, slowest 977 ms; 19 build steps sampled, the
+  largest at 584 MiB, 0 OOM kills. The settle wait then ran out, so the database restarts overlapped the edge swap
+  (connections refused 1.5 s) and two app swaps (4.4 and 4.7 s of 502); PostgreSQL 16 with no probed app: 0 failed.
+  The MySQL restart waited 10 minutes behind the global `edge.apply` that waited for the last build.
+- arm64 (2 GiB swapfile added, `real-vps.md`): a 79-minute no-cache Python rebuild under the cap, 0 failed of about
+  193,000 requests, slowest 409 ms; `app restart` 2.9 to 4.6 s of 502 per app. The earlier final rollout there was not
+  probed (the probe was killed by mistake).
+- `86f8fba` on both: 0 containers replaced, 0 failed requests.
+
+Unit tests and `make ci` ran on the amd64 VPS (`make ci` and the web checks on `c85a998`; the changed packages on
+`86f8fba`). The real-Docker integration suite was not run for these changes.

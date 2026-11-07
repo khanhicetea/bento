@@ -13,11 +13,14 @@ bento version
 Apps, the edge, and databases keep serving during the restart — only management pauses. A running operation is
 drained before the service stops.
 
-If a new version changes an app's runtime image or generated configuration, Bento brings running apps up to date by
-replacing their containers — expect a brief restart per app. Check **Activity** after upgrading.
+If a new version changes an app's runtime image or generated configuration, Bento builds the new images while apps keep
+serving on the old ones, then replaces running apps one at a time — expect a few seconds of `502` per app. A version
+with a new edge image restarts the edge once, which refuses connections for about a second. Check **Activity** after
+upgrading.
 
 Databases keep their image until you restart them: a new Bento version can ship a newer patch image of MySQL or
-PostgreSQL, and **System → Restart** on that service applies it (it never changes the engine version).
+PostgreSQL, and **System → Restart** on that service applies it (it never changes the engine version). The new image
+downloads while the database keeps serving; apps lose the database only for the restart itself, a few seconds.
 
 PHP, Debian and toolchain patch releases don't need an upgrade: **System → Images → Rebuild** picks them up, and you
 choose when to roll apps onto the new build ([Runtime images](/reference/runtime-images#rebuild-and-roll-out)).
