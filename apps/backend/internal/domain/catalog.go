@@ -41,7 +41,8 @@ var PHPMinVersions = map[string]string{
 
 // HTTPToolchains maps each HTTP toolchain version to the mise tool requests
 // installed in its image on DebianBase. A request names a release line; the
-// build resolves its newest release. Python is compiled from source.
+// build resolves its newest release. Every tool is a prebuilt release (Python
+// is a python-build-standalone build), so installing them compiles nothing.
 var HTTPToolchains = map[string]map[string]string{
 	"node": {
 		"20": "node@20 pnpm@latest",
@@ -88,10 +89,11 @@ const DebianBase = "debian:trixie-slim"
 // to DebianBase once trixie arm64 has 8.1.34-9 or newer.
 const DebianBookwormBase = "debian:bookworm-slim"
 
-// ValkeyBuildBase compiles Valkey once for every runtime image. The binaries
-// link only libc and libm, and glibc runs programs built against an older
-// release, so this must stay the oldest Debian release among the runtime
-// bases (bookworm: PHP 8.1; everything else is trixie).
+// ValkeyBuildBase is the base of the shared Valkey image, built once and copied
+// into every runtime image. The binaries link only libc and libm, and glibc runs
+// programs built against an older release, so this must stay the oldest Debian
+// release among the runtime bases (bookworm: PHP 8.1; everything else is
+// trixie).
 const ValkeyBuildBase = DebianBookwormBase
 
 // RuntimeDebianBase returns the Debian base whose release matches a runtime
@@ -104,10 +106,9 @@ func (k ImageKey) RuntimeDebianBase() string {
 	return DebianBase
 }
 
-// Supervision, scheduler, Valkey and mise artifacts downloaded (and
-// checksum-verified) while building managed runtime images. These are pinned:
-// changing one is a Bento release. Valkey is a source tarball (one checksum
-// for every architecture), compiled on ValkeyBuildBase.
+// Supervision, scheduler and mise artifacts downloaded (and checksum-verified)
+// while building managed runtime images. These are pinned: changing one is a
+// Bento release.
 var RuntimeArtifacts = map[string]string{
 	"S6_OVERLAY_VERSION":       "3.2.3.2",
 	"S6_OVERLAY_NOARCH_SHA256": "5379750ed30a84bbd2e2dd74847ba6b5bd29cd0b2e3ea2ec58049b57eb2eda12",
@@ -116,11 +117,16 @@ var RuntimeArtifacts = map[string]string{
 	"MINICROND_VERSION":        "0.6.0",
 	"MINICROND_AMD64_SHA256":   "fe4651bde9f2f3da238a875dedf9c64e43a84dec1190299e6817520248499ec9",
 	"MINICROND_ARM64_SHA256":   "21337b0e6ecfdfa81861308272481a380c199138c955d626d80c6a7bc33b8d4c",
-	"VALKEY_VERSION":           "9.1.3",
-	"VALKEY_SHA256":            "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293",
 	"MISE_VERSION":             "2026.10.12",
 	"MISE_AMD64_SHA256":        "72404716768b5b044cbd5170136d3d795cbd592658b6e932b66f0f8d67a54875",
 	"MISE_ARM64_SHA256":        "31bbf697b289fde4b5623b223af288edd9ef86298ce9ecff705ac867f6f27e09",
+}
+
+// ValkeyArtifacts pins the Valkey source tarball (one checksum for every
+// architecture) that the shared Valkey image compiles on ValkeyBuildBase.
+var ValkeyArtifacts = map[string]string{
+	"VALKEY_VERSION": "9.1.3",
+	"VALKEY_SHA256":  "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293",
 }
 
 // ValkeyPort is the loopback port of an app's own Valkey server. HTTP apps

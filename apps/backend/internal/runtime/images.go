@@ -39,10 +39,11 @@ func (s ImageSpec) BuildTag(at time.Time) string {
 		at.UTC().Format("20060102t150405.000"))
 }
 
-// Bases lists the floating base references a build of the spec pulls.
+// Bases lists the floating base references a build of the spec pulls. The
+// shared Valkey image (VALKEY_IMAGE) is local and built once, never pulled.
 func (s ImageSpec) Bases() []string {
 	var out []string
-	for _, k := range []string{"DEBIAN_BASE", "PHP_BASE", "VALKEY_BUILD_BASE"} {
+	for _, k := range []string{"DEBIAN_BASE", "PHP_BASE"} {
 		if v := s.Args[k]; v != "" && !slices.Contains(out, v) {
 			out = append(out, v)
 		}
@@ -61,8 +62,14 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	if err != nil {
 		return ImageSpec{}, err
 	}
+	valkey, err := ValkeyImageSpec()
+	if err != nil {
+		return ImageSpec{}, err
+	}
+	// The Valkey image's tag is content-addressed, so its inputs are part of
+	// this image's inputs.
 	args := map[string]string{
-		"DEBIAN_BASE": key.RuntimeDebianBase(), "VALKEY_BUILD_BASE": domain.ValkeyBuildBase, "MISE_TOOLS": tools,
+		"DEBIAN_BASE": key.RuntimeDebianBase(), "VALKEY_IMAGE": valkey.ValkeyTag(), "MISE_TOOLS": tools,
 	}
 	maps.Copy(args, domain.RuntimeArtifacts)
 	kind := "http"
@@ -85,13 +92,40 @@ func PlanImage(key domain.ImageKey) (ImageSpec, error) {
 	if err != nil {
 		return ImageSpec{}, err
 	}
-	keys := slices.Sorted(maps.Keys(args))
+	return ImageSpec{Key: key, ContextKind: kind, Context: ctxBytes, Args: args, Hash: inputsHash(ctxHash, args)}, nil
+}
+
+// inputsHash identifies a build context and its build arguments.
+func inputsHash(ctxHash string, args map[string]string) string {
 	var h bytes.Buffer
 	h.WriteString(ctxHash)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(args)) {
 		fmt.Fprintf(&h, "\n%s=%s", k, args[k])
 	}
-	return ImageSpec{Key: key, ContextKind: kind, Context: ctxBytes, Args: args, Hash: platform.SHA256Hex(h.Bytes())}, nil
+	return platform.SHA256Hex(h.Bytes())
+}
+
+// standaloneSpec plans a non-runtime image from images-standalone/<name>.
+func standaloneSpec(name string, args map[string]string) (ImageSpec, error) {
+	ctxBytes, ctxHash, err := assets.StandaloneContext(name)
+	if err != nil {
+		return ImageSpec{}, err
+	}
+	return ImageSpec{ContextKind: name, Context: ctxBytes, Args: args, Hash: inputsHash(ctxHash, args)}, nil
+}
+
+// ValkeyImageSpec plans the shared Valkey image: the pinned source tarball
+// compiled once on domain.ValkeyBuildBase and copied into every runtime image,
+// so rebuilding a runtime image never compiles Valkey again.
+func ValkeyImageSpec() (ImageSpec, error) {
+	args := map[string]string{"VALKEY_BUILD_BASE": domain.ValkeyBuildBase}
+	maps.Copy(args, domain.ValkeyArtifacts)
+	return standaloneSpec("valkey", args)
+}
+
+// ValkeyTag is the deterministic tag of the shared Valkey image.
+func (s ImageSpec) ValkeyTag() string {
+	return "bento-build/valkey:" + s.Args["VALKEY_VERSION"] + "-" + s.Hash[:12]
 }
 
 // ManifestPath is the file in which every runtime image records the versions
@@ -120,7 +154,7 @@ func ParseManifest(raw []byte) map[string]string {
 const MaxConcurrentBuilds = 2
 
 // Builds run next to the apps and databases they rebuild for, and compile
-// from source (Python, Valkey). Unbounded, two builds on a small host took
+// from source (PHP extensions, Valkey once). Unbounded, two builds on a small host took
 // all of its memory: the host stopped serving and answering SSH. Each build
 // step is therefore capped at a quarter of host memory (at least
 // MinBuildMemory, so a 2 GiB host can still build), without swap, so a build
@@ -142,8 +176,9 @@ var ErrBuildMemory = errors.New("not enough free memory to build safely")
 
 // BuildMemoryReserve is the available memory (free swap included) a build
 // needs before it starts: room for a build at the cap's floor. The largest
-// steps measured on the VPSes peak below it (the toolchain compile at 781 MiB
-// on arm64, the Valkey compile at 473 MiB).
+// steps measured on the VPSes peak below it, page cache included (898 MiB on
+// amd64, 766 MiB on arm64; with Python still compiled, one step reached the
+// 1 GiB cap).
 const BuildMemoryReserve = MinBuildMemory
 
 // checkBuildMemory refuses a build when the host lacks BuildMemoryReserve.
@@ -233,9 +268,10 @@ type Build struct {
 }
 
 // Build builds spec under a new tag through the Engine API, always pulling its
-// floating bases. refresh also bypasses the layer cache, so every package
-// install and download resolves again (an operator rebuild). The caller holds
-// the key (Hold).
+// floating bases first. refresh also bypasses the layer cache, so every
+// package install and download resolves again (an operator rebuild); the
+// shared Valkey image is built only when missing. The caller holds the key
+// (Hold).
 func (m *ImageManager) Build(
 	ctx context.Context,
 	spec ImageSpec,
@@ -273,6 +309,18 @@ func (m *ImageManager) Build(
 		at = at.Add(time.Millisecond)
 		tag = spec.BuildTag(at)
 	}
+	// The bases are pulled here rather than by the builder: a builder pull
+	// also tries to pull the local Valkey image and fails.
+	for _, ref := range spec.Bases() {
+		if err := m.Engine.PullImage(ctx, ref, progress); err != nil {
+			return Build{}, fmt.Errorf("pull %s: %w", ref, err)
+		}
+	}
+	if tag := spec.Args["VALKEY_IMAGE"]; tag != "" {
+		if err := m.ensureValkey(ctx, tag, progress); err != nil {
+			return Build{}, err
+		}
+	}
 	if progress != nil {
 		progress("building managed image " + tag)
 	}
@@ -282,7 +330,7 @@ func (m *ImageManager) Build(
 		labels[LabelStackID] = m.Names.StackID
 	}
 	id, err := m.Engine.BuildImage(ctx, tag, bytes.NewReader(spec.Context), spec.Args, labels,
-		BuildLimits(docker.BuildOptions{Pull: true, NoCache: refresh}), progress)
+		BuildLimits(docker.BuildOptions{NoCache: refresh}), progress)
 	if err != nil {
 		return Build{}, err
 	}
@@ -299,6 +347,34 @@ func (m *ImageManager) Build(
 		}
 	}
 	return b, nil
+}
+
+// ensureValkey builds the shared Valkey image under tag unless it exists. It
+// runs inside a runtime build (its slot, memory check and Hold), and builds
+// of different keys wait for each other here, so Valkey compiles once.
+func (m *ImageManager) ensureValkey(ctx context.Context, tag string, progress func(string)) error {
+	spec, err := ValkeyImageSpec()
+	if err != nil {
+		return err
+	}
+	if spec.ValkeyTag() != tag {
+		return fmt.Errorf("valkey image %s is not this release's %s", tag, spec.ValkeyTag())
+	}
+	l := m.tagLock(tag)
+	l.Lock()
+	defer l.Unlock()
+	if _, ok, err := m.Engine.ImageID(ctx, tag); err != nil || ok {
+		return err
+	}
+	if progress != nil {
+		progress("building shared Valkey image " + tag)
+	}
+	// Like the backup image, it carries no stack label: stacks on one host
+	// share it.
+	labels := map[string]string{LabelManaged: "true", "io.bento.context-hash": spec.Hash}
+	_, err = m.Engine.BuildImage(ctx, tag, bytes.NewReader(spec.Context), spec.Args, labels,
+		BuildLimits(docker.BuildOptions{}), progress)
+	return err
 }
 
 // ErrImageNotPrunable reports an image that is missing, not Bento-built, or
@@ -360,19 +436,9 @@ func (m *ImageManager) IdentityBase(ctx context.Context, imageID string) ([]byte
 // ResticImageSpec plans the app backup image: the pinned rclone image with a
 // pinned restic binary. Its tag is content-addressed like runtime images.
 func ResticImageSpec() (ImageSpec, error) {
-	ctxBytes, ctxHash, err := assets.StandaloneContext("restic")
-	if err != nil {
-		return ImageSpec{}, err
-	}
 	args := map[string]string{"RCLONE_IMAGE": domain.RcloneImage}
 	maps.Copy(args, domain.ResticArtifacts)
-	keys := slices.Sorted(maps.Keys(args))
-	var h bytes.Buffer
-	h.WriteString(ctxHash)
-	for _, k := range keys {
-		fmt.Fprintf(&h, "\n%s=%s", k, args[k])
-	}
-	return ImageSpec{ContextKind: "restic", Context: ctxBytes, Args: args, Hash: platform.SHA256Hex(h.Bytes())}, nil
+	return standaloneSpec("restic", args)
 }
 
 // ResticTag is the deterministic tag of the app backup image.

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build the pinned, checksum-verified Valkey server and CLI into /rootfs. Runs
-# on the runtime image's own base, so the binaries link against its libc.
+# on domain.ValkeyBuildBase; the result is copied into every runtime image.
 # TLS and systemd support are left out: the server is loopback-only.
 set -eux
 apt-get update

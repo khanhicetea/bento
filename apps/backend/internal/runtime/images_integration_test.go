@@ -35,7 +35,7 @@ func TestIntegrationBuildRuntimeImages(t *testing.T) {
 		{Kind: domain.RuntimeHTTP, Toolchain: "node", Version: "24"},
 		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.4"},
 		{Kind: domain.RuntimeHTTP, Toolchain: "bun", Version: "1.2"},
-		{Kind: domain.RuntimeHTTP, Toolchain: "python", Version: "3.13"}, // compiled from source
+		{Kind: domain.RuntimeHTTP, Toolchain: "python", Version: "3.13"}, // prebuilt python-build-standalone
 	}
 	for _, key := range keys {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)

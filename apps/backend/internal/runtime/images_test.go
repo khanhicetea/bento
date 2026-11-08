@@ -109,7 +109,6 @@ func TestRemoveExcludesHold(t *testing.T) {
 func TestBuildRecordsManifestAndBases(t *testing.T) {
 	fake := docker.NewFake()
 	fake.ImageFiles = map[string][]byte{ManifestPath: []byte("php=8.4.30\ncomposer=2.9.1\nbogus\n")}
-	fake.SetImage(domain.PHPVersions["8.4"], "sha256:php-base")
 	m := &ImageManager{Engine: fake}
 	spec, err := PlanImage(phpKey)
 	if err != nil {
@@ -124,13 +123,21 @@ func TestBuildRecordsManifestAndBases(t *testing.T) {
 	if b.Tag == spec.BuildTag(at) {
 		t.Fatal("build reused an existing tag")
 	}
+	baseID, _, _ := fake.ImageID(t.Context(), domain.PHPVersions["8.4"])
 	if b.Manifest["php"] != "8.4.30" || b.Manifest["composer"] != "2.9.1" ||
-		b.Manifest[ManifestBasePrefix+domain.PHPVersions["8.4"]] != "sha256:php-base" || len(b.Manifest) != 3 {
+		b.Manifest[ManifestBasePrefix+domain.PHPVersions["8.4"]] != baseID || len(b.Manifest) != 2+len(spec.Bases()) {
 		t.Fatalf("manifest %v", b.Manifest)
 	}
+	// Bento pulls the bases itself: a builder pull would also try to pull the
+	// local Valkey image and fail.
+	for _, ref := range spec.Bases() {
+		if fake.CallCount("PullImage "+ref) != 1 {
+			t.Fatalf("base %s not pulled: %v", ref, fake.Calls)
+		}
+	}
 	got := fake.Builds[len(fake.Builds)-1]
-	if !got.Pull || !got.NoCache {
-		t.Fatalf("a refresh build must pull and bypass the cache: %+v", got)
+	if got.Pull || !got.NoCache {
+		t.Fatalf("a refresh build must bypass the cache without a builder pull: %+v", got)
 	}
 	// A build must not be able to take the host's memory or CPU from the
 	// serving containers.
@@ -161,5 +168,47 @@ func TestBuildRefusedWithoutFreeMemory(t *testing.T) {
 	m.MemAvailable = func() (int64, bool) { return BuildMemoryReserve, true }
 	if _, err := m.Build(t.Context(), spec, time.Now(), false, nil); err != nil {
 		t.Fatalf("build with room: %v", err)
+	}
+}
+
+// Valkey compiles once for every runtime and every rebuild: runtime builds,
+// refresh builds included, copy the shared image and build it only when it is
+// missing.
+func TestValkeyImageBuiltOnce(t *testing.T) {
+	fake := docker.NewFake()
+	m := &ImageManager{Engine: fake}
+	php, err := PlanImage(phpKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := PlanImage(nodeKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valkey, err := ValkeyImageSpec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag := valkey.ValkeyTag()
+	if php.Args["VALKEY_IMAGE"] != tag || node.Args["VALKEY_IMAGE"] != tag {
+		t.Fatalf("runtimes copy %q and %q, want %q", php.Args["VALKEY_IMAGE"], node.Args["VALKEY_IMAGE"], tag)
+	}
+	for _, s := range []ImageSpec{php, node, php} {
+		if _, err := m.Build(t.Context(), s, time.Now(), true, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := fake.CallCount("BuildImage " + tag); n != 1 {
+		t.Fatalf("valkey built %d times, want 1", n)
+	}
+	if id, _, _ := fake.ImageID(t.Context(), tag); fake.ImageLabels[id][LabelStackID] != "" {
+		t.Fatal("the shared valkey image carries a stack label")
+	}
+	fake.SetImage(tag, "") // pruned
+	if _, err := m.Build(t.Context(), node, time.Now(), false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := fake.CallCount("BuildImage " + tag); n != 2 {
+		t.Fatalf("a pruned valkey image was not rebuilt (%d builds)", n)
 	}
 }

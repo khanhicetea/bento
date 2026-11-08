@@ -10,10 +10,12 @@ Bento builds one image per runtime version through the Docker Engine API — no 
 - **Floating:** base images follow a release line (`php:8.4-fpm-trixie`, `debian:trixie-slim`), toolchains follow a
   version line through [mise](https://mise.jdx.dev) (`node@24`, `bun@1.3`, `python@3.13`, `pnpm@latest`), Composer
   follows its `latest-2.x` channel, and phpredis is the newest PECL release. A rebuild picks up their patch releases
-  without a Bento upgrade. Python is compiled from source.
+  without a Bento upgrade. Toolchains are prebuilt releases (Python is a python-build-standalone build, verified
+  through its GitHub artifact attestation), so installing them compiles nothing.
 - **Pinned and checksum-verified:** s6-overlay, minicrond, mise itself, and the deb.sury.org signing key. Valkey is
   built once from a pinned, checksum-verified source release on the oldest Debian release among the runtime bases,
-  and that build is shared by every image. These change only with a Bento upgrade.
+  into a shared `bento-build/valkey` image that every runtime image copies, so a rebuild doesn't compile it again.
+  These change only with a Bento upgrade.
 - Each build records what it resolved: every base image id and the PHP, Composer, phpredis, Node.js, npm, pnpm, Bun,
   Python, mise and Valkey versions, plus a digest of the installed Debian packages.
 - Official PHP bases are refused below the release that fixes known PHP vulnerabilities (8.2.35, 8.3.36, 8.4.27,

@@ -4,7 +4,7 @@
 # images/php, so the s6 services, nginx and ini files are shared with it.
 # Built with the Docker Engine API (classic builder); no BuildKit features.
 ARG DEBIAN_BASE
-ARG VALKEY_BUILD_BASE
+ARG VALKEY_IMAGE
 
 # Node.js LTS with npm and pnpm, installed by mise, so apps can install
 # node_modules and build front-end assets with the tooling exec.
@@ -28,13 +28,9 @@ ARG COMPOSER_CHANNEL
 COPY apt-sources.sh fetch-artifacts.sh /tmp/
 RUN sh /tmp/apt-sources.sh && sh /tmp/fetch-artifacts.sh
 
-# Valkey for apps that turn it on, built once for every runtime image on the
-# oldest Debian release among them from the checksum-verified source tarball.
-FROM ${VALKEY_BUILD_BASE} AS valkey
-ARG VALKEY_VERSION
-ARG VALKEY_SHA256
-COPY apt-sources.sh build-valkey.sh /tmp/
-RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
+# Valkey for apps that turn it on: the shared image Bento builds once
+# (images-standalone/valkey), copied in below.
+FROM ${VALKEY_IMAGE} AS valkey
 
 # Up to the PHP-specific ARGs, this stage is identical in images/php: on one
 # Debian release every PHP version shares these layers.

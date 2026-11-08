@@ -39,8 +39,9 @@ func TestRebuildDiscardsAnUnchangedBuild(t *testing.T) {
 	app := h.runningApp("shop")
 	before := h.planned(app)
 	key := app.Runtime.ImageKey().String()
+	pulls := h.fake.CallCount("PullImage " + domain.DebianBase)
 	h.rebuild(key)
-	if got := h.fake.Builds[len(h.fake.Builds)-1]; !got.Pull || !got.NoCache {
+	if got := h.fake.Builds[len(h.fake.Builds)-1]; !got.NoCache || h.fake.CallCount("PullImage "+domain.DebianBase) != pulls+1 {
 		t.Fatalf("a rebuild must pull its bases and bypass the cache: %+v", got)
 	}
 	if after := h.planned(app); after.ID != before.ID || !after.Current {

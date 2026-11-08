@@ -1,10 +1,9 @@
 # Bento managed HTTP-process runtime image (Node.js, Bun, or Python toolchain).
 # Built once per toolchain version and shared by all HTTP apps on it. The
-# toolchain is installed by mise on Debian (MISE_TOOLS); Python is compiled
-# from source.
+# toolchain is installed by mise on Debian (MISE_TOOLS) from prebuilt releases.
 # Built with the Docker Engine API (classic builder); no BuildKit features.
 ARG DEBIAN_BASE
-ARG VALKEY_BUILD_BASE
+ARG VALKEY_IMAGE
 
 FROM ${DEBIAN_BASE} AS artifacts
 ARG S6_OVERLAY_VERSION
@@ -17,13 +16,9 @@ ARG MINICROND_ARM64_SHA256
 COPY fetch-artifacts.sh /tmp/fetch-artifacts.sh
 RUN sh /tmp/fetch-artifacts.sh
 
-# Valkey for apps that turn it on, built once for every runtime image on the
-# oldest Debian release among them from the checksum-verified source tarball.
-FROM ${VALKEY_BUILD_BASE} AS valkey
-ARG VALKEY_VERSION
-ARG VALKEY_SHA256
-COPY apt-sources.sh build-valkey.sh /tmp/
-RUN sh /tmp/apt-sources.sh && sh /tmp/build-valkey.sh
+# Valkey for apps that turn it on: the shared image Bento builds once
+# (images-standalone/valkey), copied in below.
+FROM ${VALKEY_IMAGE} AS valkey
 
 FROM ${DEBIAN_BASE} AS toolchain
 ARG MISE_VERSION

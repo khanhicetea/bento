@@ -56,6 +56,27 @@ func TestPlanArgsMatchDockerfileARGs(t *testing.T) {
 	}
 }
 
+// The standalone images pass exactly the ARGs their Dockerfiles declare too.
+func TestStandaloneArgsMatchDockerfileARGs(t *testing.T) {
+	for name, plan := range map[string]func() (ImageSpec, error){"valkey": ValkeyImageSpec, "restic": ResticImageSpec} {
+		spec, err := plan()
+		if err != nil {
+			t.Fatal(err)
+		}
+		df, err := fs.ReadFile(assets.FS, "images-standalone/"+name+"/Dockerfile")
+		if err != nil {
+			t.Fatal(err)
+		}
+		declared := map[string]bool{}
+		for _, m := range dockerfileARG.FindAllStringSubmatch(string(df), -1) {
+			declared[m[1]] = true
+		}
+		if got, want := slices.Sorted(maps.Keys(spec.Args)), slices.Sorted(maps.Keys(declared)); !slices.Equal(got, want) {
+			t.Errorf("%s: passes %v, Dockerfile declares %v", name, got, want)
+		}
+	}
+}
+
 // stage returns one build stage of a Dockerfile, from its FROM line to the
 // blank line that ends it.
 func stage(t *testing.T, df, name string) string {
@@ -74,8 +95,8 @@ func stage(t *testing.T, df, name string) string {
 
 // The classic builder shares a layer only when everything beneath it is
 // identical. The official-image and deb.sury.org PHP Dockerfiles keep their
-// final stages identical up to the PHP-specific steps, and every runtime builds
-// Valkey in the same stage, so a host stores those layers once per Debian
+// final stages identical up to the PHP-specific steps, and every runtime copies
+// Valkey from the same stage, so a host stores those layers once per Debian
 // release instead of once per runtime version.
 func TestRuntimeImagesShareLayers(t *testing.T) {
 	php, sury, http := readDockerfile(t, "php"), readDockerfile(t, "php-sury"), readDockerfile(t, "http")

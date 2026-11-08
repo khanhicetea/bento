@@ -296,15 +296,16 @@ idle `sleep` command; it never runs `/init`, starts no daemons, and does not tak
 ### Managed images
 
 `PlanImage` combines the embedded context for `php`, `php-sury` or `http` (`templates/images/common` overlaid with
-the kind) with the Bento-owned build args: the floating base references (`domain.PHPVersions`, `DebianBase`,
-`domain.ValkeyBuildBase`), the mise tool requests (`ImageKey.Tools`: `domain.PHPTools` or the
+the kind) with the Bento-owned build args: the floating base references (`domain.PHPVersions`, `DebianBase`), the
+tag of the shared Valkey image (`VALKEY_IMAGE`, content-addressed, so its inputs are part of these), the mise tool
+requests (`ImageKey.Tools`: `domain.PHPTools` or the
 `domain.HTTPToolchains` entry), the Composer channel, the PHP floor (`domain.PHPMinVersions`) or Sury package floor,
-and the pinned, checksum-verified artifacts in `domain.RuntimeArtifacts` (s6-overlay, minicrond, Valkey's source
-tarball, mise). It hashes both into `ImageSpec.Hash`, the image's **inputs**.
+and the pinned, checksum-verified artifacts in `domain.RuntimeArtifacts` (s6-overlay, minicrond, mise). It hashes both into `ImageSpec.Hash`, the image's **inputs**.
 
 Because the bases are floating tags and the tools follow release lines, building the same inputs twice can produce
 different images. Every build therefore gets its own tag, `bento-runtime/<toolchain>:<version>-<hash12>-<time>`
-(`ImageSpec.BuildTag`; an existing tag is never moved), always pulls its bases (`docker.BuildOptions.Pull`), and
+(`ImageSpec.BuildTag`; an existing tag is never moved), always pulls its bases first (`Engine.PullImage`; a builder
+pull would also try to pull the local Valkey image and fail), and
 records what it resolved: the image writes `/usr/local/share/bento-manifest` (`common/write-manifest.sh`: tool
 versions and a digest of the installed Debian packages) and `ImageManager.Build` adds the local id of every base
 reference under `base:<ref>`. Builds are rows of `runtime_builds` (key, inputs hash, tag, image id, manifest); one
@@ -326,7 +327,8 @@ per key and inputs is **current**. `app_runtime_builds` records the build each a
 - Pruning an image deletes its build rows; assignments to them cascade away, and those apps fall back to the current
   build.
 
-Builds run on the same host as the apps and databases they serve, and compile from source (Python, Valkey).
+Builds run on the same host as the apps and databases they serve, and compile from source (the official PHP
+images' extensions, and Valkey once).
 `runtime.BuildLimits` caps every build step at a quarter of host memory (at least 1 GiB) without swap, and gives it a
 quarter of the default CPU weight (`CPUShares` 256), so the serving containers keep their share and a build that needs
 more fails alone. Before a build starts, `checkBuildMemory` requires `BuildMemoryReserve` (1 GiB, room for a build at the cap's floor) of `MemAvailable`
@@ -338,15 +340,20 @@ then killed `mysqld`.
 Builds use the Engine API classic builder (`build.BuilderV1`), so the Dockerfiles use no BuildKit features. Tar
 headers use fixed modes and mtimes so the context is byte-reproducible. Toolchains are installed in a `toolchain`
 stage, identical in every Dockerfile (`common/build-toolchain.sh`): mise installs `MISE_TOOLS` into `/opt/mise` at its
-final path (Python compiled from source, so it links against that Debian release), every installed executable is
+final path (all prebuilt: Python is a python-build-standalone build whose GitHub artifact attestation mise
+verifies, so it bundles its own OpenSSL and SQLite and a Python release, not a Debian update, patches them), every
+installed executable is
 linked into `/usr/local/bin`, and the Debian packages they link against are recorded (as the PHP build does) so the
 runtime stage installs exactly those. Operator-installed tools live in the app home: `env.bash` (and
 `/etc/profile.d/bento-mise.sh` for login shells) puts `$HOME/.local/share/mise/shims` before `/usr/local/bin` and
-trusts mise config under the home; `domain.ResticMiseExcludes` keeps that data out of backups. Valkey is compiled in
-one build stage, identical in every Dockerfile, on `domain.ValkeyBuildBase` (`common/build-valkey.sh`:
-checksum-verified source tarball, TLS and systemd off). It links only libc and libm, so that base must stay the oldest
-Debian release among the runtime bases; each final stage runs `valkey-server --version` to prove the binary loads on
-its base. Only `valkey-server` and `valkey-cli` reach `/usr/local/bin`. The classic builder shares a layer only when
+trusts mise config under the home; `domain.ResticMiseExcludes` keeps that data out of backups. Valkey is compiled
+once into a shared image, `bento-build/valkey:<version>-<hash12>` (`ValkeyImageSpec`, `images-standalone/valkey`:
+checksum-verified source tarball from `domain.ValkeyArtifacts`, TLS and systemd off, on `domain.ValkeyBuildBase`).
+`ImageManager.Build` builds it only when the tag is missing (`ensureValkey`, inside the runtime build's slot and Hold),
+so refresh builds and other runtimes reuse it; every Dockerfile copies it from a `FROM ${VALKEY_IMAGE} AS valkey`
+stage. Like the backup image it carries no stack label, and pruning it only means the next build compiles it again. It
+links only libc and libm, so that base must stay the oldest Debian release among the runtime bases; each final stage
+runs `valkey-server --version` to prove the binary loads on its base. Only `valkey-server` and `valkey-cli` reach `/usr/local/bin`. The classic builder shares a layer only when
 every layer beneath it is identical: the `php` and `php-sury` final stages start with the same steps
 (`php/install-tools.sh`, toolchain, s6, Valkey) before anything PHP-specific, so PHP versions on one Debian release
 share those layers (until a refresh build, which bypasses the cache). `TestRuntimeImagesShareLayers` keeps the shared

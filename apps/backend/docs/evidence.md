@@ -1180,3 +1180,33 @@ image and the three services had a patch image to apply):
 
 Unit tests and `make ci` ran on the amd64 VPS (`make ci` and the web checks on `c85a998`; the changed packages on
 `86f8fba`). The real-Docker integration suite was not run for these changes.
+
+## Fewer compiles in runtime builds (2026-11-08; both VPSes: amd64 and arm64, 2 vCPU, ~3.8 GiB, serving apps)
+
+- Valkey is compiled once into a shared `bento-build/valkey:<version>-<hash12>` image (8.3 MB) that every runtime
+  copies; Python comes from mise's prebuilt python-build-standalone (GitHub artifact attestation verified, seen in
+  mise's debug log). PHP 8.2-8.5 still compile their extensions. Classic builder with `--pull` refuses a base that
+  exists only locally (`pull access denied`), so `ImageManager.Build` now pulls the bases itself and builds without
+  a builder pull.
+- Method: the same three runtimes rebuilt from scratch (`refresh`, no layer cache, as Images -> Rebuild all does)
+  with `579b394` (old) and this change (new), in that order, on each host while its apps, databases and edge served
+  (load average ~5, swap in use). Build-step containers' cgroup `memory.peak` was sampled every second (page cache
+  included). The new run started without the Valkey image, so its first build compiled Valkey.
+
+  | Build, from scratch | amd64 old | amd64 new | arm64 old | arm64 new |
+  | --- | --- | --- | --- | --- |
+  | Python 3.13 (first build: includes Valkey, ~5m40s) | 14m53s | 7m39s | 14m25s | 7m28s |
+  | PHP 8.4 | 14m13s | 8m44s | 14m11s | 8m54s |
+  | Node 24 | 8m21s | 2m58s | 7m49s | 2m14s |
+  | Total | 37m27s | 19m21s | 36m25s | 18m36s |
+  | Largest build step, peak memory | 1024 MiB (the cap) | 898 MiB | 880 MiB | 766 MiB |
+
+  No OOM kills. Python 3.13 image: 686 MB (was 1.02 GB); PHP 8.4 unchanged at 1.07 GB. New Python image as a
+  non-root user: 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1; ssl, sqlite3, ctypes, lzma, bz2, readline, curses, dbm,
+  zoneinfo import; `venv` and `pip install` work; `valkey-server` 9.1.3 runs.
+- On arm64 the first old run filled the 38 GB disk (both runs' images plus the failed builds' layers); two builds
+  failed in `apt-get install` and the PHP apps' health checks timed out until 14 GB of unused images were removed.
+  The arm64 old Node 24 and new rows come from a rerun, one build at a time with the image removed after each.
+- `make ci` and `make test-integration` (all eight runtime images and the lifecycle suite) passed on amd64.
+- Not run: the integration suite on arm64; a Bento upgrade of a running stack onto these images.
+

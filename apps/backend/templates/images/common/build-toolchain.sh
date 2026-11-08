@@ -13,21 +13,15 @@
 #   /rootfs/usr/local/share/bento-toolchain-deps
 #                                         Debian packages the tools link against
 #
-# Python is compiled from source (python-build), so it links against this
-# Debian release's libraries; node, pnpm and bun are release binaries that
-# mise verifies against their published checksums.
+# Every tool is a prebuilt release, so a build compiles nothing. Python is a
+# python-build-standalone build (self-contained: it bundles OpenSSL, SQLite and
+# its other libraries, so a new Python release, not a Debian update, patches
+# them); mise verifies its GitHub artifact attestation. Node, pnpm and bun are
+# release binaries that mise verifies against their published checksums.
 set -eux
 sh /tmp/apt-sources.sh
 apt-get update
-build_deps=""
-case " ${MISE_TOOLS} " in
-  *" python@"*)
-    build_deps="build-essential libbz2-dev libffi-dev libgdbm-dev liblzma-dev libncurses-dev \
-      libreadline-dev libsqlite3-dev libssl-dev libzstd-dev tk-dev uuid-dev zlib1g-dev"
-    ;;
-esac
-# shellcheck disable=SC2086
-apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils $build_deps
+apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils
 arch="$(dpkg --print-architecture)"
 case "$arch" in
   amd64) mise_arch=x64; mise_sha="$MISE_AMD64_SHA256" ;;
@@ -42,7 +36,7 @@ chmod 0755 /rootfs/usr/local/bin/mise
 # The tools live in /opt/mise at their final path: Python's prefix and pip's
 # shebangs are absolute. Config, cache and state stay in this stage.
 export MISE_DATA_DIR=/opt/mise MISE_CACHE_DIR=/tmp/mise/cache MISE_CONFIG_DIR=/tmp/mise/config \
-  MISE_STATE_DIR=/tmp/mise/state MISE_YES=1 MISE_PYTHON_COMPILE=1 MISE_NODE_NPM_SHIM=0 \
+  MISE_STATE_DIR=/tmp/mise/state MISE_YES=1 MISE_PYTHON_COMPILE=0 MISE_NODE_NPM_SHIM=0 \
   MISE_HIDE_UPDATE_WARNING=1 MISE_NODE_COREPACK=0
 mise() { /rootfs/usr/local/bin/mise "$@"; }
 # shellcheck disable=SC2086

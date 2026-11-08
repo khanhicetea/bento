@@ -96,10 +96,11 @@ Pinned artifacts (s6-overlay, minicrond, mise) live in `domain.RuntimeArtifacts`
 arm64; update both checksums together (for mise, from the release's `SHASUMS256.txt`, choosing a release at least two
 weeks old). After a minicrond bump, run `make vendor-minicrond-ui` to vendor that release's web UI into
 `internal/schedulerui` (the scheduler gateway serves it; `TestVendoredVersionMatchesPin` fails until you do). Valkey
-is pinned there too, as one source tarball (`VALKEY_VERSION`, `VALKEY_SHA256`, the same for every architecture) that
-`templates/images/common/build-valkey.sh` compiles once, on `domain.ValkeyBuildBase`, for every runtime image. That
-base must be the oldest Debian release among the runtime bases: a new base on an older release needs
-`ValkeyBuildBase` moved to it (each final stage runs `valkey-server --version`, so a mismatch fails the build).
+is pinned in `domain.ValkeyArtifacts`, as one source tarball (`VALKEY_VERSION`, `VALKEY_SHA256`, the same for every
+architecture) that `templates/images-standalone/valkey` compiles on `domain.ValkeyBuildBase` into one shared image,
+`bento-build/valkey:<version>-<hash12>`, which every runtime image copies. That base must be the oldest Debian release
+among the runtime bases: a new base on an older release needs `ValkeyBuildBase` moved to it (each final stage runs
+`valkey-server --version`, so a mismatch fails the build).
 Toolchains are installed by `templates/images/common/build-toolchain.sh` in a `toolchain` stage that every
 Dockerfile shares; a tool that links against a new Debian library gets it automatically (the stage records the
 packages its binaries need).
