@@ -22,17 +22,13 @@ None open.
 
 ## Before public traffic
 
-- **Superseded runtime builds are never removed automatically** (confirmed, both VPSes 2026-11-07/08). Every Bento
-  upgrade that changes image inputs and every operator rebuild adds images of about 0.7-1.1 GB per runtime; nothing
-  deletes the ones no app can use any more (inputs of an older Bento, no container). After a handful of releases the 38
-  GB arm64 VPS filled: Valkey could not save on shutdown, an app stayed down until started by hand, and on 2026-11-08
-  PHP apps failed their health checks until 14 GB of images were removed. Today an operator prunes them one at a time
-  from the Docker inventory on **System** (typed confirmation), and **System** flags low disk. Proposed fix: after a
-  rollout confirms, remove builds whose inputs differ from the current Bento's and that no container references (they
-  cannot be rolled back to).
+None open.
 
 ## Hardening (low)
 
+- **Old shared build images are not swept** (confirmed, 2026-11-08). `image.sweep` removes superseded runtime builds
+  only. A Bento upgrade that changes the Valkey or backup image inputs leaves the previous `bento-build/valkey` (8 MB)
+  or `bento-backup/restic` image behind; they stay prunable by hand in the Docker inventory.
 - **App operations wait behind image builds** (confirmed, 2026-11-07). A global operation (such as `edge.apply`
   after an upgrade that changes the edge image) waits for running builds, and app operations queue behind it: 5-25
   minutes on the 2 vCPU VPSes. Apps keep serving; operator actions are delayed.

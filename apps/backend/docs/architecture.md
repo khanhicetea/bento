@@ -125,6 +125,7 @@ operations on the same resource keep FIFO order and nothing overtakes a waiting 
 | `service.create`, `service.reconcile` | exclusive `service:<name>` |
 | `image.prepare`, `image.rebuild` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
 | `image.rollout`, `image.rollout-stop` | exclusive `image:<key>` (they only write build assignments) |
+| `image.sweep` | exclusive `image:<key>` (it removes only builds that nothing can be assigned except under that key) |
 | `app.clone-from-backup`, `app.restore-from-backup` | shared `restic:<src>` / `restic-remote:<repo>`, in the `restic-clone` pool (one at a time) while downloading; then `Run.Escalate` turns them global before planning, creating and provisioning the clone |
 | everything else, and any unclassified kind | **global**: runs alone, after everything before it, before anything after it |
 
@@ -326,6 +327,13 @@ per key and inputs is **current**. `app_runtime_builds` records the build each a
   a time; `image.rollout-stop` reverts every still-rolling assignment of the key (`RevertRollingRuntimeBuilds`).
 - Pruning an image deletes its build rows; assignments to them cascade away, and those apps fall back to the current
   build.
+- Superseded builds are removed automatically (`image_sweep.go`). A build is **released** when no container (running
+  or stopped) uses its image and it is neither the current build nor an app's assigned or roll-back
+  (`previous_build_id`) build that still matches this Bento's inputs. Every hour the reconciler's `SweepBuilds` stamps
+  `released_at` on newly released builds, clears it on builds in use again, and submits one `image.sweep` per runtime
+  key with a build released for `BuildReleaseGrace` (12 hours). The sweep re-checks under its key and removes the
+  image through `ImageManager.Remove`, which re-verifies that no container uses it. The Docker inventory returns
+  `autoRemoveAt` for each released build.
 
 Builds run on the same host as the apps and databases they serve, and compile from source (the official PHP
 images' extensions, and Valkey once).

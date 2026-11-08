@@ -97,7 +97,9 @@ function ResourceRow({
   usedBy,
   meta,
   action,
+  removeAt,
 }: {
+  removeAt?: string;
   ownership: T.DockerOwnership;
   icon: ReactNode;
   title: ReactNode;
@@ -121,6 +123,10 @@ function ResourceRow({
           <span className="tag" title={usedBy.join(", ")}>
             Used by {usedBy.length > 2 ? `${usedBy.slice(0, 2).join(", ")} +${usedBy.length - 2}` : usedBy.join(", ")}
           </span>
+        ) : removeAt ? (
+          <span className="tag" title={`Unused since a newer build replaced it; Bento removes it after ${removeAt}`}>
+            Auto-remove {Date.parse(removeAt) > Date.now() ? formatRelative(removeAt) : "due"}
+          </span>
         ) : (
           <span className="tag">Unused</span>
         )}
@@ -141,6 +147,7 @@ function ImageRow({ image, onPrune }: { image: T.DockerImage; onPrune: () => voi
       }
       detail={`${shortId(image.id)} · ${image.built ? "built" : "pulled"} · ${formatBytes(image.sizeBytes)}`}
       usedBy={image.usedBy}
+      removeAt={image.autoRemoveAt}
       meta={<span title={image.createdAt}>{formatRelative(image.createdAt)}</span>}
       action={
         image.prunable && (

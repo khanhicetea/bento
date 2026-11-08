@@ -215,3 +215,8 @@ re-add the public key.
   `bento-test` got a 2 GiB `/swapfile` too. Both hosts were then wiped for release testing: `reset.sh`, every other
   container, image, volume, network and the build cache removed, `bento@prod` disabled. Only `e2e-gitea` and `e2e-s3`
   (with their volumes) remain, so a new run starts at step 1's install and `bento init`.
+- **2026-11-08:** Automatic removal of superseded runtime builds on `bento-test`: a fresh stack with one Node 24 app,
+  then a binary with changed node image inputs. The reconciler built the new image and moved the app on its own; the
+  next sweep marked the old build and the Docker inventory showed its removal 12 hours later. With the mark backdated
+  by 13 hours, the startup sweep submitted `image.sweep`, which removed only the old image; the app kept answering.
+  The stack was then wiped again.

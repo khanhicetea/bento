@@ -151,6 +151,7 @@ func (r *Reconciler) Run(ctx context.Context) {
 	wg.Go(func() { r.watchEvents(ctx) })
 	wg.Go(func() { r.pruneHistory(ctx) })
 	wg.Go(func() { r.watchImageOps(ctx) })
+	wg.Go(func() { r.sweepBuilds(ctx) })
 	ticker := time.NewTicker(r.Interval)
 	defer ticker.Stop()
 	r.Trigger()
@@ -209,6 +210,52 @@ func (r *Reconciler) pruneHistory(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// sweepInterval is how often released runtime builds are marked and the due
+// ones removed, so a build goes between BuildReleaseGrace and an hour after.
+const sweepInterval = time.Hour
+
+// sweepBuilds marks runtime builds nothing can use any more and submits one
+// image.sweep per runtime whose builds have stayed so for
+// operations.BuildReleaseGrace (see operations.KindImageSweep).
+func (r *Reconciler) sweepBuilds(ctx context.Context) {
+	t := time.NewTicker(sweepInterval)
+	defer t.Stop()
+	for {
+		if err := r.SweepBuilds(ctx); err != nil && ctx.Err() == nil {
+			r.Log.Warn("runtime build sweep failed", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// SweepBuilds runs one sweep.
+func (r *Reconciler) SweepBuilds(ctx context.Context) error {
+	due, err := r.C.MarkReleasedBuilds(ctx)
+	if err != nil {
+		return err
+	}
+	for _, key := range due {
+		busy, err := store.ActiveForTarget(ctx, r.C.Store.DB(), key)
+		if err != nil {
+			return err
+		}
+		if busy {
+			continue // the next sweep tries again
+		}
+		op, _, err := r.C.Submit(ctx, operations.Submission{Kind: operations.KindImageSweep, TargetKind: "image",
+			TargetID: key, Origin: "reconciler", Request: map[string]any{"reason": "superseded builds"}})
+		if err != nil {
+			return err
+		}
+		r.Log.Info("reconcile submitted", "kind", operations.KindImageSweep, "target", key, "op", op.ID)
+	}
+	return nil
 }
 
 func (r *Reconciler) watchEvents(ctx context.Context) {

@@ -240,11 +240,15 @@ outer:
 		if c.State != "" && !c.Running {
 			state = container.ContainerState(c.State)
 		}
+		imageID := f.Images[c.Spec.Config.Image]
+		if imageID == "" && strings.HasPrefix(c.Spec.Config.Image, "sha256:") {
+			imageID = c.Spec.Config.Image // created by image id, as Docker reports it
+		}
 		sum := container.Summary{
 			ID:              c.ID,
 			Names:           []string{"/" + c.Name},
 			Image:           c.Spec.Config.Image,
-			ImageID:         f.Images[c.Spec.Config.Image],
+			ImageID:         imageID,
 			Labels:          c.Spec.Config.Labels,
 			State:           state,
 			Created:         c.Created.Unix(),
@@ -468,7 +472,7 @@ func (f *Fake) RemoveImage(_ context.Context, id string, _ []string) error {
 		return err
 	}
 	for _, c := range f.Containers {
-		if f.Images[c.Spec.Config.Image] == id {
+		if f.Images[c.Spec.Config.Image] == id || c.Spec.Config.Image == id {
 			return fmt.Errorf("conflict: image %s is being used by container %s", id, c.ID)
 		}
 	}

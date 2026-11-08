@@ -106,6 +106,9 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //   - image.rollout and image.rollout-stop hold their runtime key
 //     exclusively. They only write build assignments; the reconciler
 //     replaces the instances.
+//   - image.sweep holds its runtime key exclusively: it removes only builds
+//     no container, current build or assignment can use, and assignments
+//     change only under that key (rollouts) or to the current build.
 //
 // Everything else runs alone: edge/tunnel/dbadmin apply, provision, publish,
 // unpublish, remove, bindings, permissions, restic.restore-db, export, image prune.
@@ -153,7 +156,7 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 		return claims{shared: []string{"restic-remote:" + op.TargetID}, pool: clonePool}
 	case KindImagePrepare, KindImageRebuild:
 		return claims{excl: []string{imageClaim(op.TargetID)}, pool: imageBuildPool}
-	case KindImageRollout, KindImageRolloutStop:
+	case KindImageRollout, KindImageRolloutStop, KindImageSweep:
 		return claims{excl: []string{imageClaim(op.TargetID)}}
 	}
 	return globalClaims

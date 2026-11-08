@@ -515,8 +515,10 @@ CREATE TABLE schedules (
 -- Managed runtime image builds. A build is one image built from one set of
 -- Bento-owned inputs (context_hash) of a runtime key; its floating bases and
 -- tool channels resolved to manifest_json. current marks the build new apps
--- of that key and inputs are given. Rows are deleted when their image is
--- pruned.
+-- of that key and inputs are given. released_at is when the build was first
+-- seen unused (no container, no app assignment it can serve, not current);
+-- empty while in use. A build released for operations.BuildReleaseGrace is
+-- removed automatically. Rows are deleted when their image is pruned.
 CREATE TABLE runtime_builds (
   id            INTEGER PRIMARY KEY,
   image_key     TEXT NOT NULL,
@@ -525,7 +527,8 @@ CREATE TABLE runtime_builds (
   image_id      TEXT NOT NULL,
   manifest_json TEXT NOT NULL DEFAULT '{}',
   built_at      TEXT NOT NULL,
-  current       INTEGER NOT NULL DEFAULT 0 CHECK (current IN (0, 1))
+  current       INTEGER NOT NULL DEFAULT 0 CHECK (current IN (0, 1)),
+  released_at   TEXT NOT NULL DEFAULT ''
 ) STRICT;
 
 CREATE UNIQUE INDEX runtime_builds_current ON runtime_builds(image_key, context_hash) WHERE current = 1;

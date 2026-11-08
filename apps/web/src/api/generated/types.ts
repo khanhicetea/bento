@@ -893,6 +893,11 @@ export interface DockerImage {
    * Prunable: Bento-built and referenced by no container.
    */
   prunable: boolean;
+  /**
+   * AutoRemoveAt is when Bento removes this superseded runtime build on its
+   * own (empty: it doesn't).
+   */
+  autoRemoveAt?: string;
 }
 export interface DockerVolume {
   name: string;

@@ -313,6 +313,11 @@ func (s *Server) handleDockerInventory(w http.ResponseWriter, r *http.Request) {
 		slugs[a.ID] = a.Slug
 	}
 	inv := s.C.Names.ClassifyInventory(containers, images, volumes, networks, slugs)
+	removals, err := operations.BuildRemovals(ctx, s.Store.DB())
+	if err != nil {
+		writeError(w, s.Log, err)
+		return
+	}
 	out := dto.DockerInventory{Images: []dto.DockerImage{}, Volumes: []dto.DockerVolume{}, Networks: []dto.DockerNetwork{}}
 	for _, i := range inv.Images {
 		if i.Ownership == runtime.OwnedForeign {
@@ -321,6 +326,9 @@ func (s *Server) handleDockerInventory(w http.ResponseWriter, r *http.Request) {
 		out.Images = append(out.Images, dto.DockerImage{ID: i.ID, Tags: nonNil(i.Tags), SizeBytes: i.Size,
 			CreatedAt: platform.FormatTime(time.Unix(i.Created, 0)), Built: i.Built,
 			Ownership: dto.DockerOwnership(i.Ownership), UsedBy: nonNil(i.UsedBy), Prunable: i.Prunable})
+		if at, ok := removals[i.ID]; ok && i.Prunable {
+			out.Images[len(out.Images)-1].AutoRemoveAt = platform.FormatTime(at)
+		}
 	}
 	for _, v := range inv.Volumes {
 		if v.Ownership == runtime.OwnedForeign {

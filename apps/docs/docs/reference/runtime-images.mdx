@@ -38,6 +38,12 @@ Bento builds one image per runtime version through the Docker Engine API — no 
    the build they ran before. Apps already confirmed on the new build keep it.
 4. **Roll back** on an app row puts it back on its previous build while that image still exists.
 
+Bento removes a superseded build on its own about **12 hours** after nothing uses it any more: no container runs it,
+and it is neither the current build nor an app's build or roll-back build. Builds made for an older Bento release
+count as superseded once their apps have moved on. The Docker inventory on **System** shows when each one goes
+(**Auto-remove in 9 hours**), so you can roll back or prune it by hand before then. Rolling an app back onto a build
+stops its removal.
+
 A Bento upgrade that changes an image's inputs builds a new image and replaces apps on it automatically (see
 [Upgrade](/system/upgrade)); a rebuild never does.
 

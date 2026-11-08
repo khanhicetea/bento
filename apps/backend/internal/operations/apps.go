@@ -76,6 +76,7 @@ func (c *Controller) registerHandlers() {
 		KindPermissions:      c.handlePermissions,
 		KindAppDeploy:        c.handleDeploy,
 		KindImagePrune:       c.handleImagePrune,
+		KindImageSweep:       c.handleImageSweep,
 		KindImagePrepare:     c.handleImagePrepare,
 		KindImageRebuild:     c.handleImageRebuild,
 		KindImageRollout:     c.handleImageRollout,

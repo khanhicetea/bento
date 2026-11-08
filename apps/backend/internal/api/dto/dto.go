@@ -884,6 +884,9 @@ type DockerImage struct {
 	UsedBy    []string        `json:"usedBy"`
 	// Prunable: Bento-built and referenced by no container.
 	Prunable bool `json:"prunable"`
+	// AutoRemoveAt is when Bento removes this superseded runtime build on its
+	// own (empty: it doesn't).
+	AutoRemoveAt string `json:"autoRemoveAt,omitempty"`
 }
 
 type DockerVolume struct {

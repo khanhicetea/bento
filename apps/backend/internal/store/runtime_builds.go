@@ -21,6 +21,8 @@ type RuntimeBuild struct {
 	Manifest    map[string]string
 	BuiltAt     time.Time
 	Current     bool
+	// ReleasedAt is when the build was first seen unused; zero while in use.
+	ReleasedAt time.Time
 }
 
 // AppRuntimeBuild is the build an app runs or will run once replaced.
@@ -32,13 +34,13 @@ type AppRuntimeBuild struct {
 	UpdatedAt       time.Time
 }
 
-const runtimeBuildColumns = `id, image_key, context_hash, tag, image_id, manifest_json, built_at, current`
+const runtimeBuildColumns = `id, image_key, context_hash, tag, image_id, manifest_json, built_at, current, released_at`
 
 func scanRuntimeBuild(row interface{ Scan(...any) error }) (RuntimeBuild, error) {
 	var b RuntimeBuild
-	var manifest, builtAt string
+	var manifest, builtAt, releasedAt string
 	if err := row.Scan(&b.ID, &b.ImageKey, &b.ContextHash, &b.Tag, &b.ImageID, &manifest, &builtAt,
-		&b.Current); err != nil {
+		&b.Current, &releasedAt); err != nil {
 		return b, err
 	}
 	b.Manifest = map[string]string{}
@@ -46,6 +48,7 @@ func scanRuntimeBuild(row interface{ Scan(...any) error }) (RuntimeBuild, error)
 		return b, err
 	}
 	b.BuiltAt = platform.ParseTime(builtAt)
+	b.ReleasedAt = platform.ParseTime(releasedAt)
 	return b, nil
 }
 
@@ -112,6 +115,17 @@ func ListRuntimeBuilds(ctx context.Context, q Q) ([]RuntimeBuild, error) {
 // assigned to one lose their assignment and get the current build again.
 func DeleteRuntimeBuildsByImage(ctx context.Context, q Q, imageID string) error {
 	_, err := q.ExecContext(ctx, "DELETE FROM runtime_builds WHERE image_id = ?", imageID)
+	return err
+}
+
+// SetRuntimeBuildReleased records when a build was first seen unused; a zero
+// at marks it in use again.
+func SetRuntimeBuildReleased(ctx context.Context, q Q, id int64, at time.Time) error {
+	v := ""
+	if !at.IsZero() {
+		v = platform.FormatTime(at)
+	}
+	_, err := q.ExecContext(ctx, "UPDATE runtime_builds SET released_at = ? WHERE id = ?", v, id)
 	return err
 }
 
