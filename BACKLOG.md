@@ -22,11 +22,23 @@ None open.
 
 ## Before public traffic
 
-None open.
+- **Superseded runtime builds are never removed automatically** (confirmed, both VPSes 2026-11-07/08). Every Bento
+  upgrade that changes image inputs and every operator rebuild adds images of about 0.7-1.1 GB per runtime; nothing
+  deletes the ones no app can use any more (inputs of an older Bento, no container). After a handful of releases the 38
+  GB arm64 VPS filled: Valkey could not save on shutdown, an app stayed down until started by hand, and on 2026-11-08
+  PHP apps failed their health checks until 14 GB of images were removed. Today an operator prunes them one at a time
+  from the Docker inventory on **System** (typed confirmation), and **System** flags low disk. Proposed fix: after a
+  rollout confirms, remove builds whose inputs differ from the current Bento's and that no container references (they
+  cannot be rolled back to).
 
 ## Hardening (low)
 
-None open.
+- **App operations wait behind image builds** (confirmed, 2026-11-07). A global operation (such as `edge.apply`
+  after an upgrade that changes the edge image) waits for running builds, and app operations queue behind it: 5-25
+  minutes on the 2 vCPU VPSes. Apps keep serving; operator actions are delayed.
+- **An operation can stay `running` after a forced cancellation on a full disk** (plausible, seen once on 2026-11-07):
+  an `app.restart` whose step could not write kept its state, so that app's later operations queued behind it until
+  the backend restarted.
 
 ## Never verified live
 
@@ -41,6 +53,8 @@ These come from `apps/backend/docs/evidence.md` and the audit:
   and PostgreSQL 16/17), and a MySQL swap while the app holds a long transaction (`lock_wait_timeout` 60s).
 - Crash recovery mid-clone (`restic.recover` runs a database drop) on real Docker. Interrupted or tampered imports.
 - Scheduled backup retention pruning. A large-database restore drill. Disk-full behaviour.
+- A minicrond job running when its app stops: services get `S6_SERVICES_GRACETIME` (8 s), stray processes 0.5 s, and
+  whether minicrond waits for or signals its running jobs was not checked.
 - The web UI has no automated tests.
 
 ## Decisions

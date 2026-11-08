@@ -211,3 +211,7 @@ re-add the public key.
   (app stop time, the edge's view of a replaced app, the database patch-image pull, build memory and CPU limits).
   `bento-arm` ran out of memory during builds and later filled its disk with superseded builds; it now has a 2 GiB
   `/swapfile` (in `/etc/fstab`), and unused runtime builds were removed on both hosts. Both run `86f8fba`.
+- **2026-11-08:** Build timing, old against new, on both hosts (`evidence.md`, "Fewer compiles in runtime builds").
+  `bento-test` got a 2 GiB `/swapfile` too. Both hosts were then wiped for release testing: `reset.sh`, every other
+  container, image, volume, network and the build cache removed, `bento@prod` disabled. Only `e2e-gitea` and `e2e-s3`
+  (with their volumes) remain, so a new run starts at step 1's install and `bento init`.
