@@ -1210,3 +1210,29 @@ Unit tests and `make ci` ran on the amd64 VPS (`make ci` and the web checks on `
 - `make ci` and `make test-integration` (all eight runtime images and the lifecycle suite) passed on amd64.
 - Not run: the integration suite on arm64; a Bento upgrade of a running stack onto these images.
 
+
+## Site checks on the running stack: pages, assets, HTTPS (2026-11-08; `bento-test`, `372baa4` + edge buffer change)
+
+- Stack kept as it was (11 apps: Bagisto, Cachet, WordPress, legacy PHP on MySQL/PostgreSQL/SQLite). Every host started
+  with `tls: none`, so HTTPS had never been exercised on it. The ten working hosts were switched to `tls: acme` with
+  `redirectHttps` (Let's Encrypt staging) and all issued within a minute.
+- Passed, from the dev host and through the Docker network: HTTP -> HTTPS is one 301 then 200, no loop, query string
+  kept; HTTP/2; IPv6 (from `bento-arm`); DB-backed pages on all three engines (legacy shop, Cachet, Bagisto search and
+  API, WordPress posts); static assets with correct MIME types, gzip, immutable `Cache-Control` and ETags; tunnel
+  visitors (a client on the reserved tunnel address sending `X-Forwarded-Proto: https`) are served without a redirect
+  and `X-Forwarded-Proto` from any other client is ignored; Cachet and WordPress see `HTTPS=on` (Cachet's cookies are `secure`, WordPress links its assets over https).
+- Fixed: every upstream response over about 64 KiB (any ordinary WordPress, Cachet or Bagisto page) spilled to a temp file
+  on the edge's 256 MiB tmpfs, which the static cache shares, and logged a `[warn]` each time (3,605 on this host). The
+  edge now sets `proxy_buffer_size 16k; proxy_buffers 16 16k;` (256 KiB in memory per request; larger bodies still spill).
+  After shipping the binary and restarting `bento@prod`, 12 requests for 100-255 KiB pages logged no warning.
+- Not bugs, but they look like one (settings the fixtures got wrong):
+  - WordPress apps were created with `routing: front-controller` and Block PHP probes on. `/wp-includes/*`,
+    `/wp-content/*`, `/wp-json/` and `xmlrpc.php` answered 404 from the edge, and `/wp-login.php` and `/wp-admin/` 404
+    from the app's own Nginx (the front controller runs only `index.php`). Block PHP probes off plus `legacy` routing
+    fixes both, as `apps/docs/docs/apps/settings.mdx` says.
+  - Bagisto `/storage/*` images 404: Nginx refuses the `public/storage` symlink (`disable_symlinks`), as
+    `deploy-scripts.mdx` documents. Its theme assets are written as `http://` URLs because the fixture's `APP_URL` is
+    `http://`; mixed content on HTTPS until `APP_URL` is changed.
+  - `bagisto-sqlite` answers 500: its install stopped half way because Bagisto's migrations do not support SQLite
+    (`This database driver does not support dropping foreign keys by name`).
+- Not run: HTTP/3, a browser (mixed-content blocking is inferred from the URLs, not observed).

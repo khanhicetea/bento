@@ -714,3 +714,16 @@ func TestRenderWithoutIPv6(t *testing.T) {
 		}
 	}
 }
+
+// An ordinary 100-250 KiB HTML page must not spill to a temp file on the
+// edge's small tmpfs (nginx logs a warning for each spill).
+func TestRenderBuffersTypicalPagesInMemory(t *testing.T) {
+	files, err := Render(Input{Settings: domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(files["nginx.conf"])
+	if !strings.Contains(main, "proxy_buffer_size 16k;") || !strings.Contains(main, "proxy_buffers 16 16k;") {
+		t.Fatal("main config must size upstream response buffers for ordinary pages")
+	}
+}
