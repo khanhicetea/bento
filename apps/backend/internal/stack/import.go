@@ -219,6 +219,9 @@ func rewriteImportedState(
 		"DELETE FROM runtime_builds",
 		// Schedules stay configured but off; bookkeeping restarts on this host.
 		"UPDATE schedules SET enabled=0, last_slot='', last_run_at='', last_op_id='', last_state='', missed_count=0",
+		// Tailcat server keys are never exported (tailcat/ is skipped), and a
+		// clone must not answer on the source's address: remote access is off.
+		"UPDATE data_services SET remote_access=0",
 	}
 	for _, st := range stmts {
 		if _, err := q.ExecContext(ctx, st); err != nil {
@@ -310,7 +313,7 @@ func disableSetting(ctx context.Context, q store.Q, key string) error {
 // in the imported ledger. The ledger is preserved; allocation resumes at the
 // new range.
 func moveUIDRange(ctx context.Context, q store.Q, r domain.UIDRange) error {
-	if r.First < 1000 || r.Last <= r.First {
+	if r.First < 1000 || r.Last <= r.First || r.Last > domain.MaxUIDRangeLast {
 		return fmt.Errorf("invalid uid range %d-%d", r.First, r.Last)
 	}
 	ledger, err := store.ListLedger(ctx, q)

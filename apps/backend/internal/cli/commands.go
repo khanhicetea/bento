@@ -26,6 +26,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
+	"github.com/khanhicetea/bento/apps/backend/internal/remoteaccess"
 	"github.com/khanhicetea/bento/apps/backend/internal/scheduler"
 	"github.com/khanhicetea/bento/apps/backend/internal/stack"
 )
@@ -73,6 +74,9 @@ Client (requires the running backend):
   ops [--target ID] | op ID | op cancel ID
   services | service add --engine mysql|postgres --version V | service restart NAME
                                                       restart also applies a newer patch image of the version
+  service remote NAME [on|off|rotate]                 experimental remote access over Tailcat: state, address and
+                                                      the tailcat forward command; rotate gives a new address
+  app login SLUG [--binding ID]                       show a MySQL/PostgreSQL binding's own login (journaled)
   edge | edge set --json FILE
   tunnel | tunnel set-token (stdin) | tunnel disable
   hosts | host add --json FILE | host set --json FILE | host remove NAME
@@ -90,6 +94,13 @@ func Main(args []string, version string) int {
 	if len(args) > 0 && args[0] == "internal-relay" {
 		if err := scheduler.RunChild(); err != nil {
 			fmt.Fprintln(os.Stderr, "relay:", err)
+			return 1
+		}
+		return 0
+	}
+	if len(args) > 0 && args[0] == remoteaccess.ChildCommand {
+		if err := remoteaccess.RunChild(); err != nil {
+			fmt.Fprintln(os.Stderr, "tailcat:", err)
 			return 1
 		}
 		return 0
@@ -467,16 +478,20 @@ func (r *runner) run(args []string) error {
 			return nil
 		}
 		tw := tabwriter.NewWriter(r.out, 2, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tENGINE\tVERSION\tSTATE\tVOLUME\tUPDATE")
+		fmt.Fprintln(tw, "NAME\tENGINE\tVERSION\tSTATE\tVOLUME\tREMOTE\tUPDATE")
 		for _, s := range list.Services {
 			update := "-"
 			if s.UpdateAvailable {
 				update = "patch image; restart to apply"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Engine, s.Version, s.State, s.Volume, update)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Engine, s.Version, s.State, s.Volume,
+				s.RemoteAccess.State, update)
 		}
 		return tw.Flush()
 	case "service":
+		if len(args) >= 3 && args[1] == "remote" {
+			return r.serviceRemote(ctx, c, args[2:])
+		}
 		if len(args) == 3 && args[1] == "restart" {
 			// Also moves the service onto a newer patch image of its version.
 			_, err := c.Mutate(ctx, "POST", "/api/v1/services/"+url.PathEscape(args[2])+"/restart", nil, r.wait, r.out)
@@ -825,6 +840,13 @@ func (r *runner) app(ctx context.Context, c *Client, args []string) error {
 			r.out,
 		)
 		return err
+	case "login":
+		fs, rest := sub("app login", args[2:])
+		binding := fs.String("binding", "", "binding id (required when the app has several MySQL/PostgreSQL bindings)")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		return r.appLogin(ctx, c, base, *binding)
 	case "add-db":
 		fs, rest := sub("app add-db", args[2:])
 		binding := fs.String("binding", "", "binding id")

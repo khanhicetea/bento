@@ -1,0 +1,91 @@
+---
+title: Connect a GUI client
+description: Reach an app's MySQL or PostgreSQL database from TablePlus, DBeaver or psql on your laptop, over Tailcat (experimental).
+---
+
+**Remote access** lets a database client on your own machine — TablePlus, DBeaver, DataGrip, `psql`, `mysql` — connect
+to a MySQL or PostgreSQL data service without opening a port on the server. It is built on
+[Tailcat](https://github.com/tailscale/tailcat): the server gets a **tc address** (about 150 characters; always copy it whole), and `tailcat forward` on your
+laptop turns that address into a local port.
+
+<Callout type="warning" title="The address and a password are the whole lock">
+Anyone who has the service's address **and** a binding's password can reach that database from anywhere on the
+internet. Treat the address like a password: don't paste it in chat, tickets or screenshots. If it leaks, **Rotate
+address**. The feature is experimental, and it uses Tailscale's free public relays by default, which are rate-limited
+and have no SLA.
+</Callout>
+
+## 1. Install tailcat on your laptop
+
+| System | Install |
+| --- | --- |
+| macOS | `brew install tailcat` |
+| Windows | `scoop install tailcat` |
+| Debian, Ubuntu | the `.deb` from [Tailcat's releases](https://github.com/tailscale/tailcat/releases) (`sudo apt install ./tailcat_*.deb`) |
+| Other | static binaries on the releases page, or `go install github.com/tailscale/tailcat/cmd/tailcat@latest` |
+
+Nothing is installed on the server: Bento has Tailcat built in.
+
+## 2. Turn on remote access
+
+In **System → Data services**, flip **Remote access** on the service's tile and confirm. After a few seconds it shows
+**✓ Listening** with its address. Remote access is per service: every app bound to that service can be reached, each
+only with its own login.
+
+Then, in the app's **Data** tab, the binding shows **Remote ✓ Listening**:
+
+- **Copy command** copies `tailcat forward <tc-address> 15432:5432` (PostgreSQL) or `… 13306:3306` (MySQL).
+- **Show login** reveals the app's own database user, password and databases, with copy buttons and **Copy URL**
+  (`postgresql://user:password@127.0.0.1:15432/shop_main`, or `mysql://…@127.0.0.1:13306/…`). Every reveal is
+  recorded in **Activity** as *Login shown for …* (without the password). **Hide login** clears it from the page.
+
+SQLite bindings have no remote access; they are files inside the app.
+
+## 3. Forward and connect
+
+Run the copied command on your laptop and leave it running:
+
+```bash
+tailcat forward tcXXXX… 15432:5432
+# forwarding 127.0.0.1:15432 -> remote localhost:5432
+```
+
+Point the client at `127.0.0.1`, port `15432` (or `13306`), with the login from **Show login** — or paste the URL.
+Press Ctrl-C to stop forwarding. The local port is only a suggestion: `tailcat forward tcXXXX… 25432:5432` works too.
+
+The tunnel is end-to-end encrypted (WireGuard). It starts through a relay and usually upgrades to a direct connection;
+behind strict NATs it stays on the relay, which is slower.
+
+## Rotate, turn off, restarts
+
+- **Rotate address** gives the service a new address. The old one stops working at once and open connections are
+  cut; send people the new command.
+- **Turning it off** stops the server and cuts every connection. The address is kept: turning it on again brings back
+  the same one. Rotate if it should not.
+- The address survives backend restarts and upgrades. If the server process stops, Bento restarts it with the same
+  address.
+- **After any server restart, rotate or reboot, run `tailcat forward` again.** A `tailcat forward` that was already
+  running does not reconnect by itself: its local port stays open but every query hangs or fails. Stop it with Ctrl-C
+  and run the same command again; your client then reconnects.
+- At most 32 connections and about 10 new connections a second per service; extra connections are closed.
+- An [export](/system/stacks) or clone never carries the address: remote access is off on the imported stack.
+
+## From the CLI
+
+```bash
+bento service remote postgres17 on        # or off, rotate; without an action: state, address, command
+bento app login shop                      # the binding's login and URLs (--binding ID if it has several)
+```
+
+`bento app login` works on the server over the root-only control socket. API tokens and `bento mcp` can neither see the
+address nor reveal a login.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **✕ Failed** on the tile | The server needs outbound HTTPS and UDP to the Tailcat relays. Bento keeps retrying. |
+| `key … is missing` | The key file under `tailcat/` was lost; **Rotate address** creates a new one. |
+| Client says *password authentication failed* | Use the app's own login from **Show login**, not the service administrator. |
+| `tailcat forward` hangs on start | Your network blocks UDP and relays; try another network. |
+| Queries hang after the server restarted | Restart `tailcat forward` (Ctrl-C, run it again). |

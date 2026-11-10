@@ -419,6 +419,11 @@ CREATE TABLE data_services (
   volume        TEXT NOT NULL UNIQUE,
   initialized   INTEGER NOT NULL DEFAULT 0,
   settings_json TEXT NOT NULL DEFAULT '{}',
+  -- Remote access over Tailcat (experimental): the switch and the key
+  -- generation it must run with. A rotate bumps the generation; the key
+  -- itself lives only in a root-only file (tailcat/<name>.key).
+  remote_access     INTEGER NOT NULL DEFAULT 0 CHECK (remote_access IN (0,1)),
+  remote_generation INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL
 ) STRICT;
 

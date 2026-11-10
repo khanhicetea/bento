@@ -24,8 +24,11 @@ This document explains how the Go backend is put together and why.
      can reach it; the loopback address is for host proxies. Operators may bind any address because nothing on
      this listener works without a credential; `off` disables it.
 
-On SIGTERM it stops both listeners, waits up to 60 s for the current operation, stops relays, and exits. Containers
-are never stopped on shutdown.
+After the executor starts it also starts the Tailcat servers of the data services with remote access on
+(`Controller.StartRemoteAccess`, see *Remote access to data services*).
+
+On SIGTERM it stops both listeners, waits up to 60 s for the current operation, stops relays and the Tailcat children,
+and exits. Containers are never stopped on shutdown.
 
 ```mermaid
 flowchart LR
@@ -43,7 +46,7 @@ flowchart LR
 ## Package dependency direction
 
 ```text
-cmd/bento → cli → api → operations → {runtime, dataservices, edge, backup, transfer, scheduler} → docker, store, domain, platform
+cmd/bento → cli → api → operations → {runtime, dataservices, edge, backup, transfer, scheduler, remoteaccess} → docker, store, domain, platform
                  → stack (init/import)
                  → reconcile → operations
 ```
@@ -81,7 +84,8 @@ connection, and `BEGIN IMMEDIATE` transactions.
   change is a frontend-scope reload plus an edge apply; it never changes the container spec.
 - **Tables:** `meta` (stack id/name, uid high-water mark), `settings` (JSON: uid range, edge, tunnel,
   network plan, operator password hash), `schedules`, `uid_ledger`, `apps`, `hosts` (Ingress: one row per host name,
-  target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`, `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
+  target `app` | `upstream` | `redirect`, per-host `route_json`; app hosts cascade with the app), `data_services`
+  (`remote_access` + `remote_generation`: the remote-access switch and its key generation), `bindings` + `binding_databases` (add-only), `retired_apps`, `operations` +
   `operation_events` (≤200 events each), `sessions`, `api_tokens` (SHA-256 hashes, scope, expiry),
   `runtime_builds` + `app_runtime_builds` (managed runtime images and the build each app runs).
 - **Rule:** repositories take a `store.Q` so they work inside or outside a transaction. Never hold a transaction
@@ -122,7 +126,7 @@ operations on the same resource keep FIFO order and nothing overtakes a waiting 
 | --- | --- |
 | `app.reconcile`, `app.start`, `app.restart`, `app.update`, `app.deploy` | exclusive `app:<id>`, shared `service:<name>` for each bound service |
 | `app.stop` | exclusive `app:<id>` |
-| `service.create`, `service.reconcile` | exclusive `service:<name>` |
+| `service.create`, `service.reconcile`, `service.configure`, `service.restart`, `service.remote` | exclusive `service:<name>` |
 | `image.prepare`, `image.rebuild` | exclusive `image:<key>`, in the `image-build` pool (at most `runtime.MaxConcurrentBuilds` = 2 at once) |
 | `image.rollout`, `image.rollout-stop` | exclusive `image:<key>` (they only write build assignments) |
 | `image.sweep` | exclusive `image:<key>` (it removes only builds that nothing can be assigned except under that key) |
@@ -742,6 +746,80 @@ base64 password, databases, gateway token). `router.php` checks the token, force
 request, and keeps only a placeholder password in Adminer's session. Response cookies are re-scoped to the binding
 path. Tickets and grants do not survive a backend restart.
 
+## Remote access to data services: `remoteaccess`, `operations/remote.go`, `api/remote.go`
+
+Experimental, off by default, per MySQL/PostgreSQL service. **Product decision:** convenience first. An operator copies
+one command and connects a GUI client to `127.0.0.1`; the Tailcat address plus a binding's password is the whole
+access control (anyone holding both reaches that database from anywhere). Do not add layers that break that flow
+without the product owner; do harden what sits behind it.
+
+**Pieces.** `service.remote` (`PUT /api/v1/services/{name}/remote`, `{"action":"on"|"off"|"rotate"}`, full scope
+only) persists `data_services.remote_access` and, for a rotate, bumps `remote_generation`, then the handler acts:
+
+1. `remote-key`: `remoteaccess.EnsureKey` reads `tailcat/<name>.key` (root `0600` in a root-only `0700` directory;
+   `RootSkip` keeps it out of exports, and `import` turns remote access off). An explicit `on` creates a missing
+   key; an older generation (a rotate) is replaced. A file that is not a root-owned `0600` regular file of this
+   service, or that does not parse, is refused (`remote-key-invalid`), never overwritten. The key is a WireGuard
+   node key, a pre-shared key and a DERP region ID (0 until the first child picks the nearest region; it is then
+   recorded so the address is stable).
+2. `start-remote`: `Manager.Start` listens on `run/tailcat/<name>.sock` (bound through `/proc/self/fd/<dirfd>/…`
+   so a deep root fits `sun_path`; the socket is `0600` owned by the Tailcat identity; `run/tailcat` is
+   `0710 root:<tailcat gid>`) and starts a supervisor. The handler waits up to 75 s for the child's report; a failure
+   fails the operation (`remote-access-failed`) but leaves intent on and the supervisor retrying.
+3. `off` stops the child, closes and removes the socket, and cuts every open stream. The key is kept, so turning it
+   on again restores the same address; rotate to retire it.
+
+`Controller.StartRemoteAccess` starts every enabled service at boot. A missing key at boot is **not** replaced (the
+address would move silently): the service shows failed until the operator rotates. A rotate whose operation never
+ran (generation newer than the key) is honored at boot.
+
+**The child** is `/proc/self/exe internal-tailcat` (`remoteaccess.RunChild`), one per service, long-lived:
+
+- `Credential{Uid, Gid: domain.TailcatUID (2000000100), Groups: []}`, `Pdeathsig`, `Setpgid`, environment `PATH`
+  only, working directory `/`, and one inherited descriptor (fd 3, the `run/tailcat` directory). It runs in the
+  host network namespace: it needs outbound HTTPS (DERP map) and UDP (STUN, WireGuard) and the data network has no
+  egress, which is why it is not a container.
+- Before reading anything it refuses root and any capability (`capget`), sets `no_new_privs` and clears the
+  dumpable flag, so no other process of the same UID can ptrace it or read its memory. Tailscale's logs are
+  discarded (`logger.Discard`, `log.SetOutput(io.Discard)`); only its own error lines reach stderr, which the
+  backend logs with anything address-shaped redacted.
+- The key arrives as JSON on **stdin** (never argv, env, labels or logs). It resolves the region from the DERP map
+  (nearest by latency for a new key), starts `tailcat.Server{Key, PresharedKey, Region, ServedTCPPorts: [port],
+  OnTCP}` and prints one JSON line `{"address","regionId","netSandbox"}` on stdout. The backend accepts it as soon as the line
+  arrives and drains the rest of stdout in the background (it must not wait for EOF: a healthy child never closes it). The backend recomputes the address from the
+  key and refuses a report that differs, then records a newly picked region. The address is the short form
+  (region by ID), so it survives DERP node changes.
+- After resolving the region, Landlock (`restrictTCPConnect`, ABI ≥ 4, Linux 6.7+, applied to every thread with
+  `AllThreadsSyscall`) limits its outbound TCP to 443, 80, the region nodes' DERP ports and an overridden DERP map
+  URL's port. It shares the host network namespace and the host can reach the data bridge, so without this its UID
+  could open TCP to the data services. UDP and Unix sockets are not restricted (no data service listens on UDP). The
+  report carries `netSandbox`; on an older kernel the child runs without it and the backend logs a warning.
+- `OnTCP` serves only the engine port (5432/3306; the packet filter drops the rest) and dials `<name>.sock`
+  relative to fd 3, at most 64 at once. The child holds no database credential.
+
+**The backend half** (`Manager`, root) accepts on the socket only from the Tailcat UID or root (`SO_PEERCRED`),
+admits at most 32 concurrent streams and about 10 new streams/s (token bucket, burst 10) per service, resolves the
+service's data-network address per stream (`Controller.ServiceEndpoint`: labels, role, service name and stack id
+checked, container running) and splices bytes with half-close. A crashed child is restarted with backoff 1 s
+doubling to 5 min (reset after 2 min up); the address does not change.
+
+**Identity.** `domain.TailcatUID` is fixed, above every app range (`domain.MaxUIDRangeLast` = 2,000,000,000, now
+enforced by `init` and `import`), outside systemd's dynamic and nspawn container ranges and below its foreign
+range (2147352576+), so it is never allocated
+to or reused from an app and needs no ledger row. The manager refuses to start while a host account uses it.
+
+**What the API shows.** `GET /services` → `remoteAccess`: state (`off|starting|listening|failed`), connections, the
+suggested local port (engine port + 10000: 15432/13306) and, for full-scope callers only (session or unscoped CLI),
+`address` and `command` (`tailcat forward <address> 15432:5432`). Operation results never carry the address.
+
+**Accepted exception: the binding login.** `POST /api/v1/apps/{id}/bindings/{bid}/login` returns a
+MySQL/PostgreSQL binding's own user, **password**, databases and connection URLs. It is the only API response that
+carries a database password, deliberately, so a GUI client can be configured in one step. It is narrow: not in
+`routeScopes` (full scope: browser session with Origin + CSRF, or the unscoped root-only socket; tokens, scoped
+sockets and MCP are refused), POST only, `Cache-Control: no-store`, and each reveal is journaled first as an already
+finished `binding.login` operation (binding, user, service, caller kind; never the value). No password, no journal
+entry. Do not "fix" this endpoint away, and do not add another one like it.
+
 ## Scheduler UI gateway: `api/gateway.go`
 
 minicrond's UI is served on the management origin at `runtime.SchedulerBasePath` = `/apps/<slug>/scheduler`
@@ -794,7 +872,8 @@ changes its own UID and never execs into containers per request. Relays idle for
 ## Security invariants (checklist for reviewers)
 
 - No secret in argv, labels, the fingerprint, logs, API responses, or container env; secrets travel via exec stdin,
-  or `0400/0440` files.
+  or `0400/0440` files. The one accepted exception is the binding login endpoint (see *Remote access to data
+  services*): full scope, POST, `no-store`, journaled.
 - App containers: numeric app UID/GID, read-only, no capabilities, `no-new-privileges`, no host ports, no Docker
   socket, only their own home/SQLite/config mounted.
 - Destructive actions check labels, role, and (for app containers) the home mount first.
@@ -812,6 +891,9 @@ changes its own UID and never execs into containers per request. Relays idle for
   vendored scheduler page relaxes the latter to `'self'`, so the Scheduler tab can embed it), and `Origin: null`
   never passes the origin check.
 - Creating an API token or changing the password from a browser session requires the current password.
+- A Tailcat child runs as `domain.TailcatUID` with no capabilities, `no_new_privs`, not dumpable, its key on stdin
+  only, and reaches only the backend's socket; the backend dials only a verified service container's engine port.
+  Tailcat keys never leave `tailcat/` (not exported, not logged, not in operation results).
 - The Adminer container holds no credentials, joins only the data network, and refuses requests without the
   gateway token. The gateway injects one binding's app-user credentials per request; URL parameters cannot select
   another server, driver, user, or database.

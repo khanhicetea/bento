@@ -61,6 +61,7 @@ func TestRouteScopesNameRegisteredRoutes(t *testing.T) {
 		"POST /api/v1/stack/export", "PUT /api/v1/auth/password", "PUT /api/v1/tunnel/token",
 		"POST /api/v1/retired/{id}/prune", "DELETE /api/v1/hosts/{name}", "POST /api/v1/apps/{id}/webhook",
 		"POST /api/v1/apps/{id}/bindings/{bid}/dbadmin", "PUT /api/v1/apps/{id}/restic",
+		"POST /api/v1/apps/{id}/bindings/{bid}/login", "PUT /api/v1/services/{name}/remote",
 		"GET /api/v1/tokens", "POST /api/v1/tokens", "DELETE /api/v1/tokens/{id}",
 	} {
 		if !slices.Contains(patterns, p) {

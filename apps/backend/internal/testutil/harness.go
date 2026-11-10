@@ -15,6 +15,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
+	"github.com/khanhicetea/bento/apps/backend/internal/remoteaccess"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
@@ -62,6 +63,7 @@ func NewWith(t *testing.T, mutate func(*operations.Deps)) *Harness {
 		Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Probe:        func(context.Context, string) (int, error) { return 200, nil },
 		ReadyTimeout: 2 * time.Second, PollInterval: 20 * time.Millisecond,
+		Remote: TailcatStubManager(layout),
 	}
 	if mutate != nil {
 		mutate(&deps)
@@ -75,6 +77,7 @@ func NewWith(t *testing.T, mutate func(*operations.Deps)) *Harness {
 	t.Cleanup(func() {
 		cancel()
 		c.Shutdown(2 * time.Second)
+		c.Remote.StopAll()
 		s.Close()
 	})
 	return &Harness{T: t, C: c, Fake: fake, Store: s, Layout: layout}
@@ -144,4 +147,13 @@ func (h *Harness) NewBuild(t *testing.T, key domain.ImageKey, imageID string) st
 	}
 	h.Fake.SetImage(b.Tag, imageID)
 	return b
+}
+
+// TailcatStubManager returns a remote-access manager whose children are the
+// test binary itself running remoteaccess.RunTestChild (no network). The
+// test package's TestMain must call remoteaccess.MaybeRunTestChild first.
+func TailcatStubManager(layout platform.Layout) *remoteaccess.Manager {
+	m := remoteaccess.NewManager(layout, "/proc/self/exe", domain.TailcatUID, domain.TailcatUID, nil)
+	m.Args = []string{remoteaccess.TestChildArg}
+	return m
 }

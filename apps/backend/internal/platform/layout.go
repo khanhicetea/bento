@@ -96,6 +96,20 @@ func (l Layout) AppAppliedConfig(appID string) string {
 	return filepath.Join(l.AppStateDir(appID), "applied.json")
 }
 
+// RemoteKeyDir holds the private keys of the data services' Tailcat servers
+// (root-only; skipped by export so an address never leaves the host).
+func (l Layout) RemoteKeyDir() string { return filepath.Join(l.Root, "tailcat") }
+func (l Layout) RemoteKey(service string) string {
+	return filepath.Join(l.Root, "tailcat", service+".key")
+}
+
+// RemoteSocketDir holds the sockets the Tailcat children dial into the
+// backend; only root and the Tailcat group may traverse it.
+func (l Layout) RemoteSocketDir() string { return filepath.Join(l.Root, "run", "tailcat") }
+func (l Layout) RemoteSocket(service string) string {
+	return filepath.Join(l.Root, "run", "tailcat", service+".sock")
+}
+
 func (l Layout) RelaySocket(appID string) string {
 	return filepath.Join(l.Root, "run", "relay", appID+".sock")
 }

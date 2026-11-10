@@ -160,6 +160,7 @@ const tones: Record<string, Tone> = {
   succeeded: "success",
   published: "success",
   connected: "success",
+  listening: "success",
   starting: "info",
   running: "info",
   queued: "info",
@@ -192,6 +193,7 @@ const labels: Record<string, string> = {
   published: "Public",
   unpublished: "Private",
   drift: "Drift",
+  listening: "Listening",
 };
 
 const glyphs: Record<Tone, ReactNode> = {

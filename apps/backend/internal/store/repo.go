@@ -698,7 +698,7 @@ type ServiceRow struct {
 func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
 	rows, err := q.QueryContext(
 		ctx,
-		"SELECT name, engine, version, image, volume, initialized, settings_json, created_at FROM data_services ORDER BY name",
+		"SELECT name, engine, version, image, volume, initialized, settings_json, remote_access, remote_generation, created_at FROM data_services ORDER BY name",
 	)
 	if err != nil {
 		return nil, err
@@ -707,12 +707,14 @@ func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
 	var out []ServiceRow
 	for rows.Next() {
 		var s ServiceRow
-		var init int
+		var init, remote int
 		var settings, created string
-		if err := rows.Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &settings, &created); err != nil {
+		if err := rows.Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &settings, &remote,
+			&s.Remote.Generation, &created); err != nil {
 			return nil, err
 		}
 		s.Initialized = init == 1
+		s.Remote.Enabled = remote == 1
 		s.CreatedAt = platform.ParseTime(created)
 		if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
 			return nil, fmt.Errorf("service %s settings: %w", s.Name, err)
@@ -724,14 +726,14 @@ func ListServices(ctx context.Context, q Q) ([]ServiceRow, error) {
 
 func GetService(ctx context.Context, q Q, name string) (ServiceRow, error) {
 	var s ServiceRow
-	var init int
+	var init, remote int
 	var settings, created string
 	err := q.QueryRowContext(
 		ctx,
-		"SELECT name, engine, version, image, volume, initialized, settings_json, created_at FROM data_services WHERE name = ?",
+		"SELECT name, engine, version, image, volume, initialized, settings_json, remote_access, remote_generation, created_at FROM data_services WHERE name = ?",
 		name,
 	).
-		Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &settings, &created)
+		Scan(&s.Name, &s.Engine, &s.Version, &s.Image, &s.Volume, &init, &settings, &remote, &s.Remote.Generation, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrNotFound
 	}
@@ -739,6 +741,7 @@ func GetService(ctx context.Context, q Q, name string) (ServiceRow, error) {
 		return s, err
 	}
 	s.Initialized = init == 1
+	s.Remote.Enabled = remote == 1
 	s.CreatedAt = platform.ParseTime(created)
 	if err := json.Unmarshal([]byte(settings), &s.Settings); err != nil {
 		return s, fmt.Errorf("service %s settings: %w", s.Name, err)
@@ -794,6 +797,33 @@ func settingsJSON(s domain.ServiceSettings) string {
 	}
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+// SetServiceRemote records the remote-access switch of a service. rotate also
+// bumps the key generation, so the next start of its Tailcat server replaces
+// the key (and therefore the address) even if this operation is interrupted.
+func SetServiceRemote(ctx context.Context, q Q, name string, enabled, rotate bool) (domain.RemoteAccess, error) {
+	on := 0
+	if enabled {
+		on = 1
+	}
+	bump := 0
+	if rotate {
+		bump = 1
+	}
+	var out domain.RemoteAccess
+	var remote int
+	err := q.QueryRowContext(
+		ctx,
+		"UPDATE data_services SET remote_access = ?, remote_generation = remote_generation + ? WHERE name = ? "+
+			"RETURNING remote_access, remote_generation",
+		on, bump, name,
+	).Scan(&remote, &out.Generation)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, ErrNotFound
+	}
+	out.Enabled = remote == 1
+	return out, err
 }
 
 func MarkServiceInitialized(ctx context.Context, q Q, name string) error {

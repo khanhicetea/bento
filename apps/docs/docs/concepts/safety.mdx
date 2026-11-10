@@ -18,7 +18,9 @@ Anything destructive asks you to type an exact phrase:
 ## Secrets stay secret
 
 Passwords, tokens, and keys are stored in private files and never appear in logs, the UI, or `docker inspect`.
-One-time secrets — a webhook secret, a backup repository key, a tunnel token — are shown **once**. Copy them when you
+The one exception is **Show login** on a MySQL/PostgreSQL binding (for [remote access](/apps/remote-access)): it
+reveals that app's own database password to a signed-in browser or root on the host, never to API tokens, and every
+reveal is recorded in Activity. One-time secrets — a webhook secret, a backup repository key, a tunnel token — are shown **once**. Copy them when you
 see them. The stack backup password is never shown by the UI or the API: print it on the host with
 `sudo bento backup password` and keep a copy off the host — without it, backups cannot be recovered.
 

@@ -20,6 +20,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
+	"github.com/khanhicetea/bento/apps/backend/internal/remoteaccess"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
@@ -83,6 +84,9 @@ type Deps struct {
 	// Now is the clock for persisted schedules such as ACME backoff
 	// (default time.Now; tests move it).
 	Now func() time.Time
+	// Remote runs the data services' Tailcat servers (nil: a manager that
+	// starts /proc/self/exe internal-tailcat as domain.TailcatUID).
+	Remote *remoteaccess.Manager
 }
 
 // DefaultCancelGrace is the default CancelGrace.
@@ -197,6 +201,13 @@ func NewController(d Deps) (*Controller, error) {
 		running:   map[string]claims{},
 		warming:   map[string]*warmState{},
 		waitingOn: map[string]string{},
+	}
+	if c.Remote == nil {
+		c.Remote = remoteaccess.NewManager(d.Layout, "/proc/self/exe", domain.TailcatUID, domain.TailcatUID, d.Log)
+		c.Remote.HostIDs = d.HostIDs
+	}
+	if c.Remote.Upstream == nil {
+		c.Remote.Upstream = c.ServiceEndpoint
 	}
 	c.registerHandlers()
 	return c, nil

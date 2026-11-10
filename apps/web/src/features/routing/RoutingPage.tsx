@@ -18,6 +18,7 @@ import {
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { Mascot } from "../../components/Mascot.tsx";
+import { Switch } from "../../components/Switch.tsx";
 import { Link } from "wouter";
 import { useOperationMutation } from "../applications/useApplications.ts";
 import { HostDialogBody, targetLabels, tlsLabels } from "./HostDialog.tsx";
@@ -249,21 +250,6 @@ function StateBar({ reading, writing, waiting }: { reading: number; writing: num
 const compactFormat = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
 function compact(n: number) {
   return compactFormat.format(n);
-}
-
-function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange: (on: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      className="switch"
-      onClick={() => onChange(!checked)}
-    >
-      <span />
-    </button>
-  );
 }
 
 function EdgeForm({ status }: { status: T.EdgeStatus }) {

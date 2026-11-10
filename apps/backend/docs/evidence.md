@@ -1236,3 +1236,141 @@ Unit tests and `make ci` ran on the amd64 VPS (`make ci` and the web checks on `
   - `bagisto-sqlite` answers 500: its install stopped half way because Bagisto's migrations do not support SQLite
     (`This database driver does not support dropping foreign keys by name`).
 - Not run: HTTP/3, a browser (mixed-content blocking is inferred from the URLs, not observed).
+
+## Remote access to data services over Tailcat (2026-11-09; dev host, live Docker 29.8.1, amd64; experimental)
+
+Library: `github.com/tailscale/tailcat v0.7.0` (BSD-3, no API stability promise; pins
+`tailscale.com v1.103.0-pre.0.20260916030321-a2263542f260`). It requires Go ≥ 1.27.1, so the toolchain pin moved to
+Go 1.27.3 (`mise.toml`, CI, release; `go.mod` says `go 1.27.1`). The static amd64 binary grew from 22.0 MB to 38.3 MB
+(`-s -w`); arm64 cross-compiles (35.8 MB) but was not run.
+
+- **Unit (root, `-race`):** `internal/remoteaccess` (key only on stdin, child credential/env/fds, key file refusals,
+  socket and directory modes, address stable across restarts, new address on a new generation, 32-connection cap,
+  rate limit, stop cuts open streams, killed child restarted on the same address, missing key not replaced, reports
+  that do not match the key refused, child refuses root), `internal/operations` (`service.remote` on/rotate/off,
+  unreadable key and failing child, boot with a missing key and with a pending rotate, `ServiceEndpoint` refuses a
+  container of another stack, `binding.login` journal without the password) and `internal/api` (CSRF, strict
+  decoding, unknown service, rotate while off, tokens never see the address or reach the routes, login refused for
+  tokens and scoped sockets, allowed for the root socket, `Cache-Control: no-store`, every reveal journaled, no other
+  response carries the password). The children are the test binary itself (`remoteaccess.MaybeRunTestChild`).
+- **Real relays:** `BENTO_TAILCAT_NETWORK_TESTS=1 go test -run TestNetwork ./internal/remoteaccess`: the real child as
+  uid 2000000100 picked a region, `tailcat.Client.DialTCPPort(5432)` echoed through the backend's socket, port 22 did
+  not answer, and a restart kept the address (12 s).
+- **Real Docker:** `TestIntegrationRemoteAccessPostgres`: PostgreSQL 17 service, app binding, remote access on,
+  SCRAM-SHA-256 login as the binding user through `tailcat.Client` (`current_user` = binding user), wrong password
+  refused, rotate (old address no longer reaches the database, new one logs in), off (103 s).
+- **Manual, real binary:** `bento service remote postgres17 on` → listening, region 304; the child showed
+  `Uid/Gid 2000000100`, no groups, `CapEff/CapPrm 0`, `NoNewPrivs 1`, `/proc/<pid>/mem` and `environ` root-owned (not
+  dumpable), environment `PATH` only, cmdline `/proc/self/exe internal-tailcat`; `run/tailcat` `0710 root:2000000100`,
+  socket `0600` owned by the Tailcat uid, `tailcat/postgres17.key` `0600 root`. The `tailcat` CLI v0.7.0
+  (`tailcat forward <addr> 15432:5432`) plus `psql postgresql://…@127.0.0.1:15432/shop_main` (from `bento app login`)
+  returned the binding user. The backend log never contained the address or the password. A deep stack root first
+  failed `bind: invalid argument` (sun_path); the socket is now bound through `/proc/self/fd/<dirfd>/`. SIGTERM of
+  the backend stopped the child. UI screenshots of the System tile and the App → Data binding (Show login) checked
+  against DESIGN.md.
+- **Not verified:** arm64, the VPS pair (a real NAT/relay-only path), MySQL through the tunnel (same code path,
+  engine port 3306; not run), long-lived tunnels across a DERP reconnect, and behavior when the public DERP map is
+  unreachable at backend start beyond "failed, retrying". The full `make test-integration` suite passed (integration 1498 s, runtime 607 s).
+
+## Remote access over Tailcat on the VPS pair (2026-11-09; `bento-test` amd64 + `bento-arm` arm64, `a5d5485` + uncommitted remote-access tree)
+
+Server `bento-test` (Linode, public IPv4/IPv6, no firewall), client `bento-arm` (Hetzner; roles swapped in step 10).
+Fresh stacks (`install.sh`-style init, MySQL 8.4 + PostgreSQL 18, php 8.4 apps with one binding each), tailcat v0.7.0 on
+the client from `go install …@v0.7.0`, `psql` 17 and the MariaDB `mysql` client, no SSH tunnel to the database. Both
+hosts also run Tailscale; Tailcat did not use it (paths were the public IPv6 addresses or DERP).
+
+**A bug stopped the run on the as-built binary.** Every Tailcat child was terminated by the backend 90 s after it
+started, forever. `readReport` ends with `io.Copy(io.Discard, br)`, so the `reported` channel in `runChild` fires only
+when the child's stdout reaches EOF (the child exits); the `reportTimeout` timer (90 s) fires first and sends SIGTERM to
+a healthy child, which exits 0 on its signal handler (`the Tailcat server exited`, no error line). Backoff
+(1, 2, 4 … 300 s, reset only after 2 min up) never reset because every child lived 90 s, so the service is down for
+longer after each cycle. *Fixed before commit:* `readReport` now drains the rest of stdout in a goroutine
+(`TestReportReturnsWhileChildRuns`). Journal on the unpatched binary (`bento service remote postgres18 on` at 16:58:42): stopped
+17:00:12, 17:01:43, 17:03:15, 17:04:49, 17:06:27, 17:08:13 with `retryIn` 1 s → 32 s; the tile flips to FAILED, every
+tunnel is cut each time. The unit and integration tests all finish inside 90 s and could not see it. A one-line change
+(`go func() { _, _ = io.Copy(io.Discard, br) }()` at the end of `readReport`), built from a copy of the tree outside the
+repository, removed it: children stayed up for 10+ minutes with no restart. The tree itself was not changed. Every
+step below says which binary it ran on; steps 1-3 and the first direct ping ran on the as-built `a5d5485-dirty`, the
+rest on the patched copy.
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | amd64 build with UI, fresh stack, services, two apps with a binding each | pass (as built) |
+| 2 | remote on for both; address in CLI and session API; API tokens (read, operate, admin) | pass: `service remote NAME on` listening in 2 s with a 154-character `tc…` address; tokens of every scope get `state`, `connections`, ports and no `address`/`command`; `PUT …/remote` and `POST …/login` by token: 403 `this action needs full access`; session without CSRF 403, bad Origin 403, valid session 200 with `no-store` |
+| 3 | psql and mysql through `tailcat forward` with `bento app login` credentials | pass (as built, inside the 90 s windows): PostgreSQL 18.6 and MySQL 8.4.13, create table, 1000 inserts, select; wrong password refused on both (`password authentication failed`, `Access denied`); logging in as `postgres` refused; the app user cannot connect to another app's database, create roles, read `pg_authid`, `COPY … PROGRAM`, or create databases |
+| 4 | direct vs DERP, forced relay | pass (patched): see below |
+| 5 | restart, kill -9, backend kill, reboot | pass (patched), one client caveat below |
+| 6 | rotate | pass (patched) |
+| 7 | off, on again | pass (patched) |
+| 8 | connection limits | pass (patched) |
+| 9 | leak audit | pass, one hardening finding below |
+| 10 | arm64 stack, amd64 client | pass (patched): PostgreSQL 18.6 and MySQL 8.4.13 on aarch64, queries, wrong password refused |
+| 11 | UI | pass (puppeteer on Chrome 154 against the real stack) |
+
+**Path and timings (step 4).** `tailcat ping --until-direct` from `bento-arm`: `pong in 181-187 ms via
+[2600:3c15::2000:86ff:fe39:93f1]:port` (direct over public IPv6; plain `ping` 183-189 ms), the first pong of every fresh
+client `312 ms via DERP(tok)` (the server's region 304). 1 of 6 runs did not reach a direct path in 10 s. `psql`
+connect plus `select` (`sslmode=disable`): 965-970 ms direct, 1.31-1.67 s over DERP, 2.2-2.8 s for the first connection
+of a fresh client (WireGuard handshake and path discovery). 12.9 MB result set: 3.2 s direct, 8.3 s over DERP. Relay
+forced with `nft` on `bento-arm` (`udp dport 53 accept; meta l4proto udp drop` in the output hook, TCP untouched, a
+`systemd-run --on-active=420` timer as the revert): the forward that had been direct fell back to DERP by itself, a
+fresh forward worked (PostgreSQL and MySQL), pings stayed at 321-322 ms via DERP(tok) and never went direct; after the
+rule was removed the same forward was direct again (`pong in 182 ms via [2600:…]`). Step 10 (server on `bento-arm`,
+DERP region `fra`): 158-168 ms via DERP(fra), 182-189 ms direct. A tunnel idle for 7 minutes answered its next query.
+
+**Stability (step 5).** `systemctl restart bento@prod`: listening again after 3 s, same address (SHA-256 prefix of the
+address compared before and after; the key file is `0600` under `tailcat/`). `kill -9` of both children:
+`the Tailcat server exited: signal: killed retryIn=1s`, listening again 3 s later on the same address; killing again
+within 2 minutes backed off 1, 2, 4, 8 s. SIGKILL of the backend: no Tailcat child survived (`Pdeathsig`), systemd
+restarted the backend and both children after 7 s, same address; `systemctl stop` leaves no child. Reboot of the host:
+`bento@prod` came up on its own with both services listening within about 25 s of boot (journal 17:38:49 and 17:38:53), same addresses. Caveat: **an open `tailcat forward` does not
+recover after any server restart** (backend restart, killed child, reboot, rotate, off/on). Its WireGuard peer keeps
+retrying the old direct endpoint (`Handshake did not complete after 5 seconds, retrying`, still failing after 100 s,
+while new `tailcat ping`/`forward` processes connect at once), so a GUI client must be reconnected (restart the
+forward). The child's UDP port changes at every start (`tailcat.Server` has no port option in v0.7.0); this is the
+client's behaviour, not Bento's, but the docs promise "the same address", not an unbroken tunnel. The local socket of
+the forward also stays open while the tunnel is dead (psql shows no error).
+
+**Rotate, off (steps 6, 7).** Rotate: new address 2 s after the call; the old one fails `tailcat ping` (deadline
+exceeded) and a fresh forward on it hangs; the old child was replaced. Off: the child is gone within 1 s, an idle
+PostgreSQL session of the tunnel disappeared from `pg_stat_activity` within 1 s (a running `pg_sleep(600)` stays: PostgreSQL
+does not notice the client loss while it sleeps) and an idle MySQL session left the process list; no new connection and
+no ping. On again: the same address (prefix equal), and a new forward works. Rotating MySQL left PostgreSQL's session
+and address untouched.
+
+**Limits (step 8).** 40 connections opened 150 ms apart through one service, held open: 32 reached the server and 8
+were closed (CLI/API `32 / 32`, backend and the other service healthy, MySQL answered while PostgreSQL was full).
+40 opened at once: 10 accepted (burst), 30 closed. After the holders exited the count was 0 and a new psql worked. A
+user who hits the cap sees `server closed the connection unexpectedly`.
+
+**Leak audit (step 9).** Needles: each service's full address, two address fragments, the private key and pre-shared key
+(as stored, and the part after the colon) and both app passwords. Searched: `ps auxeww`, `cmdline` and
+`environ` of every process (the child's environment is `PATH` only, its `cmdline` `/proc/self/exe internal-tailcat`),
+the whole system journal and the backend's, `docker logs`, `docker inspect` of every container, image, network and volume,
+every operation and its event stream (`binding.login` records `{"revealed":true}`), the SQLite store, the MCP
+`initialize` and `tools/list` responses for an admin token, the export (`state.db`, `stack.tar.zst`; `tailcat/` and the key files are not in it, and
+the imported `remote_access` is cleared) and the stack root. The key, pre-shared key and address appear only in
+`tailcat/<service>.key` (`0600 root`) and, for the address, in the session-authenticated `GET /api/v1/services`. The app password
+appears only in the store, the app's `credentials.env` and the export (as before this feature) and in the login
+response, never in an app, service or operation response. Child: `Uid/Gid 2000000100`, no groups,
+`CapPrm/CapEff 0`, `NoNewPrivs 1`, `/proc/<pid>/{status,environ,mem}` owned by root (not dumpable), sockets `0600`,
+`run/tailcat` `0710 root:2000000100`; as that uid `cat` of the key file, `bento.db`, `bento.sock` and `secrets/` fails.
+Finding: **the child's uid can still open TCP to the data network** (`10.200.1.3:5432` connects from uid 2000000100;
+`iptables -S DOCKER-USER` has no uid rule), although the architecture text and the code comment say it "never reaches
+the data network". It holds no database credential, so a compromised child would still need a password, but the claim
+is only true of the code, not of the host. A `skuid 2000000100` drop for the data subnets would make it true. *Fixed before commit* without a firewall rule: the child now applies
+Landlock (`restrictTCPConnect`) after `no_new_privs` on every thread, so its outbound TCP is limited to 443, 80 and the
+relay ports (`TestRestrictTCPConnect`; the relay round trip and `TestIntegrationRemoteAccessPostgres` pass with it on;
+not re-run on the VPS pair).
+
+**UI (step 11).** Chrome 154 (puppeteer-core) logged in to the real backend: System → Data services shows
+`REMOTE ACCESS · EXPERIMENTAL · ON · LISTENING · 0 / 32 conn`, the address (copy), `LOCAL PORT 127.0.0.1:15432`, COPY
+COMMAND and ROTATE ADDRESS per service; App → Data shows `REMOTE · LISTENING`, COPY COMMAND and SHOW LOGIN, which POSTs
+`…/bindings/<id>/login` (200) and shows host, user, password, database, COPY URL, the share warning and HIDE LOGIN. The
+console showed three CSP errors for the inline script in `index.html` (not part of this change). Not viewed: dark
+mode, phone width.
+
+**Not run / not verified.** An IPv4-only direct path (every direct path here was IPv6); Tailcat over a NAT (both hosts have public
+addresses); the public DERP map being unreachable at backend start; more than one concurrent client per service;
+the Tailscale tailnet on both hosts was left running and was not used by Tailcat. Remote access with `bento mcp` was
+not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; the as-built binary is installed again.

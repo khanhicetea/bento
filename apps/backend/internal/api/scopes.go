@@ -54,7 +54,8 @@ func (s scope) String() string {
 // and raw scheduler commands (importing or deleting app jobs; admin may
 // create and edit jobs through the typed routes); database-browser tickets; credentials (password,
 // tunnel token, restic settings and keys, webhook secrets); rclone; image
-// prune; and token management itself.
+// prune; remote access to data services and binding logins (the one
+// response with a database password); and token management itself.
 var routeScopes = map[string]scope{
 	"GET /api/v1/system":                             scopeRead,
 	"GET /api/v1/system/docker":                      scopeRead,

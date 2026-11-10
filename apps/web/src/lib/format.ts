@@ -77,6 +77,8 @@ export function describeOp(op: Pick<T.Operation, "kind" | "targetId">, targetLab
     "backup.delete": "Deleting backup",
     "backup.rclone-test": "Testing rclone remote",
     "restic.restore-db": "Restoring database of",
+    "service.remote": "Changing remote access of",
+    "binding.login": "Login shown for",
     "edge.update": "Updating edge",
     "proxy.upsert": "Saving proxy",
     "proxy.remove": "Removing proxy",

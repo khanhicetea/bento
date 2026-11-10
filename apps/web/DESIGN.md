@@ -143,7 +143,8 @@ Below 1060 px S becomes 6 and the rest 12; below 640 px everything stacks to one
 | Dot         | 10 px, dense rows only, always with a word; pulse ring only while busy                                                                                                                                    |
 | Segments    | Square, sumi-filled active item: page sections (`role="tab"`). Round with counts: filters (`aria-pressed`)                                                                                                |
 | Field       | CAPS label above, 44 px input, 2 px `line` border, sumi on focus; error = fail border + `✕ REASON`                                                                                                        |
-| Switch      | 52 × 30, ok when on, idle when off, label + ON/OFF word beside it                                                                                                                                         |
+| Switch      | 52 × 30, ok when on, idle when off, label + ON/OFF word beside it (`components/Switch.tsx`)                                                                                                               |
+| Copy button | Small (`xs`) secondary button, copy glyph + verb-first label (`COPY COMMAND`, `COPY URL`), ✓ COPIED for a moment; `CopyableCode` (icon only) stays for values shown inline (`components/CopyButton.tsx`)  |
 | Metric      | Number 30–48 px + small unit, CAPS caption under; optional bar meter turns caution at ≥ 80 %                                                                                                              |
 | Live chart  | Metric header + 2 px shu line over a flat 8 % shu area, dashed mid gridline, max value top-left; hover = crosshair + sumi tooltip. Client-side history only (last 60 polls)                               |
 | Fact row    | `LABEL ······ value`: dotted leader between caption and value                                                                                                                                             |
@@ -177,7 +178,10 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   Activity.
 - **Apps:** search + round filters, three-up tiles with a corner status dot, fill = state (ume failed, tamago deploying), trailing Kara.
 - **App detail:** header with state pill and actions, square section tabs, operation cell, runtime/resources/
-  hosts/data facts, nori log; Settings shows Removed vs Retained before delete.
+  hosts/data facts, nori log; Settings shows Removed vs Retained before delete. Data: each MySQL/PostgreSQL binding
+  ends, below a hairline, with a `REMOTE` fact (its service's state pill, or OFF with a link to System), Copy command,
+  and Show login, which reveals Host / User / Password fact rows with copy icons, one Copy URL per database and a
+  caution line (`▲ Address and password grant access. Share neither.`); Hide login drops them. SQLite has none.
 - **Activity:** operations list + detail cell whose fill and mascot follow the operation state; event timeline.
 - **Ingress:** Edge / Traffic / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles (an ACME host adds a `CERTIFICATE` fact: `✓ VALID · expires in 61 days`, `◌ REQUESTING`, or `▲ NO CERT · retry in 2 hrs` in tamago ink) + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
@@ -190,8 +194,11 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
   Remotes (rclone remotes list + Open shell in the foot, Test remote form cell). App detail → Backup: Snapshots rows
   offer Restore DB (in place, requires `replace <db>`) and Clone (new app, requires `clone <slug>`).
 - **System:** Overview (Bento, Docker, stack with arch; full-width data services, each tile with Tune (MySQL/PostgreSQL
-  settings dialog, saving restarts the service) and Restart (confirm), then a trailing Kara form tile (engine + version,
-  Add in its head) in the empty slot; reconciliation beside retained data with
+  settings dialog, saving restarts the service) and Restart (confirm), and below a hairline a `REMOTE ACCESS` row with
+  an `EXPERIMENTAL` tag and a Switch (turning on confirms the risk: address + password grant access); when on: state
+  pill (✓ LISTENING, ◌ STARTING, ✕ FAILED with its reason), `n / 32 conn`, Address and Local port fact rows, Copy command
+  and Rotate address (destructive confirm: the old address stops working, tunnels are cut); then a trailing Kara form
+  tile (engine + version, Add in its head) in the empty slot; reconciliation beside retained data with
   `delete` prune; API tokens list (Revoke, confirm) beside a New token form cell that turns tamago and shows the
   token once with a Warning notice) and Images / Volumes / Networks lists with Used / Unused / Retained / Other stack tags.
   Images starts with a Runtimes box: one tile per runtime (state pill ✓ CURRENT, ▲ UPDATE, ◌ ROLLING OUT, NOT BUILT;

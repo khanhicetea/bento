@@ -72,7 +72,8 @@ echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":fal
 bento app publish shop
 ```
 
-Credentials reach the app as environment variables (`DB_*`, `BENTO_DB_<n>_*`), never through the API. With Valkey on,
+Credentials reach the app as environment variables (`DB_*`, `BENTO_DB_<n>_*`). The API never returns them, except
+the journaled binding login behind the experimental remote access (`bento app login`, UI **Show login**). With Valkey on,
 `REDIS_HOST`/`REDIS_PORT`/`REDIS_URL` point at the app's own `127.0.0.1:6379` unless the app's env sets them.
 
 ## Development

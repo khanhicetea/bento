@@ -92,6 +92,7 @@ func (s *Server) routes() (http.Handler, []string) {
 	api("POST /api/v1/apps/{id}/bindings", s.handleAddBinding)
 	api("POST /api/v1/apps/{id}/bindings/{bid}/databases", s.handleAddDatabase)
 	api("POST /api/v1/apps/{id}/bindings/{bid}/dbadmin", s.handleDBAdminTicket)
+	api("POST /api/v1/apps/{id}/bindings/{bid}/login", s.handleBindingLogin)
 	api("POST /api/v1/apps/{id}/permissions", s.handlePermissions)
 	api("GET /api/v1/apps/{id}/git", s.handleGetGitSource)
 	api("PUT /api/v1/apps/{id}/git", s.handlePutGitSource)
@@ -145,6 +146,7 @@ func (s *Server) routes() (http.Handler, []string) {
 	api("POST /api/v1/services", s.handleCreateService)
 	api("PUT /api/v1/services/{name}/settings", s.handleConfigureService)
 	api("POST /api/v1/services/{name}/restart", s.handleRestartService)
+	api("PUT /api/v1/services/{name}/remote", s.handlePutServiceRemote)
 
 	api("GET /api/v1/edge", s.handleGetEdge)
 	api("PUT /api/v1/edge", s.handlePutEdge)
@@ -1039,6 +1041,7 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 		default:
 			svc.State = dto.ObservedStateStopped
 		}
+		svc.RemoteAccess = s.remoteAccessDTO(r.Context(), row)
 		out.Services = append(out.Services, svc)
 	}
 	writeJSON(w, http.StatusOK, out)

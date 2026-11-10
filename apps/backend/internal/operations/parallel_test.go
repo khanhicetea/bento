@@ -141,7 +141,9 @@ func TestOnlyReviewedKindsRunInParallel(t *testing.T) {
 		KindAppReconcile: true, KindAppStart: true, KindAppRestart: true, KindAppStop: true,
 		KindAppUpdate: true, KindAppDeploy: true, KindServiceCreate: true, KindServiceEnsure: true,
 		KindServiceConfigure: true, KindServiceRestart: true,
-		KindImagePrepare: true, KindImageRebuild: true, KindImageRollout: true, KindImageRolloutStop: true,
+		// Runs only its own service's Tailcat server; never grants.
+		KindServiceRemote: true,
+		KindImagePrepare:  true, KindImageRebuild: true, KindImageRollout: true, KindImageRolloutStop: true,
 		KindImageSweep: true,
 		KindResticInit: true, KindResticConnect: true, KindResticBackup: true,
 		KindResticRefresh: true, KindResticKeyAdd: true, KindResticKeyRemove: true, KindResticCheck: true, KindResticUnlock: true, KindResticInspect: true,

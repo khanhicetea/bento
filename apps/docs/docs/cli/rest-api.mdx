@@ -31,7 +31,8 @@ The API is served on the loopback management listener under `/api/v1`. Types are
 | App tools | `GET /apps/{id}/readiness`, `GET /apps/{id}/logs` (SSE), `POST /apps/{id}/exec`, `POST /apps/{id}/scheduler/command`, `GET /apps/{id}/terminal` (WebSocket) |
 | App scheduler | `GET/POST /apps/{id}/scheduler/jobs`, `PATCH /apps/{id}/scheduler/jobs/{name}`, `POST /apps/{id}/scheduler/jobs/{name}/run`, `POST /apps/{id}/scheduler/jobs/{name}/enabled`, `POST /apps/{id}/scheduler/workers/{name}/{start,stop,restart}`, `GET /apps/{id}/scheduler/runs`, `GET /apps/{id}/scheduler/runs/{run}/log`, `POST /apps/{id}/scheduler/runs/{run}/stop` |
 | Operations | `GET /operations`, `GET /operations/{id}`, `GET /operations/{id}/events` (SSE), `POST /operations/{id}/cancel` |
-| Data | `GET/POST /services`, `GET /retired`, `POST /retired/{id}/prune` |
+| Data | `GET/POST /services`, `PUT /services/{name}/remote` (`on`/`off`/`rotate`), `GET /retired`, `POST /retired/{id}/prune` |
+| Binding login | `POST /apps/{id}/bindings/{bid}/login` — the binding's password (session or root CLI only, journaled) |
 | Ingress | `GET/PUT /edge`, `GET /tunnel`, `PUT /tunnel/token`, `GET/POST /hosts`, `PUT/DELETE /hosts/{name}` |
 | rclone | `GET /backups/rclone`, `POST /backups/rclone/test`, `GET /backups/rclone/terminal` (WebSocket) |
 | Stack | `POST /stack/export` |

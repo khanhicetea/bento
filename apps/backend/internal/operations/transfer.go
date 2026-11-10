@@ -30,6 +30,9 @@ var RootSkip = map[string]bool{
 	// Traffic reports are host-local: live access logs grow while the archive
 	// is written, and the reports rebuild from new traffic on the new host.
 	"traffic": true,
+	// Tailcat server keys are credentials of this host's remote access: an
+	// address must never come back from an archive or a clone.
+	"tailcat": true,
 }
 
 // SubmitExport requires confirm "export" because it briefly stops running

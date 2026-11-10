@@ -112,6 +112,9 @@ export const api = {
       } satisfies T.AddDatabaseRequest),
     permissions: (id: string, mode: string) =>
       mutate("POST", `/api/v1/apps/${enc(id)}/permissions`, { mode } satisfies T.PermissionsRequest),
+    /** Reveals a binding's own login (password included). Never cached; each call is journaled. */
+    bindingLogin: (id: string, bindingId: string) =>
+      request<T.BindingLogin>("POST", `/api/v1/apps/${enc(id)}/bindings/${enc(bindingId)}/login`, {}),
     metrics: (id: string, signal?: AbortSignal) => get<T.AppMetrics>(`/api/v1/apps/${enc(id)}/metrics`, signal),
     git: (id: string, signal?: AbortSignal) => get<T.GitSource>(`/api/v1/apps/${enc(id)}/git`, signal),
     setGit: (id: string, body: T.GitSourceRequest) => request<T.GitSource>("PUT", `/api/v1/apps/${enc(id)}/git`, body),
@@ -159,6 +162,8 @@ export const api = {
     configure: (name: string, body: T.ConfigureServiceRequest) =>
       mutate("PUT", `/api/v1/services/${enc(name)}/settings`, body),
     restart: (name: string) => mutate("POST", `/api/v1/services/${enc(name)}/restart`),
+    remote: (name: string, action: T.RemoteAccessAction) =>
+      mutate("PUT", `/api/v1/services/${enc(name)}/remote`, { action } satisfies T.RemoteAccessRequest),
   },
   edge: {
     get: (signal?: AbortSignal) => get<T.EdgeStatus>("/api/v1/edge", signal),

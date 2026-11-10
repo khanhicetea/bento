@@ -388,6 +388,29 @@ export interface DBAdminSettingsRequest {
   enabled: boolean;
 }
 /**
+ * BindingLogin is a MySQL/PostgreSQL binding's own login, for a GUI client
+ * connected through remote access. It is the one response that carries a
+ * database password: browser sessions (with CSRF) and the unscoped CLI only,
+ * never cached, and each reveal is journaled without the value.
+ */
+export interface BindingLogin {
+  engine: Engine;
+  service: string;
+  host: string;
+  port: number /* int */;
+  username: string;
+  password: string;
+  databases: string[];
+  /**
+   * URLs are connection URLs to Host:Port, one per database.
+   */
+  urls: BindingLoginURL[];
+}
+export interface BindingLoginURL {
+  database: string;
+  url: string;
+}
+/**
  * DBAdminTicket opens one binding in the database browser. Path is a
  * single-use path on the utils listener that expires at ExpiresAt; open it
  * under BaseURL (the utils base URL) or, when that is empty, on the current
@@ -517,6 +540,50 @@ export interface Service {
    * Tunables lists the parameters this engine allows tuning.
    */
   tunables: ServiceTunable[];
+  /**
+   * RemoteAccess is the experimental remote access over Tailcat.
+   */
+  remoteAccess: RemoteAccess;
+}
+export const RemoteAccessStateOff = "off";
+export const RemoteAccessStateStarting = "starting";
+export const RemoteAccessStateListening = "listening";
+export const RemoteAccessStateFailed = "failed";
+export type RemoteAccessState = typeof RemoteAccessStateOff | typeof RemoteAccessStateStarting | typeof RemoteAccessStateListening | typeof RemoteAccessStateFailed;
+/**
+ * RemoteAccess is a service's experimental remote access: a Tailcat server
+ * forwards its engine port; clients run Command and connect to
+ * 127.0.0.1:LocalPort with a binding's login. The address is a bearer
+ * capability, so Address and Command are set only for browser sessions and
+ * the unscoped CLI (API tokens and scoped callers see them empty).
+ */
+export interface RemoteAccess {
+  enabled: boolean;
+  state: RemoteAccessState;
+  address?: string;
+  /**
+   * Command is `tailcat forward <address> <localPort>:<enginePort>`.
+   */
+  command?: string;
+  localPort: number /* int */;
+  enginePort: number /* int */;
+  /**
+   * Connections counts open tunnel connections, at most MaxConnections.
+   */
+  connections: number /* int */;
+  maxConnections: number /* int */;
+  message?: string;
+}
+export const RemoteAccessActionOn = "on";
+export const RemoteAccessActionOff = "off";
+export const RemoteAccessActionRotate = "rotate";
+export type RemoteAccessAction = typeof RemoteAccessActionOn | typeof RemoteAccessActionOff | typeof RemoteAccessActionRotate;
+/**
+ * RemoteAccessRequest turns remote access on or off, or rotates the address
+ * (a new key: the old address stops working and open tunnels are cut).
+ */
+export interface RemoteAccessRequest {
+  action: RemoteAccessAction;
 }
 export const TunableKindSize = "size";
 export const TunableKindInt = "int";

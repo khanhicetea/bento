@@ -9,6 +9,7 @@ import { Cell, DomainError, DomainLoading, Field, StateBadge } from "../../compo
 import { useCatalog, useOperationMutation } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { ServiceRemoteAccess } from "./RemoteAccess.tsx";
 import { ServiceSettingsDialog } from "./ServiceSettingsDialog.tsx";
 
 /** Shared database services, shown on the System page below the host metrics. */
@@ -134,6 +135,7 @@ function ServiceTile({ service: s }: { service: T.Service }) {
           </Button>
         </div>
       )}
+      {s.initialized && <ServiceRemoteAccess service={s} />}
       {s.tunables.length > 0 && <ServiceSettingsDialog service={s} open={tuning} onOpenChange={setTuning} />}
       <ConfirmDialog
         open={confirmRestart}

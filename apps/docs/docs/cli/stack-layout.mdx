@@ -21,6 +21,7 @@ description: Every file and directory in a stack root, and which ones are durabl
 ├── secrets/restic/stack.key     stack backup password (root, 0400) — keep a copy off the host
 ├── secrets/restic/<appId>.key   per-app repository keys (0400), kept after removal
 ├── rclone/rclone.conf       rclone remotes (yours; must not be encrypted)
+├── tailcat/<service>.key    remote-access server keys (root, 0600; not exported) — the address comes from it
 └── run/ locks/ cache/ staging/   runtime coordination, not durable
 ```
 

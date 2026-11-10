@@ -43,6 +43,7 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 | Runtime images | `templates/images/{common,php,php-sury,http}`, catalog and pins in `internal/domain/catalog.go`, builds and rollouts in `internal/operations/runtime_images.go` |
 | Edge Nginx | `internal/edge` + `templates/edge` + `internal/operations/edge.go` |
 | MySQL/PostgreSQL | `internal/dataservices` |
+| Remote access over Tailcat (child, supervision, stream proxy, keys) | `internal/remoteaccess` + `internal/operations/remote.go` |
 | Persistence | `internal/store` |
 | New Docker capability | `internal/docker`: `Engine` interface + `SDK` + `Fake`, all three together |
 
@@ -63,7 +64,10 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
    Never remove a data volume (the sole exception is a failing import cleaning up volumes it created itself).
 6. **Secrets** never go in argv, labels, the generation fingerprint, container `Env`, logs, errors, or API responses.
    Use exec stdin, `--defaults-extra-file`, private files (`0400`/`0440`), or hashes. Redact app secrets in streamed
-   output.
+   output. **One accepted exception:** the binding login endpoint (`api/remote.go`, `handleBindingLogin`) returns a
+   MySQL/PostgreSQL binding's password for remote access. It is a product decision: keep it full-scope only
+   (unlisted in `routeScopes`, principal re-checked in the handler), POST, `no-store`, journaled via
+   `RecordLoginReveal` before the value is written. Never widen it, never cache it, never add a second one.
 7. **App containers stay hardened:** `User uid:gid`, read-only root, `CapDrop: ALL`, `no-new-privileges`, no host
    ports, no Docker socket, only the app's own home/SQLite/config/identity mounts. `TestPersistentSpecSecurityInvariants`
    must keep passing.
@@ -77,7 +81,7 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 ## Gotchas learned the hard way
 
 - **Operations run in parallel only if `operations/claims.go` says so.** An unlisted kind is global (runs alone).
-  Handlers of parallel kinds (`app.reconcile|start|restart|update|deploy|stop`, `service.create|reconcile`) share the
+  Handlers of parallel kinds (`app.reconcile|start|restart|update|deploy|stop`, `service.create|reconcile|configure|restart|remote`) share the
   edge, the network plan and image builds only through `applyEdge` (`edgeMu`), `NetworkPlan`/`EnsureNetworks`
   (`netMu`) and `Images.Ensure` (per-tag lock): never write those outside these functions. Grants (`provisionRelational`) write shared data services and are only for global kinds; a parallel
   kind that could provision (an unprovisioned `start`/`update`) is classified global.
@@ -114,6 +118,16 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
   paths or loosen that allowlist: the app UID can replace minicrond.
 - **Scheduler relay** execs `/proc/self/exe internal-relay` as the app UID and `fchdir`s to an inherited directory fd;
   do not replace this with `setuid` in the backend or `docker exec` per request.
+- **Remote access** (`internal/remoteaccess`) execs `/proc/self/exe internal-tailcat` per service as
+  `domain.TailcatUID` (fixed, above `MaxUIDRangeLast`, never an app UID) in the host network namespace, key on stdin
+  only, Tailscale logs discarded, `no_new_privs` on every thread and Landlock limiting its outbound TCP to the relay
+  ports (it shares the host network namespace, which can reach the data bridge). The Tailcat address is a bearer capability: keep it out of logs, operation results
+  and restricted callers' responses. Tailcat keys live in `tailcat/` (root `0600`, skipped by export); a missing key
+  is never regenerated except by an explicit on/rotate. Tests run the child as the test binary
+  (`remoteaccess.MaybeRunTestChild` in `TestMain`, `TestChildArg` network-free, `TestRealChildArg` for the relays);
+  a package that enables remote access in tests needs that `TestMain`, or it would re-run its own tests as the child.
+  `github.com/tailscale/tailcat` has no API stability promise and pins a pre-release `tailscale.com`: bump it
+  deliberately and rerun `BENTO_TAILCAT_NETWORK_TESTS=1 go test ./internal/remoteaccess` and the integration test.
 - **Scoped reloads** validate with the running process and must `Changes.Restore` the previous bytes on failure
   without sending a reload.
 - **Readiness failures never trigger recreation**; only missing/stopped containers or a changed fingerprint do.

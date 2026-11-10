@@ -91,7 +91,8 @@ func (c *Controller) claimsFor(ctx context.Context, op store.Operation) claims {
 //     earlier queued operation is still bringing its database up. A start or
 //     update of an unprovisioned app provisions (grants on shared data
 //     services) and therefore runs alone.
-//   - service.create|reconcile hold their own service exclusively.
+//   - service.create|reconcile|configure|restart|remote hold their own service
+//     exclusively (remote only runs its Tailcat server, never a grant).
 //   - restic.backup shares its app (the app keeps running; lifecycle
 //     operations wait) and every bound data service, and holds the app's
 //     repository exclusively, in the restic pool. Other restic.* kinds hold
@@ -130,7 +131,7 @@ func classify(op store.Operation, lookup func(id string) (domain.App, error)) cl
 			cl.shared = serviceDeps(app)
 		}
 		return cl
-	case KindServiceCreate, KindServiceEnsure, KindServiceConfigure, KindServiceRestart:
+	case KindServiceCreate, KindServiceEnsure, KindServiceConfigure, KindServiceRestart, KindServiceRemote:
 		return claims{excl: []string{serviceClaim(op.TargetID)}}
 	case KindResticBackup:
 		app, err := lookup(op.TargetID)

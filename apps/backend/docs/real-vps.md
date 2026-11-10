@@ -220,3 +220,9 @@ re-add the public key.
   next sweep marked the old build and the Docker inventory showed its removal 12 hours later. With the mark backdated
   by 13 hours, the startup sweep submitted `image.sweep`, which removed only the old image; the app kept answering.
   The stack was then wiped again.
+- **2026-11-09:** Remote access to data services over Tailcat on the pair (`evidence.md`, "Remote access over Tailcat on
+  the VPS pair"): `bento-arm` as the laptop (`tailcat` v0.7.0 via `go install`, `psql`, `mysql`), `bento-test` as the stack,
+  then the roles swapped. One bug on the as-built binary (the backend kills every Tailcat child after 90 s); the rest ran
+  on a copy with a one-line fix. Both hosts were reset afterwards (stacks, containers, volumes and networks removed,
+  `bento@prod` disabled, the as-built `a5d5485-dirty` binary installed); `tailcat` and the database clients stay
+  installed on both, and `e2e-gitea`/`e2e-s3` remain.

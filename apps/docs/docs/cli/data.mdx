@@ -25,3 +25,14 @@ bento app add-db shop --binding <id> --name reports    # shop_reports
 
 Bindings are add-only. Database names are `<slug>_<name>` (hyphens become `_`); `<name>` is 1–30 lowercase letters
 or digits and `main` is reserved.
+
+## Remote access (experimental)
+
+```bash
+bento service remote postgres17                 # state, address and the tailcat forward command
+bento service remote postgres17 on              # on | off | rotate (rotate: new address, open tunnels cut)
+bento app login shop [--binding <id>]           # the binding's own user, password, databases and URLs
+```
+
+Every `app login` is recorded as a `binding.login` operation, without the password. See
+[Connect a GUI client](/apps/remote-access).

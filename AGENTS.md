@@ -30,6 +30,14 @@ operations, effects happen in operation handlers, ownership is verified before d
 never recreated empty, and secrets never reach argv, labels, logs, or API responses. After changing
 `apps/backend/internal/api/dto`, run `make -C apps/backend generate-types` and commit the output.
 
+**Accepted exception (product decision, do not "fix"):** `POST /api/v1/apps/{id}/bindings/{bid}/login` (UI **Show
+login**, CLI `bento app login`) returns a MySQL/PostgreSQL binding's own password so a GUI client can connect through
+the experimental remote access over Tailcat. It stays narrow: full scope only (browser session with CSRF, or the
+unscoped root-only socket; never API tokens, scoped sockets or MCP), POST, `Cache-Control: no-store`, and every reveal
+is journaled as a `binding.login` operation without the value. Do not widen it or add another endpoint like it. The
+Tailcat address is likewise shown only to full-scope callers. See "Remote access to data services" in
+`apps/backend/docs/architecture.md`.
+
 ## UI design
 
 - The design system is [`apps/web/DESIGN.md`](apps/web/DESIGN.md): tokens, bento shape rules, cell kinds,

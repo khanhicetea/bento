@@ -53,7 +53,7 @@ func Init(ctx context.Context, opts InitOptions) (store.StackIdentity, error) {
 	if opts.UIDRange == (domain.UIDRange{}) {
 		opts.UIDRange = domain.DefaultUIDRange()
 	}
-	if opts.UIDRange.First < 1000 || opts.UIDRange.Last <= opts.UIDRange.First || opts.UIDRange.Last > 2_000_000_000 {
+	if opts.UIDRange.First < 1000 || opts.UIDRange.Last <= opts.UIDRange.First || opts.UIDRange.Last > domain.MaxUIDRangeLast {
 		return id, fmt.Errorf("invalid uid range %d-%d", opts.UIDRange.First, opts.UIDRange.Last)
 	}
 	if m := DetectForeign(layout.Root); m != "" {

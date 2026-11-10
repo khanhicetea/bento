@@ -173,6 +173,10 @@ func Serve(opts ServeOptions) error {
 	rec := reconcile.New(ctrl, log)
 	ctrl.WakeReconciler = rec.Trigger // before Start: workers read it
 	ctrl.Start(ctx)
+	// Tailcat servers of the services with remote access on. They run as
+	// children of this process and stop with it (Pdeathsig, StopAll).
+	ctrl.StartRemoteAccess(ctx)
+	defer ctrl.Remote.StopAll() // also on early error returns
 	// Background loops end with ctx and are joined before the store closes.
 	var bg sync.WaitGroup
 	defer func() { cancel(); bg.Wait() }() // also on early error returns
@@ -293,6 +297,7 @@ func Serve(opts ServeOptions) error {
 	cancel()
 	bg.Wait()
 	relay.Reap(true)
+	ctrl.Remote.StopAll()
 	_ = os.Remove(layout.ControlSocket())
 	log.Info("backend stopped; app containers, ingress, and schedulers keep running")
 	return listenErr

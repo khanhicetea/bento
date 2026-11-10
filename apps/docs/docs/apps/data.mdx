@@ -47,6 +47,11 @@ ssh -L 7780:127.0.0.1:7780 -L 7781:127.0.0.1:7781 root@your-server
 
 Access lasts 30 idle minutes and ends when you sign out. Uploads up to 80 MB, queries up to 15 minutes.
 
+## Connect from your laptop
+
+To use TablePlus, DBeaver or `psql` on your own machine, turn on **Remote access** for the data service (experimental):
+the binding then offers **Copy command** and **Show login**. See [Connect a GUI client](/apps/remote-access).
+
 ## Valkey
 
 An app can run its own [Valkey](https://valkey.io) (a Redis-compatible server) inside its container, for cache,

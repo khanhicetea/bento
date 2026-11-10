@@ -405,6 +405,27 @@ type DBAdminSettingsRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
+// BindingLogin is a MySQL/PostgreSQL binding's own login, for a GUI client
+// connected through remote access. It is the one response that carries a
+// database password: browser sessions (with CSRF) and the unscoped CLI only,
+// never cached, and each reveal is journaled without the value.
+type BindingLogin struct {
+	Engine    Engine   `json:"engine"`
+	Service   string   `json:"service"`
+	Host      string   `json:"host"`
+	Port      int      `json:"port"`
+	Username  string   `json:"username"`
+	Password  string   `json:"password"`
+	Databases []string `json:"databases"`
+	// URLs are connection URLs to Host:Port, one per database.
+	URLs []BindingLoginURL `json:"urls"`
+}
+
+type BindingLoginURL struct {
+	Database string `json:"database"`
+	URL      string `json:"url"`
+}
+
 // DBAdminTicket opens one binding in the database browser. Path is a
 // single-use path on the utils listener that expires at ExpiresAt; open it
 // under BaseURL (the utils base URL) or, when that is empty, on the current
@@ -524,6 +545,50 @@ type Service struct {
 	UpdateAvailable bool `json:"updateAvailable"`
 	// Tunables lists the parameters this engine allows tuning.
 	Tunables []ServiceTunable `json:"tunables"`
+	// RemoteAccess is the experimental remote access over Tailcat.
+	RemoteAccess RemoteAccess `json:"remoteAccess"`
+}
+
+type RemoteAccessState string
+
+const (
+	RemoteAccessStateOff       RemoteAccessState = "off"
+	RemoteAccessStateStarting  RemoteAccessState = "starting"
+	RemoteAccessStateListening RemoteAccessState = "listening"
+	RemoteAccessStateFailed    RemoteAccessState = "failed"
+)
+
+// RemoteAccess is a service's experimental remote access: a Tailcat server
+// forwards its engine port; clients run Command and connect to
+// 127.0.0.1:LocalPort with a binding's login. The address is a bearer
+// capability, so Address and Command are set only for browser sessions and
+// the unscoped CLI (API tokens and scoped callers see them empty).
+type RemoteAccess struct {
+	Enabled bool              `json:"enabled"`
+	State   RemoteAccessState `json:"state"`
+	Address string            `json:"address,omitempty"`
+	// Command is `tailcat forward <address> <localPort>:<enginePort>`.
+	Command    string `json:"command,omitempty"`
+	LocalPort  int    `json:"localPort"`
+	EnginePort int    `json:"enginePort"`
+	// Connections counts open tunnel connections, at most MaxConnections.
+	Connections    int    `json:"connections"`
+	MaxConnections int    `json:"maxConnections"`
+	Message        string `json:"message,omitempty"`
+}
+
+type RemoteAccessAction string
+
+const (
+	RemoteAccessActionOn     RemoteAccessAction = "on"
+	RemoteAccessActionOff    RemoteAccessAction = "off"
+	RemoteAccessActionRotate RemoteAccessAction = "rotate"
+)
+
+// RemoteAccessRequest turns remote access on or off, or rotates the address
+// (a new key: the old address stops working and open tunnels are cut).
+type RemoteAccessRequest struct {
+	Action RemoteAccessAction `json:"action"`
 }
 
 type TunableKind string

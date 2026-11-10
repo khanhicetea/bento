@@ -20,6 +20,7 @@ import { TerminalPanel } from "../../components/Terminal.tsx";
 import { keys } from "../../api/keys.ts";
 import { formatRelative } from "../../lib/format.ts";
 import { useActiveOperations } from "../operations/useActiveOperations.ts";
+import { BindingRemoteAccess } from "../data/RemoteAccess.tsx";
 import { ApplicationEditor } from "./ApplicationEditor.tsx";
 import { BackupPanel } from "./BackupPanel.tsx";
 import { DeployPanel } from "./DeployPanel.tsx";
@@ -410,7 +411,7 @@ function DataBindings({ app }: { app: T.App }) {
   return (
     <div className="box box--3">
       {groups.map((group) => (
-        <KindCard key={group.key} appId={app.id} group={group} />
+        <KindCard key={group.key} appId={app.id} group={group} services={services.data?.services ?? []} />
       ))}
       <Cell
         title="New binding"
@@ -440,7 +441,7 @@ function DataBindings({ app }: { app: T.App }) {
   );
 }
 
-function KindCard({ appId, group }: { appId: string; group: BindingGroup }) {
+function KindCard({ appId, group, services }: { appId: string; group: BindingGroup; services: T.Service[] }) {
   const multi = group.bindings.length > 1;
   const solo = group.bindings[0]!;
   return (
@@ -456,14 +457,30 @@ function KindCard({ appId, group }: { appId: string; group: BindingGroup }) {
       </div>
       <div className="grid gap-4">
         {group.bindings.map((binding) => (
-          <BindingRow key={binding.id} appId={appId} binding={binding} showService={multi} />
+          <BindingRow
+            key={binding.id}
+            appId={appId}
+            binding={binding}
+            showService={multi}
+            service={services.find((s) => s.name === binding.service)}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function BindingRow({ appId, binding, showService }: { appId: string; binding: T.Binding; showService: boolean }) {
+function BindingRow({
+  appId,
+  binding,
+  showService,
+  service,
+}: {
+  appId: string;
+  binding: T.Binding;
+  showService: boolean;
+  service: T.Service | undefined;
+}) {
   const [name, setName] = useState("");
   const add = useOperationMutation(() => api.apps.addDatabase(appId, binding.id, name));
   const browse = useUtilsTab(() => api.dbadmin.ticket(appId, binding.id));
@@ -519,6 +536,7 @@ function BindingRow({ appId, binding, showService }: { appId: string; binding: T
               <Plus /> Add
             </Button>
           </div>
+          <BindingRemoteAccess appId={appId} binding={binding} service={service} />
         </>
       )}
       {add.error && <p className="note note--bad">{messageOf(add.error)}</p>}

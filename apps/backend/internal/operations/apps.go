@@ -67,6 +67,7 @@ func (c *Controller) registerHandlers() {
 		KindServiceEnsure:    c.handleServiceEnsure,
 		KindServiceConfigure: c.handleServiceConfigure,
 		KindServiceRestart:   c.handleServiceRestart,
+		KindServiceRemote:    c.handleServiceRemote,
 		KindEdgeApply:        c.handleEdgeApply,
 		KindTunnelApply:      c.handleTunnelApply,
 		KindDBAdminApply:     c.handleDBAdminApply,

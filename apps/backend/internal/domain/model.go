@@ -352,8 +352,18 @@ type DataService struct {
 	Image   string
 	Volume  string
 	// Settings are tuned server parameters (MySQL/PostgreSQL only).
-	Settings  ServiceSettings
+	Settings ServiceSettings
+	// Remote is the experimental remote access over Tailcat.
+	Remote    RemoteAccess
 	CreatedAt time.Time
+}
+
+// RemoteAccess is a data service's remote-access intent: whether a Tailcat
+// server forwards the engine port, and the key generation it must run with
+// (a rotate bumps it; the key lives only in a root-only file).
+type RemoteAccess struct {
+	Enabled    bool
+	Generation int64
 }
 
 type EdgeSettings struct {
@@ -409,3 +419,16 @@ type UIDRange struct {
 }
 
 func DefaultUIDRange() UIDRange { return UIDRange{First: 10000, Last: 19999} }
+
+// MaxUIDRangeLast is the highest UID an app allocation range may reach.
+const MaxUIDRangeLast = 2_000_000_000
+
+// TailcatUID is the unprivileged identity (UID == GID, no supplementary
+// groups) that runs the data services' Tailcat servers. It lies above every
+// app range (MaxUIDRangeLast), so it is never allocated to, or reused from,
+// an app; it is outside systemd's dynamic (61184-65519) and nspawn container
+// (524288-1879048191) ranges and below its foreign range (2147352576+). It is
+// fixed rather than allocated because it owns no files outside run/tailcat,
+// and a fixed number lets operators recognise the process. The backend
+// refuses to use it while a host account claims it.
+const TailcatUID = 2_000_000_100
