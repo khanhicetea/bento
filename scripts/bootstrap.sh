@@ -179,10 +179,12 @@ aarch64 | arm64) ARCH=arm64 ;;
 esac
 ok "Linux $ARCH"
 
-OS_NAME=unknown
+OS_NAME=unknown OS_ID=''
 if [ -r /etc/os-release ]; then
 	# shellcheck disable=SC1091
 	OS_NAME=$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-$ID}")
+	# shellcheck disable=SC1091
+	OS_ID=$(. /etc/os-release && printf '%s' "${ID:-}")
 fi
 ok "$OS_NAME"
 
@@ -212,7 +214,7 @@ fi
 DOCKER_PLAN=ok
 if ! have docker; then
 	DOCKER_PLAN=install
-	warn "Docker Engine is not installed; will install it with get.docker.com"
+	warn "Docker Engine is not installed; will install it"
 elif ! DOCKER_API=$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null); then
 	DOCKER_PLAN=start
 	warn "Docker is installed but not running; will start it"
@@ -363,7 +365,12 @@ step "Summary"
 row() { printf '  %-14s %s\n' "$1" "$2"; }
 [ ${#TOOLS[@]} -gt 0 ] && row "Tools" "install ${TOOLS[*]}"
 case $DOCKER_PLAN in
-install) row "Docker" "install Docker Engine (get.docker.com), enable docker.service" ;;
+install)
+	case "$OS_ID" in
+	almalinux | rocky | ol) row "Docker" "install Docker Engine (download.docker.com RHEL repo), enable docker.service" ;;
+	*) row "Docker" "install Docker Engine (get.docker.com), enable docker.service" ;;
+	esac
+	;;
 start) row "Docker" "enable and start docker.service" ;;
 ok) row "Docker" "already running (API $DOCKER_API)" ;;
 esac
@@ -400,8 +407,18 @@ fi
 
 if [ "$DOCKER_PLAN" = install ]; then
 	step "Installing Docker Engine"
-	fetch https://get.docker.com "$TMP/get-docker.sh"
-	sh "$TMP/get-docker.sh"
+	case "$OS_ID" in
+	almalinux | rocky | ol)
+		# Docker's own repositories for these rebuilds can be empty (AlmaLinux 10
+		# has no packages), so use its RHEL repository, which they are built from.
+		fetch https://download.docker.com/linux/rhel/docker-ce.repo /etc/yum.repos.d/docker-ce.repo
+		dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+		;;
+	*)
+		fetch https://get.docker.com "$TMP/get-docker.sh"
+		sh "$TMP/get-docker.sh"
+		;;
+	esac
 fi
 if [ "$DOCKER_PLAN" != ok ]; then
 	systemctl enable --now docker
