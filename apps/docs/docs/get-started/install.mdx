@@ -1,6 +1,6 @@
 ---
 title: Install Bento
-description: Install Docker, install the Bento binary, create your first stack, and start the service.
+description: Bootstrap a server with one script, or install Docker, the Bento binary, and your first stack by hand.
 ---
 
 <Callout type="warning" title="Run everything as root">
@@ -19,6 +19,43 @@ Running `bento` as a normal user (even one in the `docker` group) fails: the con
 - A Linux server, **amd64** or **arm64**.
 - A fresh or dedicated machine is best. Bento will want ports **80** and **443** if you use its built-in edge.
 - A domain you can point at the server, if you want public HTTPS.
+
+## Quick install
+
+The bootstrap script does every step below on a fresh server, asks a few questions first, and changes nothing until
+you confirm:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/khanhicetea/bento/main/scripts/bootstrap.sh | sudo bash
+```
+
+It checks the server (Linux amd64/arm64, systemd, root, memory, disk), then asks:
+
+| Question | Default | Notes |
+| --- | --- | --- |
+| Alternative HTTP / HTTPS port | — | Asked only when **80** or **443** is already in use. Let's Encrypt needs port 80 to reach the edge. |
+| ACME email | — | Your Let's Encrypt contact address. |
+| Stack name | `prod` | Also the service name: `bento@prod`. |
+| Install the stack in | `/srv/bento/<name>` | Press <kbd>Enter</kbd> for the default. Must be empty or new. |
+| MySQL / PostgreSQL version | `8.4` / `none` | Checked against the release being installed. Add more later in the UI. |
+| Web UI password | generated | At least 12 characters. A generated one is shown once at the end. |
+
+After a summary and your **y**, it installs `curl` and Docker Engine if missing, downloads the latest release and
+verifies its SHA-256, installs `/usr/local/bin/bento` and the `bento@.service` unit, creates the stack, starts
+`bento@<name>`, turns on the [edge](/get-started/go-live) with your ports and email, and adds
+`export BENTO_STACK_ROOT=...` to root's `~/.bashrc`. A stack outside `/srv/bento` gets its path in
+`/etc/bento/<name>.env`.
+
+Then [open the web UI](/get-started/open-the-ui). To install a specific release instead of the latest, pipe into
+`sudo BENTO_VERSION=0.3.0 bash`.
+
+<Callout type="note">
+The script sets up the first stack on a server. It stops if Bento already listens on `127.0.0.1:7780`; for a second
+stack or an upgrade, follow the manual steps or [Upgrade](/system/upgrade). It never changes your firewall — it prints the
+`ufw` or `firewalld` command to open the edge ports instead.
+</Callout>
+
+## Manual install
 
 <Steps>
   <Step title="Install Docker">

@@ -9,7 +9,9 @@ description: Turn on Bento's edge, point DNS, and publish your app on HTTPS.
     Certificates can't be issued until DNS resolves.
   </Step>
   <Step title="Turn on the edge (once per server)">
-    Go to **Ingress → Edge**:
+    Used the [bootstrap script](/get-started/install#quick-install)? The edge is already on — skip to the next step.
+
+    Otherwise go to **Ingress → Edge**:
 
     - Tick **Enabled**. Keep **Bind** `0.0.0.0`, **HTTP** `80`, **HTTPS** `443`.
     - Under **Certificates · ACME**, enter your **Contact email**. Leave the directory URL empty for Let's Encrypt.

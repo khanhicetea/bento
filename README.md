@@ -40,8 +40,21 @@ and reconciliation pause.
 
 ## Install
 
-Requirements: Linux amd64 or arm64, Docker Engine with API ≥ 1.44, root (the backend owns app homes and runs the
-scheduler relay).
+Requirements: Linux amd64 or arm64 with systemd, Docker Engine with API ≥ 1.44, root (the backend owns app homes and
+runs the scheduler relay).
+
+On a fresh server, the bootstrap script checks the host, installs missing tools and Docker Engine, installs the latest
+release (SHA-256 verified), creates a stack, starts `bento@<name>`, and turns on the edge:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/khanhicetea/bento/main/scripts/bootstrap.sh | sudo bash
+```
+
+It asks for alternative ports when 80 or 443 is taken, your ACME email, the stack name and location (default
+`/srv/bento/prod`), database versions, and the UI password, then shows a summary and changes nothing until you confirm.
+`| sudo BENTO_VERSION=<tag> bash` pins a release. See [`scripts/bootstrap.sh`](scripts/bootstrap.sh).
+
+Manual install:
 
 ```bash
 install -m 0755 bento-linux-amd64 /usr/local/bin/bento
@@ -67,6 +80,7 @@ EOF
 bento app create --json shop.json      # provisioned, stopped, unpublished
 bento app shell shop                    # starts in /home/shop/app; run: git clone <repository> .
 bento app start shop                    # waits for FPM, local Nginx, scheduler, and HTTP readiness
+# the bootstrap script already turned the edge on; otherwise:
 echo '{"enabled":true,"bind":"0.0.0.0","httpPort":80,"httpsPort":443,"http3":false,"acmeEmail":"you@example.com","acmeUrl":""}' \
   | bento edge set --json -
 bento app publish shop
