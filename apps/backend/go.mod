@@ -1,6 +1,6 @@
 module github.com/khanhicetea/bento/apps/backend
 
-go 1.27.1
+go 1.27.4
 
 require (
 	github.com/coder/websocket v1.8.15
