@@ -1476,3 +1476,51 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
 - Not verified: arm64; the other PHP bases (7.4 on deb.sury.org, 8.0, 8.1 official images) with the new ini and the
   smaller PEAR install were built by `TestIntegrationBuildRuntimeImages` but not served or probed; WordPress admin
   pages (the fixture uses front-controller routing, which does not serve `wp-admin`).
+
+## Bootstrap script and 0.4.1 on rebuilt hosts (2026-11-11; `bento-test` Debian 13 amd64, `bento-arm` AlmaLinux 10.2 arm64; 2 vCPU, ~3.8 GiB each)
+
+- **Bootstrap.** `curl -fsSL …/main/scripts/bootstrap.sh | sudo bash` on freshly rebuilt hosts, answers fed through a
+  pty. Debian: defaults, MySQL 8.4 + PostgreSQL 18, generated password. Alma: 443 held by another listener (asked,
+  8443 given), stack `main` in `/opt/bento/main`, typed password. Both installed Docker 29.9.3 and 0.4.1, verified the
+  SHA-256, started `bento@<name>` and the edge; the edge answered from the internet, the UI password logged in (a
+  wrong one got 401), and on Alma the service process ran with `BENTO_STACK_ROOT=/opt/bento/main` from
+  `/etc/bento/main.env`. A first run (release 0.3.0) failed on Alma: get.docker.com uses Docker's AlmaLinux
+  repository, which has no packages for AlmaLinux 10; the script now uses the RHEL repository on AlmaLinux, Rocky
+  and Oracle Linux. Not exercised: SELinux enforcing, an active firewall, Ubuntu, Rocky, Oracle.
+- **Real-Docker suite** (`make test-integration` from `/root/src` at `fc2b525`, Go 1.27.4, beside the bootstrapped
+  stack): amd64 `internal/integration` 2934 s, `internal/runtime` 1784 s; arm64 2565 s and 1520 s. All passed.
+- **Smoke** (`smoke.sh`, Let's Encrypt staging, the bootstrapped stacks): on both hosts five staging certificates,
+  all five apps over HTTPS on IPv4 and IPv6 with their database round trip (PostgreSQL 18, MySQL 8.4 + Valkey,
+  SQLite), HTTP→HTTPS keeping the custom `:8443`, and a Gitea push deployed by webhook with its mark live. The
+  arm64 host stopped answering (even ping) for about a minute mid-run, same boot, no OOM kill in the kernel log;
+  the run itself completed and its checks were repeated afterwards.
+- **Still open (reproduced):** right after `bento app exec`, a visitor request got a 502 with the edge logging
+  `connect() failed (113: No route to host)` to the exited tool container's address: tool containers still join
+  the apps network with the app's alias (see the 2026-11-11 PHP entry above). The next requests were 200.
+- **Benchmarks** (`scripts/vps/bench/all.sh`, wrk on the same host through the edge, one run each, 30 s per point
+  after a 10 s warm-up; CPU per request from the containers' cgroup `cpu.stat`). WordPress fixture `wp-up.sh`: PHP
+  8.4, 1 GB / 1 CPU, standard mode, 1,000 posts of ~1,200 words, 10 categories, Twenty Twenty-Five, Yoast SEO 28.8,
+  Contact Form 7; visitor mix 20% home, 60% posts, 10% categories, 5% search, 5% contact; plain HTTP through the edge.
+  No non-2xx responses anywhere; errors are wrk timeouts at 10 s.
+
+  | Host | Test | Conns | req/s | p50 | p99 | Errors | App CPU / req | DB CPU / req |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | amd64 | WordPress mix | 1 | 8.69 | 107 ms | 752 ms | 0 | 102 ms | 11 ms |
+  | amd64 | WordPress mix | 16 | 8.51 | 1.80 s | 2.86 s | 0 | 117 ms | 12 ms |
+  | amd64 | WordPress mix | 64 | 7.75 | 7.14 s | 9.91 s | 11 | 128 ms | 13 ms |
+  | arm64 | WordPress mix | 1 | 6.92 | 127 ms | 668 ms | 0 | 105 ms | 15 ms |
+  | arm64 | WordPress mix | 16 | 7.21 | 2.08 s | 3.36 s | 0 | 128 ms | 17 ms |
+  | arm64 | WordPress mix | 64 | 6.99 | 8.53 s | 9.82 s | 5 | 124 ms | 16 ms |
+  | amd64 | e2e-node `/` (HTTPS, 20 s) | 200 | 693 | 232 ms | 892 ms | 0 | 0.5 ms | 1.5 ms |
+  | amd64 | e2e-php `/` (HTTPS, 20 s) | 200 | 221 | 858 ms | 1.11 s | 0 | 1.5 ms | 5.0 ms |
+  | amd64 | e2e-bun `/` (HTTPS, 20 s) | 200 | 678 | 278 ms | 453 ms | 0 | 0.5 ms | — |
+  | arm64 | e2e-node `/` (HTTPS, 20 s) | 200 | 487 | 364 ms | 709 ms | 0 | 0.7 ms | 1.4 ms |
+  | arm64 | e2e-php `/` (HTTPS, 20 s) | 200 | 117 | 1.29 s | 3.27 s | 0 | 1.7 ms | 7.2 ms |
+  | arm64 | e2e-bun `/` (HTTPS, 20 s) | 200 | 187 | 1.06 s | 1.47 s | 0 | 0.7 ms | — |
+
+  The WordPress fixture is rebuilt, not the one of the 2026-11-11 PHP entry (91 ms per page, 9.45 req/s at 16
+  connections, p99 2.58 s there): a heavier theme and longer posts, so compare within this table. The plain
+  numbers are bound by wrk, TLS at the edge and the app sharing two vCPUs, not by the apps (about 1 ms of app CPU
+  per request). A first round counted the HTTP→HTTPS redirects of the e2e apps as successes (11–13k req/s, zero
+  app CPU); the Lua scripts now count every non-2xx response and the plain runs use HTTPS.
+

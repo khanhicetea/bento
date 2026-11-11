@@ -15,8 +15,9 @@ The dev host only edits code and builds; every test, including `make ci`, runs o
 | Address | `104.64.207.10`, `2600:3c15::2000:86ff:fe39:93f1` (`ssh root@104.64.207.10`) |
 | OS | Debian GNU/Linux 13 (trixie), x86_64 |
 | Size | 2 vCPU, 3.8 GiB RAM, 79 GB disk |
-| Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd), Compose v5.7.0; installed 2026-11-06 via get.docker.com |
-| Tooling | Go 1.27.0 (`/usr/local/go`), Bun 1.4.0, gcc (race tests), git, jq, rsync |
+| Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd); installed 2026-11-11 by `scripts/bootstrap.sh` (get.docker.com) |
+| Tooling | Go 1.27.4 (`/usr/local/go`), gcc, git, jq, rsync, wrk 4.2.0 (built from source); 512 MiB swap partition + 2 GiB `/swapfile` |
+| Stack | `prod` in `/srv/bento/prod`, edge 80/443 (from `bootstrap.sh`) |
 
 The arm64 host is a second, equally disposable box:
 
@@ -24,10 +25,11 @@ The arm64 host is a second, equally disposable box:
 | --- | --- |
 | Provider | Hetzner (`ssh bento-arm`, same key and `~/.ssh/config` entry shape as `bento-test`) |
 | Address | `2.31.150.195`, `2a01:4f8:1c1c:b3ca::1` |
-| OS | Debian GNU/Linux 13 (trixie), aarch64 |
+| OS | AlmaLinux 10.2, aarch64 (SELinux permissive, firewalld off); Debian 13 until 2026-11-11 |
 | Size | 2 vCPU, 3.7 GiB RAM, 38 GB disk |
-| Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd); installed 2026-11-07 via get.docker.com |
-| Tooling | Go 1.27.0 (`go1.27.0.linux-arm64`), gcc, git, jq, rsync; no Bun (the web checks run on `bento-test`) |
+| Docker | 29.9.3 (API 1.56), overlayfs, cgroup v2 (systemd); installed 2026-11-11 by `scripts/bootstrap.sh` (Docker's RHEL repository) |
+| Tooling | Go 1.27.4, gcc, git, jq, rsync, wrk 4.2.0 (built from source), 2 GiB `/swapfile`; no Bun (the web checks run on `bento-test`) |
+| Stack | `main` in `/opt/bento/main` (`/etc/bento/main.env`), edge 80/8443 (from `bootstrap.sh`); scripts find it through `bench/env.sh` |
 
 The scripts target it with `BENTO_VPS=bento-arm` (and `BENTO_ARCH=arm64` for `ship.sh`); build the test binaries
 with `GOARCH=arm64`. Everything else in this guide applies as written.
@@ -66,7 +68,7 @@ Run everything non-interactively: `ssh -o BatchMode=yes bento-test '...'`. The s
 ## Scripts
 
 `scripts/vps/` holds the helpers. `sync.sh` and `ship.sh` run on the dev host; the rest are copied to `/root` on the
-VPS (`scp scripts/vps/*.sh bento-test:/root/`).
+VPS (`scp scripts/vps/*.sh bento-test:/root/`, and `scp -r scripts/vps/bench bento-test:/root/` for the benchmarks).
 
 | Script | Where | What |
 | --- | --- | --- |
@@ -81,6 +83,9 @@ VPS (`scp scripts/vps/*.sh bento-test:/root/`).
 | `push.sh REPO BRANCH SED FILE` | VPS | edit one file in a Gitea repo and push (webhook tests) |
 | `lara.sh` | VPS | the Laravel fixture of `e2e-live.md` section 8, pushed to Gitea |
 | `final.sh` | VPS | the smoke run: reset, install, edge, apps, certificates, HTTPS on IPv4/IPv6, a Gitea push-to-deploy |
+| `smoke.sh` | VPS | the same checks on the stack that is already running (e.g. from `scripts/bootstrap.sh`), any root and edge ports, no reset; Let's Encrypt staging |
+| `bench/wp-up.sh [SLUG] [MB] [CPU_MILLIS]` | VPS | WordPress fixture: PHP 8.4, MySQL 8.4, 1,000 posts, 10 categories, Yoast SEO, Contact Form 7, `/%postname%/`, HTTP host `<slug>.<ip>.nip.io` |
+| `bench/run.sh LABEL SLUG LUA [CONNS...]` | VPS | wrk through the edge on the same host (`wordpress.lua` visitor mix or `plain.lua`), req/s, p50/p99, errors, app and database CPU per request from cgroup `cpu.stat`; appends to `/root/bench/results.tsv` |
 | `dbmatrix.sh [ENGINE:VERSION...]` | VPS | per database version: service, a fixture app (`APP=php\|legacy\|node\|py`), add-db, backup and restore-db, the database browser (`dbadmin.py`), service restart, remove and prune |
 | `dbtune.sh` | VPS | every MySQL/PostgreSQL service: apply non-default settings, check the server reports them, reset |
 | `probe.py run LOG ADDR HOST[=MUST]...` / `report LOG [FROM TO]` | VPS | availability probe: a new TLS connection to each host every 100 ms, then outage windows per host |
@@ -226,3 +231,7 @@ re-add the public key.
   on a copy with a one-line fix. Both hosts were reset afterwards (stacks, containers, volumes and networks removed,
   `bento@prod` disabled, the as-built `a5d5485-dirty` binary installed); `tailcat` and the database clients stay
   installed on both, and `e2e-gitea`/`e2e-s3` remain.
+- **2026-11-11:** Both hosts rebuilt by the user: `bento-test` on Debian 13, `bento-arm` on AlmaLinux 10.2. Installed with
+  the `scripts/bootstrap.sh` one-liner (0.3.0, then rolled back, then 0.4.1 from GitHub), then the real-Docker suite,
+  `smoke.sh` and the `bench/` round on the bootstrapped stacks (`evidence.md`, "Bootstrap script and 0.4.1 on rebuilt
+  hosts"). Gitea runs again on both; there is no S3 endpoint, Bun or Tailcat any more.

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Write deploy scripts, then deploy, start and publish every e2e app.
 set -uo pipefail
-export BENTO_STACK_ROOT=/srv/bento/prod
+export BENTO_STACK_ROOT=${BENTO_STACK_ROOT:-/srv/bento/prod}
 ds() { bento app exec $1 -- bash -c "printf '%s\n' '#!/bin/bash' 'set -e' $2 > ~/deploy.sh && chmod 755 ~/deploy.sh" >/dev/null; }
 ds e2e-node "'npm install --omit=dev'"
 ds e2e-php "'date -u +%FT%TZ > deployed-at.txt'"
