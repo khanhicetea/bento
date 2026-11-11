@@ -26,12 +26,12 @@ bento_load_env_file /etc/bento/app.env || exit $?
 bento_load_env_file /etc/bento/runtime.env || exit $?
 bento_load_env_file /etc/bento/credentials.env || exit $?
 export USER="${BENTO_APP_SLUG:-app}" LOGNAME="${BENTO_APP_SLUG:-app}"
-export MINICRON_DATA="${HOME}/.local/share/minicron"
-export MINICRON_CONFIG=/etc/bento/minicrond.toml
+export MINICROND_DATA="${HOME}/.local/share/minicron"
+export MINICROND_CONFIG=/etc/bento/minicrond.toml
 export VALKEY_DATA="${HOME}/.local/share/valkey"
 # Lets the Bento UI embed the scheduler page in a same-origin iframe.
-export MINICRON_ALLOW_IFRAME=1
-export BASE_PATH="${BENTO_SCHEDULER_BASE_PATH:-}"
+export MINICROND_ALLOW_IFRAME=1
+export MINICROND_BASE_PATH="${BENTO_SCHEDULER_BASE_PATH:-}"
 # Toolchains the operator installs with mise (mise use / mise install) live in
 # the app home and shadow the image's own, read-only tools in /usr/local/bin.
 # The home's mise data is never backed up; its config (~/.config/mise) is, so

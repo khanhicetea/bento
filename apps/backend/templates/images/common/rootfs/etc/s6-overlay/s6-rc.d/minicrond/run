@@ -9,7 +9,7 @@ if [[ "${BENTO_MINICROND:-1}" != 1 ]]; then
   exit 0
 fi
 umask 077
-mkdir -p "$MINICRON_DATA"
-chmod 700 "$MINICRON_DATA"
+mkdir -p "$MINICROND_DATA"
+chmod 700 "$MINICROND_DATA"
 cd "$HOME"
 exec /usr/local/bin/minicrond daemon

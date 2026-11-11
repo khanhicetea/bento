@@ -10,9 +10,9 @@ set -uo pipefail
 source /usr/local/lib/bento/env.bash
 fail() { echo "not ready: $*"; exit 1; }
 if [[ "${BENTO_MINICROND:-1}" == 1 ]]; then
-  sock="$MINICRON_DATA/minicron.sock"
+  sock="$MINICROND_DATA/minicron.sock"
   [[ -S "$sock" ]] || fail "scheduler socket missing"
-  curl -fsS -o /dev/null --max-time 3 --unix-socket "$sock" "http://minicrond${BASE_PATH%/}/healthz" \
+  curl -fsS -o /dev/null --max-time 3 --unix-socket "$sock" "http://minicrond${MINICROND_BASE_PATH%/}/healthz" \
     || fail "scheduler health check failed"
 fi
 if [[ "${BENTO_VALKEY:-0}" == 1 ]]; then

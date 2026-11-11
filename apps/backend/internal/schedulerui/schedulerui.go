@@ -27,7 +27,7 @@ import (
 var files embed.FS
 
 // baseTag is the placeholder minicrond's index.html ships with; minicrond
-// itself replaces it with BASE_PATH when it serves the page.
+// itself replaces it with MINICROND_BASE_PATH when it serves the page.
 const baseTag = `<base href="/" />`
 
 // Asset is one static file of the UI bundle.

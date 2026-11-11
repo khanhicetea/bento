@@ -179,7 +179,7 @@ var envKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // reservedEnvKeys are set by Bento or the image and cannot be overridden.
 var reservedEnvKeys = map[string]bool{
 	"HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "PATH": true, "TZ": true,
-	"BASE_PATH": true, "MINICRON_DATA": true, "MINICRON_CONFIG": true, "MINICRON_ALLOW_IFRAME": true,
+	"MINICROND_BASE_PATH": true, "MINICROND_DATA": true, "MINICROND_CONFIG": true, "MINICROND_ALLOW_IFRAME": true,
 	"VALKEY_DATA": true,
 }
 
