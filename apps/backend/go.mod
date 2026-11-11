@@ -11,8 +11,8 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/tailscale/tailcat v0.7.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/sys v0.48.0
-	golang.org/x/term v0.46.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.59.0
 	tailscale.com v1.103.0-pre.0.20260916030321-a2263542f260
 )
