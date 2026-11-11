@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/containerd/errdefs v1.0.0
-	github.com/klauspost/compress v1.20.0
+	github.com/klauspost/compress v1.20.3
 	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.6.0
 	github.com/robfig/cron/v3 v3.0.1
