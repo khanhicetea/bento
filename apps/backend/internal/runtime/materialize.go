@@ -546,7 +546,14 @@ func renderPHP(app domain.App, ctx AppContext) (frontend, fastcgi, pool, ini []b
 	return frontend, fastcgi, pool, ini, nil
 }
 
+// openBasedir is the pool's open_basedir, empty (unset) unless the app opts in
+// to strict file access. The container is the app's boundary; open_basedir only
+// narrows what a file-read bug in the app reaches inside it, and PHP disables
+// its realpath cache while it is set (every include re-resolves its path).
 func openBasedir(app domain.App) string {
+	if !app.Runtime.PHP.StrictFileAccess {
+		return ""
+	}
 	parts := []string{app.ContainerHome(), "/tmp", "/usr/local/lib/php"}
 	for _, b := range app.Bindings {
 		if b.Engine == domain.EngineSQLite {

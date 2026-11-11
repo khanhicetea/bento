@@ -12,7 +12,10 @@ FROM ${PHP_BASE} AS php-build
 ARG PHP_MIN_VERSION
 # Also records the Debian packages providing the shared libraries PHP links
 # against, so the runtime stage installs exactly those on any base release,
-# and the loaded modules, which the runtime stage must reproduce.
+# and the loaded modules, which the runtime stage must reproduce. PEAR's
+# commands go after the redis install: nothing in the image runs them, and
+# pearcmd.php is a well-known gadget for turning a file include into code
+# execution.
 COPY apt-sources.sh /tmp/apt-sources.sh
 RUN set -eux; \
   sh /tmp/apt-sources.sh; \
@@ -38,7 +41,8 @@ RUN set -eux; \
     > /usr/local/share/bento-php-runtime-deps; \
   cat /usr/local/share/bento-php-runtime-deps; \
   rm -rf /usr/local/include/php /usr/local/lib/php/build /usr/local/bin/docker-php-ext-* \
-    /usr/local/bin/peardev /usr/local/bin/pecl /usr/local/bin/php-config /usr/local/bin/phpize \
+    /usr/local/bin/pear /usr/local/bin/peardev /usr/local/bin/pecl /usr/local/bin/php-config /usr/local/bin/phpize \
+    /usr/local/lib/php/pearcmd.php /usr/local/lib/php/peclcmd.php \
     /usr/src/php* /tmp/pear /usr/local/etc/php-fpm.d/*
 
 # Node.js LTS with npm and pnpm, installed by mise, so apps can install

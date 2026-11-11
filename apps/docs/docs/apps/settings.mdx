@@ -11,6 +11,24 @@ restart**; other changes apply without downtime.
 Version, routing, document root (PHP) or command, port, and ready path (HTTP process). The runtime *type* can't
 change.
 
+### File access (PHP)
+
+- **Whole container** (default): PHP can open any file the app's user can read inside its own container — its home,
+  the runtime image and its generated settings. Other apps and the host are never visible; the container is the
+  boundary.
+- **App home only**: sets PHP's `open_basedir` to the app home, `/tmp` and the app's SQLite folders, so a file-read
+  bug in the site can't reach the process environment (`/proc/self/environ`) or `/etc/bento`, where the database
+  password also lives. It does not stop code that can run commands. PHP turns its path cache off while
+  `open_basedir` is set, so every page costs more CPU: about 40% more for WordPress.
+
+Changing it restarts PHP-FPM inside the container; the container is not recreated.
+
+### PHP defaults
+
+PHP runs with production error handling: errors go to the app's **Logs**, never into the page (`display_errors` is
+off). `assert()` is compiled out (`zend.assertions = -1`); run test suites that need it with
+`php -d zend.assertions=1 …`. `$argv` is set only on the command line (`register_argc_argv` is off for web requests).
+
 ## PHP performance settings
 
 Start from **Standard** or **High concurrency**, then override if needed:

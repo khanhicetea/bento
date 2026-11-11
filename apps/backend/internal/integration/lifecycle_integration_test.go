@@ -171,9 +171,19 @@ func TestIntegrationAppLifecycle(t *testing.T) {
 	}
 	php := domain.Runtime{Kind: domain.RuntimePHP, PHP: &domain.PHPRuntime{Version: "8.4", DocumentRoot: "public", Routing: "front-controller", Mode: "standard", UploadLimitMB: 16}}
 	node := domain.Runtime{Kind: domain.RuntimeHTTP, HTTP: &domain.HTTPRuntime{Toolchain: "node", Version: "24", Argv: []string{"node", "s.js"}, Port: 3000}}
-	a1, a2, h := e.create("one", php), e.create("two", php), e.create("web", node)
-	writeFile(t, filepath.Join(e.layout.AppCode("one"), "public/index.php"), "<?php echo 'one:'.posix_getuid();", a1.UID)
-	writeFile(t, filepath.Join(e.layout.AppCode("two"), "public/index.php"), "<?php echo 'two:'.posix_getuid();", a2.UID)
+	// "two" opts in to strict file access (open_basedir); "one" keeps the default.
+	strictPHP := *php.PHP
+	strictPHP.StrictFileAccess = true
+	a1, a2, h := e.create("one", php), e.create("two", domain.Runtime{Kind: domain.RuntimePHP, PHP: &strictPHP}), e.create("web", node)
+	// Effective web-request settings as FPM serves them: production defaults
+	// from the image's zz-bento.ini, no PEAR command script, open_basedir only
+	// when strict.
+	writeFile(t, filepath.Join(e.layout.AppCode("one"), "public/index.php"), "<?php echo 'one:'.posix_getuid()"+
+		".'|basedir='.ini_get('open_basedir').'|display='.(int)ini_get('display_errors')"+
+		".'|argv='.(int)ini_get('register_argc_argv').'|assert='.ini_get('zend.assertions')"+
+		".'|pearcmd='.(int)file_exists('/usr/local/lib/php/pearcmd.php');", a1.UID)
+	writeFile(t, filepath.Join(e.layout.AppCode("two"), "public/index.php"),
+		"<?php echo 'two:'.posix_getuid().'|basedir='.ini_get('open_basedir');", a2.UID)
 	writeFile(t, filepath.Join(e.layout.AppCode("web"), "s.js"),
 		"require('http').createServer((q,s)=>s.end('web:'+process.getuid())).listen(3000,'0.0.0.0')", h.UID)
 	for _, a := range []domain.App{a1, a2, h} {
@@ -182,7 +192,11 @@ func TestIntegrationAppLifecycle(t *testing.T) {
 	for _, tc := range []struct {
 		app  domain.App
 		want string
-	}{{a1, "one:" + fmt.Sprint(a1.UID)}, {a2, "two:" + fmt.Sprint(a2.UID)}, {h, "web:" + fmt.Sprint(h.UID)}} {
+	}{
+		{a1, fmt.Sprintf("one:%d|basedir=|display=0|argv=0|assert=-1|pearcmd=0", a1.UID)},
+		{a2, fmt.Sprintf("two:%d|basedir=%s:/tmp:/usr/local/lib/php:%s", a2.UID, a2.ContainerHome(), a2.Bindings[0].SQLiteContainerDir())},
+		{h, "web:" + fmt.Sprint(h.UID)},
+	} {
 		obs, _ := e.c.Observe(ctx, tc.app)
 		resp, err := http.Get(fmt.Sprintf("http://%s:%d/", obs.IP, tc.app.HTTPPort()))
 		if err != nil {

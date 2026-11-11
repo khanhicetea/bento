@@ -139,6 +139,40 @@ func TestFingerprintStableAndScoped(t *testing.T) {
 	}
 }
 
+// open_basedir disables PHP's realpath cache, so it is set only when the app
+// opts in; toggling it is a pool reload, never a recreation.
+func TestStrictFileAccess(t *testing.T) {
+	pool := func(app domain.App) string {
+		t.Helper()
+		cfg, _, _, err := RenderAppConfig(app, AppContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range cfg {
+			if f.name == "php-fpm.conf" {
+				return string(f.data)
+			}
+		}
+		t.Fatal("php-fpm.conf not rendered")
+		return ""
+	}
+	base := testApp()
+	if conf := pool(base); strings.Contains(conf, "open_basedir") {
+		t.Fatalf("default pool must not set open_basedir:\n%s", conf)
+	}
+	strict := testApp()
+	strict.Runtime.PHP.StrictFileAccess = true
+	conf := pool(strict)
+	want := "\nphp_admin_value[open_basedir] = /home/shop:/tmp:/usr/local/lib/php:/var/lib/bento/sqlite/shop_0123456789\n" +
+		"php_admin_value[session.save_path] = /home/shop/tmp/sessions\n"
+	if !strings.Contains(conf, want) {
+		t.Fatalf("strict pool lacks %q:\n%s", want, conf)
+	}
+	if Fingerprint(inputs(t, strict)) != Fingerprint(inputs(t, base)) {
+		t.Fatal("strict file access must not change the boot fingerprint")
+	}
+}
+
 func TestRenderedConfig(t *testing.T) {
 	app := testApp()
 	cfg, id, _, err := RenderAppConfig(app, AppContext{TrustedProxies: []string{"10.200.0.2"}, ImagePasswd: []byte("root:x:0:0::/root:/bin/bash\nshop:x:1:1::/:/bin/sh\n"), ImageGroup: []byte("root:x:0:\n")})

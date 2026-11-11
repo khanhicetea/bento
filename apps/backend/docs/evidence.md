@@ -1374,3 +1374,65 @@ mode, phone width.
 addresses); the public DERP map being unreachable at backend start; more than one concurrent client per service;
 the Tailscale tailnet on both hosts was left running and was not used by Tailcat. Remote access with `bento mcp` was
 not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; the as-built binary is installed again.
+
+## PHP file access, production ini defaults and PEAR (2026-11-11; `bento-test`, amd64, Docker 29.9.3, PHP 8.4.27)
+
+- **Finding.** The WordPress benchmark fixture (`/root/bench/wp-up.sh`: 1,000 posts, Yoast SEO and Contact Form 7,
+  MySQL 8.4, 1 GB / 1 CPU, 12 workers) under wrk through the edge from the same host, with the visitor mix of
+  `bench-local/wordpress.lua`. CPU per page is the app container's cgroup `cpu.stat` over completed requests. As
+  shipped: 147 ms per page (49 ms kernel), 6.45 req/s at 16 connections, p99 4.08 s. MySQL used 12–16 ms per page.
+  strace on the FPM workers counted about 7,000 `newfstatat` per page (91% of syscall time), and
+  `realpath_cache_size()` was 0 inside FPM: PHP turns its realpath cache off while `open_basedir` is set.
+- **A/B** (one run each; `bento@prod` stopped while the generated config was edited, since the reconciler restores it
+  within a second):
+
+  | Pool | CPU per page | req/s at 16 conns | p99 |
+  | --- | --- | --- | --- |
+  | as shipped (`open_basedir` set) | 147 ms (49 kernel) | 6.45 | 4.08 s |
+  | no `open_basedir` | 87 ms (6 kernel) | 9.58 | 2.53 s |
+  | no `open_basedir`, `zend.assertions=-1` | 88 ms | 9.78 | 2.43 s |
+  | plus Valkey object cache (Redis Object Cache) | 91 ms | 9.19 | 2.49 s |
+  | no `open_basedir`, 2 CPUs | 101 ms | 16.77 | 1.89 s |
+
+  `zend.assertions=-1` alone, with `open_basedir` still set, gave 147 → 136 ms. The object cache moved MySQL from 12
+  to 3 ms per page but saved no app CPU: Valkey runs in the app container and shares its CPU quota. OPcache was not a
+  factor (99.96% hits, 37 of 128 MB, no restarts; JIT and `validate_timestamps=0` made no difference). A test-only
+  anonymous FastCGI page cache in the app's nginx served hits on `/` at 520–835 req/s (not shipped).
+- **What `open_basedir` protected**, checked as the app user in the app container: with it,
+  `/proc/self/environ`, `/proc/1/environ`, `/etc/bento/credentials.env` and `/etc/bento/nginx.conf` were blocked;
+  without it they are readable (the database password is in the first three; `wp-config.php` in the home is
+  readable either way). `/etc/shadow` is blocked either way. `shell_exec` worked in both cases (no
+  `disable_functions`), so it never stopped code execution. The allow-list included `/usr/local/lib/php`, which
+  held `pearcmd.php`, and FPM ran with `register_argc_argv` on (no `php.ini`): the preconditions of the
+  pearcmd include-to-code-execution chain were present with `open_basedir` set (not exploited here).
+- **Change.** `runtime.php.strictFileAccess` (default off) sets `open_basedir` (home, `/tmp`, the
+  `/usr/local/lib/php` include path, SQLite directories); otherwise the pool sets none. `zz-bento.ini` adds
+  `display_errors`/`display_startup_errors` off, `log_errors` on, `zend.assertions = -1`, `register_argc_argv` off.
+  The official-image build removes `pear`, `pecl`, `pearcmd.php` and `peclcmd.php` (the `PEAR/` library stays).
+- **After shipping** the binary, the reconciler built the new `php-8.4` image and moved the three PHP apps onto it.
+  - A probe served by FPM (`?+config-create+/` in the query) saw `open_basedir` empty, `display_errors` off,
+    `zend.assertions` -1, `register_argc_argv` off, no `$_SERVER['argv']`, no `pearcmd.php`, and realpath cache
+    entries. An `E_USER_WARNING` reached `bento app logs` as `PHP message: PHP Warning: …` and not the page. On the
+    CLI the warning goes to stderr and `$argv` works.
+  - Load, same fixture and harness, nothing edited: 91 ms per page (6 ms kernel), 9.45 req/s at 16 connections,
+    p99 2.58 s (was 147 ms, 6.45 req/s, 4.08 s).
+  - `strictFileAccess: true` through `bento app update`: a `reload php-fpm` phase, the container was not recreated
+    (same start time), the pool gained `open_basedir`, and a page cost 151 ms again. Turning it off removed the line.
+- **Tests** (VPS, root): web `fmt:check`, `lint`, `check`, `web:build` passed. `make ci` passed gofmt, vet and the race
+  tests of all 20 packages, then stopped at `check-generated` because the regenerated `types.ts` was not committed
+  yet. On a clean checkout of the committed tree (without the unrelated uncommitted work), `make ci` including
+  `check-generated` and the web checks passed. New
+  `TestStrictFileAccess`: no `open_basedir` by default, the exact allow-list when strict, same boot fingerprint.
+  `make test-integration` with `TMPDIR` on disk passed (`internal/integration` 2259 s, `internal/runtime` 786 s).
+  `TestIntegrationAppLifecycle` now reads the values FPM serves: the default app sees no `open_basedir`,
+  `display_errors` off, `register_argc_argv` off, `zend.assertions` -1 and no `pearcmd.php`; the strict app sees
+  `open_basedir` = home, `/tmp`, `/usr/local/lib/php` and its SQLite directory. It passed on its own too (99 s).
+- Found while testing, not fixed: tool containers (`app exec`, shells, deploy scripts, backups) of an app without
+  Valkey join the apps network with the app's own alias (`ToolContainerSpec` reuses `appNetworks`). The edge
+  resolves that alias, so it also sends visitor requests to the tool: 10 `connect() failed (111: Connection
+  refused)` in a minute while `bento app exec … sleep 25` ran (retried on the app, so visitors got 200), and once a
+  3 s `No route to host` stall and a 502 for the first request after a tool exited. The same 502 is in the
+  2026-11-08 WordPress setup log.
+- Not verified: arm64; the other PHP bases (7.4 on deb.sury.org, 8.0, 8.1 official images) with the new ini and the
+  smaller PEAR install were built by `TestIntegrationBuildRuntimeImages` but not served or probed; WordPress admin
+  pages (the fixture uses front-controller routing, which does not serve `wp-admin`).

@@ -371,7 +371,12 @@ every layer beneath it is identical: the `php` and `php-sury` final stages start
 share those layers (until a refresh build, which bypasses the cache). `TestRuntimeImagesShareLayers` keeps the shared
 steps identical and `TestPlanArgsMatchDockerfileARGs` keeps each plan's build args equal to its Dockerfile's `ARG`s.
 The official-image PHP build refuses a base below `PHP_MIN_VERSION`, checks that OPcache and redis load, records
-`php -m`, and the final stage fails if it loads a different module list (a missing library).
+`php -m`, and the final stage fails if it loads a different module list (a missing library). It also drops PEAR's
+commands (`pear`, `pecl`, `pearcmd.php`): nothing runs them, and `pearcmd.php` turns a file-include bug into code
+execution. No `php.ini` is installed, so `conf.d/zz-bento.ini` sets the production values PHP would otherwise lack
+(`display_errors` off, `zend.assertions = -1`, `register_argc_argv` off). The pool sets `open_basedir` only for
+`strictFileAccess` apps: the container is the boundary, and PHP disables its realpath cache while `open_basedir` is
+set (measured: about 40% more CPU per WordPress page, `docs/evidence.md`).
 
 ### Inside a runtime container
 

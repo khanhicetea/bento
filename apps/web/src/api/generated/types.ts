@@ -103,6 +103,12 @@ export interface PHPRuntime {
   maxInputVars?: number /* int */;
   readyPath?: string;
   releaseSymlink?: string;
+  /**
+   * StrictFileAccess sets open_basedir: PHP opens files only in the app
+   * home, /tmp and SQLite directories. Off by default (it disables PHP's
+   * realpath cache, so pages cost noticeably more CPU).
+   */
+  strictFileAccess?: boolean;
   uploadLimitMb: number /* int */;
 }
 export interface HTTPRuntime {

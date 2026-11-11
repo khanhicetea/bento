@@ -18,7 +18,13 @@ import { Link } from "wouter";
 import { HostDialogBody } from "../routing/HostDialog.tsx";
 
 // Each cell saves only its own fields, so PHP settings are overlaid on the saved runtime key by key.
-const phpRuntimeKeys: (keyof T.PHPRuntime)[] = ["version", "routing", "documentRoot", "releaseSymlink"];
+const phpRuntimeKeys: (keyof T.PHPRuntime)[] = [
+  "version",
+  "routing",
+  "documentRoot",
+  "releaseSymlink",
+  "strictFileAccess",
+];
 const phpPerformanceKeys: (keyof T.PHPRuntime)[] = [
   "mode",
   "maxWorkers",
@@ -170,6 +176,23 @@ export function ApplicationEditor({ app }: { app: T.App }) {
                     value={php.releaseSymlink ?? ""}
                     onChange={(e) => setPhp({ ...php, releaseSymlink: e.target.value || undefined })}
                   />
+                </Field>
+                <Field
+                  label="File access"
+                  hint={
+                    php.strictFileAccess
+                      ? "Sets open_basedir. PHP's path cache turns off: about 40% more CPU per page."
+                      : undefined
+                  }
+                >
+                  <NativeSelect
+                    className="w-full"
+                    value={php.strictFileAccess ? "home" : "container"}
+                    onChange={(e) => setPhp({ ...php, strictFileAccess: e.target.value === "home" || undefined })}
+                  >
+                    <option value="container">Whole container</option>
+                    <option value="home">App home only</option>
+                  </NativeSelect>
                 </Field>
               </div>
             ) : (

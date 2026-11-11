@@ -138,7 +138,11 @@ type PHPRuntime struct {
 	MaxInputVars        int    `json:"maxInputVars,omitempty"`
 	ReadyPath           string `json:"readyPath,omitempty"`
 	ReleaseSymlink      string `json:"releaseSymlink,omitempty"`
-	UploadLimitMB       int    `json:"uploadLimitMb"`
+	// StrictFileAccess sets open_basedir: PHP opens files only in the app
+	// home, /tmp and SQLite directories. Off by default (it disables PHP's
+	// realpath cache, so pages cost noticeably more CPU).
+	StrictFileAccess bool `json:"strictFileAccess,omitempty"`
+	UploadLimitMB    int  `json:"uploadLimitMb"`
 }
 
 type HTTPRuntime struct {

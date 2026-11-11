@@ -192,7 +192,12 @@ type PHPRuntime struct {
 	// ReleaseSymlink optionally names a symlink below the code directory (for
 	// example "current") that the document root may traverse deliberately.
 	ReleaseSymlink string `json:"releaseSymlink,omitempty"`
-	UploadLimitMB  int    `json:"uploadLimitMb"`
+	// StrictFileAccess limits PHP to the app home, /tmp and its SQLite
+	// directories (open_basedir). Off by default: the container already
+	// confines the app, and PHP turns its realpath cache off while
+	// open_basedir is set, which costs WordPress about 40% more CPU per page.
+	StrictFileAccess bool `json:"strictFileAccess,omitempty"`
+	UploadLimitMB    int  `json:"uploadLimitMb"`
 }
 
 const (

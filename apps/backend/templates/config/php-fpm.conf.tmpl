@@ -23,7 +23,11 @@ catch_workers_output = yes
 decorate_workers_output = no
 request_slowlog_timeout = 5s
 slowlog = /proc/self/fd/2
+{{- if .OpenBasedir}}
+; Strict file access (opt-in). PHP turns its realpath cache off while
+; open_basedir is set, so every include resolves its path from scratch.
 php_admin_value[open_basedir] = {{.OpenBasedir}}
+{{- end}}
 php_admin_value[session.save_path] = {{.Home}}/tmp/sessions
 php_admin_value[upload_tmp_dir] = /tmp
 php_admin_value[upload_max_filesize] = {{.UploadLimitMB}}M
