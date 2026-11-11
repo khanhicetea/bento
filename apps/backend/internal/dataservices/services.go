@@ -260,6 +260,17 @@ func (m *Manager) Ready(ctx context.Context, s domain.DataService, containerID s
 
 // SQL runs administrative SQL over stdin (never argv).
 func (m *Manager) SQL(ctx context.Context, s domain.DataService, containerID, database, sql string) (string, error) {
+	return m.sqlRedacting(ctx, s, containerID, database, sql)
+}
+
+// sqlRedacting is SQL for statements that embed secrets: on failure every given
+// secret is replaced in the client's error text before it leaves the package.
+func (m *Manager) sqlRedacting(
+	ctx context.Context,
+	s domain.DataService,
+	containerID, database, sql string,
+	secrets ...string,
+) (string, error) {
 	req := docker.ExecRequest{Stdin: strings.NewReader(sql), OutputLimit: 1 << 20}
 	switch s.Engine {
 	case domain.EngineMySQL:
@@ -271,7 +282,7 @@ func (m *Manager) SQL(ctx context.Context, s domain.DataService, containerID, da
 		if database == "" {
 			database = "postgres"
 		}
-		req.Cmd = []string{"psql", "-U", "postgres", "-d", database, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1"}
+		req.Cmd = []string{"psql", "-U", "postgres", "-d", database, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=terse"}
 	default:
 		return "", errors.New("not a relational service")
 	}
@@ -282,7 +293,13 @@ func (m *Manager) SQL(ctx context.Context, s domain.DataService, containerID, da
 		return "", err
 	}
 	if res.ExitCode != 0 {
-		return "", fmt.Errorf("%s admin SQL failed: %s", s.Name, redactLine(string(res.Stderr)))
+		text := string(res.Stderr)
+		for _, secret := range secrets {
+			if secret != "" {
+				text = strings.ReplaceAll(text, secret, "[redacted]")
+			}
+		}
+		return "", fmt.Errorf("%s admin SQL failed: %s", s.Name, trimLine(text))
 	}
 	return strings.TrimSpace(string(res.Stdout)), nil
 }
@@ -301,7 +318,7 @@ func ident(s string) (string, error) {
 	return s, nil
 }
 
-func redactLine(s string) string {
+func trimLine(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) > 500 {
 		s = s[:500] + "…"
@@ -326,12 +343,13 @@ func (m *Manager) ProvisionBinding(
 	}
 	switch s.Engine {
 	case domain.EngineMySQL:
-		if _, err := m.SQL(
+		if _, err := m.sqlRedacting(
 			ctx,
 			s,
 			containerID,
 			"",
 			fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s';\n", user, b.Password),
+			b.Password,
 		); err != nil {
 			return err
 		}
@@ -347,7 +365,7 @@ IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') THEN
 END IF;
 END $$;
 `, user, user, b.Password)
-		if _, err := m.SQL(ctx, s, containerID, "", role); err != nil {
+		if _, err := m.sqlRedacting(ctx, s, containerID, "", role, b.Password); err != nil {
 			return err
 		}
 		for _, name := range b.Databases {

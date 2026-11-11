@@ -3,24 +3,30 @@ import { Clipboard, Trash2, WrapText } from "lucide-react";
 import { api } from "../../api/client.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { appendLine, type LogLine } from "../../lib/logBuffer.ts";
 
-type Line = { ts: string; line: string };
 const maxLines = 2000;
+// The backend's logMaxTail (internal/api/stream.go): on a resume, take every line since the last one seen.
+const resumeTail = 5000;
 
 export function LogsPanel({ appId }: { appId: string }) {
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<LogLine[]>([]);
   const [follow, setFollow] = useState(true);
   const [atBottom, setAtBottom] = useState(true);
   const [wrap, setWrap] = useState(false);
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState("connecting");
   const viewport = useRef<HTMLPreElement>(null);
+  const seq = useRef(0);
+  const lastTs = useRef("");
   useEffect(() => {
-    const source = new EventSource(api.apps.logsUrl(appId, lines.length === 0 ? 300 : 0, follow));
+    const since = lastTs.current;
+    const source = new EventSource(api.apps.logsUrl(appId, since ? resumeTail : 300, follow, since || undefined));
     source.addEventListener("open", () => setStatus("streaming"));
     source.addEventListener("log", (event) => {
-      const data = JSON.parse((event as MessageEvent<string>).data) as Line;
-      setLines((current) => [...current, data].slice(-maxLines));
+      const data = JSON.parse((event as MessageEvent<string>).data) as { ts: string; line: string };
+      lastTs.current = data.ts > lastTs.current ? data.ts : lastTs.current;
+      setLines((current) => appendLine(current, data, ++seq.current, maxLines));
     });
     source.addEventListener("end", () => {
       setStatus("ended");
@@ -28,7 +34,7 @@ export function LogsPanel({ appId }: { appId: string }) {
     });
     source.addEventListener("error", () => setStatus(follow ? "reconnecting" : "closed"));
     return () => source.close();
-    // Existing lines deliberately survive follow reconnects.
+    // Lines survive follow reconnects; the stream resumes from lastTs.
   }, [appId, follow]);
   useEffect(() => {
     if (follow && atBottom) {
@@ -89,8 +95,8 @@ export function LogsPanel({ appId }: { appId: string }) {
         }}
         className={`console ${wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
       >
-        {visible.map((line, index) => (
-          <div key={`${line.ts}-${index}`}>
+        {visible.map((line) => (
+          <div key={line.id}>
             <span>{line.ts.slice(11, 19)} </span>
             {line.line}
           </div>

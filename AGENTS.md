@@ -64,7 +64,8 @@ Tailcat address is likewise shown only to full-scope callers. See "Remote access
 
 ## Safety and compatibility
 
-- Never weaken exact confirmations (`delete <slug>`, `delete`, `replace <db>`, `export`, `delete <host>`).
+- Never weaken exact confirmations (`delete <slug>`, `delete`, `delete <host>`, `export`, `export <slug>`,
+  `replace <db>`, `clone <slug>`, `disconnect <slug>`).
 - Unsupported or unknown state is refused, never rewritten or re-initialized.
 - The management listener is loopback-only; do not imply the UI is safe on an untrusted network.
 - Preserve the add-only binding model, UID non-reuse, and retained-data semantics on removal.
@@ -72,7 +73,7 @@ Tailcat address is likewise shown only to full-scope callers. See "Remote access
 ## Tests and required checks
 
 ```bash
-bun run fmt:check && bun run lint && bun run check && bun run web:build
+bun run fmt:check && bun run lint && bun run check && bun run test && bun run web:build
 make -C apps/backend ci                 # gofmt, vet, race tests, generated-type drift, build (run as root)
 make -C apps/backend test-integration   # real Docker; disposable roots only
 ```

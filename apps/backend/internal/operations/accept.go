@@ -833,7 +833,7 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 	} else if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return store.Operation{}, err
 	}
-	op, _, err := c.Submit(ctx, Submission{
+	op, existed, err := c.Submit(ctx, Submission{
 		Kind: KindTunnelApply, TargetKind: "tunnel", TargetID: "tunnel", IdempotencyKey: idem,
 		Request: map[string]any{"enabled": enabled},
 		Mutate: func(ctx context.Context, q store.Q) error {
@@ -846,7 +846,9 @@ func (c *Controller) SetTunnelToken(ctx context.Context, token, idem string) (st
 			return store.PutSetting(ctx, q, tunnelSettingKey, s)
 		},
 	})
-	if err != nil {
+	if err != nil || existed {
+		// A replayed idempotency key creates no operation and changes no
+		// settings: the token file must be what it was before this call.
 		rollback()
 	}
 	return op, err

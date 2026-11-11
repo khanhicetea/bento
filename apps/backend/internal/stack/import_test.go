@@ -70,6 +70,17 @@ func writeExport(t *testing.T) exportedStack {
 		if err := store.PutSetting(ctx, q, "network", map[string]any{"apps": "10.200.0.0/24"}); err != nil {
 			return err
 		}
+		for _, state := range []store.OpState{store.OpQueued, store.OpRunning} {
+			op, _, err := store.InsertOperation(ctx, q, store.Operation{ID: "op-" + string(state), Kind: "app.start", TargetKind: "app", TargetID: app.ID})
+			if err != nil {
+				return err
+			}
+			if state == store.OpRunning {
+				if _, err := q.ExecContext(ctx, "UPDATE operations SET state='running', started_at=created_at WHERE id=?", op.ID); err != nil {
+					return err
+				}
+			}
+		}
 		_, err = q.ExecContext(ctx, "INSERT INTO sessions(token_hash, csrf_token, created_at, expires_at) VALUES('h','c','x','y')")
 		return err
 	})
@@ -175,9 +186,15 @@ func TestImportNeutralizesStateAndRestoresVolumes(t *testing.T) {
 		t.Fatalf("imported app must be stopped and unpublished: %+v %v", app, err)
 	}
 	ops, _ := store.ListOperations(ctx, db, store.OpFilter{})
+	if len(ops) < 2 {
+		t.Fatalf("source operations missing after import: %d", len(ops))
+	}
 	for _, o := range ops {
 		if o.State != store.OpCancelled || o.ErrorCode != "imported" {
 			t.Fatalf("pending operation replayable after import: %+v", o)
+		}
+		if o.FinishedAt == "" {
+			t.Fatalf("operation cancelled by import has no finish time, so history pruning never collects it: %+v", o)
 		}
 	}
 	var n int

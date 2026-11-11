@@ -296,7 +296,9 @@ hashes of `runtime.env`/argv/identity files, the credentials generation counter,
 Bump `specVersion` whenever you change the shape of the spec so existing containers are replaced deliberately.
 
 `ToolContainerSpec` uses the same image and mounts with entrypoint `bento-exec`, Docker's init, restart `no`, and an
-idle `sleep` command; it never runs `/init`, starts no daemons, and does not take the instance lock.
+idle `sleep` command; it never runs `/init`, starts no daemons, and does not take the instance lock. Tool sessions opened from a request (terminal, exec, file
+browser) never build an image or record a build assignment: they fail with `image-not-ready` until `image.prepare` (or
+an app start) has produced one. Only the `app.deploy` operation builds when it opens a tool.
 
 ### Managed images
 
@@ -725,7 +727,8 @@ only what it created.
 - `stream.go`: logs as SSE (tail ≤ 5000, 30 min, 20 MB, the app's secrets redacted, resume via `since`/`Last-Event-ID`),
   operation events as SSE, bounded exec (1 MiB, 10 min), `minicrond` passthrough (refuses `daemon`), and the
   WebSocket terminal (origin + CSRF query token for browsers; binary frames for bytes, JSON text frames for
-  `resize`/`exit`; 30 min idle, 4 h max). Log lines over 256 KiB are truncated with a `…[truncated]` marker and the
+  `resize`/`exit`; 30 min idle, 4 h max). An attached terminal re-checks its session every 30 s and kills the shell
+  when the session was revoked or expired. Log lines over 256 KiB are truncated with a `…[truncated]` marker and the
   stream continues. Exec and `minicrond` output get the same secret redaction as logs. The interactive terminal PTY
   stream is deliberately **not** redacted: a secret can be split across arbitrary chunk boundaries and terminal escape
   sequences, and the operator can already read the app's secrets from its environment inside that shell, so
@@ -885,7 +888,10 @@ changes its own UID and never execs into containers per request. Relays idle for
 - Exact confirmations are enforced server-side in `accept.go`, not only in the CLI/UI.
 - Missing durable data blocks; nothing is ever silently re-created empty.
 - The management API is loopback-only and requires a session, a peer-verified local socket, or a scoped API token.
-  No token scope reaches deletes, restores, exec, terminals, or credentials.
+  No token scope reaches deletes, restores, the exec and terminal endpoints, or credential endpoints. The `read` and
+  `operate` scopes cannot run code. The `admin` scope can: it may create and edit scheduler jobs, write files under
+  `~/app`, and change an HTTP app's start command (`argv`), each of which runs code as the app and so can read that
+  app's secrets. Treat an admin token as code execution on every app.
 - The utils listener serves only routes that authenticate themselves: deploy webhooks (per-app secret; can at most
   queue a deploy of the configured branch) and the database browser (single-use ticket from a session + CSRF call,
   then a binding-scoped grant re-checked against the live session on every request). The scheduler UI is not served

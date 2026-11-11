@@ -1375,6 +1375,46 @@ addresses); the public DERP map being unreachable at backend start; more than on
 the Tailscale tailnet on both hosts was left running and was not used by Tailcat. Remote access with `bento mcp` was
 not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; the as-built binary is installed again.
 
+## Audit plans 001–021 (2026-11-10; dev host, live Docker 29.8.1, amd64, Go 1.27.3, root; uncommitted tree on `6d3af61`)
+
+- **Gates:** `make ci` passed (gofmt, vet, race tests, generated-type drift, build). The frontend chain passed:
+  `bun run fmt:check && bun run lint && bun run check && bun run test && bun run web:build`, 51 unit tests.
+- **Flakiness:** `go test -race -count=8 ./internal/operations/` passed while Docker tests ran alongside. The
+  timing-sensitive tests added by these plans passed 50 runs under `-race` (deploy cancel, finish-write retry,
+  traffic reopen timeout, sweep).
+  - One unexplained `internal/operations` failure seen while plan 019 was implemented did not recur.
+  - `/tmp` (a 4.9 GiB tmpfs on this host) was nearly full at the time, so test temp dirs and the linker could hit
+    ENOSPC. Run the real-Docker suites with `TMPDIR` on a disk-backed directory.
+- **`sudo make test-integration`:** passed with `TMPDIR` on disk. `internal/integration` took 1603 s and
+  `internal/runtime` 258 s. No test in either package is gated by another environment variable.
+- **`TestIntegrationEndToEndBinary` (new):** builds `cmd/bento`, runs `init --mysql 8.4 --postgres 17` and `serve`
+  on a disposable root, and drives it over REST (session, Origin, CSRF), the terminal WebSocket and the CLI. It
+  verified, live:
+  - Metrics list the app's node process with its argv secret shown as `[redacted]`; the secret never appears (004).
+  - A tool-session exec runs as the app UID and leaves the stack's image set unchanged (012).
+  - A replayed `PUT /tunnel/token` with the same `Idempotency-Key` returns the same operation and leaves the first
+    token in `cloudflared/token` (013).
+  - Logging out closes that session's open terminal with policy-violation "session ended", 30 s later: one
+    `terminalSessionCheck` tick (010).
+  - Removal refuses `delete` and needs `delete <slug>`; the home is retained (006).
+  - Prune refuses `""`, `Delete`, `delete <slug>`, `delete ` and `yes`, then with `delete` it removes the home and
+    drops the binding's MySQL database and user. A second prune is refused (006).
+  - `app show`, `--json ops --target` and `app exec` work against the same backend.
+- **`TestIntegrationAdminSQLErrorsDoNotEchoStatements` (new):** on real psql 17 with `VERBOSITY=terse`, failing
+  statements report only the primary message (no `LINE`, `QUERY` or `CONTEXT`), including an `EXECUTE`d
+  `CREATE ROLE … PASSWORD`. On MySQL 8.4 a syntax error quotes only the text after the error point (`near 'BROKEN'`).
+  That is why password-bearing grants still redact the password explicitly (003).
+- **Not verified live:**
+  - The log view's resume-from-last-line (008), the settings form following outside changes (016), the terminal
+    typeface and colours, and the toast timer (020): only unit tests, typecheck and lint, no browser run.
+  - The database-browser gateway's underscore-header stripping against real PHP (014).
+  - Rollout state across a config change with two real apps (011).
+  - The workflow changes on GitHub (018).
+  - arm64.
+- **`make -C apps/backend vuln`:** reports GO-2026-6865, reachable via `transfer.ArchiveRoot`
+  (`github.com/klauspost/compress` v1.20.0; fixed in v1.20.2). Until the module is upgraded, the new CI vuln step
+  fails.
+
 ## PHP file access, production ini defaults and PEAR (2026-11-11; `bento-test`, amd64, Docker 29.9.3, PHP 8.4.27)
 
 - **Finding.** The WordPress benchmark fixture (`/root/bench/wp-up.sh`: 1,000 posts, Yoast SEO and Contact Form 7,

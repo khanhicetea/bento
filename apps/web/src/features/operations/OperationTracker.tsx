@@ -1,65 +1,15 @@
 import { createContext, use, useEffect, useState, type PropsWithChildren } from "react";
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
 import { Link } from "wouter";
-import { api, type T } from "../../api/client.ts";
+import { type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import { describeOp } from "../../lib/format.ts";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { isTerminal, useTrackedOperation } from "./useOperation.ts";
 
-const terminalStates = new Set<string>(["succeeded", "failed", "cancelled", "interrupted"]);
-
-export function isTerminal(state: string | undefined): boolean {
-  return state !== undefined && terminalStates.has(state);
-}
-
-/** Invalidate only the domains an operation can have changed. */
-function invalidateFor(queryClient: QueryClient, op: T.Operation) {
-  // Lists only: invalidating ["operations"] would include this tracker's own
-  // detail query and cancel the fetch that observed the terminal state.
-  void queryClient.invalidateQueries({ queryKey: keys.operations.lists });
-  void queryClient.invalidateQueries({ queryKey: keys.system });
-  // Any finished operation can clear (or add to) a reconcile target's budget.
-  void queryClient.invalidateQueries({ queryKey: keys.reconcile });
-  switch (op.targetKind) {
-    case "app":
-      void queryClient.invalidateQueries({ queryKey: keys.apps.all });
-      // Publication and removal change which hosts are live or exist.
-      void queryClient.invalidateQueries({ queryKey: keys.hosts });
-      if (op.kind === "app.remove") void queryClient.invalidateQueries({ queryKey: keys.retired });
-      if (op.kind.startsWith("restic.")) void queryClient.invalidateQueries({ queryKey: keys.backups.all });
-      break;
-    case "retired-app":
-      void queryClient.invalidateQueries({ queryKey: keys.retired });
-      break;
-    case "service":
-      void queryClient.invalidateQueries({ queryKey: keys.services });
-      break;
-    case "edge":
-    case "host":
-      void queryClient.invalidateQueries({ queryKey: keys.edge });
-      void queryClient.invalidateQueries({ queryKey: keys.hosts });
-      void queryClient.invalidateQueries({ queryKey: keys.apps.all });
-      break;
-    case "tunnel":
-      void queryClient.invalidateQueries({ queryKey: keys.tunnel });
-      break;
-    case "dbadmin":
-      void queryClient.invalidateQueries({ queryKey: keys.dbadmin });
-      break;
-    case "backup":
-      void queryClient.invalidateQueries({ queryKey: keys.backups.all });
-      break;
-    case "image":
-      // Runtime images and the Docker inventory sit under keys.system; a
-      // rollout changes which build each app runs.
-      void queryClient.invalidateQueries({ queryKey: keys.apps.all });
-      break;
-    default:
-      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "operations" });
-  }
-}
+export { isTerminal } from "./useOperation.ts";
 
 const TrackContext = createContext<(accepted: T.Accepted) => void>(() => {});
 
@@ -115,17 +65,7 @@ function TrackedOperation({
   visible: boolean;
   onDismiss: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: keys.operations.detail(initial.id),
-    queryFn: async ({ signal }) => {
-      const op = await api.operations.get(initial.id, signal);
-      if (isTerminal(op.state)) invalidateFor(queryClient, op);
-      return op;
-    },
-    initialData: initial,
-    refetchInterval: (q) => (isTerminal(q.state.data?.state) ? false : 1000),
-  });
+  const query = useTrackedOperation(initial);
   const op = query.data;
   const lastEvent = op.events?.at(-1)?.message;
   const failed = op.state === "failed" || op.state === "interrupted";
@@ -133,7 +73,11 @@ function TrackedOperation({
     if (op.state !== "succeeded") return;
     const timer = window.setTimeout(onDismiss, 6_000);
     return () => window.clearTimeout(timer);
-  }, [op.state, onDismiss]);
+    // onDismiss is a new function on every provider render; listing it would
+    // restart the timer whenever any toast changes. Any version of it is
+    // correct: dismissal filters by id with a functional state update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [op.state]);
   if (!visible) return null;
   return (
     <div className="flex items-start gap-3 rounded-[1.125rem] bg-[var(--nori)] p-3.5 text-sm text-[var(--nori-ink)] shadow-[0_0_0_4px_var(--rim),0_20px_40px_-20px_rgb(0_0_0/0.6)]">

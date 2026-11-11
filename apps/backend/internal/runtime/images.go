@@ -215,7 +215,7 @@ type ImageManager struct {
 	// nil skips the check (tests).
 	MemAvailable func() (int64, bool)
 
-	prune  sync.RWMutex // Hold holds it shared, Remove exclusively
+	prune  sync.RWMutex // Hold holds it shared, Remove exclusively; RemoveForKey takes only the key lock
 	mu     sync.Mutex   // guards tags and builds
 	tags   map[string]*sync.Mutex
 	builds chan struct{}
@@ -387,6 +387,22 @@ var ErrImageNotPrunable = errors.New("image is not prunable")
 func (m *ImageManager) Remove(ctx context.Context, id string) (docker.ImageSummary, error) {
 	m.prune.Lock()
 	defer m.prune.Unlock()
+	return m.removeLocked(ctx, id)
+}
+
+// RemoveForKey is Remove for a superseded build of one runtime key (the
+// String form of a domain.ImageKey). It excludes only Hold of that key, so a
+// sweep never waits for a build of another runtime, and a waiting sweep never
+// stalls restic jobs or other builds behind the stack-wide lock. The Engine
+// still refuses to remove an image a container references.
+func (m *ImageManager) RemoveForKey(ctx context.Context, key, id string) (docker.ImageSummary, error) {
+	l := m.tagLock("key:" + key)
+	l.Lock()
+	defer l.Unlock()
+	return m.removeLocked(ctx, id)
+}
+
+func (m *ImageManager) removeLocked(ctx context.Context, id string) (docker.ImageSummary, error) {
 	containers, err := m.Engine.List(ctx, nil)
 	if err != nil {
 		return docker.ImageSummary{}, err

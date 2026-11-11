@@ -71,8 +71,9 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 7. **App containers stay hardened:** `User uid:gid`, read-only root, `CapDrop: ALL`, `no-new-privileges`, no host
    ports, no Docker socket, only the app's own home/SQLite/config/identity mounts. `TestPersistentSpecSecurityInvariants`
    must keep passing.
-8. **Exact confirmations are enforced server-side** in `accept.go` (`delete <slug>`, `delete`, `replace <db>`,
-   `export`, `delete <host>`). Never loosen them or move them only to the UI/CLI.
+8. **Exact confirmations are enforced server-side** by the acceptance functions in `internal/operations` (every site
+   that returns `ErrConfirmation`): `delete <slug>`, `delete`, `delete <host>`, `export`, `export <slug>`,
+   `replace <db>`, `clone <slug>`, `disconnect <slug>`. Never loosen them or move them only to the UI/CLI.
 9. **Unknown state is refused, not rewritten.** `store.CheckCompatible` must stay read-only. Schema changes bump
    `store.SchemaVersion` and add an explicit migration.
 10. **Loopback only.** `cli.ValidateListen` must keep rejecting non-loopback addresses. Browser writes need session +
@@ -81,7 +82,11 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 ## Gotchas learned the hard way
 
 - **Operations run in parallel only if `operations/claims.go` says so.** An unlisted kind is global (runs alone).
-  Handlers of parallel kinds (`app.reconcile|start|restart|update|deploy|stop`, `service.create|reconcile|configure|restart|remote`) share the
+  Handlers of parallel kinds (every kind with a case in `claimsFor`, pinned by `TestOnlyReviewedKindsRunInParallel`;
+  today `app.reconcile|start|restart|update|deploy|stop|clone-from-backup|restore-from-backup`,
+  `service.create|reconcile|configure|restart|remote`,
+  `restic.backup|init|connect|refresh|key-add|key-remove|check|unlock|inspect|inspect-remote`, and
+  `image.prepare|rebuild|rollout|rollout-stop|sweep`) share the
   edge, the network plan and image builds only through `applyEdge` (`edgeMu`), `NetworkPlan`/`EnsureNetworks`
   (`netMu`) and `Images.Ensure` (per-tag lock): never write those outside these functions. Grants (`provisionRelational`) write shared data services and are only for global kinds; a parallel
   kind that could provision (an unprovisioned `start`/`update`) is classified global.

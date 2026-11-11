@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
 	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
@@ -123,5 +124,80 @@ func TestSweepRemovesBuildsReleasedForTheGracePeriod(t *testing.T) {
 	h.mark()
 	if r := h.released(); r[b1.ID].IsZero() || !r[b3.ID].IsZero() {
 		t.Fatalf("after an upgrade: %v", r)
+	}
+}
+
+// sweepDue builds a stack where one superseded build of alpha's runtime is due
+// for removal and returns the harness, the key, that build and the runtime key.
+func sweepDue(t *testing.T) (h *harness, key string, due store.RuntimeBuild, hold domain.ImageKey) {
+	t.Helper()
+	t0 := time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	clock := &testClock{now: t0}
+	h = newHarnessWith(t, func(d *Deps) { d.Now = clock.Now })
+	alpha := h.runningApp("alpha")
+	ik := alpha.Runtime.ImageKey()
+	key = ik.String()
+	b1 := h.planned(alpha)
+	h.fake.ImageFiles = map[string][]byte{runtime.ManifestPath: []byte("php=8.4.98\n")}
+	h.rebuild(key)
+	b2 := h.current(key)
+	h.rollTo(alpha.ID, key, b2.ID)
+	h.fake.ImageFiles = map[string][]byte{runtime.ManifestPath: []byte("php=8.4.99\n")}
+	h.rebuild(key)
+	b3 := h.current(key)
+	h.rollTo(alpha.ID, key, b3.ID) // b1 is used by nothing
+	h.mark()
+	clock.Add(BuildReleaseGrace)
+	if got := h.mark(); !slices.Equal(got, []string{key}) {
+		t.Fatalf("due %v", got)
+	}
+	return h, key, b1, ik
+}
+
+// A sweep of one runtime never waits for a build of another runtime.
+func TestSweepDoesNotWaitForAnotherRuntimesBuild(t *testing.T) {
+	h, key, due, ik := sweepDue(t)
+	other := domain.ImageKey{Kind: ik.Kind, Toolchain: "other", Version: "0"}
+	release := h.c.Images.Hold(other)
+	defer release()
+
+	op, _, err := h.c.Submit(t.Context(), Submission{Kind: KindImageSweep, TargetKind: "image", TargetID: key})
+	h.mustSucceed(op, err) // fails after 10 s if the sweep blocks on the held key
+	if _, ok, _ := h.fake.ImageID(t.Context(), due.Tag); ok {
+		t.Fatal("the released build was not removed")
+	}
+}
+
+// A sweep still excludes builds and app starts of its own runtime.
+func TestSweepWaitsForItsOwnKey(t *testing.T) {
+	h, key, due, ik := sweepDue(t)
+	release := h.c.Images.Hold(ik)
+	released := false
+	defer func() {
+		if !released {
+			release()
+		}
+	}()
+
+	op, _, err := h.c.Submit(t.Context(), Submission{Kind: KindImageSweep, TargetKind: "image", TargetID: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	got, err := store.GetOperation(t.Context(), h.store.DB(), op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State.Terminal() {
+		t.Fatalf("the sweep finished (%s) while its runtime was held", got.State)
+	}
+	if _, ok, _ := h.fake.ImageID(t.Context(), due.Tag); !ok {
+		t.Fatal("the build was removed while its runtime was held")
+	}
+	release()
+	released = true
+	h.mustSucceed(op, nil)
+	if _, ok, _ := h.fake.ImageID(t.Context(), due.Tag); ok {
+		t.Fatal("the released build was not removed")
 	}
 }

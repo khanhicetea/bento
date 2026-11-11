@@ -296,12 +296,20 @@ func (r *Reconciler) watchEvents(ctx context.Context) {
 	}
 }
 
-// get returns the in-flight pass's target for id, starting a fresh budget
-// when the id is new or its configuration generation changed.
+// get returns the in-flight pass's target for id. A new id starts fresh. A
+// changed configuration generation restarts the retry budget, but an
+// operation still pending for the target stays tracked: dropping it would
+// let a rollout submit the next app while this one's replacement still runs,
+// and would lose its failure.
 func (r *Reconciler) get(id string, gen int64) *target {
 	t, ok := r.work[id]
-	if !ok || (gen != 0 && t.Generation != gen) {
+	if !ok {
 		t = &target{Generation: gen}
+		r.work[id] = t
+		return t
+	}
+	if gen != 0 && t.Generation != gen {
+		t = &target{Generation: gen, PendingOp: t.PendingOp, OpTarget: t.OpTarget, Rollout: t.PendingOp != "" && t.Rollout}
 		r.work[id] = t
 	}
 	return t

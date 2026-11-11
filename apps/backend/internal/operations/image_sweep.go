@@ -158,7 +158,7 @@ func (c *Controller) handleImageSweep(ctx context.Context, r *Run) (any, error) 
 	}
 	removed := []string{}
 	for _, id := range order {
-		img, err := c.Images.Remove(ctx, id)
+		img, err := c.Images.RemoveForKey(ctx, key, id)
 		switch {
 		case errors.Is(err, runtime.ErrImageNotPrunable) && img.ID == "":
 			r.Info(ctx, "build %s was already removed", strings.Join(due[id], ", "))

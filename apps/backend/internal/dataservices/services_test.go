@@ -1,11 +1,14 @@
 package dataservices
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
@@ -79,4 +82,59 @@ func TestMySQLGrantIsExactAndRevokesWildcard(t *testing.T) {
 	if got := MySQLGrant("shop", "ua"); strings.Contains(got, "REVOKE") {
 		t.Fatalf("revokes its own grant: %s", got)
 	}
+}
+
+// A failing grant must never carry the binding password into the returned error,
+// even when the server echoes the whole statement back (psql CONTEXT lines).
+func TestProvisionErrorNeverContainsThePassword(t *testing.T) {
+	password := strings.Repeat("p", 32)
+	for _, engine := range []domain.Engine{domain.EngineMySQL, domain.EnginePostgres} {
+		t.Run(string(engine), func(t *testing.T) {
+			fake := docker.NewFake()
+			fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
+				var sql []byte
+				if req.Stdin != nil {
+					sql, _ = io.ReadAll(req.Stdin)
+				}
+				return docker.ExecResult{
+					ExitCode: 1,
+					Stderr:   append([]byte("ERROR: boom\nCONTEXT: SQL statement \""), sql...),
+				}
+			}
+			m := &Manager{Engine: fake}
+			svc := domain.DataService{Name: "svc", Engine: engine}
+			err := m.ProvisionBinding(context.Background(), svc, "c1", domain.Binding{
+				Username: "ua", Databases: []string{"shop"}, Password: password,
+			})
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if strings.Contains(err.Error(), password) {
+				t.Fatalf("error leaks the password: %v", err)
+			}
+			if !strings.Contains(err.Error(), "[redacted]") {
+				t.Fatalf("error not redacted: %v", err)
+			}
+		})
+	}
+}
+
+func TestPsqlRunsTerse(t *testing.T) {
+	fake := docker.NewFake()
+	var cmd []string
+	fake.ExecHook = func(_ string, req docker.ExecRequest) docker.ExecResult {
+		cmd = req.Cmd
+		return docker.ExecResult{}
+	}
+	m := &Manager{Engine: fake}
+	svc := domain.DataService{Name: "pg", Engine: domain.EnginePostgres}
+	if _, err := m.SQL(context.Background(), svc, "c1", "", "SELECT 1;"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i+1 < len(cmd); i++ {
+		if cmd[i] == "-v" && cmd[i+1] == "VERBOSITY=terse" {
+			return
+		}
+	}
+	t.Fatalf("psql command %v lacks -v VERBOSITY=terse", cmd)
 }

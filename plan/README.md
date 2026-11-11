@@ -13,27 +13,27 @@ backend tests (`sudo`; non-root runs silently skip most of them — a skip is no
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| [001](001-retry-operation-finish-write.md) | Retry recording an operation's final state instead of leaving it `running` | P1 | S–M | — | TODO |
-| [002](002-image-sweep-per-key-lock.md) | `image.sweep` waits only for work on its own runtime key | P1 | S | — | TODO |
-| [003](003-redact-db-password-in-sql-errors.md) | Keep a binding's password out of failed grant errors | P1 | S | — | TODO |
-| [004](004-redact-process-command-lines.md) | Redact app secrets in app metrics' process list | P1 | S | — | TODO |
-| [005](005-bound-traffic-log-reopen.md) | Deadline on the traffic cycle's edge exec under `edgeMu` | P2 | S | — | TODO |
-| [006](006-test-app-prune.md) | Tests for `app.prune` (the only permanent data deletion) | P1 | M | — | TODO |
-| [007](007-web-test-baseline-and-hooks-lint.md) | Web UI unit-test baseline and React hooks lint | P2 | M | — | TODO |
-| [008](008-logs-resume-and-stable-rows.md) | Log view resumes from the last line; stable row keys | P1 | S | 007 | TODO |
-| [009](009-one-operation-status-hook.md) | One shared operation-status hook that always refreshes affected data | P2 | S–M | 007 | TODO |
-| [010](010-close-terminals-on-session-revocation.md) | End browser terminals when their session is revoked | P2 | S | — | TODO |
-| [011](011-keep-rollout-state-across-config-change.md) | Keep a rollout in flight when its app's configuration changes | P2 | S | — | TODO |
-| [012](012-no-image-builds-from-request-handlers.md) | Tool sessions opened by requests never build an image | P2 | S–M | — | TODO |
-| [013](013-tunnel-token-idempotent-replay.md) | A replayed tunnel-token request leaves the token file alone | P3 | S | — | TODO |
-| [014](014-dbadmin-strip-underscore-headers.md) | Database-browser gateway drops underscore header names | P3 | S | — | TODO |
-| [015](015-retry-network-errors-and-handle-401-on-mutations.md) | Retry queries when the backend is unreachable; sign out on a rejected write | P2 | S | 007 | TODO |
-| [016](016-app-editor-follows-outside-changes.md) | App settings form follows changes made elsewhere | P2 | M | 007 | TODO |
-| [017](017-fix-drifted-agent-and-architecture-docs.md) | Bring agent rules, security invariants and backlog in line with the code | P2 | S | — | TODO |
-| [018](018-harden-release-workflow.md) | Release workflow: read-only build, pinned actions, vulnerability scan | P2 | S–M | — | TODO |
-| [019](019-backend-small-fixes.md) | Import finish times, deploy cancel message, stray `.pyc` | P3 | S | — | TODO |
-| [020](020-frontend-small-fixes.md) | Env text mode round trip, toast timer, terminal typeface | P3 | S | 007 (009 touches the same file) | TODO |
-| [021](021-investigate-operations-target-index.md) | Investigate: do target lookups need an index? (likely "no") | P3 | S | — | TODO |
+| [001](001-retry-operation-finish-write.md) | Retry recording an operation's final state instead of leaving it `running` | P1 | S–M | — | DONE |
+| [002](002-image-sweep-per-key-lock.md) | `image.sweep` waits only for work on its own runtime key | P1 | S | — | DONE |
+| [003](003-redact-db-password-in-sql-errors.md) | Keep a binding's password out of failed grant errors | P1 | S | — | DONE |
+| [004](004-redact-process-command-lines.md) | Redact app secrets in app metrics' process list | P1 | S | — | DONE |
+| [005](005-bound-traffic-log-reopen.md) | Deadline on the traffic cycle's edge exec under `edgeMu` | P2 | S | — | DONE |
+| [006](006-test-app-prune.md) | Tests for `app.prune` (the only permanent data deletion) | P1 | M | — | DONE |
+| [007](007-web-test-baseline-and-hooks-lint.md) | Web UI unit-test baseline and React hooks lint | P2 | M | — | DONE |
+| [008](008-logs-resume-and-stable-rows.md) | Log view resumes from the last line; stable row keys | P1 | S | 007 | DONE |
+| [009](009-one-operation-status-hook.md) | One shared operation-status hook that always refreshes affected data | P2 | S–M | 007 | DONE |
+| [010](010-close-terminals-on-session-revocation.md) | End browser terminals when their session is revoked | P2 | S | — | DONE |
+| [011](011-keep-rollout-state-across-config-change.md) | Keep a rollout in flight when its app's configuration changes | P2 | S | — | DONE |
+| [012](012-no-image-builds-from-request-handlers.md) | Tool sessions opened by requests never build an image | P2 | S–M | — | DONE |
+| [013](013-tunnel-token-idempotent-replay.md) | A replayed tunnel-token request leaves the token file alone | P3 | S | — | DONE |
+| [014](014-dbadmin-strip-underscore-headers.md) | Database-browser gateway drops underscore header names | P3 | S | — | DONE |
+| [015](015-retry-network-errors-and-handle-401-on-mutations.md) | Retry queries when the backend is unreachable; sign out on a rejected write | P2 | S | 007 | DONE |
+| [016](016-app-editor-follows-outside-changes.md) | App settings form follows changes made elsewhere | P2 | M | 007 | DONE (step 6 manual check not run) |
+| [017](017-fix-drifted-agent-and-architecture-docs.md) | Bring agent rules, security invariants and backlog in line with the code | P2 | S | — | DONE |
+| [018](018-harden-release-workflow.md) | Release workflow: read-only build, pinned actions, vulnerability scan | P2 | S–M | — | DONE (workflows not yet run on GitHub; govulncheck found 1 reachable advisory, see BACKLOG.md) |
+| [019](019-backend-small-fixes.md) | Import finish times, deploy cancel message, stray `.pyc` | P3 | S | — | DONE |
+| [020](020-frontend-small-fixes.md) | Env text mode round trip, toast timer, terminal typeface | P3 | S | 007 (009 touches the same file) | DONE (visual checks not run; app needs Docker) |
+| [021](021-investigate-operations-target-index.md) | Investigate: do target lookups need an index? (likely "no") | P3 | S | — | REJECTED: measured, not worth a migration. 5,050 rows/50 targets, after ANALYZE: ActiveForTarget = `SEARCH operations USING INDEX operations_state (state=?)` (mean 32 µs); ListOperations{TargetID, Limit:100} = `SEARCH operations USING INDEX operations_target (ANY(target_kind) AND target_id=?)` + `USE TEMP B-TREE FOR ORDER BY` (mean 431 µs; skip-scan); ListOperations{TargetID, States:[succeeded], Limit:1} = same skip-scan plan (mean 103 µs). Without ANALYZE (the store never runs it): state index / `SCAN ... USING INDEX operations_target`, 16 µs / 695 µs / 67 µs. All under the 2 ms threshold, no index added. Guard test `TestOperationTargetQueryPlans` kept. |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale — finding fixed independently or approach abandoned)
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
+	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
 func newTestTermSession(t *testing.T) (*termSession, net.Conn) {
@@ -92,5 +93,37 @@ func TestTermSessionGraceKillsDetachedShell(t *testing.T) {
 	case <-ts.done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("grace expiry must end the shell")
+	}
+}
+
+func TestTerminalOwnerLive(t *testing.T) {
+	c, h := newServer(t)
+	ctx := t.Context()
+	now := time.Now()
+	if err := store.InsertSession(ctx, h.Store.DB(), store.Session{
+		TokenHash: "livehash", CSRFToken: "csrf", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSession(ctx, h.Store.DB(), store.Session{
+		TokenHash: "expiredhash", CSRFToken: "csrf", CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for owner, want := range map[string]bool{
+		"local":               true,
+		"session:livehash":    true,
+		"session:expiredhash": false,
+		"session:unknownhash": false,
+	} {
+		if got := c.api.terminalOwnerLive(ctx, owner); got != want {
+			t.Errorf("owner %q live = %v, want %v", owner, got, want)
+		}
+	}
+	if err := store.RevokeSession(ctx, h.Store.DB(), "livehash"); err != nil {
+		t.Fatal(err)
+	}
+	if c.api.terminalOwnerLive(ctx, "session:livehash") {
+		t.Error("a revoked session must not keep its terminal")
 	}
 }

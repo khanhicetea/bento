@@ -1,12 +1,14 @@
 package operations
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -231,5 +233,62 @@ func TestDeployFaultInjectionThenRecover(t *testing.T) {
 func TestDeployScriptNeverWritesKeyOutsideTmp(t *testing.T) {
 	if !strings.Contains(deployScript, `mktemp /tmp/`) || !strings.Contains(deployScript, `trap 'rm -f "$key"' EXIT`) {
 		t.Fatal("the key must live only in the tooling container's /tmp and be removed")
+	}
+}
+
+// hungDeploy holds the deploy script until its context ends.
+type hungDeploy struct {
+	docker.Engine
+	started chan struct{}
+}
+
+func (e *hungDeploy) Exec(ctx context.Context, id string, req docker.ExecRequest) (docker.ExecResult, error) {
+	if !slices.ContainsFunc(req.Cmd, func(s string) bool { return strings.HasSuffix(s, "/"+DeployScriptName) }) {
+		return e.Engine.Exec(ctx, id, req)
+	}
+	select {
+	case e.started <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return docker.ExecResult{}, ctx.Err()
+}
+
+// A forced cancellation ends the script's context too, but it is not the
+// script's own deadline and must not be reported as a timeout.
+func TestDeployCancelledMidScriptIsNotReportedAsTimeout(t *testing.T) {
+	eng := &hungDeploy{started: make(chan struct{}, 1)}
+	h := newHarnessWith(t, func(d *Deps) {
+		eng.Engine = d.Engine
+		d.Engine = eng
+		d.CancelGrace, d.CancelPoll = 100*time.Millisecond, 10*time.Millisecond
+	})
+	app := h.createApp("shop")
+	ctx := t.Context()
+	if _, err := h.c.SetGitSource(ctx, app.ID, GitSourceInput{RepoURL: "git@github.com:o/r.git", Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	writeDeployScript(t, h, app, 0o755)
+	var script docker.ExecRequest
+	var execs []string
+	h.fake.ExecHook = scriptHook(0, "", &script, &execs)
+	op, err := h.c.DeployApp(ctx, app.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-eng.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the deploy never reached ~/deploy.sh")
+	}
+	if _, err := store.RequestCancel(ctx, h.store.DB(), op.ID); err != nil {
+		t.Fatal(err)
+	}
+	got := h.wait(op)
+	if got.State != store.OpCancelled {
+		t.Fatalf("cancelled deploy ended %s %s: %s", got.State, got.ErrorCode, got.ErrorMessage)
+	}
+	if got.ErrorCode == "deploy-script-timeout" || strings.Contains(got.ErrorMessage, "did not finish within") {
+		t.Fatalf("cancellation reported as a timeout: %s %s", got.ErrorCode, got.ErrorMessage)
 	}
 }

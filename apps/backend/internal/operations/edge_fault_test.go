@@ -1,6 +1,7 @@
 package operations
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -131,6 +132,51 @@ func TestTunnelApplyPullsRotatesAndRemoves(t *testing.T) {
 	h.mustSucceed(h.c.SetTunnelToken(ctx, "", ""))
 	if gone, _ := h.fake.Inspect(ctx, name); gone != nil {
 		t.Fatal("disabling the tunnel must remove its container")
+	}
+}
+
+// A replayed idempotency key creates no operation, so it must not change or
+// delete the token file either.
+func TestTunnelTokenReplayLeavesTheFileAlone(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	path := h.c.Layout.TunnelDir() + "/token"
+	first := h.mustSucceed(h.c.SetTunnelToken(ctx, strings.Repeat("a", 40), "key-1"))
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := h.c.SetTunnelToken(ctx, strings.Repeat("b", 40), "key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != first.ID {
+		t.Fatalf("replay must return the first operation, got %s want %s", again.ID, first.ID)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("token file changed by a replayed request")
+	}
+	if _, err := h.c.SetTunnelToken(ctx, "", "key-1"); err != nil {
+		t.Fatal(err)
+	}
+	after, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("token file removed by a replayed disable: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("token file changed by a replayed disable")
+	}
+	h.mustSucceed(h.c.SetTunnelToken(ctx, strings.Repeat("c", 40), "key-2"))
+	after, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(before, after) {
+		t.Fatal("a new request must replace the token file")
 	}
 }
 

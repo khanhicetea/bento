@@ -470,7 +470,9 @@ func (c *Controller) runDeployScript(
 	r.Info(ctx, "running ~/%s", DeployScriptName)
 	execCtx, cancel := context.WithTimeout(ctx, deployScriptTimeout)
 	res, err := c.Engine.Exec(execCtx, tool.ContainerID, req)
-	timedOut := execCtx.Err() != nil
+	// Only the script's own deadline is a timeout; a forced cancellation or a
+	// backend stop also ends execCtx and is reported by its own error.
+	timedOut := execCtx.Err() != nil && ctx.Err() == nil
 	cancel()
 	// Engines that capture instead of streaming return the output here.
 	stdout.Write(res.Stdout)

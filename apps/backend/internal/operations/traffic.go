@@ -35,6 +35,12 @@ import (
 // before the rotated files are read.
 var trafficReopenWait = 2 * time.Second
 
+// trafficReopenTimeout bounds the edge calls the traffic cycle makes while
+// holding edgeMu. The cycle runs on the backend's lifetime context, which
+// nothing cancels: a stalled exec would otherwise block every edge change
+// until a restart. A missed reopen is retried by the next cycle.
+var trafficReopenTimeout = 30 * time.Second
+
 // trafficRunTimeout bounds one host's GoAccess run.
 const trafficRunTimeout = 10 * time.Minute
 
@@ -222,14 +228,16 @@ func (c *Controller) rotateTrafficLogs(ctx context.Context) (reopened bool, err 
 	if renamed == 0 && !c.anyTrafficPending() {
 		return false, nil
 	}
-	id, running, err := c.edgeContainer(ctx)
+	ectx, cancel := context.WithTimeout(ctx, trafficReopenTimeout)
+	defer cancel()
+	id, running, err := c.edgeContainer(ectx)
 	if err != nil {
 		return false, err
 	}
 	if !running {
 		return false, nil
 	}
-	if err := c.edgeControl(ctx, id, "reopen"); err != nil {
+	if err := c.edgeControl(ectx, id, "reopen"); err != nil {
 		return false, fmt.Errorf("reopen edge logs: %w", err)
 	}
 	return true, nil

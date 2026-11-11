@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
@@ -206,8 +207,6 @@ func rewriteImportedState(
 	stmts := []string{
 		// Archived running intent is never honored automatically.
 		"UPDATE apps SET desired_runtime='stopped', publication='unpublished'",
-		// Pending/interrupted work in the archive is never replayed.
-		"UPDATE operations SET state='cancelled', error_code='imported', error_message='not replayed after import' WHERE state IN ('queued','running')",
 		"DELETE FROM sessions",
 		// API tokens belong to the source host; a clone must not accept them.
 		"DELETE FROM api_tokens",
@@ -227,6 +226,14 @@ func rewriteImportedState(
 		if _, err := q.ExecContext(ctx, st); err != nil {
 			return err
 		}
+	}
+	// Pending/interrupted work in the archive is never replayed. The finish
+	// time lets history pruning collect these rows.
+	if _, err := q.ExecContext(ctx,
+		"UPDATE operations SET state='cancelled', error_code='imported', error_message='not replayed after import', finished_at=? WHERE state IN ('queued','running')",
+		platform.FormatTime(time.Now()),
+	); err != nil {
+		return err
 	}
 	if err := disableSetting(ctx, q, "edge"); err != nil {
 		return err

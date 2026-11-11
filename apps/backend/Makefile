@@ -6,7 +6,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)+$(COMMIT)
 GO      ?= go
 DIST    ?= ../../dist
 
-.PHONY: build web release vendor-minicrond-ui generate-types check-generated fmt-check vet test test-race test-integration ci clean
+.PHONY: build web release vendor-minicrond-ui generate-types check-generated fmt-check vet test test-race test-integration ci vuln clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/bento ./cmd/bento
@@ -69,6 +69,12 @@ test-integration:
 	BENTO_DOCKER_TESTS=1 $(GO) test -count=1 -timeout 60m ./internal/integration/... ./internal/runtime/...
 
 ci: fmt-check vet test-race check-generated build
+
+# Known vulnerabilities reachable from the module's code. Pinned so the gate
+# does not change under us; bump deliberately.
+GOVULNCHECK_VERSION = v1.9.0
+vuln:
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 clean:
 	rm -f $(DIST)/bento $(DIST)/bento-linux-amd64 $(DIST)/bento-linux-arm64 $(DIST)/SHA256SUMS

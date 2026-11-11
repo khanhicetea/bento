@@ -322,8 +322,12 @@ func (s *Server) dbadminGateway() http.Handler {
 			pr.Out.Host = "dbadmin"
 			h := pr.Out.Header
 			for k := range h {
-				if lk := strings.ToLower(k); strings.HasPrefix(lk, "x-bento-") || strings.HasPrefix(lk, "x-forwarded-") {
-					h.Del(k)
+				lk := strings.ToLower(k)
+				// PHP's built-in server maps "-" and "_" in header names to the same
+				// $_SERVER key, so X_Bento_Server would collide with the injected
+				// X-Bento-Server. No legitimate browser header contains "_".
+				if strings.Contains(lk, "_") || strings.HasPrefix(lk, "x-bento-") || strings.HasPrefix(lk, "x-forwarded-") {
+					delete(h, k)
 				}
 			}
 			for _, k := range []string{"Authorization", "Forwarded", "Cookie", "Proxy-Authorization"} {

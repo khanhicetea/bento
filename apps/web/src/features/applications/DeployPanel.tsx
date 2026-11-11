@@ -15,7 +15,7 @@ import {
   StateBadge,
 } from "../../components/DomainState.tsx";
 import { formatDuration, formatRelative } from "../../lib/format.ts";
-import { isTerminal } from "../operations/OperationTracker.tsx";
+import { useOperation } from "../operations/useOperation.ts";
 import { useOperationMutation } from "./useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -373,11 +373,7 @@ function DeliveryTrace({ delivery: d }: { delivery: T.WebhookDelivery }) {
 }
 
 function OperationTrace({ id }: { id: string }) {
-  const query = useQuery({
-    queryKey: keys.operations.detail(id),
-    queryFn: ({ signal }) => api.operations.get(id, signal),
-    refetchInterval: (current) => (isTerminal(current.state.data?.state) ? false : 1_000),
-  });
+  const query = useOperation(id);
   if (query.isPending) return <DomainLoading label="deploy log" />;
   if (query.error) return <p className="note note--bad">{messageOf(query.error)}</p>;
   const op = query.data;

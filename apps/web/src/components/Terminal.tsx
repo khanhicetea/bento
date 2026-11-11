@@ -59,9 +59,7 @@ export function TerminalPanel({
 }) {
   return (
     <TerminalView path={api.apps.terminalPath(appId, mode)}>
-      {mode === "running" && (
-        <span className="text-xs text-amber-600">Live app container — changes affect production</span>
-      )}
+      {mode === "running" && <span className="note note--caution">Live app container — changes affect production</span>}
       {onModeChange && (
         <div className="seg ml-auto">
           <button type="button" aria-pressed={mode === "tool"} onClick={() => onModeChange("tool")}>
@@ -95,21 +93,36 @@ export function TerminalView({ path, children }: { path: string; children?: Reac
   useEffect(() => {
     if (!element) return;
     const key = sessionKey(path);
+    const styles = getComputedStyle(document.documentElement);
+    const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: '"SFMono-Regular", Consolas, monospace',
+      fontFamily: token("--font-body", '"JetBrains Mono", monospace'),
       fontSize: 14,
       scrollback: 5_000,
-      theme: { background: "#16140f", foreground: "#ede6d6", cursor: "#e2603f", selectionBackground: "#3a352e" },
+      theme: {
+        background: token("--nori", "#1b1815"),
+        foreground: token("--nori-ink", "#e9e1d3"),
+        cursor: "#e2603f",
+        selectionBackground: "#3a352e",
+      },
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(element);
     fit.fit();
+    // Re-measure once the self-hosted font is ready; a cold load opens with the fallback's metrics.
+    // Assigning the same fontFamily is a no-op in xterm 5.5, so toggle fontSize to force a re-measure.
+    let disposed = false;
+    void document.fonts.load('14px "JetBrains Mono"').then(() => {
+      if (disposed) return;
+      terminal.options.fontSize = 13;
+      terminal.options.fontSize = 14;
+      fit.fit();
+    });
     setExitCode(null);
     const encoder = new TextEncoder();
     let current: WebSocket | null = null;
-    let disposed = false;
     let retries = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let everConnected = false;

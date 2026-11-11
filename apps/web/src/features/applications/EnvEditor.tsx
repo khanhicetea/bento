@@ -3,34 +3,11 @@ import { Plus, X } from "lucide-react";
 import type { T } from "../../api/client.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { envFromText, envToText } from "../../lib/env.ts";
+
+export { envFromText, envToText };
 
 export type EnvMode = "table" | "text";
-
-/** Render variables as dotenv lines. */
-export function envToText(env: T.EnvVar[]): string {
-  return env
-    .filter((e) => e.key.trim() !== "")
-    .map((e) => `${e.key}=${e.value}`)
-    .join("\n");
-}
-
-/** Parse dotenv-style text: blank lines and # comments are skipped, `export ` and matching quotes are stripped. */
-export function envFromText(text: string): T.EnvVar[] {
-  const out: T.EnvVar[] = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    const body = line.startsWith("export ") ? line.slice(7).trimStart() : line;
-    const eq = body.indexOf("=");
-    const key = (eq < 0 ? body : body.slice(0, eq)).trim();
-    let value = eq < 0 ? "" : body.slice(eq + 1).trim();
-    if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
-      value = value.slice(1, -1);
-    }
-    out.push({ key, value });
-  }
-  return out;
-}
 
 /** Local draft for the env editor; `value()` returns the variables in either mode. */
 export function useEnvDraft(initial: T.EnvVar[]) {
@@ -43,6 +20,11 @@ export function useEnvDraft(initial: T.EnvVar[]) {
     text,
     setRows,
     setText,
+    /** Replace the draft with saved variables (the saved value changed elsewhere). */
+    reset(saved: T.EnvVar[]) {
+      setRows(saved);
+      setText(envToText(saved));
+    },
     toggle() {
       if (mode === "table") {
         setText(envToText(rows));

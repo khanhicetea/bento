@@ -1,11 +1,13 @@
 package operations
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,7 +25,12 @@ const trafficHost = "api.example.com"
 // with its access log on.
 func trafficHarness(t *testing.T, accessLog bool) *harness {
 	t.Helper()
-	h := newHarness(t)
+	return trafficHarnessWith(t, accessLog, nil)
+}
+
+func trafficHarnessWith(t *testing.T, accessLog bool, mutate func(*Deps)) *harness {
+	t.Helper()
+	h := newHarnessWith(t, mutate)
 	enableEdge(t, h)
 	_, op, err := h.c.CreateHost(t.Context(), HostInput{Name: trafficHost, Target: domain.HostTargetUpstream,
 		Upstreams: []string{"http://10.0.0.9:8080"}, Enabled: true,
@@ -211,6 +218,71 @@ func TestTrafficUndeliveredReopenDefersReading(t *testing.T) {
 	}
 	if edgeControls(h, "reopen") != before+1 {
 		t.Fatal("leftover rotated logs were read without reopening the edge's logs first")
+	}
+	if len(*jobs) != 1 || len(pendingLogs(t, h, trafficHost)) != 0 {
+		t.Fatalf("the next run must reopen and read: jobs %d", len(*jobs))
+	}
+}
+
+// stallingEngine blocks Exec until its context ends while stall is set, like
+// a Docker daemon that never answers.
+type stallingEngine struct {
+	docker.Engine
+	stall atomic.Bool
+}
+
+func (e *stallingEngine) Exec(ctx context.Context, id string, req docker.ExecRequest) (docker.ExecResult, error) {
+	if e.stall.Load() {
+		<-ctx.Done()
+		return docker.ExecResult{}, ctx.Err()
+	}
+	return e.Engine.Exec(ctx, id, req)
+}
+
+// A stalled reopen must not hold edgeMu forever: the cycle gives up and the
+// next one retries.
+func TestTrafficReopenTimesOutAndReleasesTheEdge(t *testing.T) {
+	var eng *stallingEngine
+	h := trafficHarnessWith(t, true, func(d *Deps) {
+		eng = &stallingEngine{Engine: d.Engine}
+		d.Engine = eng
+	})
+	old := trafficReopenTimeout
+	trafficReopenTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { trafficReopenTimeout = old })
+	var code int64
+	jobs := goAccessJobs(t, h, &code)
+	writeTrafficLog(t, h, trafficHost, "line\n")
+	eng.stall.Store(true)
+
+	done := make(chan error, 1)
+	go func() { done <- h.c.TrafficCycle(t.Context()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the traffic cycle is stuck on a stalled reopen")
+	}
+	if len(*jobs) != 0 {
+		t.Fatal("goaccess read a log the edge may still write to")
+	}
+	if p := pendingLogs(t, h, trafficHost); len(p) != 1 {
+		t.Fatalf("pending = %v", p)
+	}
+	if st := h.c.TrafficStatus(trafficHost); !strings.Contains(st.Error, "logs not rotated") {
+		t.Fatalf("status = %+v", st)
+	}
+	if !h.c.edgeMu.TryLock() {
+		t.Fatal("edgeMu is still held after the reopen timed out")
+	}
+	h.c.edgeMu.Unlock()
+
+	// The next cycle retries and delivers.
+	eng.stall.Store(false)
+	if err := h.c.TrafficCycle(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	if len(*jobs) != 1 || len(pendingLogs(t, h, trafficHost)) != 0 {
 		t.Fatalf("the next run must reopen and read: jobs %d", len(*jobs))

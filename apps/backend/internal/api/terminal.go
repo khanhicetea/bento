@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
+	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
 // Terminal bounds. A shell outlives its WebSocket: when the browser drops the
@@ -29,6 +31,23 @@ const (
 	terminalMaxAge  = 4 * time.Hour
 	terminalBacklog = 64 << 10
 )
+
+// terminalSessionCheck is how often an attached terminal re-checks that the
+// session that opened it is still live (a variable so tests can shorten it).
+var terminalSessionCheck = 30 * time.Second
+
+// terminalOwnerLive reports whether the owner of a terminal may keep using
+// it. Socket-owned terminals ("local") have no session. A session owner must
+// still be live; a store error other than "not found" is not treated as a
+// revocation, so a transient database error never kills a shell.
+func (s *Server) terminalOwnerLive(ctx context.Context, owner string) bool {
+	hash, ok := strings.CutPrefix(owner, "session:")
+	if !ok {
+		return true
+	}
+	_, err := store.GetLiveSession(ctx, s.Store.DB(), hash, time.Now())
+	return !errors.Is(err, store.ErrNotFound)
+}
 
 // WebSocket close codes the client uses to decide whether to reconnect.
 const (
@@ -412,8 +431,9 @@ func (s *Server) serveTerminal(
 		// per output chunk.
 		idle := time.NewTimer(terminalIdle)
 		defer idle.Stop()
+		check := time.NewTicker(terminalSessionCheck)
+		defer check.Stop()
 		for {
-			idle.Reset(terminalIdle)
 			select {
 			case <-ctx.Done():
 				return
@@ -431,10 +451,18 @@ func (s *Server) serveTerminal(
 					return
 				}
 				touch()
+				idle.Reset(terminalIdle)
 				if conn.Write(ctx, websocket.MessageBinary, chunk) != nil {
 					return
 				}
 			case <-activity:
+				idle.Reset(terminalIdle)
+			case <-check.C:
+				if !s.terminalOwnerLive(ctx, owner) {
+					t.kill()
+					_ = conn.Close(websocket.StatusPolicyViolation, "session ended")
+					return
+				}
 			case <-idle.C:
 				_ = conn.Close(websocket.StatusPolicyViolation, "idle timeout")
 				return

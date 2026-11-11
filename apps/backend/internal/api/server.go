@@ -1434,11 +1434,20 @@ func (s *Server) handleAppMetrics(w http.ResponseWriter, r *http.Request) {
 	if len(procs) > metricsMaxProcesses {
 		procs = procs[:metricsMaxProcesses]
 	}
+	out.Processes = appProcesses(app, procs)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// appProcesses converts container processes for the API. Command lines are
+// app-controlled output, so the app's secrets are redacted like in logs.
+func appProcesses(app domain.App, procs []docker.Process) []dto.AppProcess {
+	out := make([]dto.AppProcess, 0, len(procs))
+	hide := redactor(app)
 	for _, p := range procs {
-		out.Processes = append(out.Processes, dto.AppProcess{
+		out = append(out, dto.AppProcess{
 			PID: p.PID, PPID: p.PPID, User: p.User, CPUPercent: p.CPUPercent, MemPercent: p.MemPercent,
-			RSSBytes: int64(p.RSSKiB) * 1024, Elapsed: p.Elapsed, Command: p.Command,
+			RSSBytes: int64(p.RSSKiB) * 1024, Elapsed: p.Elapsed, Command: hide.Replace(p.Command),
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out
 }

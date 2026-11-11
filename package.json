@@ -15,17 +15,19 @@
     "fmt:check": "bunx prettier --check apps/web/src apps/web/index.html package.json apps/web/package.json tsconfig.json apps/web/tsconfig.json eslint.config.js .prettierrc.json",
     "lint": "bunx eslint apps/web/src",
     "check": "bunx tsc --noEmit --project apps/web/tsconfig.json",
+    "test": "bun test apps/web/src",
     "web:build": "bun run --cwd apps/web build",
     "docs:dev": "bun run --cwd apps/docs dev",
     "docs:build": "bun run --cwd apps/docs build",
     "backend:build": "make -C apps/backend build",
     "backend:test": "make -C apps/backend test",
-    "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run web:build && make -C apps/backend ci"
+    "ci": "bun install --frozen-lockfile && bun run fmt:check && bun run lint && bun run check && bun run test && bun run web:build && make -C apps/backend ci"
   },
   "devDependencies": {
     "@eslint/js": "9.34.0",
     "@types/bun": "1.4.0",
     "eslint": "9.34.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "prettier": "3.6.2",
     "typescript": "5.9.2",
     "typescript-eslint": "8.41.0"

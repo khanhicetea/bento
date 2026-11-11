@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Search } from "lucide-react";
 import { Link } from "wouter";
-import { api, messageOf } from "../../api/client.ts";
+import { api, messageOf, type T } from "../../api/client.ts";
 import { keys } from "../../api/keys.ts";
 import {
   Cell,
@@ -15,7 +15,7 @@ import {
 } from "../../components/DomainState.tsx";
 import { Mascot } from "../../components/Mascot.tsx";
 import { describeOp, formatDuration, formatRelative } from "../../lib/format.ts";
-import { isTerminal } from "./OperationTracker.tsx";
+import { invalidateFor, isTerminal, justFinished, useOperation } from "./useOperation.ts";
 import { useApplicationList } from "../applications/useApplications.ts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,14 +118,14 @@ export function OperationsPage({ selectedId }: { selectedId?: string }) {
 function OperationDetail({ id }: { id: string }) {
   const apps = useApplicationList();
   const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: keys.operations.detail(id),
-    queryFn: ({ signal }) => api.operations.get(id, signal),
-    refetchInterval: (current) => (isTerminal(current.state.data?.state) ? false : 1_000),
-  });
+  const query = useOperation(id);
   const cancel = useMutation({
     mutationFn: () => api.operations.cancel(id),
-    onSuccess: (op) => queryClient.setQueryData(keys.operations.detail(id), op),
+    onSuccess: (op) => {
+      const key = keys.operations.detail(id);
+      if (justFinished(queryClient.getQueryData<T.Operation>(key), op)) invalidateFor(queryClient, op);
+      queryClient.setQueryData(key, op);
+    },
   });
   if (query.isPending)
     return (

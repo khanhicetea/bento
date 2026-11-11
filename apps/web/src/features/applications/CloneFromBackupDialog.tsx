@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Play } from "lucide-react";
 import { Link } from "wouter";
 import { api, messageOf, type T } from "../../api/client.ts";
-import { keys } from "../../api/keys.ts";
 import { Field, KeyValues } from "../../components/DomainState.tsx";
 import { formatBytes } from "../../lib/format.ts";
 import { isTerminal, useTrackOperation } from "../operations/OperationTracker.tsx";
+import { useOperation } from "../operations/useOperation.ts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,21 +26,6 @@ type Step = "repository" | "options" | "preview" | "confirm" | "result";
 
 /** Where the snapshot comes from: an app of this stack, or a repository of another stack. */
 type CloneSource = { kind: "app"; app: T.App; snapshot: T.ResticSnapshot } | { kind: "repository" };
-
-/** Polls an accepted operation until it reaches a terminal state. */
-function useOperationState(id: string) {
-  const queryClient = useQueryClient();
-  return useQuery({
-    queryKey: keys.operations.detail(id),
-    queryFn: async ({ signal }) => {
-      const op = await api.operations.get(id, signal);
-      if (isTerminal(op.state)) void queryClient.invalidateQueries({ queryKey: keys.apps.list() });
-      return op;
-    },
-    enabled: id !== "",
-    refetchInterval: (query) => (isTerminal(query.state.data?.state) ? false : 1000),
-  });
-}
 
 function OperationProgress({ op, label }: { op: T.Operation | undefined; label: string }) {
   const last = op?.events?.at(-1)?.message;
@@ -105,7 +90,7 @@ function CloneSteps({ source, onClose }: { source: CloneSource; onClose: () => v
   const [typed, setTyped] = useState("");
   const [inspectId, setInspectId] = useState("");
   const [cloneId, setCloneId] = useState("");
-  const listOp = useOperationState(listId).data;
+  const listOp = useOperation(listId).data;
   const listing =
     listOp?.state === "succeeded" ? (listOp.result as unknown as T.ResticClonePreview | undefined) : undefined;
   const snapshotId = source.kind === "app" ? source.snapshot.id : chosen || listing?.snapshots[0]?.id || "";
@@ -162,8 +147,8 @@ function CloneSteps({ source, onClose }: { source: CloneSource; onClose: () => v
       setStep("result");
     },
   });
-  const inspectOp = useOperationState(inspectId).data;
-  const cloneOp = useOperationState(cloneId).data;
+  const inspectOp = useOperation(inspectId).data;
+  const cloneOp = useOperation(cloneId).data;
   const phrase = `clone ${slug.trim()}`;
 
   if (step === "repository") {

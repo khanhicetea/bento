@@ -16,6 +16,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Globe, Plus } from "lucide-react";
 import { Link } from "wouter";
 import { HostDialogBody } from "../routing/HostDialog.tsx";
+import { pick, sliceKey } from "../../lib/savedSlice.ts";
 
 // Each cell saves only its own fields, so PHP settings are overlaid on the saved runtime key by key.
 const phpRuntimeKeys: (keyof T.PHPRuntime)[] = [
@@ -34,6 +35,21 @@ const phpPerformanceKeys: (keyof T.PHPRuntime)[] = [
   "maxInputVars",
   "uploadLimitMb",
 ];
+
+const defaultPhp: T.PHPRuntime = {
+  version: "8.4",
+  documentRoot: "public",
+  routing: "front-controller",
+  mode: "standard",
+  uploadLimitMb: 64,
+};
+const defaultHttp: T.HTTPRuntime = {
+  toolchain: "node",
+  version: "24",
+  argv: ["node", "server.js"],
+  workdir: "",
+  port: 3000,
+};
 
 function phpWith(base: T.PHPRuntime, draft: T.PHPRuntime, keys: (keyof T.PHPRuntime)[]): T.PHPRuntime {
   const out: Record<string, unknown> = { ...base };
@@ -86,20 +102,13 @@ const PROTECTION_HINTS: Record<keyof T.Protection, string> = {
 export function ApplicationEditor({ app }: { app: T.App }) {
   const catalog = useCatalog();
   const active = useActiveOperations(app.id);
-  const [generation, setGeneration] = useState(app.configGeneration);
+  const [savedGeneration, setGeneration] = useState(app.configGeneration);
+  // The newer of what our last save returned and what the app query now shows:
+  // the app also changes elsewhere (another tab, the CLI, an added binding).
+  const generation = Math.max(savedGeneration, app.configGeneration);
   const kind = app.runtime.kind;
-  const [php, setPhp] = useState<T.PHPRuntime>(
-    app.runtime.php ?? {
-      version: "8.4",
-      documentRoot: "public",
-      routing: "front-controller",
-      mode: "standard",
-      uploadLimitMb: 64,
-    },
-  );
-  const [http, setHttp] = useState<T.HTTPRuntime>(
-    app.runtime.http ?? { toolchain: "node", version: "24", argv: ["node", "server.js"], workdir: "", port: 3000 },
-  );
+  const [php, setPhp] = useState<T.PHPRuntime>(app.runtime.php ?? defaultPhp);
+  const [http, setHttp] = useState<T.HTTPRuntime>(app.runtime.http ?? defaultHttp);
   const [ingress, setIngress] = useState<T.IngressMode>(app.ingress);
   const [accessLog, setAccessLog] = useState(app.accessLog);
   const [protection, setProtection] = useState<T.Protection>(app.protection);
@@ -108,6 +117,47 @@ export function ApplicationEditor({ app }: { app: T.App }) {
   const [hostDialog, setHostDialog] = useState(false);
   const [resources, setResources] = useState<T.Resources>(app.resources);
   const env = useEnvDraft(app.env);
+
+  // Each cell's draft follows the server when that cell's saved value changes (set during render, no effect).
+  // A new editable field must be added to its slice's key and its re-seed.
+  const savedRuntimePhp = app.runtime.php ?? defaultPhp;
+  const runtimeSaved = sliceKey(
+    kind === "php-fpm" ? pick(savedRuntimePhp, phpRuntimeKeys) : (app.runtime.http ?? defaultHttp),
+  );
+  const [runtimeSeen, setRuntimeSeen] = useState(runtimeSaved);
+  if (runtimeSaved !== runtimeSeen) {
+    setRuntimeSeen(runtimeSaved);
+    if (kind === "php-fpm") setPhp((cur) => phpWith(cur, savedRuntimePhp, phpRuntimeKeys));
+    else setHttp(app.runtime.http ?? defaultHttp);
+  }
+  const performanceSaved = sliceKey(pick(savedRuntimePhp, phpPerformanceKeys));
+  const [performanceSeen, setPerformanceSeen] = useState(performanceSaved);
+  if (performanceSaved !== performanceSeen) {
+    setPerformanceSeen(performanceSaved);
+    if (kind === "php-fpm") setPhp((cur) => phpWith(cur, savedRuntimePhp, phpPerformanceKeys));
+  }
+  const ingressSaved = sliceKey({ ingress: app.ingress, accessLog: app.accessLog, protection: app.protection });
+  const [ingressSeen, setIngressSeen] = useState(ingressSaved);
+  if (ingressSaved !== ingressSeen) {
+    setIngressSeen(ingressSaved);
+    setIngress(app.ingress);
+    setAccessLog(app.accessLog);
+    setProtection(app.protection);
+  }
+  const resourcesSaved = sliceKey({ resources: app.resources, valkey: app.valkey, minicrond: app.minicrond });
+  const [resourcesSeen, setResourcesSeen] = useState(resourcesSaved);
+  if (resourcesSaved !== resourcesSeen) {
+    setResourcesSeen(resourcesSaved);
+    setResources(app.resources);
+    setValkey(app.valkey);
+    setMinicrond(app.minicrond);
+  }
+  const envSaved = sliceKey(app.env);
+  const [envSeen, setEnvSeen] = useState(envSaved);
+  if (envSaved !== envSeen) {
+    setEnvSeen(envSaved);
+    env.reset(app.env);
+  }
 
   const argvValid = kind !== "http-process" || (http.argv.length > 0 && http.argv.every((arg) => arg.trim() !== ""));
   const phpValid = kind !== "php-fpm" || phpPerformanceValid(php);

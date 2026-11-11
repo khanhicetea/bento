@@ -8,3 +8,5 @@
 node_modules/
 coverage/
 mise.local.toml
+__pycache__/
+*.pyc

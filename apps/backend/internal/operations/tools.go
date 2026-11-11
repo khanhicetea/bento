@@ -10,6 +10,7 @@ import (
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/platform"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
+	"github.com/khanhicetea/bento/apps/backend/internal/store"
 )
 
 // ToolSession is a scoped ephemeral tooling container for one app.
@@ -34,7 +35,8 @@ func (t *ToolSession) Close() {
 // runs outside operations (terminals, exec, file access), so it never writes
 // the app's generated config: it uses the files the last operation
 // materialized, which an operation may be restoring after a failed
-// validation at the same moment.
+// validation at the same moment. It never builds an image or records a build
+// assignment: without a usable build it fails with image-not-ready.
 func (c *Controller) OpenTool(ctx context.Context, app domain.App, lifetime time.Duration) (*ToolSession, error) {
 	return c.openTool(ctx, app, lifetime, false)
 }
@@ -52,11 +54,32 @@ func (c *Controller) openTool(ctx context.Context, app domain.App, lifetime time
 	if _, err := c.EnsureNetworks(ctx); err != nil {
 		return nil, err
 	}
-	build, err := c.ensureAppBuild(ctx, app, nil)
-	imageID := build.ImageID
-	if err != nil {
-		return nil, err
+	var build store.RuntimeBuild
+	if writeConfig {
+		// An operation holding the app (deploy): it may build and assign.
+		b, err := c.ensureAppBuild(ctx, app, nil)
+		if err != nil {
+			return nil, err
+		}
+		build = b
+	} else {
+		// A request (terminal, exec, files): use an existing build only. A
+		// build belongs in an operation; the reconciler prepares missing images.
+		b, _, ok, err := c.plannedBuild(ctx, app)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, Fail(
+				"image-not-ready",
+				"The runtime image for this app is being prepared; watch Activity for image.prepare and try again, or start the app.",
+				"no runtime image is built yet for app %s",
+				app.Slug,
+			)
+		}
+		build = b
 	}
+	imageID := build.ImageID
 	passwd, group, err := c.Images.IdentityBase(ctx, imageID)
 	if err != nil {
 		return nil, err

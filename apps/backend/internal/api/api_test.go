@@ -600,6 +600,25 @@ func TestDBAdminTicketGateway(t *testing.T) {
 		t.Fatalf("response headers %v", resp.Header)
 	}
 
+	// Header names PHP would fold onto the injected X-Bento-* variables never reach Adminer.
+	under := get("/_bento/dbadmin/b/bmysql/", map[string]string{
+		"X_Bento_Server": "evil", "X_BENTO_PASSWORD": "evil", "X-Bento-Server": "evil", "X_Forwarded_For": "1.2.3.4", "Accept-Language": "en",
+	}, grant)
+	if under.StatusCode != 200 {
+		t.Fatalf("underscore headers -> %d", under.StatusCode)
+	}
+	for k := range seen {
+		if strings.Contains(k, "_") {
+			t.Errorf("header %q reached the upstream", k)
+		}
+	}
+	if v := seen.Values("X-Bento-Server"); len(v) != 1 || v[0] != "mysql84" {
+		t.Errorf("X-Bento-Server = %v", v)
+	}
+	if seen.Get("Accept-Language") != "en" {
+		t.Errorf("ordinary header dropped: %v", seen)
+	}
+
 	post := func(hdr map[string]string) int {
 		req, _ := http.NewRequest("POST", utils.URL+"/_bento/dbadmin/b/bmysql/?sql=", strings.NewReader("query=1"))
 		req.AddCookie(grant)

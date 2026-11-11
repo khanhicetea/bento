@@ -81,6 +81,10 @@ type Deps struct {
 	// CancelPoll is how often a running operation's cancellation flag is
 	// read (default 1s).
 	CancelPoll time.Duration
+	// FinishRetry is the first delay between attempts to record an
+	// operation's final state when the write fails (default 250ms); it
+	// doubles up to 5s.
+	FinishRetry time.Duration
 	// Now is the clock for persisted schedules such as ACME backoff
 	// (default time.Now; tests move it).
 	Now func() time.Time
@@ -110,6 +114,10 @@ type Controller struct {
 	// WakeReconciler asks the reconciler for a pass soon (nil: wait for the next
 	// periodic one). Rollouts call it after changing build assignments.
 	WakeReconciler func()
+
+	// finishOp records an operation's final state (store.FinishOperation;
+	// tests inject write failures).
+	finishOp func(ctx context.Context, q store.Q, id string, state store.OpState, result json.RawMessage, code, message, guidance string) error
 
 	handlers map[string]handler
 	wake     chan struct{}
@@ -184,6 +192,9 @@ func NewController(d Deps) (*Controller, error) {
 	if d.CancelPoll <= 0 {
 		d.CancelPoll = time.Second
 	}
+	if d.FinishRetry <= 0 {
+		d.FinishRetry = 250 * time.Millisecond
+	}
 	if d.Now == nil {
 		d.Now = time.Now
 	}
@@ -194,6 +205,7 @@ func NewController(d Deps) (*Controller, error) {
 	names := runtime.Names{StackID: stack.ID, StackName: stack.Name}
 	c := &Controller{
 		Deps: d, Stack: stack, Names: names,
+		finishOp:  store.FinishOperation,
 		Images:    &runtime.ImageManager{Engine: d.Engine, Layout: d.Layout, Names: names, MemAvailable: d.MemAvailable},
 		wake:      make(chan struct{}, 1),
 		done:      make(chan struct{}),
@@ -661,15 +673,42 @@ func (c *Controller) execute(ctx context.Context, op store.Operation) {
 	} else {
 		c.Log.Info("operation succeeded", "op", op.ID, "kind", op.Kind)
 	}
-	if ferr := store.FinishOperation(context.WithoutCancel(ctx), db, op.ID, state, raw, code, msg, guidance); ferr != nil {
-		c.Log.Error("finish operation", "op", op.ID, "err", ferr)
-	}
+	c.recordFinish(ctx, op.ID, state, raw, code, msg, guidance)
 	c.notify(op.ID)
 	// A failed or cancelled step can leave its target half done (a forced
 	// cancellation between stopping and recreating an instance leaves the app
 	// down): the reconciler repairs it now instead of at its next interval.
 	if err != nil && c.WakeReconciler != nil {
 		c.WakeReconciler()
+	}
+}
+
+// recordFinish writes the operation's final state, retrying with backoff
+// while the write fails: a row left running blocks its target's
+// reconciliation and schedules until the next start. The caller still holds
+// the operation's claims, so nothing else runs on the target meanwhile. It
+// gives up only when the backend stops; Recover marks the row interrupted on
+// the next start.
+func (c *Controller) recordFinish(ctx context.Context, id string, state store.OpState, raw json.RawMessage, code, msg, guidance string) {
+	delay := c.FinishRetry
+	for attempt := 1; ; attempt++ {
+		err := c.finishOp(context.WithoutCancel(ctx), c.Store.DB(), id, state, raw, code, msg, guidance)
+		if err == nil {
+			if attempt > 1 {
+				c.Log.Info("finish operation recorded after retries", "op", id, "attempts", attempt)
+			}
+			return
+		}
+		// Log the first failure and then every tenth, not every attempt.
+		if attempt == 1 || attempt%10 == 0 {
+			c.Log.Error("finish operation", "op", id, "attempt", attempt, "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		delay = min(delay*2, 5*time.Second)
 	}
 }
 

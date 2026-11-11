@@ -10,13 +10,15 @@ export type { T };
 
 export class ApiError extends Error {
   readonly status: number;
-  readonly code: T.ErrorCode | "network";
+  readonly code: T.ErrorCode | "network" | "http";
   readonly fields: T.FieldError[];
 
   constructor(status: number, body: T.ErrorBody | null, fallback: string) {
     super(body?.message ?? fallback);
     this.status = status;
-    this.code = body?.code ?? "network";
+    // "network": no response at all. "http": a response without Bento's error
+    // envelope (a proxy's HTML error page, a truncated body).
+    this.code = body?.code ?? (status === 0 ? "network" : "http");
     this.fields = body?.fields ?? [];
   }
 }
@@ -146,8 +148,8 @@ export const api = {
       restoreDb: (id: string, body: T.ResticRestoreDBRequest) =>
         mutate("POST", `/api/v1/apps/${enc(id)}/restic/restore-db`, body),
     },
-    logsUrl: (id: string, tail: number, follow: boolean) =>
-      `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}`,
+    logsUrl: (id: string, tail: number, follow: boolean, since?: string) =>
+      `/api/v1/apps/${enc(id)}/logs?tail=${tail}${follow ? "&follow=1" : ""}${since ? `&since=${enc(since)}` : ""}`,
     terminalPath: (id: string, mode: "tool" | "running") => `/api/v1/apps/${enc(id)}/terminal?mode=${mode}`,
   },
   operations: {

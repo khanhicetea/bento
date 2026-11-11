@@ -211,3 +211,39 @@ func TestDownAppsAreReconciledInParallel(t *testing.T) {
 		t.Fatalf("reconcile operations for different apps never overlapped (peak %d)", peak.Load())
 	}
 }
+
+func TestGenerationChangeKeepsPendingOperation(t *testing.T) {
+	r := &Reconciler{work: map[string]*target{}}
+	old := &target{
+		Generation: 1, PendingOp: "op_1", OpTarget: "app_1", Rollout: true,
+		Failures: 3, LastError: "boom", NextAttempt: time.Now().Add(time.Hour), Paused: true,
+	}
+	r.work["app_1"] = old
+	got := r.get("app_1", 2)
+	if got.PendingOp != "op_1" || got.OpTarget != "app_1" || !got.Rollout || got.Generation != 2 {
+		t.Fatalf("in-flight fields not kept: %+v", got)
+	}
+	if got.Failures != 0 || got.LastError != "" || !got.NextAttempt.IsZero() || got.Paused {
+		t.Fatalf("retry budget not reset: %+v", got)
+	}
+
+	// Same generation returns the same target unchanged.
+	same := &target{Generation: 5, PendingOp: "op_2", Failures: 1}
+	r.work["app_2"] = same
+	if g := r.get("app_2", 5); g != same || g.Failures != 1 || g.PendingOp != "op_2" {
+		t.Fatalf("same generation changed the target: %+v", g)
+	}
+
+	// A finished target gets a fresh budget and no rollout flag.
+	r.work["app_3"] = &target{Generation: 1, Rollout: true, Failures: 2}
+	if g := r.get("app_3", 2); g.Rollout || g.Failures != 0 || g.PendingOp != "" || g.Generation != 2 {
+		t.Fatalf("finished target not reset: %+v", g)
+	}
+
+	// Generation 0 never replaces an existing target.
+	zero := &target{Generation: 7, Failures: 4}
+	r.work["app_4"] = zero
+	if g := r.get("app_4", 0); g != zero || g.Failures != 4 {
+		t.Fatalf("gen 0 replaced the target: %+v", g)
+	}
+}

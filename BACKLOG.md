@@ -26,15 +26,20 @@ None open.
 
 ## Hardening (low)
 
+- **govulncheck reports one reachable advisory** (2026-11-10, `make -C apps/backend vuln`): GO-2026-6865, panic on
+  two-block frames in `github.com/klauspost/compress` v1.20.0, fixed in v1.20.2; reached through
+  `transfer.ArchiveRoot` (`zstd.Encoder.Close`). 1 further advisory in an imported package and 8 in required modules
+  are not called. The `vuln` step in `ci.yml` fails until the module is upgraded.
 - **Old shared build images are not swept** (confirmed, 2026-11-08). `image.sweep` removes superseded runtime builds
   only. A Bento upgrade that changes the Valkey or backup image inputs leaves the previous `bento-build/valkey` (8 MB)
   or `bento-backup/restic` image behind; they stay prunable by hand in the Docker inventory.
 - **App operations wait behind image builds** (confirmed, 2026-11-07). A global operation (such as `edge.apply`
   after an upgrade that changes the edge image) waits for running builds, and app operations queue behind it: 5-25
   minutes on the 2 vCPU VPSes. Apps keep serving; operator actions are delayed.
-- **An operation can stay `running` after a forced cancellation on a full disk** (plausible, seen once on 2026-11-07):
-  an `app.restart` whose step could not write kept its state, so that app's later operations queued behind it until
-  the backend restarted.
+- **An operation could stay `running` after a forced cancellation on a full disk** (seen once on 2026-11-07): a failed
+  final-state write was logged and dropped, so the row stayed `running` until a restart. The write is now retried with
+  backoff until it succeeds or the backend stops. The "later operations queued behind it" part of that observation was
+  not reproduced.
 
 ## Never verified live
 
@@ -51,7 +56,7 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 - Scheduled backup retention pruning. A large-database restore drill. Disk-full behaviour.
 - A minicrond job running when its app stops: services get `S6_SERVICES_GRACETIME` (8 s), stray processes 0.5 s, and
   whether minicrond waits for or signals its running jobs was not checked.
-- The web UI has no automated tests.
+- The web UI has unit tests for pure logic only (`bun run test`); no component or end-to-end tests.
 
 ## Decisions
 
@@ -76,8 +81,8 @@ These come from `apps/backend/docs/evidence.md` and the audit:
 - No stack runs in production yet, so on 2026-11-07 every schema change so far was folded into one baseline, schema 1
   (`store.SchemaVersion` and `store.MigratableFromVersion`), with no migrations. Development stacks on schemas 2–5
   are re-initialized, not migrated. The next schema change adds `migrations[1]`.
-- The real-Docker suite (`make -C apps/backend test-integration`) runs on the local dev host, not in GitHub
-  Actions. CI (`.github/workflows/ci.yml`) runs only on tags and releases.
+- CI (`.github/workflows/ci.yml`) runs only on tags and published releases, not on every push; it includes the
+  real-Docker suite (`make -C apps/backend test-integration`). Day to day, that suite runs on the local dev host.
 - After a host reboot Docker restarts every container at once, without ordering, and the edge routes to an app as soon
   as its container runs. An app that needs its database answers errors until the database accepts connections (on
   the 2 vCPU test VPS, measured per second on 2026-11-07: databases ready about 25 s after the Docker daemon, every

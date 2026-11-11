@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -123,4 +124,104 @@ func TestPruneHistory(t *testing.T) {
 			t.Fatalf("%s must be kept: %v", id, err)
 		}
 	}
+}
+
+// TestOperationTargetQueryPlans records how SQLite answers the per-target
+// operation lookups and pins that the hot reconciler query (ActiveForTarget)
+// never degrades to a full table scan. Timings are logged, not asserted.
+func TestOperationTargetQueryPlans(t *testing.T) {
+	s := newStore(t)
+	ctx := t.Context()
+	const targets, terminal = 50, 5000
+	err := s.Tx(ctx, func(tx Q) error {
+		for i := 0; i < terminal+3; i++ {
+			op, _, err := InsertOperation(ctx, tx, Operation{
+				ID:         platform.NewOperationID(),
+				Kind:       "app.reconcile",
+				TargetKind: "app",
+				TargetID:   fmt.Sprintf("app%02d", i%targets),
+			})
+			if err != nil {
+				return err
+			}
+			state := OpSucceeded
+			switch {
+			case i >= terminal:
+				state = OpQueued
+				if i == terminal+2 {
+					state = OpRunning
+				}
+			case i%7 == 0:
+				state = OpFailed
+			}
+			if _, err := tx.ExecContext(ctx, "UPDATE operations SET state = ? WHERE id = ?", state, op.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB().ExecContext(ctx, "ANALYZE"); err != nil {
+		t.Fatal(err)
+	}
+
+	const target = "app01"
+	statements := []struct{ name, sql string }{
+		{"ActiveForTarget", "SELECT COUNT(*) FROM operations WHERE target_id = ? AND state IN ('queued','running')"},
+		{"ListOperations{TargetID, Limit:100}", "SELECT " + opColumns + " FROM operations WHERE 1=1 AND target_id = ? ORDER BY created_at DESC, id DESC LIMIT ?"},
+		{"ListOperations{TargetID, States:[succeeded], Limit:1}", "SELECT " + opColumns + " FROM operations WHERE 1=1 AND target_id = ? AND state IN (?) ORDER BY created_at DESC, id DESC LIMIT ?"},
+	}
+	argsFor := []([]any){{target}, {target, 100}, {target, OpSucceeded, 1}}
+	for i, st := range statements {
+		rows, err := s.DB().QueryContext(ctx, "EXPLAIN QUERY PLAN "+st.sql, argsFor[i]...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var details []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			details = append(details, detail)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%s plan: %s", st.name, strings.Join(details, " | "))
+		if i == 0 {
+			for _, d := range details {
+				if strings.Contains(d, "SCAN operations") && !strings.Contains(d, "USING") {
+					t.Fatalf("ActiveForTarget scans the whole operations table: %q", d)
+				}
+			}
+		}
+	}
+
+	start := time.Now()
+	for i := 0; i < 1000; i++ {
+		if _, err := ActiveForTarget(ctx, s.DB(), target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("ActiveForTarget mean over 1000 calls: %v", time.Since(start)/1000)
+	start = time.Now()
+	for i := 0; i < 100; i++ {
+		if _, err := ListOperations(ctx, s.DB(), OpFilter{TargetID: target, Limit: 100}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("ListOperations{TargetID, Limit:100} mean over 100 calls: %v", time.Since(start)/100)
+	start = time.Now()
+	for i := 0; i < 100; i++ {
+		if _, err := ListOperations(ctx, s.DB(), OpFilter{TargetID: target, States: []OpState{OpSucceeded}, Limit: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("ListOperations{TargetID, States:[succeeded], Limit:1} mean over 100 calls: %v", time.Since(start)/100)
 }

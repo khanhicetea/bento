@@ -85,7 +85,7 @@ export function ApplicationPage({ slug, tab = "overview" }: { slug: string; tab?
       {tab === "overview" && <Overview app={app} />}
       {tab === "deploy" && <DeployPanel app={app} />}
       {tab === "monitoring" && <MonitoringPanel app={app} />}
-      {tab === "logs" && <LogsPanel appId={app.id} />}
+      {tab === "logs" && <LogsPanel key={app.id} appId={app.id} />}
       {tab === "terminal" && (
         <TerminalPanel
           appId={app.id}
