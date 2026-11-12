@@ -1536,5 +1536,7 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   app answers. With the old spec put back temporarily the same check failed with two addresses
   (`10.200.6.129`, `10.200.6.130`). `TestToolSpecStartsNoDaemons` checks the spec (no alias, data network kept);
   `TestToolSharesAppNetworkForValkey` still passes. `make ci` passed.
-- Not verified: the full `make test-integration` suite, arm64, and a live edge on a VPS after the change (the 502
-  reproduction needs a release or a binary copied to the test hosts).
+- Full `make test-integration` on the dev host (amd64, Docker 29.8.1) with the change: `internal/integration` 1020 s,
+  `internal/runtime` 548 s, all passed.
+- Not verified: arm64, and a live edge on a VPS after the change (the 502 reproduction needs a release or a binary
+  copied to the test hosts).
