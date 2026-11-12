@@ -1538,5 +1538,19 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   `TestToolSharesAppNetworkForValkey` still passes. `make ci` passed.
 - Full `make test-integration` on the dev host (amd64, Docker 29.8.1) with the change: `internal/integration` 1020 s,
   `internal/runtime` 548 s, all passed.
-- Not verified: arm64, and a live edge on a VPS after the change (the 502 reproduction needs a release or a binary
-  copied to the test hosts).
+- Live edge on `bento-arm` (AlmaLinux 10.2 arm64, Docker 29.9.3, stack `main`, edge HTTPS on 8443), same app and
+  script before and after replacing the binary (`make release` arm64 build of `0086e32`; 0.4.1 kept as
+  `/root/bento-0.4.1.bak`). Per round: 4 sequential curl loops for 40 s over HTTPS to `e2e-node` (Node 22, PostgreSQL
+  binding, no Valkey), `bento app exec e2e-node -- sleep 15` at +3 s, the alias resolved from the app container at
+  +10 s, edge log grepped for `connect() failed`. Three rounds each:
+
+  | Binary | Requests / round | Alias resolves to | Edge connect errors / round | Non-200 / round |
+  | --- | --- | --- | --- | --- |
+  | 0.4.1 | 2698–2798 | app + tool | 526–613 (`111: Connection refused`) | 4 × 504 after 5 s |
+  | `0086e32` | 3022–3132 | app only | 0 | 0 |
+
+  After the swap a tool container of `e2e-node` still reached `postgres18` over the data network and the internet,
+  a tool of `e2e-php` (Valkey on) got `PONG` from `$REDIS_URL`, and `bento app deploy e2e-node` succeeded with the app
+  answering afterwards.
+- Not verified: the integration suite on arm64 (only the live checks above ran there), a webhook-triggered deploy and
+  a backup with the new binary.
