@@ -301,6 +301,30 @@ func TestIntegrationAppServices(t *testing.T) {
 		t.Fatalf("default processes:\n%s", p)
 	}
 
+	// Without Valkey a tool container has its own address on the apps
+	// network, but not the app's routing alias: the alias resolves to the app
+	// container only, so the edge never sends visitors to a tool.
+	appIns, err := e.sdk.Inspect(ctx, e.c.Names.AppContainer(app.ID))
+	if err != nil || appIns == nil {
+		t.Fatalf("inspect app: %v", err)
+	}
+	appIP := appIns.NetworkSettings.Networks[e.c.Names.AppsNetwork()].IPAddress.String()
+	plain, err := store.GetApp(ctx, e.s.DB(), app.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := e.c.OpenTool(ctx, plain, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.sdk.Exec(ctx, tool.ContainerID, docker.ExecRequest{Cmd: []string{"/usr/local/bin/bento-exec", "bash", "-c",
+		"getent ahostsv4 " + runtime.AppAlias(app.ID) + " | awk '{print $1}' | sort -u; " +
+			"node -e \"fetch('http://" + runtime.AppAlias(app.ID) + ":3000').then(r=>r.text()).then(console.log)\""}})
+	tool.Close()
+	if err != nil || strings.TrimSpace(string(res.Stdout)) != appIP+"\nok" {
+		t.Fatalf("alias from tool container: got %q %q %v, want only the app's %s and its reply", res.Stdout, res.Stderr, err, appIP)
+	}
+
 	update(true, true)
 	if got := exec("valkey-cli", "PING"); got != "PONG" {
 		t.Fatalf("valkey PING: %q", got)
@@ -334,11 +358,11 @@ func TestIntegrationAppServices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, err := e.c.OpenTool(ctx, running, time.Minute)
+	tool, err = e.c.OpenTool(ctx, running, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := e.sdk.Exec(ctx, tool.ContainerID, docker.ExecRequest{
+	res, err = e.sdk.Exec(ctx, tool.ContainerID, docker.ExecRequest{
 		Cmd: []string{"/usr/local/bin/bento-exec", "bash", "-c", `valkey-cli -u "$REDIS_URL" GET greeting`},
 	})
 	tool.Close()

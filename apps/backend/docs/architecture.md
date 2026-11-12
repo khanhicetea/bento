@@ -257,7 +257,8 @@ Recovery of missing durable data is refused by the handlers themselves (`verifyH
 
 `runtime.Names` derives every Docker name from the stack name: `bento-<stack>-app-<appId>`, `-tool-<appId>-<op>`,
 `-edge`, `-cloudflared`, `-<service>`, `-job-<op>`, volumes `bento-<stack>-<service>-data`, networks
-`bento-<stack>-apps` / `-data`, and the routing alias `app-<appId>`. Labels: `io.bento.managed`, `stack-id`,
+`bento-<stack>-apps` / `-data`, and the routing alias `app-<appId>`, carried only by the app container (the edge
+and other apps resolve it per request, so a tool container under it would take visitor traffic). Labels: `io.bento.managed`, `stack-id`,
 `app-id`, `role` (`runtime|tool|edge|database|tunnel|backup|network|volume`), `generation`, `operation-id`,
 `service`, `image-key`. `Names.OwnedBy` is checked before any stop/remove; names alone never authorize anything.
 
@@ -285,7 +286,7 @@ The whole directory is mounted (not individual files) so atomic renames inside i
 (uid-owned, **exec**, 64 MiB — s6-overlay needs to execute from it) and `/tmp`, Engine-API memory/CPU/PID limits,
 `local` log driver (10 MB × 3), health check running `bento-ready`, restart `unless-stopped` (or `no`), working
 directory `/home/<slug>/app`, and an endpoint on the apps network, plus the data network only when the app has a
-MySQL or PostgreSQL binding (`needsDataNetwork`; tool containers follow the same rule, except that `OpenTool` for a
+MySQL or PostgreSQL binding (`needsDataNetwork`; tool containers follow the same rule without the routing alias, except that `OpenTool` for a
 running app with Valkey on joins the app container's network namespace via `ShareAppNetwork`, so terminals, execs,
 file edits and deploy hooks reach the app's loopback Valkey; a tool opened before a replace keeps loopback only). Mounts: own home, config dir, identity files, own
 SQLite dirs. Nothing else.

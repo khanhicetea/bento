@@ -104,6 +104,15 @@ func TestToolSpecStartsNoDaemons(t *testing.T) {
 	if spec.HostConfig.RestartPolicy.Name != "no" || !spec.HostConfig.ReadonlyRootfs {
 		t.Fatal("tool must not restart and must be read-only")
 	}
+	// Same networks as the app, but never its routing alias: the edge would
+	// send visitors to the tool.
+	apps, ok := spec.Networking.EndpointsConfig["bento-prod-apps"]
+	if !ok || len(apps.Aliases) != 0 {
+		t.Fatalf("tool must join the apps network without the app alias: %+v", apps)
+	}
+	if _, ok := spec.Networking.EndpointsConfig["bento-prod-data"]; !ok {
+		t.Fatal("tool of a database-bound app must join the data network")
+	}
 }
 
 func TestFingerprintStableAndScoped(t *testing.T) {
@@ -305,11 +314,11 @@ func TestValkeyAndMinicrondToggles(t *testing.T) {
 func TestDataNetworkOnlyForServiceBindings(t *testing.T) {
 	names := Names{StackID: "s1", StackName: "prod"}
 	app := testApp()
-	if eps := appNetworks(AppInputs{App: app, Names: names}).EndpointsConfig; eps[names.DataNetwork()] == nil {
+	if eps := appNetworks(AppInputs{App: app, Names: names}, true).EndpointsConfig; eps[names.DataNetwork()] == nil {
 		t.Fatal("a MySQL-bound app must join the data network")
 	}
 	app.Bindings = app.Bindings[1:] // SQLite only
-	if eps := appNetworks(AppInputs{App: app, Names: names}).EndpointsConfig; eps[names.DataNetwork()] != nil || eps[names.AppsNetwork()] == nil {
+	if eps := appNetworks(AppInputs{App: app, Names: names}, true).EndpointsConfig; eps[names.DataNetwork()] != nil || eps[names.AppsNetwork()] == nil {
 		t.Fatal("an app without service bindings stays off the data network")
 	}
 }

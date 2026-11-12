@@ -1494,9 +1494,10 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   SQLite), HTTP→HTTPS keeping the custom `:8443`, and a Gitea push deployed by webhook with its mark live. The
   arm64 host stopped answering (even ping) for about a minute mid-run, same boot, no OOM kill in the kernel log;
   the run itself completed and its checks were repeated afterwards.
-- **Still open (reproduced):** right after `bento app exec`, a visitor request got a 502 with the edge logging
-  `connect() failed (113: No route to host)` to the exited tool container's address: tool containers still join
-  the apps network with the app's alias (see the 2026-11-11 PHP entry above). The next requests were 200.
+- **Still open (reproduced; fixed after 0.4.1, see the next section):** right after `bento app exec`, a visitor
+  request got a 502 with the edge logging `connect() failed (113: No route to host)` to the exited tool container's
+  address: tool containers still join the apps network with the app's alias (see the 2026-11-11 PHP entry above).
+  The next requests were 200.
 - **Benchmarks** (`scripts/vps/bench/all.sh`, wrk on the same host through the edge, one run each, 30 s per point
   after a 10 s warm-up; CPU per request from the containers' cgroup `cpu.stat`). WordPress fixture `wp-up.sh`: PHP
   8.4, 1 GB / 1 CPU, standard mode, 1,000 posts of ~1,200 words, 10 categories, Twenty Twenty-Five, Yoast SEO 28.8,
@@ -1524,3 +1525,16 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   per request). A first round counted the HTTP→HTTPS redirects of the e2e apps as successes (11–13k req/s, zero
   app CPU); the Lua scripts now count every non-2xx response and the plain runs use HTTPS.
 
+## Tool containers no longer carry the app's routing alias (2026-11-12; live Docker 29.8.1, amd64)
+
+- Fix for the finding above: `ToolContainerSpec` joins the apps network (and the data network for MySQL/PostgreSQL
+  apps) without the `app-<appId>` alias; only the app container carries it. The edge and other apps' `INTERNAL_URL`
+  resolve the alias per request, so a tool container under it took a share of visitor requests (refused while it
+  ran, a 502 after a ~3 s `No route to host` stall once it exited and its address was still cached).
+- `TestIntegrationAppServices` (real Docker) opens a tool for a running app without Valkey and runs `getent ahostsv4
+  app-<appId>` and a `fetch` to the alias inside it: the alias resolves to the app container's address only and the
+  app answers. With the old spec put back temporarily the same check failed with two addresses
+  (`10.200.6.129`, `10.200.6.130`). `TestToolSpecStartsNoDaemons` checks the spec (no alias, data network kept);
+  `TestToolSharesAppNetworkForValkey` still passes. `make ci` passed.
+- Not verified: the full `make test-integration` suite, arm64, and a live edge on a VPS after the change (the 502
+  reproduction needs a release or a binary copied to the test hosts).

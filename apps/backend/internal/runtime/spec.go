@@ -81,10 +81,17 @@ func appEnv(app domain.App) []string {
 	return []string{"HOME=" + app.ContainerHome(), "USER=" + app.Slug, "LANG=C.UTF-8"}
 }
 
-func appNetworks(in AppInputs) *network.NetworkingConfig {
-	eps := map[string]*network.EndpointSettings{
-		in.Names.AppsNetwork(): {Aliases: []string{AppAlias(in.App.ID)}},
+// appNetworks joins the apps network and, for apps bound to MySQL or
+// PostgreSQL, the data network. Only the app container carries the routing
+// alias: the edge and other apps resolve it on every request, so a tool
+// container under the same alias would receive visitor traffic (refused while
+// it runs, a 502 for requests sent to its cached address after it exits).
+func appNetworks(in AppInputs, routable bool) *network.NetworkingConfig {
+	apps := &network.EndpointSettings{}
+	if routable {
+		apps.Aliases = []string{AppAlias(in.App.ID)}
 	}
+	eps := map[string]*network.EndpointSettings{in.Names.AppsNetwork(): apps}
 	if needsDataNetwork(in.App) {
 		eps[in.Names.DataNetwork()] = &network.EndpointSettings{}
 	}
@@ -187,13 +194,15 @@ func AppContainerSpec(in AppInputs, running bool) (docker.ContainerSpec, string)
 		ShmSize:        64 << 20,
 	}
 	return docker.ContainerSpec{
-		Name: in.Names.AppContainer(app.ID), Config: cfg, HostConfig: host, Networking: appNetworks(in),
+		Name: in.Names.AppContainer(app.ID), Config: cfg, HostConfig: host, Networking: appNetworks(in, true),
 	}, gen
 }
 
 // ToolContainerSpec plans an ephemeral tooling container: same image and
 // identity, dedicated exec entrypoint (never /init), no daemons, no restart,
-// and no backup archives. It idles until the requested exec finishes.
+// and no backup archives. It joins the app's networks without the routing
+// alias, so it never receives the app's traffic. It idles until the requested
+// exec finishes.
 func ToolContainerSpec(in AppInputs, opID string, maxLifetime time.Duration) docker.ContainerSpec {
 	app := in.App
 	cfg := &container.Config{
@@ -218,7 +227,7 @@ func ToolContainerSpec(in AppInputs, opID string, maxLifetime time.Duration) doc
 		Init:           new(true),
 	}
 	return docker.ContainerSpec{
-		Name: in.Names.ToolContainer(app.ID, opID), Config: cfg, HostConfig: host, Networking: appNetworks(in),
+		Name: in.Names.ToolContainer(app.ID, opID), Config: cfg, HostConfig: host, Networking: appNetworks(in, false),
 	}
 }
 
