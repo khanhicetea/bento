@@ -806,7 +806,68 @@ func (s *Server) handleGetUtils(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.UtilsSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.utilsTargets())})
+	writeJSON(w, http.StatusOK, s.utilsSettingsDTO(r.Context(), ps))
+}
+
+func (s *Server) utilsSettingsDTO(ctx context.Context, ps domain.UtilsSettings) dto.UtilsSettings {
+	out := dto.UtilsSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.utilsTargets())}
+	if h, ok := s.utilsEdgeHost(ctx); ok {
+		out.EdgeHost, out.EdgeURL = h.Name, s.hostOrigin(ctx, h)
+	}
+	return out
+}
+
+// UtilsEdgePrefix is the path prefix an upstream host forwards to a utils
+// listener to serve Bento's utils routes on its own domain.
+const UtilsEdgePrefix = "/_bento/"
+
+// utilsEdgeHost returns the enabled upstream host that serves the utils
+// routes: it forwards UtilsEdgePrefix and only to utils listener addresses.
+func (s *Server) utilsEdgeHost(ctx context.Context) (domain.Host, bool) {
+	targets := s.utilsTargets()
+	if len(targets) == 0 {
+		return domain.Host{}, false
+	}
+	hs, err := store.ListHosts(ctx, s.Store.DB())
+	if err != nil {
+		return domain.Host{}, false
+	}
+	for _, h := range hs {
+		if !h.Enabled || h.Target != domain.HostTargetUpstream || !slices.Contains(h.Route.PathPrefixes, UtilsEdgePrefix) {
+			continue
+		}
+		if !slices.ContainsFunc(h.Upstreams, func(u string) bool {
+			return !slices.Contains(targets, strings.TrimSuffix(u, "/"))
+		}) {
+			return h, true
+		}
+	}
+	return domain.Host{}, false
+}
+
+// hostOrigin is an edge host's public origin while the edge is on, or "".
+func (s *Server) hostOrigin(ctx context.Context, h domain.Host) string {
+	es, err := s.C.EdgeSettings(ctx)
+	if err != nil || !es.Enabled {
+		return ""
+	}
+	ts, err := s.C.TunnelSettings(ctx)
+	if err != nil {
+		return ""
+	}
+	return publicHostOrigin(es, ts.Enabled, h)
+}
+
+// utilsBase is where browsers and git hosts reach the utils routes: the
+// configured base URL, else the utils edge host's origin, else "".
+func (s *Server) utilsBase(ctx context.Context) string {
+	if ps, err := s.C.UtilsSettings(ctx); err == nil && ps.BaseURL != "" {
+		return ps.BaseURL
+	}
+	if h, ok := s.utilsEdgeHost(ctx); ok {
+		return s.hostOrigin(ctx, h)
+	}
+	return ""
 }
 
 func (s *Server) handlePutUtils(w http.ResponseWriter, r *http.Request) {
@@ -820,15 +881,15 @@ func (s *Server) handlePutUtils(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.Log, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, dto.UtilsSettings{BaseURL: ps.BaseURL, Targets: nonNil(s.utilsTargets())})
+	writeJSON(w, http.StatusOK, s.utilsSettingsDTO(r.Context(), ps))
 }
 
-// webhookBase is the configured utils base URL; failing that, the origin of
-// the app's display host when the edge forwards /_bento/webhook/* to Bento
-// (it does on every app host); else "".
+// webhookBase is the configured utils base URL or the utils edge host's
+// origin; failing those, the origin of the app's display host when the edge
+// forwards /_bento/webhook/* to Bento (it does on every app host); else "".
 func (s *Server) webhookBase(r *http.Request, app domain.App) string {
-	if ps, err := s.C.UtilsSettings(r.Context()); err == nil && ps.BaseURL != "" {
-		return ps.BaseURL
+	if base := s.utilsBase(r.Context()); base != "" {
+		return base
 	}
 	es, err := s.C.EdgeSettings(r.Context())
 	if err != nil || !es.Enabled || s.C.UtilsAppsPort == 0 {

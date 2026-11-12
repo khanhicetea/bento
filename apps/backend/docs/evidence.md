@@ -1566,3 +1566,21 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   except `check-generated`, which only flagged the regenerated, not yet committed `types.ts`.
 - Not verified: the full `make test-integration` suite, arm64, or a live utils host (database browser and webhook
   through an ACME domain with prefix `/_bento/`).
+
+## Utils edge host, live (2026-11-12; `bento-test` Debian 13 amd64, stack `prod`, edge 80/443, ACME staging CA; dev build `0.4.1-5-g6a58481-dirty`)
+
+- `bento host add` with the body the UI's **Serve on edge** sends (`utils.104.64.207.10.nip.io`, upstream
+  `http://10.200.0.128:7781`, prefix `/_bento/`, ACME, HTTPS redirect, 80 MB): the edge applied it and
+  `GET /api/v1/utils` reported `edgeHost` and `edgeUrl` `https://utils.104.64.207.10.nip.io`. The stack's ACME
+  directory is Let's Encrypt staging, so the issued certificate is not publicly trusted (checks used `-k`).
+- Over HTTPS: `/`, `/index.php`, `/api/v1/session` and `/_bentox` got the edge's own nginx 404 (HTML); `/_bento` a 301
+  to `/_bento/`; `/_bento/` and `/_bento/dbadmin/t/bogus` Bento's 404 (JSON/text). `http://` redirected to `https://`.
+- Database browser (`scripts`-style client logging in on the loopback UI): the ticket's `baseUrl` was the utils host
+  with no base URL set; redeeming it there set `Secure` cookies scoped to `/_bento/dbadmin/b/<binding>/`, and
+  `SELECT version()` through Adminer returned `8.4.13` (MySQL, `e2e-php`) and `PostgreSQL 18.6` (`e2e-node`). A write
+  with a foreign `Origin` got 403.
+- Webhook: enabling `e2e-node`'s webhook returned a URL on the utils host; a generic `Bearer` delivery to it got 202
+  `deployed` and the `app.deploy` succeeded; a wrong secret got 404. The webhook was disabled again afterwards.
+- `TestUtilsEdgeHost` covers detection (prefix, utils addresses only, enabled, edge on) and the base URL order.
+- Not verified: the Utils tab UI in a browser, a publicly trusted certificate, the tunnel and front-proxy origins,
+  arm64, the full `make test-integration` suite.

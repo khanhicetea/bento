@@ -394,6 +394,12 @@ type UtilsSettings struct {
 	BaseURL string `json:"baseUrl"`
 	// Targets are the addresses the utils listener serves (read-only).
 	Targets []string `json:"targets"`
+	// EdgeHost is the enabled upstream host that serves the utils routes on
+	// the edge (path prefix /_bento/ to a utils listener address), or "".
+	EdgeHost string `json:"edgeHost"`
+	// EdgeURL is EdgeHost's public origin while the edge is on, or "". With
+	// no BaseURL, webhook URLs and the database browser use it.
+	EdgeURL string `json:"edgeUrl"`
 }
 
 type UtilsSettingsRequest struct {

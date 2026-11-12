@@ -1227,3 +1227,64 @@ func TestHostTrafficEndpoint(t *testing.T) {
 		t.Fatalf("corrupt report -> %d %s", resp.StatusCode, body)
 	}
 }
+
+// An enabled upstream host forwarding /_bento/ to a utils listener address is
+// the utils edge host: with no base URL, webhook URLs and database browser
+// tickets use its public origin.
+func TestUtilsEdgeHost(t *testing.T) {
+	c, h := newServer(t)
+	c.login()
+	c.api.UtilsAddrs = func() []string { return []string{"127.0.0.1:7781", "10.200.0.1:7781"} }
+	es := domain.DefaultEdgeSettings()
+	es.Enabled = true
+	if err := store.PutSetting(t.Context(), h.Store.DB(), "edge", es); err != nil {
+		t.Fatal(err)
+	}
+	utils := func() dto.UtilsSettings {
+		t.Helper()
+		var out dto.UtilsSettings
+		_, body := c.do("GET", "/api/v1/utils", "", nil)
+		if err := json.Unmarshal([]byte(body), &out); err != nil {
+			t.Fatal(body)
+		}
+		return out
+	}
+	add := func(name, upstream string, prefixes string) {
+		t.Helper()
+		resp, body := c.write("POST", "/api/v1/hosts", `{"name":"`+name+`","enabled":true,"target":{"kind":"upstream","upstreams":["`+
+			upstream+`"]},"route":{"tls":"acme","redirectHttps":true,"pathPrefixes":`+prefixes+`}}`)
+		var acc dto.Accepted
+		if resp.StatusCode != http.StatusAccepted || json.Unmarshal([]byte(body), &acc) != nil {
+			t.Fatalf("add %s -> %d %s", name, resp.StatusCode, body)
+		}
+		h.Wait(acc.Operation.ID)
+	}
+	// Neither another upstream nor a utils address without the prefix counts.
+	add("other.example.com", "http://10.0.0.5:3000", `["/_bento/"]`)
+	add("open.example.com", "http://10.200.0.1:7781", `[]`)
+	if u := utils(); u.EdgeHost != "" || u.EdgeURL != "" {
+		t.Fatalf("no utils edge host expected: %+v", u)
+	}
+	add("utils.example.com", "http://10.200.0.1:7781/", `["/_bento/"]`)
+	if u := utils(); u.EdgeHost != "utils.example.com" || u.EdgeURL != "https://utils.example.com" {
+		t.Fatalf("utils edge host not detected: %+v", u)
+	}
+	if resp, out := c.write("PUT", "/api/v1/utils", `{"baseUrl":"https://hooks.example.com"}`); resp.StatusCode != 200 ||
+		!strings.Contains(out, `"edgeUrl":"https://utils.example.com"`) {
+		t.Fatalf("set base -> %d %s", resp.StatusCode, out)
+	}
+	if got := c.api.utilsBase(t.Context()); got != "https://hooks.example.com" {
+		t.Fatalf("a configured base URL wins: %s", got)
+	}
+	c.write("PUT", "/api/v1/utils", `{"baseUrl":""}`)
+	if got := c.api.utilsBase(t.Context()); got != "https://utils.example.com" {
+		t.Fatalf("without a base URL the utils edge host is used: %s", got)
+	}
+	es.Enabled = false
+	if err := store.PutSetting(t.Context(), h.Store.DB(), "edge", es); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.api.utilsBase(t.Context()); got != "" {
+		t.Fatalf("with the edge off nothing serves the host: %s", got)
+	}
+}

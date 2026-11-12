@@ -501,8 +501,10 @@ An upstream host's `route.pathPrefixes` (at most 16, URL path characters only, n
 `location / { return 404; }`, so only those paths reach the upstream; an upstream path is mapped with
 `rewrite ^/(.*)$ <path>$1 break` (the prefix is kept, as on an unrestricted host). Prefixes are refused on app and
 redirect hosts and together with the static cache, whose extension location would match outside them. A host with
-prefix `/_bento/` and the utils listener's apps-network address as its upstream serves Bento's utils routes on its
-own domain.
+prefix `/_bento/` and only utils listener addresses as upstreams serves Bento's utils routes on its own domain;
+the API reports the first enabled one as the utils edge host (`GET /api/v1/utils` `edgeHost`/`edgeUrl`), and while
+the edge is on and no `baseUrl` is set its public origin (`publicHostOrigin`) is the base for webhook URLs and
+database browser tickets. The UI's **Serve on edge** creates that host (ACME, HTTPS redirect, 80 MB body).
 
 When the utils listener binds the apps network, every app and upstream host reserves
 `location ^~ /_bento/webhook/`, proxied through the shared `bento_utils` upstream (`<apps-gateway>:<port>`,

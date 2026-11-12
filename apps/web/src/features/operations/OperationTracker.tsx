@@ -31,6 +31,7 @@ export function OperationTrackerProvider({ children }: PropsWithChildren) {
     if (accepted.operation.targetKind === "host") {
       void queryClient.invalidateQueries({ queryKey: keys.hosts });
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+      void queryClient.invalidateQueries({ queryKey: keys.utils });
     }
     setTracked((current) => [accepted.operation, ...current.filter((op) => op.id !== accepted.operation.id)]);
   }

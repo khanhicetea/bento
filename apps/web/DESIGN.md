@@ -186,6 +186,9 @@ Avoid "please", "successfully", "currently", "click here", and page descriptions
 - **Ingress:** Edge / Traffic / Tunnel / Utils. Edge config (front proxy switch inside it; its fields show only when on) and ACME (left; each a form cell with its own head Save, tamago while it has unsaved changes) beside traffic (right: live requests/s line over three metric cards), host tiles (an ACME host adds a `CERTIFICATE` fact: `✓ VALID · expires in 61 days`, `◌ REQUESTING`, or `▲ NO CERT · retry in 2 hrs` in tamago ink) + Kara. Ingress owns
   domains: each host points at an app, an upstream or a redirect and carries its own TLS; the app editor lists its
   hosts and adds one through the same host dialog. A host tile with its access log on has a ghost **Traffic** button.
+  Utils: base URL form and listener addresses (muted), then a wide `EDGE HOST` cell (a ≤ 1-field add form with
+  **Serve on edge**, or the utils host's facts with Edit / Remove; tamago with `▲` when its upstream no longer
+  matches the listener, plus **Update address**), then the database browser.
   Traffic: round host filters (access-logged hosts only), then the hourly report: optional ume `RUN FAILED` (wide,
   first), four metrics (REQUESTS, VISITORS, DATA SENT, SERVER ERRORS: tamago with ▲ at ≥ 1 %), day bars (wide,
   `Updated … · n pending` in the head); Top / Slowest paths; Status codes, Top clients, Agents, Referrers as rank

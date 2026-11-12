@@ -384,6 +384,16 @@ export interface UtilsSettings {
    * Targets are the addresses the utils listener serves (read-only).
    */
   targets: string[];
+  /**
+   * EdgeHost is the enabled upstream host that serves the utils routes on
+   * the edge (path prefix /_bento/ to a utils listener address), or "".
+   */
+  edgeHost: string;
+  /**
+   * EdgeURL is EdgeHost's public origin while the edge is on, or "". With
+   * no BaseURL, webhook URLs and the database browser use it.
+   */
+  edgeUrl: string;
 }
 export interface UtilsSettingsRequest {
   baseUrl: string;

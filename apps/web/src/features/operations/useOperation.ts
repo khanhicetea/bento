@@ -35,6 +35,8 @@ export function invalidateFor(queryClient: QueryClient, op: T.Operation) {
       void queryClient.invalidateQueries({ queryKey: keys.edge });
       void queryClient.invalidateQueries({ queryKey: keys.hosts });
       void queryClient.invalidateQueries({ queryKey: keys.apps.all });
+      // The utils edge host and its public URL follow hosts and the edge.
+      void queryClient.invalidateQueries({ queryKey: keys.utils });
       break;
     case "tunnel":
       void queryClient.invalidateQueries({ queryKey: keys.tunnel });

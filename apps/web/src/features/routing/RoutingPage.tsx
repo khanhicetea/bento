@@ -564,7 +564,7 @@ function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
           >
             <Input
               value={baseUrl}
-              placeholder="https://utils.example.com"
+              placeholder={settings.edgeUrl || "https://utils.example.com"}
               spellCheck={false}
               onChange={(event) => setBaseUrl(event.target.value)}
             />
@@ -580,8 +580,8 @@ function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
       <Cell title="Utils listener" className="cell--muted">
         <p className="note mb-3">
           Route <code>/_bento/webhook/*</code> and <code>/_bento/dbadmin/*</code> on that host to one of these. The edge
-          forwards <code>/_bento/webhook/*</code> automatically for its domains. To serve both on the edge, add an
-          Upstream host pointing at the containers address with path prefix <code>/_bento/</code>.
+          forwards <code>/_bento/webhook/*</code> automatically for its domains; <strong>Edge host</strong> below serves
+          both on a domain of its own.
         </p>
         {settings.targets.length ? (
           <KeyValues
@@ -594,8 +594,187 @@ function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
           <p className="note">The utils listener is off (bento serve --utils-listen off).</p>
         )}
       </Cell>
+      <UtilsEdgeHostCell settings={settings} />
       <DBAdminCell />
     </div>
+  );
+}
+
+const utilsPrefix = "/_bento/";
+
+function isLoopbackTarget(target: string) {
+  return target.includes("127.0.0.1") || target.includes("[::1]");
+}
+
+/**
+ * One-click utils host: an Upstream host that forwards only /_bento/ to the
+ * utils listener's containers address. The backend recognizes it and uses its
+ * URL when no base URL is set.
+ */
+function UtilsEdgeHostCell({ settings }: { settings: T.UtilsSettings }) {
+  const hosts = useQuery({ queryKey: keys.hosts, queryFn: ({ signal }) => api.hosts.list(signal) });
+  const edge = useQuery({ queryKey: keys.edge, queryFn: ({ signal }) => api.edge.get(signal) });
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const containers = settings.targets.find((target) => !isLoopbackTarget(target));
+  const all = hosts.data?.hosts ?? [];
+  const host =
+    all.find((candidate) => candidate.name === settings.edgeHost) ??
+    all.find(
+      (candidate) => candidate.target.kind === "upstream" && candidate.route.pathPrefixes?.includes(utilsPrefix),
+    );
+  const stale =
+    host !== undefined &&
+    !(host.target.upstreams ?? []).every((upstream) => settings.targets.includes(upstream.replace(/\/$/, "")));
+  const route = (base?: T.Route): T.Route => ({
+    tls: "acme",
+    redirectHttps: true,
+    accessLog: false,
+    staticCache: false,
+    maxBodyMb: 80,
+    ...base,
+    pathPrefixes: [utilsPrefix],
+  });
+  const create = useOperationMutation((value: string) =>
+    api.hosts.create({
+      name: value,
+      target: { kind: "upstream", upstreams: [containers ?? ""] },
+      route: route(),
+      enabled: true,
+    }),
+  );
+  const repoint = useOperationMutation((current: T.Host) =>
+    api.hosts.update(current.name, {
+      name: current.name,
+      target: { kind: "upstream", upstreams: [containers ?? ""] },
+      route: route(current.route),
+      enabled: current.enabled,
+    }),
+  );
+  const remove = useOperationMutation((confirm: string) => api.hosts.remove(host?.name ?? "", confirm));
+  const edgeOn = edge.data?.settings.enabled ?? false;
+  const error = hosts.error ?? edge.error;
+  let body: React.ReactNode;
+  if (error) {
+    body = <DomainError message={messageOf(error)} onRetry={() => void hosts.refetch()} />;
+  } else if (hosts.isPending || edge.isPending) {
+    body = <DomainLoading label="hosts" />;
+  } else if (host) {
+    body = (
+      <div className="grid gap-3">
+        <KeyValues
+          items={[
+            ["Host", <span className="font-mono">{host.name}</span>],
+            [
+              "URL",
+              settings.edgeUrl ? (
+                <CopyableCode value={settings.edgeUrl} />
+              ) : (
+                <span className="text-muted-foreground">— {host.enabled ? "Edge off" : "Host disabled"}</span>
+              ),
+            ],
+            ...(host.certificate
+              ? [["Certificate", <CertificateText certificate={host.certificate} />] as [string, React.ReactNode]]
+              : []),
+            ["Upstream", <span className="font-mono">{(host.target.upstreams ?? []).join(" ")}</span>],
+          ]}
+        />
+        {stale && (
+          <p className="note text-[var(--tamago-ink)]">
+            ▲ The upstream is not a utils listener address anymore{containers ? "; update it to " + containers : ""}.
+          </p>
+        )}
+        {settings.baseUrl && settings.edgeUrl && (
+          <p className="note">The base URL above is used instead of this host's URL.</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {stale && containers && (
+            <Button disabled={repoint.isPending} onClick={() => repoint.mutate(host)}>
+              Update address
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            <Pencil /> Edit
+          </Button>
+          <Button variant="danger" size="icon" aria-label={`Remove ${host.name}`} onClick={() => setRemoving(true)}>
+            <Trash2 />
+          </Button>
+        </div>
+        {repoint.error && <p className="note note--bad">{messageOf(repoint.error)}</p>}
+      </div>
+    );
+  } else if (!containers) {
+    body = (
+      <p className="note">
+        The utils listener has no containers address, so the edge cannot reach it (bento serve --utils-listen).
+      </p>
+    );
+  } else if (!edgeOn) {
+    body = <p className="note">Turn on the edge (Ingress → Edge) to serve the utils routes on a domain.</p>;
+  } else {
+    body = (
+      <form
+        className="grid gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          create.mutate(name.trim(), { onSuccess: () => setName("") });
+        }}
+      >
+        <p className="note">
+          Adds an Upstream host that forwards only <code>/_bento/*</code> to the utils listener, with an ACME
+          certificate. Every other path gets 404. Its URL becomes the base URL unless you set one above.
+        </p>
+        <Field label="Host">
+          <Input
+            value={name}
+            placeholder="utils.example.com"
+            spellCheck={false}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        <div>
+          <Button type="submit" disabled={!name.trim() || create.isPending}>
+            Serve on edge
+          </Button>
+        </div>
+        {create.error && <p className="note note--bad">{messageOf(create.error)}</p>}
+      </form>
+    );
+  }
+  return (
+    <Cell
+      title="Edge host"
+      kind={stale ? "tamago" : "gohan"}
+      className="cell--wide"
+      action={
+        host && (
+          <StateBadge
+            state={host.live ? "published" : "stopped"}
+            label={host.live ? "Live" : host.enabled ? "Not live" : "Disabled"}
+          />
+        )
+      }
+    >
+      {body}
+      <Dialog open={editing && host !== undefined} onOpenChange={setEditing}>
+        <DialogContent>
+          {editing && host && <HostDialogBody key={host.name} host={host} onDone={() => setEditing(false)} />}
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={removing && host !== undefined}
+        onOpenChange={setRemoving}
+        title={`Remove ${host?.name ?? ""}?`}
+        description="The edge stops serving Bento's utils routes on this host."
+        phrase={host ? `delete ${host.name}` : ""}
+        destructive
+        confirmLabel="Remove host"
+        pending={remove.isPending}
+        error={remove.error}
+        onConfirm={(typed) => remove.mutate(typed, { onSuccess: () => setRemoving(false) })}
+      />
+    </Cell>
   );
 }
 

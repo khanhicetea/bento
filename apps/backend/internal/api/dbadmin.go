@@ -221,11 +221,6 @@ func (s *Server) handleDBAdminTicket(w http.ResponseWriter, r *http.Request) {
 			msg: "the database browser is disabled; enable it under Ingress → Utils"})
 		return
 	}
-	us, err := s.C.UtilsSettings(r.Context())
-	if err != nil {
-		writeError(w, s.Log, err)
-		return
-	}
 	expires := time.Now().Add(dbadminTicketTTL)
 	ticket := s.dbadmin.issue(dbadminPass{
 		appID:       app.ID,
@@ -233,7 +228,7 @@ func (s *Server) handleDBAdminTicket(w http.ResponseWriter, r *http.Request) {
 		sessionHash: p.Session.TokenHash,
 		expires:     expires,
 	})
-	writeJSON(w, http.StatusOK, dto.DBAdminTicket{Path: dbadminPathPrefix + "t/" + ticket, BaseURL: us.BaseURL,
+	writeJSON(w, http.StatusOK, dto.DBAdminTicket{Path: dbadminPathPrefix + "t/" + ticket, BaseURL: s.utilsBase(r.Context()),
 		LoopbackPort: s.utilsLoopbackPort(), ExpiresAt: platform.FormatTime(expires)})
 }
 
