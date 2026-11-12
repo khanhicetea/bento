@@ -216,3 +216,60 @@ func TestSupportedVersionsStartAtBaseline(t *testing.T) {
 		}
 	}
 }
+
+// TestCopyFileSeesLiveWALWithoutWriting pins the snapshot an upgrade plan
+// works on: it includes commits still in the WAL of a serving backend, and
+// never writes the source.
+func TestCopyFileSeesLiveWALWithoutWriting(t *testing.T) {
+	ctx := t.Context()
+	path := newStateFile(t)
+	live, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer live.Close()
+	if err := PutSetting(ctx, live.DB(), "probe", map[string]string{"v": "in-wal"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "copy.db")
+	appID, version, err := CopyFile(ctx, path, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appID != ApplicationID || version != SchemaVersion {
+		t.Fatalf("copy reports app id %#x version %d", appID, version)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("copying must not write the source database")
+	}
+	cp, err := Open(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cp.Close()
+	var got map[string]string
+	if _, err := GetSetting(ctx, cp.DB(), "probe", &got); err != nil || got["v"] != "in-wal" {
+		t.Fatalf("copy misses the live commit: %v %v", got, err)
+	}
+	if info, _ := os.Stat(dest); info.Mode().Perm() != 0o600 {
+		t.Fatalf("copy mode %v, want 0600", info.Mode().Perm())
+	}
+	if _, _, err := CopyFile(ctx, path, dest); err == nil {
+		t.Fatal("an existing destination must be refused")
+	}
+	// A stopped backend leaves no WAL or shared-memory file behind.
+	live.Close()
+	if _, _, err := CopyFile(ctx, path, filepath.Join(t.TempDir(), "stopped.db")); err != nil {
+		t.Fatalf("copy of a stopped backend's state: %v", err)
+	}
+	for _, side := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(path + side); err == nil {
+			t.Fatalf("copying a stopped backend's state left %s behind", filepath.Base(path+side))
+		}
+	}
+}

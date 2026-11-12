@@ -1,14 +1,58 @@
 ---
 title: Upgrade Bento
-description: Replace the binary and restart the service — your apps keep running.
+description: Preview what a new version changes, then replace the binary and restart the service — your apps keep running.
 ---
+
+## Preview the upgrade
+
+Run the **new** binary's plan before installing it. It changes nothing: it migrates a copy of the state in a temporary
+folder, reads Docker without changing anything, and lists what the new version would do once it serves the stack.
+The running backend keeps serving.
 
 ```bash
 sudo -i
+chmod +x bento-linux-amd64
+./bento-linux-amd64 --stack /srv/bento/prod upgrade plan
+```
+
+```text
+bento 0.5.0 upgrade plan for stack prod (/srv/bento/prod)
+Nothing was changed: this ran on a copy of the state and a read-only Docker connection.
+
+SCHEMA    1 → 2           migration ran on a copy: ok; the first start copies the state to state-backups/ …
+DOCKER    ok              Engine 29.8.1, API 1.56 (needs 1.44+)
+IMAGES    build php-8.4   for blog, shop
+APPS      replace blog    runtime image inputs changed; replaced once its image is built
+          replace shop    runtime image inputs changed; replaced once its image is built
+          reload docs     generated config changed
+SERVICES  note mysql      a newer patch image of mysql:8.4 applies on its next restart
+EDGE      recreate edge   image or container changed; refuses connections for about a second
+```
+
+| Row | Meaning |
+| --- | --- |
+| `SCHEMA` | The state migration, already tried on a copy. After it, the previous binary can no longer open the state. |
+| `IMAGES` | Runtime images built after the restart, while apps keep serving on their current ones. |
+| `APPS` | `replace`: a few seconds of `502`, one app at a time. `reload`: config applied in place, no downtime. `start` / `stop`: the app is not in its desired state, upgrade or not. |
+| `SERVICES` | `note`: nothing happens until you restart that database. |
+| `EDGE` | `recreate`: about a second of refused connections. `reload`: no downtime. |
+| `UNKNOWN` | A target that could not be checked. The backend decides it after the restart. |
+
+The plan exits non-zero and installs nothing when the new binary cannot serve the stack: state written by a newer
+Bento, a migration that fails on the copy, or a Docker Engine that is too old. Run it once per stack. Add `--json` for
+machine output. If your unit passes `--utils-listen` to `serve`, pass the same values to `upgrade plan`.
+
+The plan is a forecast: the backend decides again when it starts.
+
+## Install
+
+```bash
 install -m 0755 bento-linux-amd64 /usr/local/bin/bento
 systemctl restart bento@prod
 bento version
 ```
+
+The binary is shared by every stack on the host: restart each `bento@<stack>` service.
 
 Apps, the edge, and databases keep serving during the restart — only management pauses. A running operation is
 drained before the service stops.

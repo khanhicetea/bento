@@ -1584,3 +1584,26 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
 - `TestUtilsEdgeHost` covers detection (prefix, utils addresses only, enabled, edge on) and the base URL order.
 - Not verified: the Utils tab UI in a browser, a publicly trusted certificate, the tunnel and front-proxy origins,
   arm64, the full `make test-integration` suite.
+
+## Upgrade plan (2026-11-12; dev host, live Docker 29.8.1, amd64, Go 1.27, root; uncommitted tree on `ca14d6a`)
+
+- `bento upgrade plan` built from this tree, run against three local stacks:
+  - `/srv/bento-fast`, served by `dist/bento` built at `96c9ad9`: `IMAGES build php-8.4 for lara`, `APPS replace lara
+    (runtime image inputs changed)`. Correct: `ca14d6a` bumps minicrond, a pinned runtime artifact.
+  - `/srv/bento-dev`, no backend running: build php-8.4, start two apps, two databases and the edge (all stopped).
+    `find /srv/bento-dev -newer <marker>` was empty after the run, the `bento.db` SHA-256 was unchanged, and no probe
+    container was created.
+  - `/srv/bento-e2e`, on a pre-baseline dev schema that also says version 1: exit 1, `upgrade blocked: this build
+    could not read the stack's state (no such column: remote_access)`.
+- The first run, before the `immutable` fallback in `store.CopyFile`, left an empty `bento.db-wal` and a
+  `bento.db-shm` beside the stopped dev stack's database (a read-only WAL open creates them). They were removed (no
+  process held them); `TestCopyFileSeesLiveWALWithoutWriting` now pins that a copy of a stopped backend's state
+  creates neither, and that a copy taken while a store is open includes commits still in its WAL.
+- Unit tests: `TestReadOnlyRefusesEveryMutation`, `TestPlanOfSteadyStackIsEmpty`,
+  `TestPlanNamesImageBuildBeforeReplace` (the next pass prepares the image the plan named),
+  `TestPlanRepairsMissingAndStopsUnwanted` (each plan runs on a never-started controller over `docker.ReadOnly` and
+  fails if any Docker mutation or operation happened), `TestUpgradePlanBlocksStateThisBuildCannotOpen` (newer schema,
+  foreign file; source bytes and stack root unchanged), `TestPrintUpgradePlan`. `make ci` passed, and so did
+  `make test-integration` (real Docker; integration 29 min, runtime 8 min), which covers the refactored `Pass`.
+- Not verified: a real schema migration (there is none after baseline 1 yet; the migrate-on-copy path is exercised
+  only with the current schema), a plan whose edge, tunnel or dbadmin drifts (no running edge on these stacks), arm64.

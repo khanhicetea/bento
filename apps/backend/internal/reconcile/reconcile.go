@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/khanhicetea/bento/apps/backend/internal/dataservices"
 	"github.com/khanhicetea/bento/apps/backend/internal/domain"
 	"github.com/khanhicetea/bento/apps/backend/internal/operations"
 	"github.com/khanhicetea/bento/apps/backend/internal/runtime"
@@ -533,15 +532,13 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		if busy {
 			continue
 		}
-		ins, err := r.C.Engine.Inspect(ctx, r.C.Names.ServiceContainer(s.Name))
+		// A stale settings fingerprint means a configure did not finish;
+		// ensure replaces the container on its volume.
+		action, _, err := decideService(ctx, r.C, s)
 		if err != nil {
 			return err
 		}
-		// A stale settings fingerprint means a configure did not finish;
-		// ensure replaces the container on its volume.
-		stale := ins != nil && ins.Config != nil &&
-			ins.Config.Labels[runtime.LabelServiceSettings] != dataservices.SettingsFingerprint(s.DataService)
-		if ins == nil || ins.State == nil || !ins.State.Running || stale {
+		if action != "" {
 			r.submit(ctx, t, operations.KindServiceEnsure, "service", s.Name)
 		}
 	}
@@ -584,39 +581,24 @@ func (r *Reconciler) Pass(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		var need bool
-		switch app.DesiredRuntime {
-		case domain.DesiredStopped:
-			need = obs.Exists && obs.Running
-		case domain.DesiredRunning:
-			if !obs.Exists || !obs.Running {
-				need = true
-				break
-			}
-			drift, err := r.C.RunningAppDrift(ctx, app, obs.Generation)
-			if err != nil {
-				// Unhealthy readiness alone never triggers recreation: only a
-				// missing image, a changed fingerprint or config drift does.
-				t.LastError = err.Error()
-				continue
-			}
-			if drift == operations.DriftImageMissing {
-				// The instance keeps serving on its current image while the
-				// planned one builds; it is replaced only once the build has
-				// succeeded.
-				missing[key] = true
-				if err := r.prepareImage(ctx, key); err != nil {
-					return err
-				}
-				continue
-			}
-			if drift == operations.DriftReplace {
-				// A serving instance is replaced only as part of the rollout.
-				ro.candidates = append(ro.candidates, rolloutCandidate{app: app, t: t, key: key})
-				continue
-			}
+		action, _, err := decideApp(ctx, r.C, app, obs)
+		if err != nil {
+			t.LastError = err.Error()
+			continue
 		}
-		if need {
+		switch action {
+		case ActionBuild:
+			// The instance keeps serving on its current image while the
+			// planned one builds; it is replaced only once the build has
+			// succeeded.
+			missing[key] = true
+			if err := r.prepareImage(ctx, key); err != nil {
+				return err
+			}
+		case ActionReplace, ActionReload:
+			// A serving instance is changed only as part of the rollout.
+			ro.candidates = append(ro.candidates, rolloutCandidate{app: app, t: t, key: key})
+		case ActionStart, ActionStop:
 			// A stopped or missing instance serves nothing: repair it now,
 			// in parallel with other apps.
 			r.submit(ctx, t, operations.KindAppReconcile, "app", app.ID)

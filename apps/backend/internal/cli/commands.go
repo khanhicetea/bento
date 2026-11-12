@@ -43,6 +43,9 @@ Backend:
   init --name NAME [--mysql 8.4] [--postgres 17] [--uid-first N --uid-last N] [--password-stdin]
   import --from DIR [--name NEWNAME] [--uid-first N --uid-last N]
                                                       stage an export into an empty root
+  upgrade plan [--utils-listen ADDR]... [--json]      run with the NEW binary before installing it: migrates a copy of
+                                                      the state and lists what it would build, replace and reload
+                                                      (read-only; the running backend keeps serving)
   version
 
 Client (requires the running backend):
@@ -323,6 +326,8 @@ func (r *runner) run(args []string) error {
 			"imported. All apps are stopped and unpublished; edge, tunnel, and backup schedules are disabled until you enable them.",
 		)
 		return nil
+	case "upgrade":
+		return r.upgrade(ctx, args[1:])
 	case "status":
 		if err := r.listFlags(flag.NewFlagSet("status", flag.ContinueOnError), args[1:]); err != nil {
 			return err

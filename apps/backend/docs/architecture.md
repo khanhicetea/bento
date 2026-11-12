@@ -244,6 +244,19 @@ debounces triggers for 2 s, and also runs a full `Pass` every 60 s. A pass:
   (`TunnelDrift`);
 - removes exited tool containers owned by the stack.
 
+The per-target verdicts live in `reconcile/plan.go` (`decideApp`, `decideService`) and are shared with `PlanPass`,
+which decides every target the way a pass would but submits nothing and keeps no retry budgets. `bento upgrade plan`
+(`cli/upgrade.go`) runs it with the binary about to be installed: `store.CopyFile` takes a consistent copy of
+`bento.db` without writing the stack root (read-only through the live WAL while a backend serves; `immutable` when no
+`-wal` exists, so no `-wal`/`-shm` files are left behind), `store.Open` migrates the copy in a temporary directory,
+and a controller that is never started runs over the copy, the real layout (read-only) and `docker.ReadOnly`, an
+`Engine` wrapper whose mutating methods return `ErrReadOnly` (it spells out every method, so a new `Engine` method
+does not compile until it is classified). A probe container is a mutation too, so an app whose image identity is not
+in the stack's cache is reported as a problem rather than probed. Errors reading the migrated copy block the
+upgrade: the new binary would fail the same way serving it. App drift distinguishes `DriftReplace` (fingerprint:
+recreated) from `DriftReload` (generated config only: scoped reloads); the pass treats both as rollout candidates.
+`EdgeDrift` likewise says recreate (fingerprint, ports) or reload (routes, templates, ACME state).
+
 Each target has a retry budget: failures back off from 30 s doubling to 30 min; after 5 failures the target is
 **blocked** until its config generation changes or an operator lifecycle action calls `ResetBudget`. Status is exposed
 in app DTOs (`reconcile`, and `observed.state = blocked`).

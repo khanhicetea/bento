@@ -33,7 +33,7 @@ sudo /tmp/bento --stack /tmp/s1 init --name s1 && sudo /tmp/bento --stack /tmp/s
 | Change container shape | `internal/runtime/spec.go` (bump `specVersion`) |
 | Change generated app config | `templates/config/*.tmpl` + `internal/runtime/materialize.go` |
 | Change the runtime image | `templates/images/**` (the inputs hash changes; apps get a new build and roll out automatically) |
-| Add a Docker capability | `docker.Engine` + `SDK` + `Fake` together |
+| Add a Docker capability | `docker.Engine` + `SDK` + `Fake` + `ReadOnly` together (`ReadOnly` refuses anything that changes Docker state) |
 | Change persistence | `internal/store`: bump `SchemaVersion`, add `migrations[old]` (refuse rows it cannot map), extend `schema` for new stacks, and test that a file at the old version opens with its data migrated |
 
 ## Recipe: add an API endpoint that mutates something

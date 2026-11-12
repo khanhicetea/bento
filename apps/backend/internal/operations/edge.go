@@ -548,37 +548,61 @@ type ACMEHostStatus struct {
 // EdgeConfigDrift reports whether the live edge generation differs from what
 // current desired state and the embedded templates render.
 func (c *Controller) EdgeConfigDrift(ctx context.Context) (bool, error) {
+	d, err := c.EdgeDrift(ctx)
+	return d != EdgeDriftNone, err
+}
+
+// EdgeDriftKind says what applying the edge would do to a running edge.
+type EdgeDriftKind int
+
+const (
+	EdgeDriftNone EdgeDriftKind = iota
+	// EdgeDriftRecreate: the image pin, ports or container shape changed;
+	// the edge container is recreated.
+	EdgeDriftRecreate
+	// EdgeDriftReload: rendered routes or templates differ from the live
+	// generation, it was never loaded, or ACME state is due; the running
+	// edge reloads.
+	EdgeDriftReload
+)
+
+// EdgeDrift is EdgeConfigDrift with what kind of change applying would make.
+// It never writes.
+func (c *Controller) EdgeDrift(ctx context.Context) (EdgeDriftKind, error) {
 	s, err := c.EdgeSettings(ctx)
 	if err != nil || !s.Enabled {
-		return false, err
+		return EdgeDriftNone, err
 	}
 	ns, err := c.NetworkPlan(ctx)
 	if err != nil {
-		return false, err
+		return EdgeDriftNone, err
 	}
 	// A new image pin (a Bento upgrade) or container shape changes the
 	// fingerprint without changing any route: the edge must be recreated.
 	ins, err := c.Engine.Inspect(ctx, c.Names.EdgeContainer())
 	if err != nil {
-		return false, err
+		return EdgeDriftNone, err
 	}
 	if ins != nil && ins.Config != nil &&
 		(ins.Config.Labels[runtime.LabelGeneration] != edgeFingerprint(s, ns) || edgePortsMissing(ins)) {
-		return true, nil
+		return EdgeDriftRecreate, nil
 	}
 	// A warming app renders as unavailable until its operation sees it
 	// ready and refreshes the edge itself; that is not drift.
 	if c.anyWarming() {
-		return false, nil
+		return EdgeDriftNone, nil
 	}
 	files, plan, err := c.renderEdge(ctx, s, ns, nil, false)
 	if err != nil {
-		return false, err
+		return EdgeDriftNone, err
 	}
 	// Live on disk but never loaded (a reload that was lost) is drift too,
 	// and so is ACME state to record (a window opened or closed).
 	gens := c.edgeGenerations()
-	return !gens.Same(files) || !gens.Loaded(files) || plan.changed(), nil
+	if !gens.Same(files) || !gens.Loaded(files) || plan.changed() {
+		return EdgeDriftReload, nil
+	}
+	return EdgeDriftNone, nil
 }
 
 // markEdgeLoaded records that the running edge serves files. A failed record

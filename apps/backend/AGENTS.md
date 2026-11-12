@@ -45,7 +45,7 @@ A skipped test is not a pass. Say which tests ran as root and whether Docker tes
 | MySQL/PostgreSQL | `internal/dataservices` |
 | Remote access over Tailcat (child, supervision, stream proxy, keys) | `internal/remoteaccess` + `internal/operations/remote.go` |
 | Persistence | `internal/store` |
-| New Docker capability | `internal/docker`: `Engine` interface + `SDK` + `Fake`, all three together |
+| New Docker capability | `internal/docker`: `Engine` interface + `SDK` + `Fake` + `ReadOnly` (pass through only if it never changes Docker state), all together |
 
 ## Non-negotiable rules
 

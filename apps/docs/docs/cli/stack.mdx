@@ -1,10 +1,10 @@
 ---
 title: Stack
-description: init, serve, import, export, and password commands.
+description: init, serve, import, export, upgrade plan, and password commands.
 ---
 
-These commands work on the stack folder directly and take the stack lock (except `export`, `status`, and
-`auth`).
+These commands work on the stack folder directly and take the stack lock (except `export`, `upgrade plan`,
+`status`, and `auth`).
 
 ## init
 
@@ -37,6 +37,17 @@ bento --stack ROOT import --from DIR [--name NAME] [--uid-first N --uid-last N]
 ```
 
 See [Stacks, export, and migration](/system/stacks).
+
+## upgrade plan
+
+```text
+./bento-NEW --stack ROOT upgrade plan [--utils-listen IP:PORT|apps:PORT|off]... [--json]
+```
+
+Run with the binary you are about to install, as root. Migrates a copy of the state in a temporary folder and lists
+what that version would build, replace, reload and recreate once it serves the stack. Read-only, takes no lock, and
+the running backend keeps serving. Exits non-zero when that binary cannot serve the stack. See
+[Upgrade Bento](/system/upgrade#preview-the-upgrade).
 
 ## Misc
 

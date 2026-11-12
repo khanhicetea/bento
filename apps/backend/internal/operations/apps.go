@@ -1491,8 +1491,12 @@ const (
 	// DriftImageMissing: the planned image is not built. Build it first
 	// (image.prepare); the instance keeps serving on its current image.
 	DriftImageMissing
-	// DriftReplace: the planned fingerprint or the generated config changed.
+	// DriftReplace: the planned fingerprint changed (image, container shape
+	// or boot-static configuration); the instance is recreated.
 	DriftReplace
+	// DriftReload: only the generated config changed (a template change);
+	// reconciling applies it with validated scoped reloads, no recreation.
+	DriftReload
 )
 
 // RunningAppDrift reports what a running app whose container carries
@@ -1521,7 +1525,7 @@ func (c *Controller) RunningAppDrift(ctx context.Context, app domain.App, observ
 	if err != nil || !drift {
 		return DriftNone, err
 	}
-	return DriftReplace, nil
+	return DriftReload, nil
 }
 
 // Observe exposes observed state to status readers.

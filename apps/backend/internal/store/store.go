@@ -343,6 +343,41 @@ func (s *Store) SnapshotTo(ctx context.Context, dest string) error {
 	return err
 }
 
+// CopyFile writes a consistent copy of the database at src to dest, a new
+// 0600 file, without writing to src or its directory. While a backend serves
+// src (its -wal file exists) it reads through a read-only connection that sees
+// committed WAL frames, which Inspect's immutable open can miss. Without a
+// -wal file everything is in the main file, and an immutable open reads it
+// without creating the -wal and -shm files a read-only WAL open would leave
+// behind. It returns the copy's application id and schema version without
+// judging them, so a caller can describe a database this build would refuse.
+func CopyFile(ctx context.Context, src, dest string) (appID, version int64, err error) {
+	if _, err := os.Stat(src); err != nil {
+		return 0, 0, err
+	}
+	query := "mode=ro&immutable=1"
+	if _, err := os.Stat(src + "-wal"); err == nil {
+		query = "mode=ro&_pragma=busy_timeout(5000)"
+	}
+	u := url.URL{Scheme: "file", Path: src, RawQuery: query}
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return 0, 0, err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 0, 0, err
+	}
+	f.Close()
+	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", dest); err != nil {
+		os.Remove(dest)
+		return 0, 0, fmt.Errorf("%w: copy %s: %v", ErrUnsupportedState, src, err)
+	}
+	return Inspect(dest)
+}
+
 const schema = `
 CREATE TABLE meta (
   key   TEXT PRIMARY KEY,
