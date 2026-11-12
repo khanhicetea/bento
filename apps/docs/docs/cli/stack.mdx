@@ -1,6 +1,6 @@
 ---
 title: Stack
-description: init, serve, import, export, upgrade plan, and password commands.
+description: init, serve, import, export, upgrade, and password commands.
 ---
 
 These commands work on the stack folder directly and take the stack lock (except `export`, `upgrade plan`,
@@ -37,6 +37,18 @@ bento --stack ROOT import --from DIR [--name NAME] [--uid-first N --uid-last N]
 ```
 
 See [Stacks, export, and migration](/system/stacks).
+
+## upgrade
+
+```text
+bento upgrade check [--json]
+bento upgrade [--version TAG] [--yes] [--allow-downgrade]
+```
+
+`check` compares this binary with the latest GitHub release. `upgrade` (as root) downloads a release, checks its
+SHA-256 against the release's `SHA256SUMS`, previews every running `bento@<stack>` service with the new binary's
+`upgrade plan`, asks you to type `upgrade`, then replaces this binary (keeping `bento.prev`) and restarts those
+services. `BENTO_REPO=owner/repo` installs from a fork. See [Upgrade Bento](/system/upgrade).
 
 ## upgrade plan
 

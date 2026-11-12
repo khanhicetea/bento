@@ -257,6 +257,16 @@ upgrade: the new binary would fail the same way serving it. App drift distinguis
 recreated) from `DriftReload` (generated config only: scoped reloads); the pass treats both as rollout candidates.
 `EdgeDrift` likewise says recreate (fingerprint, ports) or reload (routes, templates, ACME state).
 
+`bento upgrade` (`cli/selfupgrade.go`, `release`) is a root host command like `scripts/bootstrap.sh`, never a backend
+operation: the backend does not replace itself. It resolves the tag from the `/releases/latest` redirect (no API
+token or rate limit), downloads the asset into a temporary directory beside the binary and accepts it only when its
+SHA-256 matches the release's `SHA256SUMS` (an integrity check; releases are not signed), and checks that the binary
+reports the tag's version. It finds running `bento@` units with `systemctl`, and reads each one's binary, stack root
+and `--utils-listen` from `/proc/<MainPID>`; only units running the binary being replaced are previewed and
+restarted. Every such stack must pass the new binary's `upgrade plan` before anything is installed. The install keeps
+the old binary as `<bin>.prev` and renames the new one into place; the unit file is fetched from the tag and written
+only when it differs. A restart counts as done when the backend's `GET /api/v1/system` reports the new version.
+
 Each target has a retry budget: failures back off from 30 s doubling to 30 min; after 5 failures the target is
 **blocked** until its config generation changes or an operator lifecycle action calls `ResetBudget`. Status is exposed
 in app DTOs (`reconcile`, and `observed.state = blocked`).

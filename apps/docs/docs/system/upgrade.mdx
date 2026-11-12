@@ -3,11 +3,35 @@ title: Upgrade Bento
 description: Preview what a new version changes, then replace the binary and restart the service — your apps keep running.
 ---
 
+## Upgrade with one command
+
+```bash
+sudo bento upgrade check     # installed vs latest release
+sudo bento upgrade           # or: --version 0.6.0
+```
+
+`bento upgrade`:
+
+1. Downloads the release binary for this CPU and checks its SHA-256 against the release's `SHA256SUMS`.
+2. Runs the new binary's `upgrade plan` (below) for every running `bento@<stack>` service, and stops if any stack is
+   blocked. Nothing is installed until then.
+3. Asks you to type `upgrade`. `--yes` skips the question, not the preview.
+4. Replaces the binary, keeping the old one as `bento.prev`, updates `bento@.service` if the release changed it, and
+   restarts each service, waiting until it answers with the new version.
+
+It refuses an older release unless you pass `--allow-downgrade`. Releases from before `upgrade plan` existed install
+without a preview.
+
+<Callout type="note">
+The checksum proves the download is the file GitHub published for that tag, not who built it: the same trust as the
+install script. Releases are not signed.
+</Callout>
+
 ## Preview the upgrade
 
-Run the **new** binary's plan before installing it. It changes nothing: it migrates a copy of the state in a temporary
-folder, reads Docker without changing anything, and lists what the new version would do once it serves the stack.
-The running backend keeps serving.
+`bento upgrade` runs this for you. To preview by hand, run the **new** binary's plan before installing it. It
+changes nothing: it migrates a copy of the state in a temporary folder, reads Docker without changing anything, and
+lists what the new version would do once it serves the stack. The running backend keeps serving.
 
 ```bash
 sudo -i
@@ -44,7 +68,7 @@ machine output. If your unit passes `--utils-listen` to `serve`, pass the same v
 
 The plan is a forecast: the backend decides again when it starts.
 
-## Install
+## Install by hand
 
 ```bash
 install -m 0755 bento-linux-amd64 /usr/local/bin/bento

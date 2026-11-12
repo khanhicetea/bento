@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/khanhicetea/bento/apps/backend/internal/docker"
@@ -203,11 +204,24 @@ func printUpgradePlan(w io.Writer, p UpgradePlan) {
 	fmt.Fprintln(w, "This is a forecast: the backend decides again when it starts.")
 }
 
+// upgrade dispatches `upgrade plan`, `upgrade check` and `upgrade [flags]`.
 func (r *runner) upgrade(ctx context.Context, args []string) error {
-	if len(args) == 0 || args[0] != "plan" {
-		return errors.New("usage: bento upgrade plan [--utils-listen ADDR|apps:PORT|off]... [--json]")
+	if len(args) > 0 {
+		switch args[0] {
+		case "plan":
+			return r.upgradePlan(ctx, args[1:])
+		case "check":
+			return r.upgradeCheck(ctx, args[1:])
+		}
+		if !strings.HasPrefix(args[0], "-") {
+			return fmt.Errorf("upgrade: unknown subcommand %q (plan, check, or flags of upgrade itself)", args[0])
+		}
 	}
-	fs, rest := sub("upgrade plan", args[1:])
+	return r.selfUpgrade(ctx, args)
+}
+
+func (r *runner) upgradePlan(ctx context.Context, args []string) error {
+	fs, rest := sub("upgrade plan", args)
 	var utils multiFlag
 	fs.Var(&utils, "utils-listen", "the backend's --utils-listen values, if its unit sets them (repeatable)")
 	asJSON := fs.Bool("json", r.json, "machine-readable output")

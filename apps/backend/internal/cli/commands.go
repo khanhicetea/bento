@@ -43,6 +43,11 @@ Backend:
   init --name NAME [--mysql 8.4] [--postgres 17] [--uid-first N --uid-last N] [--password-stdin]
   import --from DIR [--name NEWNAME] [--uid-first N --uid-last N]
                                                       stage an export into an empty root
+  upgrade check                                       compare this binary with the latest GitHub release
+  upgrade [--version TAG] [--yes] [--allow-downgrade]
+                                                      download a release (SHA-256 checked against its SHA256SUMS),
+                                                      preview every running bento@ stack with it, then replace this
+                                                      binary (keeping .prev) and restart those services; prompts for "upgrade"
   upgrade plan [--utils-listen ADDR]... [--json]      run with the NEW binary before installing it: migrates a copy of
                                                       the state and lists what it would build, replace and reload
                                                       (read-only; the running backend keeps serving)

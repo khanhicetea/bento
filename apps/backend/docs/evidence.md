@@ -1607,3 +1607,22 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   `make test-integration` (real Docker; integration 29 min, runtime 8 min), which covers the refactored `Pass`.
 - Not verified: a real schema migration (there is none after baseline 1 yet; the migrate-on-copy path is exercised
   only with the current schema), a plan whose edge, tunnel or dbadmin drifts (no running edge on these stacks), arm64.
+
+## Self-upgrade from GitHub releases (2026-11-12; dev host, live Docker 29.8.1, amd64, root; branch `self-upgrade`)
+
+- `bento upgrade check` against `khanhicetea/bento`: latest release `0.4.1`, read from the `/releases/latest`
+  redirect; `--json` too.
+- A scratch binary built as `0.4.0+test` ran `bento upgrade --version 0.4.1`: the real `bento-linux-amd64` matched the
+  release's `SHA256SUMS`, the binary reported `0.4.1+fc2b525`, it replaced the scratch binary with the old one kept as
+  `.prev`, and the temporary directory was removed. A wrong confirmation installed nothing. A download that failed
+  (the dev host's `/tmp` tmpfs filled up) left no temporary directory behind.
+- With a disposable stack served by a transient `bento@uptest` unit (`systemd-run`, `--utils-listen 127.0.0.1:17786`):
+  the unit, its stack root and its utils listener were found from `/proc`; 0.4.1 predates `upgrade plan`, so the
+  preview said so; after `upgrade` the unit restarted and `bento status` reported `backend 0.4.1+fc2b525`. The unit,
+  root and its (empty) labelled Docker resources were removed afterwards.
+- Unit tests: `internal/release` (latest redirect, checksum match, mismatch, missing and malformed lines leave no
+  file, refused tags, version order) and `internal/cli` (`parseUnitList`, `inspectProcess`, `installBinary`,
+  `isNewer`).
+- Not verified: a preview by a release that has `upgrade plan` (none is published yet), a blocked preview stopping
+  the install through this path (the plan's blocking is covered by its own tests), the unit file update (this host
+  has no `/etc/systemd/system/bento@.service`), a restart that fails, several stacks at once, arm64.
