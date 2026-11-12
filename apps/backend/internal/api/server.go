@@ -383,6 +383,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		modes = append(modes, dto.PHPMode{
 			Name: name, WorkerMultiplier: m.WorkerMultiplier, WebMemoryLimitMB: m.WebMemoryLimitMB,
 			CLIMemoryLimitMB: m.CLIMemoryLimitMB, MaxExecutionSeconds: m.MaxExecutionSeconds, MaxInputVars: m.MaxInputVars,
+			OpcacheMemoryMB: m.OpcacheMemoryMB, OpcacheMaxFiles: m.OpcacheMaxFiles, RealpathCacheKB: m.RealpathCacheKB,
 		})
 	}
 	writeJSON(w, http.StatusOK, dto.Catalog{

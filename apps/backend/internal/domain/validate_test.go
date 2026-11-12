@@ -45,7 +45,9 @@ func TestRuntimeUnionVariantConstraints(t *testing.T) {
 		{"php docroot escape", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", DocumentRoot: "../x"}}, false},
 		{"php high-concurrency", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", Mode: PHPModeHighConcurrency}}, true},
 		{"php old pool name", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", Mode: "small"}}, false},
-		{"php overrides", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxWorkers: 20, WebMemoryLimitMB: 256, CLIMemoryLimitMB: 1024, MaxExecutionSeconds: 280, MaxInputVars: 5000}}, true},
+		{"php overrides", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxWorkers: 20, WebMemoryLimitMB: 256, CLIMemoryLimitMB: 1024, MaxExecutionSeconds: 280, MaxInputVars: 5000, OpcacheMemoryMB: 256, OpcacheMaxFiles: 100000, RealpathCacheKB: 16384}}, true},
+		{"php opcache memory too small", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", OpcacheMemoryMB: 16}}, false},
+		{"php realpath cache too small", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", RealpathCacheKB: 8}}, false},
 		{"php too many workers", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxWorkers: PHPMaxWorkers + 1}}, false},
 		{"php execution past edge timeout", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", MaxExecutionSeconds: 300}}, false},
 		{"php tiny memory limit", Runtime{Kind: RuntimePHP, PHP: &PHPRuntime{Version: "8.4", WebMemoryLimitMB: 8}}, false},
@@ -183,6 +185,10 @@ func TestResolvePHP(t *testing.T) {
 	over, _ := ResolvePHP(PHPRuntime{Mode: PHPModeStandard, MaxWorkers: 3, WebMemoryLimitMB: 512, MaxExecutionSeconds: 200}, res)
 	if over.Workers != 3 || over.WebMemoryLimitMB != 512 || over.MaxExecutionSeconds != 200 || over.MaxInputVars != 1000 {
 		t.Fatalf("overrides: %+v", over)
+	}
+	caches, _ := ResolvePHP(PHPRuntime{Mode: PHPModeStandard, OpcacheMemoryMB: 256, RealpathCacheKB: 16384}, res)
+	if caches.OpcacheMemoryMB != 256 || caches.OpcacheMaxFiles != 20000 || caches.RealpathCacheKB != 16384 {
+		t.Fatalf("cache overrides: %+v", caches)
 	}
 	if _, err := ResolvePHP(PHPRuntime{Mode: ""}, res); err == nil {
 		t.Fatal("an unset mode must be refused, not defaulted, at render time")

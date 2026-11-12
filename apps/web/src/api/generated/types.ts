@@ -101,6 +101,13 @@ export interface PHPRuntime {
   cliMemoryLimitMb?: number /* int */;
   maxExecutionSeconds?: number /* int */;
   maxInputVars?: number /* int */;
+  /**
+   * OPcache and realpath cache are read when FPM starts (PHP_INI_SYSTEM),
+   * so they go in the app ini and a change restarts FPM.
+   */
+  opcacheMemoryMb?: number /* int */;
+  opcacheMaxFiles?: number /* int */;
+  realpathCacheKb?: number /* int */;
   readyPath?: string;
   releaseSymlink?: string;
   /**
@@ -925,6 +932,9 @@ export interface PHPMode {
   cliMemoryLimitMb: number /* int */;
   maxExecutionSeconds: number /* int */;
   maxInputVars: number /* int */;
+  opcacheMemoryMb: number /* int */;
+  opcacheMaxFiles: number /* int */;
+  realpathCacheKb: number /* int */;
 }
 /**
  * PHPSizing is the automatic worker formula:

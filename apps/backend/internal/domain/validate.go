@@ -245,6 +245,10 @@ func ValidateRuntime(r *Runtime, errs *ValidationErrors) {
 		// Must end before the edge proxy_read_timeout (300s).
 		optionalRange(errs, "runtime.php.maxExecutionSeconds", p.MaxExecutionSeconds, 1, 280)
 		optionalRange(errs, "runtime.php.maxInputVars", p.MaxInputVars, 100, 100000)
+		// OPcache shared memory counts against the app memory limit.
+		optionalRange(errs, "runtime.php.opcacheMemoryMb", p.OpcacheMemoryMB, 32, 2048)
+		optionalRange(errs, "runtime.php.opcacheMaxFiles", p.OpcacheMaxFiles, 1000, 1000000)
+		optionalRange(errs, "runtime.php.realpathCacheKb", p.RealpathCacheKB, 64, 262144)
 		if p.ReadyPath != "" && !readyPathRegexp.MatchString(p.ReadyPath) {
 			errs.Add("runtime.php.readyPath", "must be an absolute URL path")
 		}

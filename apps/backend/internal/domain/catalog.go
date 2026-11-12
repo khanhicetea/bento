@@ -210,11 +210,20 @@ type PHPMode struct {
 	CLIMemoryLimitMB    int
 	MaxExecutionSeconds int
 	MaxInputVars        int
+	OpcacheMemoryMB     int
+	OpcacheMaxFiles     int
+	RealpathCacheKB     int
 }
 
 var PHPModes = map[string]PHPMode{
-	PHPModeStandard:        {WorkerMultiplier: 1, WebMemoryLimitMB: 128, CLIMemoryLimitMB: 256, MaxExecutionSeconds: 60, MaxInputVars: 1000},
-	PHPModeHighConcurrency: {WorkerMultiplier: 3, WebMemoryLimitMB: 48, CLIMemoryLimitMB: 256, MaxExecutionSeconds: 30, MaxInputVars: 1000},
+	PHPModeStandard: {
+		WorkerMultiplier: 1, WebMemoryLimitMB: 128, CLIMemoryLimitMB: 256, MaxExecutionSeconds: 60, MaxInputVars: 1000,
+		OpcacheMemoryMB: 128, OpcacheMaxFiles: 20000, RealpathCacheKB: 4096,
+	},
+	PHPModeHighConcurrency: {
+		WorkerMultiplier: 3, WebMemoryLimitMB: 48, CLIMemoryLimitMB: 256, MaxExecutionSeconds: 30, MaxInputVars: 1000,
+		OpcacheMemoryMB: 128, OpcacheMaxFiles: 20000, RealpathCacheKB: 4096,
+	},
 }
 
 // Auto worker sizing: FPM gets PHPWebSharePercent of the app memory limit at
@@ -236,6 +245,9 @@ type PHPSettings struct {
 	CLIMemoryLimitMB    int
 	MaxExecutionSeconds int
 	MaxInputVars        int
+	OpcacheMemoryMB     int
+	OpcacheMaxFiles     int
+	RealpathCacheKB     int
 }
 
 // AutoPHPWorkers is the worker count a mode gets for a memory and PID limit.
@@ -266,6 +278,9 @@ func ResolvePHP(p PHPRuntime, res Resources) (PHPSettings, error) {
 		CLIMemoryLimitMB:    pick(p.CLIMemoryLimitMB, mode.CLIMemoryLimitMB),
 		MaxExecutionSeconds: pick(p.MaxExecutionSeconds, mode.MaxExecutionSeconds),
 		MaxInputVars:        pick(p.MaxInputVars, mode.MaxInputVars),
+		OpcacheMemoryMB:     pick(p.OpcacheMemoryMB, mode.OpcacheMemoryMB),
+		OpcacheMaxFiles:     pick(p.OpcacheMaxFiles, mode.OpcacheMaxFiles),
+		RealpathCacheKB:     pick(p.RealpathCacheKB, mode.RealpathCacheKB),
 	}, nil
 }
 

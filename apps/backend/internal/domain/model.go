@@ -188,7 +188,12 @@ type PHPRuntime struct {
 	CLIMemoryLimitMB    int    `json:"cliMemoryLimitMb,omitempty"`
 	MaxExecutionSeconds int    `json:"maxExecutionSeconds,omitempty"`
 	MaxInputVars        int    `json:"maxInputVars,omitempty"`
-	ReadyPath           string `json:"readyPath,omitempty"`
+	// OPcache and realpath cache are read when FPM starts (PHP_INI_SYSTEM),
+	// so they go in the app ini and a change restarts FPM.
+	OpcacheMemoryMB int    `json:"opcacheMemoryMb,omitempty"`
+	OpcacheMaxFiles int    `json:"opcacheMaxFiles,omitempty"`
+	RealpathCacheKB int    `json:"realpathCacheKb,omitempty"`
+	ReadyPath       string `json:"readyPath,omitempty"`
 	// ReleaseSymlink optionally names a symlink below the code directory (for
 	// example "current") that the document root may traverse deliberately.
 	ReleaseSymlink string `json:"releaseSymlink,omitempty"`

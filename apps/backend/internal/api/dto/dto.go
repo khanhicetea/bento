@@ -136,8 +136,13 @@ type PHPRuntime struct {
 	CLIMemoryLimitMB    int    `json:"cliMemoryLimitMb,omitempty"`
 	MaxExecutionSeconds int    `json:"maxExecutionSeconds,omitempty"`
 	MaxInputVars        int    `json:"maxInputVars,omitempty"`
-	ReadyPath           string `json:"readyPath,omitempty"`
-	ReleaseSymlink      string `json:"releaseSymlink,omitempty"`
+	// OPcache and realpath cache are read when FPM starts (PHP_INI_SYSTEM),
+	// so they go in the app ini and a change restarts FPM.
+	OpcacheMemoryMB int    `json:"opcacheMemoryMb,omitempty"`
+	OpcacheMaxFiles int    `json:"opcacheMaxFiles,omitempty"`
+	RealpathCacheKB int    `json:"realpathCacheKb,omitempty"`
+	ReadyPath       string `json:"readyPath,omitempty"`
+	ReleaseSymlink  string `json:"releaseSymlink,omitempty"`
 	// StrictFileAccess sets open_basedir: PHP opens files only in the app
 	// home, /tmp and SQLite directories. Off by default (it disables PHP's
 	// realpath cache, so pages cost noticeably more CPU).
@@ -909,6 +914,9 @@ type PHPMode struct {
 	CLIMemoryLimitMB    int    `json:"cliMemoryLimitMb"`
 	MaxExecutionSeconds int    `json:"maxExecutionSeconds"`
 	MaxInputVars        int    `json:"maxInputVars"`
+	OpcacheMemoryMB     int    `json:"opcacheMemoryMb"`
+	OpcacheMaxFiles     int    `json:"opcacheMaxFiles"`
+	RealpathCacheKB     int    `json:"realpathCacheKb"`
 }
 
 // PHPSizing is the automatic worker formula:

@@ -10,7 +10,15 @@ const modeText: Record<string, { title: string; detail: string }> = {
   },
 };
 
-type Override = "maxWorkers" | "webMemoryLimitMb" | "cliMemoryLimitMb" | "maxExecutionSeconds" | "maxInputVars";
+type Override =
+  | "maxWorkers"
+  | "webMemoryLimitMb"
+  | "cliMemoryLimitMb"
+  | "maxExecutionSeconds"
+  | "maxInputVars"
+  | "opcacheMemoryMb"
+  | "opcacheMaxFiles"
+  | "realpathCacheKb";
 
 // Same bounds as domain.ValidateRuntime; empty means the mode default.
 const bounds: Record<Override, [number, number]> = {
@@ -19,6 +27,9 @@ const bounds: Record<Override, [number, number]> = {
   cliMemoryLimitMb: [16, 8192],
   maxExecutionSeconds: [1, 280],
   maxInputVars: [100, 100000],
+  opcacheMemoryMb: [32, 2048],
+  opcacheMaxFiles: [1000, 1000000],
+  realpathCacheKb: [64, 262144],
 };
 
 export function phpPerformanceValid(php: T.PHPRuntime) {
@@ -111,9 +122,14 @@ export function PHPPerformance({
               onChange={(event) => onChange({ ...php, uploadLimitMb: Number(event.target.value) })}
             />
           </Field>
+          {number("opcacheMemoryMb", "OPcache memory", "MB", mode?.opcacheMemoryMb)}
+          {number("opcacheMaxFiles", "OPcache files", "", mode?.opcacheMaxFiles)}
+          {number("realpathCacheKb", "Realpath cache", "KB", mode?.realpathCacheKb)}
         </div>
         <p className="note mt-2">
-          Empty fields use the mode default. Other PHP settings can go in a <code>.user.ini</code> in the document root.
+          OPcache memory is shared by all workers and counts toward the app memory limit. Changing a cache setting
+          restarts PHP-FPM. Empty fields use the mode default. Other PHP settings can go in a <code>.user.ini</code> in
+          the document root.
         </p>
       </details>
     </div>

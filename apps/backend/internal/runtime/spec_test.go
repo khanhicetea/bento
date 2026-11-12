@@ -241,8 +241,10 @@ func TestRenderedConfig(t *testing.T) {
 			t.Errorf("php-fpm.conf missing %q", want)
 		}
 	}
-	if !strings.Contains(files[PHPIniFile], "memory_limit = 256M\n") {
-		t.Fatalf("CLI ini: %s", files[PHPIniFile])
+	for _, want := range []string{"memory_limit = 256M\n", "opcache.memory_consumption = 128\n", "opcache.max_accelerated_files = 20000\n", "realpath_cache_size = 4096K\n", "opcache.validate_timestamps = 1\n", "opcache.revalidate_freq = 5\n"} {
+		if !strings.Contains(files[PHPIniFile], want) {
+			t.Errorf("app ini missing %q: %s", want, files[PHPIniFile])
+		}
 	}
 	if !strings.Contains(files["fastcgi.conf"], "fastcgi_read_timeout 120s;") {
 		t.Fatal("fastcgi timeout must keep its 120s floor")

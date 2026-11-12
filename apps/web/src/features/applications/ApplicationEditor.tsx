@@ -33,6 +33,9 @@ const phpPerformanceKeys: (keyof T.PHPRuntime)[] = [
   "cliMemoryLimitMb",
   "maxExecutionSeconds",
   "maxInputVars",
+  "opcacheMemoryMb",
+  "opcacheMaxFiles",
+  "realpathCacheKb",
   "uploadLimitMb",
 ];
 

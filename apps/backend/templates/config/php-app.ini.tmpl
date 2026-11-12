@@ -2,3 +2,15 @@
 ; Loaded by every PHP process through PHP_INI_SCAN_DIR: cron jobs, workers and
 ; shells. Web requests use the php_value limits in php-fpm.conf instead.
 memory_limit = {{.PHP.CLIMemoryLimitMB}}M
+
+; Read once when FPM starts (PHP_INI_SYSTEM): a pool-level value would come too
+; late for the OPcache shared memory, which FPM allocates before forking. A
+; change here restarts FPM. OPcache is off on the CLI (opcache.enable_cli=0).
+opcache.memory_consumption = {{.PHP.OpcacheMemoryMB}}
+opcache.max_accelerated_files = {{.PHP.OpcacheMaxFiles}}
+realpath_cache_size = {{.PHP.RealpathCacheKB}}K
+; Fixed, not a setting: a changed PHP file (plugin update in the app's admin,
+; SFTP, a shell edit) is served within 5s without a reload; git deploys reload
+; FPM anyway. Overrides the 2s of the image's zz-opcache.ini.
+opcache.validate_timestamps = 1
+opcache.revalidate_freq = 5
