@@ -27,8 +27,13 @@ The **Argv** form also works with bare names such as `["php", "artisan", "queue:
 ```toml
 [[worker]]
 name = "queue-default"
-command = "php artisan queue:work --sleep=1 --tries=3 --max-time=3600"
+argv = ["php", "artisan", "queue:work", "--sleep=1", "--tries=3", "--max-time=3600"]
 ```
+
+Prefer **Argv** for a worker that is a single program. A **Command** runs under `/bin/sh` (dash in Bento's images),
+which stays alive beside the program for the whole run: one extra process of about 400 KiB per worker. If you need
+shell syntax, start the program with `exec`, e.g. `cd sub && exec php artisan queue:work`. Stops and timeouts reach the
+program either way.
 
 Workers are restarted after every clean exit, so `php artisan queue:restart` in a deploy script is enough to load new
 code. A worker that keeps failing (non-zero exit within 30 seconds, 5 times in a row) is stopped and shown as

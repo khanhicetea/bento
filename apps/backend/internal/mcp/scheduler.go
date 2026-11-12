@@ -208,7 +208,7 @@ func schedulerOperateTools() []Tool {
 // jobSpecProps are the definition fields create and update accept.
 func jobSpecProps() map[string]any {
 	return map[string]any{
-		"command": str("Shell command line, e.g. \"php artisan schedule:run\". Clears argv."),
+		"command": str("Shell command line run by /bin/sh, e.g. \"php artisan schedule:run\". Clears argv. Prefer argv for a worker that is one program; with a shell line, start it with exec so no shell stays alive beside it."),
 		"argv": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1,
 			"maxItems": 128, "description": "Command as argv, without a shell. Clears command."},
 		"schedule":    str("Cron expression for a job, e.g. \"*/5 * * * *\". Workers have none. Empty clears it."),
