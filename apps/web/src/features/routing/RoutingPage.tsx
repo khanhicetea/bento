@@ -580,7 +580,8 @@ function UtilsForm({ settings }: { settings: T.UtilsSettings }) {
       <Cell title="Utils listener" className="cell--muted">
         <p className="note mb-3">
           Route <code>/_bento/webhook/*</code> and <code>/_bento/dbadmin/*</code> on that host to one of these. The edge
-          forwards <code>/_bento/webhook/*</code> automatically for its domains.
+          forwards <code>/_bento/webhook/*</code> automatically for its domains. To serve both on the edge, add an
+          Upstream host pointing at the containers address with path prefix <code>/_bento/</code>.
         </p>
         {settings.targets.length ? (
           <KeyValues
@@ -839,6 +840,14 @@ function HostTile({
             <dd>{host.route.staticCache ? "✓ On" : "— Off"}</dd>
           </div>
         )}
+        {host.route.pathPrefixes?.length ? (
+          <div>
+            <dt>Paths</dt>
+            <dd className="truncate font-mono" title={host.route.pathPrefixes.join(" ")}>
+              {host.route.pathPrefixes.join(" ")}
+            </dd>
+          </div>
+        ) : null}
         {!redirect && host.route.maxBodyMb ? (
           <div>
             <dt>Body limit</dt>

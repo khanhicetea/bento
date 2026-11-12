@@ -169,6 +169,9 @@ type Route struct {
 	// MaxBodyMB limits request bodies through the edge; 0 or absent uses the
 	// PHP app's upload limit, or 64 MB for HTTP apps and upstreams.
 	MaxBodyMB int `json:"maxBodyMb,omitempty"`
+	// PathPrefixes (upstream hosts only) are the only paths forwarded to the
+	// upstream; the edge answers every other path 404. Absent forwards all.
+	PathPrefixes []string `json:"pathPrefixes,omitempty"`
 }
 
 // Binding never carries a password.

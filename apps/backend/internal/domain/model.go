@@ -242,6 +242,10 @@ type Route struct {
 	// MaxBodyMB limits request bodies through the edge; 0 uses the PHP
 	// app's upload limit, or 64 MB for HTTP apps and upstreams.
 	MaxBodyMB int `json:"maxBodyMb,omitempty"`
+	// PathPrefixes limit an upstream host to these path prefixes: only they
+	// reach the upstream and every other path is answered 404 by the edge.
+	// Empty (or "/") forwards every path.
+	PathPrefixes []string `json:"pathPrefixes,omitempty"`
 }
 
 type Engine string

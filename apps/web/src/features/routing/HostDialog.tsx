@@ -27,6 +27,7 @@ type HostForm = {
   kind: T.HostTargetKind;
   app: string;
   upstreams: string;
+  paths: string;
   redirectTo: string;
   route: T.Route;
   enabled: boolean;
@@ -39,6 +40,7 @@ function formOf(host: T.Host | undefined, app: string | undefined): HostForm {
       kind: host.target.kind,
       app: host.target.app ?? "",
       upstreams: (host.target.upstreams ?? []).join(" "),
+      paths: (host.route.pathPrefixes ?? []).join(" "),
       redirectTo: host.target.redirectTo ?? "",
       route: host.route,
       enabled: host.enabled,
@@ -49,6 +51,7 @@ function formOf(host: T.Host | undefined, app: string | undefined): HostForm {
     kind: app ? "app" : "upstream",
     app: app ?? "",
     upstreams: "",
+    paths: "",
     redirectTo: "",
     route: { tls: "none", redirectHttps: false, accessLog: false, staticCache: false },
     enabled: true,
@@ -76,21 +79,25 @@ export function HostDialogBody({
   const route = form.route;
   const set = (next: Partial<HostForm>) => setForm({ ...form, ...next });
   const setRoute = (next: Partial<T.Route>) => set({ route: { ...route, ...next } });
+  const paths = form.kind === "upstream" ? form.paths.split(/\s+/).filter(Boolean) : [];
+  const limited = paths.length > 0 && !paths.includes("/");
   const managedApps = (apps.data?.apps ?? []).filter((candidate) => candidate.ingress === "managed");
   const save = useOperationMutation(() => {
     const target: T.HostTarget = { kind: form.kind };
     if (form.kind === "app") target.app = form.app;
     if (form.kind === "upstream") target.upstreams = form.upstreams.split(/\s+/).filter(Boolean);
     if (form.kind === "redirect") target.redirectTo = form.redirectTo.trim();
+    const routed: T.Route = { ...route, pathPrefixes: paths.length ? paths : undefined };
+    if (limited) routed.staticCache = false;
     const body: T.HostRequest = {
       name: form.name.trim(),
       target,
       route:
         form.kind === "redirect"
-          ? { ...route, redirectHttps: false, staticCache: false }
+          ? { ...routed, redirectHttps: false, staticCache: false }
           : route.tls === "none"
-            ? { ...route, redirectHttps: false }
-            : route,
+            ? { ...routed, redirectHttps: false }
+            : routed,
       enabled: form.enabled,
     };
     return host ? api.hosts.update(host.name, body) : api.hosts.create(body);
@@ -170,6 +177,19 @@ export function HostDialogBody({
           />
         </Field>
       )}
+      {form.kind === "upstream" && (
+        <Field
+          label="Path prefixes"
+          hint="Space-separated. Only these reach the upstream; other paths get 404. Empty = all."
+        >
+          <Input
+            placeholder="/  (all paths)"
+            spellCheck={false}
+            value={form.paths}
+            onChange={(event) => set({ paths: event.target.value })}
+          />
+        </Field>
+      )}
       <div className={route.tls === "external" ? "grid-2" : undefined}>
         <Field label="TLS">
           <NativeSelect
@@ -237,13 +257,16 @@ export function HostDialogBody({
           <label
             className="check"
             title={
-              form.kind === "app"
-                ? "Cache static file responses (css, js, images, fonts) at the edge for 10 minutes. Only enable if those URLs never return per-user content."
-                : "Cache public static files (css, js, images, fonts) at the edge. Responses the upstream marks private, no-store, or that set cookies are never cached."
+              limited
+                ? "Not available with path prefixes: cached files outside them would be served."
+                : form.kind === "app"
+                  ? "Cache static file responses (css, js, images, fonts) at the edge for 10 minutes. Only enable if those URLs never return per-user content."
+                  : "Cache public static files (css, js, images, fonts) at the edge. Responses the upstream marks private, no-store, or that set cookies are never cached."
             }
           >
             <Checkbox
-              checked={route.staticCache ?? false}
+              checked={!limited && (route.staticCache ?? false)}
+              disabled={limited}
               onCheckedChange={(checked) => setRoute({ staticCache: checked === true })}
             />
             Edge static cache

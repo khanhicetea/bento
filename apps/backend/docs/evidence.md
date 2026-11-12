@@ -1554,3 +1554,15 @@ not exercised beyond the audit's MCP calls. Both stacks were wiped afterwards; t
   answering afterwards.
 - Not verified: the integration suite on arm64 (only the live checks above ran there), a webhook-triggered deploy and
   a backup with the new binary.
+
+## Upstream host path prefixes (2026-11-12; dev host, live Docker 29.8.1, amd64, Go 1.27.4, root; uncommitted tree on `cf43d69`)
+
+- `route.pathPrefixes` on an upstream host renders `location ^~ <prefix>` per prefix and `location / { return 404; }`.
+  `TestIntegrationEdgeUpstreamPathPrefixes` (real Docker, real edge image) creates a host with prefixes `/api/` and
+  `/_bento/` and an unresolvable upstream: `/api/x` and `/_bento/dbadmin/t/x` reached the upstream (502), while `/`,
+  `/apix` and `/other/api/` got 404 from the edge. `TestIntegrationEdgeUnresolvableUpstream` still passes.
+- Unit tests: `TestValidateHostPathPrefixes` (normalization, refused characters and dot segments, the webhook
+  reservation, the limit, static cache, app/redirect targets) and `TestRenderUpstreamPathPrefixes`. `make ci` passed
+  except `check-generated`, which only flagged the regenerated, not yet committed `types.ts`.
+- Not verified: the full `make test-integration` suite, arm64, or a live utils host (database browser and webhook
+  through an ACME domain with prefix `/_bento/`).

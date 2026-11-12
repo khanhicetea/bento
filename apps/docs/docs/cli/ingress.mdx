@@ -35,6 +35,7 @@ bento host remove grafana.example.com    # type "delete grafana.example.com"
     { "name": "grafana.example.com", "target": { "kind": "upstream", "upstreams": ["http://10.0.0.5:3000"] },
       "route": { "tls": "acme", "redirectHttps": true, "staticCache": true }, "enabled": true }
     ```
+    Add `"pathPrefixes": ["/api/"]` to `route` to forward only those paths (others get 404).
   </Tab>
   <Tab title="Redirect">
     ```json

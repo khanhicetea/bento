@@ -727,3 +727,42 @@ func TestRenderBuffersTypicalPagesInMemory(t *testing.T) {
 		t.Fatal("main config must size upstream response buffers for ordinary pages")
 	}
 }
+
+func TestRenderUpstreamPathPrefixes(t *testing.T) {
+	limited := upstreamHost("utils.example.com", false, "http://10.200.0.1:7781")
+	limited.Route.PathPrefixes = []string{"/_bento/", "/api"}
+	based := upstreamHost("based.example.com", false, "http://10.0.0.9:8080/base")
+	based.Route.PathPrefixes = []string{"/v1/"}
+	files, err := Render(Input{
+		Settings:      domain.EdgeSettings{HTTPPort: 80, HTTPSPort: 443},
+		Hosts:         []domain.Host{limited, based, upstreamHost("open.example.com", false, "http://10.0.0.9:8080")},
+		UtilsUpstream: "10.200.0.1:7781",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := string(files["sites/host-utils.example.com.conf"])
+	up := "bento_host_" + upstreamIdent("utils.example.com")
+	for _, want := range []string{
+		"location ^~ /_bento/ {", "location ^~ /api {", "proxy_pass http://" + up + ";",
+		"location / {\n    return 404;\n  }",
+		// Webhooks still go to Bento's utils listener, not the upstream.
+		"location ^~ /_bento/webhook/ {",
+	} {
+		if !strings.Contains(site, want) {
+			t.Errorf("limited host lacks %q:\n%s", want, site)
+		}
+	}
+	if strings.Count(site, "proxy_pass http://"+up) != 2 {
+		t.Errorf("only the two prefixes may reach the upstream:\n%s", site)
+	}
+	withPath := string(files["sites/host-based.example.com.conf"])
+	if !strings.Contains(withPath, "location ^~ /v1/ {") ||
+		!strings.Contains(withPath, "rewrite ^/(.*)$ /base$1 break;\n    proxy_pass http://bento_host_"+upstreamIdent("based.example.com")+";") {
+		t.Errorf("an upstream path must map like an unrestricted host's:\n%s", withPath)
+	}
+	open := string(files["sites/host-open.example.com.conf"])
+	if strings.Contains(open, "return 404;") || !strings.Contains(open, "location / {") {
+		t.Errorf("a host without prefixes forwards every path:\n%s", open)
+	}
+}

@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -223,6 +225,62 @@ func TestConfigPathsAreAllowListed(t *testing.T) {
 	for _, good := range []string{"public", "web/public_html", "dist-1.2", "", "./public/"} {
 		if _, err := CleanConfigPath(good); err != nil {
 			t.Errorf("%q refused: %v", good, err)
+		}
+	}
+}
+
+func TestValidateHostPathPrefixes(t *testing.T) {
+	up := func(prefixes ...string) Host {
+		return Host{Name: "x.example.com", Target: HostTargetUpstream, Upstreams: []string{"http://10.0.0.1:7781"},
+			Route: Route{TLS: TLSNone, PathPrefixes: prefixes}}
+	}
+	h := up(" /_bento/ ", "/api", "/api", "/~user/a-b.c")
+	var errs ValidationErrors
+	ValidateHost(&h, &errs)
+	if err := errs.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(h.Route.PathPrefixes, " "); got != "/_bento/ /api /~user/a-b.c" {
+		t.Fatalf("prefixes not trimmed and deduplicated in order: %q", got)
+	}
+	h = up("/api", "/")
+	errs = nil
+	ValidateHost(&h, &errs)
+	if errs.Err() != nil || h.Route.PathPrefixes != nil {
+		t.Fatalf("a list with / forwards everything: %v %v", h.Route.PathPrefixes, errs.Err())
+	}
+	for _, bad := range []string{"", "api", "/a b", "/a;b", "/a{b}", "/a$b", "/a'b", "/a\"b", "/a\\b", "/a%2Fb", "//a",
+		"/a//b", "/a/./b", "/a/..", "/.", "/_bento/webhook/", "/_bento/webhook/deploy/x", strings.Repeat("/a", 101)} {
+		h := up(bad)
+		errs = nil
+		ValidateHost(&h, &errs)
+		if errs.Err() == nil {
+			t.Errorf("%q should be refused", bad)
+		}
+	}
+	many := make([]string, MaxPathPrefixes+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("/p%d", i)
+	}
+	h = up(many...)
+	errs = nil
+	if ValidateHost(&h, &errs); errs.Err() == nil {
+		t.Error("more than MaxPathPrefixes must be refused")
+	}
+	h = up("/api")
+	h.Route.StaticCache = true
+	errs = nil
+	if ValidateHost(&h, &errs); errs.Err() == nil {
+		t.Error("path prefixes with the static cache must be refused")
+	}
+	for _, other := range []Host{
+		{Name: "a.example.com", Target: HostTargetApp, AppID: "x", Route: Route{TLS: TLSNone, PathPrefixes: []string{"/api"}}},
+		{Name: "r.example.com", Target: HostTargetRedirect, RedirectTo: "b.example.com",
+			Route: Route{TLS: TLSNone, PathPrefixes: []string{"/api"}}},
+	} {
+		errs = nil
+		if ValidateHost(&other, &errs); errs.Err() == nil {
+			t.Errorf("%s target must refuse path prefixes", other.Target)
 		}
 	}
 }

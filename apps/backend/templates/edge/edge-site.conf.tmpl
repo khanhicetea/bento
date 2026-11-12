@@ -127,10 +127,29 @@ upstream {{.UpstreamName}} {
     proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}};
   }
 {{- end}}
+{{- if .PathPrefixes}}
+  # Only these path prefixes reach the upstream (^~: no regex location can
+  # take them over); the edge answers every other path 404.
+{{- range .PathPrefixes}}
+  location ^~ {{.}} {
+{{- template "bento-proxy" $}}
+{{- if $.UpstreamURI}}
+    # Map "/" onto the upstream path exactly as an unrestricted host does,
+    # keeping the matched prefix.
+    rewrite ^/(.*)$ {{$.UpstreamURI}}$1 break;
+{{- end}}
+    proxy_pass {{$.UpstreamScheme}}://{{$.UpstreamName}};
+  }
+{{- end}}
+  location / {
+    return 404;
+  }
+{{- else}}
   location / {
 {{- template "bento-proxy" .}}
     proxy_pass {{.UpstreamScheme}}://{{.UpstreamName}}{{.UpstreamURI}};
   }
+{{- end}}
 {{- end}}
 
 {{- define "bento-front-reject"}}

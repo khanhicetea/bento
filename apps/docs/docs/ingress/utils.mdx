@@ -21,7 +21,18 @@ UI or the API. Every request must prove itself (a webhook secret, or a one-time 
 <Tabs>
   <Tab title="Bento edge">
     Webhooks work automatically on every domain the edge serves. The database browser is **not** forwarded on app
-    domains — open it through the SSH tunnel or a base URL.
+    domains. To serve both on a domain of their own, add a [host](/ingress/hosts):
+
+    | Field | Value |
+    | --- | --- |
+    | Host | `utils.example.com` |
+    | Target | **Upstream** → the apps-network address above, e.g. `http://10.200.0.128:7781` |
+    | Path prefixes | `/_bento/` |
+    | TLS | **ACME**, HTTPS redirect on |
+    | Body limit | `80` |
+
+    Every other path on that domain gets a 404 from the edge. If you ever change the stack's network plan, update
+    the upstream to the new address.
   </Tab>
   <Tab title="Host nginx">
     ```nginx

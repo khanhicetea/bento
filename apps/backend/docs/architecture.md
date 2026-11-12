@@ -496,6 +496,13 @@ is reached as that name: `proxy_ssl_server_name on`, `proxy_ssl_name <host>`, `p
 image's `/etc/ssl/certs/ca-certificates.crt` (depth 4), and `Host: <host>[:port]` so SNI-routed hosts (Cloudflare,
 Vercel) answer; `X-Forwarded-Host` keeps the visitor's host. An HTTPS upstream named by an IP address is encrypted but
 not verified (`proxy_ssl_verify off`, no SNI) and keeps the visitor's `Host`.
+An upstream host's `route.pathPrefixes` (at most 16, URL path characters only, no dot segments, never under
+`/_bento/webhook/`; a list with `/` is stored empty) renders one `location ^~ <prefix>` per prefix and
+`location / { return 404; }`, so only those paths reach the upstream; an upstream path is mapped with
+`rewrite ^/(.*)$ <path>$1 break` (the prefix is kept, as on an unrestricted host). Prefixes are refused on app and
+redirect hosts and together with the static cache, whose extension location would match outside them. A host with
+prefix `/_bento/` and the utils listener's apps-network address as its upstream serves Bento's utils routes on its
+own domain.
 
 When the utils listener binds the apps network, every app and upstream host reserves
 `location ^~ /_bento/webhook/`, proxied through the shared `bento_utils` upstream (`<apps-gateway>:<port>`,

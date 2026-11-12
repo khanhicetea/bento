@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -349,6 +350,50 @@ func ValidateRoute(r *Route, field string, errs *ValidationErrors) {
 	if r.MaxBodyMB < 0 || r.MaxBodyMB > 10240 {
 		errs.Add(field+".maxBodyMb", "must be between 1 and 10240, or 0 for the default")
 	}
+	r.PathPrefixes = normalizePathPrefixes(r.PathPrefixes, field+".pathPrefixes", errs)
+}
+
+// MaxPathPrefixes bounds a host's path prefix list.
+const MaxPathPrefixes = 16
+
+// pathPrefixPattern admits the URL path characters that are safe inside a
+// generated nginx location: no spaces, quotes, braces, semicolons or "$".
+// nginx matches locations against the decoded path, so "%" escapes would
+// never match and are refused too.
+var pathPrefixPattern = regexp.MustCompile(`^/[A-Za-z0-9._~:@!+,=/-]*$`)
+
+// normalizePathPrefixes trims, deduplicates and checks a path prefix list in
+// order. A list containing "/" forwards every path, so it becomes empty.
+func normalizePathPrefixes(in []string, field string, errs *ValidationErrors) []string {
+	var out []string
+	all := false
+	for i, p := range in {
+		p = strings.TrimSpace(p)
+		f := fmt.Sprintf("%s[%d]", field, i)
+		switch {
+		case !pathPrefixPattern.MatchString(p) || len(p) > 200:
+			errs.Add(f, "must start with / and use only URL path characters (at most 200)")
+			continue
+		case strings.Contains(p, "//") || path.Clean(p) != strings.TrimSuffix(p, "/") && p != "/":
+			errs.Add(f, "must not contain empty, . or .. segments")
+			continue
+		case strings.HasPrefix(p, WebhookPathPrefix):
+			errs.Add(f, "%s is reserved for Bento's webhooks; use /_bento/ to forward Bento's utils routes", WebhookPathPrefix)
+			continue
+		case p == "/":
+			all = true
+		}
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) > MaxPathPrefixes {
+		errs.Add(field, "at most %d path prefixes", MaxPathPrefixes)
+	}
+	if all {
+		return nil
+	}
+	return out
 }
 
 // ValidateUpstream checks a reverse-proxy upstream URL.
@@ -435,6 +480,15 @@ func ValidateHost(h *Host, errs *ValidationErrors) {
 		errs.Add("target.kind", "must be app, upstream, or redirect")
 	}
 	ValidateRoute(&h.Route, "route", errs)
+	if len(h.Route.PathPrefixes) > 0 {
+		if h.Target != HostTargetUpstream {
+			errs.Add("route.pathPrefixes", "only upstream hosts take path prefixes")
+		}
+		if h.Route.StaticCache {
+			// The cache's extension location would match outside the prefixes.
+			errs.Add("route.staticCache", "cannot be combined with path prefixes")
+		}
+	}
 }
 
 func ValidateIngress(mode IngressMode) error {

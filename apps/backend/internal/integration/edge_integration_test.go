@@ -137,7 +137,12 @@ func TestIntegrationEdgeRecreateAndRollback(t *testing.T) {
 // edgeGet fetches / for host through the edge on 127.0.0.1:port.
 func edgeGet(t *testing.T, port int, host string) int {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/", port), nil)
+	return edgeGetPath(t, port, host, "/")
+}
+
+func edgeGetPath(t *testing.T, port int, host, path string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d%s", port, path), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,5 +187,30 @@ func TestIntegrationEdgeUnresolvableUpstream(t *testing.T) {
 	}
 	if code := edgeGet(t, p1, "away.example.com"); code < 300 || code > 399 {
 		t.Fatalf("the other host must keep serving its redirect, got %d", code)
+	}
+}
+
+// An upstream host with path prefixes forwards only those prefixes; the edge
+// answers every other path 404 itself.
+func TestIntegrationEdgeUpstreamPathPrefixes(t *testing.T) {
+	e := setup(t)
+	p1, p2 := freePort(t), freePort(t)
+	if op := e.configureEdge(p1, p2); op.State != store.OpSucceeded {
+		t.Fatalf("enable edge: %s: %s", op.ErrorCode, op.ErrorMessage)
+	}
+	_, op, err := e.c.CreateHost(context.Background(), operations.HostInput{Name: "limited.example.com",
+		Target: domain.HostTargetUpstream, Upstreams: []string{"http://no-such-host.invalid:8080"}, Enabled: true,
+		Route: domain.Route{TLS: domain.TLSNone, PathPrefixes: []string{"/api/", "/_bento/"}}}, "")
+	if got := e.wait(op, err); got.State != store.OpSucceeded {
+		t.Fatalf("create limited host: %s: %s", got.ErrorCode, got.ErrorMessage)
+	}
+	// The unresolvable upstream answers 502, so 502 means "reached the upstream".
+	for path, want := range map[string]int{
+		"/api/x": http.StatusBadGateway, "/_bento/dbadmin/t/x": http.StatusBadGateway,
+		"/": http.StatusNotFound, "/apix": http.StatusNotFound, "/other/api/": http.StatusNotFound,
+	} {
+		if code := edgeGetPath(t, p1, "limited.example.com", path); code != want {
+			t.Errorf("GET %s: want %d, got %d", path, want, code)
+		}
 	}
 }

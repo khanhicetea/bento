@@ -24,6 +24,9 @@ Then set the host's options:
 - **Body limit** — the largest request body the edge accepts, in MB. Empty uses the app's upload limit (PHP) or
   64 MB.
 - **Access log** — log requests at the edge and build an hourly [traffic report](/ingress/traffic) for the host.
+- **Path prefixes** (Upstream only) — forward only these paths, e.g. `/api/ /_bento/`; every other path gets a 404
+  from the edge. Empty forwards everything. Prefixes match like nginx: `/api` also matches `/apiary`, so end one
+  with `/` to mean a directory. Not combined with the static cache.
 
 ## Edit or remove
 

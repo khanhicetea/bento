@@ -575,6 +575,9 @@ func (r *runner) run(args []string) error {
 			switch h.Target.Kind {
 			case dto.HostTargetKindUpstream:
 				target = strings.Join(h.Target.Upstreams, " ")
+				if len(h.Route.PathPrefixes) > 0 {
+					target += " (paths " + strings.Join(h.Route.PathPrefixes, " ") + ")"
+				}
 			case dto.HostTargetKindRedirect:
 				target = "→ " + h.Target.RedirectTo
 			}

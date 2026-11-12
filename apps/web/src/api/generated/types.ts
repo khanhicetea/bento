@@ -135,6 +135,11 @@ export interface Route {
    * PHP app's upload limit, or 64 MB for HTTP apps and upstreams.
    */
   maxBodyMb?: number /* int */;
+  /**
+   * PathPrefixes (upstream hosts only) are the only paths forwarded to the
+   * upstream; the edge answers every other path 404. Absent forwards all.
+   */
+  pathPrefixes?: string[];
 }
 /**
  * Binding never carries a password.

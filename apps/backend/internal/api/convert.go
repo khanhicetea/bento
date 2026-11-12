@@ -88,6 +88,7 @@ func routeFromDTO(r *dto.Route) domain.Route {
 		AccessLog:     r.AccessLog,
 		StaticCache:   r.StaticCache,
 		MaxBodyMB:     r.MaxBodyMB,
+		PathPrefixes:  r.PathPrefixes,
 	}
 }
 
@@ -99,6 +100,7 @@ func routeToDTO(r domain.Route) dto.Route {
 		AccessLog:     r.AccessLog,
 		StaticCache:   r.StaticCache,
 		MaxBodyMB:     r.MaxBodyMB,
+		PathPrefixes:  r.PathPrefixes,
 	}
 }
 

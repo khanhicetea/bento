@@ -80,6 +80,9 @@ type Route struct {
 	// AppUpstream is the app container alias host:port, re-resolved at runtime.
 	AppUpstream    string
 	ProxyUpstreams []string
+	// PathPrefixes, when set, are the only paths proxied to the upstream;
+	// every other path is answered 404.
+	PathPrefixes   []string
 	UpstreamName   string
 	UpstreamScheme string
 	UpstreamURI    string
@@ -269,6 +272,7 @@ func Render(in Input) (map[string][]byte, error) {
 				r.ProxyUpstreams = append(r.ProxyUpstreams, host)
 			}
 			r.UpstreamScheme, r.UpstreamURI = scheme, uri
+			r.PathPrefixes = h.Route.PathPrefixes
 			if scheme == "https" {
 				r.UpstreamTLSName, r.UpstreamHostHeader = upstreamTLSName(first)
 			}
